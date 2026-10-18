@@ -63,12 +63,11 @@ let authentication_preserves_nullable_error () =
 let session_restoration_preserves_every_field () =
   match
     decode "restore-ui-session"
-      "{\"graphId\":null,\"destination\":\"graphs\",\"draft\":\"draft\",\"assets\":[{\"uuid\":\"a\",\"title\":\"image\",\"localPath\":\"/tmp/a\",\"payload\":\"raw\"}],\"composerExpanded\":true,\"searchOpen\":false,\"query\":\"q\",\"appPath\":[\"p1\",\"p2\"],\"searchPath\":[],\"selectedPageId\":\"p2\",\"settingsOpen\":true}"
+      "{\"graphId\":null,\"destination\":\"graphs\",\"assets\":[{\"uuid\":\"a\",\"title\":\"image\",\"localPath\":\"/tmp/a\",\"payload\":\"raw\"}],\"composerExpanded\":true,\"searchOpen\":false,\"query\":\"q\",\"appPath\":[\"p1\",\"p2\"],\"searchPath\":[],\"selectedPageId\":\"p2\",\"settingsOpen\":true}"
   with
   | Ok (Restore_ui_session session) ->
     check (session.graph_id = None);
     check_eq "graphs" session.destination;
-    check_eq "draft" session.draft;
     check session.composer_expanded;
     check (not session.search_open);
     check session.settings_open;

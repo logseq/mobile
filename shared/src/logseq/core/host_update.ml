@@ -10,7 +10,6 @@ type host_composer_asset =
 type host_ui_session =
   { graph_id : string option
   ; destination : string
-  ; draft : string
   ; assets : host_composer_asset list
   ; composer_expanded : bool
   ; search_open : bool
@@ -97,7 +96,6 @@ let ui_session value =
   {
     graph_id = Util.to_string_option (Util.member "graphId" value);
     destination = string_field "destination" value;
-    draft = string_field "draft" value;
     assets =
       List.map
         (fun asset -> composer_asset asset (string_field "payload" asset))

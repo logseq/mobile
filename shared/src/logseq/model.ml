@@ -30,7 +30,6 @@ type asset_preview =
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
-  ; draft : string
   ; assets : composer_asset list
   ; composer_expanded : bool
   ; search_open : bool
@@ -1587,7 +1586,6 @@ let ui_session (current : logseq_model) =
   {
     graph_id = current.selected_graph_id;
     destination = current.destination;
-    draft = current.composer_draft;
     assets = current.composer_assets;
     composer_expanded = current.composer_expanded;
     search_open = current.search_open;
@@ -1621,7 +1619,6 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
       {
         current with
         destination = session.destination;
-        composer_draft = session.draft;
         composer_assets = session.assets;
         composer_expanded = session.composer_expanded;
         composer_autofocus = session.composer_expanded;

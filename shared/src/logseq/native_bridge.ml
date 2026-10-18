@@ -87,7 +87,6 @@ let host_action (update : Host_update.host_update) =
            | "flashcards" -> Model.FlashcardsDestination
            | "graphs" -> Model.GraphsDestination
            | _ -> Model.JournalsDestination);
-        draft = session.draft;
         assets = List.map session_asset session.assets;
         composer_expanded = session.composer_expanded;
         search_open = session.search_open;
@@ -140,7 +139,7 @@ let encode_ui_session (session : Model.ui_session) =
        | Model.FlashcardsDestination -> "flashcards"
        | Model.GraphsDestination -> "graphs"
        | Model.JournalsDestination -> "journals")
-  ^ ",\"draft\":" ^ Lui_wire.quoted session.draft ^ ",\"assets\":["
+  ^ ",\"assets\":["
   ^ String.concat "," (List.map encode_session_asset session.assets)
   ^ "]" ^ ",\"composerExpanded\":"
   ^ string_of_bool session.composer_expanded

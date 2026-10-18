@@ -8466,7 +8466,6 @@ let ui_session_restores_after_process_relaunch () =
       (Model.initial ()) with
       Model.selected_graph_id = Some "graph-a";
       composer_expanded = true;
-      composer_draft = "Unsent draft";
       search_open = true;
       search_query = "hello";
       app_navigation_path = [ Model.NodeRoute "page-a" ];
@@ -8479,7 +8478,6 @@ let ui_session_restores_after_process_relaunch () =
     { (Model.initial ()) with Model.selected_graph_id = Some "graph-a" }
   in
   let restored = Model.update fresh (Model.RestoreUISession saved) in
-  check_eq ~msg:"restore unsent text" restored.composer_draft "Unsent draft";
   check_eq ~msg:"reopen Capture" restored.composer_expanded true;
   check_eq ~msg:"reopen Search" restored.search_open true;
   check_eq ~msg:"restore query" restored.search_query "hello";
@@ -8493,6 +8491,26 @@ let ui_session_restores_after_process_relaunch () =
   check_eq ~msg:"never restore another graph's state"
     (Model.update (Model.initial ()) (Model.RestoreUISession saved))
     (Model.initial ())
+
+let ui_session_preserves_independently_restored_composer_draft () =
+  let previous =
+    {
+      (Model.initial ()) with
+      Model.selected_graph_id = Some "graph-a";
+      composer_draft = "Older draft";
+    }
+  in
+  let session = Model.ui_session previous in
+  List.iter
+    (fun draft ->
+      let fresh =
+        { (Model.initial ()) with Model.selected_graph_id = Some "graph-a" }
+      in
+      let hydrated = Model.update fresh (Model.ApplyComposerDraft draft) in
+      let restored = Model.update hydrated (Model.RestoreUISession session) in
+      check_eq ~msg:"navigation restoration cannot replace authoritative text"
+        restored.composer_draft draft)
+    [ "Older draft / latest edit"; "" ]
 
 let quick_actions_open_from_existing_navigation () =
   let current =
@@ -8706,5 +8724,7 @@ let cases =
     case "block-node-breadcrumbs-preserve-navigation-context" block_node_breadcrumbs_preserve_navigation_context;
     case "composer-attachment-previews-remove-only-the-selected-draft" composer_attachment_previews_remove_only_the_selected_draft;
     case "ui-session-restores-after-process-relaunch" ui_session_restores_after_process_relaunch;
+    case "ui-session-preserves-independently-restored-composer-draft"
+      ui_session_preserves_independently_restored_composer_draft;
     case "quick-actions-open-from-existing-navigation" quick_actions_open_from_existing_navigation;
   ]

@@ -10,7 +10,6 @@ type host_composer_asset =
 type host_ui_session =
   { graph_id : string option
   ; destination : string
-  ; draft : string
   ; assets : host_composer_asset list
   ; composer_expanded : bool
   ; search_open : bool

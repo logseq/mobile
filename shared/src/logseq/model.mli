@@ -27,7 +27,6 @@ type asset_preview =
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
-  ; draft : string
   ; assets : composer_asset list
   ; composer_expanded : bool
   ; search_open : bool
@@ -609,4 +608,3 @@ val ui_session : logseq_model -> ui_session
 val restore_session_routes :
   logseq_model -> navigation_route list -> bool -> logseq_model
 val restore_ui_session : logseq_model -> ui_session -> logseq_model
-
