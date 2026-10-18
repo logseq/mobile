@@ -5967,6 +5967,40 @@ let native_navigation_retains_the_journal_and_every_node_route () =
   check_eq ~msg:"a native multi-pop is safely clamped to the LG path"
     (App.model application).app_navigation_path []
 
+let native_navigation_retains_repeated_node_visits () =
+  let application = App.create (ios_backend ()) in
+  let route_a = node_projection "node-a" "page-a" "Tag" [] [] in
+  let route_b = node_projection "node-b" "page-b" "Block" [] [] in
+  start application;
+  send application (Model.RequestAppNode "node-a");
+  send application (Model.RequestAppNode "node-b");
+  send application
+    (Model.ApplyCoreSnapshot
+       { (empty_core_projection ()) with
+         selected_graph_id = Some "test-graph";
+         node_routes = [ route_a; route_b ] });
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let navigation = extension_node application "native-navigation-stack" in
+  let retained = Model.sub_list 6 8 (children renderer navigation) in
+  send application (Model.RequestAppNode "node-a");
+  flush application;
+  check_eq ~msg:"revisiting an ancestor pushes another destination"
+    (extension_property application navigation "depth")
+    (Some (Lui_protocol.IntValue 3));
+  let visits = Model.sub_list 6 9 (children renderer navigation) in
+  check_eq ~msg:"each visit owns a distinct retained native screen"
+    (List.length (List.sort_uniq compare visits)) 3;
+  check_eq ~msg:"pushing a revisit preserves preceding native screens"
+    (Model.sub_list 0 2 visits) retained;
+  send application (Model.BackAppNavigation 1);
+  flush application;
+  check_eq ~msg:"back removes only the newest visit"
+    (App.model application).app_navigation_path
+    [ Model.NodeRoute "node-a"; Model.NodeRoute "node-b" ];
+  check_eq ~msg:"back restores the preceding native screens unchanged"
+    (Model.sub_list 6 8 (children renderer navigation)) retained
+
 let journal_navigation_exposes_an_immediate_preview_route () =
   let row =
     journal_outline_row "journal-block" "journal-page" "Journal row"
@@ -8674,6 +8708,7 @@ let cases =
     case "kotlin-selected-pages-unmount-the-hidden-journal-pane" kotlin_selected_pages_unmount_the_hidden_journal_pane;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
+    case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
     case "journal-navigation-exposes-an-immediate-preview-route" journal_navigation_exposes_an_immediate_preview_route;
     case "block-navigation-exposes-an-immediate-outliner-preview-route" block_navigation_exposes_an_immediate_outliner_preview_route;
     case "popped-native-path-restores-root-before-core-route-cleanup" popped_native_path_restores_root_before_core_route_cleanup;

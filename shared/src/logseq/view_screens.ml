@@ -610,7 +610,7 @@ let main_header_connection model_source send : t =
     ]
 
 let native_node_screen (context : Lui_ui.ui_context) model_source
-    route_source send : t =
+    ~source:route_source send : t =
   let route_model_source =
     Signal.map2 View_base.node_route_model model_source route_source
   in
@@ -618,6 +618,19 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
     box ~grow:1.0 ~background:"background"
       [ View_outliner.node_screen context route_model_source send ]
   else View_outliner.node_screen context route_model_source send
+
+let native_node_stack context model_source ~source:routes_source send =
+  keyed
+    ~source:
+      (reactive
+         (fun routes -> List.mapi (fun index route -> (index, route)) routes)
+         routes_source)
+    ~key:(fun (index, (route : Model.node_projection)) ->
+      (index, route.node_uuid))
+    ~cmp:compare
+    ~mount:(fun visit_source ->
+      native_node_screen context model_source
+        ~source:(reactive (fun (_, route) -> route) visit_source) send)
 
 let native_search_view (_context : Lui_ui.ui_context) model_source send :
     t =
@@ -653,7 +666,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
                (Signal.map View_base.active_app_node_routes model_source)
              ~key:View_base.node_projection_identifier ~cmp:compare
              ~mount:(fun route_source ->
-               native_node_screen context model_source route_source send);
+               native_node_screen context model_source ~source:route_source send);
            if_
              ~test:
                (Signal.map View_base.kotlin_search_root_visible_
@@ -666,7 +679,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
                   model_source)
              ~key:View_base.node_projection_identifier ~cmp:compare
              ~mount:(fun route_source ->
-               native_node_screen context model_source route_source send);
+               native_node_screen context model_source ~source:route_source send);
          ]
          context (Some node)
      in
@@ -678,12 +691,8 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
        ((column ~grow:1.0 [ search_screen model_source send ]) context
           (Some node));
      ignore
-       ((keyed
-           ~source:
-             (Signal.map View_base.search_node_routes model_source)
-           ~key:View_base.node_projection_identifier ~cmp:compare
-           ~mount:(fun route_source ->
-             native_node_screen context model_source route_source send))
+       ((native_node_stack context model_source
+           ~source:(reactive View_base.search_node_routes model_source) send)
           context (Some node));
      node)
 
@@ -791,10 +800,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      ignore
        ((main_bottom_chrome context model_source send) context (Some node));
      ignore
-       ((keyed ~source:(Signal.map Model.app_node_routes model_source)
-           ~key:View_base.node_projection_identifier ~cmp:compare
-           ~mount:(fun route_source ->
-             native_node_screen context model_source route_source send))
+       ((native_node_stack context model_source
+           ~source:(reactive Model.app_node_routes model_source) send)
           context (Some node));
      ignore
        ((if_
