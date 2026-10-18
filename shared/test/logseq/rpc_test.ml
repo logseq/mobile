@@ -4153,118 +4153,48 @@ let page_service_exceptions_are_not_reclassified_as_payload_json_errors () =
     (json_string (member "message" (member "error" response)))
     "request must be valid JSON"
 
-let remote_feed =
-  "{\"blocks\":[{\"uuid\":\"remote\",\"title\":\"Remote text\",\"page-id\":\"journal\",\"parent-id\":\"journal\",\"created-at\":10,\"updated-at\":20}],\"journals\":[{\"uuid\":\"journal\",\"title\":\"Today\",\"journal-day\":20260916}]}"
-
-let refresh_session send =
-  let session =
-    Session.create_session
-      {
-        Session.default_options with
-        load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
-        send;
-      }
-  in
-  ignore
-    (dispatch_json session "configure"
-       "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}");
-  session
-
-let refresh_caches_blocks_journals_and_statuses_in_request_order () =
-  let requests = ref [] in
-  let session =
-    refresh_session (fun request ->
-        requests := !requests @ [ request.Api.url ];
-        check_eq request.method_ "GET";
-        check_eq request.token "access";
-        Ok
-          (Api.response 200
-             (if List.length !requests = 1 then remote_feed
-              else
-                "{\"choices\":[{\"uuid\":\"todo\",\"title\":\"Todo\",\"ident\":\"logseq.property/status.todo\"}]}")))
-  in
-  let response = dispatch_json session "refresh" "" in
-  check (Json_util.to_bool (member "ok" response));
-  check_eq (List.length !requests) 2;
-  check
-    (let first = List.hd !requests in
-     try
-       ignore (Str.search_forward (Str.regexp "/blocks\\?journal-only=true&journal-day-at-most=") first 0);
-       true
-     with Not_found -> false);
-  check
-    (String.ends_with ~suffix:"/search?q=Status&types=properties&limit=100"
-       (List.nth !requests 1));
-  (match Model.read_block (Session.state session).model "remote" with
-   | Some block ->
-     check_eq block.Model.title "Remote text";
-     check_eq block.sync_status "synced";
-     check_eq block.updated_at 20
-   | None -> check false);
-  check_eq
-    (Model.journal_metadata (Session.state session).model "journal")
-    (Some ("Today", 20260916));
-  check_eq
-    (List.map
-       (fun (s : Model.status) -> s.uuid)
-       (Model.all_statuses (Session.state session).model))
-    [ "todo" ]
-
-let refresh_stops_before_status_request_when_blocks_request_fails () =
+let refresh_reads_local_graph_without_http () =
   List.iter
-    (fun transport_failure ->
+    (fun response ->
       let requests = ref 0 in
-      let session =
-        refresh_session (fun _ ->
-            incr requests;
-            if transport_failure then Error "offline"
-            else Ok (Api.response 503 "bad gateway"))
+      let status : Model.status =
+        { uuid = "todo"; title = "Todo"; ident = None;
+          icon_type = Some "tabler-icon"; icon_id = Some "circle";
+          icon_color = Some "#7c3aed" }
       in
-      let response = dispatch_json session "refresh" "" in
-      check_eq (response_error_code response) "remote_refresh_failed";
-      check_eq !requests 1;
-      check (Model.read_block (Session.state session).model "remote" = None))
-    [ true; false ]
-
-let refresh_status_failure_preserves_already_cached_blocks () =
-  List.iter
-    (fun transport_failure ->
-      let requests = ref 0 in
-      let session =
-        refresh_session (fun _ ->
-            if !requests = 0 then (
-              incr requests;
-              Ok (Api.response 200 remote_feed))
-            else (
-              incr requests;
-              if transport_failure then Error "offline"
-              else Ok (Api.response 503 "bad gateway")))
+      let local =
+        { (Model.local_block "local" "Offline draft" "journal" None 10) with
+          tags = [ { Model.uuid = "tag"; title = "Project" } ];
+          references = [ { Model.uuid = "page"; title = "Reference" } ];
+          status = Some status }
       in
-      let response = dispatch_json session "refresh" "" in
-      check_eq (response_error_code response) "remote_statuses_failed";
-      check_eq !requests 2;
-      check (Model.read_block (Session.state session).model "remote" <> None))
-    [ true; false ]
-
-let refresh_malformed_json_preserves_error_and_partial_cache_semantics () =
-  List.iter
-    (fun malformed_blocks ->
-      let requests = ref 0 in
       let session =
-        refresh_session (fun _ ->
-            incr requests;
-            Ok
-              (Api.response 200
-                 (if !requests = 1 && not malformed_blocks then remote_feed
-                  else "not json")))
+        Session.create_session
+          { Session.default_options with
+            load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
+            graph_blocks = Some (fun () -> Some [ local ]);
+            send = (fun _ -> incr requests; response) }
       in
-      let response = dispatch_json session "refresh" "" in
-      check_eq (response_error_code response) "invalid_json";
-      check_eq !requests (if malformed_blocks then 1 else 2);
-      check_eq
-        (Model.read_block (Session.state session).model "remote" <> None)
-        (not malformed_blocks))
-    [ true; false ]
+      ignore
+        (dispatch_json session "configure"
+           "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}");
+      let model = (Session.state session).model in
+      Model.upsert_journal_page model "journal" 20260916 "Today";
+      Model.upsert_blocks model [ local ] 10;
+      Model.upsert_statuses model [ status ];
+      let result = response_result (dispatch_json session "refresh" "") in
+      check_eq !requests 0;
+      let block = List.hd (json_items "blocks" result) in
+      check_eq (member "uuid" block) (`String "local");
+      check_eq (member "title" block) (`String "Offline draft");
+      check_eq (member "syncStatus" block) (`String "pending");
+      check_eq (member "title" (List.hd (json_items "tags" block))) (`String "Project");
+      check_eq (member "title" (List.hd (json_items "references" block))) (`String "Reference");
+      check_eq (member "color" (member "icon" (member "status" block))) (`String "#7c3aed");
+      check_eq (member "uuid" (List.hd (json_items "taskStatuses" result))) (`String "todo");
+      check_eq (Model.journal_metadata model "journal") (Some ("Today", 20260916));
+      check_eq (Model.read_block model "local") (Some local))
+    [ Error "offline"; Ok (Api.response 200 "{\"blocks\":[],\"choices\":[]}") ]
 
 let optimistic_capture_is_returned_before_sync () =
   let session = Session.create_session Session.default_options in
@@ -6030,14 +5960,7 @@ let cases =
       page_and_review_actions_preserve_precondition_priority;
     case "page service exceptions are not reclassified as payload json errors"
       page_service_exceptions_are_not_reclassified_as_payload_json_errors;
-    case "refresh caches blocks journals and statuses in request order"
-      refresh_caches_blocks_journals_and_statuses_in_request_order;
-    case "refresh stops before status request when blocks request fails"
-      refresh_stops_before_status_request_when_blocks_request_fails;
-    case "refresh status failure preserves already cached blocks"
-      refresh_status_failure_preserves_already_cached_blocks;
-    case "refresh malformed json preserves error and partial cache semantics"
-      refresh_malformed_json_preserves_error_and_partial_cache_semantics;
+    case "refresh reads local graph without HTTP" refresh_reads_local_graph_without_http;
     case "optimistic capture is returned before sync"
       optimistic_capture_is_returned_before_sync;
     case "title normalization preserves operation and stages tags first"

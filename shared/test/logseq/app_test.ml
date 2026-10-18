@@ -791,7 +791,7 @@ let settings_reject_invalid_connections_and_preserve_required_tabs () =
     {
       (Model.initial ()) with
       Model.settings_open = true;
-      base_url = "not a server";
+      base_url_draft = "not a server";
     }
   in
   let invalid = Model.update opened Model.ApplySettings in

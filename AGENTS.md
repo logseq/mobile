@@ -27,7 +27,7 @@ Logseq uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed 
 
 Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, or `swift test`. Do not try to start those from this environment.
 
-The Linux-runnable surface is the OCaml core in `shared/native/` (inbox capture, DataScript model, RPC, SQLite persistence). There is no in-repo HTTP server; the app’s default API (`http://127.0.0.1:8787`) lives in a separate Logseq product.
+The Linux-runnable surface is the OCaml core in `shared/native/` (inbox capture, DataScript model, RPC, SQLite persistence). There is no in-repo HTTP server; the app's default API is `https://api.logseq.io`. Local sync testing can explicitly override it with `http://127.0.0.1:8787` from the separate Logseq server repository.
 
 ### OCaml core
 

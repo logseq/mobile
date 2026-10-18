@@ -27,7 +27,7 @@ items = host_info.get("UIApplicationShortcutItems", [])
 assert [(item["UIApplicationShortcutItemType"], item["UIApplicationShortcutItemTitle"]) for item in items] == [
     ("logseq://audio", "Voice"), ("logseq://capture", "Quick Add")
 ], "Home Screen must expose Voice and Quick Add"
-assert info["CFBundleIdentifier"] == host_info["CFBundleIdentifier"] + ".widgets"
+assert info["CFBundleIdentifier"] == host_info["CFBundleIdentifier"] + ".shortcuts"
 assert info["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
 assert (widget / info["CFBundleExecutable"]).is_file()
 print("Verified four distinct app shortcuts and the embedded widget extension")

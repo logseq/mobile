@@ -103,6 +103,14 @@ struct LogseqCommunityLink: Identifiable {
 }
 
 enum LogseqSettingsPolicy {
+    static let defaultBaseURL = "https://api.logseq.io"
+
+    static func storedBaseURL(in defaults: UserDefaults = .standard) -> String {
+        let value = defaults.string(forKey: "logseq.baseURL")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? defaultBaseURL : value
+    }
+
     static let languages = [
         LogseqLanguageChoice(id: "system", title: "System"),
         LogseqLanguageChoice(id: "en", title: "English"),

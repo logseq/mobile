@@ -159,20 +159,6 @@ val delete_page :
   (unit -> string) ->
   string
 
-val cache_remote_blocks :
-  Cache_model.model -> Api.api_response -> int -> (unit, string) result
-
-val cache_task_statuses :
-  Cache_model.model -> Api.api_response -> (unit, string) result
-
-val refresh_from_remote :
-  Cache_model.model ->
-  Api.api_config ->
-  (Api.api_request -> (Api.api_response, string) result) ->
-  int ->
-  (unit -> string) ->
-  string
-
 val create_sync_graph :
   Api.api_config option ->
   string option ->

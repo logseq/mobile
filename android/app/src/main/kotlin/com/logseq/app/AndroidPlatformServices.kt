@@ -20,7 +20,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-internal const val DEFAULT_BASE_URL = "http://127.0.0.1:8787"
+internal const val DEFAULT_BASE_URL = "https://api.logseq.io"
 
 internal fun normalizedBaseUrl(value: String?): String =
     value?.trim().orEmpty().ifBlank { DEFAULT_BASE_URL }

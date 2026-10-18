@@ -764,12 +764,9 @@ private let testEmptySnapshotJSON = """
         await store.unlockGraph("secret")
         store.select(block)
         store.clearSelection()
-        store.loadBlockReferences("block-1")
-        store.loadPageReferences("page-1")
-        store.loadTagObjects("tag-1")
         store.clearRelated()
 
-        try await waitUntil { recorder.all.count >= 11 }
+        try await waitUntil { recorder.all.count >= 8 }
 
         let expectedActionsAndPayloads: [(String, String?)] = [
             ("selectPage", "page-1"),
@@ -779,9 +776,6 @@ private let testEmptySnapshotJSON = """
             ("unlockGraph", "secret"),
             ("select", "block-1"),
             ("clearSelection", nil),
-            ("loadBlockReferences", "block-1"),
-            ("loadPageReferences", "page-1"),
-            ("loadTagObjects", "tag-1"),
             ("clearRelated", nil),
         ]
         for (action, payload) in expectedActionsAndPayloads {

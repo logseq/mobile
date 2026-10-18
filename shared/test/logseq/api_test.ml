@@ -11,11 +11,6 @@ let config : Api.api_config =
     token = "token";
   }
 
-let single_block body =
-  let blocks = Api.blocks_from_list_body "results" body in
-  check_eq 1 (List.length blocks);
-  List.hd blocks
-
 let url_encoding_and_secure_metadata_defaults () =
   check_eq "a%20b%2F%3F%23%25%2B%C3%A9-_.~"
     (Api.url_encode "a b/?#%+é-_.~");
@@ -44,77 +39,16 @@ let url_encoding_and_secure_metadata_defaults () =
       "{\"blocks\":[{\"uuid\":\"\"}]}";
     ]
 
-let block_timestamps_and_semantics () =
-  let explicit =
-    single_block
-      "{\"results\":[{\"uuid\":\"block-explicit\",\"title\":\"Explicit\",\"order\":\"a1\",\"created-at\":1776000000000,\"updated-at\":1776000100000}]}"
-  in
-  let missing =
-    single_block
-      "{\"results\":[{\"uuid\":\"block-missing\",\"title\":\"Missing\"}]}"
-  in
-  let semantic =
-    single_block
-      "{\"results\":[{\"uuid\":\"semantic\",\"title\":\"Review [[Project]]\",\"tags\":[{\"uuid\":\"tag-1\",\"title\":\"Project\"}],\"references\":[{\"uuid\":\"page-1\",\"title\":\"Project\"}],\"status\":{\"uuid\":\"status-1\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\",\"icon\":{\"type\":\"tabler-icon\",\"id\":\"circle\"}},\"asset-type\":\"jpg\",\"asset-size\":2048,\"asset-checksum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}"
-  in
-  check_eq (Some "a1") explicit.Cache_model.order;
-  check_eq 1776000000000 explicit.created_at;
-  check_eq 1776000100000 explicit.updated_at;
-  check_eq 0 missing.Cache_model.created_at;
-  check_eq 0 missing.updated_at;
-  check_eq [ "Project" ]
-    (List.map
-       (fun (s : Cache_model.entity_summary) -> s.title)
-       semantic.tags);
-  check_eq [ "Project" ]
-    (List.map
-       (fun (s : Cache_model.entity_summary) -> s.title)
-       semantic.references);
-  check_eq (Some "Todo")
-    (match semantic.status with
-     | Some (status : Cache_model.status) -> Some status.title
-     | None -> None);
-  check_eq (Some "circle")
-    (match semantic.status with
-     | Some status -> status.Cache_model.icon_id
-     | None -> None);
-  check_eq (Some "jpg") semantic.Cache_model.asset_type;
-  check_eq (Some 2048) semantic.asset_size;
-  let statuses =
-    Api.statuses_from_property_body
-      "{\"results\":[{\"uuid\":\"property-status\",\"ident\":\"logseq.property/status\",\"title\":\"Status\",\"choices\":[{\"uuid\":\"status-waiting\",\"ident\":\"user.status/waiting\",\"title\":\"Waiting\",\"icon\":{\"type\":\"tabler-icon\",\"id\":\"clock\",\"color\":\"#7c3aed\"}}]}]}"
-  in
-  check_eq 1 (List.length statuses);
-  let (status : Cache_model.status) = List.hd statuses in
-  check_eq "Waiting" status.title;
-  check_eq (Some "#7c3aed") status.icon_color
-
 let read_endpoints () =
-  check_eq "GET" (Api.recent_blocks_request config 20260813).method_;
   List.iter
     (fun ((request : Api.api_request), suffix) ->
+      check_eq "GET" request.method_;
       check_eq ("https://api.example" ^ suffix) request.url)
     [
-      ( Api.recent_blocks_request config 20260813
-      , "/api/v1/graphs/graph-1/blocks?journal-only=true&journal-day-at-most=20260813&sort=created-at-desc&limit=100"
-      );
-      ( Api.task_statuses_request config
-      , "/api/v1/graphs/graph-1/search?q=Status&types=properties&limit=100" );
       (Api.graphs_request config, "/graphs");
-      ( Api.block_references_request config "block-1"
-      , "/api/v1/graphs/graph-1/blocks/block-1/references?limit=100" );
-      ( Api.tag_objects_request config "tag-1"
-      , "/api/v1/graphs/graph-1/tags/tag-1/objects?limit=100" );
-      ( Api.page_references_request config "page-1"
-      , "/api/v1/graphs/graph-1/pages/page-1/references?limit=100" );
       (Api.user_keys_request config, "/e2ee/user-keys");
       (Api.graph_key_request config, "/e2ee/graphs/graph-1/aes-key");
-    ];
-  check_eq [ "backlink" ]
-    (List.map
-       (fun (b : Cache_model.block) -> b.uuid)
-       (Api.blocks_from_list_body "references"
-          "{\"references\":[{\"uuid\":\"backlink\",\"title\":\"Uses Project\"}]}"))
+    ]
 
 let capture_and_task_bodies () =
   List.iter
@@ -211,7 +145,7 @@ let asset_upload_query_parameters () =
   check_eq "/tmp/encrypted" encrypted.file_path;
   check_eq None encrypted.request.body
 
-let creation_responses_and_feed () =
+let creation_responses () =
   List.iter
     (fun (body, expected) ->
       check_eq expected (Api.created_block_uuid_from_body body))
@@ -222,19 +156,7 @@ let creation_responses_and_feed () =
       , "server-task" );
       ( "{\"page-id\":\"journal\",\"blocks\":[{\"uuid\":\"server-block\",\"title\":\"Offline\"}]}"
       , "server-block" );
-    ];
-  let blocks, journals =
-    Api.feed_from_body
-      "{\"blocks\":[{\"uuid\":\"block-1\",\"title\":\"Message\",\"page-id\":\"journal-new\",\"created-at\":1776000000000}],\"journals\":[{\"uuid\":\"journal-new\",\"title\":\"Aug 13th, 2026\",\"journal-day\":20260813}]}"
-  in
-  check_eq [ "block-1" ]
-    (List.map (fun (b : Cache_model.block) -> b.uuid) blocks);
-  check_eq [ "journal-new" ]
-    (List.map (fun (j : Api.api_journal) -> j.uuid) journals);
-  check_eq [ "Aug 13th, 2026" ]
-    (List.map (fun (j : Api.api_journal) -> j.title) journals);
-  check_eq [ 20260813 ]
-    (List.map (fun (j : Api.api_journal) -> j.journal_day) journals)
+    ]
 
 let key_packages () =
   let upsert = Api.upsert_graph_key_request config "wrapped" in
@@ -311,13 +233,12 @@ let cases =
   [
     case "url encoding and secure metadata defaults"
       url_encoding_and_secure_metadata_defaults;
-    case "block timestamps and semantics" block_timestamps_and_semantics;
     case "read endpoints" read_endpoints;
     case "capture and task bodies" capture_and_task_bodies;
     case "status and transaction requests" status_and_transaction_requests;
     case "asset upload metadata" asset_upload_metadata;
     case "asset upload query parameters" asset_upload_query_parameters;
-    case "creation responses and feed" creation_responses_and_feed;
+    case "creation responses" creation_responses;
     case "key packages" key_packages;
     case "graph creation and discovery" graph_creation_and_discovery;
     case "initial snapshot upload" initial_snapshot_upload;

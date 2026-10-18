@@ -106,8 +106,7 @@ final class LGGraphLifecycle {
 
     func connectStoredGraph() async -> Bool {
         let defaults = UserDefaults.standard
-        let baseURL = defaults.string(forKey: "logseq.baseURL")
-            ?? "http://127.0.0.1:8787"
+        let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
         let storedGraphID = defaults.string(forKey: "logseq.selectedGraphId") ?? ""
         let graphID = storedGraphID.isEmpty ? nil : storedGraphID
         guard let accessToken = try? await authentication.accessToken() else {
@@ -144,8 +143,7 @@ final class LGGraphLifecycle {
             return resolution(succeeded: false)
         }
 
-        let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
-            ?? "http://127.0.0.1:8787"
+        let baseURL = LogseqSettingsPolicy.storedBaseURL()
         let accessToken = (try? await authentication.accessToken()) ?? ""
         let isEncrypted = store.snapshot.graphs?
             .first(where: { $0.id == graphID })?.isEncrypted ?? false
@@ -188,8 +186,7 @@ final class LGGraphLifecycle {
                 output: .discard
             )
         }
-        let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
-            ?? "http://127.0.0.1:8787"
+        let baseURL = LogseqSettingsPolicy.storedBaseURL()
         let accessToken = (try? await authentication.accessToken()) ?? ""
         if !accessToken.isEmpty {
             // The encrypted graph opens without a sync checkpoint while locked,
@@ -227,8 +224,7 @@ final class LGGraphLifecycle {
             defaults.set("", forKey: "logseq.selectedGraphId")
             let accessToken = (try? await authentication.accessToken()) ?? ""
             await store.configureAndSelectGraph(
-                baseURL: defaults.string(forKey: "logseq.baseURL")
-                    ?? "http://127.0.0.1:8787",
+                baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
                 token: accessToken,
                 selectedGraphID: nil
             )

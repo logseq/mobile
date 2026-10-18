@@ -232,8 +232,7 @@ public struct LogseqRootView : View {
                 defaults.set("", forKey: "logseq.selectedGraphId")
                 defaults.removeObject(forKey: "logseq.uiSession")
                 store.configure(
-                    baseURL: defaults.string(forKey: "logseq.baseURL")
-                        ?? "http://127.0.0.1:8787",
+                    baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
                     token: "",
                     refreshAfterApply: false
                 )
@@ -512,8 +511,7 @@ public struct LogseqRootView : View {
             sidebarTabs: rawTabs.isEmpty
                 ? []
                 : rawTabs.split(separator: ",").map { value in String(value) },
-            baseURL: defaults.string(forKey: "logseq.baseURL")
-                ?? "http://127.0.0.1:8787",
+            baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
             version: LogseqSettingsPolicy.version,
             revision: LogseqSettingsPolicy.revision
         )
@@ -540,8 +538,7 @@ public struct LogseqRootView : View {
         guard localLaunchResult == nil else { return }
         let graphID = UserDefaults.standard.string(forKey: "logseq.selectedGraphId") ?? ""
         let databasePath = databasePath
-        let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
-            ?? "http://127.0.0.1:8787"
+        let baseURL = LogseqSettingsPolicy.storedBaseURL()
         localLaunchResult = {
             LogseqAppDelegate.shared.reportLaunchStage("local_load_started")
             func configureGraph() {
@@ -781,7 +778,7 @@ public struct LogseqRootView : View {
     public func syncFromStoredConnection() async -> Bool {
         await waitForLocalLaunchLoad()
         let defaults = UserDefaults.standard
-        let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
+        let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
         guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {
             return false
         }

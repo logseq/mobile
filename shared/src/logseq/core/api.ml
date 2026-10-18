@@ -1,6 +1,5 @@
 module Json = Yojson.Basic
 module Json_util = Yojson.Basic.Util
-module Model = Cache_model
 
 type api_config =
   { base_url : string
@@ -26,12 +25,6 @@ type api_file_upload =
   ; file_path : string
   ; content_type : string
   ; headers : (string * string) list
-  }
-
-type api_journal =
-  { uuid : string
-  ; title : string
-  ; journal_day : int
   }
 
 type api_graph =
@@ -96,19 +89,6 @@ let graph_path config suffix =
 
 let json_body fields = Some (Json.to_string (`Assoc fields))
 
-let recent_blocks_request config journal_day =
-  request config "GET"
-    (graph_path config
-       ("/blocks?journal-only=true&journal-day-at-most="
-        ^ string_of_int journal_day
-        ^ "&sort=created-at-desc&limit=100"))
-    None
-
-let task_statuses_request config =
-  request config "GET"
-    (graph_path config "/search?q=Status&types=properties&limit=100")
-    None
-
 let graphs_request config = request config "GET" "/graphs" None
 
 let create_graph_request config name schema_version e2ee =
@@ -154,21 +134,6 @@ let encrypted_journal_page_request config uuid title name journal_day =
          ("name", `String name);
          ("journal-day", `Int journal_day);
        ])
-
-let related_request config resource uuid collection =
-  request config "GET"
-    (graph_path config
-       ("/" ^ resource ^ "/" ^ url_encode uuid ^ "/" ^ collection ^ "?limit=100"))
-    None
-
-let block_references_request config uuid =
-  related_request config "blocks" uuid "references"
-
-let page_references_request config uuid =
-  related_request config "pages" uuid "references"
-
-let tag_objects_request config uuid =
-  related_request config "tags" uuid "objects"
 
 let page_fields page_id =
   match page_id with
@@ -362,110 +327,6 @@ let update_block_status_request config uuid status =
   request config "PUT"
     (graph_path config ("/blocks/" ^ url_encode uuid ^ "/properties/Status"))
     (json_body [ ("value", `String status) ])
-
-let summary_of_json input =
-  let uuid = string_member "uuid" input in
-  let title = string_member "title" input in
-  if uuid <> "" && title <> "" then
-    Some ({ uuid; title } : Model.entity_summary)
-  else None
-
-let summaries_member name input =
-  List.filter_map summary_of_json (list_member name input)
-
-let status_of_json input =
-  let uuid = string_member "uuid" input in
-  let title = string_member "title" input in
-  let icon = member "icon" input in
-  if uuid <> "" && title <> "" then
-    Some
-      ({
-         uuid;
-         title;
-         ident = option_string_member "ident" input;
-         icon_type = option_string_member "type" icon;
-         icon_id = option_string_member "id" icon;
-         icon_color = option_string_member "color" icon;
-       }
-       : Model.status)
-  else None
-
-let status_choices input =
-  List.filter_map status_of_json (list_member "choices" input)
-
-let statuses_from_property_body body =
-  let input = Json.from_string body in
-  match member "results" input with
-  | `List properties ->
-    (match
-       List.find_map
-         (fun property ->
-           if string_member "ident" property = "logseq.property/status" then
-             Some (status_choices property)
-           else None)
-         properties
-     with
-     | Some choices -> choices
-     | None -> [])
-  | _ -> status_choices input
-
-let block_of_json fallback_time input =
-  let uuid = string_member "uuid" input in
-  let title = string_member "title" input in
-  if uuid <> "" && title <> "" then
-    Some
-      ({
-         uuid;
-         title;
-         page_id = string_member "page-id" input;
-         parent_id = option_string_member "parent-id" input;
-         order = option_string_member "order" input;
-         created_at =
-           (let value = int_member "created-at" input in
-            if value = 0 then fallback_time else value);
-         updated_at =
-           (let value = int_member "updated-at" input in
-            if value = 0 then fallback_time else value);
-         sync_status = "synced";
-         tags = summaries_member "tags" input;
-         references = summaries_member "references" input;
-         breadcrumbs = summaries_member "breadcrumbs" input;
-         status = status_of_json (member "status" input);
-         is_asset = false;
-         asset_type = option_string_member "asset-type" input;
-         asset_size =
-           (match member "asset-size" input with
-            | `Int value -> Some value
-            | _ -> None);
-         asset_checksum = option_string_member "asset-checksum" input;
-         local_path = None;
-         journal = None;
-       }
-       : Model.block)
-  else None
-
-let blocks_member key input =
-  List.filter_map (fun value -> block_of_json 0 value) (list_member key input)
-
-let blocks_from_list_body key body = blocks_member key (Json.from_string body)
-
-let journal_of_json input =
-  let uuid = string_member "uuid" input in
-  let day = int_member "journal-day" input in
-  if uuid <> "" && day > 0 then
-    Some
-      ({
-         uuid;
-         title = string_member "title" input;
-         journal_day = day;
-       }
-       : api_journal)
-  else None
-
-let feed_from_body body =
-  let input = Json.from_string body in
-  ( blocks_member "blocks" input
-  , List.filter_map journal_of_json (list_member "journals" input) )
 
 let bool_member default name input =
   match member name input with `Bool value -> value | _ -> default

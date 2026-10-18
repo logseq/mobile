@@ -409,35 +409,12 @@ let discover_graphs session (config : Api.api_config) =
            ("Could not parse Logseq graphs response: "
             ^ Printexc.to_string error))
 
-let refresh_from_remote session (config : Api.api_config) =
-  Rpc.refresh_from_remote (state session).model config
-    (host session).send (now_ms ()) (fun () -> snapshot_visible session)
-
 let resolve_graph (config : Api.api_config) =
   if not (String_kit.is_blank config.graph_id) then begin
     debug ("graph discovery skipped graph=" ^ config.graph_id);
     Ok config
   end
   else Error "Select a Logseq graph before syncing"
-
-let load_related session request key =
-  let blocks =
-    match (host session).send request with
-    | Ok response ->
-      if response.status >= 200 && response.status <= 299 then
-        Api.blocks_from_list_body key response.body
-      else begin
-        debug
-          ("related blocks HTTP failed status="
-           ^ string_of_int response.status);
-        []
-      end
-    | Error message ->
-      debug ("related blocks request failed message=" ^ message);
-      []
-  in
-  session.Types.state := { !(session.state) with related_blocks = blocks };
-  snapshot_visible session
 
 let dispatch_outliner_event session payload =
   match Rpc.outliner_message payload with
@@ -1112,14 +1089,6 @@ let reload_flashcards session now =
          | None -> []);
     }
 
-let load_references session payload request key =
-  match ((state session).config, payload) with
-  | Some config, Some uuid ->
-    (match resolve_graph config with
-     | Ok config -> load_related session (request config uuid) key
-     | Error _ -> snapshot_visible session)
-  | _ -> snapshot_visible session
-
 let dispatch session action payload =
   let s = state session in
   let h = host session in
@@ -1150,7 +1119,7 @@ let dispatch session action payload =
          else
            Rpc.failure "encrypted_graph_locked"
              "Unlock the encrypted graph first"
-       else refresh_from_remote session config
+       else snapshot_visible session
      | None -> snapshot_visible session)
   | "refreshGraphCatalog" ->
     (match s.config with
@@ -1354,29 +1323,6 @@ let dispatch session action payload =
   | "cancelPendingSync" ->
     cancel_pending_sync session;
     snapshot_visible session
-  | "loadBlockReferences" ->
-    load_references session payload Api.block_references_request
-      "references"
-  | "loadPageReferences" ->
-    load_references session payload Api.page_references_request
-      "references"
-  | "loadTagObjects" ->
-    (match h.Types.graph_tag_objects with
-     | Some load ->
-       (match payload with
-        | Some uuid ->
-          session.Types.state :=
-            {
-              !(session.state) with
-              related_blocks =
-                (match load uuid with
-                 | Some blocks -> blocks
-                 | None -> []);
-            }
-        | None -> ());
-       snapshot_visible session
-     | None ->
-       load_references session payload Api.tag_objects_request "objects")
   | "clearRelated" ->
     session.Types.state := { !(session.state) with related_blocks = [] };
     snapshot_visible session

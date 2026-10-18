@@ -1485,27 +1485,6 @@ private struct DeletePagePayload: Encodable {
         performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "clearSelection")))
     }
 
-    public func loadBlockReferences(_ uuid: String) {
-        performAsync(LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: "loadBlockReferences", payload: uuid)
-        ))
-    }
-
-    public func loadPageReferences(_ uuid: String) {
-        performAsync(LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: "loadPageReferences", payload: uuid)
-        ))
-    }
-
-    public func loadTagObjects(_ uuid: String) {
-        performAsync(LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: "loadTagObjects", payload: uuid)
-        ))
-    }
-
     public func clearRelated() {
         performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "clearRelated")))
     }
@@ -1898,8 +1877,7 @@ private struct DeletePagePayload: Encodable {
     private static func corePriority(for action: String) -> LogseqCorePriority {
         switch action {
         case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
-             "select", "clearSelection", "loadOlderJournals", "loadBlockReferences",
-             "loadPageReferences", "loadTagObjects", "searchNodes", "send", "sendTask",
+             "select", "clearSelection", "loadOlderJournals", "searchNodes", "send", "sendTask",
              "addAsset", "addChildBlock", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction
         case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",

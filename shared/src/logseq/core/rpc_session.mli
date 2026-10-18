@@ -220,10 +220,7 @@ val pending_sync_patch : Session_types.session -> string
 val reconcile_authoritative_blocks : Session_types.session -> unit
 val discover_graphs :
   Session_types.session -> Api.api_config -> (unit, string) result
-val refresh_from_remote : Session_types.session -> Api.api_config -> string
 val resolve_graph : Api.api_config -> (Api.api_config, string) result
-val load_related :
-  Session_types.session -> Api.api_request -> string -> string
 val dispatch_outliner_event : Session_types.session -> string -> string
 val switch_graph_model :
   Session_types.session -> string -> (unit, string) result
@@ -291,11 +288,5 @@ val delete_blocks :
 val delete_block :
   Session_types.session -> (string * Yojson.Basic.t) list -> string
 val reload_flashcards : Session_types.session -> int -> unit
-val load_references :
-  Session_types.session ->
-  string option ->
-  (Api.api_config -> string -> Api.api_request) ->
-  string ->
-  string
 val dispatch : Session_types.session -> string -> string option -> string
 val call : Session_types.session -> string -> string

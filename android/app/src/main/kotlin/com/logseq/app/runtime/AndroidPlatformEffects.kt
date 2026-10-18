@@ -2,6 +2,7 @@ package com.logseq.app.runtime
 
 import com.logseq.app.AndroidPlatformServices
 import com.logseq.app.CognitoAuthProvider
+import com.logseq.app.DEFAULT_BASE_URL
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -57,7 +58,7 @@ internal data class AndroidStorageState(
             return AndroidStorageState(
                 databasePath = value["databasePath"] as? String ?: "",
                 graphsDirectory = value["graphsDirectory"] as? String ?: "",
-                baseUrl = value["baseUrl"] as? String ?: "http://127.0.0.1:8787",
+                baseUrl = value["baseUrl"] as? String ?: DEFAULT_BASE_URL,
                 selectedGraphId = value["selectedGraphId"] as? String ?: "",
                 localGraphIds = localGraphIds,
                 settings = AndroidHostSettings.fromPlatformValue(settings),
@@ -98,7 +99,7 @@ internal data class AndroidHostSettings(
             spellCheck = true,
             autoCorrection = true,
             sidebarTabs = emptyList(),
-            baseUrl = "http://127.0.0.1:8787",
+            baseUrl = DEFAULT_BASE_URL,
             version = "Development",
             revision = "Development",
         )
