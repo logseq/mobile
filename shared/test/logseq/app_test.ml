@@ -5912,9 +5912,9 @@ let native_navigation_retains_the_journal_and_every_node_route () =
           "list.outliner")
        Lui_protocol.Selected)
     true;
-  check_eq ~msg:"the system back action replaces the root sidebar control"
+  check_eq ~msg:"the retained root keeps its sidebar ready for interactive pop"
     (List.length (children renderer (List.nth nav_children 1)))
-    0;
+    1;
   check_eq ~msg:"LG supplies the native title"
     (property_string renderer (List.nth nav_children 2)
        Lui_protocol.AccessibilityIdentifier)
@@ -5945,6 +5945,12 @@ let native_navigation_retains_the_journal_and_every_node_route () =
     (descendant_with_identifier renderer (List.nth nav_children 7)
        "outliner.block.second-child"
     <> -1);
+  check_eq ~msg:"the incoming retained page owns its native title"
+    (extension_property application (List.nth nav_children 6) "title")
+    (Some (Lui_protocol.StringValue "First"));
+  check_eq ~msg:"the outgoing page owns a separate native title"
+    (extension_property application (List.nth nav_children 7) "title")
+    (Some (Lui_protocol.StringValue "Second"));
   dispatch application
     (Lui_protocol.ExtensionEvent
        ( navigation,

@@ -1289,6 +1289,14 @@ let selected_page_title (current : Model.logseq_model) =
   | Some page -> page.title
   | None -> ""
 
+let navigation_root_model (current : Model.logseq_model) =
+  { current with
+    node_routes = [];
+    app_navigation_path = [];
+    search_open = false;
+    search_navigation_path = [];
+  }
+
 let journal_navigation_model (current : Model.logseq_model) =
   let rows = current.journal_outliner_rows in
   let root =

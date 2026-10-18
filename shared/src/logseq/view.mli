@@ -17,6 +17,9 @@ val native_navigation_stack_schema :
 val native_search_presentation_schema :
   unit -> Lui_extension.extension_component_schema
 
+val native_navigation_title_schema :
+  unit -> Lui_extension.extension_component_schema
+
 val liquid_glass_schema :
   unit -> Lui_extension.extension_component_schema
 

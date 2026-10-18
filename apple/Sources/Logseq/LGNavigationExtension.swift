@@ -52,6 +52,17 @@ enum LGNavigationExtension {
                 AnyView(LGNavigationStack(context: context))
             }
         )
+        try registry.registerTweak(
+            LUIAppleTweak(
+                identifier: "native-navigation-title",
+                fingerprint: "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none",
+                properties: [
+                    .init(name: "title", kind: .string, isRequired: true),
+                ]
+            ) { content, context in
+                AnyView(LGNavigationDestination(context: context, content: content))
+            }
+        )
     }
 }
 
@@ -93,6 +104,25 @@ private struct LGNavigationStack: View {
         return value
     }
 
+}
+
+private struct LGNavigationDestination: View {
+    let context: LUIAppleExtensionViewContext
+    let content: AnyView
+
+    var body: some View {
+        let _ = context.revision
+        content
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+    }
+
+    private var title: String {
+        guard case let .string(value) = context.property("title") else { return "" }
+        return value
+    }
 }
 
 @MainActor
@@ -458,7 +488,7 @@ private struct LGNavigationContent: View {
                 usesSystemGroupedBackground = usesSystemBackground
             }
             .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
-                visibleScrollTitle = title
+                if let title { visibleScrollTitle = title }
             }
     }
 
@@ -505,10 +535,6 @@ private struct LGNavigationContent: View {
                             alignment: .topLeading
                         )
                         .background(routeBackground)
-                        .navigationTitle(navigationTitle)
-                        #if os(iOS)
-                        .navigationBarTitleDisplayMode(.inline)
-                        #endif
                         .toolbar {
                             destinationTrailingToolbar
                         }
@@ -615,7 +641,7 @@ private struct LGNavigationContent: View {
 
     @ViewBuilder
     private func rootToolbarTitle(index: Int) -> some View {
-        if depth == 0, let title = visibleScrollTitle {
+        if navigationTitle.isEmpty, let title = visibleScrollTitle {
             Text(title)
                 .font(.headline)
                 .lineLimit(1)

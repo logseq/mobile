@@ -472,8 +472,12 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
         (text ~accessibility_identifier:"journals.graph-loaded" ~value:"" []);
     ]
 
-let main_header_leading (context : Lui_ui.ui_context) model_source send :
-    t =
+let main_header_model context current =
+  if Lui_ui.host context = KotlinHost then current
+  else View_base.navigation_root_model current
+
+let main_header_leading_content (context : Lui_ui.ui_context)
+    ~source:model_source send : t =
   stack
     [
       if_
@@ -509,15 +513,18 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
            []);
     ]
 
+let main_header_leading context model_source send =
+  main_header_leading_content context
+    ~source:(reactive (main_header_model context) model_source) send
+
 let main_header_title (context : Lui_ui.ui_context) model_source : t =
-  if Lui_ui.host context = KotlinHost then
-    text
-      ~value_signal:(Signal.map View_base.main_title model_source)
-      ~style_class:"headline" ~accessibility_identifier:"title.main" []
-  else
-    text
-      ~value_signal:(Signal.map View_base.main_title model_source)
-      ~style_class:"headline" ~accessibility_identifier:"title.main" []
+  text
+    ~value:
+      (reactive
+         (fun current ->
+           View_base.main_title (main_header_model context current))
+         model_source)
+    ~style_class:"headline" ~accessibility_identifier:"title.main" []
 
 let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
   stack
@@ -609,6 +616,14 @@ let main_header_connection model_source send : t =
         (active_overflow_menu model_source send);
     ]
 
+let native_node_destination ~source:title_source content : t =
+ fun context parent ->
+   let node = Lui_ui.platform_tweak context "native-navigation-title" in
+   Lui_ui.extension_property_signal context node "title" title_source;
+   ignore (content context (Some node));
+   attach context parent node;
+   node
+
 let native_node_screen (context : Lui_ui.ui_context) model_source
     ~source:route_source send : t =
   let route_model_source =
@@ -617,7 +632,14 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
   if Lui_ui.host context = KotlinHost then
     box ~grow:1.0 ~background:"background"
       [ View_outliner.node_screen context route_model_source send ]
-  else View_outliner.node_screen context route_model_source send
+  else
+    native_node_destination
+      ~source:
+        (reactive
+           (fun (route : Model.node_projection) ->
+             StringValue route.node_title)
+           route_source)
+      (View_outliner.node_screen context route_model_source send)
 
 let native_node_stack context model_source ~source:routes_source send =
   keyed
@@ -714,7 +736,11 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    let composer_dismissal_source =
      Signal.map View_base.bottom_chrome_expanded_composer_ model_source
    in
-   let title_source = Signal.map View_base.main_title model_source in
+   let title_source =
+     Signal.map
+       (fun current -> View_base.main_title (main_header_model context current))
+       model_source
+   in
    Lui_ui.extension_property_signal context node "depth"
      (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node "back-depth"
