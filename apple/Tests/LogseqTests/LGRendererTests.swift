@@ -1569,7 +1569,7 @@ private final class LGEffectExecutorProbe: LGEffectExecuting {
 }
 
 private struct LGGraphLifecycleCognitoProbe: LogseqCognitoProviding {
-    func accessToken() async throws -> String? { nil }
+    func apiToken() async throws -> String? { nil }
     func signIn() async throws -> String { "" }
     func signOut() async throws {}
 }

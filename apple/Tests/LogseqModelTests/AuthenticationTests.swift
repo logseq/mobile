@@ -12,7 +12,7 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
         self.signInToken = signInToken
     }
 
-    func accessToken() async throws -> String? {
+    func apiToken() async throws -> String? {
         token
     }
 
@@ -36,7 +36,7 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         var errorDescription: String? { "Could not restore the Cognito session." }
     }
 
-    func accessToken() async throws -> String? {
+    func apiToken() async throws -> String? {
         throw SessionError()
     }
 
@@ -56,7 +56,7 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         await auth.restore()
 
         #expect(auth.state == .signedIn)
-        #expect(try await auth.accessToken() == "restored-access-token")
+        #expect(try await auth.apiToken() == "restored-access-token")
     }
 
     @Test @MainActor func signsInAndPublishesOnlyTheAccessToken() async throws {
@@ -110,7 +110,7 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         }
 
         do {
-            _ = try await auth.accessToken()
+            _ = try await auth.apiToken()
             #expect(1 == 0, "Expected access token restoration to fail")
         } catch {
             #expect(auth.state == .signedOut)
@@ -126,7 +126,7 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         }
 
         do {
-            _ = try await auth.accessToken()
+            _ = try await auth.apiToken()
             #expect(1 == 0, "Expected a missing access token to throw")
         } catch {
             #expect(auth.state == .signedOut)

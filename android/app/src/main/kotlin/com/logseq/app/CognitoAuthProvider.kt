@@ -38,10 +38,12 @@ internal class CognitoAuthProvider(
         preferences().getString(tokenPreference, null),
     )
 
-    suspend fun accessToken(): String? {
+    suspend fun apiToken(): String? {
         val current = loadTokens() ?: return null
-        if (current.expiresAtMillis - System.currentTimeMillis() > refreshLeewayMillis) {
-            return current.accessToken
+        if (!current.idToken.isNullOrBlank() &&
+            current.expiresAtMillis - System.currentTimeMillis() > refreshLeewayMillis
+        ) {
+            return current.idToken
         }
         return try {
             val refreshed = tokenRequest(
@@ -53,7 +55,7 @@ internal class CognitoAuthProvider(
                 previousRefreshToken = current.refreshToken
             )
             saveTokens(refreshed)
-            refreshed.accessToken
+            refreshed.idToken
         } catch (error: Throwable) {
             clearTokens()
             throw error
@@ -114,7 +116,7 @@ internal class CognitoAuthProvider(
             "Cognito did not return a refresh token"
         }
         saveTokens(tokens)
-        return tokens.accessToken
+        return requireNotNull(tokens.idToken)
     }
 
     suspend fun signOut() {
@@ -160,13 +162,13 @@ internal class CognitoAuthProvider(
         previousRefreshToken: String?
     ): StoredTokens {
         val response = tokenPost(endpoint("/oauth2/token"), values)
-        val accessToken = response.optString("access_token")
-        require(accessToken.isNotBlank()) { "Cognito did not return an access token" }
+        val idToken = response.optString("id_token")
+        require(idToken.isNotBlank()) { "Cognito did not return an ID token" }
         val refreshToken = response.optString("refresh_token").ifBlank {
             previousRefreshToken.orEmpty()
         }
         return StoredTokens(
-            accessToken = accessToken,
+            idToken = idToken,
             refreshToken = refreshToken,
             expiresAtMillis = System.currentTimeMillis() +
                 response.optLong("expires_in", 3600) * 1000
@@ -208,7 +210,7 @@ internal class CognitoAuthProvider(
 
     private fun saveTokens(tokens: StoredTokens) {
         val encoded = JSONObject()
-            .put("accessToken", tokens.accessToken)
+            .put("idToken", tokens.idToken)
             .put("refreshToken", tokens.refreshToken)
             .put("expiresAtMillis", tokens.expiresAtMillis)
             .toString()
@@ -247,7 +249,7 @@ internal class CognitoAuthProvider(
                 )
             )
             StoredTokens(
-                accessToken = json.getString("accessToken"),
+                idToken = json.optString("idToken").takeIf { it.isNotBlank() },
                 refreshToken = json.getString("refreshToken"),
                 expiresAtMillis = json.getLong("expiresAtMillis")
             )
@@ -288,7 +290,7 @@ internal class CognitoAuthProvider(
     private fun endpoint(path: String) = "https://${configuration.oauthDomain}$path"
 
     private data class StoredTokens(
-        val accessToken: String,
+        val idToken: String?,
         val refreshToken: String,
         val expiresAtMillis: Long
     )

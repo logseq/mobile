@@ -118,29 +118,29 @@ enum CognitoOAuthCallback {
 }
 
 struct CognitoStoredTokens: Codable, Sendable {
-    let accessToken: String
+    let idToken: String?
     let refreshToken: String
     let expiresAt: Date
 
     func requiresRefresh(at date: Date) -> Bool {
-        expiresAt.timeIntervalSince(date) <= 60
+        idToken?.isEmpty != false || expiresAt.timeIntervalSince(date) <= 60
     }
 }
 
 struct CognitoOAuthTokenResponse: Codable, Sendable {
-    let accessToken: String
+    let idToken: String
     let refreshToken: String?
     let expiresIn: Int
 
     enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
+        case idToken = "id_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
     }
 
     func storedTokens(previousRefreshToken: String?, now: Date) -> CognitoStoredTokens {
         CognitoStoredTokens(
-            accessToken: accessToken,
+            idToken: idToken,
             refreshToken: refreshToken ?? previousRefreshToken ?? "",
             expiresAt: now.addingTimeInterval(TimeInterval(expiresIn))
         )

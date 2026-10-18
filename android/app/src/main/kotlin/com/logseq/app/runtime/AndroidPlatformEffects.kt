@@ -21,7 +21,7 @@ internal class CognitoAndroidAuthentication(
     private val provider: CognitoAuthProvider,
 ) : AndroidAuthentication {
     override fun hasStoredSession(): Boolean = provider.hasStoredSession()
-    override suspend fun restoreAccessToken(): String? = provider.accessToken()
+    override suspend fun restoreAccessToken(): String? = provider.apiToken()
     override suspend fun signIn(): String = provider.signIn()
     override suspend fun signOut() = provider.signOut()
 }

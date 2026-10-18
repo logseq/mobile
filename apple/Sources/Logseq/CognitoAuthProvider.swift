@@ -10,7 +10,7 @@ import UIKit
 
 enum CognitoAuthProviderError: Error, LocalizedError {
     case invalidConfiguration
-    case missingAccessToken
+    case missingIDToken
     case missingRefreshToken
     case secureStorage(Int32)
     case tokenRequest(String)
@@ -20,8 +20,8 @@ enum CognitoAuthProviderError: Error, LocalizedError {
         switch self {
         case .invalidConfiguration:
             return "Cognito Hosted UI is not configured."
-        case .missingAccessToken:
-            return "Cognito did not return an access token."
+        case .missingIDToken:
+            return "Cognito did not return an ID token."
         case .missingRefreshToken:
             return "Cognito did not return a refresh token."
         case .secureStorage(let status):
@@ -149,9 +149,9 @@ private struct CognitoTokenStore: Sendable {
         )
     }
 
-    func accessToken() async throws -> String? {
+    func apiToken() async throws -> String? {
         guard var tokens = try tokenStore.load() else { return nil }
-        guard tokens.requiresRefresh(at: Date()) else { return tokens.accessToken }
+        guard tokens.requiresRefresh(at: Date()) else { return tokens.idToken }
         guard !tokens.refreshToken.isEmpty else {
             try tokenStore.clear()
             return nil
@@ -168,7 +168,7 @@ private struct CognitoTokenStore: Sendable {
                 now: Date()
             )
             try tokenStore.save(tokens)
-            return tokens.accessToken
+            return tokens.idToken
         } catch {
             try? tokenStore.clear()
             throw error
@@ -200,14 +200,14 @@ private struct CognitoTokenStore: Sendable {
             )
         )
         let tokens = response.storedTokens(previousRefreshToken: nil, now: Date())
-        guard !tokens.accessToken.isEmpty else {
-            throw CognitoAuthProviderError.missingAccessToken
+        guard let idToken = tokens.idToken, !idToken.isEmpty else {
+            throw CognitoAuthProviderError.missingIDToken
         }
         guard !tokens.refreshToken.isEmpty else {
             throw CognitoAuthProviderError.missingRefreshToken
         }
         try tokenStore.save(tokens)
-        return tokens.accessToken
+        return idToken
     }
 
     func signOut() async throws {
@@ -239,7 +239,11 @@ private struct CognitoTokenStore: Sendable {
                 ?? "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"
             throw CognitoAuthProviderError.tokenRequest(reason)
         }
-        return try JSONDecoder().decode(CognitoOAuthTokenResponse.self, from: data)
+        let tokens = try JSONDecoder().decode(CognitoOAuthTokenResponse.self, from: data)
+        guard !tokens.idToken.isEmpty else {
+            throw CognitoAuthProviderError.missingIDToken
+        }
+        return tokens
     }
 
     private func revoke(refreshToken: String) async throws {

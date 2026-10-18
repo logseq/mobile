@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 public protocol LogseqCognitoProviding: Sendable {
-    func accessToken() async throws -> String?
+    // Logseq APIs require Cognito ID-token identity claims, not access-token scopes.
+    func apiToken() async throws -> String?
     func signIn() async throws -> String
     func signOut() async throws
 }
@@ -45,7 +46,7 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         state = .restoring
         errorMessage = nil
         do {
-            guard let token = try await provider.accessToken(), !token.isEmpty else {
+            guard let token = try await provider.apiToken(), !token.isEmpty else {
                 state = .signedOut
                 onAccessToken(nil)
                 return
@@ -88,10 +89,10 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         onAccessToken(nil)
     }
 
-    public func accessToken() async throws -> String {
+    public func apiToken() async throws -> String {
         let token: String?
         do {
-            token = try await provider.accessToken()
+            token = try await provider.apiToken()
         } catch {
             state = .signedOut
             errorMessage = error.localizedDescription

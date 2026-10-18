@@ -782,7 +782,7 @@ public struct LogseqRootView : View {
         guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {
             return false
         }
-        guard let token = try? await authentication.accessToken() else { return false }
+        guard let token = try? await authentication.apiToken() else { return false }
         await store.configureAndSelectGraph(
             baseURL: baseURL,
             token: token,

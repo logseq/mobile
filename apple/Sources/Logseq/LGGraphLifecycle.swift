@@ -109,7 +109,7 @@ final class LGGraphLifecycle {
         let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
         let storedGraphID = defaults.string(forKey: "logseq.selectedGraphId") ?? ""
         let graphID = storedGraphID.isEmpty ? nil : storedGraphID
-        guard let accessToken = try? await authentication.accessToken() else {
+        guard let accessToken = try? await authentication.apiToken() else {
             return false
         }
         await store.configureAndSelectGraph(
@@ -144,7 +144,7 @@ final class LGGraphLifecycle {
         }
 
         let baseURL = LogseqSettingsPolicy.storedBaseURL()
-        let accessToken = (try? await authentication.accessToken()) ?? ""
+        let accessToken = (try? await authentication.apiToken()) ?? ""
         let isEncrypted = store.snapshot.graphs?
             .first(where: { $0.id == graphID })?.isEncrypted ?? false
         let opened = await store.bootstrapSelectedGraph(
@@ -187,7 +187,7 @@ final class LGGraphLifecycle {
             )
         }
         let baseURL = LogseqSettingsPolicy.storedBaseURL()
-        let accessToken = (try? await authentication.accessToken()) ?? ""
+        let accessToken = (try? await authentication.apiToken()) ?? ""
         if !accessToken.isEmpty {
             // The encrypted graph opens without a sync checkpoint while locked,
             // so re-open it now that the keyring is unlocked to populate
@@ -222,7 +222,7 @@ final class LGGraphLifecycle {
         }
         if deletingSelected {
             defaults.set("", forKey: "logseq.selectedGraphId")
-            let accessToken = (try? await authentication.accessToken()) ?? ""
+            let accessToken = (try? await authentication.apiToken()) ?? ""
             await store.configureAndSelectGraph(
                 baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
                 token: accessToken,
@@ -257,7 +257,7 @@ final class LGGraphLifecycle {
                 guard let self else { return }
                 var reconnectAttempt = 0
                 while !Task.isCancelled && authentication.state == .signedIn {
-                    guard let accessToken = try? await authentication.accessToken() else { return }
+                    guard let accessToken = try? await authentication.apiToken() else { return }
                     let cursorBeforeConnection = store.snapshot.appliedServerT
                     let snapshotRequired = await store.runGraphEventsOnce(
                         graphID: graphID,
@@ -285,7 +285,7 @@ final class LGGraphLifecycle {
                     if snapshotRequired && !shouldRefresh {
                         store.deferSnapshotRefreshWhileEditing()
                     } else if shouldRefresh {
-                        guard let refreshedToken = try? await authentication.accessToken(),
+                        guard let refreshedToken = try? await authentication.apiToken(),
                               await store.bootstrapSelectedGraph(
                                 graphID: graphID,
                                 baseURL: baseURL,

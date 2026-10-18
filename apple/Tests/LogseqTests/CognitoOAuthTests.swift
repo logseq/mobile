@@ -93,27 +93,32 @@ import Testing
         #expect(!refresh.contains("client_secret"))
     }
 
-    @Test func tokenExpiryRefreshesEarlyAndPreservesRotatedRefreshToken() {
+    @Test func tokenExpiryRefreshesEarlyAndPreservesIDToken() throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let current = CognitoStoredTokens(
-            accessToken: "access",
+            idToken: "id",
             refreshToken: "refresh",
             expiresAt: now.addingTimeInterval(120)
         )
         #expect(!current.requiresRefresh(at: now))
         #expect(current.requiresRefresh(at: now.addingTimeInterval(61)))
 
-        let response = CognitoOAuthTokenResponse(
-            accessToken: "new-access",
-            refreshToken: nil,
-            expiresIn: 3_600
-        )
+        let response = try JSONDecoder().decode(CognitoOAuthTokenResponse.self, from: Data("""
+        {"access_token":"new-access","id_token":"new-id","expires_in":3600}
+        """.utf8))
         let refreshed = response.storedTokens(
             previousRefreshToken: current.refreshToken,
             now: now
         )
         #expect(refreshed.refreshToken == "refresh")
         #expect(refreshed.expiresAt == now.addingTimeInterval(3_600))
+        let persisted = try JSONSerialization.jsonObject(with: JSONEncoder().encode(refreshed)) as! [String: Any]
+        #expect(persisted["idToken"] as? String == "new-id")
+        var previousSession = persisted
+        previousSession.removeValue(forKey: "idToken")
+        previousSession["accessToken"] = "old-access"
+        let restored = try JSONDecoder().decode(CognitoStoredTokens.self, from: JSONSerialization.data(withJSONObject: previousSession))
+        #expect(restored.requiresRefresh(at: now))
     }
 
     private func formValues(_ body: String) -> [String: String] {
