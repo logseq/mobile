@@ -68,6 +68,43 @@ let node_route_projection_retains_journal_and_editor_state () =
          projection.Model.journal_outliner_rows)
       [ "journal" ]
 
+let node_route_title_uses_resolved_markup () =
+  let source = "[[Project]] #[[6ad51977-c95d-47a2-880a-00056f684f2e]]" in
+  let block =
+    `Assoc
+      [ "uuid", `String "block-a";
+        "title", `String source;
+        "markup", `List
+          [ `Assoc [ "type", `String "nodeReference";
+                     "uuid", `String "page-a";
+                     "title", `String "Project" ];
+            `Assoc [ "type", `String "text"; "text", `String " " ];
+            `Assoc [ "type", `String "tagReference";
+                     "uuid", `String "6ad51977-c95d-47a2-880a-00056f684f2e";
+                     "title", `String "标签" ] ] ]
+  in
+  let response =
+    `Assoc
+      [ "ok", `Bool true;
+        "result", `Assoc
+          [ "nodeRoutes", `List
+              [ `Assoc
+                  [ "uuid", `String "block-a";
+                    "page", `Assoc [ "uuid", `String "page-a";
+                                     "title", `String "Project" ];
+                    "blocks", `List [ block ];
+                    "outlinerRows", `List
+                      [ `Assoc [ "block", block; "depth", `Int 0 ] ] ] ] ] ]
+    |> Json.to_string
+  in
+  match Response_snapshot.decode_response response with
+  | Error message -> Alcotest.fail message
+  | Ok projection ->
+    let route = List.hd projection.Model.node_routes in
+    Test_util.check_eq route.Model.node_title "Project #标签";
+    Test_util.check_eq
+      (List.hd route.Model.node_outliner_rows).Model.row_title source
+
 let first_authoritative_snapshot_publishes_retained_patch () =
   ignore (Native_bridge.initialize 2 2 0);
   Fun.protect
@@ -137,6 +174,8 @@ let quick_actions_clear_selection_before_opening_native_recorder () =
 let cases =
   [ Test_util.case "node route projection retains journal and editor state"
       node_route_projection_retains_journal_and_editor_state;
+    Test_util.case "node route title uses resolved markup"
+      node_route_title_uses_resolved_markup;
     Test_util.case "first authoritative snapshot publishes retained patch"
       first_authoritative_snapshot_publishes_retained_patch;
     Test_util.case

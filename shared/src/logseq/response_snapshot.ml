@@ -368,7 +368,7 @@ let node_title uuid is_tag fields =
         (fun block ->
           let block_fields = object_fields block in
           if string_member "uuid" block_fields = Some uuid then
-            string_member "title" block_fields
+            Some (block_markup_text true block_fields)
           else None)
         (list_member "blocks" fields)
     with
