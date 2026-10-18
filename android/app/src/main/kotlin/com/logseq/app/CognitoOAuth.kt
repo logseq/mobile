@@ -29,11 +29,12 @@ internal object CognitoOAuth {
         )
     )
 
-    fun authorizationCode(callbackURL: String, expectedState: String): String {
+    fun authorizationCode(callbackURL: String, expectedState: String, redirectURI: String): String {
         val uri = URI(callbackURL)
-        if (!uri.scheme.equals("logseq", ignoreCase = true) ||
-            !uri.host.equals("auth", ignoreCase = true) ||
-            uri.path != "/callback"
+        val redirect = URI(redirectURI)
+        if (!uri.scheme.equals(redirect.scheme, ignoreCase = true) ||
+            !uri.host.equals(redirect.host, ignoreCase = true) ||
+            uri.path != redirect.path
         ) {
             throw IllegalStateException("The sign-in callback URL is invalid")
         }

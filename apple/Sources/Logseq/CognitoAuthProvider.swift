@@ -92,11 +92,11 @@ private struct CognitoTokenStore: Sendable {
 {
     private var session: ASWebAuthenticationSession?
 
-    func authenticate(at url: URL) async throws -> URL {
+    func authenticate(at url: URL, callbackURLScheme: String?) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: url,
-                callbackURLScheme: "logseq"
+                callbackURLScheme: callbackURLScheme
             ) { [weak self] callbackURL, error in
                 self?.session = nil
                 if let callbackURL {
@@ -184,7 +184,10 @@ private struct CognitoTokenStore: Sendable {
             state: state,
             codeChallenge: CognitoPKCE.codeChallenge(for: codeVerifier)
         )
-        let callbackURL = try await webAuthentication.authenticate(at: authorizationURL)
+        let callbackURL = try await webAuthentication.authenticate(
+            at: authorizationURL,
+            callbackURLScheme: URL(string: configuration.redirectURI)?.scheme
+        )
         let code = try CognitoOAuthCallback.authorizationCode(
             from: callbackURL,
             expectedState: state

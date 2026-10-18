@@ -45,8 +45,9 @@ class CognitoOAuthTest {
         assertEquals(
             "code/value",
             CognitoOAuth.authorizationCode(
-                "logseq://auth/callback?state=expected&code=code%2Fvalue",
-                expectedState = "expected"
+                "logseqchat://auth/callback?state=expected&code=code%2Fvalue",
+                expectedState = "expected",
+                redirectURI = "logseqchat://auth/callback"
             )
         )
     }
@@ -56,7 +57,8 @@ class CognitoOAuthTest {
         val error = assertThrows(IllegalStateException::class.java) {
             CognitoOAuth.authorizationCode(
                 "logseq://auth/callback?state=unexpected&code=secret",
-                expectedState = "expected"
+                expectedState = "expected",
+                redirectURI = "logseq://auth/callback"
             )
         }
 
@@ -68,13 +70,15 @@ class CognitoOAuthTest {
         val providerError = assertThrows(IllegalStateException::class.java) {
             CognitoOAuth.authorizationCode(
                 "logseq://auth/callback?state=expected&error=access_denied",
-                expectedState = "expected"
+                expectedState = "expected",
+                redirectURI = "logseq://auth/callback"
             )
         }
         val missingCode = assertThrows(IllegalStateException::class.java) {
             CognitoOAuth.authorizationCode(
                 "logseq://auth/callback?state=expected",
-                expectedState = "expected"
+                expectedState = "expected",
+                redirectURI = "logseq://auth/callback"
             )
         }
 
@@ -87,7 +91,8 @@ class CognitoOAuthTest {
         val error = assertThrows(IllegalStateException::class.java) {
             CognitoOAuth.authorizationCode(
                 "https://example.com/auth/callback?state=expected&code=secret",
-                expectedState = "expected"
+                expectedState = "expected",
+                redirectURI = "logseq://auth/callback"
             )
         }
 

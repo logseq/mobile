@@ -95,3 +95,7 @@ Authentication uses Cognito Hosted UI authorization-code flow with PKCE. Apple
 uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
 in the platform secure store, so neither client depends on Amplify or the AWS
 SDK.
+
+The production Cognito callback is `logseqchat://auth/callback`, separate from
+`logseq://` navigation links. Changing it also requires updating the Cognito
+app client's allowed callback and sign-out URLs.

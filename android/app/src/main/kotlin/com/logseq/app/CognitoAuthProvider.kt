@@ -133,16 +133,17 @@ internal class CognitoAuthProvider(
     fun handleCallback(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val uri = Uri.parse(url)
-        if (!uri.scheme.equals("logseq", ignoreCase = true) ||
-            !uri.host.equals("auth", ignoreCase = true) ||
-            uri.path != "/callback"
+        val redirect = Uri.parse(configuration.redirectURI)
+        if (!uri.scheme.equals(redirect.scheme, ignoreCase = true) ||
+            !uri.host.equals(redirect.host, ignoreCase = true) ||
+            uri.path != redirect.path
         ) {
             return false
         }
         val pending = synchronized(callbackLock) {
             pendingLogin.also { pendingLogin = null }
         } ?: return true
-        runCatching { CognitoOAuth.authorizationCode(url, pending.state) }
+        runCatching { CognitoOAuth.authorizationCode(url, pending.state, configuration.redirectURI) }
             .onSuccess { code ->
                 if (pending.continuation.isActive) pending.continuation.resume(code)
             }

@@ -31,6 +31,14 @@
                 <string>logseq</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.logseq.logseq.auth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>logseqchat</string>
+            </array>
+        </dict>
     </array>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
