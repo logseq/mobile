@@ -104,6 +104,22 @@ final class LGGraphLifecycle {
         }
     }
 
+    func reconfigureAPI() async throws {
+        let token = authentication.state == .signedIn
+            ? try await authentication.apiToken() : ""
+        await syncCoordinator.cancelBackground()
+        await syncCoordinator.stopForeground()
+        let defaults = UserDefaults.standard
+        defaults.set("", forKey: "logseq.selectedGraphId")
+        defaults.removeObject(forKey: "logseq.uiSession")
+        await store.openAndWait(path: databasePath)
+        await store.configureAndSelectGraph(
+            baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
+            token: token,
+            selectedGraphID: nil
+        )
+    }
+
     func connectStoredGraph() async -> Bool {
         let defaults = UserDefaults.standard
         let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)

@@ -197,6 +197,7 @@ public struct LogseqRootView : View {
         let platformHandler = LGPlatformEffectHandler(
             saveSettings: { settings in
                 let defaults = UserDefaults.standard
+                let previousBaseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
                 defaults.set(settings.appearance, forKey: "logseq.appearance")
                 defaults.set(
                     LogseqSettingsPolicy.normalizedLanguageID(settings.language),
@@ -212,6 +213,9 @@ public struct LogseqRootView : View {
                     forKey: "logseq.mobile.sidebarTabs"
                 )
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
+                if LogseqSettingsPolicy.storedBaseURL(in: defaults) != previousBaseURL {
+                    try await graphLifecycle.reconfigureAPI()
+                }
             },
             persistComposerDraft: { draft in
                 UserDefaults.standard.set(draft, forKey: "logseq.composerDraft")

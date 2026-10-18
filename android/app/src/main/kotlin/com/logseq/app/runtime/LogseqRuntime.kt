@@ -373,8 +373,24 @@ internal class LogseqRuntime(
             )
         val resolution = executor.execute(effect)
         if (effect.kind == "save-settings" && resolution.succeeded) {
-            runCatching { JSONObject(effect.text) }.getOrNull()?.let {
-                appearance = it.optString("appearance", "system")
+            val storage = platformEffects.loadStorageState()
+            appearance = storage.settings.appearance
+            if (storage.baseUrl != storageBaseUrl) {
+                graphCatalogAutoRefresh?.stopPeriodic()
+                hasOpenGraph = false
+                graphEventsJob?.cancel()
+                pendingSyncJob?.cancel()
+                graphEventsJob?.join()
+                pendingSyncJob?.join()
+                graphEventsJob = null
+                graphEventsGraphId = null
+                pendingSyncJob = null
+                pendingSyncRequested = false
+                selectedGraphId = ""
+                appliedServerT = -1L
+                storageBaseUrl = storage.baseUrl
+                platformEffects.persistSelectedGraphId("")
+                runCoreRestore(hasAuthenticatedSession, storage.copy(selectedGraphId = ""))
             }
         }
         if (effect.kind == "sign-in" && resolution.succeeded) {
