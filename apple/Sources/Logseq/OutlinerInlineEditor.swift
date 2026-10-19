@@ -207,13 +207,18 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     }
                 }
             } else {
+                let caretUTF16Offset = min(
+                    desiredCaretUTF16Offset ?? selection.location, text.utf16.count
+                )
+                // Caret-only updates acknowledge earlier input; the native
+                // editor may already hold a newer caret or word selection.
+                let shouldRestoreSelection = !isSameBlock || textView.text != text
                 if textView.text != text {
                     textView.text = text
                 }
-                textView.selectedRange = NSRange(
-                    location: min(desiredCaretUTF16Offset ?? selection.location, text.utf16.count),
-                    length: 0
-                )
+                if shouldRestoreSelection {
+                    textView.selectedRange = NSRange(location: caretUTF16Offset, length: 0)
+                }
             }
         }
         if !isSameBlock {

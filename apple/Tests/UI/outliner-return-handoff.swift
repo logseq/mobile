@@ -7,6 +7,14 @@ final class EditorModel: ObservableObject {
     @Published var blockID = "original"
     @Published var caret = "First block".utf16.count
     var returns = 0
+    var pendingCarets: [Int]?
+    func moveCaret(_ caret: Int) {
+        if pendingCarets != nil {
+            pendingCarets?.append(caret)
+        } else {
+            self.caret = caret
+        }
+    }
     func enter(_ title: String, _ caret: Int) {
         returns += 1
         self.title = String((title as NSString).substring(from: caret))
@@ -31,7 +39,7 @@ private struct EditorHost: View {
                     onTextChange: { model.title = $0; model.caret = $1 },
                     onReturn: model.enter,
                     onBackspace: { _, _ in },
-                    onCaretChange: { model.caret = $0 })
+                    onCaretChange: model.moveCaret)
             }
             Spacer()
         }.frame(width: 326)
@@ -107,7 +115,25 @@ struct ReturnHandoffCheck {
         if model.returns != beforeRapid + 1 || model.title != "\nAfter" || editor().selectedRange.location != 6 {
             print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text"); failures += 1
         }
+        model.title = "Matrix parent 20261018"; model.blockID = "delayed-selection"; model.caret = model.title.utf16.count
+        settle()
+        model.pendingCarets = []
+        editor().selectedRange = NSRange(location: 6, length: 0)
+        editor().selectedRange = NSRange(location: 0, length: 6)
+        let acknowledgements = model.pendingCarets ?? []
+        if acknowledgements != [6, 0] {
+            print("FAIL: selection must emit both native caret events before model acknowledgement; got=\(acknowledgements)")
+            failures += 1
+        }
+        for caret in acknowledgements {
+            model.caret = caret
+            settle()
+            if editor().selectedRange != NSRange(location: 0, length: 6) {
+                print("FAIL: delayed caret acknowledgement=\(caret) erased native selection=\(editor().selectedRange)")
+                failures += 1
+            }
+        }
         guard failures == 0 else { exit(1) }
-        print("PASS: Enter handoff alignment and Shift+Enter inline newline")
+        print("PASS: Enter handoff, Shift+Enter, and selection across delayed caret acknowledgements")
     }
 }
