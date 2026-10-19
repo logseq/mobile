@@ -123,20 +123,22 @@ struct OutlinerRowPayload: Decodable, Equatable {
     private var swiftUIContent: some View {
         HStack(alignment: .top, spacing: 0) {
             Color.clear.frame(width: CGFloat(max(0, row.depth)) * 22, height: 1)
-            if row.journalBullet {
-                IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
-                    .foregroundStyle(Color.secondary.opacity(0.4))
-                    .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
-            } else {
-                Button { emit("open-node") } label: {
+            Group {
+                if row.journalBullet {
                     IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
+                        .foregroundStyle(Color.secondary.opacity(0.4))
+                        .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
+                } else {
+                    Button { emit("open-node") } label: {
+                        IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.secondary.opacity(0.4))
+                    .accessibilityLabel("Open block")
+                    .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.secondary.opacity(0.4))
-                .accessibilityLabel("Open block")
-                .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
             }
-            Color.clear.frame(width: 2, height: 1)
+            .padding(.trailing, row.status != nil || row.priority != nil ? -4 : 2)
             if let status = row.status {
                 Menu {
                     ForEach(Array(row.statuses.enumerated()), id: \.element.id) { index, item in
@@ -227,7 +229,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
         let asset: String
         if case let .assetName(name) = LGIconPolicy.icons[key] { asset = name }
         else { asset = "task_todo" }
-        return IconImage(name: asset, size: 22).foregroundStyle(status.color(in: semanticColors))
+        return IconImage(name: asset, size: 22)
+            .foregroundStyle(status.color(in: semanticColors))
+            .shadow(color: .black.opacity(0.18), radius: 0.6, x: 0, y: 0.5)
     }
 
     private func emit(_ name: String, uuid: String? = nil, extra: [String: LUIExtensionValue] = [:]) {

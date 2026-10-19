@@ -92,12 +92,14 @@ struct OutlinerTextRow: UIViewRepresentable {
         priority.isHidden = row.priority == nil
         priority.contentMode = .scaleAspectFit
         priority.image = row.priority.flatMap { statusImage($0.icon) }
+        applyIconShadow(priority)
         priority.tintColor = .secondaryLabel
         priority.accessibilityLabel = row.priority?.title
         status.isHidden = row.status == nil
         if let task = row.status {
             status.setImage(statusImage(task.icon), for: .normal)
             status.imageView?.contentMode = .center
+            applyIconShadow(status.imageView)
             status.accessibilityLabel = task.title
             status.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] complete in
                 guard let self, let row = self.row else { complete([]); return }
@@ -138,6 +140,15 @@ struct OutlinerTextRow: UIViewRepresentable {
         for tag in tags { tag.titleLabel?.font = .preferredFont(forTextStyle: .caption1) }
     }
 
+    private func applyIconShadow(_ imageView: UIImageView?) {
+        guard let imageView else { return }
+        imageView.clipsToBounds = false
+        imageView.layer.shadowColor = UIColor.black.cgColor
+        imageView.layer.shadowOpacity = 0.18
+        imageView.layer.shadowRadius = 0.6
+        imageView.layer.shadowOffset = CGSize(width: 0, height: 0.5)
+    }
+
     private func statusImage(_ icon: String) -> UIImage? {
         let key = icon.replacingOccurrences(of: "app:", with: "")
         guard case let .assetName(name) = LGIconPolicy.icons[key] else { return nil }
@@ -150,14 +161,15 @@ struct OutlinerTextRow: UIViewRepresentable {
         let statusWidth: CGFloat = row.status == nil ? 0 : 29
         let trailing: CGFloat = row.hasChildren ? 28 : 0
         let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
-        let leading = inset + 26 + statusWidth + priorityWidth
+        let iconLeading: CGFloat = row.status != nil || row.priority != nil ? 20 : 26
+        let leading = inset + iconLeading + statusWidth + priorityWidth
         let bodyWidth = max(1, width - leading - trailing)
         let titleHeight = max(24, ceil(title.sizeThatFits(CGSize(width: bodyWidth, height: .greatestFiniteMagnitude)).height))
         var height = titleHeight + 4
         if apply {
             bullet.frame = CGRect(x: inset, y: 2, width: 24, height: 24)
-            status.frame = CGRect(x: inset + 26, y: 2, width: 22, height: 24)
-            priority.frame = CGRect(x: inset + 26 + statusWidth, y: 2, width: 20, height: 24)
+            status.frame = CGRect(x: inset + iconLeading, y: 2, width: 22, height: 24)
+            priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
             disclosure.frame = CGRect(x: width - trailing, y: 2, width: 28, height: 24)
         }
