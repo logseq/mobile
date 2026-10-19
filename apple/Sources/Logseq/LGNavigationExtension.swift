@@ -598,7 +598,7 @@ private struct LGNavigationContent: View {
         }
         .onChange(of: desiredPath) { _, newPath in
             if path != newPath {
-                path = newPath
+                withAnimation { path = newPath }
             }
         }
     }

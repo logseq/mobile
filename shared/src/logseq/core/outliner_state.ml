@@ -386,8 +386,33 @@ let token_request kind marker prefix =
     else None
   | None -> None
 
+(* Completion markers in code and escaped text are literal. Once a code
+   span closes, an earlier marker cannot consume the prose after it. *)
+let completion_prefix prefix =
+  let length = String.length prefix in
+  let visible = Bytes.of_string prefix in
+  let rec ticks index =
+    if index < length && prefix.[index] = '`' then ticks (index + 1) else index in
+  let rec scan index code_width start =
+    if index >= length then
+      if code_width <> 0 then "" else Bytes.sub_string visible start (length - start)
+    else if prefix.[index] = '\\' && code_width = 0 && index + 1 < length then begin
+      (match prefix.[index + 1] with
+       | '#' | '[' | ':' -> Bytes.set visible (index + 1) ' '
+       | _ -> ());
+      scan (index + 2) code_width start
+    end else if prefix.[index] = '`' then
+      let next = ticks index in
+      let width = next - index in
+      if code_width = 0 then scan next width start
+      else if width = code_width || (code_width >= 3 && width >= code_width) then scan next 0 next
+      else scan next code_width start
+    else scan (index + 1) code_width start
+  in
+  scan 0 0 0
+
 let autocomplete_for title caret =
-  let prefix = prefix_at title caret in
+  let prefix = completion_prefix (prefix_at title caret) in
   match last_substring prefix "[[" with
   | Some index ->
     if not (contains_from prefix (index + 2) "]]") then

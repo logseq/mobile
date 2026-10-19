@@ -56,7 +56,7 @@ let retained_row_editing_caret (retained : retained_row) =
 
 (* Only the native-visible window owns UI scopes and protocol nodes. The
    lightweight collection metadata keeps the entire outline scrollable. *)
-let windowed_keyed ?first_section ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
+let windowed_keyed ?scroll_target ?first_section ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
   if Lui_ui.host context <> Lui_protocol.SwiftUIHost then
     Lui_elements.keyed ~source ~key ~cmp ~mount context parent
@@ -64,6 +64,19 @@ let windowed_keyed ?first_section ?(on_window = fun _ -> ()) ?(is_pinned = fun _
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
     let range = Signal.state context.ui_scheduler (0, 32) in
+    let target = match scroll_target with Some source -> source
+      | None -> Signal.constant context.ui_scheduler None in
+    let request = own (Signal.map2 (fun items target ->
+      match target with
+      | None -> None
+      | Some uuid -> Option.map (fun index -> (uuid, index))
+          (Array.find_index (fun item -> key item = uuid) items)) items target) in
+    let applied_target = ref None in
+    ignore (Signal.own context.ui_scope (Signal.observe request (function
+      | Some (uuid, index) when !applied_target <> Some uuid ->
+        applied_target := Some uuid;
+        Signal.set range (max 0 (index - 8), 32)
+      | _ -> ())));
     let window = own (Signal.map2 (fun items (start, length) ->
       let count = Array.length items in
       let start = min start (max 0 (count - length)) in
@@ -73,13 +86,17 @@ let windowed_keyed ?first_section ?(on_window = fun _ -> ()) ?(is_pinned = fun _
     let pinned = own (Signal.map (fun items ->
       match Array.find_index is_pinned items with Some index -> index | None -> -1) items) in
     let layout = own (Signal.map2 (fun first pinned -> first, pinned) first_section pinned) in
-    let metadata = own (Signal.map2 (fun (items, start, _) (first_count, pinned_index) ->
+    let metadata_base = own (Signal.map2 (fun (items, start, _) (first_count, pinned_index) ->
       ["data-virtual-count", string_of_int (Array.length items);
        "data-virtual-start", string_of_int start;
        "data-item-extent", "32";
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
        "data-pinned-index", string_of_int pinned_index]) window layout) in
+    let metadata = own (Signal.map2 (fun metadata request ->
+      match request with None -> metadata | Some (uuid, index) ->
+        ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
+      metadata_base request) in
     let visible = own (Signal.map (fun (items, start, length) ->
       Array.sub items start length |> Array.to_list) window) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));

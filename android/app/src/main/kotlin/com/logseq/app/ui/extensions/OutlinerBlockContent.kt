@@ -319,7 +319,7 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
                 )
             ) {
                 pushStringAnnotation(TAG_NODE, uuid)
-                append(label)
+                append(if (node.optString("type") == "nodeReference") "[[$label]]" else "#$label")
                 pop()
             }
         }

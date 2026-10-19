@@ -99,6 +99,9 @@ let block_json (block : Model.block) =
      @ (match block.order with
         | Some order -> [ ("order", `String order) ]
         | None -> [])
+     @ (match block.priority with
+        | Some priority -> [ ("priority", status_response_json priority) ]
+        | None -> [])
      @ (match block.status with
         | Some status -> [ ("status", status_response_json status) ]
         | None -> [])

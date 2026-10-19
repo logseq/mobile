@@ -315,6 +315,9 @@ let encode_effect (eff : Model.logseq_effect) =
   | CancelOutlinerEditingEffect id ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
+  | OpenSearchResultEffect (id, uuid) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"open-search-result\",\"text\":"
+    ^ Lui_wire.quoted uuid ^ "}"
   | OpenAppNodeEffect (id, uuid) | OpenSearchNodeEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"open-node\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"

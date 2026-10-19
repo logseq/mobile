@@ -18,6 +18,7 @@ let block uuid title order : Model.block =
     tags = [];
     references = [];
     breadcrumbs = [];
+    priority = None;
     status = None;
     is_asset = false;
     asset_type = None;

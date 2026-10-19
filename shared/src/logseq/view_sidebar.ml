@@ -148,26 +148,33 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
       box
         ~height:(if Lui_ui.host context = KotlinHost then 8 else 48)
         [];
-      stack
+      row ~cross:`center ~gap:4
         [
-          sidebar_graph_switch context model_source send;
-          if_
-            ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
-            (dropdown_menu ~anchor:`below ~anchor_alignment:`start
-               ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
-               ~style_class:"anchored-popover" ~gap:0
-               ~on_dismiss:(press send Model.DismissGraphMenu)
-               [
-                 keyed
-                   ~source:
-                     (Signal.map
-                        View_base.model_graphs
-                        model_source)
-                   ~key:View_base.sidebar_graph_identifier ~cmp:compare
-                   ~mount:(fun graph_source ->
-                     sidebar_graph_menu_item model_source graph_source
-                       send);
-               ]);
+          stack ~grow:1.0
+            [
+              sidebar_graph_switch context model_source send;
+              if_
+                ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
+                (dropdown_menu ~anchor:`below ~anchor_alignment:`start
+                   ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
+                   ~style_class:"anchored-popover" ~gap:0
+                   ~on_dismiss:(press send Model.DismissGraphMenu)
+                   [
+                     keyed
+                       ~source:
+                         (Signal.map
+                            View_base.model_graphs
+                            model_source)
+                       ~key:View_base.sidebar_graph_identifier ~cmp:compare
+                       ~mount:(fun graph_source ->
+                         sidebar_graph_menu_item model_source graph_source
+                           send);
+                   ]);
+            ];
+          button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+            ~width:44 ~height:44 ~label:"Settings"
+            ~accessibility_identifier:"button.sidebar.settings"
+            ~on_press:(press send Model.OpenSettings) [];
         ];
       box ~height:12 [];
       sidebar_journals_row context model_source send;

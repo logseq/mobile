@@ -403,9 +403,11 @@ public struct LogseqNodeProjection: Codable, Identifiable {
 
 public struct LogseqNodeRouteRequest: Codable, Sendable {
     public let uuid: String
+    public let reveal: Bool
 
-    public init(uuid: String) {
+    public init(uuid: String, reveal: Bool = false) {
         self.uuid = uuid
+        self.reveal = reveal
     }
 }
 

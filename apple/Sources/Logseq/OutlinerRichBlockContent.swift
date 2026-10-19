@@ -120,7 +120,7 @@ enum OutlinerMarkupMarkdown {
             guard let url = node.url, !url.isEmpty else { return label }
             return "[" + label + "](" + escapeDestination(url) + ")"
         case .nodeReference:
-            return nodeLink(label: node.title ?? "", uuid: node.uuid)
+            return nodeLink(label: "[[" + (node.title ?? "") + "]]", uuid: node.uuid)
         case .tagReference:
             return nodeLink(label: "#" + (node.title ?? ""), uuid: node.uuid)
         case .video, .iframe:
@@ -205,7 +205,7 @@ enum OutlinerMarkupAttributedString {
             value.link = node.url.flatMap(URL.init(string:))
             return value
         case .nodeReference:
-            var value = AttributedString(node.title ?? "")
+            var value = AttributedString("[[" + (node.title ?? "") + "]]")
             if let uuid = node.uuid {
                 value.link = OutlinerMarkupLink.node(uuid: uuid).url
             }

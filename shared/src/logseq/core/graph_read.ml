@@ -124,10 +124,10 @@ let rec breadcrumbs_loop decrypt_title db seen eid ancestors =
 let breadcrumbs decrypt_title db eid =
   breadcrumbs_loop decrypt_title db [] eid []
 
-let status_for_eid decrypt_title db eid =
+let choice_for_eid decrypt_title db eid property =
   match
-    Ds_value.optional_ref_eid db "logseq.property/status"
-      (value db eid "logseq.property/status")
+    Ds_value.optional_ref_eid db property
+      (value db eid property)
   with
   | Some status_eid ->
     let ident =
@@ -152,6 +152,9 @@ let status_for_eid decrypt_title db eid =
         }
     else None
   | None -> None
+
+let status_for_eid decrypt_title db eid =
+  choice_for_eid decrypt_title db eid "logseq.property/status"
 
 let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db eid =
   let attributes = Hashtbl.create 24 in
@@ -239,7 +242,8 @@ let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db ei
            tags = visible_tag_summaries decrypt_title db eid;
            references = entity_summaries decrypt_title db eid "block/refs";
            breadcrumbs = ancestors;
-           status = status_for_eid decrypt_title db eid;
+           priority = choice_for_eid decrypt_title db eid "logseq.property/priority";
+           status = choice_for_eid decrypt_title db eid "logseq.property/status";
            is_asset = entity_is_instance_of db eid "logseq.class/Asset";
            asset_type =
              string_value (value db eid "logseq.property.asset/type");
@@ -505,6 +509,7 @@ let page_block decrypt_title db eid =
         tags = visible_tag_summaries decrypt_title db eid;
         references = [];
         breadcrumbs = [];
+        priority = None;
         status = None;
         is_asset = false;
         asset_type = None;

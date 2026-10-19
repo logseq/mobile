@@ -271,6 +271,7 @@ let rpc_restart_isolates_the_open_graph () =
         tags = [];
         references = [];
         breadcrumbs = [];
+        priority = None;
         status = None;
         is_asset = false;
         asset_type = None;

@@ -104,6 +104,28 @@ let window_serializer session serialize blocks =
     fun (block : Model.block) ->
       if Hashtbl.mem content block.uuid then serialize block else Rpc.block_shell_json block
 
+let route_breadcrumbs context (route : Types.node_route) =
+  if not route.zoom_to_block then []
+  else
+    let by_uuid = Hashtbl.create (List.length context.Outliner.blocks) in
+    List.iter (fun (block : Model.block) -> Hashtbl.replace by_uuid block.uuid block) context.Outliner.blocks;
+    let seen = Hashtbl.create 8 in
+    let rec walk uuid ancestors =
+      if uuid = route.page.uuid then route.page :: ancestors
+      else if Hashtbl.mem seen uuid then ancestors
+      else begin
+        Hashtbl.add seen uuid ();
+        match Hashtbl.find_opt by_uuid uuid with
+        | None -> route.page :: ancestors
+        | Some block ->
+          let ancestors = if uuid = route.uuid then ancestors else
+            ({ Model.uuid = block.uuid; title = block.title } : Model.entity_summary) :: ancestors in
+          match block.parent_id with
+          | Some parent -> walk parent ancestors
+          | None -> route.page :: ancestors
+      end
+    in walk route.uuid []
+
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
   Rpc.json_list
@@ -126,6 +148,8 @@ let node_routes_json session serialize serialize_plain =
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
+           ; ("breadcrumbs", Rpc.json_list (List.map Rpc.summary_json (route_breadcrumbs context route)))
+           ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)
            ; ("isProperty", `Bool route.is_property)
            ; ("page", Rpc.summary_json route.page)
@@ -869,6 +893,9 @@ let open_node session fields =
        | None -> projected_node_destination session uuid
      with
      | Some (page, zoom) ->
+       let reveal = zoom && List.assoc_opt "reveal" fields = Some (`Bool true) in
+       let scroll_target = if reveal then Some uuid else None in
+       let uuid = if reveal then page.uuid else uuid in
        let tag =
          match (host session).graph_node_is_tag with
          | Some check -> check uuid
@@ -892,7 +919,8 @@ let open_node session fields =
            is_tag = tag;
            is_property = property;
            page;
-           zoom_to_block = zoom;
+           scroll_target;
+           zoom_to_block = zoom && not reveal;
            related_blocks = related;
            state = Outliner.empty;
          }

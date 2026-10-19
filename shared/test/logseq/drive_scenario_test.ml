@@ -177,6 +177,7 @@ let host_responses host model =
         :: current_graph_projection host model ~extra:(fun projection ->
                { projection with Model.flashcards = host.flashcards })
         :: resolved
+      | Model.OpenSearchResultEffect (id, uuid)
       | Model.OpenSearchNodeEffect (id, uuid)
       | Model.OpenAppNodeEffect (id, uuid) ->
         let route =

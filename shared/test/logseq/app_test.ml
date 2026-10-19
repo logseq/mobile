@@ -309,6 +309,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     Model.node_uuid = uuid;
     node_page_uuid = page_uuid;
     node_title = title;
+    node_breadcrumbs = []; node_scroll_target = None;
     node_is_tag = false;
     node_is_property = false;
     node_outliner_rows = [];
@@ -421,6 +422,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     is_asset = false;
     asset_type = None;
     local_path = None;
+    row_priority = None;
     row_status = None;
     tags = [];
     sync_status = None;
@@ -2500,6 +2502,7 @@ let outline_row uuid title =
     is_asset = false;
     asset_type = None;
     local_path = None;
+    row_priority = None;
     row_status = None;
     tags = [];
     sync_status = None;
@@ -5513,7 +5516,7 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
   in
   let route =
     {
-      (node_projection "node-a" "page-a" "Project"
+      (node_projection "node-a" "node-a" "Project"
          [
            {
              (outline_row "reference" "Linked from journal") with
@@ -6514,9 +6517,9 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"later journal sections render main's native divider"
     (descendant_count_with_identifier renderer root "journal.divider")
     1;
-  check_eq ~msg:"journal bullets expose no press action"
+  check_eq ~msg:"the first journal block keeps its navigation action"
     (Yojson.Basic.Util.member "journalBullet" (native_row_payload application first_block))
-    (`Bool true);
+    (`Bool false);
   check_eq ~msg:"journal heading and bullet taps do not open a page"
     (App.model application).pending_effects []
 
@@ -8181,6 +8184,7 @@ let outliner_rows_preserve_depth_zoom_and_collapse_controls () =
     [ Model.NodeRoute "parent" ]
 
 let journal_child_blocks_keep_zoom_navigation () =
+  List.iter (fun uuid ->
   let application = App.create (ios_backend ()) in
   let root_row =
     journal_outline_row "day-root" "page-a" "Journal root" "Sep 14th, 2026"
@@ -8197,19 +8201,19 @@ let journal_child_blocks_keep_zoom_navigation () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
-  let child = descendant_with_identifier renderer root "outliner.block.block-a" in
+  let child = descendant_with_identifier renderer root ("outliner.block." ^ uuid) in
   check_eq ~msg:"journal children keep an interactive zoom bullet"
     (Yojson.Basic.Util.member "journalBullet" (native_row_payload application child)) (`Bool false);
   dispatch application (Lui_protocol.ExtensionEvent
     (native_row application child, "outliner-block-row", "open-node",
-      Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "block-a")));
+      Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue uuid)));
   flush application;
   check_eq
     ~msg:
       "journal child zoom opens the block instead of acting like a \
        journal marker"
     (App.model application).pending_effects
-    [ Model.OpenAppNodeEffect (1, "block-a") ]
+    [ Model.OpenAppNodeEffect (1, uuid) ]) ["day-root"; "block-a"]
 
 let outliner_row_splices_update_the_existing_keyed_projection () =
   let parent =
@@ -8382,8 +8386,8 @@ let native_outliner_controls_match_first_line_and_main_status_shapes () =
   let open Yojson.Basic.Util in
   check_eq ~msg:"native task glyph uses semantic status identity"
     (payload |> member "status" |> member "icon") (`String "app:task-doing");
-  check_eq ~msg:"journal roots retain noninteractive bullet chrome"
-    (payload |> member "journalBullet") (`Bool true);
+  check_eq ~msg:"journal roots retain interactive bullet chrome"
+    (payload |> member "journalBullet") (`Bool false);
   check_eq ~msg:"native disclosure receives its child state"
     (payload |> member "hasChildren") (`Bool true)
 
@@ -8439,6 +8443,85 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
   check_eq ~msg:"successful assets leave the draft"
     completed.composer_assets []
 
+let sidebar_settings_opens_sheet_directly () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application Model.OpenSidebar;
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let root = Lui_app.root_node application in
+  let settings = descendant_with_identifier renderer root "button.sidebar.settings" in
+  check ~msg:"settings is available directly beside the graph switch" (settings <> -1);
+  dispatch application (Lui_protocol.Press settings);
+  flush application;
+  check ~msg:"a single settings click opens the sheet" (App.model application).settings_open;
+  check ~msg:"settings dismisses the sidebar" (not (App.model application).sidebar_open)
+
+let search_reveal_mounts_only_the_target_window () =
+  List.iter (fun count ->
+    let application = App.create (ios_backend ()) in
+    let rows = List.init count (fun index -> outline_row ("b" ^ string_of_int index) "Block") in
+    let target = "b" ^ string_of_int (count - 20) in
+    let route = { (node_projection "page" "page" "Page" [] []) with
+      Model.node_scroll_target = Some target; node_outliner_rows = rows } in
+    start application;
+    send application Model.OpenSearch;
+    send application (Model.RequestSearchResult target);
+    flush application;
+    check ~msg:"search requests page reveal while bullet presses keep zoom semantics"
+      (List.exists (function Model.OpenSearchResultEffect (_, uuid) -> uuid = target | _ -> false)
+        (App.model application).pending_effects);
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+      Model.selected_graph_id = Some "graph"; node_routes = [route]; outliner_rows = rows });
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let navigation = extension_node application "native-search-presentation" in
+    let window = descendant_with_identifier renderer navigation "outliner.window" in
+    let metadata = Lui_protocol.data_attrs_decode (property_string renderer window Lui_protocol.DataAttrs) in
+    let first = int_of_string (List.assoc "data-virtual-start" metadata) in
+    check ~msg:"search mounts the distant result without walking through every preceding row"
+      (first <= count - 20 && count - 20 < first + 32);
+    check ~msg:"the requested result is materialized"
+      (descendant_with_identifier renderer window ("outliner.block." ^ target) <> -1);
+    check ~msg:"phone search never mounts more than 32 blocks"
+      (List.length (children renderer window) <= 32);
+    check_eq ~msg:"the navigation history records the containing page"
+      (App.model application).search_navigation_path [Model.NodeRoute "page"];
+    send application (Model.RequestSearchNode target);
+    flush application;
+    check_eq ~msg:"the revealed block can still be zoomed through its bullet"
+      (App.model application).search_navigation_path [Model.NodeRoute "page"; Model.NodeRoute target]
+  ) [1000; 10000]
+
+let selected_page_survives_node_navigation () =
+  let application = App.create (ios_backend ()) in
+  let rows = [outline_row "parent" "Parent"; outline_row "child" "Child"] in
+  let sidebar = { (empty_sidebar_projection ()) with
+    Model.selected_page = Some { uuid = "page"; title = "Page" } } in
+  let projection = { (empty_core_projection ()) with
+    Model.selected_graph_id = Some "graph"; sidebar;
+    journal_outliner_rows = rows; outliner_rows = rows } in
+  start application;
+  send application (Model.ApplyCoreSnapshot projection);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let pane () = descendant_with_identifier renderer (main_root renderer application) "pane.selected-page" in
+  let original = pane () in
+  check ~msg:"the selected page is mounted" (original <> -1);
+  send application (Model.RequestAppNode "child");
+  let route = { (node_projection "child" "page" "Child" [] []) with
+    Model.node_outliner_rows = [List.nth rows 1] } in
+  send application (Model.ApplyCoreSnapshot { projection with
+    node_routes = [route]; outliner_rows = route.node_outliner_rows });
+  flush application;
+  check_eq ~msg:"pushing a node retains the source page and its native scroll view" (pane ()) original;
+  check ~msg:"the source page still contains its original block during interactive back"
+    (descendant_with_identifier renderer original "outliner.block.parent" <> -1);
+  send application (Model.BackAppNavigation 1);
+  send application (Model.ApplyCoreSnapshot projection);
+  flush application;
+  check_eq ~msg:"back reuses the original page instead of resetting its scroll view" (pane ()) original
+
 let block_node_breadcrumbs_preserve_navigation_context () =
   List.iter
     (fun search_ ->
@@ -8485,9 +8568,8 @@ let block_node_breadcrumbs_preserve_navigation_context () =
        let parent =
          descendant_with_identifier renderer trail "button.breadcrumb.parent"
        in
-       if search_ then
-         check_eq
-           ~msg:"search block details do not repeat their content as a heading"
+       check_eq
+           ~msg:"block details do not repeat their content as a heading"
            (descendant_with_identifier renderer navigation "title.node")
            (-1);
        check_eq ~msg:"block navigation displays the containing page"
@@ -8849,6 +8931,9 @@ let cases =
     case "native-outliner-controls-match-first-line-and-main-status-shapes" native_outliner_controls_match_first_line_and_main_status_shapes;
     case "composer-stages-multiple-assets-until-confirmed" composer_stages_multiple_assets_until_confirmed;
     case "composer-asset-failure-retains-draft-and-success-removes-it" composer_asset_failure_retains_draft_and_success_removes_it;
+    case "sidebar-settings-opens-sheet-directly" sidebar_settings_opens_sheet_directly;
+    case "search-reveal-mounts-only-the-target-window" search_reveal_mounts_only_the_target_window;
+    case "selected-page-survives-node-navigation" selected_page_survives_node_navigation;
     case "block-node-breadcrumbs-preserve-navigation-context" block_node_breadcrumbs_preserve_navigation_context;
     case "composer-attachment-previews-remove-only-the-selected-draft" composer_attachment_previews_remove_only_the_selected_draft;
     case "library-does-not-offer-empty-outline" library_does_not_offer_an_empty_outline_editor;

@@ -72,7 +72,7 @@ struct OutlinerMarkupPresentation: Equatable {
                         append(node.children)
                     }
                 case .nodeReference:
-                    text += node.title ?? ""
+                    text += "[[" + (node.title ?? "") + "]]"
                     if let uuid = node.uuid {
                         links.append(.node(uuid: uuid))
                     }

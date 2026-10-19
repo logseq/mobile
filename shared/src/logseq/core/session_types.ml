@@ -61,6 +61,7 @@ type node_route =
   ; is_tag : bool
   ; is_property : bool
   ; page : Model.entity_summary
+  ; scroll_target : string option
   ; zoom_to_block : bool
   ; related_blocks : Model.block list
   ; state : Outliner.outliner_state

@@ -9,7 +9,7 @@ let search_result_row hit_source send : t =
        ~on_press:(fun _ ->
          ignore
            (send
-              (Model.RequestSearchNode
+              (Model.RequestSearchResult
                  (Signal.sample hit_source : Model.search_hit).hit_uuid)))
        [
          column ~gap:4 ~padding_vertical:6 ~grow:1.0
@@ -678,7 +678,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      node
    else (
      ignore
-       ((logseq_main_view context model_source send) context (Some node));
+       ((logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send) context (Some node));
      ignore
        ((column ~grow:1.0 [ search_screen model_source send ]) context
           (Some node));

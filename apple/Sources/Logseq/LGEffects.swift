@@ -552,10 +552,10 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                 method: "dispatch",
                 params: LogseqRPCParams(action: "searchNodes", payload: effect.text)
             )
-        case "open-node":
+        case "open-node", "open-search-result":
             do {
                 let payloadData = try JSONEncoder().encode(
-                    LogseqNodeRouteRequest(uuid: effect.text)
+                    LogseqNodeRouteRequest(uuid: effect.text, reveal: effect.kind == "open-search-result")
                 )
                 guard let payload = String(data: payloadData, encoding: .utf8) else {
                     return LGEffectResolution(

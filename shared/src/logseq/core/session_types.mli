@@ -54,6 +54,7 @@ type node_route =
   ; is_tag : bool
   ; is_property : bool
   ; page : Cache_model.entity_summary
+  ; scroll_target : string option
   ; zoom_to_block : bool
   ; related_blocks : Cache_model.block list
   ; state : Outliner_state.outliner_state

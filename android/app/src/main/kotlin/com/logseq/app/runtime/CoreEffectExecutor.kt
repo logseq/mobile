@@ -70,9 +70,10 @@ internal class CoreEffectExecutor(
                 action = "searchNodes"
                 payload = effect.text
             }
-            "open-node" -> {
+            "open-node", "open-search-result" -> {
                 action = "openNode"
-                payload = JSONObject().put("uuid", effect.text).toString()
+                payload = JSONObject().put("uuid", effect.text)
+                    .put("reveal", effect.kind == "open-search-result").toString()
             }
             "close-node" -> action = "closeNode"
             "select-sidebar-page" -> {

@@ -98,7 +98,7 @@ let breadcrumb_button breadcrumb_source search_open send : t =
   let breadcrumb = Signal.sample breadcrumb_source in
   button
     ~text_signal:(reactive View_base.breadcrumb_title breadcrumb_source)
-    ~variant:`ghost ~style_class:"caption" ~foreground:"muted-foreground"
+    ~variant:`ghost ~style_class:"caption single-line" ~max_width:180 ~foreground:"muted-foreground"
     ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
     ~on_press:(fun _ ->
       ignore
@@ -154,26 +154,8 @@ let outliner_tag tag_source send : t =
 
 let outliner_zoom_control (context : Lui_ui.ui_context) model_source
     row_source send search_open : t =
-  let current = Signal.sample model_source in
   let current_row = Signal.sample row_source in
-  if (not search_open) && View_base.outliner_row_journal_ current current_row
-  then
-    if Lui_ui.host context = KotlinHost then
-      row ~width:24 ~height:24 ~main:`center ~cross:`center
-        [
-          box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
-            ~accessibility_identifier:
-              ("outliner.bullet-glyph."
-               ^ View_base.outliner_row_uuid current_row)
-            [];
-        ]
-    else
-      icon ~name:(`app "outliner-bullet") ~style_class:"body-line"
-        ~foreground:"border" ~width:24 ~height:24
-        ~accessibility_identifier_signal:
-          (Signal.map View_base.outliner_row_zoom_identifier row_source)
-        []
-  else if Lui_ui.host context = KotlinHost then
+  if Lui_ui.host context = KotlinHost then
     stack ~width:24 ~height:24
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
@@ -412,8 +394,15 @@ let native_outliner_row model_source retained_source row_source send : t =
       "completed", `Bool (View_base.outliner_row_completed_ row);
       "selected", `Bool (View_base.row_selected_ current row);
       "opensAsPage", `Bool row.opens_as_page;
-      "journalBullet", `Bool ((not current.search_open) && View_base.outliner_row_journal_ current row);
+      "journalBullet", `Bool false;
       "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
+      "priority", (match row.row_priority with
+        | None -> `Null
+        | Some priority ->
+          let ident = Option.value ~default:"" priority.ident in
+          let level = match String.split_on_char '.' ident |> List.rev with value :: _ -> value | [] -> "none" in
+          `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
+            "icon", `String ("app:priority-" ^ level)]);
       "status", (match row.row_status with Some value -> status value | None -> `Null);
       "statuses", `List (List.map status current.task_statuses);
       "tags", `List (List.map summary row.tags)]) in
@@ -620,8 +609,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
           ignore (send (Model.PerformOutlinerToolbarAction action)))
         ~text:label []
     in
-    View_base.with_liquid_glass "capsule"
-      (toolbar ~orientation:`horizontal ~label:"Outliner selection"
+    toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
          ~style_class:"scroll-leading leading-inset-12"
          ~toolbar_gap:6 ~placement:"bottom"
@@ -645,7 +633,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
             ignore
               (send (Model.PerformOutlinerToolbarAction "unselect")))
           ~text:"Unselect" [];
-      ])
+      ]
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     candidate_source send : t =
@@ -881,7 +869,10 @@ let outliner_entries context model_source ~source send : t =
       requested := ids;
       if ids <> [] then ignore (send (Model.EnsureOutlinerRows ids))
     end in
-  View_rows.windowed_keyed ~first_section ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
+  let scroll_target = Signal.own_signal mount_context.ui_scope
+    (Signal.map (fun current -> match View_base.active_node_projection current with
+      | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
+  View_rows.windowed_keyed ~scroll_target ~first_section ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
     ~key:View_rows.page_entry_identifier ~cmp:compare
     ~mount:(fun entry_source ->
       let render () = match Signal.sample entry_source with

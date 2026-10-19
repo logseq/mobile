@@ -126,6 +126,7 @@ type outline_row =
   ; is_asset : bool
   ; asset_type : string option
   ; local_path : string option
+  ; row_priority : task_status option
   ; row_status : task_status option
   ; tags : sidebar_page list
   ; sync_status : string option
@@ -179,6 +180,8 @@ type node_projection =
   { node_uuid : string
   ; node_page_uuid : string
   ; node_title : string
+  ; node_breadcrumbs : sidebar_page list
+  ; node_scroll_target : string option
   ; node_is_tag : bool
   ; node_is_property : bool
   ; node_outliner_rows : outline_row list
@@ -262,6 +265,7 @@ type logseq_effect =
   | ChooseOutlinerAutocompleteEffect of int * string
   | CancelOutlinerEditingEffect of int
   | OpenAppNodeEffect of int * string
+  | OpenSearchResultEffect of int * string
   | OpenSearchNodeEffect of int * string
   | CloseAppNodeEffect of int * string
   | CloseSearchNodeEffect of int * string
@@ -351,6 +355,7 @@ type logseq_model =
   ; search_results : search_hit list
   ; search_loading : bool
   ; node_routes : node_projection list
+  ; navigation_root_rows : outline_row list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -423,6 +428,7 @@ type logseq_action =
   | RequestAppNode of string
   | ResolveAppNode of string * bool
   | BackAppNavigation of int
+  | RequestSearchResult of string
   | RequestSearchNode of string
   | ResolveSearchNode of string * bool
   | BackSearchNavigation of int

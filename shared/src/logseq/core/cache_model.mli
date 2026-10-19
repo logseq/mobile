@@ -26,6 +26,7 @@ type block =
   ; tags : entity_summary list
   ; references : entity_summary list
   ; breadcrumbs : entity_summary list
+  ; priority : status option
   ; status : status option
   ; is_asset : bool
   ; asset_type : string option

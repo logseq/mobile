@@ -1009,8 +1009,28 @@ let parent_window_does_not_scan_unused_entity_properties () =
   check_eq (window_uuids result) ["window-block"];
   check ~msg:"displaying one row must not scan 10k unrelated custom properties" (!reads < 100)
 
+let priority_survives_graph_projection_and_cache () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/created-at"; "db/ident"]
+    ["logseq.property/priority", ref_attr] in
+  transact conn [page "page" "page" "Page" [];
+    entity "high" "High" [field "db/ident" (Ds.Keyword "logseq.property/priority.high")];
+    block "task" "Task" "page" "page" 1
+      [field "logseq.property/priority" (Ds.Ref_to (Ds.Temp_id "high"))]];
+  let blocks = Read.blocks_for_page plain (Ds.conn_db conn) "page" in
+  let verify block =
+    check_eq ~msg:"priority keeps master's builtin identity"
+      (Yojson.Basic.Util.member "ident" (Yojson.Basic.Util.member "priority" (Rpc.block_json block)))
+      (`String "logseq.property/priority.high") in
+  verify (List.hd blocks);
+  let cache = Model.create None in
+  Model.upsert_blocks cache blocks 1;
+  verify (Option.get (Model.read_block cache "task"));
+  Model.upsert_blocks cache [{ (List.hd blocks) with priority = None }] 2;
+  check_eq ~msg:"clearing priority removes its cached icon"
+    (Yojson.Basic.Util.member "priority" (Rpc.block_json (Option.get (Model.read_block cache "task")))) `Null
+
 let cases =
-  [
+  [ case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;
     case "property value subtrees are not outline content" property_value_subtrees_are_not_outline_content;
     case "parent windows skip collapsed and hidden subtrees" parent_window_skips_collapsed_and_hidden_subtrees;
     case "parent windows hydrate 32 rows and continue without gaps" parent_window_hydrates_only_32_rows_and_continues_without_gaps;

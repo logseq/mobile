@@ -31,8 +31,35 @@ final class LGYouTubePlaybackState {
     var starts: [String: Int] = [:]
 }
 
+@Observable
 final class OutlinerRowDropGeometry {
     var height: CGFloat = 44
+    var placement: OutlinerDropPlacement?
+}
+
+struct OutlinerDropIndicator: View {
+    let placement: OutlinerDropPlacement?
+    let depth: Int
+
+    var body: some View {
+        Canvas { context, size in
+            guard let placement else { return }
+            let parentX = min(size.width, CGFloat(max(0, depth)) * 22 + 12)
+            let y: CGFloat = placement == .before ? 1 : max(1, size.height - 1)
+            let x = placement == .inside ? min(size.width, parentX + 22) : parentX
+            var line = Path()
+            if placement == .inside {
+                line.move(to: CGPoint(x: parentX, y: max(1, y - 12)))
+                line.addLine(to: CGPoint(x: parentX, y: y))
+                line.addLine(to: CGPoint(x: x, y: y))
+            } else { line.move(to: CGPoint(x: x, y: y)) }
+            line.addLine(to: CGPoint(x: size.width, y: y))
+            context.stroke(line, with: .color(.accentColor), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            context.fill(Path(ellipseIn: CGRect(x: x - 3, y: y - 3, width: 6, height: 6)), with: .color(.accentColor))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 #if os(iOS)
@@ -44,8 +71,20 @@ struct OutlinerRowDropDelegate: DropDelegate {
         info.hasItemsConforming(to: [UTType.plainText])
     }
 
+    func dropEntered(info: DropInfo) {
+        geometry.placement = OutlinerDropZone.placement(locationY: info.location.y, rowHeight: geometry.height)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        dropEntered(info: info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) { geometry.placement = nil }
+
     func performDrop(info: DropInfo) -> Bool {
-        onDrop(OutlinerDropZone.placement(
+        defer { geometry.placement = nil }
+        return onDrop(OutlinerDropZone.placement(
             locationY: info.location.y,
             rowHeight: geometry.height
         ))
@@ -108,6 +147,7 @@ private struct LGRichBlock: View {
     var body: some View {
         #if os(iOS)
         content
+            .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: 0) }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 dropGeometry.height = height
             }

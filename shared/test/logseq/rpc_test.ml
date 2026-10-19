@@ -485,6 +485,29 @@ let node_navigation_preserves_independent_projections_and_editing () =
   check_eq (List.length routes) 1;
   check_eq (member "uuid" (List.hd routes)) (`String "block-1")
 
+let search_block_reveals_page_and_zoom_has_ancestry () =
+  let page : Model.entity_summary = { uuid = "page"; title = "Page" } in
+  let parent = { (Model.local_block "parent" "Parent" "page" None 1) with
+    Model.parent_id = Some "page"; order = Some "a0" } in
+  let child = { parent with uuid = "child"; title = "Child"; parent_id = Some "parent" } in
+  let sibling = { parent with uuid = "sibling"; title = "Sibling"; order = Some "a1" } in
+  let session = Session.create_session { Session.default_options with
+    graph_node_destination = Some (fun uuid -> Some (page, uuid <> "page"));
+    graph_page_blocks = Some (fun _ -> Some [parent;child;sibling]) } in
+  let route payload = List.hd (json_items "nodeRoutes"
+    (response_result (dispatch_json session "openNode" payload))) in
+  let zoom = route "{\"uuid\":\"child\"}" in
+  check_eq ~msg:"zoom supplies ancestry without per-row breadcrumb loading"
+    (List.map (member "uuid") (json_items "breadcrumbs" zoom))
+    [`String "page"; `String "parent"];
+  ignore (dispatch_json session "closeNode" "");
+  let reveal = route "{\"uuid\":\"child\",\"reveal\":true}" in
+  check_eq ~msg:"search opens the containing page" (member "uuid" reveal) (`String "page");
+  check_eq ~msg:"search carries an exact scroll target" (member "scrollTarget" reveal) (`String "child");
+  check_eq ~msg:"search includes siblings rather than zooming to the result"
+    (List.map (fun row -> member "uuid" (member "block" row)) (json_items "outlinerRows" reveal))
+    [`String "parent"; `String "child"; `String "sibling"]
+
 let sidebar_tag_selection_projects_objects_and_linked_references () =
   let page : Model.entity_summary = { uuid = "tag-1"; title = "Task" } in
   let tagged =
@@ -5874,6 +5897,7 @@ let cases =
       authoritative_reconciliation_preserves_newer_local_edits;
     case "node navigation preserves independent projections and editing"
       node_navigation_preserves_independent_projections_and_editing;
+    case "search block reveals page and zoom has ancestry" search_block_reveals_page_and_zoom_has_ancestry;
     case "graph assets download and cache binary files" graph_assets_download_and_cache_binary_files;
     case "mobile page references are deferred" mobile_page_references_are_deferred;
     case "sidebar tag selection projects objects and linked references"

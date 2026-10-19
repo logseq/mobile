@@ -33,6 +33,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let opensAsPage: Bool
     let journalBullet: Bool
     let syncFailed: Bool
+    let priority: Status?
     let status: Status?
     let statuses: [Status]
     let tags: [Summary]
@@ -71,6 +72,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         #if os(iOS)
         if context.childIDs.isEmpty {
             content
+                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
                 .onLongPressGesture { emit("long-press") }
                 .onDrag { emit("drag-start"); return NSItemProvider(object: row.uuid as NSString) }
@@ -98,12 +100,12 @@ struct OutlinerRowPayload: Decodable, Equatable {
         HStack(alignment: .top, spacing: 0) {
             Color.clear.frame(width: CGFloat(max(0, row.depth)) * 22, height: 1)
             if row.journalBullet {
-                IconImage(name: "outliner_bullet", size: 24).frame(height: 24)
+                IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
                     .foregroundStyle(Color.secondary.opacity(0.4))
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
             } else {
                 Button { emit("open-node") } label: {
-                    IconImage(name: "outliner_bullet", size: 24).frame(height: 24)
+                    IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondary.opacity(0.4))
@@ -126,6 +128,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 .padding(.trailing, 7)
                 .accessibilityLabel(status.title)
                 .accessibilityIdentifier("button.block-task-status")
+            }
+            if let priority = row.priority {
+                statusIcon(priority).frame(width: 20, height: 24)
+                    .padding(.trailing, 5)
+                    .accessibilityLabel(priority.title)
             }
             VStack(alignment: .leading, spacing: 2) {
                 if let editor = context.childIDs.first {

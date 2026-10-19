@@ -683,14 +683,10 @@ let active_node_uuid (current : Model.logseq_model) =
 
 let active_node_breadcrumbs (current : Model.logseq_model) =
   match active_node_projection current with
+  | Some route when route.node_breadcrumbs <> [] -> route.node_breadcrumbs
   | Some route ->
-    (match
-       List.find_opt
-         (fun (row : Model.outline_row) -> row.row_uuid = route.node_uuid)
-         route.node_outliner_rows
-     with
-     | Some row -> row.row_breadcrumbs
-     | None -> [])
+    (match List.find_opt (fun (row : Model.outline_row) -> row.row_uuid = route.node_uuid) route.node_outliner_rows with
+     | Some row -> row.row_breadcrumbs | None -> [])
   | None -> []
 
 let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
@@ -779,8 +775,7 @@ let node_title_visible_ (current : Model.logseq_model) =
   node_outliner_visible_ current
   && (not (current_content_is_tag_ current))
   && (not
-        (current.search_open
-         && active_node_uuid current <> active_node_page_uuid current))
+        (active_node_uuid current <> active_node_page_uuid current))
 
 let main_can_add_first_block_ (current : Model.logseq_model) =
   journal_root_visible_ current && node_can_add_first_block_ current
@@ -1310,6 +1305,7 @@ let selected_page_title (current : Model.logseq_model) =
 
 let navigation_root_model (current : Model.logseq_model) =
   { current with
+    outliner_rows = (if current.node_routes = [] then current.outliner_rows else current.navigation_root_rows);
     node_routes = [];
     app_navigation_path = [];
     search_open = false;

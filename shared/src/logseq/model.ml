@@ -129,6 +129,7 @@ type outline_row =
   ; is_asset : bool
   ; asset_type : string option
   ; local_path : string option
+  ; row_priority : task_status option
   ; row_status : task_status option
   ; tags : sidebar_page list
   ; sync_status : string option
@@ -182,6 +183,8 @@ type node_projection =
   { node_uuid : string
   ; node_page_uuid : string
   ; node_title : string
+  ; node_breadcrumbs : sidebar_page list
+  ; node_scroll_target : string option
   ; node_is_tag : bool
   ; node_is_property : bool
   ; node_outliner_rows : outline_row list
@@ -265,6 +268,7 @@ type logseq_effect =
   | ChooseOutlinerAutocompleteEffect of int * string
   | CancelOutlinerEditingEffect of int
   | OpenAppNodeEffect of int * string
+  | OpenSearchResultEffect of int * string
   | OpenSearchNodeEffect of int * string
   | CloseAppNodeEffect of int * string
   | CloseSearchNodeEffect of int * string
@@ -354,6 +358,7 @@ type logseq_model =
   ; search_results : search_hit list
   ; search_loading : bool
   ; node_routes : node_projection list
+  ; navigation_root_rows : outline_row list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -426,6 +431,7 @@ type logseq_action =
   | RequestAppNode of string
   | ResolveAppNode of string * bool
   | BackAppNavigation of int
+  | RequestSearchResult of string
   | RequestSearchNode of string
   | ResolveSearchNode of string * bool
   | BackSearchNavigation of int
@@ -659,6 +665,7 @@ let initial () =
     search_results = [];
     search_loading = false;
     node_routes = [];
+    navigation_root_rows = [];
     journal_outliner_rows = [];
     outliner_rows = [];
     outliner_selected_block_ids = [];
@@ -743,6 +750,7 @@ let effect_id eff =
   | ChooseOutlinerAutocompleteEffect (id, _) -> id
   | CancelOutlinerEditingEffect id -> id
   | OpenAppNodeEffect (id, _) -> id
+  | OpenSearchResultEffect (id, _)
   | OpenSearchNodeEffect (id, _) -> id
   | CloseAppNodeEffect (id, _) -> id
   | CloseSearchNodeEffect (id, _) -> id
@@ -958,6 +966,8 @@ let journal_preview_route (current : logseq_model) uuid =
         node_uuid = uuid;
         node_page_uuid = uuid;
         node_title = section.section_title;
+        node_breadcrumbs = [];
+        node_scroll_target = None;
         node_is_tag = false;
         node_is_property = false;
         node_outliner_rows =
@@ -972,12 +982,13 @@ let journal_preview_route (current : logseq_model) uuid =
   | None -> None
 
 let outliner_preview_end_index rows start depth =
-  let rec loop index =
-    if index = List.length rows then index
-    else if (List.nth rows index).depth <= depth then index
-    else loop (index + 1)
-  in
-  loop (start + 1)
+  let rec skip remaining rows =
+    if remaining = 0 then rows
+    else match rows with [] -> [] | _ :: rest -> skip (remaining - 1) rest in
+  let rec loop index = function
+    | [] -> index
+    | row :: rest -> if row.depth <= depth then index else loop (index + 1) rest in
+  loop (start + 1) (skip (start + 1) rows)
 
 let row_index rows uuid =
   let rec loop index rows =
@@ -999,6 +1010,8 @@ let outliner_preview_route (current : logseq_model) uuid =
         node_uuid = uuid;
         node_page_uuid = row.page_id;
         node_title = row.row_title;
+        node_breadcrumbs = row.row_breadcrumbs;
+        node_scroll_target = None;
         node_is_tag = false;
         node_is_property = false;
         node_outliner_rows = sub_list index end_index rows;
@@ -1400,6 +1413,7 @@ let rollback_navigation_effect (current : logseq_model) eff =
       app_navigation_previews =
         remove_node_projection current.app_navigation_previews uuid;
     }
+  | OpenSearchResultEffect (_, uuid)
   | OpenSearchNodeEffect (_, uuid) ->
     {
       current with
@@ -2053,6 +2067,7 @@ let rec update (current : logseq_model) action =
       let id = current.next_effect_id in
       enqueue_effect current (OutlinerToolbarEffect (id, "unselect"))
     else back_app_navigation current count
+  | RequestSearchResult uuid
   | RequestSearchNode uuid ->
     let path = current.search_navigation_path in
     let requested = request_route path (NodeRoute uuid) in
@@ -2065,7 +2080,10 @@ let rec update (current : logseq_model) action =
         }
       in
       let id = updated.next_effect_id in
-      enqueue_effect updated (OpenSearchNodeEffect (id, uuid))
+      enqueue_effect updated
+        (match action with
+         | RequestSearchResult _ -> OpenSearchResultEffect (id, uuid)
+         | _ -> OpenSearchNodeEffect (id, uuid))
     end
   | ResolveSearchNode (uuid, resolved) ->
     {
@@ -2379,6 +2397,8 @@ let rec update (current : logseq_model) action =
   | OpenSettings ->
     {
       current with
+      sidebar_open = false;
+      graph_menu_open = false;
       connection_menu_open = false;
       settings_open = true;
       settings_tabs_open = false;
@@ -2580,6 +2600,7 @@ and apply_core_snapshot (current : logseq_model)
     else
       let hydrate = hydrate_rows projection.hydrated_rows in
       { current with outliner_rows = hydrate current.outliner_rows;
+        navigation_root_rows = hydrate current.navigation_root_rows;
         journal_outliner_rows = hydrate current.journal_outliner_rows;
         related_rows = hydrate current.related_rows;
         linked_reference_rows = hydrate current.linked_reference_rows;
@@ -2638,6 +2659,7 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_semantic_operations =
         projection.has_pending_semantic_operations;
       has_pending_sync_request = projection.has_pending_sync_request;
+      navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = projection.projection_outliner_autocomplete;
@@ -2709,9 +2731,19 @@ and apply_core_snapshot (current : logseq_model)
         else current.local_graph_ids @ [ graph_id ]
       | None -> current.local_graph_ids
     in
+    let search_navigation_path =
+      match last_opt projection.node_routes, last_opt current.search_navigation_path with
+      | Some { node_scroll_target = Some target; node_uuid; _ }, Some (NodeRoute requested)
+        when target = requested
+             && List.length projection.node_routes =
+                List.length current.app_navigation_path + List.length current.search_navigation_path ->
+        pop_route current.search_navigation_path @ [NodeRoute node_uuid]
+      | _ -> current.search_navigation_path
+    in
     let updated =
       {
         current with
+        search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;
         graphs = projection.graphs;
@@ -2752,6 +2784,9 @@ and apply_core_snapshot (current : logseq_model)
                 node_outliner_rows = retain_shell_contents previous.node_outliner_rows route.node_outliner_rows;
                 node_related_rows = retain_shell_contents previous.node_related_rows route.node_related_rows;
                 node_linked_reference_rows = retain_shell_contents previous.node_linked_reference_rows route.node_linked_reference_rows }) projection.node_routes);
+        navigation_root_rows = (if projection.node_routes = [] then projected_rows
+          else if selected_graph_changed then projection.journal_outliner_rows
+          else retain_shell_contents current.navigation_root_rows projection.journal_outliner_rows);
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
         outliner_autocomplete = projection.projection_outliner_autocomplete;

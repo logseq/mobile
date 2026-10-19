@@ -250,6 +250,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
         is_asset = bool_member "isAsset" fields;
         asset_type = string_member "assetType" fields;
         local_path = string_member "localPath" fields;
+        row_priority = Option.bind (List.assoc_opt "priority" fields) task_status;
         row_status =
           (match List.assoc_opt "status" fields with
            | Some status -> task_status status
@@ -388,6 +389,8 @@ let node_route input =
         node_title = node_title node_uuid node_is_tag fields;
         node_is_tag;
         node_is_property = bool_member "isProperty" fields;
+        node_breadcrumbs = breadcrumbs fields;
+        node_scroll_target = string_member "scrollTarget" fields;
         node_outliner_rows = outliner_rows_member "outlinerRows" fields;
         node_related_rows = related_rows_member "relatedBlocks" fields;
         node_linked_reference_rows =

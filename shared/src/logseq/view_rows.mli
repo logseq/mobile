@@ -15,9 +15,10 @@ val retained_row_editing_ : retained_row -> bool
 val retained_row_editing_title : retained_row -> string
 val retained_row_editing_caret : retained_row -> int
 val windowed_keyed :
+  ?scroll_target:string option Signal.signal ->
   ?first_section:int Signal.signal -> ?on_window:('a list -> unit) -> ?is_pinned:('a -> bool) ->
-  source:'a list Signal.signal -> key:('a -> 'key) ->
-  cmp:('key -> 'key -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
+  source:'a list Signal.signal -> key:('a -> string) ->
+  cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
 
 type reference_entry =
   | Reference_heading of string * string

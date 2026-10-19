@@ -26,6 +26,7 @@ type block =
   ; tags : entity_summary list
   ; references : entity_summary list
   ; breadcrumbs : entity_summary list
+  ; priority : status option
   ; status : status option
   ; is_asset : bool
   ; asset_type : string option
@@ -104,6 +105,7 @@ let block_sync_status = text_attribute "block/sync-status" true
 let block_tags_json = text_attribute "block/tags-json" false
 let block_references_json = text_attribute "block/references-json" false
 let block_breadcrumbs_json = text_attribute "block/breadcrumbs-json" false
+let block_priority_json = text_attribute "block/priority-json" false
 let block_status_json = text_attribute "block/status-json" false
 let block_asset_type = text_attribute "block/asset-type" true
 let block_asset_size = number_attribute "block/asset-size" false
@@ -125,6 +127,7 @@ let schema =
     (block_tags_json.attr_name, block_tags_json.attr_spec);
     (block_references_json.attr_name, block_references_json.attr_spec);
     (block_breadcrumbs_json.attr_name, block_breadcrumbs_json.attr_spec);
+    (block_priority_json.attr_name, block_priority_json.attr_spec);
     (block_status_json.attr_name, block_status_json.attr_spec);
     (block_asset_type.attr_name, block_asset_type.attr_spec);
     (block_asset_size.attr_name, block_asset_size.attr_spec);
@@ -274,6 +277,7 @@ let materialize_block model uuid =
         breadcrumbs =
           summaries_of_json
             (Option.value ~default:"[]" (read block_breadcrumbs_json entity));
+        priority = Option.bind (read block_priority_json entity) status_of_json;
         status =
           Option.bind (read block_status_json entity) status_of_json;
         is_asset = Option.is_some asset_type;
@@ -574,6 +578,12 @@ let block_transactions model incoming =
   let optional =
     List.filter_map Fun.id
       [
+        (match block.priority with
+         | Some priority -> Some (add block_priority_json entity (status_json priority))
+         | None ->
+           Option.bind existing (fun previous ->
+             Option.map (fun priority -> Ds.Retract (entity, block_priority_json.attr_name,
+               Some (Ds.String (status_json priority)))) previous.priority));
         (match block.status with
          | Some status -> Some (add block_status_json entity (status_json status))
          | None -> None);
@@ -651,6 +661,7 @@ let local_block uuid title page_id parent_id now =
     tags = [];
     references = [];
     breadcrumbs = [];
+    priority = None;
     status = None;
     is_asset = false;
     asset_type = None;

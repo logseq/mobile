@@ -30,6 +30,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let guides = OutlinerIndentGuideView()
     private let title = OutlinerTitleLabel()
     private let bullet = UIButton(type: .custom)
+    private let priority = UIImageView()
     private let status = UIButton(type: .custom)
     private let disclosure = UIButton(type: .custom)
     private let failure = UILabel()
@@ -52,7 +53,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         disclosure.addTarget(self, action: #selector(collapse), for: .touchUpInside)
         failure.text = String(localized: "Sync failed")
         failure.textColor = .systemRed
-        for child in [guides, title, bullet, status, disclosure, failure] { addSubview(child) }
+        for child in [guides, title, bullet, status, priority, disclosure, failure] { addSubview(child) }
         layer.cornerRadius = 10
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: OutlinerTextRowView, _: UITraitCollection) in
             view.updateFonts()
@@ -78,8 +79,15 @@ struct OutlinerTextRow: UIViewRepresentable {
         title.accessibilityTraits = .button
         bullet.accessibilityIdentifier = "button.outliner.zoom." + row.uuid + "." + row.title
         bullet.accessibilityLabel = "Open block"
+        let bulletAsset = row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet"
+        bullet.setImage(UIImage(named: bulletAsset, in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.isUserInteractionEnabled = !row.journalBullet
         bullet.accessibilityTraits = row.journalBullet ? .image : .button
+        priority.isHidden = row.priority == nil
+        priority.contentMode = .scaleAspectFit
+        priority.image = row.priority.flatMap { statusImage($0.icon) }
+        priority.tintColor = .secondaryLabel
+        priority.accessibilityLabel = row.priority?.title
         status.isHidden = row.status == nil
         if let task = row.status {
             status.setImage(statusImage(task.icon), for: .normal)
@@ -135,13 +143,15 @@ struct OutlinerTextRow: UIViewRepresentable {
         let inset = CGFloat(max(0, row.depth)) * 22
         let statusWidth: CGFloat = row.status == nil ? 0 : 29
         let trailing: CGFloat = row.hasChildren ? 28 : 0
-        let leading = inset + 26 + statusWidth
+        let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
+        let leading = inset + 26 + statusWidth + priorityWidth
         let bodyWidth = max(1, width - leading - trailing)
         let titleHeight = max(24, ceil(title.sizeThatFits(CGSize(width: bodyWidth, height: .greatestFiniteMagnitude)).height))
         var height = titleHeight + 4
         if apply {
             bullet.frame = CGRect(x: inset, y: 2, width: 24, height: 24)
             status.frame = CGRect(x: inset + 26, y: 2, width: 22, height: 24)
+            priority.frame = CGRect(x: inset + 26 + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
             disclosure.frame = CGRect(x: width - trailing, y: 2, width: 28, height: 24)
         }

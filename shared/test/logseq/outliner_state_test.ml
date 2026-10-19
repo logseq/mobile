@@ -17,6 +17,7 @@ let block uuid title : Model.block =
     tags = [];
     references = [];
     breadcrumbs = [];
+    priority = None;
     status = None;
     is_asset = false;
     asset_type = None;
@@ -726,6 +727,22 @@ let autocomplete_candidates_combine_deduplicate_and_bound_results () =
        (fun (c : State.outliner_candidate) -> c.value = "project")
        (State.autocomplete_candidates ctx (request State.Tag "prj")))
 
+let entering_code_does_not_offer_tag_completion () =
+  List.iter (fun title ->
+    let ctx = context_for [block "a" title] in
+    let editing = fst (step ctx State.empty (State.Tap_block "a")) in
+    let moved = fst (step ctx editing (State.Caret_moved (State.utf16_length title))) in
+    check_eq ~msg:("literal code does not open completion: " ^ title) (State.autocomplete moved) None;
+    let changed = title ^ " #new" in
+    if not (List.mem title ["`#Asset"; "```\n#tag"]) then begin
+      let typed = fst (step ctx moved (State.Text_changed (text changed (State.utf16_length changed)))) in
+      check_eq ~msg:"typing a real tag after literal code still offers completion"
+        (State.autocomplete typed) (Some (request State.Tag "new"))
+    end
+  ) ["db-test#1452: `#Asset` label is not displayed on asset nodes when `Hide from Node` is disabled";
+     "`#Asset`"; "`#Asset"; "```\n#tag"; "```\n#tag\n```";
+     "prefix \\#tag"; "`[[Page`"; "`status::`"; "中文 `#标签`"]
+
 let autocomplete_token_parsing_preserves_current_line_rules () =
   List.iter
     (fun (title, expected) ->
@@ -1168,6 +1185,7 @@ let cases =
       unicode_carets_and_token_search_handle_boundaries;
     case "autocomplete candidates combine deduplicate and bound results"
       autocomplete_candidates_combine_deduplicate_and_bound_results;
+    case "entering code does not offer tag completion" entering_code_does_not_offer_tag_completion;
     case "autocomplete token parsing preserves current line rules"
       autocomplete_token_parsing_preserves_current_line_rules;
     case "completion and caret insertion preserve literal text"
