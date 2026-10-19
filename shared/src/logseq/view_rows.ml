@@ -56,7 +56,7 @@ let retained_row_editing_caret (retained : retained_row) =
 
 (* Only the native-visible window owns UI scopes and protocol nodes. The
    lightweight collection metadata keeps the entire outline scrollable. *)
-let windowed_keyed ?scroll_target ?first_section ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
+let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
   if Lui_ui.host context <> Lui_protocol.SwiftUIHost then
     Lui_elements.keyed ~source ~key ~cmp ~mount context parent
@@ -93,6 +93,12 @@ let windowed_keyed ?scroll_target ?first_section ?(on_window = fun _ -> ()) ?(is
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
        "data-pinned-index", string_of_int pinned_index]) window layout) in
+    let section_titles = match section_titles with
+      | Some source -> source | None -> Signal.constant context.ui_scheduler [] in
+    let metadata_base = own (Signal.map2 (fun metadata titles ->
+      List.rev_append (List.rev_map (fun (index, title) ->
+        ("data-section-title-" ^ string_of_int index, title)) titles) metadata)
+      metadata_base section_titles) in
     let metadata = own (Signal.map2 (fun metadata request ->
       match request with None -> metadata | Some (uuid, index) ->
         ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)

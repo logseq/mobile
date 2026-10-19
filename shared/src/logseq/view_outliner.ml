@@ -867,6 +867,12 @@ let outliner_entries context model_source ~source send : t =
     (Signal.map2 View_rows.page_entries source model_source) in
   let first_section = Signal.own_signal mount_context.ui_scope
     (Signal.map View_rows.first_journal_section_count model_source) in
+  let section_titles = Signal.own_signal mount_context.ui_scope
+    (Signal.map (fun (current : Model.logseq_model) ->
+      if View_base.journal_root_visible_ current && current.selected_page = None then
+        List.map (fun (marker : Model.journal_section_marker) ->
+          marker.start_index, marker.section_title) current.outliner_section_markers
+      else []) model_source) in
   let requested = ref [] in
   let on_window entries =
     let ids = List.filter_map View_rows.unloaded_entry_id entries in
@@ -877,7 +883,7 @@ let outliner_entries context model_source ~source send : t =
   let scroll_target = Signal.own_signal mount_context.ui_scope
     (Signal.map (fun current -> match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
-  View_rows.windowed_keyed ~scroll_target ~first_section ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
+  View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
     ~key:View_rows.page_entry_identifier ~cmp:compare
     ~mount:(fun entry_source ->
       let render () = match Signal.sample entry_source with

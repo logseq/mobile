@@ -6584,6 +6584,9 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
     (List.assoc "data-first-section-count" metadata) "2";
+  check_eq ~msg:"journal dates remain available outside the mounted block window"
+    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-2" metadata)
+    (Some "August 27th", Some "August 28th");
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
        List.exists (fun item -> List.mem entry (children renderer item))
