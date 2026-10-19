@@ -35,7 +35,7 @@ let sidebar_graph_menu_item model_source graph_source send : t =
     (View_base.with_selected_signal
        (Signal.map2 View_base.sidebar_graph_selected_ model_source
           graph_source)
-       (menu_item
+       (menu_item ~size:`sm
        ~text:(reactive View_base.graph_title graph_source)
        ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
        ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
@@ -155,6 +155,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
             ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
             (dropdown_menu ~anchor:`below ~anchor_alignment:`start
                ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
+               ~style_class:"anchored-popover" ~gap:0
                ~on_dismiss:(press send Model.DismissGraphMenu)
                [
                  keyed

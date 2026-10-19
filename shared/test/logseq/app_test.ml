@@ -4852,6 +4852,32 @@ let composer_attachment_selection_is_owned_by_lg () =
        (Model.PresentAttachmentEffect (7, "files")))
     "{\"id\":7,\"kind\":\"present-attachment\",\"text\":\"files\"}"
 
+let composer_attachment_picker_owns_each_presented_action () =
+  List.iter (fun service ->
+    let application = App.create (ios_backend ()) in
+    start application;
+    send application (Model.SelectGraph "Work");
+    send application Model.ExpandComposer;
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = Lui_app.root_node application in
+    let identifier = "button.attachment." ^ service in
+    check_eq ~msg:"closed attachment pickers do not leave native menu actions mounted"
+      (descendant_with_identifier renderer root identifier) (-1);
+    let trigger = descendant_with_identifier renderer root "button.attachment" in
+    dispatch application (Lui_protocol.Press trigger);
+    flush application;
+    let action = descendant_with_identifier renderer root identifier in
+    check ~msg:"the attachment trigger presents each action" (action <> -1);
+    dispatch application (Lui_protocol.Press action);
+    flush application;
+    check_eq ~msg:"selecting an attachment dismisses the picker"
+      (descendant_with_identifier renderer root identifier) (-1);
+    check_eq ~msg:"the selected service reaches native presentation exactly once"
+      (App.model application).pending_effects
+      [Model.PresentAttachmentEffect (1, service)])
+    ["files"; "camera"; "photos"; "audio"]
+
 let composer_attachment_menu_preserves_main_actions () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -8740,6 +8766,7 @@ let cases =
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
+    case "composer-attachment-picker-owns-each-presented-action" composer_attachment_picker_owns_each_presented_action;
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;
     case "composer-task-status-menu-preserves-main-actions" composer_task_status_menu_preserves_main_actions;
     case "task-capture-has-a-stable-native-effect-payload" task_capture_has_a_stable_native_effect_payload;

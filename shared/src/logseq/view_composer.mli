@@ -1,4 +1,3 @@
-val attachment_menu : (Model.logseq_action -> 'a) -> Lui_elements.t
 val composer_attachment_button :
   Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val composer_task_status_button :

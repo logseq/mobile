@@ -1,38 +1,8 @@
 open Lui_elements
 
-let attachment_menu send : t =
-  context_menu
-    [
-      menu_item ~icon:(`app "toolbar-attachment")
-        ~accessibility_identifier:"button.attachment.files"
-        ~text:"File"
-        ~on_press:(fun _ ->
-          ignore (send (Model.ChooseAttachment "files")))
-        [];
-      menu_item ~icon:(`app "toolbar-camera")
-        ~accessibility_identifier:"button.attachment.camera"
-        ~text:"Camera"
-        ~on_press:(fun _ ->
-          ignore (send (Model.ChooseAttachment "camera")))
-        [];
-      menu_item ~icon:(`app "composer-photo")
-        ~accessibility_identifier:"button.attachment.photos"
-        ~text:"Photo"
-        ~on_press:(fun _ ->
-          ignore (send (Model.ChooseAttachment "photos")))
-        [];
-      menu_item ~icon:(`app "toolbar-audio")
-        ~accessibility_identifier:"button.attachment.audio"
-        ~text:"Audio recording"
-        ~on_press:(fun _ ->
-          ignore (send (Model.ChooseAttachment "audio")))
-        [];
-    ]
-
 let attachment_picker_menu send : t =
-  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:200
-    ~on_dismiss:(press send Model.CloseAttachmentPicker)
-    [
+ fun context parent ->
+  let items = [
       menu_item ~icon:(`app "toolbar-attachment")
         ~accessibility_identifier:"button.attachment.files"
         ~text:"File"
@@ -57,13 +27,17 @@ let attachment_picker_menu send : t =
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "audio")))
         [];
-    ]
+    ] in
+  let items = if Lui_ui.host context = KotlinHost then items else List.rev items in
+  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
+    ~style_class:"anchored-popover" ~gap:0
+    ~on_dismiss:(press send Model.CloseAttachmentPicker) items context parent
 
 let composer_attachment_button (_context : Lui_ui.ui_context) send : t =
   button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
     ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
     ~on_press:(press send Model.OpenAttachmentPicker)
-    [ attachment_menu send ]
+    []
 
 let composer_task_status_button (_context : Lui_ui.ui_context) send : t =
   button ~icon:(`app "task-todo") ~variant:`ghost ~size:`icon ~width:32
@@ -126,6 +100,7 @@ let task_status_row status_source send : t =
 
 let task_status_picker_dialog model_source send : t =
   dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
+    ~style_class:"anchored-popover" ~gap:0
     ~on_dismiss:(press send Model.CloseTaskStatusPicker)
     [
       keyed
@@ -139,6 +114,13 @@ let task_status_picker_dialog model_source send : t =
            ~on_press:(press send Model.ClearTaskStatus)
            []);
     ]
+
+let with_press handler (elem : t) : t =
+ fun context parent ->
+  let node = elem context parent in
+  enable context node Lui_protocol.PressEnabled;
+  register_press context node handler;
+  node
 
 (* The expanded composer keeps the surface spec from the previous lui pin
    (edf381b): upstream restyled it with a content-hugging `composer-surface`
@@ -161,7 +143,7 @@ let composer_send_button context ?send_icon send_disabled on_send : t =
 let composer_surface ?key ?accessibility_identifier ?attachments
     ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
-    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ()
+    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
     : t =
  fun context parent ->
   let attachment_strip =
@@ -217,7 +199,10 @@ let composer_surface ?key ?accessibility_identifier ?attachments
               @ send_button);
          ])
   in
-  capsule context parent
+  (match on_press with
+   | None -> capsule
+   | Some handler -> with_press handler capsule)
+    context parent
 
 let composer_view (context : Lui_ui.ui_context) model_source send : t =
   box ~accessibility_identifier:"surface.composer.root" ~grow:1.0
@@ -241,8 +226,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              (Signal.map View_base.composer_assets_present_ model_source)
            ~actions:
              [
-               (if Lui_ui.host context = KotlinHost then
-                  stack
+               stack
                     [
                       composer_attachment_button context send;
                       if_
@@ -251,8 +235,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                              View_base.model_attachment_picker_open_
                              model_source)
                         (attachment_picker_menu send);
-                    ]
-                else composer_attachment_button context send);
+                    ];
                stack
                  [
                    composer_task_status_button context send;
@@ -270,6 +253,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                         Model.ChangeComposerDraft text))
            ~on_submit:(press send Model.SendComposer)
            ~on_send:(press send Model.SendComposer)
+           ~on_press:(press send Model.FocusComposer)
            ());
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
