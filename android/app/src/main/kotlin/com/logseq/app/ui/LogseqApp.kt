@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -71,6 +72,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
+                        .consumeWindowInsets(padding)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                         // Expose LUI accessibility-identifier testTags as
                         // resource-ids so Maestro `id:` selectors resolve.
