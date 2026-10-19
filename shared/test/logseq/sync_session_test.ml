@@ -216,7 +216,12 @@ let encrypted_legacy_built_in_titles_are_also_decrypted () =
       ]
       (Ds.empty_db ~schema ())
   in
-  let plaintext = expect_ok (Session.plaintext_snapshot_db decrypt db) in
+  let progress = ref [] in
+  let plaintext = expect_ok (Session.plaintext_snapshot_db
+    ~on_progress:(fun phase completed total -> progress := (phase, completed, total) :: !progress)
+    decrypt db) in
+  check_eq ~msg:"import progress counts actual datoms, not storage rows or bytes"
+    (List.rev !progress) ["importing", 0, Some 3; "importing", 3, Some 3];
   List.iter
     (fun (eid, title) ->
       check_eq

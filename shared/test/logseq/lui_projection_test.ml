@@ -171,8 +171,94 @@ let quick_actions_clear_selection_before_opening_native_recorder () =
                 (Some "audio"))))
     [ "capture"; "journal"; "audio" ]
 
+let search_queries_wait_200ms_and_only_dispatch_the_latest_input () =
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "ab"));
+    let waiting () =
+      let response = Json.from_string (Native_bridge.take_effect ()) in
+      Test_util.check ~msg:"a pending query returns a nonblocking wakeup"
+        (match int_member "waitMs" response with Some ms -> ms > 0 && ms <= 200 | None -> false)
+    in
+    waiting ();
+    ignore (Unix.select [] [] [] 0.11);
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "abc"));
+    ignore (Unix.select [] [] [] 0.11);
+    waiting ();
+    ignore (Unix.select [] [] [] 0.11);
+    let eff = take_effect () in
+    Test_util.check_eq (string_member "kind" eff) (Some "search-nodes");
+    Test_util.check_eq (string_member "text" eff) (Some "abc");
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery ""));
+    Test_util.check_eq (Native_bridge.take_effect ()) "")
+
+let autocomplete_debounces_queries_but_flushes_before_structural_actions () =
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.apply_response
+      {|{"ok":true,"result":{"outlinerState":{"editing":{"uuid":"block-a","title":"","caretUTF16Offset":0}}}}|});
+    ignore (Native_bridge.flush_action (Model.ChangeOutlinerText ("block-a", "#a", 2)));
+    ignore (Native_bridge.flush_action (Model.ChangeOutlinerText ("block-a", "#ab", 3)));
+    ignore (Native_bridge.flush_action (Model.MoveOutlinerCaret ("block-a", 2)));
+    Test_util.check_eq ~msg:"typing and caret updates coalesce into the latest query"
+      (List.length (App.model (Native_bridge.app ())).Model.pending_effects) 1;
+    let waiting = Json.from_string (Native_bridge.take_effect ()) in
+    Test_util.check ~msg:"autocomplete waits for the debounce deadline"
+      (int_member "waitMs" waiting <> None);
+    ignore (Native_bridge.flush_action (Model.ReturnOutlinerEditor ("block-a", "#ab", 2)));
+    let edit = take_effect () in
+    Test_util.check_eq (string_member "kind" edit) (Some "change-outliner-text");
+    Test_util.check_eq (string_member "text" edit) (Some "#ab");
+    Test_util.check_eq (int_member "value" edit) (Some 2);
+    let enter = take_effect () in
+    Test_util.check_eq (string_member "kind" enter) (Some "return-outliner-editor"))
+
+let viewport_hydration_does_not_bypass_the_query_debounce () =
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "pending"));
+    ignore (Native_bridge.flush_action (Model.EnsureOutlinerRows ["row"]));
+    let first = take_effect () in
+    Test_util.check_eq ~msg:"viewport reads remain responsive while the input timer is pending"
+      (string_member "kind" first) (Some "hydrate-outliner-rows");
+    let waiting = Json.from_string (Native_bridge.take_effect ()) in
+    Test_util.check ~msg:"hydrating rows does not dispatch the search query early"
+      (int_member "waitMs" waiting <> None))
+
+let pending_references_schedule_a_separate_query () =
+  ignore (Native_bridge.initialize 2 2 3);
+  let response pending = Yojson.Basic.to_string (`Assoc ["ok", `Bool true;
+    "result", `Assoc ["selectedPage", `Assoc ["uuid", `String "page"; "title", `String "Page"];
+      "pendingReferenceUuid", pending]]) in
+  ignore (Native_bridge.apply_response (response (`String "page")));
+  let encoded = Native_bridge.take_effect () in
+  Test_util.check ~msg:"page snapshot schedules deferred references" (encoded <> "");
+  let eff = object_member "effect" (Json.from_string encoded) in
+  Test_util.check_eq (string_member "kind" eff) (Some "load-page-references");
+  Test_util.check_eq (string_member "text" eff) (Some "page");
+  ignore (Native_bridge.apply_response (response (`String "page")));
+  let next = Native_bridge.take_effect () in
+  Test_util.check ~msg:"in-flight reference requests are not duplicated" (next = "");
+  ignore (Native_bridge.apply_response (response `Null));
+  ignore (Native_bridge.dispose ())
+
+let reference_updates_preserve_body_and_ignore_stale_pages () =
+  ignore (Native_bridge.initialize 2 2 3);
+  ignore (Native_bridge.apply_response
+    {|{"ok":true,"result":{"selectedGraphId":"g","selectedPage":{"uuid":"page","title":"Page"},"outlinerRows":[{"block":{"uuid":"body","title":"Body"}}]}}|});
+  let before = (App.model (Native_bridge.app ())).Model.outliner_rows in
+  ignore (Native_bridge.apply_response
+    {|{"ok":true,"result":{"isReferencePatch":true,"selectedGraphId":"g","referenceUuid":"page","referenceBlocks":[{"uuid":"ref","title":"Reference"}]}}|});
+  let after = App.model (Native_bridge.app ()) in
+  Test_util.check ~msg:"reference updates preserve the exact body rows" (before == after.Model.outliner_rows);
+  Test_util.check_eq (List.map (fun row -> row.Model.row_uuid) after.related_rows) ["ref"];
+  ignore (Native_bridge.apply_response
+    {|{"ok":true,"result":{"isReferencePatch":true,"selectedGraphId":"g","referenceUuid":"other","referenceBlocks":[]}}|});
+  Test_util.check_eq (List.map (fun row -> row.Model.row_uuid) (App.model (Native_bridge.app ())).related_rows) ["ref"];
+  ignore (Native_bridge.dispose ())
+
 let cases =
-  [ Test_util.case "node route projection retains journal and editor state"
+  [ Test_util.case "references preserve body and ignore stale pages" reference_updates_preserve_body_and_ignore_stale_pages; Test_util.case "pending references schedule a separate query" pending_references_schedule_a_separate_query; Test_util.case "node route projection retains journal and editor state"
       node_route_projection_retains_journal_and_editor_state;
     Test_util.case "node route title uses resolved markup"
       node_route_title_uses_resolved_markup;
@@ -182,4 +268,10 @@ let cases =
       "native session roundtrip preserves draft assets and navigation"
       native_session_roundtrip_preserves_draft_assets_and_navigation;
     Test_util.case "quick actions clear selection before opening native recorder"
-      quick_actions_clear_selection_before_opening_native_recorder ]
+      quick_actions_clear_selection_before_opening_native_recorder;
+    Test_util.case "search waits 200ms and dispatches only the latest input"
+      search_queries_wait_200ms_and_only_dispatch_the_latest_input;
+    Test_util.case "autocomplete debounces queries and flushes before structural actions"
+      autocomplete_debounces_queries_but_flushes_before_structural_actions;
+    Test_util.case "viewport hydration does not bypass the query debounce"
+      viewport_hydration_does_not_bypass_the_query_debounce ]

@@ -17,11 +17,22 @@ public enum LGAttachmentService: String, CaseIterable, Sendable {
     case audio
 }
 
+struct LGAttachmentRequest {
+    let id: UUID
+    let targetBlockID: String?
+}
+
 @MainActor
 @Observable
 public final class LGPlatformPresentationCoordinator {
+    public var graphDownloadProgress: LogseqGraphDownloadProgress?
     public private(set) var attachmentService: LGAttachmentService?
     public private(set) var attachmentTargetBlockID: String?
+    public private(set) var attachmentRequestID = UUID()
+
+    var attachmentRequest: LGAttachmentRequest {
+        LGAttachmentRequest(id: attachmentRequestID, targetBlockID: attachmentTargetBlockID)
+    }
     public private(set) var pendingDeletionBlockIDs: [String] = []
 
     public init() {
@@ -35,16 +46,19 @@ public final class LGPlatformPresentationCoordinator {
         guard let service = LGAttachmentService(rawValue: rawValue) else {
             return false
         }
+        attachmentRequestID = UUID()
         attachmentService = service
         attachmentTargetBlockID = targetBlockID
         return true
     }
 
-    public func dismissAttachment() {
+    public func dismissAttachment(requestID: UUID? = nil) {
+        guard requestID == nil || requestID == attachmentRequestID else { return }
         attachmentService = nil
     }
 
-    public func completeAttachment() {
+    public func completeAttachment(requestID: UUID? = nil) {
+        guard requestID == nil || requestID == attachmentRequestID else { return }
         attachmentService = nil
         attachmentTargetBlockID = nil
     }
@@ -194,12 +208,13 @@ struct LGPlatformPresentationHost: ViewModifier {
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
     func body(content: Content) -> some View {
-        content
+        let request = coordinator.attachmentRequest
+        return content
             .fileImporter(
                 isPresented: presentationBinding(for: .files),
                 allowedContentTypes: [.image, .audio, .data],
                 allowsMultipleSelection: true,
-                onCompletion: importFiles
+                onCompletion: { importFiles($0, request: request) }
             )
             #if !os(iOS)
             .photosPicker(
@@ -224,11 +239,20 @@ struct LGPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
+            .sheet(item: Binding(
+                get: { coordinator.graphDownloadProgress },
+                set: { _ in }
+            )) { _ in
+                GraphDownloadProgressView(coordinator: coordinator)
+                    .presentationDetents([.height(260)])
+                    .interactiveDismissDisabled()
+            }
             .sheet(isPresented: mediaPanelBinding) {
-                let target = coordinator.attachmentTargetBlockID
+                let request = coordinator.attachmentRequest
+                let target = request.targetBlockID
                 VStack(spacing: 0) {
                     LGMediaPanel(initialService: coordinator.attachmentService ?? .photos) { items in
-                        importPhotos(items, closeWhenFinished: false, targetBlockID: target)
+                        importPhotos(items, closeWhenFinished: false, request: request)
                     } onCapture: { data in
                         importCapturedData(data, targetBlockID: target)
                     } onPhotoData: { data, fileExtension in
@@ -242,32 +266,42 @@ struct LGPlatformPresentationHost: ViewModifier {
                 .presentationCornerRadius(32)
             }
             .sheet(isPresented: presentationBinding(for: .audio)) {
+                let request = coordinator.attachmentRequest
                 AudioRecorderSheet(
-                    targetBlockID: coordinator.attachmentTargetBlockID
+                    targetBlockID: request.targetBlockID
                 ) { asset, targetBlockID, transcript in
                     try addImportedAsset(LGImportedAsset(
                         title: asset.title, assetType: AudioRecordingPolicy.fileExtension,
                         size: asset.size, checksum: asset.checksum, path: asset.path
                     ), targetBlockID: targetBlockID, transcript: transcript)
-                    coordinator.completeAttachment()
+                    coordinator.completeAttachment(requestID: request.id)
                 }
             }
             #endif
     }
 
-    private var mediaPanelBinding: Binding<Bool> {
-        Binding(
-            get: { coordinator.attachmentService == .camera || coordinator.attachmentService == .photos },
-            set: { if !$0 { coordinator.completeAttachment() } }
+    var mediaPanelBinding: Binding<Bool> {
+        let request = coordinator.attachmentRequest
+        return Binding(
+            get: {
+                coordinator.attachmentRequestID == request.id &&
+                    (coordinator.attachmentService == .camera || coordinator.attachmentService == .photos)
+            },
+            set: { shown in
+                if !shown, coordinator.attachmentService == .camera || coordinator.attachmentService == .photos {
+                    coordinator.completeAttachment(requestID: request.id)
+                }
+            }
         )
     }
 
-    private func presentationBinding(for service: LGAttachmentService) -> Binding<Bool> {
-        Binding(
-            get: { coordinator.attachmentService == service },
-            set: { presented in
-                if !presented {
-                    coordinator.dismissAttachment()
+    func presentationBinding(for service: LGAttachmentService) -> Binding<Bool> {
+        let request = coordinator.attachmentRequest
+        return Binding(
+            get: { coordinator.attachmentRequestID == request.id && coordinator.attachmentService == service },
+            set: { shown in
+                if !shown, coordinator.attachmentService == service {
+                    coordinator.dismissAttachment(requestID: request.id)
                 }
             }
         )
@@ -289,47 +323,44 @@ struct LGPlatformPresentationHost: ViewModifier {
         coordinator.pendingDeletionBlockIDs.count > 1 ? "Delete blocks?" : "Delete block?"
     }
 
-    private func importFiles(_ result: Result<[URL], Error>) {
+    func importFiles(_ result: Result<[URL], Error>, request: LGAttachmentRequest? = nil) {
+        let request = request ?? coordinator.attachmentRequest
         guard case .success(let urls) = result else {
-            coordinator.completeAttachment()
+            coordinator.completeAttachment(requestID: request.id)
             return
         }
-        let target = coordinator.attachmentTargetBlockID
         Task {
             for url in urls {
                 do {
-                    try addImportedAsset(try await LGAssetImporter.persist(url), targetBlockID: target)
+                    try addImportedAsset(try await LGAssetImporter.persist(url), targetBlockID: request.targetBlockID)
                 } catch {
                     logger.error("Asset import failed: \(String(describing: error))")
                 }
             }
-            coordinator.completeAttachment()
+            coordinator.completeAttachment(requestID: request.id)
         }
     }
 
     private func importPhotos(_ items: [PhotosPickerItem], closeWhenFinished: Bool = true,
-                              targetBlockID: String? = nil) {
+                              request: LGAttachmentRequest? = nil) {
         guard !items.isEmpty else { return }
         selectedPhotoItems = []
-        let target = targetBlockID ?? coordinator.attachmentTargetBlockID
+        let request = request ?? coordinator.attachmentRequest
         Task {
             for item in items {
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else {
-                        continue
-                    }
-                    let fileExtension = item.supportedContentTypes.first?
-                        .preferredFilenameExtension ?? "jpg"
+                    guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                    let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
                     let title = "Photo-\(UUID().uuidString).\(fileExtension)"
                     try addImportedAsset(
                         try await LGAssetImporter.persist(data: data, title: title),
-                        targetBlockID: target
+                        targetBlockID: request.targetBlockID
                     )
                 } catch {
                     logger.error("Photo import failed: \(String(describing: error))")
                 }
             }
-            if closeWhenFinished { coordinator.completeAttachment() }
+            if closeWhenFinished { coordinator.completeAttachment(requestID: request.id) }
         }
     }
 

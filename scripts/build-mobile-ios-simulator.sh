@@ -94,6 +94,11 @@ mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
 native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
 
+swift_extra_args=()
+if [[ ${LOGSEQ_IOS_ENABLE_TESTING:-0} == 1 ]]; then
+  swift_extra_args+=(-Xswiftc -enable-testing)
+fi
+
 prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 LOGSEQ_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
@@ -103,7 +108,8 @@ swift build \
   --package-path "$repo_root/apple" \
   --product LogseqShell \
   --triple "$triple" \
-  --sdk "$sdk_path"
+  --sdk "$sdk_path" \
+  "${swift_extra_args[@]}"
 
 xcodebuild \
   -project "$repo_root/apple/App/Logseq.xcodeproj" \
@@ -149,6 +155,8 @@ codesign --force --sign - --entitlements "$repo_root/apple/App/ShareExtension/Sh
 codesign --force --sign - --timestamp=none --generate-entitlement-der \
   "$plugins_dir/LogseqWidgets.appex"
 
+python3 "$repo_root/scripts/configure-ios-resource-bundles.py" "$app_dir"
+
 logseq_resource_bundle="$app_dir/logseq_Logseq.bundle"
 if [[ -d $logseq_resource_bundle ]]; then
   xcrun actool \
@@ -172,4 +180,5 @@ codesign --force --sign - --entitlements "$signature_entitlements" \
   --timestamp=none --generate-entitlement-der "$app_dir"
 
 python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
+python3 "$repo_root/scripts/verify-ios-native-symbols.py" "$app_dir"
 echo "$app_dir"

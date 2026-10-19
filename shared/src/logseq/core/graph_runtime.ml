@@ -17,6 +17,7 @@ type runtime_options =
 type read_caches =
   { blocks : (int * int option, Model.block list) Hashtbl.t
   ; page_blocks : (string, Model.block list) Hashtbl.t
+  ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Model.block list) Hashtbl.t
   ; node_destinations :
       (string, (Model.entity_summary * bool) option) Hashtbl.t
@@ -63,6 +64,7 @@ let new_read_caches () =
   {
     blocks = Hashtbl.create 16;
     page_blocks = Hashtbl.create 64;
+    page_readers = Hashtbl.create 32;
     node_blocks = Hashtbl.create 64;
     node_destinations = Hashtbl.create 64;
     node_kind = Hashtbl.create 64;
@@ -491,6 +493,15 @@ let blocks_for_page runtime page_uuid =
     in
     Hashtbl.replace caches.page_blocks page_uuid blocks;
     blocks
+
+let page_window ?(collapsed = []) ?offset ?limit runtime uuid =
+  let database = db runtime in
+  let caches = caches_for_db runtime database in
+  let reader = match Hashtbl.find_opt caches.page_readers uuid with
+    | Some reader -> Read.page_reader_with_collapsed reader collapsed
+    | None -> Read.page_reader ~collapsed database uuid in
+  Hashtbl.replace caches.page_readers uuid reader;
+  Read.read_page_window ?offset ?limit (fun title -> Ok title) reader
 
 let sidebar_pages runtime =
   let database = db runtime in

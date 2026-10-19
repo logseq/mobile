@@ -40,6 +40,11 @@ const char *logseq_lui_apply_snapshot(const char *response_json);
 const char *logseq_lui_apply_host_update(const char *kind,
                                               const char *payload_json);
 
+
+typedef void (*logseq_graph_import_progress_callback)(const char *, const char *, int64_t, int64_t);
+void logseq_set_graph_import_progress_callback(logseq_graph_import_progress_callback callback);
+void logseq_graph_import_progress(const char *graph_id, const char *phase, int64_t completed, int64_t total);
+
 #ifdef __cplusplus
 }
 #endif

@@ -140,13 +140,6 @@ let task_status_picker_dialog model_source send : t =
            []);
     ]
 
-let with_press handler (elem : t) : t =
- fun context parent ->
-  let node = elem context parent in
-  enable context node Lui_protocol.PressEnabled;
-  register_press context node handler;
-  node
-
 (* The expanded composer keeps the surface spec from the previous lui pin
    (edf381b): upstream restyled it with a content-hugging `composer-surface`
    column, which changed the capture UI. This is that older spec verbatim,
@@ -168,7 +161,7 @@ let composer_send_button context ?send_icon send_disabled on_send : t =
 let composer_surface ?key ?accessibility_identifier ?attachments
     ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
-    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
+    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ()
     : t =
  fun context parent ->
   let attachment_strip =
@@ -224,10 +217,7 @@ let composer_surface ?key ?accessibility_identifier ?attachments
               @ send_button);
          ])
   in
-  (match on_press with
-   | None -> capsule
-   | Some handler -> with_press handler capsule)
-    context parent
+  capsule context parent
 
 let composer_view (context : Lui_ui.ui_context) model_source send : t =
   box ~accessibility_identifier:"surface.composer.root" ~grow:1.0
@@ -280,7 +270,6 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                         Model.ChangeComposerDraft text))
            ~on_submit:(press send Model.SendComposer)
            ~on_send:(press send Model.SendComposer)
-           ~on_press:(press send Model.FocusComposer)
            ());
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)

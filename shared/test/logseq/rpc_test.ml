@@ -555,6 +555,88 @@ let sidebar_page_selection_projects_references_without_node_routes () =
     (`String "reference-1");
   check (json_items "nodeRoutes" result = [])
 
+let graph_assets_download_and_cache_binary_files () =
+  let root = Filename.temp_file "logseq-asset-test" "" in
+  Sys.remove root;
+  Unix.mkdir root 0o700;
+  Fun.protect ~finally:(fun () ->
+    let rec remove path = if Sys.is_directory path then begin
+      Array.iter (fun name -> remove (Filename.concat path name)) (Sys.readdir path);
+      Unix.rmdir path
+    end else Sys.remove path in
+    remove root) (fun () ->
+    let page : Model.entity_summary = { uuid = "album-page"; title = "Album" } in
+    let asset uuid parent = { (Model.local_block uuid uuid page.uuid None 1) with
+      is_asset = true; asset_type = Some "png"; parent_id = Some parent } in
+    let session = Session.create_session { Session.default_options with
+      load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
+      graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
+      graph_page_blocks = Some (fun _ -> Some [asset "image-uuid" "album"; asset "sibling" "album"; asset "unrelated" "other"]);
+      resolve_asset_path = (fun path -> Filename.concat root path) } |> configure_plain_session in
+    ignore (response_result (dispatch_json session "selectPage" page.uuid));
+    let fields = ["uuid", `String "image-uuid"; "assetType", `String "image/png";
+      "graphId", `String "plain-1"] in
+    let dispatch action extra = dispatch_json session action (Json.to_string (`Assoc (fields @ extra))) in
+    let prepared = response_result (dispatch "prepareAssetDownload" []) in
+    let request = member "request" prepared in
+    check_eq (member "url" request) (`String "http://127.0.0.1:8787/assets/plain-1/image-uuid.png");
+    check_eq (member "token" request) (`String "access");
+    let source = Filename.concat root "response" in
+    let bytes = "\137PNG\000\255\001binary" in
+    ignore (Asset_files.write_file source bytes);
+    let cached = response_result (dispatch "cacheDownloadedAsset" ["path", `String source]) in
+    let path = json_string (member "localPath" cached) in
+    check_eq (Asset_files.read_file path) (Ok bytes);
+    let reopened = response_result (dispatch "prepareAssetDownload" []) in
+    check_eq (member "localPath" reopened) (`String path);
+    check_eq (member "request" reopened) `Null;
+    List.iter (fun uuid ->
+      ignore (response_result (dispatch_json session "cacheDownloadedAsset"
+        (Json.to_string (`Assoc ["uuid", `String uuid; "assetType", `String "png";
+          "graphId", `String "plain-1"; "path", `String source]))))) ["sibling"; "unrelated"];
+    let gallery = response_result (dispatch_json session "cachedImageGallery" "sibling") in
+    check_eq ~msg:"preview contains only cached images from the same parent" (List.length (json_items "paths" gallery)) 2;
+    check_eq (member "selectedIndex" gallery) (`Int 1);
+    let stale = dispatch_json session "cacheDownloadedAsset"
+      (Json.to_string (`Assoc ["graphId", `String "other"; "uuid", `String "image-uuid";
+        "assetType", `String "png"; "path", `String source])) in
+    check_eq (response_error_code stale) "graph_changed")
+
+let mobile_page_references_are_deferred () =
+  List.iter (fun is_tag ->
+    let page : Model.entity_summary = { uuid = "deferred-page"; title = "Deferred" } in
+    let body = Model.local_block "body" "Body" page.uuid None 1 in
+    let reference = Model.local_block "reference" "Reference" "other" None 1 in
+    let reads = ref 0 in
+    let session = Session.create_session {
+      Session.default_options with
+      outliner_projection_limit = Some 32;
+      graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
+      graph_node_destination = Some (fun _ -> Some (page, false));
+      graph_node_is_tag = Some (fun _ -> is_tag);
+      graph_page_blocks = Some (fun _ -> Some [body]);
+      graph_tag_objects = Some (fun _ -> Some [body]);
+      graph_node_references = Some (fun _ -> incr reads; Some [reference]);
+    } in
+    let first = response_result (dispatch_json session "selectPage" page.uuid) in
+    check_eq ~msg:"first paint never queries references" !reads 0;
+    check_eq (member "pendingReferenceUuid" first) (`String page.uuid);
+    let loaded = response_result (dispatch_json session "loadPageReferences" page.uuid) in
+    check_eq !reads 1;
+    check_eq (member "pendingReferenceUuid" loaded) `Null;
+    check_eq (member "isReferencePatch" loaded) (`Bool true);
+    check_eq ~msg:"references never republish the page body" (member "outlinerRows" loaded) `Null;
+    check_eq (member "uuid" (List.hd (json_items "referenceBlocks" loaded))) (`String reference.uuid);
+    ignore (response_result (dispatch_json session "loadPageReferences" page.uuid));
+    check_eq ~msg:"loaded references are reused" !reads 1;
+    ignore (response_result (dispatch_json session "clearSelectedPage" ""));
+    ignore (response_result (dispatch_json session "loadPageReferences" page.uuid));
+    check_eq ~msg:"stale reference request cannot reopen a page" !reads 1;
+    let opened = response_result (dispatch_json session "openNode" (Yojson.Basic.to_string (`Assoc ["uuid", `String page.uuid]))) in
+    check_eq ~msg:"node routes share the reference cache" !reads 1;
+    check_eq (List.length (json_items "nodeRoutes" opened)) 1
+  ) [false; true]
+
 let search_projects_page_context_and_clears_blank_queries () =
   let page : Model.entity_summary = { uuid = "page-1"; title = "Page one" } in
   let hit : Search.indexed_search_hit =
@@ -5741,8 +5823,37 @@ let youtube_targets_ignore_other_videos_and_preserve_original_url () =
        ])
     []
 
+let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
+  let page : Model.entity_summary = { uuid = "large-page"; title = "Large page" } in
+  let blocks = List.init 10_000 (fun index ->
+    { (Model.local_block ("row-" ^ string_of_int index) ("Block " ^ string_of_int index) page.uuid None 1) with
+      Model.parent_id = Some (if index mod 4 = 0 then page.uuid else "row-" ^ string_of_int (index - 1));
+      order = Some (Printf.sprintf "a%06d" index) }) in
+  let session = Session.create_session { Session.default_options with
+    outliner_projection_limit = Some 32;
+    graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
+    graph_page_blocks = Some (fun _ -> Some blocks) } in
+  let response = dispatch_json session "selectPage" page.uuid in
+  let result = response_result response in
+  let rows = json_items "outlinerRows" result in
+  check_eq (List.length rows) 10_000;
+  let complete = List.filter (fun row -> member "isShell" (member "block" row) <> `Bool true) rows in
+  check_eq ~msg:"the initial projection encodes only the first viewport's contents" (List.length complete) 32;
+  check_eq (List.length (json_items "blocks" result)) 32;
+  check ~msg:"the response contains compact topology instead of two complete page copies"
+    (String.length (Json.to_string response) < 2_500_000);
+  let last = List.nth rows 9_999 in
+  check_eq (member "depth" last) (`Int 3);
+  check_eq ~msg:"compact rows retain the timestamps required by native snapshot consumers"
+    (member "createdAt" (member "block" last)) (`Int 1);
+  check_eq (member "updatedAt" (member "block" last)) (`Int 1);
+  let hydrated = response_result (dispatch_json session "hydrateOutlinerRows" "[\"row-9999\",\"row-9998\"]") in
+  check_eq (member "isOutlinerContentPatch" hydrated) (`Bool true);
+  check_eq (List.map (fun value -> member "title" value) (json_items "hydratedBlocks" hydrated))
+    [`String "Block 9999"; `String "Block 9998"]
+
 let cases =
-  [
+  [ case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
     case "semantic completion preserves error and status precedence"
       semantic_completion_preserves_error_and_status_precedence;
     case "required string lists preserve order and validate every item"
@@ -5763,6 +5874,8 @@ let cases =
       authoritative_reconciliation_preserves_newer_local_edits;
     case "node navigation preserves independent projections and editing"
       node_navigation_preserves_independent_projections_and_editing;
+    case "graph assets download and cache binary files" graph_assets_download_and_cache_binary_files;
+    case "mobile page references are deferred" mobile_page_references_are_deferred;
     case "sidebar tag selection projects objects and linked references"
       sidebar_tag_selection_projects_objects_and_linked_references;
     case "sidebar page selection projects references without node routes"

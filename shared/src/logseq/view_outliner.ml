@@ -144,6 +144,7 @@ let outliner_tag tag_source send : t =
     (button
        ~text_signal:(reactive View_base.outliner_tag_title tag_source)
        ~style_class:"caption" ~variant:`ghost ~foreground:"accent"
+       ~height:22 ~padding_vertical:0
        ~accessibility_identifier:(View_base.outliner_tag_identifier tag)
        ~on_press:(fun _ ->
          ignore
@@ -347,7 +348,8 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       if_ ~test:has_status_source
         (column ~cross:`start
            [ outliner_status_control context model_source row_source send ]);
-      column ~grow:1.0 ~cross:`start
+      column ~gap:2 ~grow:1.0 ~cross:`start
+        ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
           if_ ~test:editing_source
             (outliner_editor_view block_id_source editing_title_source
@@ -390,6 +392,48 @@ let outliner_row_content context model_source retained_row_source
         row_source send;
     ]
 
+let native_outliner_row model_source retained_source row_source send : t =
+ fun context parent ->
+  let node = Lui_ui.extension context "outliner-block-row" in
+  attach context parent node;
+  let summary (page : Model.sidebar_page) = `Assoc ["uuid", `String page.uuid; "title", `String page.title] in
+  let status (status : Model.task_status) = `Assoc ["uuid", `String status.uuid;
+    "title", `String status.title; "icon", `String (View_base.task_status_icon_name status)] in
+  let payload (current : Model.logseq_model) (retained : View_rows.retained_row) =
+    let row = View_rows.retained_row_value retained in
+    Yojson.Basic.to_string (`Assoc [
+      "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "markup", (try Yojson.Basic.from_string row.markup_json with _ -> `List []);
+      "depth", `Int row.depth; "hasChildren", `Bool row.has_children;
+      "collapsed", `Bool row.is_collapsed; "isAsset", `Bool row.is_asset;
+      "assetType", `String (View_base.outliner_row_asset_type row);
+      "localPath", `String (View_base.outliner_row_local_path row);
+      "youtubeURL", `String (View_base.outliner_row_youtube_target row);
+      "completed", `Bool (View_base.outliner_row_completed_ row);
+      "selected", `Bool (View_base.row_selected_ current row);
+      "opensAsPage", `Bool row.opens_as_page;
+      "journalBullet", `Bool ((not current.search_open) && View_base.outliner_row_journal_ current row);
+      "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
+      "status", (match row.row_status with Some value -> status value | None -> `Null);
+      "statuses", `List (List.map status current.task_statuses);
+      "tags", `List (List.map summary row.tags)]) in
+  Lui_ui.extension_property_signal context node "payload"
+    (Signal.map2 (fun current retained -> StringValue (payload current retained)) model_source retained_source);
+  ignore ((if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
+    (box ~padding:0 [outliner_editor_view (Signal.map View_base.outliner_row_uuid row_source)
+      (Signal.map View_rows.retained_row_editing_title retained_source)
+      (Signal.map View_rows.retained_row_editing_caret retained_source) send])) context (Some node));
+  Lui_ui.on_event context node (function
+    | ExtensionEvent (_, _, "collapse", _) -> ignore (send (Model.ToggleOutlinerCollapsed (Signal.sample row_source).row_uuid))
+    | ExtensionEvent (_, _, "long-press", _) -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))
+    | ExtensionEvent (_, _, "set-status", values) ->
+      let index = match String_map.find_opt "count" values with Some (IntValue value) -> value | _ -> -1 in
+      (match (if index < 0 then None else List.nth_opt (Signal.sample model_source).Model.task_statuses index) with
+       | Some status -> ignore (send (Model.SetOutlinerTaskStatus ((Signal.sample row_source).row_uuid, status.uuid)))
+       | None -> ())
+    | input -> ignore (View_base.handle_outliner_block_content_event input model_source send));
+  node
+
 let outliner_row (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
@@ -400,6 +444,11 @@ let outliner_row (context : Lui_ui.ui_context) model_source
         View_base.row_selected_ current r)
       model_source row_source
   in
+  if Lui_ui.host context = SwiftUIHost then
+    View_base.with_bool_prop_signal Selected selected_source
+      (box ~padding:0 ~accessibility_identifier:(reactive View_base.outliner_row_identifier row_source)
+        [native_outliner_row model_source retained_row_source row_source send])
+  else
   if
     View_base.outliner_row_list_item_press_enabled_
       (Lui_ui.host context) current_row
@@ -432,7 +481,12 @@ let outliner_row (context : Lui_ui.ui_context) model_source
                     ~on_press:(fun _ ->
                       ignore
                         (let current_row = Signal.sample row_source in
-                         send
+                         let asset_type = View_base.outliner_row_asset_type current_row |> String.lowercase_ascii in
+                         let native_image = Lui_ui.host context = SwiftUIHost && current_row.is_asset
+                           && (String.starts_with ~prefix:"image/" asset_type
+                               || List.mem asset_type ["png"; "jpg"; "jpeg"; "gif"; "heic"; "webp"]) in
+                         if native_image then true
+                         else send
                            (if (current_row : Model.outline_row).is_asset then
                               Model.OpenOutlinerAsset
                                 current_row.row_uuid
@@ -522,39 +576,6 @@ let outliner_entry context model_source retained_row_source row_source
         send;
     ]
 
-let outliner_first_journal_section (context : Lui_ui.ui_context)
-    model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    column
-      ~accessibility_identifier:
-        (View_rows.first_journal_section_identifier
-           (Signal.sample model_source))
-      [
-        keyed
-          ~source:(Signal.map View_rows.first_journal_retained_rows
-                     model_source)
-          ~key:View_rows.retained_row_identifier ~cmp:compare
-          ~mount:(fun retained_row_source ->
-            outliner_entry context model_source retained_row_source
-              (Signal.map View_rows.retained_row_value retained_row_source)
-              send);
-      ]
-  else
-    column ~container_relative_frame:`min_vertical
-      ~container_relative_frame_inset:136
-      ~accessibility_identifier:
-        (View_rows.first_journal_section_identifier
-           (Signal.sample model_source))
-      [
-        keyed
-          ~source:(Signal.map View_rows.first_journal_retained_rows
-                     model_source)
-          ~key:View_rows.retained_row_identifier ~cmp:compare
-          ~mount:(fun retained_row_source ->
-            outliner_entry context model_source retained_row_source
-              (Signal.map View_rows.retained_row_value retained_row_source)
-              send);
-      ]
 
 let toolbar_button icon label identifier action send : t =
   button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
@@ -769,7 +790,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           [];
       ]
 
-let node_related_row context model_source row_source send : t =
+let node_related_row context model_source ~source:row_source send : t =
   let structured_breadcrumb_source =
     Signal.map View_base.outliner_row_structured_breadcrumb_ row_source
   in
@@ -807,62 +828,31 @@ let related_section_heading title : t =
         ~accessibility_identifier:"title.related-section" ~value:title [];
     ]
 
-let node_related_section context model_source send : t =
-  column ~gap:0 ~accessibility_identifier:"section.node.linked-references"
-    [
-      box ~height:26 [];
-      related_section_heading "Linked references";
-      box ~height:8 [];
-      column ~accessibility_identifier:"list.node.related"
-        [
-          keyed
-            ~source:(Signal.map View_base.active_node_related_rows
-                       model_source)
-            ~key:View_base.outliner_row_identifier ~cmp:compare
-            ~mount:(fun row_source ->
-              node_related_row context model_source row_source send);
-        ];
-    ]
+let reference_entry context model_source entry_source send : t =
+      (* The key fixes the entry kind; row values keep their own reactive bindings. *)
+      match Signal.sample entry_source with
+      | View_rows.Reference_heading (key, title) ->
+        let identifier =
+          if key = "tagged" then "section.tag.tagged-nodes"
+          else "section.node.linked-references"
+        in
+        column ~gap:0 ~padding_horizontal:8
+          ~accessibility_identifier:identifier
+          [ box ~height:26 []; related_section_heading title; box ~height:8 [] ]
+      | View_rows.Empty_tag ->
+        box ~padding_horizontal:16
+          [ text ~foreground:"muted-foreground" ~value:"No tagged nodes" [] ]
+      | View_rows.Reference_row _ ->
+        box ~padding_horizontal:8
+          [ node_related_row context model_source
+              ~source:(reactive View_rows.reference_entry_row entry_source) send ]
 
-let node_tagged_section context model_source send : t =
-  column ~gap:0 ~accessibility_identifier:"section.tag.tagged-nodes"
-    [
-      box ~height:26 [];
-      related_section_heading "Tagged nodes";
-      box ~height:8 [];
-      if_
-        ~test:(Signal.map View_base.node_tag_section_empty_ model_source)
-        (box ~padding_horizontal:8
-           [ text ~foreground:"muted-foreground" ~value:"No tagged nodes" [] ]);
-      column ~accessibility_identifier:"list.node.tagged"
-        [
-          keyed
-            ~source:(Signal.map View_base.active_node_related_rows
-                       model_source)
-            ~key:View_base.outliner_row_identifier ~cmp:compare
-            ~mount:(fun row_source ->
-              node_related_row context model_source row_source send);
-        ];
-    ]
-
-let node_linked_reference_section context model_source send : t =
-  column ~gap:0
-    ~accessibility_identifier:"section.node.linked-references"
-    [
-      box ~height:26 [];
-      related_section_heading "Linked references";
-      box ~height:8 [];
-      column ~accessibility_identifier:"list.node.linked-references"
-        [
-          keyed
-            ~source:
-              (Signal.map View_base.active_node_linked_reference_rows
-                 model_source)
-            ~key:View_base.outliner_row_identifier ~cmp:compare
-            ~mount:(fun row_source ->
-              node_related_row context model_source row_source send);
-        ];
-    ]
+let page_loading_view model_source : t =
+  if_ ~test:(reactive View_base.page_loading_visible_ model_source)
+    (row ~gap:8 ~cross:`center ~padding:16
+       ~accessibility_identifier:"status.page-loading"
+       [ spinner ~width:16 ~height:16 [];
+         text ~foreground:"muted-foreground" ~value:"Loading blocks…" [] ])
 
 let add_first_block_button model_source send : t =
   box ~padding_horizontal:8
@@ -878,77 +868,59 @@ let add_first_block_button model_source send : t =
         ~text:"Add first block" [];
     ]
 
+let outliner_entries context model_source ~source send : t =
+ fun mount_context parent ->
+  let entries = Signal.own_signal mount_context.Lui_ui.ui_scope
+    (Signal.map2 View_rows.page_entries source model_source) in
+  let first_section = Signal.own_signal mount_context.ui_scope
+    (Signal.map View_rows.first_journal_section_count model_source) in
+  let requested = ref [] in
+  let on_window entries =
+    let ids = List.filter_map View_rows.unloaded_entry_id entries in
+    if ids <> !requested then begin
+      requested := ids;
+      if ids <> [] then ignore (send (Model.EnsureOutlinerRows ids))
+    end in
+  View_rows.windowed_keyed ~first_section ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
+    ~key:View_rows.page_entry_identifier ~cmp:compare
+    ~mount:(fun entry_source ->
+      let render () = match Signal.sample entry_source with
+      | View_rows.Outline_entry _ ->
+        let retained = Signal.map View_rows.page_entry_outline entry_source in
+        outliner_entry context model_source retained
+          (Signal.map View_rows.retained_row_value retained) send
+      | View_rows.Reference_entry _ ->
+        reference_entry context model_source
+          (Signal.map View_rows.page_entry_reference entry_source) send in
+      box ~padding:0
+        [ reactive (fun ready -> if ready then render ()
+            else box ~height:32 ~padding_horizontal:16
+              ~accessibility_identifier:"outliner.row-loading"
+              [box ~width:160 ~height:14 ~corner_radius:4 ~background:"muted" []])
+            (Signal.map View_rows.page_entry_ready entry_source) ])
+    mount_context parent
+
 let node_screen (context : Lui_ui.ui_context) model_source send : t =
   column ~accessibility_identifier:"screen.node"
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
-      scroll ~grow:1.0 ~accessibility_identifier:"scroll.outliner"
+      virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.outliner"
         [
-          column ~gap:0 ~padding_horizontal:8
-            [
-              box ~height:16 [];
-              if_
-                ~test:
-                  (Signal.map View_base.active_node_has_breadcrumbs_
-                     model_source)
-                (box ~padding_horizontal:8
-                   [ node_breadcrumbs model_source send ]);
-              if_
-                ~test:(Signal.map View_base.node_title_visible_ model_source)
-                (column ~gap:0
-                   [
-                     box ~height:26 [];
-                     box ~padding_horizontal:8
-                       ~accessibility_identifier:"layout.node.title"
-                       [
-                         heading ~level:3
-                           ~value_signal:
-                             (Signal.map View_base.active_node_title
-                                model_source)
-                           ~accessibility_identifier:"title.node" [];
-                       ];
-                     box ~height:12 [];
-                   ]);
-              if_
-                ~test:
-                  (Signal.map View_base.node_outliner_visible_ model_source)
-                (column ~accessibility_identifier:"list.outliner"
-                   [
-                     keyed
-                       ~source:
-                         (Signal.map View_rows.retained_outliner_rows
-                            model_source)
-                       ~key:View_rows.retained_row_identifier
-                       ~cmp:compare
-                       ~mount:(fun retained_row_source ->
-                         outliner_row context model_source
-                           retained_row_source
-                           (Signal.map View_rows.retained_row_value
-                              retained_row_source)
-                           send);
-                   ]);
-              if_
-                ~test:
-                  (Signal.map View_base.node_can_add_first_block_
-                     model_source)
-                (add_first_block_button model_source send);
-              if_
-                ~test:
-                  (Signal.map View_base.node_related_section_visible_
-                     model_source)
-                (node_related_section context model_source send);
-              if_
-                ~test:
-                  (Signal.map View_base.node_tag_section_visible_
-                     model_source)
-                (node_tagged_section context model_source send);
-              if_
-                ~test:
-                  (Signal.map
-                     View_base.node_linked_reference_section_visible_
-                     model_source)
-                (node_linked_reference_section context model_source send);
-              box ~height:120 [];
-            ];
+          box ~height:16 [];
+          if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)
+            (box ~padding_horizontal:8 [ node_breadcrumbs model_source send ]);
+          if_ ~test:(reactive View_base.node_title_visible_ model_source)
+            (column ~gap:0
+               [ box ~height:26 [];
+                 box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
+                   [ heading ~level:3 ~value:(reactive View_base.active_node_title model_source)
+                       ~accessibility_identifier:"title.node" [] ];
+                 box ~height:12 [] ]);
+          page_loading_view model_source;
+          outliner_entries context model_source
+            ~source:(reactive View_rows.retained_outliner_rows model_source) send;
+          if_ ~test:(reactive View_base.node_can_add_first_block_ model_source)
+            (box ~padding_horizontal:8 [ add_first_block_button model_source send ]);
+          box ~height:120 [];
         ];
     ]

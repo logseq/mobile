@@ -40,6 +40,7 @@ set_bool "LSRequiresIPhoneOS" "true"
 set_string "MinimumOSVersion" "$deployment_target"
 set_bool "UIApplicationSupportsIndirectInputEvents" "true"
 set_string "UIStatusBarStyle" "UIStatusBarStyleDefault"
+set_string "NSPhotoLibraryAddUsageDescription" "Save images from your Logseq graph to Photos."
 set_string "NSLocalNetworkUsageDescription" "Connect to a Logseq graph sync server on your local network."
 
 reset_key "NSAppTransportSecurity"

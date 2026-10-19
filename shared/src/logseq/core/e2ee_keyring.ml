@@ -135,7 +135,7 @@ let encrypt_title keyring graph_id title =
 let encrypt_asset keyring graph_id bytes =
   let ( let* ) = Result.bind in
   let* key = graph_key keyring graph_id in
-  E2ee.encrypt_value keyring.crypto key (Transit.Binary bytes)
+  E2ee.encrypt_bytes keyring.crypto key bytes
 
 let decrypt_title keyring graph_id ciphertext =
   let ( let* ) = Result.bind in

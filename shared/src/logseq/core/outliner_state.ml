@@ -650,15 +650,12 @@ let visible_rows (context : outliner_context) (state : outliner_state) =
       let descendants = children block.uuid in
       let collapsed = Sset.mem block.uuid state.collapsed in
       let rows =
-        rows
-        @ [
             {
               block;
               depth;
               has_children = descendants <> [];
               is_collapsed = collapsed;
-            };
-          ]
+            } :: rows
       in
       if collapsed then begin
         hide_descendants block.uuid;
@@ -684,7 +681,7 @@ let visible_rows (context : outliner_context) (state : outliner_state) =
       List.fold_left (fun rows block -> append_row 0 rows block) rows context.blocks
     else rows
   in
-  rows
+  List.rev rows
 
 let selected_roots (context : outliner_context) selected =
   let by_uuid = Hashtbl.create 64 in

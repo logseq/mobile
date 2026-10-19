@@ -58,6 +58,14 @@ internal class CoreEffectExecutor(
                     .put("status", metadataObject(effect, "task status"))
                     .toString()
             }
+            "load-page-references" -> {
+                action = "loadPageReferences"
+                payload = effect.text
+            }
+            "hydrate-outliner-rows" -> {
+                action = "hydrateOutlinerRows"
+                payload = effect.text
+            }
             "search-nodes" -> {
                 action = "searchNodes"
                 payload = effect.text

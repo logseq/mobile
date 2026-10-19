@@ -63,12 +63,14 @@ internal class NativeEffectDrain(
     @Volatile private var disposed = false
 
     private var activeDrain: kotlinx.coroutines.Job? = null
+    private var queryWake: kotlinx.coroutines.CompletableDeferred<Unit>? = null
 
     // Reentrant: concurrent drain() calls join the in-flight loop.
     suspend fun drain(scope: kotlinx.coroutines.CoroutineScope) {
         if (disposed) return
         val active = activeDrain
         if (active != null && active.isActive) {
+            queryWake?.complete(Unit)
             active.join()
             return
         }
@@ -79,7 +81,7 @@ internal class NativeEffectDrain(
     }
 
     private suspend fun run() {
-        while (true) {
+        while (!disposed) {
             val encoded = runtime.takeEffect()
             if (encoded.isEmpty()) {
                 if (autosavePending) {
@@ -88,6 +90,15 @@ internal class NativeEffectDrain(
                     continue
                 }
                 return
+            }
+
+            val waitMillis = runCatching { JSONObject(encoded).optLong("waitMs", 0) }.getOrDefault(0)
+            if (waitMillis > 0) {
+                val wake = kotlinx.coroutines.CompletableDeferred<Unit>()
+                queryWake = wake
+                kotlinx.coroutines.withTimeoutOrNull(waitMillis.coerceIn(1, 200)) { wake.await() }
+                queryWake = null
+                continue
             }
 
             val dispatch = try {
@@ -132,6 +143,8 @@ internal class NativeEffectDrain(
 
     fun dispose() {
         disposed = true
+        queryWake?.complete(Unit)
+        queryWake = null
         autosaveTask?.cancel(false)
         autosaveTask = null
         autosavePending = false
@@ -139,7 +152,7 @@ internal class NativeEffectDrain(
     }
 
     private fun cancelOutlinerAutosaveBeforeExecuting(effect: NativeEffect) {
-        if (!effect.kind.contains("outliner") || effect.kind == "move-outliner-caret") return
+        if (!effect.kind.contains("outliner") || effect.kind == "move-outliner-caret" || effect.kind == "hydrate-outliner-rows") return
         autosaveTask?.cancel(false)
         autosaveTask = null
         autosavePending = false

@@ -35,6 +35,7 @@ type ui_session =
   ; search_path : navigation_route list
   ; selected_page_id : string option
   ; settings_open : bool
+  ; recent_graph_ids : string list
   }
 
 type sidebar_page =
@@ -112,6 +113,7 @@ type search_hit =
 
 type outline_row =
   { row_uuid : string
+  ; row_loaded : bool
   ; row_title : string
   ; markup_json : string
   ; youtube_target_url : string option
@@ -214,6 +216,8 @@ type core_projection =
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
   ; search_results : search_hit list
+  ; reference_update : (string * outline_row list) option
+  ; pending_reference_uuid : string option
   ; node_routes : node_projection list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
@@ -224,6 +228,9 @@ type core_projection =
   ; outliner_rows : outline_row list
   ; has_older_journals : bool
   ; is_outliner_patch : bool
+  ; is_outliner_content_patch : bool
+  ; hydrated_rows : outline_row list
+  ; is_search_patch : bool
   ; outliner_row_splices : outline_row_splice list
   }
 
@@ -241,6 +248,8 @@ type logseq_effect =
   | SyncNowEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
+  | LoadPageReferencesEffect of int * string
+  | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
@@ -280,6 +289,7 @@ type logseq_model =
   ; selected_graph_id : string option
   ; graphs : graph list
   ; local_graph_ids : string list
+  ; recent_graph_ids : string list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
   ; unlock_previous_graph_id : string option
@@ -301,6 +311,7 @@ type logseq_model =
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
+  ; selected_page_ready : bool
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
@@ -372,6 +383,7 @@ type logseq_action =
   | SyncFailed of string
   | OpenSearch
   | ChangeSearchQuery of string
+  | EnsureOutlinerRows of string list
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string

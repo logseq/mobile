@@ -11,7 +11,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.block.journal-block-1
 expect prop:accessibility-identifier=outliner.block.journal-block-2
-press prop:accessibility-identifier=outliner.block-action.journal-block-1
+ext ext:outliner-block-row outliner-block-row edit '{"uuid":"journal-block-1"}'
 wait prop:accessibility-identifier=toolbar.outliner.editor
 expect prop:accessibility-identifier=button.outliner.editor.task
 expect prop:accessibility-identifier=button.outliner.editor.indent

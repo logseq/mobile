@@ -1544,8 +1544,21 @@ let runtime_title_normalization_shares_new_tags_without_mutating_the_graph () =
       check_eq (Ds.conn_db conn).max_tx before.max_tx;
       check (Pending.list path = []))
 
+let page_windows_follow_pending_edits_and_collapse_changes () =
+  with_runtime (fun _path _conn current ->
+    let first = Runtime.page_window current "page" in
+    check_eq (List.map (fun (row : Graph_read.page_window_row) -> row.block.title) first.rows) ["Old"];
+    let collapsed = Runtime.page_window ~collapsed:["block"] current "page" in
+    check_eq (List.map (fun (row : Graph_read.page_window_row) -> row.is_collapsed) collapsed.rows) [true];
+    check_eq (List.map (fun (row : Graph_read.page_window_row) -> row.is_collapsed)
+      (Runtime.page_window current "page").rows) [false];
+    check (is_ok (Runtime.stage current (save_title "window-edit" "Old" "New")));
+    check_eq (List.map (fun (row : Graph_read.page_window_row) -> row.block.title)
+      (Runtime.page_window current "page").rows) ["New"])
+
 let cases =
   [
+    case "page windows follow pending edits and collapse changes" page_windows_follow_pending_edits_and_collapse_changes;
     case "semantic values preserve native primitives"
       semantic_values_preserve_native_primitives;
     case "semantic maps preserve nesting entry order and duplicate keys"

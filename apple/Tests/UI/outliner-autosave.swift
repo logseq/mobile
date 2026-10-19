@@ -2,7 +2,7 @@ import Foundation
 @testable import Logseq
 
 @MainActor
-private final class NativeQueue: LGNativeCalling {
+private final class NativeQueue: @preconcurrency LGNativeCalling {
     var effects: [String] = []
     func initialize(platformCode: Int, hostCode: Int, authenticationCode: Int) -> String { "" }
     func appear(node: Int) -> String { "" }
@@ -60,10 +60,25 @@ struct Check {
             print("\(passed ? "PASS" : "FAIL"): \(kind), effects=\(recorder.effects)")
             failed = failed || !passed
         }
+        let native = NativeQueue()
+        native.effects = [
+            #"{"id":1,"kind":"change-outliner-text","text":"Draft"}"#,
+            #"{"id":2,"kind":"hydrate-outliner-rows","text":"[]"}"#,
+        ]
+        let recorder = Recorder()
+        let runtime = LGRuntime(native: native, effectExecutor: recorder, outlinerAutosaveDelayNanoseconds: 1_000_000)
+        await runtime.drainEffectsForTesting()
+        try? await Task.sleep(for: .milliseconds(50))
+        await runtime.drainEffectsForTesting()
+        let keepsAutosave = recorder.effects.contains("save-outliner-editing")
+        print("\(keepsAutosave ? "PASS" : "FAIL"): viewport hydration preserves pending autosave")
+        failed = failed || !keepsAutosave
         if failed { exit(1) }
     }
 }
 
 // This harness injects the effect boundary and must never initialize the native core.
+#if !LOGSEQ_LINKED_CORE
 @_cdecl("logseq_initialize")
 func unexpectedCoreInitialization() { fatalError("Unexpected native core initialization") }
+#endif

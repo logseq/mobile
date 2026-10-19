@@ -18,6 +18,7 @@ type host_ui_session =
   ; search_path : string list
   ; selected_page_id : string option
   ; settings_open : bool
+  ; recent_graph_ids : string list
   }
 
 type host_settings =
@@ -108,6 +109,7 @@ let ui_session value =
     selected_page_id =
       Util.to_string_option (Util.member "selectedPageId" value);
     settings_open = bool_field "settingsOpen" value;
+    recent_graph_ids = (match Util.member "recentGraphIds" value with `Null -> [] | ids -> string_vector ids);
   }
 
 let decode kind payload =

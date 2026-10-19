@@ -69,9 +69,9 @@ val outliner_entry :
   View_rows.retained_row Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val outliner_first_journal_section :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
+val outliner_entries :
+  Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
+  source:View_rows.retained_row list Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val toolbar_button :
   Lui_elements.icon ->
@@ -93,21 +93,10 @@ val outliner_editor_toolbar :
 val node_related_row :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
-  Model.outline_row Signal.signal ->
+  source:Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val related_section_heading : string -> Lui_elements.t
-val node_related_section :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
-val node_tagged_section :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
-val node_linked_reference_section :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
+val page_loading_view : Model.logseq_model Signal.signal -> Lui_elements.t
 val add_first_block_button :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t

@@ -1,0 +1,14 @@
+(executable
+ (name page_open)
+ (modules page_open)
+ (libraries logseq_core logseq_app unix yojson))
+
+(executable
+ (name page_fixture)
+ (modules page_fixture)
+ (libraries logseq_core unix))
+
+(executable
+ (name page_window)
+ (modules page_window)
+ (libraries logseq_core unix yojson))

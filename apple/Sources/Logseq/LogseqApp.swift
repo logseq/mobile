@@ -335,6 +335,9 @@ public struct LogseqRootView : View {
                 #endif
             }
         }
+        store.graphDownloadProgressChanged = { [weak presentationCoordinator] progress in
+            presentationCoordinator?.graphDownloadProgress = progress
+        }
         graphLifecycle.localGraphIDsChanged = { [weak lgRuntime] graphIDs in
             guard let data = try? JSONEncoder().encode(graphIDs),
                   let payload = String(data: data, encoding: .utf8)

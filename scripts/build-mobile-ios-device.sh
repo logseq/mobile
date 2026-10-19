@@ -171,6 +171,8 @@ for bundle in "$swift_build_dir"/*.bundle; do
   cp -R "$bundle" "$app_dir/"
 done
 
+python3 "$repo_root/scripts/configure-ios-resource-bundles.py" "$app_dir"
+
 logseq_resource_bundle="$app_dir/logseq_Logseq.bundle"
 if [[ -d $logseq_resource_bundle ]]; then
   xcrun actool \
@@ -228,4 +230,5 @@ codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --tim
 codesign --verify --deep --strict "$app_dir"
 
 python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
+python3 "$repo_root/scripts/verify-ios-native-symbols.py" "$app_dir"
 echo "$app_dir"

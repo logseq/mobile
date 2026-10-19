@@ -153,8 +153,23 @@ let status_for_eid decrypt_title db eid =
     else None
   | None -> None
 
-let block ?(with_breadcrumbs = true) decrypt_title db eid =
-  let uuid = uuid_for_eid db eid in
+let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db eid =
+  let attributes = Hashtbl.create 24 in
+  (match fields with
+   | None ->
+     Seq.iter (fun (datom : Ds.datom) ->
+       if not (Hashtbl.mem attributes datom.a) then
+         Hashtbl.add attributes datom.a datom.v)
+       (Ds.Db.datoms db Ds.Eavt ~e:eid ())
+   | Some fields ->
+     List.iter (fun attr ->
+       Option.iter (fun value -> Hashtbl.replace attributes attr value)
+         (value db eid attr)) fields);
+  let original_value = value in
+  let value db entity attr =
+    if entity = eid then Hashtbl.find_opt attributes attr
+    else original_value db entity attr in
+  let uuid = uuid_value (value db eid "block/uuid") in
   let title = protected_string decrypt_title (value db eid "block/title") in
   let name = value db eid "block/name" in
   match name with
@@ -173,7 +188,9 @@ let block ?(with_breadcrumbs = true) decrypt_title db eid =
          Ds_value.optional_ref_eid db "block/page" (value db eid "block/page")
        in
        let page_id =
-         Option.value ~default:""
+         match page_info with
+         | Some info -> fst (Lazy.force info)
+         | None -> Option.value ~default:""
            (match page_eid with
             | Some eid -> uuid_for_eid db eid
             | None -> None)
@@ -182,7 +199,9 @@ let block ?(with_breadcrumbs = true) decrypt_title db eid =
          if with_breadcrumbs then breadcrumbs decrypt_title db eid else []
        in
        let journal =
-         match page_eid with
+         match page_info with
+         | Some info -> snd (Lazy.force info)
+         | None -> match page_eid with
          | Some page_eid ->
            let title =
              match ancestors with
@@ -232,6 +251,9 @@ let block ?(with_breadcrumbs = true) decrypt_title db eid =
            journal;
          }
      | _ -> None)
+
+let block ?with_breadcrumbs decrypt_title db eid =
+  read_block ?with_breadcrumbs decrypt_title db eid
 
 let page_is_hidden db eid =
   let rec loop seen eid =
@@ -640,28 +662,253 @@ let compare_journal_blocks left right =
   let order = compare (journal_day right) (journal_day left) in
   if order = 0 then compare_blocks left right else order
 
-let related_candidate_is_visible db eid =
-  (not (page_is_hidden db eid))
-  && value db eid "logseq.property/view-for" = None
+let outline_metadata_chain db =
+  let cached = Hashtbl.create 64 in
+  fun root ->
+    let seen = Hashtbl.create 8 in
+    let finish trail result =
+      List.iter (fun eid -> Hashtbl.replace cached eid result) trail;
+      result in
+    let rec loop trail eid =
+      match Hashtbl.find_opt cached eid with
+      | Some result -> finish trail result
+      | None when Hashtbl.mem seen eid -> finish trail false
+      | None ->
+        Hashtbl.add seen eid ();
+        let trail = eid :: trail in
+        if value db eid "logseq.property/created-from-property" <> None
+           || value db eid "block/closed-value-property" <> None then finish trail true
+        else match Ds_value.optional_ref_eid db "block/parent" (value db eid "block/parent") with
+          | Some parent -> loop trail parent
+          | None -> finish trail false in
+    loop [] root
 
-let blocks_referencing ?(with_breadcrumbs = true) decrypt_title db attr
+let related_candidate_is_visible db =
+  let is_metadata = outline_metadata_chain db in
+  fun eid ->
+    (not (page_is_hidden db eid))
+    && not (is_metadata eid)
+    && value db eid "logseq.property/view-for" = None
+
+let read_blocks_referencing ?(with_breadcrumbs = true) ?page_info decrypt_title db attr
     target_uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid target_uuid) with
   | Some eid ->
+    let is_visible = related_candidate_is_visible db in
     List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt attr eid)
     |> List.filter_map (fun (datom : Ds.datom) ->
-      if related_candidate_is_visible db datom.e then
-        block ~with_breadcrumbs decrypt_title db datom.e
+      if is_visible datom.e then
+        read_block ~with_breadcrumbs ?page_info decrypt_title db datom.e
       else None)
     |> List.sort compare_blocks
   | None -> []
 
-let blocks_for_page decrypt_title db uuid =
-  blocks_referencing ~with_breadcrumbs:false decrypt_title db "block/page"
-    uuid
+let blocks_referencing ?with_breadcrumbs decrypt_title db attr uuid =
+  read_blocks_referencing ?with_breadcrumbs decrypt_title db attr uuid
 
 let references_for_node decrypt_title db uuid =
   blocks_referencing decrypt_title db "block/refs" uuid
+
+type page_window_row =
+  { block : Model.block
+  ; depth : int
+  ; has_children : bool
+  ; is_collapsed : bool
+  }
+
+type page_window =
+  { rows : page_window_row list
+  ; next_offset : int option
+  }
+
+module Page_uuid_set = Set.Make (String)
+
+type page_metadata_row =
+  { entity_id : int
+  ; row_depth : int
+  ; row_has_children : bool
+  ; row_is_collapsed : bool
+  ; has_following : bool
+  }
+
+type page_tree =
+  { tree_db : Ds.db
+  ; page_uuid : string
+  ; page_eid : int option
+  ; child_orders : (int, int list) Hashtbl.t
+  ; visible_entities : (int, bool) Hashtbl.t
+  ; child_presence : (int, bool) Hashtbl.t
+  }
+
+type page_reader =
+  { tree : page_tree
+  ; reader_collapsed : string list
+  ; metadata_rows : page_metadata_row Seq.t
+  }
+
+let page_entity_visible tree eid =
+  match Hashtbl.find_opt tree.visible_entities eid with
+  | Some visible -> visible
+  | None ->
+    let db = tree.tree_db in
+    let visible =
+      Ds_value.optional_ref_eid db "block/page" (value db eid "block/page") = tree.page_eid
+      && value db eid "block/name" = None
+      && value db eid "logseq.property/hide?" <> Some (Ds.Bool true)
+      && value db eid "logseq.property/deleted-at" = None
+      && value db eid "logseq.property/view-for" = None
+      && value db eid "logseq.property/created-from-property" = None
+      && value db eid "block/closed-value-property" = None in
+    Hashtbl.replace tree.visible_entities eid visible;
+    visible
+
+let page_child_ids tree parent =
+  Ds_value.datoms_by_ref tree.tree_db Ds.Aevt "block/parent" parent
+  |> Seq.map (fun (datom : Ds.datom) -> datom.e)
+
+let page_has_children tree parent =
+  match Hashtbl.find_opt tree.child_presence parent with
+  | Some present -> present
+  | None ->
+    let present = Seq.exists (page_entity_visible tree) (page_child_ids tree parent) in
+    Hashtbl.replace tree.child_presence parent present;
+    present
+
+let ordered_page_children tree parent =
+  match Hashtbl.find_opt tree.child_orders parent with
+  | Some ids -> ids
+  | None ->
+    let db = tree.tree_db in
+    let children = page_child_ids tree parent |> List.of_seq
+      |> List.map (fun eid ->
+        (eid, string_value (value db eid "block/order"),
+         lazy (Option.value ~default:0 (int_value (value db eid "block/created-at"))),
+         lazy (Option.value ~default:"" (uuid_for_eid db eid)))) in
+    let compare_child (_, left, left_time, left_uuid) (_, right, right_time, right_uuid) =
+      match left, right with
+      | Some a, Some b when a <> b -> String.compare a b
+      | Some _, None -> -1
+      | None, Some _ -> 1
+      | _ ->
+        let order = Int.compare (Lazy.force left_time) (Lazy.force right_time) in
+        if order <> 0 then order
+        else String.compare (Lazy.force left_uuid) (Lazy.force right_uuid) in
+    let ids = List.sort compare_child children |> List.map (fun (eid, _, _, _) -> eid) in
+    Hashtbl.replace tree.child_orders parent ids;
+    ids
+
+type page_walk_frame =
+  | Visit_children of int * int
+  | Visit_siblings of int list * int
+
+let page_reader_for_tree tree collapsed =
+  let collapsed = List.sort_uniq String.compare collapsed in
+  let collapsed_set = Page_uuid_set.of_list collapsed in
+  let visited = Hashtbl.create 64 in
+  let rec walk frames () =
+    match frames with
+    | [] -> Seq.Nil
+    | Visit_children (parent, depth) :: rest ->
+      walk (Visit_siblings (ordered_page_children tree parent, depth) :: rest) ()
+    | Visit_siblings ([], _) :: rest -> walk rest ()
+    | Visit_siblings (eid :: siblings, depth) :: rest ->
+      let rest = if siblings = [] then rest else Visit_siblings (siblings, depth) :: rest in
+      if Hashtbl.mem visited eid || not (page_entity_visible tree eid) then walk rest ()
+      else begin
+        Hashtbl.add visited eid ();
+        let has_children = page_has_children tree eid in
+        let is_collapsed =
+          not (Page_uuid_set.is_empty collapsed_set)
+          && (match uuid_for_eid tree.tree_db eid with
+              | Some uuid -> Page_uuid_set.mem uuid collapsed_set
+              | None -> false) in
+        let enters_children = has_children && not is_collapsed in
+        let next = if enters_children then Visit_children (eid, depth + 1) :: rest else rest in
+        Seq.Cons (
+          { entity_id = eid; row_depth = depth; row_has_children = has_children;
+            row_is_collapsed = is_collapsed; has_following = enters_children || rest <> [] },
+          walk next)
+      end
+  in
+  let rows () =
+    match tree.page_eid with
+    | Some eid when not (page_is_hidden tree.tree_db eid) -> walk [Visit_children (eid, 0)] ()
+    | _ -> Seq.Nil in
+  { tree; reader_collapsed = collapsed; metadata_rows = Seq.memoize rows }
+
+let page_reader ?(collapsed = []) db uuid =
+  let tree = { tree_db = db; page_uuid = uuid;
+    page_eid = Ds.entid db "block/uuid" (Ds.Uuid uuid);
+    child_orders = Hashtbl.create 32; visible_entities = Hashtbl.create 64;
+    child_presence = Hashtbl.create 64 } in
+  page_reader_for_tree tree collapsed
+
+let page_reader_with_collapsed reader collapsed =
+  let collapsed = List.sort_uniq String.compare collapsed in
+  if collapsed = reader.reader_collapsed then reader
+  else page_reader_for_tree reader.tree collapsed
+
+let window_block_fields =
+  ["block/uuid"; "block/title"; "block/name"; "block/page"; "block/parent";
+   "block/order"; "block/created-at"; "block/updated-at";
+   "logseq.property.asset/type"; "logseq.property.asset/size";
+   "logseq.property.asset/checksum"]
+
+let read_page_window ?(offset = 0) ?(limit = 32) decrypt_title reader =
+  if offset < 0 || limit < 0 || limit > 32 then
+    invalid_arg "page window requires a nonnegative offset and a limit between 0 and 32";
+  if limit = 0 then { rows = []; next_offset = None }
+  else
+    let tree = reader.tree in
+    let db = tree.tree_db in
+    let page_info = lazy (
+      let journal = match tree.page_eid with
+        | Some eid ->
+          (match int_value (value db eid "block/journal-day") with
+           | Some day -> Option.map (fun title -> title, day)
+               (protected_string decrypt_title (value db eid "block/title"))
+           | None -> None)
+        | None -> None in
+      tree.page_uuid, journal) in
+    let rec skip count rows =
+      if count = 0 then rows
+      else match rows () with Seq.Nil -> Seq.empty | Seq.Cons (_, rest) -> skip (count - 1) rest in
+    let rec collect index count result rows =
+      match rows () with
+      | Seq.Nil -> { rows = List.rev result; next_offset = None }
+      | Seq.Cons (metadata, rest) ->
+        (match read_block ~with_breadcrumbs:false ~page_info ~fields:window_block_fields
+          decrypt_title db metadata.entity_id with
+         | None -> collect (index + 1) count result rest
+         | Some block ->
+           let row = { block; depth = metadata.row_depth;
+             has_children = metadata.row_has_children; is_collapsed = metadata.row_is_collapsed } in
+           let result = row :: result in
+           if count = 1 then
+             { rows = List.rev result;
+               next_offset = if metadata.has_following then Some (index + 1) else None }
+           else collect (index + 1) (count - 1) result rest)
+    in
+    collect offset limit [] (skip offset reader.metadata_rows)
+
+(* Match master direct-child membership: property values and choices are
+   metadata, not outline children. Traverse parent membership rather than
+   treating every entity with the same block/page as rendered content. *)
+let blocks_for_page decrypt_title db uuid =
+  let reader = page_reader db uuid in
+  let page_info = lazy (
+    let journal = match reader.tree.page_eid with
+      | Some eid ->
+        (match int_value (value db eid "block/journal-day") with
+         | Some day -> Option.map (fun title -> title, day)
+             (protected_string decrypt_title (value db eid "block/title"))
+         | None -> None)
+      | None -> None in
+    uuid, journal) in
+  reader.metadata_rows
+  |> Seq.filter_map (fun row ->
+       read_block ~with_breadcrumbs:false ~page_info decrypt_title db row.entity_id)
+  |> List.of_seq
 
 let node_destination decrypt_title db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
@@ -688,6 +935,7 @@ let node_destination decrypt_title db uuid =
 let objects_for_tag decrypt_title db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
   | Some eid ->
+    let is_visible = related_candidate_is_visible db in
     let ids =
       class_descendants db eid
       |> List.sort_uniq compare
@@ -698,7 +946,7 @@ let objects_for_tag decrypt_title db uuid =
     in
     ids
     |> List.filter_map (fun eid ->
-      if related_candidate_is_visible db eid then
+      if is_visible eid then
         match block decrypt_title db eid with
         | Some block -> Some block
         | None -> page_block decrypt_title db eid
@@ -755,6 +1003,8 @@ let blocks ?block_limit decrypt_title journal_limit db =
       List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt "block/page" page_eid)
       |> List.map (fun (datom : Ds.datom) -> (day, datom.e)))
   in
+  let is_visible = related_candidate_is_visible db in
+  let entries = List.filter (fun (_, eid) -> is_visible eid) entries in
   let eids =
     match block_limit with
     | Some limit when List.length entries > limit ->

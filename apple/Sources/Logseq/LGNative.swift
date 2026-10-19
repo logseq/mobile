@@ -4,6 +4,7 @@ import Observation
 import LogseqModel
 
 public protocol LGNativeCalling {
+    @MainActor func performAsync(_ operation: LGNativeOperation) async -> String
     func initialize(
         platformCode: Int,
         hostCode: Int,
@@ -36,11 +37,54 @@ public protocol LGNativeCalling {
     func applyHostUpdate(kind: String, payload: String) -> String
 }
 
-public final class LGCoreNativeCaller: LGNativeCalling {
+public enum LGNativeOperation: Sendable {
+    case appear(Int), press(Int), longPress(Int), submit(Int), change(Int), dismiss(Int), doublePress(Int)
+    case textChanged(Int, String), toggleChanged(Int, Bool), valueChanged(Int, Double)
+    case extensionEvent(Int, String, String, String, Int), picked(Int, String)
+    case visibleRange(Int, Int, Int), scrollCompleted(Int, Int, String)
+    case takeEffect, resolveEffect(Int, Bool, String), snapshot(String), hostUpdate(String, String)
+
+    func perform(on native: any LGNativeCalling) -> String {
+        switch self {
+        case let .appear(node): native.appear(node: node)
+        case let .press(node): native.press(node: node)
+        case let .longPress(node): native.longPress(node: node)
+        case let .submit(node): native.submit(node: node)
+        case let .change(node): native.change(node: node)
+        case let .dismiss(node): native.dismiss(node: node)
+        case let .doublePress(node): native.doublePress(node: node)
+        case let .textChanged(node, text): native.textChanged(node: node, text: text)
+        case let .toggleChanged(node, checked): native.toggleChanged(node: node, checked: checked)
+        case let .valueChanged(node, value): native.valueChanged(node: node, value: value)
+        case let .extensionEvent(node, identifier, name, text, value):
+            native.extensionEvent(node: node, identifier: identifier, name: name, text: text, value: value)
+        case let .picked(node, payload): native.picked(node: node, payload: payload)
+        case let .visibleRange(node, first, last): native.visibleRange(node: node, first: first, last: last)
+        case let .scrollCompleted(node, token, outcome): native.scrollCompleted(node: node, token: token, outcome: outcome)
+        case .takeEffect: native.takeEffect()
+        case let .resolveEffect(id, succeeded, message): native.resolveEffect(id: id, succeeded: succeeded, message: message)
+        case let .snapshot(response): native.applySnapshot(response)
+        case let .hostUpdate(kind, payload): native.applyHostUpdate(kind: kind, payload: payload)
+        }
+    }
+}
+
+extension LGNativeCalling {
+    @MainActor public func performAsync(_ operation: LGNativeOperation) async -> String {
+        operation.perform(on: self)
+    }
+}
+
+// All native access is serialized by LogseqCoreExecutor, including async UI jobs.
+public final class LGCoreNativeCaller: LGNativeCalling, @unchecked Sendable {
     private let core: LogseqCore
 
     public init(core: LogseqCore = LogseqCore.shared) {
         self.core = core
+    }
+
+    @MainActor public func performAsync(_ operation: LGNativeOperation) async -> String {
+        await LogseqCore.performUIAsync { operation.perform(on: self) }
     }
 
     public func initialize(

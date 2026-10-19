@@ -28,16 +28,38 @@ let app () =
   | Some value -> value
   | None -> invalid_arg "Logseq native runtime is not started"
 
+let query_deadlines = Hashtbl.create 8
+
+let debounced_query = function
+  | Model.SearchNodesEffect _ | Model.ChangeOutlinerTextEffect _
+  | Model.MoveOutlinerCaretEffect _ -> true
+  | _ -> false
+
+let note_query_deadlines () =
+  let pending = (App.model (app ())).Model.pending_effects in
+  let active = Hashtbl.create 8 in
+  List.iter (fun eff ->
+    if debounced_query eff then begin
+      let id = Model.effect_id eff in
+      Hashtbl.replace active id ();
+      if not (Hashtbl.mem query_deadlines id) then
+        Hashtbl.add query_deadlines id (Unix.gettimeofday () +. 0.2)
+    end) pending;
+  Hashtbl.filter_map_inplace (fun id deadline ->
+    if Hashtbl.mem active id then Some deadline else None) query_deadlines
+
 let flush_event event =
   latest_patch := "";
   ignore (Lui_app.dispatch_event (app ()) event);
   ignore (Lui_app.flush (app ()));
+  note_query_deadlines ();
   !latest_patch
 
 let flush_action action =
   latest_patch := "";
   ignore (Lui_app.send (app ()) action);
   ignore (Lui_app.flush (app ()));
+  note_query_deadlines ();
   !latest_patch
 
 let apply_response encoded =
@@ -95,7 +117,8 @@ let host_action (update : Host_update.host_update) =
         search_path =
           List.map (fun uuid -> Model.NodeRoute uuid) session.search_path;
         selected_page_id = session.selected_page_id;
-        settings_open = session.settings_open }
+        settings_open = session.settings_open;
+        recent_graph_ids = session.recent_graph_ids }
   | Composer_draft draft -> Model.ApplyComposerDraft draft
   | Graph_loading loading -> Model.ApplyGraphLoading loading
   | Authentication authentication ->
@@ -149,7 +172,8 @@ let encode_ui_session (session : Model.ui_session) =
   ^ encode_session_routes session.search_path
   ^ ",\"selectedPageId\":"
   ^ encode_option_string session.selected_page_id
-  ^ ",\"settingsOpen\":" ^ string_of_bool session.settings_open ^ "}"
+  ^ ",\"settingsOpen\":" ^ string_of_bool session.settings_open
+  ^ ",\"recentGraphIds\":" ^ encode_string_vector session.recent_graph_ids ^ "}"
 
 let encode_task_status (status : Model.task_status) =
   "{\"uuid\":" ^ Lui_wire.quoted status.uuid ^ ",\"ident\":"
@@ -235,6 +259,12 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted block_id ^ ",\"metadata\":"
     ^ Lui_wire.quoted (encode_task_status status)
     ^ "}"
+  | LoadPageReferencesEffect (id, uuid) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"load-page-references\",\"text\":"
+    ^ Lui_wire.quoted uuid ^ "}"
+  | HydrateOutlinerRowsEffect (id, ids) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"hydrate-outliner-rows\",\"text\":"
+    ^ Lui_wire.quoted (Yojson.Basic.to_string (`List (List.map (fun id -> `String id) ids))) ^ "}"
   | SearchNodesEffect (id, query) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"search-nodes\",\"text\":" ^ Lui_wire.quoted query ^ "}"
@@ -361,11 +391,25 @@ let encode_effect_dispatch eff patch =
 
 let take_effect () =
   let effects = (App.model (app ())).pending_effects in
+  let independent = function
+    | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ -> true
+    | _ -> false in
   match effects with
   | [] -> ""
   | eff :: _ ->
-    let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
-    encode_effect_dispatch eff patch
+    let remaining =
+      if debounced_query eff
+         && List.for_all (fun eff -> debounced_query eff || independent eff) effects then
+        max 0. (Option.value ~default:0.
+          (Hashtbl.find_opt query_deadlines (Model.effect_id eff)) -. Unix.gettimeofday ())
+      else 0. in
+    let ready = if remaining > 0. then List.find_opt independent effects else Some eff in
+    match ready with
+    | None -> Printf.sprintf "{\"waitMs\":%d}"
+        (min 200 (max 1 (int_of_float (ceil (remaining *. 1000.)))))
+    | Some eff ->
+      let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
+      encode_effect_dispatch eff patch
 
 let resolve_effect id succeeded message =
   flush_action (Model.ResolveEffect (id, succeeded, message))
@@ -388,6 +432,7 @@ let backend host_profile =
   }
 
 let start_application application =
+  Hashtbl.clear query_deadlines;
   current_app := Some application;
   ignore (Lui_app.start application);
   ignore (Lui_app.flush application);
@@ -438,6 +483,10 @@ let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
     match identifier, name with
+    | "outliner-block-row", "set-status" -> ["uuid", StringValue text; "count", IntValue value]
+    | "outliner-block-row", "drop" -> ["uuid", StringValue text; "placement", StringValue
+        (match value with 0 -> "before" | 1 -> "inside" | _ -> "after")]
+    | "outliner-block-row", _ -> ["uuid", StringValue text]
     | "outliner-block-content", "open-node"
     | "outliner-block-content", "drag-start"
     | "outliner-block-content", "edit" ->

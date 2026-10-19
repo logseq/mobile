@@ -24,3 +24,5 @@ val liquid_glass_schema :
   unit -> Lui_extension.extension_component_schema
 
 val extension_registry : unit -> Lui_extension.extension_registry
+
+val outliner_block_row_schema : unit -> Lui_extension.extension_component_schema

@@ -38,6 +38,8 @@ let schema : (string * Ds.schema_attr) list =
     ("logseq.property/hide?", one);
     ("logseq.property/deleted-at", instant_attr);
     ("logseq.property/view-for", ref_attr);
+    ("logseq.property/created-from-property", ref_attr);
+    ("block/closed-value-property", ref_attr);
     ("logseq.property.class/hide-from-node", one);
     ("logseq.property/built-in?", one);
     ( "db/ident",
@@ -545,6 +547,7 @@ let sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_re
     new_conn
       [
         "block/page";
+        "block/parent";
         "block/link";
         "block/order";
         "block/created-at";
@@ -585,6 +588,7 @@ let sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_re
       entity "alpha-block" "Alpha content"
         [
           field "block/page" (Ds.Ref_to (Ds.Temp_id "page-alpha"));
+          field "block/parent" (Ds.Ref_to (Ds.Temp_id "page-alpha"));
           field "block/created-at" (Ds.Instant 100L);
           field "block/updated-at" (Ds.Instant 100L);
         ];
@@ -855,8 +859,163 @@ let page_navigation_reads_only_the_requested_reference_range () =
          (!reads < 24))
     [ "page", Read.blocks_for_page; "references", Read.references_for_node ]
 
+let large_pages_decrypt_their_shared_journal_metadata_once () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/created-at"; "block/journal-day"] [] in
+  let page_id = "e2e30000-0000-4000-8000-000000000200" in
+  transact conn (journal page_id "Shared journal" 20261019 ::
+    List.init 10_000 (fun index ->
+      block (Printf.sprintf "e2e30000-0000-4000-9000-%012d" index)
+        "Block" page_id page_id 1 []));
+  let page_reads = ref 0 in
+  let decrypt title =
+    if title = "Shared journal" then incr page_reads;
+    Ok title
+  in
+  let blocks = Read.blocks_for_page decrypt (Ds.conn_db conn) page_id in
+  check_eq (List.length blocks) 10_000;
+  check_eq ~msg:"the same page metadata must not be queried and decrypted for every row"
+    !page_reads 1;
+  check (List.for_all (fun (block : Model.block) ->
+    block.page_id = page_id && block.journal = Some ("Shared journal", 20261019)) blocks)
+
+let window_conn () =
+  new_conn ["block/page"; "block/parent"; "block/order"; "block/created-at";
+    "logseq.property/hide?"; "logseq.property/deleted-at"; "logseq.property/view-for"]
+    ["block/page", { ref_attr with Ds.indexed = true };
+     "block/parent", { ref_attr with Ds.indexed = true }]
+
+let window_uuids (window : Read.page_window) =
+  List.map (fun (row : Read.page_window_row) -> row.block.uuid) window.rows
+
+let parent_window_skips_collapsed_and_hidden_subtrees () =
+  let conn = window_conn () in
+  let ordered id parent order =
+    block id id "window-page" parent 1 [field "block/order" (Ds.String order)] in
+  transact conn [
+    page "window-page" "window-page" "Page" [];
+    ordered "second" "window-page" "a1";
+    ordered "first" "window-page" "a0";
+    ordered "never-hydrate-collapsed-child" "first" "a0";
+    ordered "second-child" "second" "a0";
+    ordered "last" "window-page" "a3";
+    block "hidden" "never-hydrate-hidden" "window-page" "window-page" 1
+      [field "block/order" (Ds.String "a2"); field "logseq.property/hide?" (Ds.Bool true)];
+    ordered "never-hydrate-hidden-child" "hidden" "a0";
+  ];
+  let decrypted = ref [] in
+  let decrypt title =
+    if String.starts_with ~prefix:"never-hydrate" title then
+      fail "collapsed and hidden descendants must not read titles";
+    decrypted := title :: !decrypted;
+    Ok title in
+  let reader = Read.page_reader ~collapsed:["first"] (Ds.conn_db conn) "window-page" in
+  let result = Read.read_page_window decrypt reader in
+  check_eq (window_uuids result) ["first"; "second"; "second-child"; "last"];
+  check_eq (List.map (fun (row : Read.page_window_row) -> row.depth) result.rows) [0; 0; 1; 0];
+  check_eq (List.map (fun (row : Read.page_window_row) -> row.has_children) result.rows) [true; true; false; false];
+  check_eq (List.map (fun (row : Read.page_window_row) -> row.is_collapsed) result.rows) [true; false; false; false];
+  check_eq (List.rev !decrypted) ["first"; "second"; "second-child"; "last"];
+  check_eq result.next_offset None
+
+let property_value_subtrees_are_not_outline_content () =
+  let conn = new_conn ["logseq.property/created-from-property"; "block/closed-value-property"; "block/journal-day"] [] in
+  transact conn [
+    page "property-page" "property-page" "Page" [field "block/journal-day" (Ds.Int64 20261019L)];
+    entity "property" "Property" [];
+    block "visible" "Visible" "property-page" "property-page" 1 [];
+    block "value" "Property value" "property-page" "property-page" 0
+      [field "logseq.property/created-from-property" (Ds.Ref_to (Ds.Temp_id "property"))];
+    block "closed-value" "Choice value" "property-page" "property-page" 4
+      [field "block/closed-value-property" (Ds.Ref_to (Ds.Temp_id "property"))];
+    block "closed-value-child" "Nested choice content" "property-page" "closed-value" 5 [];
+    block "value-child" "Nested property content" "property-page" "value" 3 [];
+  ];
+  let db = Ds.conn_db conn in
+  check_eq ~msg:"whole-page reads exclude property value subtrees"
+    (List.map (fun (block : Model.block) -> block.uuid) (Read.blocks_for_page plain db "property-page"))
+    ["visible"];
+  check_eq ~msg:"journal limits apply after property values are excluded"
+    (List.map (fun (block : Model.block) -> block.uuid) (Read.blocks ~block_limit:1 plain 2 db))
+    ["visible"];
+  check_eq ~msg:"window reads share the same content filtering"
+    (window_uuids (Read.read_page_window plain (Read.page_reader db "property-page")))
+    ["visible"]
+
+let parent_window_hydrates_only_32_rows_and_continues_without_gaps () =
+  let conn = window_conn () in
+  let id index = Printf.sprintf "window-%05d" index in
+  transact conn (page "window-page" "window-page" "Page" [] ::
+    List.init 10_000 (fun index ->
+      block (id index) (id index) "window-page" "window-page" 1
+        [field "block/order" (Ds.String (Printf.sprintf "a%06d" (9_999 - index)))]));
+  let hydrated = ref [] in
+  let decrypt title = hydrated := title :: !hydrated; Ok title in
+  let reader = Read.page_reader (Ds.conn_db conn) "window-page" in
+  check_eq ~msg:"creating a reader never hydrates block contents" !hydrated [];
+  let first = Read.read_page_window decrypt reader in
+  check_eq (window_uuids first) (List.init 32 (fun index -> id (9_999 - index)));
+  check_eq ~msg:"continuation detection does not hydrate a 33rd block" (List.length !hydrated) 32;
+  check_eq first.next_offset (Some 32);
+  hydrated := [];
+  let second = Read.read_page_window ~offset:32 decrypt reader in
+  check_eq (window_uuids second) (List.init 32 (fun index -> id (9_967 - index)));
+  check_eq (List.length !hydrated) 32;
+  check_eq second.next_offset (Some 64);
+  hydrated := [];
+  let last = Read.read_page_window ~offset:9_984 decrypt reader in
+  check_eq (window_uuids last) (List.init 16 (fun index -> id (15 - index)));
+  check_eq ~msg:"jumping skips metadata without hydrating intervening blocks" (List.length !hydrated) 16;
+  check_eq last.next_offset None;
+  check_eq (window_uuids (Read.read_page_window ~offset:32 plain reader)) (window_uuids second)
+
+let parent_window_preserves_ties_and_raw_reference_compatibility () =
+  let conn = window_conn () in
+  let raw e a v = Ds.Raw_datom { Ds.e; a; v; tx = 0; added = true } in
+  let db = Ds.db_with [
+    raw 1 "block/uuid" (Ds.Uuid "raw-window");
+    raw 1 "block/name" (Ds.String "raw-window");
+    raw 1 "block/title" (Ds.String "Page");
+    raw 2 "block/uuid" (Ds.Uuid "later"); raw 2 "block/title" (Ds.String "Later");
+    raw 2 "block/page" (Ds.Int64 1L); raw 2 "block/parent" (Ds.Int64 1L);
+    raw 2 "block/order" (Ds.String "a0"); raw 2 "block/created-at" (Ds.Instant 2L);
+    raw 3 "block/uuid" (Ds.Uuid "first"); raw 3 "block/title" (Ds.String "First");
+    raw 3 "block/page" (Ds.Int64 1L); raw 3 "block/parent" (Ds.Int64 1L);
+    raw 3 "block/order" (Ds.String "a0"); raw 3 "block/created-at" (Ds.Instant 1L);
+    raw 4 "block/uuid" (Ds.Uuid "unordered"); raw 4 "block/title" (Ds.String "Unordered");
+    raw 4 "block/page" (Ds.Int64 1L); raw 4 "block/parent" (Ds.Int64 1L);
+  ] (Ds.conn_db conn) in
+  let result = Read.read_page_window plain (Read.page_reader db "raw-window") in
+  check_eq (window_uuids result) ["first"; "later"; "unordered"];
+  check_eq (Read.read_page_window plain (Read.page_reader db "missing")).rows [];
+  check_eq (Read.read_page_window ~limit:0 (fun _ -> fail "zero limit must not hydrate")
+    (Read.page_reader db "raw-window")).rows []
+
+let parent_window_does_not_scan_unused_entity_properties () =
+  let conn = window_conn () in
+  transact conn [page "window-page" "window-page" "Page" [];
+    block "window-block" "Visible" "window-page" "window-page" 1
+      [field "block/order" (Ds.String "a0")]];
+  transact conn (List.init 10_000 (fun index ->
+    Ds.Add (Ds.Lookup_ref ("block/uuid", Ds.Uuid "window-block"),
+      Printf.sprintf "user.property/unused-%05d" index, Ds.String "Unused")));
+  let storage = Ds.memory_storage () in
+  ignore (Ds.store ~storage (Ds.conn_db conn));
+  let reads = ref 0 in
+  let counted = { storage with Ds.storage_restore = (fun address ->
+    incr reads; storage.storage_restore address) } in
+  let db = match Ds.restore counted with Some db -> db | None -> fail "missing restored db" in
+  reads := 0;
+  let result = Read.read_page_window plain (Read.page_reader db "window-page") in
+  check_eq (window_uuids result) ["window-block"];
+  check ~msg:"displaying one row must not scan 10k unrelated custom properties" (!reads < 100)
+
 let cases =
   [
+    case "property value subtrees are not outline content" property_value_subtrees_are_not_outline_content;
+    case "parent windows skip collapsed and hidden subtrees" parent_window_skips_collapsed_and_hidden_subtrees;
+    case "parent windows hydrate 32 rows and continue without gaps" parent_window_hydrates_only_32_rows_and_continues_without_gaps;
+    case "parent windows preserve ordering ties and raw references" parent_window_preserves_ties_and_raw_reference_compatibility;
+    case "parent windows do not scan unused entity properties" parent_window_does_not_scan_unused_entity_properties;
     case "page navigation reads only the requested reference range"
       page_navigation_reads_only_the_requested_reference_range;
     case
@@ -891,4 +1050,6 @@ let cases =
       recent_window_fills_past_hidden_and_blank_pages_without_decrypting_older_pages;
     case "built-in tag filtering and recent assignment order match logseq"
       built_in_tag_filtering_and_recent_assignment_order_match_logseq;
+    case "10k page blocks share journal metadata hydration"
+      large_pages_decrypt_their_shared_journal_metadata_once;
   ]

@@ -41,3 +41,19 @@ let encrypt_file encrypt graph_id source_path : (string * int, string) result =
         | Error message ->
           (try Sys.remove path with _ -> ());
           Error message))
+
+let cache_download path contents =
+  let rec ensure_directory path =
+    if not (Sys.file_exists path) then begin
+      ensure_directory (Filename.dirname path);
+      Unix.mkdir path 0o700
+    end
+  in
+  try
+    ensure_directory (Filename.dirname path);
+    let temporary = Filename.temp_file ~temp_dir:(Filename.dirname path) "download-" ".tmp" in
+    Fun.protect ~finally:(fun () -> if Sys.file_exists temporary then Sys.remove temporary)
+      (fun () -> match write_file temporary contents with
+        | Error _ as error -> error
+        | Ok () -> Sys.rename temporary path; Ok ())
+  with error -> Error ("Cache asset: " ^ Printexc.to_string error)

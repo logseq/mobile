@@ -29,6 +29,7 @@ let host_options (database : Database.mobile_database) ring catalog =
   let graph = database.graph in
   {
     Rpc.default_options with
+    Types.outliner_projection_limit = Some 32;
     Types.load_graph_catalog =
       (match catalog with
        | Some catalog ->
@@ -105,6 +106,10 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun graph_id title -> Keyring.encrypt_title ring graph_id title);
     resolve_asset_path =
       (fun source_path -> Graph.resolve_asset_path graph source_path);
+    decrypt_asset = Some (fun graph_id bytes ->
+      let ( let* ) = Result.bind in
+      let* key = Keyring.graph_key ring graph_id in
+      E2ee.decrypt_bytes ring.crypto key bytes);
     encrypt_asset_file =
       Some (fun graph_id path ->
         Assets.encrypt_file

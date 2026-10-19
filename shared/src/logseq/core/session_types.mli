@@ -61,6 +61,7 @@ type node_route =
 
 type host_options =
   { storage : Datascript.storage option
+  ; outliner_projection_limit : int option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (string -> Cache_model.model) option
@@ -96,6 +97,7 @@ type host_options =
   ; graph_unlocked : (string -> bool) option
   ; encrypt_title : (string -> string -> (string, string) result) option
   ; resolve_asset_path : string -> string
+  ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :
       (string -> string -> (string * int, string) result) option
   ; journal_page_id : (int -> string option) option
@@ -137,6 +139,8 @@ type session_state =
 type session =
   { host : host_options
   ; state : session_state ref
+  ; reference_cache : (string, Cache_model.block list) Hashtbl.t
+  ; reference_generation : (string option * int option * int) option ref
   }
 
 val default_options : host_options

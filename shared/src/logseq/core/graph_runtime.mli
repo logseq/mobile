@@ -10,6 +10,7 @@ type runtime_options =
 type read_caches =
   { blocks : (int * int option, Cache_model.block list) Hashtbl.t
   ; page_blocks : (string, Cache_model.block list) Hashtbl.t
+  ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Cache_model.block list) Hashtbl.t
   ; node_destinations :
       (string, (Cache_model.entity_summary * bool) option) Hashtbl.t
@@ -100,6 +101,10 @@ val review_flashcard :
 val has_older_journals : graph_runtime -> bool
 val load_older_journals : graph_runtime -> unit
 val blocks_for_page : graph_runtime -> string -> Cache_model.block list
+val page_window :
+  ?collapsed:string list -> ?offset:int -> ?limit:int ->
+  graph_runtime -> string -> Graph_read.page_window
+
 val sidebar_pages : graph_runtime -> Graph_read.sidebar_pages
 val set_page_favorite :
   graph_runtime -> string -> bool -> string -> int -> (unit, string) result

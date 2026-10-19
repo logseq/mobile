@@ -125,3 +125,7 @@ val refresh_reference_metadata :
   Outliner_state.outliner_context ->
   Pending_ops.pending_operation list ->
   Outliner_state.outliner_context
+
+val references_for_node : Session_types.session -> string -> Cache_model.block list
+val pending_reference_uuid : Session_types.session -> string option
+val load_page_references : Session_types.session -> string -> unit

@@ -84,6 +84,26 @@ let parse_transport_completion = Pump.parse_transport_completion
 let complete_pending_sync = Pump.complete_pending_sync
 let cancel_pending_sync = Pump.cancel_pending_sync
 
+let take count values =
+  let rec loop count result = function
+    | _ when count <= 0 -> List.rev result
+    | [] -> List.rev result
+    | value :: rest -> loop (count - 1) (value :: result) rest
+  in loop count [] values
+
+let projection_blocks session blocks =
+  match (host session).Types.outliner_projection_limit with
+  | None -> blocks | Some limit -> take limit blocks
+
+let window_serializer session serialize blocks =
+  match (host session).Types.outliner_projection_limit with
+  | None -> serialize
+  | Some limit ->
+    let content = Hashtbl.create limit in
+    List.iter (fun (block : Model.block) -> Hashtbl.replace content block.uuid ()) (take limit blocks);
+    fun (block : Model.block) ->
+      if Hashtbl.mem content block.uuid then serialize block else Rpc.block_shell_json block
+
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
   Rpc.json_list
@@ -96,6 +116,13 @@ let node_routes_json session serialize serialize_plain =
            | _ -> route.state
          in
          let context = node_route_context session route in
+         let ordered = List.map (fun (row : Outliner.outliner_row) -> row.block)
+           (Outliner.visible_rows context current) in
+         let serialize = window_serializer session serialize ordered in
+         let related = node_route_related_blocks session route in
+         let linked = node_route_linked_reference_blocks session route in
+         let serialize_related = window_serializer session serialize_plain related in
+         let serialize_linked = window_serializer session serialize_plain linked in
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
@@ -103,16 +130,15 @@ let node_routes_json session serialize serialize_plain =
            ; ("isProperty", `Bool route.is_property)
            ; ("page", Rpc.summary_json route.page)
            ; ( "blocks"
-             , Rpc.json_list (List.map serialize context.Outliner.blocks)
+             , Rpc.json_list (List.map serialize (projection_blocks session
+                  (if (host session).Types.outliner_projection_limit = None then context.Outliner.blocks else ordered)))
              )
            ; ( "relatedBlocks"
              , Rpc.json_list
-                 (List.map serialize_plain
-                    (node_route_related_blocks session route)) )
+                 (List.map serialize_related related) )
            ; ( "linkedReferenceBlocks"
              , Rpc.json_list
-                 (List.map serialize_plain
-                    (node_route_linked_reference_blocks session route)) )
+                 (List.map serialize_linked linked) )
            ; ("outlinerState", Rpc.outliner_state_json current)
            ; ( "outlinerRows"
              , Rpc.outliner_rows_json serialize context current )
@@ -161,25 +187,34 @@ let snapshot session context_blocks blocks =
       Hashtbl.replace serialized_plain block.uuid value;
       value
   in
+  let ordered = List.map (fun (row : Outliner.outliner_row) -> row.block)
+    (Outliner.visible_rows context current) in
+  let base_serialize = window_serializer session serialize ordered in
+  let related = snapshot_related_blocks session in
+  let linked = snapshot_linked_reference_blocks session in
+  let related_serialize = window_serializer session Rpc.block_json related in
+  let linked_serialize = window_serializer session Rpc.block_json linked in
   let config = s.config in
   let response =
     Rpc.success
       (Rpc.json_object
          [
            ("revision", `Int s.model.revision)
-         ; ("blocks", Rpc.json_list (List.map serialize blocks))
+         ; ("pendingReferenceUuid", match So.pending_reference_uuid session with
+             | Some uuid -> `String uuid | None -> `Null)
+         ; ("blocks", Rpc.json_list (List.map base_serialize
+             (if h.Types.outliner_projection_limit = None then blocks else projection_blocks session ordered)))
          ; ( "selectedBlock"
            , match Model.selected_block s.model with
              | Some block -> Rpc.block_json block
              | None -> `Null )
          ; ( "relatedBlocks"
            , Rpc.json_list
-               (List.map Rpc.block_json (snapshot_related_blocks session))
+               (List.map related_serialize related)
            )
          ; ( "linkedReferenceBlocks"
            , Rpc.json_list
-               (List.map Rpc.block_json
-                  (snapshot_linked_reference_blocks session)) )
+               (List.map linked_serialize linked) )
          ; ("selectedPageIsTag", `Bool (selected_page_is_tag session))
          ; ( "selectedPageIsProperty"
            , `Bool (selected_page_is_property session) )
@@ -237,7 +272,7 @@ let snapshot session context_blocks blocks =
          ; ("outlinerState", Rpc.outliner_state_json current)
          ; ( "outlinerAutocompleteCandidates"
            , Rpc.outliner_candidates_json context current )
-         ; ("outlinerRows", Rpc.outliner_rows_json serialize context current)
+         ; ("outlinerRows", Rpc.outliner_rows_json base_serialize context current)
          ; ("outlinerCommandRevision", `Int s.outliner_revision)
          ; ( "outlinerCommands"
            , Rpc.json_list
@@ -702,6 +737,94 @@ let select_graph session payload =
        Rpc.failure "unknown_graph" "The selected graph is not available")
   | _ -> Rpc.failure "invalid_params" "selectGraph requires a graph id"
 
+let hydrate_outliner_rows session payload =
+  try
+    let ids = match Yojson.Basic.from_string (Option.value ~default:"[]" payload) with
+      | `List values -> List.filter_map (function `String value -> Some value | _ -> None) values
+      | _ -> [] in
+    if List.length ids > 32 then Rpc.failure "invalid_params" "At most 32 rows may be hydrated"
+    else
+      let wanted = Hashtbl.create 32 and found = Hashtbl.create 32 in
+      List.iter (fun id -> Hashtbl.replace wanted id ()) ids;
+      let collect blocks = List.iter (fun (block : Model.block) ->
+        if Hashtbl.mem wanted block.uuid then Hashtbl.replace found block.uuid block) blocks in
+      collect (outliner_context session).Outliner.blocks;
+      if Hashtbl.length found < Hashtbl.length wanted then collect (base_outliner_context session).Outliner.blocks;
+      if Hashtbl.length found < Hashtbl.length wanted then collect (snapshot_related_blocks session);
+      if Hashtbl.length found < Hashtbl.length wanted then collect (snapshot_linked_reference_blocks session);
+      List.iter (fun route ->
+        if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_context session route).Outliner.blocks;
+        if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_related_blocks session route);
+        if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_linked_reference_blocks session route)) (state session).node_routes;
+      Rpc.success (Rpc.json_object ["isOutlinerContentPatch", `Bool true;
+        "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
+        "hydratedBlocks", Rpc.json_list (List.filter_map (fun id ->
+          Option.map Rpc.visible_block_json (Hashtbl.find_opt found id)) ids)])
+  with Yojson.Json_error message -> Rpc.failure "invalid_params" message
+
+let asset_cache_path session graph_id uuid asset_type =
+  (host session).resolve_asset_path
+    (Filename.concat "Assets" (Filename.concat (Api.url_encode graph_id)
+      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type))))
+
+let cached_image_gallery session uuid =
+  let blocks = (outliner_context session).Outliner.blocks in
+  match (List.find_opt (fun (block : Model.block) -> block.uuid = uuid) blocks,
+         (state session).config) with
+  | Some selected, Some config ->
+    let images = List.filter_map (fun (block : Model.block) ->
+      let kind = Api.normalize_asset_type (Option.value ~default:"" block.asset_type) in
+      if not block.is_asset || block.parent_id <> selected.parent_id
+         || not (List.mem kind ["png"; "jpg"; "jpeg"; "gif"; "webp"; "heic"]) then None
+      else
+        let cached = asset_cache_path session config.Api.graph_id block.uuid kind in
+        let local = Option.map (host session).resolve_asset_path block.local_path in
+        let path = match local with Some path when Sys.file_exists path -> path | _ -> cached in
+        if Sys.file_exists path then Some (block, path) else None) blocks
+      |> List.sort (fun (a, _) (b, _) -> compare (a.Model.order, a.uuid) (b.Model.order, b.uuid)) in
+    let index = ref (-1) in
+    let paths = List.mapi (fun position (block, path) ->
+      if block.Model.uuid = uuid then index := position;
+      `String path) images in
+    if !index < 0 then Rpc.failure "asset_unavailable" "The image is not cached"
+    else Rpc.success (Rpc.json_object ["paths", Rpc.json_list paths; "selectedIndex", `Int !index])
+  | _ -> Rpc.failure "asset_unavailable" "The image is not in the active page"
+
+let graph_asset session fields downloaded =
+  let ( let* ) = Result.bind in
+  let result =
+    let* uuid = Rpc.required_string fields "uuid" in
+    let* asset_type = Rpc.required_string fields "assetType" in
+    let graph_id = match List.assoc_opt "graphId" fields with
+      | Some (`String id) -> id
+      | _ -> Option.fold ~none:"" ~some:(fun config -> config.Api.graph_id) (state session).config in
+    match (state session).config with
+    | Some config when config.Api.graph_id = graph_id ->
+      let kind = Api.normalize_asset_type asset_type in
+      let path = asset_cache_path session graph_id uuid kind in
+      let response () = Rpc.json_object ["graphId", `String graph_id; "localPath", `String path] in
+      if Sys.file_exists path then Ok (response ())
+      else if not downloaded then
+        let request = Api.request config "GET"
+          ("/assets/" ^ Api.url_encode graph_id ^ "/" ^ Api.url_encode uuid ^ "." ^ Api.url_encode kind) None in
+        Ok (Rpc.json_object ["graphId", `String graph_id; "request", Rpc.request_json 0 request None "application/octet-stream" []])
+      else
+        let* source = Rpc.required_string fields "path" in
+        let* bytes = Asset_files.read_file source in
+        let* contents = if selected_graph_is_encrypted session then
+          match (host session).decrypt_asset with
+          | Some decrypt -> decrypt graph_id bytes
+          | None -> Error "Asset decryption is unavailable"
+          else Ok bytes in
+        let* () = Asset_files.cache_download path contents in
+        Ok (response ())
+    | _ -> Error "graph_changed"
+  in
+  match result with
+  | Ok value -> Rpc.success value
+  | Error "graph_changed" -> Rpc.failure "graph_changed" "The active graph changed during asset download"
+  | Error message -> Rpc.failure "asset_download_failed" message
+
 let select_page session payload =
   match
     ( payload
@@ -725,12 +848,7 @@ let select_page session payload =
            related_blocks =
              (if selected_page_is_tag session then []
               else
-                match (host session).graph_node_references with
-                | Some load ->
-                  (match load page.Model.uuid with
-                   | Some blocks -> blocks
-                   | None -> [])
-                | None -> []);
+                So.references_for_node session page.Model.uuid);
          };
        reset_outliner session;
        snapshot_visible session
@@ -761,17 +879,12 @@ let open_node session fields =
          | Some check -> check uuid
          | None -> false
        in
-       let loader =
-         if tag then (host session).graph_tag_objects
-         else (host session).graph_node_references
-       in
        let related =
-         match loader with
-         | Some load ->
-           (match load uuid with
-            | Some blocks -> blocks
-            | None -> [])
-         | None -> []
+         if tag then
+           match (host session).graph_tag_objects with
+           | Some load -> Option.value ~default:[] (load uuid)
+           | None -> []
+         else So.references_for_node session uuid
        in
        let route =
          {
@@ -1162,6 +1275,26 @@ let dispatch session action payload =
         snapshot_visible session)
   | "selectGraph" -> select_graph session payload
   | "selectPage" -> select_page session payload
+  | "hydrateOutlinerRows" -> hydrate_outliner_rows session payload
+  | "cachedImageGallery" ->
+    (match payload with Some uuid -> cached_image_gallery session uuid
+     | None -> Rpc.failure "invalid_params" "An image UUID is required")
+  | "prepareAssetDownload" ->
+    with_object action payload "Asset metadata is required" (fun _input fields -> graph_asset session fields false)
+  | "cacheDownloadedAsset" ->
+    with_object action payload "Asset download is required" (fun _input fields -> graph_asset session fields true)
+  | "loadPageReferences" ->
+    (match payload with
+     | None -> Rpc.failure "invalid_params" "A page UUID is required"
+     | Some uuid ->
+       So.load_page_references session uuid;
+       let blocks = So.references_for_node session uuid in
+       let serialize = window_serializer session Rpc.visible_block_json blocks in
+       Rpc.success (Rpc.json_object [
+         "isReferencePatch", `Bool true; "referenceUuid", `String uuid;
+         "selectedGraphId", (match (state session).config with
+           | Some config -> `String config.Api.graph_id | None -> `Null);
+         "referenceBlocks", Rpc.json_list (List.map serialize blocks)]))
   | "openNode" ->
     with_object action payload "openNode requires a node id"
       (fun _input fields -> open_node session fields)
@@ -1265,7 +1398,10 @@ let dispatch session action payload =
     in
     session.Types.state :=
       { !(session.state) with search_query = query; search_results = found };
-    snapshot_visible session
+    if h.Types.outliner_projection_limit = None then snapshot_visible session
+    else Rpc.success (Rpc.json_object ["isSearchPatch", `Bool true;
+      "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
+      "searchQuery", `String query; "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
   | "addAsset" ->

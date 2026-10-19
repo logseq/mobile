@@ -196,6 +196,8 @@ val node_related_section_visible_ : Model.logseq_model -> bool
 val node_tag_section_visible_ : Model.logseq_model -> bool
 val node_tag_section_empty_ : Model.logseq_model -> bool
 val node_linked_reference_section_visible_ : Model.logseq_model -> bool
+val page_content_ready_ : Model.logseq_model -> bool
+val page_loading_visible_ : Model.logseq_model -> bool
 val node_can_add_first_block_ : Model.logseq_model -> bool
 val node_outliner_visible_ : Model.logseq_model -> bool
 val node_title_visible_ : Model.logseq_model -> bool

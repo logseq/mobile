@@ -8,3 +8,5 @@ val encrypt_file :
   string ->
   string ->
   (string * int, string) result
+
+val cache_download : string -> string -> (unit, string) result

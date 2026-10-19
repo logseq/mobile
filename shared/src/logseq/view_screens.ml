@@ -265,23 +265,11 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                    ];
                  box ~height:12 [];
                ]);
-          if_
-            ~test:
-              (Signal.map View_rows.first_journal_section_visible_
-                 model_source)
-            (View_outliner.outliner_first_journal_section context model_source
-               send);
-          keyed
+          View_outliner.outliner_entries context model_source
             ~source:
-              (Signal.map View_rows.remaining_retained_outliner_rows
+              (Signal.map View_rows.retained_outliner_rows
                  model_source)
-            ~key:View_rows.retained_row_identifier ~cmp:compare
-            ~mount:(fun retained_row_source ->
-              View_outliner.outliner_entry context model_source
-                retained_row_source
-                (Signal.map View_rows.retained_row_value
-                   retained_row_source)
-                send);
+            send;
           if_
             ~test:(Signal.map View_base.older_journals_visible_
                      model_source)
@@ -290,30 +278,12 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                ~on_appear:(fun _ ->
                  ignore (send Model.LoadOlderJournals))
                []);
+          View_outliner.page_loading_view model_source;
           if_
             ~test:(Signal.map View_base.main_can_add_first_block_
                      model_source)
             (box ~padding_horizontal:8
                [ View_outliner.add_first_block_button model_source send ]);
-          if_
-            ~test:(Signal.map View_base.main_related_section_visible_
-                     model_source)
-            (box ~padding_horizontal:8
-               [ View_outliner.node_related_section context model_source send ]);
-          if_
-            ~test:(Signal.map View_base.main_tag_section_visible_
-                     model_source)
-            (box ~padding_horizontal:8
-               [ View_outliner.node_tagged_section context model_source send ]);
-          if_
-            ~test:
-              (Signal.map View_base.main_linked_reference_section_visible_
-                 model_source)
-            (box ~padding_horizontal:8
-               [
-                 View_outliner.node_linked_reference_section context model_source
-                   send;
-               ]);
           box ~height:120 [];
           ]);
     ]

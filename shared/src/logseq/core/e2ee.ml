@@ -79,6 +79,17 @@ let unlock_graph_key crypto password private_source encrypted_graph_key =
   let* private_key = decrypt_private_key crypto password private_source in
   decrypt_graph_key crypto private_key encrypted_graph_key
 
+let encrypt_bytes crypto graph_key plaintext =
+  let ( let* ) = Result.bind in
+  let* iv, ciphertext = crypto.encrypt_aes_gcm graph_key plaintext in
+  Ok (Codec.to_string (Value.Array [ Value.Binary iv; Value.Binary ciphertext ]))
+
+let decrypt_bytes crypto graph_key source =
+  match (try Some (Codec.of_string source) with _ -> None) with
+  | Some (Value.Array [ Value.Binary iv; Value.Binary ciphertext ]) ->
+    crypto.decrypt_aes_gcm graph_key iv ciphertext
+  | _ -> Error "Asset has an invalid Transit AES-GCM envelope"
+
 let encrypt_value crypto graph_key value =
   let ( let* ) = Result.bind in
   let plaintext = Codec.to_string value in

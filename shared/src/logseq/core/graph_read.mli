@@ -103,6 +103,31 @@ val references_for_node :
   Datascript.db ->
   string ->
   Cache_model.block list
+
+type page_window_row = {
+  block : Cache_model.block;
+  depth : int;
+  has_children : bool;
+  is_collapsed : bool;
+}
+type page_window = {
+  rows : page_window_row list;
+  next_offset : int option;
+}
+type page_reader
+
+(** Create a lazy depth-first reader for one immutable database and collapse
+    state. Child ordering metadata is shared by subsequent window reads. *)
+val page_reader : ?collapsed:string list -> Datascript.db -> string -> page_reader
+
+(** Change the collapse state while reusing the same immutable tree metadata. *)
+val page_reader_with_collapsed : page_reader -> string list -> page_reader
+
+(** Hydrate at most 32 visible rows. Skipped rows and collapsed descendants do
+    not load block content. [next_offset] continues the same visible outline. *)
+val read_page_window :
+  ?offset:int -> ?limit:int -> (string -> (string, string) result) ->
+  page_reader -> page_window
 val node_destination :
   (string -> (string, string) result) ->
   Datascript.db ->

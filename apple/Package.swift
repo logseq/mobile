@@ -6,8 +6,16 @@ let logseqNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_NATIVE_
     .split(separator: ":")
     .map(String.init) ?? []
 let logseqSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_SIMULATOR_ENTITLEMENTS"]
+// Ctypes resolves these by name, so the static linker cannot see their uses.
+// Retain and export them even when a Release executable strips unused code.
+let logseqRuntimeExports = [
+    "_logseq_https_send", "_logseq_https_upload_file", "_logseq_crypto_call", "_logseq_metric_log", "_logseq_graph_import_progress"
+]
+let logseqRuntimeExportFlags = ["-Xlinker", "-export_dynamic"] + logseqRuntimeExports.flatMap {
+    ["-Xlinker", "-u", "-Xlinker", $0]
+}
 let logseqLinkerSettings: [LinkerSetting] = logseqNativeLinkInputs.isEmpty ? [] : [
-    .unsafeFlags(logseqNativeLinkInputs, .when(platforms: [.iOS])),
+    .unsafeFlags(logseqNativeLinkInputs + logseqRuntimeExportFlags, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
     .linkedFramework("Security", .when(platforms: [.iOS])),
     .linkedLibrary("sqlite3", .when(platforms: [.iOS])),
@@ -34,7 +42,7 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "2e15c0de5a9d914a3a1566beddea13141630d676"),
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "3ccbbcfa97161dba207f4065ace8f72b068c00f5"),
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],

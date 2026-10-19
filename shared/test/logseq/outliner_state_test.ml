@@ -620,6 +620,27 @@ let large_outlines_retain_the_existing_latency_bound () =
   check_eq (List.length rows) 5000;
   check (elapsed < 0.1)
 
+let flattening_ten_thousand_nested_blocks_avoids_quadratic_allocation () =
+  let allocated count =
+    let blocks = List.init count (fun index ->
+      row (string_of_int index)
+        (if index mod 4 = 0 then "page" else string_of_int (index - 1))
+        (Printf.sprintf "a%06d" index)) in
+    let context = context_for blocks in
+    let before = Gc.allocated_bytes () in
+    let rows = State.visible_rows context State.empty in
+    let bytes = Gc.allocated_bytes () -. before in
+    check_eq (List.length rows) count;
+    List.iteri (fun index (row : State.outliner_row) ->
+      check_eq row.block.uuid (string_of_int index);
+      check_eq row.depth (index mod 4)) rows;
+    bytes
+  in
+  let small = allocated 1_000 in
+  let large = allocated 10_000 in
+  check ~msg:"10x the blocks must allocate less than 20x the memory"
+    (large < small *. 20.)
+
 let unicode_carets_and_token_search_handle_boundaries () =
   List.iter
     (fun (byte, length) -> check_eq (State.utf8_sequence_length byte) length)
@@ -1141,6 +1162,8 @@ let cases =
       nested_zoom_and_deleted_destinations_maintain_valid_paths;
     case "large outlines retain the existing latency bound"
       large_outlines_retain_the_existing_latency_bound;
+    case "flattening 10k nested blocks avoids quadratic allocation"
+      flattening_ten_thousand_nested_blocks_avoids_quadratic_allocation;
     case "unicode carets and token search handle boundaries"
       unicode_carets_and_token_search_handle_boundaries;
     case "autocomplete candidates combine deduplicate and bound results"

@@ -160,7 +160,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                  keyed
                    ~source:
                      (Signal.map
-                        (fun (current : Model.logseq_model) -> current.graphs)
+                        View_base.model_graphs
                         model_source)
                    ~key:View_base.sidebar_graph_identifier ~cmp:compare
                    ~mount:(fun graph_source ->

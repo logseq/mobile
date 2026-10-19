@@ -34,3 +34,6 @@ val decrypt_value :
   e2ee_crypto -> string -> string -> (Transit_core.Json.value, string) result
 val decrypt_string :
   e2ee_crypto -> string -> string -> (string, string) result
+
+val encrypt_bytes : e2ee_crypto -> string -> string -> (string, string) result
+val decrypt_bytes : e2ee_crypto -> string -> string -> (string, string) result

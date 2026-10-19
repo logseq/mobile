@@ -53,6 +53,14 @@ public final class LogseqCore {
         #endif
     }
 
+    public nonisolated static func performUIAsync(
+        _ operation: @escaping @Sendable () -> String
+    ) async -> String {
+        await LogseqCoreExecutor.shared.call(
+            { _ in operation() }, requestJSON: "", priority: .interaction
+        )
+    }
+
     public func logseq_call(_ request: String) -> String {
         #if LOGSEQ_CORE
         return invokeCore {
@@ -493,6 +501,19 @@ private struct DeletePagePayload: Encodable {
     public private(set) var cursorAdvancedAfterMutation = false
     public private(set) var captureRequestRevision = 0
     public private(set) var isSnapshotRefreshDeferred = false
+    @ObservationIgnored public var graphDownloadProgressChanged: (@MainActor (LogseqGraphDownloadProgress?) -> Void)?
+    private var graphDownloadProgress: LogseqGraphDownloadProgress?
+    private var graphDownloadGeneration = 0
+
+    private func reportDownloadProgress(_ progress: LogseqGraphDownloadProgress?) {
+        // Queued callbacks cannot move an importing graph back to the transfer phase.
+        if let progress, progress.phase == "downloading",
+           let current = graphDownloadProgress, current.graphId == progress.graphId,
+           current.phase == "decoding" || current.phase == "importing" || current.phase == "opening" { return }
+        guard progress != graphDownloadProgress else { return }
+        graphDownloadProgress = progress
+        graphDownloadProgressChanged?(progress)
+    }
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
@@ -1035,11 +1056,43 @@ private struct DeletePagePayload: Encodable {
 
             guard allowSnapshotDownload else { return false }
 
+            let graphName = snapshot.graphs?.first(where: { $0.id == graphID })?.name ?? graphID
+            let showsProgress = !forceSnapshot
+            graphDownloadGeneration += 1
+            let downloadGeneration = graphDownloadGeneration
+            if showsProgress {
+                #if LOGSEQ_CORE
+                LogseqCoreABI.logseq_set_graph_import_progress_callback(receiveGraphImportProgress)
+                #endif
+                GraphImportProgressRelay.report = { [weak self] id, phase, completed, total in
+                    guard let self, id == graphID, self.graphDownloadGeneration == downloadGeneration,
+                          self.graphDownloadProgress?.phase == "importing" else { return }
+                    self.reportDownloadProgress(LogseqGraphDownloadProgress(
+                        graphId: id, graphName: graphName, phase: phase, completedItems: completed, totalItems: total
+                    ))
+                }
+            }
+            defer {
+                if graphDownloadGeneration == downloadGeneration {
+                    graphDownloadGeneration += 1
+                    if showsProgress {
+                        GraphImportProgressRelay.report = nil
+                        reportDownloadProgress(nil)
+                    }
+                }
+            }
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
                 accessToken: accessToken,
-                graphSchemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
+                graphSchemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion,
+                progress: { [weak self] phase in
+                    guard showsProgress else { return }
+                    await self?.reportDownloadProgress(LogseqGraphDownloadProgress(
+                        graphId: graphID, graphName: graphName, phase: phase,
+                        completedItems: 0, totalItems: nil
+                    ))
+                }
             )
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
             let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
@@ -1052,6 +1105,12 @@ private struct DeletePagePayload: Encodable {
             ) else {
                 isSnapshotRefreshDeferred = true
                 return true
+            }
+            if showsProgress {
+                reportDownloadProgress(LogseqGraphDownloadProgress(
+                    graphId: graphID, graphName: graphName, phase: "importing",
+                    completedItems: 0, totalItems: nil
+                ))
             }
             let payload = ImportSnapshotPayload(
                 graphId: graphID,

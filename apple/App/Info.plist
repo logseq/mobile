@@ -42,6 +42,8 @@
     <true/>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Save images from your Logseq graph to Photos.</string>
     <key>NSCameraUsageDescription</key>
     <string>Capture photos to add to your Logseq journal.</string>
     <key>NSMicrophoneUsageDescription</key>

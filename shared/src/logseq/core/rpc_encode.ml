@@ -118,6 +118,14 @@ let block_json (block : Model.block) =
         | Some parent -> [ ("parentId", `String parent) ]
         | None -> []))
 
+let block_shell_json (block : Model.block) =
+  Wire.json_object (["uuid", `String block.uuid; "title", `String "";
+    "pageId", `String block.page_id; "isShell", `Bool true;
+    "createdAt", `Int block.created_at; "updatedAt", `Int block.updated_at]
+    @ match block.journal with
+      | Some (title, day) -> ["journalTitle", `String title; "journalDay", `Int day]
+      | None -> [])
+
 let visible_block_json (block : Model.block) =
   let encoded = block_json block in
   match block.journal with

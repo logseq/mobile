@@ -101,20 +101,26 @@ let plaintext_datom decrypt (datom : Ds.datom) =
         ("protected snapshot attribute " ^ datom.a ^ " must be a string")
   else Ok datom
 
-let plaintext_snapshot_db decrypt db =
+let plaintext_snapshot_db ?(on_progress = fun _ _ _ -> ()) decrypt db =
+  let total = Persistent_sorted_set.count db.Ds.eavt_index + List.length db.duplicate_datoms in
+  on_progress "importing" 0 (Some total);
+  let completed = ref 0 in
   let rec loop remaining plaintext =
     let ( let* ) = Result.bind in
     match remaining () with
     | Seq.Cons (datom, rest) ->
       let* datom = plaintext_datom decrypt datom in
+      incr completed;
+      if !completed mod 1024 = 0 || !completed = total then
+        on_progress "importing" !completed (Some total);
       loop rest (datom :: plaintext)
     | Seq.Nil -> Ok (Ds.init_db ~schema:(Ds.schema db) (List.rev plaintext))
   in
   loop (Ds.Db.datoms db Ds.Eavt ()) []
 
-let materialize_plaintext_snapshot active_path decrypt encrypted_db =
+let materialize_plaintext_snapshot ~on_progress active_path decrypt encrypted_db =
   let ( let* ) = Result.bind in
-  let* db = plaintext_snapshot_db decrypt encrypted_db in
+  let* db = plaintext_snapshot_db ~on_progress decrypt encrypted_db in
   try
     let storage = Store.import_storage active_path in
     ignore (Ds.store ~storage db);
@@ -152,6 +158,8 @@ let import_snapshot decrypt graph_id active_path checkpoint_path metadata
       metadata.baseline_t metadata.row_count
   in
   let ( let* ) = Result.bind in
+  let on_progress = Graph_import_progress.report graph_id in
+  on_progress "importing" 0 None;
   let* () = Store.begin_import active_path in
   let* () = stream_snapshot active_path download_path parser import in
   let* () = Snapshot.finish_parser parser in
@@ -190,10 +198,12 @@ let import_snapshot decrypt graph_id active_path checkpoint_path metadata
   let* () =
     match decrypt with
     | Some decrypt ->
-      materialize_plaintext_snapshot active_path decrypt db
+      materialize_plaintext_snapshot ~on_progress active_path decrypt db
     | None -> Ok ()
   in
   let* _ = Store.restore_db (Store.staging_path active_path) in
+  let total = Persistent_sorted_set.count db.Ds.eavt_index + List.length db.duplicate_datoms in
+  on_progress "opening" total (Some total);
   let* () = Store.activate active_path in
   let* () =
     Checkpoint.save_checkpoint_atomic checkpoint_path

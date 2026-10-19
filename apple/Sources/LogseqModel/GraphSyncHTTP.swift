@@ -167,8 +167,10 @@ public enum LogseqGraphSyncHTTP {
 
     public static func downloadSnapshot(
         baseURL: String, graphID: String, accessToken: String,
-        graphSchemaVersion: String? = nil
+        graphSchemaVersion: String? = nil,
+        progress: @escaping @Sendable (String) async -> Void = { _ in }
     ) async throws -> LogseqGraphSnapshotArtifact {
+        await progress("preparing")
         let metadataRequest = try snapshotMetadataRequest(
             baseURL: baseURL, graphID: graphID, accessToken: accessToken
         )
@@ -185,6 +187,7 @@ public enum LogseqGraphSyncHTTP {
         }
         var downloadRequest = URLRequest(url: downloadURL.absoluteURL)
         downloadRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        await progress("downloading")
         let (temporaryURL, downloadResponse) = try await URLSession.shared.download(for: downloadRequest)
         try requireSuccess(downloadResponse)
         guard let snapshotMetadataBody = String(data: metadataData, encoding: .utf8),
@@ -201,6 +204,7 @@ public enum LogseqGraphSyncHTTP {
             .appendingPathComponent("logseq-graph-\(UUID().uuidString).download")
         try FileManager.default.moveItem(at: temporaryURL, to: ownedDownloadURL)
         do {
+            await progress("decoding")
             let snapshotURL = try decodeSnapshotFile(
                 at: ownedDownloadURL,
                 contentEncoding: metadata.contentEncoding

@@ -150,6 +150,9 @@ public final class LGRenderer {
     @ObservationIgnored
     let backend: LUIAppleBackend
 
+    @ObservationIgnored
+    let imagePreviews = LGImagePreviewStore()
+
     public init() {
         let backend = Self.makeBackend()
         self.backend = backend
@@ -269,6 +272,7 @@ public struct LGRendererRoot: View {
     public var body: some View {
         if let rootID = renderer.rootID {
             LUISwiftUIRoot(backend: renderer.backend, rootID: rootID)
+                .modifier(LGImagePreviewModifier(store: renderer.imagePreviews))
         } else {
             EmptyView()
         }

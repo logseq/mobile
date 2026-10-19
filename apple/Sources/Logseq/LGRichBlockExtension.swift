@@ -20,27 +20,24 @@ enum LGExtensionRegistry {
             in: registry,
             playback: LGYouTubePlaybackState()
         )
+        try OutlinerRowExtension.register(in: registry, playback: LGYouTubePlaybackState())
         return registry
     }
 }
 
 @MainActor
 @Observable
-private final class LGYouTubePlaybackState {
+final class LGYouTubePlaybackState {
     var starts: [String: Int] = [:]
 }
 
-#if os(iOS)
-private struct OutlinerRowHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 44
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
+final class OutlinerRowDropGeometry {
+    var height: CGFloat = 44
 }
 
-private struct OutlinerRowDropDelegate: DropDelegate {
-    let rowHeight: CGFloat
+#if os(iOS)
+struct OutlinerRowDropDelegate: DropDelegate {
+    let geometry: OutlinerRowDropGeometry
     let onDrop: (OutlinerDropPlacement) -> Bool
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -50,7 +47,7 @@ private struct OutlinerRowDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         onDrop(OutlinerDropZone.placement(
             locationY: info.location.y,
-            rowHeight: rowHeight
+            rowHeight: geometry.height
         ))
     }
 }
@@ -106,21 +103,13 @@ private enum LGRichBlockExtension {
 private struct LGRichBlock: View {
     let context: LUIAppleExtensionViewContext
     let playback: LGYouTubePlaybackState
-    @State private var measuredHeight: CGFloat = 44
+    @State private var dropGeometry = OutlinerRowDropGeometry()
 
     var body: some View {
         #if os(iOS)
         content
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: OutlinerRowHeightPreferenceKey.self,
-                        value: geometry.size.height
-                    )
-                }
-            }
-            .onPreferenceChange(OutlinerRowHeightPreferenceKey.self) {
-                measuredHeight = $0
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                dropGeometry.height = height
             }
             .onDrag {
                 emitDragStart()
@@ -129,7 +118,7 @@ private struct LGRichBlock: View {
             .onDrop(
                 of: [UTType.plainText],
                 delegate: OutlinerRowDropDelegate(
-                    rowHeight: measuredHeight,
+                    geometry: dropGeometry,
                     onDrop: emitDrop
                 )
             )
@@ -142,6 +131,7 @@ private struct LGRichBlock: View {
         Group {
             if boolProperty("is-asset") {
                 LGAssetPreview(
+                    uuid: blockID,
                     title: stringProperty("title"),
                     assetType: stringProperty("asset-type"),
                     localPath: stringProperty("local-path")
@@ -269,20 +259,52 @@ enum LGAssetPreviewPolicy {
 }
 
 @MainActor
-private struct LGAssetPreview: View {
+struct LGAssetPreview: View {
+    let uuid: String
     let title: String
     let assetType: String
     let localPath: String
+    @Environment(\.lgImagePreviews) private var imagePreviews
+    @State private var downloadedURL: URL?
+    @State private var downloadError: String?
+    @State private var retry = 0
 
     var body: some View {
         #if os(iOS)
-        if kind == .image,
-           let url = LocalAssetPath.resolve(
-               localPath,
-               title: title,
-               assetType: assetType
-           ) {
-            LGInlineImage(url: url)
+        if kind == .image {
+            Group {
+                if let url = downloadedURL ?? LocalAssetPath.resolve(localPath, title: title, assetType: assetType) {
+                    Button {
+                        Task { await imagePreviews?.present(uuid: uuid, fallback: url) }
+                    } label: {
+                        LGInlineImage(url: url)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Preview image")
+                    .accessibilityIdentifier("image.open." + uuid)
+                } else if let downloadError {
+                    Button { retry += 1 } label: {
+                        SwiftUI.Label("Retry image", systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityHint(downloadError)
+                } else {
+                    ProgressView().frame(height: 120)
+                }
+            }
+            .task(id: "\(uuid):\(retry)") {
+                guard LocalAssetPath.resolve(localPath, title: title, assetType: assetType) == nil else { return }
+                downloadError = nil
+                do {
+                    let url = try await LGGraphAssetLoader.load(uuid: uuid, assetType: assetType)
+                    try Task.checkCancellation()
+                    downloadedURL = url
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    downloadError = error.localizedDescription
+                }
+            }
         } else if LGAssetPreviewPolicy.usesInlineAudioPlayer(
             assetType: assetType,
             localPath: localPath

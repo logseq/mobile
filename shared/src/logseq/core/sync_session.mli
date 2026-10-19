@@ -28,10 +28,12 @@ val plaintext_datom :
   Datascript.datom ->
   (Datascript.datom, string) result
 val plaintext_snapshot_db :
+  ?on_progress:(string -> int -> int option -> unit) ->
   (string -> (string, string) result) ->
   Datascript.db ->
   (Datascript.db, string) result
 val materialize_plaintext_snapshot :
+  on_progress:(string -> int -> int option -> unit) ->
   string ->
   (string -> (string, string) result) ->
   Datascript.db ->

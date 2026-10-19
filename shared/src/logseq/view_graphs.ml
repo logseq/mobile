@@ -1,16 +1,13 @@
 open Lui_protocol
 open Lui_elements
 
-let graph_row (context : Lui_ui.ui_context) model_source graph_source
+let graph_row (_context : Lui_ui.ui_context) model_source graph_source
     _local send : t =
   let graph = (Signal.sample graph_source : Model.graph) in
   let graph_id = graph.id in
   list_item
     ~accessibility_identifier:(View_base.graph_identifier graph)
-    ~padding:16 ~corner_radius:16
-    ~background:
-      (if Lui_ui.host context = KotlinHost then "surface-container-low"
-       else "surface")
+    ~padding_horizontal:12 ~padding_vertical:10 ~min_height:44
     ~disabled_signal:
       (Signal.map2 View_base.graph_row_disabled_ model_source
          graph_source)
@@ -626,7 +623,7 @@ let kotlin_graph_picker_catalog (context : Lui_ui.ui_context) model_source
           column ~gap:12
             [
               keyed
-                ~source:(Signal.map View_base.model_graphs model_source)
+                ~source:(reactive View_base.model_graphs model_source)
                 ~key:View_base.graph_identifier ~cmp:compare
                 ~mount:(fun graph_source ->
                   graph_row context model_source graph_source false send);
@@ -701,7 +698,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
             column ~gap:12
               [
                 keyed
-                  ~source:(Signal.map View_base.model_graphs model_source)
+                  ~source:(reactive View_base.model_graphs model_source)
                   ~key:View_base.graph_identifier ~cmp:compare
                   ~mount:(fun graph_source ->
                     graph_row context model_source graph_source false

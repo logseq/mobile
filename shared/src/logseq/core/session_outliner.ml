@@ -100,12 +100,55 @@ let active_node_route (session : Types.session) =
   | route :: _ -> Some route
   | [] -> None
 
+let deferred_references session =
+  (Types.host session).outliner_projection_limit <> None
+
+let synchronize_reference_cache session =
+  let state = Types.state session in
+  let generation = (Option.map (fun config -> config.Api.graph_id) state.config,
+    Types.projection_server_t session, state.outliner_revision) in
+  if !(session.Types.reference_generation) <> Some generation then begin
+    Hashtbl.clear session.reference_cache;
+    session.reference_generation := Some generation
+  end
+
+let references_for_node session uuid =
+  if deferred_references session then begin
+    synchronize_reference_cache session;
+    Option.value ~default:[] (Hashtbl.find_opt session.Types.reference_cache uuid)
+  end else
+    match (Types.host session).graph_node_references with
+    | Some load -> Option.value ~default:[] (load uuid)
+    | None -> []
+
+let active_reference_uuid session =
+  match active_node_route session with
+  | Some route -> Some route.uuid
+  | None -> Option.map (fun (page : Model.entity_summary) -> page.uuid)
+      (Types.state session).selected_sidebar_page
+
+let pending_reference_uuid session =
+  if not (deferred_references session) then None
+  else begin
+    synchronize_reference_cache session;
+    match active_reference_uuid session with
+    | Some uuid when not (Hashtbl.mem session.Types.reference_cache uuid) -> Some uuid
+    | _ -> None
+  end
+
+let load_page_references session uuid =
+  synchronize_reference_cache session;
+  if active_reference_uuid session = Some uuid
+     && not (Hashtbl.mem session.Types.reference_cache uuid) then begin
+    let blocks = match (Types.host session).graph_node_references with
+      | Some load -> Option.value ~default:[] (load uuid)
+      | None -> [] in
+    Hashtbl.replace session.reference_cache uuid blocks
+  end
+
 let node_route_related_blocks session (route : Types.node_route) =
-  let loader =
-    if route.is_tag then (Types.host session).Types.graph_tag_objects
-    else (Types.host session).graph_node_references
-  in
-  match loader with
+  if not route.is_tag then references_for_node session route.uuid
+  else match (Types.host session).Types.graph_tag_objects with
   | Some load ->
     (match load route.uuid with
      | Some blocks -> blocks
@@ -113,12 +156,7 @@ let node_route_related_blocks session (route : Types.node_route) =
   | None -> route.related_blocks
 
 let node_route_linked_reference_blocks session (route : Types.node_route) =
-  if route.is_tag then
-    match (Types.host session).graph_node_references with
-    | Some load ->
-      (match load route.uuid with Some blocks -> blocks | None -> [])
-    | None -> []
-  else []
+  if route.is_tag then references_for_node session route.uuid else []
 
 let page_for_visible_block (block : Model.block) =
   let title =
@@ -264,19 +302,17 @@ let snapshot_related_blocks (session : Types.session) =
        | Some blocks -> blocks
        | None -> [])
     | _ -> []
+  else if deferred_references session then
+    (match (Types.state session).selected_sidebar_page with
+     | Some page -> references_for_node session page.Model.uuid
+     | None -> [])
   else (Types.state session).related_blocks
 
 let snapshot_linked_reference_blocks (session : Types.session) =
   if selected_page_is_tag session then
-    match
-      ( (Types.state session).selected_sidebar_page
-      , (Types.host session).graph_node_references )
-    with
-    | Some page, Some load ->
-      (match load page.Model.uuid with
-       | Some blocks -> blocks
-       | None -> [])
-    | _ -> []
+    match (Types.state session).selected_sidebar_page with
+    | Some page -> references_for_node session page.Model.uuid
+    | None -> []
   else []
 
 let has_pending_operations (session : Types.session) =

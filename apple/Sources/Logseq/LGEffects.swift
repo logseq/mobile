@@ -541,6 +541,12 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                     message: String(describing: error)
                 )
             }
+        case "load-page-references":
+            request = LogseqRPCRequest(method: "dispatch",
+                params: LogseqRPCParams(action: "loadPageReferences", payload: effect.text))
+        case "hydrate-outliner-rows":
+            request = LogseqRPCRequest(method: "dispatch",
+                params: LogseqRPCParams(action: "hydrateOutlinerRows", payload: effect.text))
         case "search-nodes":
             request = LogseqRPCRequest(
                 method: "dispatch",
@@ -698,7 +704,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                     message: "Local graph deletion is unavailable"
                 )
             }
-            return Self.resolution(from: await deleteLocalGraph(effect.text))
+            return await Self.resolution(from: await deleteLocalGraph(effect.text))
         case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
              "present-attachment", "present-asset", "present-page-share", "sync-now":
@@ -899,7 +905,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         }
 
         let responseJSON = await callCore(request)
-        let resolution = Self.resolution(from: responseJSON)
+        let resolution = await Self.resolution(from: responseJSON)
         if effect.kind == "send-asset", resolution.succeeded,
            let asset = try? JSONDecoder().decode(LGAssetTranscript.self, from: Data(effect.text.utf8)),
            let title = asset.transcript, !title.isEmpty, let uuid = asset.transcriptUUID {
@@ -908,7 +914,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                     uuid: uuid, title: title, parentId: asset.uuid,
                     now: Int64(Date().timeIntervalSince1970 * 1_000)
                 ))
-                return Self.resolution(from: await callCore(LogseqRPCRequest(
+                return await Self.resolution(from: await callCore(LogseqRPCRequest(
                     method: "dispatch", params: LogseqRPCParams(
                         action: "addChildBlock", payload: String(decoding: payload, as: UTF8.self)
                     )
@@ -920,7 +926,11 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         return resolution
     }
 
-    private static func resolution(from responseJSON: String) -> LGEffectResolution {
+    private static func resolution(from responseJSON: String) async -> LGEffectResolution {
+        await Task.detached { decodeResolution(responseJSON) }.value
+    }
+
+    private nonisolated static func decodeResolution(_ responseJSON: String) -> LGEffectResolution {
         do {
             let response = try JSONDecoder().decode(
                 LGCoreEffectResponse.self,

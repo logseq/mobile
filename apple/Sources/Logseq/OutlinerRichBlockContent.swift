@@ -30,8 +30,16 @@ struct OutlinerMixedRichMarkupContent: View {
         OutlinerRichMarkupPolicy.chunks(targetedNodes)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    var body: AnyView {
+        if !OutlinerRichMarkupPolicy.containsRich(nodes) {
+            return AnyView(inlineContent(nodes).accessibilityIdentifier("block.rich.inline.0"))
+        }
+        return AnyView(richContent)
+    }
+
+    private var richContent: some View {
+        let chunks = self.chunks
+        return VStack(alignment: .leading, spacing: 8) {
             ForEach(0..<chunks.count, id: \.self) { index in
                 let chunk = chunks[index]
                 if chunk.count == 1,

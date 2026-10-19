@@ -573,3 +573,19 @@ const char *logseq_lui_apply_host_update(const char *kind,
 void logseq_metric_log(const char *message) {
   LOGSEQ_LOG("%s", message);
 }
+
+static pthread_mutex_t logseq_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static logseq_graph_import_progress_callback logseq_progress_callback = NULL;
+
+void logseq_set_graph_import_progress_callback(logseq_graph_import_progress_callback callback) {
+  pthread_mutex_lock(&logseq_progress_mutex);
+  logseq_progress_callback = callback;
+  pthread_mutex_unlock(&logseq_progress_mutex);
+}
+
+void logseq_graph_import_progress(const char *graph_id, const char *phase, int64_t completed, int64_t total) {
+  pthread_mutex_lock(&logseq_progress_mutex);
+  logseq_graph_import_progress_callback callback = logseq_progress_callback;
+  pthread_mutex_unlock(&logseq_progress_mutex);
+  if (callback != NULL) callback(graph_id, phase, completed, total);
+}

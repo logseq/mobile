@@ -68,6 +68,7 @@ type node_route =
 
 type host_options =
   { storage : Datascript.storage option
+  ; outliner_projection_limit : int option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (string -> Model.model) option
@@ -103,6 +104,7 @@ type host_options =
   ; graph_unlocked : (string -> bool) option
   ; encrypt_title : (string -> string -> (string, string) result) option
   ; resolve_asset_path : string -> string
+  ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :
       (string -> string -> (string * int, string) result) option
   ; journal_page_id : (int -> string option) option
@@ -144,11 +146,14 @@ type session_state =
 type session =
   { host : host_options
   ; state : session_state ref
+  ; reference_cache : (string, Model.block list) Hashtbl.t
+  ; reference_generation : (string option * int option * int) option ref
   }
 
 let default_options =
   {
     storage = None;
+    outliner_projection_limit = None;
     open_graph = None;
     import_snapshot = None;
     model_for_graph = None;
@@ -178,6 +183,7 @@ let default_options =
     graph_unlocked = None;
     encrypt_title = None;
     resolve_asset_path = (fun path -> path);
+    decrypt_asset = None;
     encrypt_asset_file = None;
     journal_page_id = None;
     send = Http.send;
@@ -247,6 +253,8 @@ let create_session options =
   in
   {
     host = options;
+    reference_cache = Hashtbl.create 8;
+    reference_generation = ref None;
     state =
       ref
         {

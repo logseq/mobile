@@ -96,6 +96,18 @@ let outliner_block_content_schema () =
         [ Lui_extension.event_field "uuid" StringScalar true ];
     ]
 
+let outliner_block_row_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  let uuid = Lui_extension.event_field "uuid" StringScalar true in
+  Lui_extension.component "outliner-block-row" [profile IOS SwiftUIHost] true []
+    [Lui_extension.property "payload" StringScalar true None]
+    [Lui_extension.event "edit" [uuid]; Lui_extension.event "open-node" [uuid];
+     Lui_extension.event "collapse" [uuid]; Lui_extension.event "long-press" [uuid];
+     Lui_extension.event "drag-start" [uuid];
+     Lui_extension.event "drop" [uuid; Lui_extension.event_field "placement" StringScalar true];
+     Lui_extension.event "set-status" [uuid; Lui_extension.event_field "count" IntScalar true]]
+
 let native_navigation_stack_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -153,6 +165,7 @@ let liquid_glass_schema () =
 let extension_registry () =
   let registry = Lui_extension.registry () in
   Lui_extension.register_component registry (outliner_editor_schema ());
+  Lui_extension.register_component registry (outliner_block_row_schema ());
   Lui_extension.register_component registry
     (outliner_block_content_schema ());
   Lui_extension.register_component registry

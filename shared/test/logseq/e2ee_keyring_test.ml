@@ -174,7 +174,7 @@ let title_codec_uses_the_loaded_key_and_logseq_transit_envelope () =
   check_eq "decrypted title"
     (expect_ok (E2ee_keyring.decrypt_title ring "encrypted-graph" encrypted))
 
-let assets_encrypt_transit_binary_with_the_loaded_key () =
+let assets_encrypt_raw_bytes_with_the_loaded_key () =
   let plaintext = ref None in
   let engine =
     { crypto with
@@ -198,11 +198,10 @@ let assets_encrypt_transit_binary_with_the_loaded_key () =
     expect_ok
       (E2ee_keyring.encrypt_asset ring "encrypted-graph" "raw-image-bytes")
   in
-  check_eq (Value.Binary "raw-image-bytes")
-    (Codec.of_string
-       (match !plaintext with
-        | Some value -> value
-        | None -> failwith "missing plaintext"));
+  check_eq "raw-image-bytes"
+    (match !plaintext with
+     | Some value -> value
+     | None -> failwith "missing plaintext");
   check_eq
     (Value.Array
        [ Value.Binary "asset-iv"; Value.Binary "asset-ciphertext" ])
@@ -357,8 +356,8 @@ let cases =
       wrong_password_never_persists_key_or_password;
     case "title codec uses the loaded key and logseq transit envelope"
       title_codec_uses_the_loaded_key_and_logseq_transit_envelope;
-    case "assets encrypt transit binary with the loaded key"
-      assets_encrypt_transit_binary_with_the_loaded_key;
+    case "assets encrypt raw bytes with the loaded key"
+      assets_encrypt_raw_bytes_with_the_loaded_key;
     case "provision uploads and caches the new graph key"
       provision_uploads_and_caches_the_new_graph_key;
     case "failed unlock preserves locked state and persistence order"

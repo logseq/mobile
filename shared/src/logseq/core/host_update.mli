@@ -18,6 +18,7 @@ type host_ui_session =
   ; search_path : string list
   ; selected_page_id : string option
   ; settings_open : bool
+  ; recent_graph_ids : string list
   }
 
 type host_settings =

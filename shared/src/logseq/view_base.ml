@@ -265,7 +265,15 @@ let model_new_graph_encrypted_ (current : Model.logseq_model) =
 let model_graph_password (current : Model.logseq_model) =
   current.graph_password
 
-let model_graphs (current : Model.logseq_model) = current.graphs
+let model_graphs (current : Model.logseq_model) =
+  let recent = Hashtbl.create 16 in
+  List.iteri (fun index id -> Hashtbl.replace recent id index) current.recent_graph_ids;
+  let local = Hashtbl.create 16 in
+  List.iter (fun id -> Hashtbl.replace local id ()) current.local_graph_ids;
+  let rank (graph : Model.graph) =
+    (if Hashtbl.mem local graph.id then 0 else 1),
+    Option.value ~default:max_int (Hashtbl.find_opt recent graph.id) in
+  List.stable_sort (fun a b -> compare (rank a) (rank b)) current.graphs
 
 let model_settings_language_menu_open_ (current : Model.logseq_model) =
   current.settings_language_menu_open
@@ -748,10 +756,21 @@ let node_tag_section_empty_ (current : Model.logseq_model) =
 let node_linked_reference_section_visible_ (current : Model.logseq_model) =
   active_node_linked_reference_rows current <> []
 
+let page_content_ready_ (current : Model.logseq_model) =
+  active_node_projection current <> None || current.selected_page_ready
+
+let page_loading_visible_ (current : Model.logseq_model) =
+  current_content_active_ current && not (page_content_ready_ current)
+  && current.outliner_rows = [] && current.effect_error = None
+
 let node_can_add_first_block_ (current : Model.logseq_model) =
-  current_content_active_ current && current.outliner_rows = []
+  current_content_active_ current && page_content_ready_ current
+  && current.outliner_rows = []
   && (not (current_content_is_tag_ current))
   && not (current_content_is_property_ current)
+  && (match Model.active_page current with
+      | Some page -> String.lowercase_ascii page.title <> "library"
+      | None -> true)
 
 let node_outliner_visible_ (current : Model.logseq_model) =
   current.outliner_rows <> []
@@ -1005,11 +1024,11 @@ let sidebar_graph_icon_name (current : Model.logseq_model) (graph : Model.graph)
 
 let local_graphs (current : Model.logseq_model) =
   List.filter (fun (graph : Model.graph) -> Model.graph_local_ current graph.id)
-    current.graphs
+    (model_graphs current)
 
 let remote_graphs (current : Model.logseq_model) =
   List.filter (fun (graph : Model.graph) -> not (Model.graph_local_ current graph.id))
-    current.graphs
+    (model_graphs current)
 
 let local_graphs_empty_ (current : Model.logseq_model) =
   local_graphs current = []

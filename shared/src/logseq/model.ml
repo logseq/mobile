@@ -38,6 +38,7 @@ type ui_session =
   ; search_path : navigation_route list
   ; selected_page_id : string option
   ; settings_open : bool
+  ; recent_graph_ids : string list
   }
 
 type sidebar_page =
@@ -115,6 +116,7 @@ type search_hit =
 
 type outline_row =
   { row_uuid : string
+  ; row_loaded : bool
   ; row_title : string
   ; markup_json : string
   ; youtube_target_url : string option
@@ -217,6 +219,8 @@ type core_projection =
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
   ; search_results : search_hit list
+  ; reference_update : (string * outline_row list) option
+  ; pending_reference_uuid : string option
   ; node_routes : node_projection list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
@@ -227,6 +231,9 @@ type core_projection =
   ; outliner_rows : outline_row list
   ; has_older_journals : bool
   ; is_outliner_patch : bool
+  ; is_outliner_content_patch : bool
+  ; hydrated_rows : outline_row list
+  ; is_search_patch : bool
   ; outliner_row_splices : outline_row_splice list
   }
 
@@ -244,6 +251,8 @@ type logseq_effect =
   | SyncNowEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
+  | LoadPageReferencesEffect of int * string
+  | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
@@ -283,6 +292,7 @@ type logseq_model =
   ; selected_graph_id : string option
   ; graphs : graph list
   ; local_graph_ids : string list
+  ; recent_graph_ids : string list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
   ; unlock_previous_graph_id : string option
@@ -304,6 +314,7 @@ type logseq_model =
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
+  ; selected_page_ready : bool
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
@@ -375,6 +386,7 @@ type logseq_action =
   | SyncFailed of string
   | OpenSearch
   | ChangeSearchQuery of string
+  | EnsureOutlinerRows of string list
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
@@ -585,6 +597,7 @@ let initial () =
     selected_graph_id = None;
     graphs = [];
     local_graph_ids = [];
+    recent_graph_ids = [];
     is_graph_encrypted = false;
     is_graph_unlocked = false;
     unlock_previous_graph_id = None;
@@ -606,6 +619,7 @@ let initial () =
     selected_page = None;
     selected_page_is_tag = false;
     selected_page_is_property = false;
+    selected_page_ready = true;
     related_rows = [];
     linked_reference_rows = [];
     task_statuses = built_in_task_statuses ();
@@ -715,6 +729,8 @@ let effect_id eff =
   | SyncNowEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
   | SearchNodesEffect (id, _) -> id
+  | LoadPageReferencesEffect (id, _) -> id
+  | HydrateOutlinerRowsEffect (id, _) -> id
   | TapOutlinerBlockEffect (id, _) -> id
   | ChangeOutlinerTextEffect (id, _, _, _) -> id
   | ReturnOutlinerEditorEffect (id, _, _, _) -> id
@@ -821,6 +837,14 @@ let contains_change_outliner_text_effect_ effects uuid =
   List.exists (fun eff -> change_outliner_text_effect_for_ eff uuid)
     effects
 
+let remove_trailing_outliner_inputs effects uuid =
+  let rec drop = function
+    | ChangeOutlinerTextEffect (_, id, _, _) :: rest
+    | MoveOutlinerCaretEffect (_, id, _) :: rest when id = uuid -> drop rest
+    | rest -> rest
+  in
+  List.rev (drop (List.rev effects))
+
 let change_outliner_text_active_ (current : logseq_model) uuid =
   contains_change_outliner_text_effect_ current.pending_effects uuid
   || contains_change_outliner_text_effect_ current.in_flight_effects uuid
@@ -882,8 +906,6 @@ let refresh_journal_window current_rows projected_rows =
 let finish_journal_section result start start_index end_index =
   match start with
   | Some (row : outline_row) ->
-    result
-    @ [
         {
           block_id = row.row_uuid;
           page_id = row.page_id;
@@ -891,16 +913,13 @@ let finish_journal_section result start start_index end_index =
           has_divider = result <> [];
           start_index;
           end_index;
-        };
-      ]
+        } :: result
   | None -> result
 
 let journal_section_markers rows =
-  let rec loop index section_key section_start section_start_index result =
-    if index = List.length rows then
-      finish_journal_section result section_start section_start_index index
-    else begin
-      let row = List.nth rows index in
+  let rec loop index section_key section_start section_start_index result = function
+    | [] -> List.rev (finish_journal_section result section_start section_start_index index)
+    | row :: rest ->
       let row_key = journal_section_key row in
       let starts_section =
         match row_key with
@@ -917,10 +936,9 @@ let journal_section_markers rows =
         (if starts_section then row_key else section_key)
         (if starts_section then Some row else section_start)
         (if starts_section then index else section_start_index)
-        next_result
-    end
+        next_result rest
   in
-  loop 0 None None 0 []
+  loop 0 None None 0 [] rows
 
 let node_route_by_uuid routes uuid =
   List.find_opt (fun (route : node_projection) -> route.node_uuid = uuid)
@@ -1054,12 +1072,20 @@ let journal_rows_for_page current uuid =
   | None -> []
 
 let preview_sidebar_page (current : logseq_model) uuid =
-  match sidebar_page_by_uuid current uuid with
+  let already_loaded =
+    current.selected_page_ready && current.node_routes = []
+    && match current.selected_page with
+       | Some page -> page.uuid = uuid
+       | None -> false
+  in
+  if already_loaded then current
+  else match sidebar_page_by_uuid current uuid with
   | Some page ->
     let rows = journal_rows_for_page current uuid in
     {
       current with
       selected_page = Some page;
+      selected_page_ready = rows <> [];
       selected_page_is_tag = false;
       selected_page_is_property = false;
       related_rows = [];
@@ -1193,6 +1219,17 @@ let indexed_outliner_autocomplete_candidates candidates =
     (fun index (candidate : outliner_autocomplete_candidate) ->
       { candidate with candidate_index = index })
     candidates
+
+let snapshot_autocomplete_candidates (current : logseq_model) projection =
+  let stale =
+    match current.outliner_editing with
+    | Some editing when change_outliner_text_active_ current editing.editing_uuid ->
+      current.outliner_editing <> projection.projection_outliner_editing
+    | _ -> false
+  in
+  if stale then []
+  else indexed_outliner_autocomplete_candidates
+    projection.projection_outliner_autocomplete_candidates
 
 let valid_authentication_state_ state =
   state = "restoring" || state = "signedOut" || state = "signingIn"
@@ -1431,7 +1468,8 @@ let resolve_successful_effect (current : logseq_model) eff _message =
          graph_loading = false;
          selected_graph_id = Some graph_id;
          selected_graph = Some selected.name;
-       }
+         recent_graph_ids = graph_id :: remove_string current.recent_graph_ids graph_id;
+            }
      | None ->
        { current with destination = JournalsDestination; graph_loading = false })
   | UnlockGraphEffect _ ->
@@ -1585,6 +1623,7 @@ let editing_sync_state (current : logseq_model) =
 let ui_session (current : logseq_model) =
   {
     graph_id = current.selected_graph_id;
+    recent_graph_ids = current.recent_graph_ids;
     destination = current.destination;
     assets = current.composer_assets;
     composer_expanded = current.composer_expanded;
@@ -1619,6 +1658,7 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
       {
         current with
         destination = session.destination;
+        recent_graph_ids = session.recent_graph_ids;
         composer_assets = session.assets;
         composer_expanded = session.composer_expanded;
         composer_autofocus = session.composer_expanded;
@@ -1652,6 +1692,27 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
     | _ -> routed
   end
 
+let hydrate_rows content rows =
+  let by_id = Hashtbl.create (List.length content) in
+  List.iter (fun (row : outline_row) -> Hashtbl.replace by_id row.row_uuid row) content;
+  List.map (fun (row : outline_row) ->
+    match Hashtbl.find_opt by_id row.row_uuid with
+    | None -> row
+    | Some value -> { value with depth = row.depth; has_children = row.has_children;
+        is_collapsed = row.is_collapsed; opens_as_page = row.opens_as_page }) rows
+
+let retain_shell_contents previous rows =
+  let by_id = Hashtbl.create (List.length previous) in
+  List.iter (fun (row : outline_row) -> Hashtbl.replace by_id row.row_uuid row) previous;
+  List.map (fun (row : outline_row) ->
+    if row.row_loaded then row else
+      match Hashtbl.find_opt by_id row.row_uuid with
+      | None -> row
+      | Some cached -> { cached with row_loaded = false; depth = row.depth;
+          has_children = row.has_children; is_collapsed = row.is_collapsed;
+          opens_as_page = row.opens_as_page; page_id = row.page_id;
+          journal_title = row.journal_title; journal_day = row.journal_day }) rows
+
 let rec update (current : logseq_model) action =
   match action with
   | SaveUISession ->
@@ -1664,6 +1725,16 @@ let rec update (current : logseq_model) action =
   | SyncSucceeded -> { current with sync_state = SyncedState }
   | SyncFailed reason -> { current with sync_state = FailedState reason }
   | OpenSearch -> { current with search_open = true }
+  | EnsureOutlinerRows ids ->
+    let requested = Hashtbl.create 32 in
+    List.iter (function HydrateOutlinerRowsEffect (_, ids) ->
+      List.iter (fun id -> Hashtbl.replace requested id ()) ids | _ -> ())
+      (current.pending_effects @ current.in_flight_effects);
+    let ids = List.filter (fun id ->
+      if Hashtbl.mem requested id then false
+      else (Hashtbl.add requested id (); true)) ids in
+    if ids = [] then current
+    else enqueue_effect current (HydrateOutlinerRowsEffect (current.next_effect_id, ids))
   | ChangeSearchQuery query ->
     let pending = remove_search_effects current.pending_effects in
     if String_kit.is_blank query then
@@ -1690,7 +1761,13 @@ let rec update (current : logseq_model) action =
       { current with search_results = results; search_loading = false }
     else current
   | ApplyCoreSnapshot projection ->
-    apply_core_snapshot current projection
+    let updated = apply_core_snapshot current projection in
+    (match projection.pending_reference_uuid with
+     | Some uuid when not (List.exists (function
+         | LoadPageReferencesEffect (_, candidate) -> candidate = uuid
+         | _ -> false) (updated.pending_effects @ updated.in_flight_effects)) ->
+       enqueue_effect updated (LoadPageReferencesEffect (updated.next_effect_id, uuid))
+     | _ -> updated)
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
@@ -1703,7 +1780,8 @@ let rec update (current : logseq_model) action =
       }
     in
     let id = updated.next_effect_id in
-    enqueue_effect updated
+    enqueue_effect { updated with pending_effects =
+      remove_trailing_outliner_inputs updated.pending_effects uuid }
       (ChangeOutlinerTextEffect (id, uuid, title, caret))
   | ReturnOutlinerEditor (uuid, title, caret) ->
     let updated = update_editing current uuid title caret in
@@ -1722,7 +1800,14 @@ let rec update (current : logseq_model) action =
     in
     let updated = update_editing current uuid title caret in
     let id = updated.next_effect_id in
-    enqueue_effect updated (MoveOutlinerCaretEffect (id, uuid, caret))
+    let pending = remove_trailing_outliner_inputs updated.pending_effects uuid in
+    let has_pending_text = List.exists
+      (fun eff -> change_outliner_text_effect_for_ eff uuid)
+      (sub_list (List.length pending) (List.length updated.pending_effects) updated.pending_effects) in
+    enqueue_effect { updated with pending_effects = pending;
+      outliner_autocomplete_candidates = [] }
+      (if has_pending_text then ChangeOutlinerTextEffect (id, uuid, title, caret)
+       else MoveOutlinerCaretEffect (id, uuid, caret))
   | ToggleOutlinerCollapsed uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (ToggleOutlinerCollapsedEffect (id, uuid))
@@ -2028,6 +2113,10 @@ let rec update (current : logseq_model) action =
        else current
      | None -> current)
   | SelectSidebarPage uuid ->
+    let reusable = current.selected_page_ready && current.node_routes = []
+      && current.app_navigation_path = [] && not current.search_open
+      && current.outliner_editing = None && current.outliner_selected_block_ids = []
+      && (match current.selected_page with Some page -> page.uuid = uuid | None -> false) in
     let updated =
       preview_sidebar_page
         {
@@ -2038,8 +2127,8 @@ let rec update (current : logseq_model) action =
         }
         uuid
     in
-    let id = updated.next_effect_id in
-    enqueue_effect updated (SelectSidebarPageEffect (id, uuid))
+    if reusable then updated
+    else enqueue_effect updated (SelectSidebarPageEffect (updated.next_effect_id, uuid))
   | OpenQuickAction kind ->
     if not (kind = "capture" || kind = "audio" || kind = "journal") then
       current
@@ -2469,6 +2558,36 @@ let rec update (current : logseq_model) action =
 
 and apply_core_snapshot (current : logseq_model)
     (projection : core_projection) =
+  if Option.is_some projection.reference_update then
+    if projection.selected_graph_id <> current.selected_graph_id then current
+    else
+      let uuid, rows = Option.get projection.reference_update in
+      let selected = Option.map (fun (page : sidebar_page) -> page.uuid) current.selected_page = Some uuid in
+      { current with
+        related_rows = (if selected && not current.selected_page_is_tag then rows else current.related_rows);
+        linked_reference_rows = (if selected && current.selected_page_is_tag then rows else current.linked_reference_rows);
+        node_routes = List.map (fun (route : node_projection) ->
+          if route.node_uuid <> uuid then route
+          else if route.node_is_tag then { route with node_linked_reference_rows = rows }
+          else { route with node_related_rows = rows }) current.node_routes }
+  else if projection.is_search_patch then
+    if projection.selected_graph_id = current.selected_graph_id
+       && projection.projection_search_query = current.search_query then
+      { current with search_results = projection.search_results; search_loading = false }
+    else current
+  else if projection.is_outliner_content_patch then
+    if projection.selected_graph_id <> current.selected_graph_id then current
+    else
+      let hydrate = hydrate_rows projection.hydrated_rows in
+      { current with outliner_rows = hydrate current.outliner_rows;
+        journal_outliner_rows = hydrate current.journal_outliner_rows;
+        related_rows = hydrate current.related_rows;
+        linked_reference_rows = hydrate current.linked_reference_rows;
+        node_routes = List.map (fun (route : node_projection) ->
+          { route with node_outliner_rows = hydrate route.node_outliner_rows;
+            node_related_rows = hydrate route.node_related_rows;
+            node_linked_reference_rows = hydrate route.node_linked_reference_rows }) current.node_routes }
+  else
   if projection.is_graph_catalog_patch then
     {
       current with
@@ -2523,8 +2642,7 @@ and apply_core_snapshot (current : logseq_model)
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = projection.projection_outliner_autocomplete;
       outliner_autocomplete_candidates =
-        indexed_outliner_autocomplete_candidates
-          projection.projection_outliner_autocomplete_candidates;
+        snapshot_autocomplete_candidates current projection;
       outliner_selected_block_ids =
         projection.projection_outliner_selected_block_ids;
       outliner_section_markers = journal_section_markers projected_rows;
@@ -2559,6 +2677,8 @@ and apply_core_snapshot (current : logseq_model)
           projection.outliner_rows
       else projection.outliner_rows
     in
+    let projected_rows = if selected_graph_changed then projected_rows
+      else retain_shell_contents current.outliner_rows projected_rows in
     let journal_rows =
       if projection_is_journal_home then projected_rows
       else
@@ -2571,6 +2691,8 @@ and apply_core_snapshot (current : logseq_model)
               projection.journal_outliner_rows
         | Some _ -> current.journal_outliner_rows
     in
+    let journal_rows = if selected_graph_changed then journal_rows
+      else retain_shell_contents current.journal_outliner_rows journal_rows in
     let has_older_journals =
       if preserve_journal_window then current.has_older_journals
       else projection.has_older_journals
@@ -2611,23 +2733,30 @@ and apply_core_snapshot (current : logseq_model)
         favorites = sidebar.favorites;
         recent_pages = sidebar.recent_pages;
         selected_page = sidebar.selected_page;
+        selected_page_ready = true;
         selected_page_is_tag = sidebar.selected_page_is_tag;
         selected_page_is_property = sidebar.selected_page_is_property;
-        related_rows = sidebar.related_rows;
-        linked_reference_rows = sidebar.linked_reference_rows;
+        related_rows = (if selected_graph_changed then sidebar.related_rows else retain_shell_contents current.related_rows sidebar.related_rows);
+        linked_reference_rows = (if selected_graph_changed then sidebar.linked_reference_rows else retain_shell_contents current.linked_reference_rows sidebar.linked_reference_rows);
         task_statuses = available_task_statuses projection.task_statuses;
         flashcards = projection.flashcards;
         flashcard_cloze_revealed =
           (if card_changed then false else current.flashcard_cloze_revealed);
         flashcard_answer_revealed =
           (if card_changed then false else current.flashcard_answer_revealed);
-        node_routes = projection.node_routes;
+        node_routes = (if selected_graph_changed then projection.node_routes else
+          List.map (fun (route : node_projection) ->
+            match List.find_opt (fun (previous : node_projection) -> previous.node_uuid = route.node_uuid) current.node_routes with
+            | None -> route
+            | Some previous -> { route with
+                node_outliner_rows = retain_shell_contents previous.node_outliner_rows route.node_outliner_rows;
+                node_related_rows = retain_shell_contents previous.node_related_rows route.node_related_rows;
+                node_linked_reference_rows = retain_shell_contents previous.node_linked_reference_rows route.node_linked_reference_rows }) projection.node_routes);
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
         outliner_autocomplete = projection.projection_outliner_autocomplete;
         outliner_autocomplete_candidates =
-          indexed_outliner_autocomplete_candidates
-            projection.projection_outliner_autocomplete_candidates;
+          snapshot_autocomplete_candidates current projection;
         outliner_selected_block_ids =
           projection.projection_outliner_selected_block_ids;
         has_older_journals;

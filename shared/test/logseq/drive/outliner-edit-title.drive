@@ -8,7 +8,7 @@ type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.block.journal-block-1
-press prop:accessibility-identifier=outliner.block-action.journal-block-1
+ext ext:outliner-block-row outliner-block-row edit '{"uuid":"journal-block-1"}'
 wait prop:accessibility-identifier=toolbar.outliner.editor
 ext ext:outliner-editor outliner-editor text-change '{"title":"Renamed block","caret-utf16-offset":13}'
 ext ext:outliner-editor outliner-editor return '{"title":"Renamed block","caret-utf16-offset":13}'

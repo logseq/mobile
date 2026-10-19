@@ -8,6 +8,10 @@ private struct LGPatchMetadata: Decodable {
     let generation: Int
 }
 
+private struct LGEffectWait: Decodable {
+    let waitMs: Int
+}
+
 public struct LGPlatformCommandBatch: Equatable, Sendable {
     public let revision: Int
     public let graphName: String?
@@ -30,12 +34,15 @@ private struct LGPendingHostUpdate {
 }
 
 
-private struct LGCoreResponseEnvelope: Decodable {
+private struct LGCoreResponseEnvelope: Decodable, Sendable {
     let result: Result?
 
-    struct Result: Decodable {
+    struct Result: Decodable, Sendable {
         let isPendingSyncPatch: Bool?
         let isOutlinerPatch: Bool?
+        let isOutlinerContentPatch: Bool?
+        let isSearchPatch: Bool?
+        let isReferencePatch: Bool?
         let graphName: String?
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
@@ -45,17 +52,17 @@ private struct LGCoreResponseEnvelope: Decodable {
         let pendingSyncRequest: PendingSyncRequest?
     }
 
-    struct NodeRoute: Decodable {
+    struct NodeRoute: Decodable, Sendable {
         let outlinerState: OutlinerState?
     }
 
-    struct OutlinerState: Decodable {
+    struct OutlinerState: Decodable, Sendable {
         let autocomplete: Autocomplete?
     }
 
-    struct Autocomplete: Decodable {}
+    struct Autocomplete: Decodable, Sendable {}
 
-    struct PendingSyncRequest: Decodable {}
+    struct PendingSyncRequest: Decodable, Sendable {}
 }
 
 private struct LGCoreSyncProjection: Equatable {
@@ -120,6 +127,15 @@ public final class LGRuntime {
     private var patchTail: Task<Void, Never>?
 
     @ObservationIgnored
+    private var nativeTail: Task<String, Never>?
+
+    @ObservationIgnored
+    private var queryWait: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var effectWakeVersion = 0
+
+    @ObservationIgnored
     private var patchApplyEpoch = 0
 
     public init(
@@ -179,6 +195,8 @@ public final class LGRuntime {
 
     public func stop() {
         guard isStarted else { return }
+        queryWait?.cancel()
+        queryWait = nil
         cancelOutlinerAutosave()
         invalidatePendingPatchApplies()
         do {
@@ -201,17 +219,20 @@ public final class LGRuntime {
             pendingCoreResponses.append(response)
             return
         }
+        if !synchronously {
+            enqueueNative(.snapshot(response), coreResponse: response)
+            return
+        }
         let envelope = decodeCoreResponse(response)
         guard shouldApplyCoreResponse(response, envelope: envelope) else {
             Self.log.notice("skipped core response (deduped) pendingSync=\(envelope?.result?.isPendingSyncPatch ?? false, privacy: .public) outliner=\(envelope?.result?.isOutlinerPatch ?? false, privacy: .public)")
             deliverPlatformCommands(envelope)
             return
         }
-        let patch = native.applySnapshot(response)
         if synchronously {
-            try apply(patch)
+            try apply(native.applySnapshot(response))
         } else {
-            enqueueApply(patch)
+            enqueueNative(.snapshot(response))
         }
         recordAppliedCoreResponse(response, envelope: envelope)
         deliverPlatformCommands(envelope)
@@ -225,7 +246,7 @@ public final class LGRuntime {
         if result.isPendingSyncPatch == true {
             return syncProjection(result) != lastCoreSyncProjection
         }
-        if result.isOutlinerPatch == true {
+        if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true {
             return true
         }
         return response != lastAuthoritativeCoreResponse
@@ -243,13 +264,19 @@ public final class LGRuntime {
         if result.isPendingSyncPatch == true {
             lastCoreSyncProjection = syncProjection(result)
             authoritativeCoreResponseInvalidated = true
-        } else if result.isOutlinerPatch == true {
+        } else if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true {
             authoritativeCoreResponseInvalidated = true
         } else {
             lastAuthoritativeCoreResponse = response
             lastCoreSyncProjection = syncProjection(result)
             authoritativeCoreResponseInvalidated = false
         }
+    }
+
+    private nonisolated static func decodeCoreResponseAsync(_ response: String) async -> LGCoreResponseEnvelope? {
+        await Task.detached {
+            try? JSONDecoder().decode(LGCoreResponseEnvelope.self, from: Data(response.utf8))
+        }.value
     }
 
     private func decodeCoreResponse(_ response: String) -> LGCoreResponseEnvelope? {
@@ -273,49 +300,38 @@ public final class LGRuntime {
             pendingHostUpdates.append(LGPendingHostUpdate(kind: kind, payload: payload))
             return
         }
-        enqueueApply(native.applyHostUpdate(kind: kind, payload: payload))
+        enqueueNative(.hostUpdate(kind, payload))
     }
 
     private func receive(_ event: LGRendererEvent) {
-        let patch: String
+        let operation: LGNativeOperation
         switch event.kind {
         case .appear:
-            patch = native.appear(node: event.nodeID)
+            operation = .appear(event.nodeID)
         case .press:
-            patch = native.press(node: event.nodeID)
+            operation = .press(event.nodeID)
         case .longPress:
-            patch = native.longPress(node: event.nodeID)
+            operation = .longPress(event.nodeID)
         case .textChanged:
-            patch = native.textChanged(node: event.nodeID, text: event.text ?? "")
+            operation = .textChanged(event.nodeID, event.text ?? "")
         case .submit:
-            patch = native.submit(node: event.nodeID)
+            operation = .submit(event.nodeID)
         case .toggleChanged:
-            patch = native.toggleChanged(
-                node: event.nodeID,
-                checked: event.checked ?? false
-            )
+            operation = .toggleChanged(event.nodeID, event.checked ?? false)
         case .change:
-            patch = native.change(node: event.nodeID)
+            operation = .change(event.nodeID)
         case .valueChanged:
-            patch = native.valueChanged(node: event.nodeID, value: event.value ?? 0.0)
+            operation = .valueChanged(event.nodeID, event.value ?? 0.0)
         case .dismiss:
-            patch = native.dismiss(node: event.nodeID)
+            operation = .dismiss(event.nodeID)
         case .doublePress:
-            patch = native.doublePress(node: event.nodeID)
+            operation = .doublePress(event.nodeID)
         case .scrollCompleted:
-            patch = native.scrollCompleted(
-                node: event.nodeID,
-                token: event.token ?? 0,
-                outcome: event.outcome ?? ""
-            )
+            operation = .scrollCompleted(event.nodeID, event.token ?? 0, event.outcome ?? "")
         case .visibleRange:
-            patch = native.visibleRange(
-                node: event.nodeID,
-                first: event.first ?? 0,
-                last: event.last ?? 0
-            )
+            operation = .visibleRange(event.nodeID, event.first ?? 0, event.last ?? 0)
         case .picked:
-            patch = native.picked(node: event.nodeID, payload: event.payload ?? "")
+            operation = .picked(event.nodeID, event.payload ?? "")
         case .extension:
             guard let identifier = event.extensionIdentifier,
                   let name = event.extensionName,
@@ -332,17 +348,54 @@ public final class LGRuntime {
                 ?? Self.extensionInt(values, name: "count")
                 ?? Self.extensionPlacement(values)
                 ?? 0
-            patch = native.extensionEvent(
-                node: event.nodeID,
-                identifier: identifier,
-                name: name,
-                text: text,
-                value: value
-            )
+            operation = .extensionEvent(event.nodeID, identifier, name, text, value)
         }
 
-        enqueueApply(patch)
+        enqueueNative(operation)
         scheduleEffectDrain()
+    }
+
+    // Keep VM execution and patch delivery in one ordered chain. The core's
+    // worker may be reading a large graph; the main actor must never wait on
+    // its semaphore, including for a seemingly small input event.
+    @discardableResult
+    private func enqueueNative(
+        _ operation: LGNativeOperation,
+        effectDispatch: Bool = false,
+        coreResponse: String? = nil
+    ) -> Task<String, Never> {
+        let previous = nativeTail
+        let epoch = patchApplyEpoch
+        let task = Task { [weak self] in
+            _ = await previous?.value
+            guard let self, epoch == self.patchApplyEpoch else { return "" }
+            var envelope: LGCoreResponseEnvelope?
+            if let coreResponse {
+                envelope = await Self.decodeCoreResponseAsync(coreResponse)
+                guard epoch == self.patchApplyEpoch else { return "" }
+                guard self.shouldApplyCoreResponse(coreResponse, envelope: envelope) else {
+                    self.deliverPlatformCommands(envelope)
+                    return ""
+                }
+            }
+            let result = await self.native.performAsync(operation)
+            guard epoch == self.patchApplyEpoch else { return "" }
+            if effectDispatch {
+                if let dispatch = try? JSONDecoder().decode(LGEffectDispatch.self, from: Data(result.utf8)) {
+                    self.enqueueApply(dispatch.patch)
+                }
+            } else {
+                self.enqueueApply(result)
+            }
+            if let coreResponse {
+                self.recordAppliedCoreResponse(coreResponse, envelope: envelope)
+                self.deliverPlatformCommands(envelope)
+            }
+            if case .takeEffect = operation { } else { self.scheduleEffectDrain() }
+            return result
+        }
+        nativeTail = task
+        return task
     }
 
     private static func extensionString(
@@ -374,18 +427,40 @@ public final class LGRuntime {
     }
 
     private func scheduleEffectDrain() {
+        guard isStarted else { return }
+        effectWakeVersion &+= 1
+        queryWait?.cancel()
         guard !isDrainingEffects else { return }
         isDrainingEffects = true
         Task { [weak self] in
-            await self?.drainEffects()
+            guard let self else { return }
+            guard self.isStarted else {
+                self.isDrainingEffects = false
+                return
+            }
+            await self.drainEffects()
         }
     }
 
     private func drainEffects() async {
         defer { isDrainingEffects = false }
+        let epoch = patchApplyEpoch
         while true {
-            let encoded = native.takeEffect()
+            guard epoch == patchApplyEpoch else { return }
+            let wakeVersion = effectWakeVersion
+            let encoded = await enqueueNative(.takeEffect, effectDispatch: true).value
+            guard epoch == patchApplyEpoch else { return }
+            if let wait = try? JSONDecoder().decode(LGEffectWait.self, from: Data(encoded.utf8)) {
+                let task = Task {
+                    _ = try? await Task.sleep(for: .milliseconds(max(1, min(200, wait.waitMs))))
+                }
+                queryWait = task
+                await task.value
+                queryWait = nil
+                continue
+            }
             if encoded.isEmpty {
+                if wakeVersion != effectWakeVersion { continue }
                 if outlinerAutosavePending {
                     outlinerAutosavePending = false
                     await executeOutlinerAutosave()
@@ -408,7 +483,6 @@ public final class LGRuntime {
                             + " kind=\(dispatch.effect.kind)"
                     )
                     #endif
-                    enqueueApply(dispatch.patch)
                     effect = dispatch.effect
                 } else {
                     #if DEBUG
@@ -424,23 +498,20 @@ public final class LGRuntime {
             cancelOutlinerAutosaveBeforeExecuting(effect)
             Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
             let resolution = await effectExecutor.execute(effect)
+            guard epoch == patchApplyEpoch else { return }
             Self.log.notice("effect resolved id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) succeeded=\(resolution.succeeded, privacy: .public)")
             if !resolution.succeeded {
                 Self.log.error("effect failed id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) message=\(resolution.message, privacy: .public)")
             }
             if resolution.succeeded,
                case .coreResponse = resolution.output {
-                enqueueApply(native.applySnapshot(resolution.message))
+                _ = await enqueueNative(.snapshot(resolution.message)).value
             }
-            enqueueApply(native.resolveEffect(
-                id: effect.id,
-                succeeded: resolution.succeeded,
-                message: resolution.message
-            ))
+            _ = await enqueueNative(.resolveEffect(effect.id, resolution.succeeded, resolution.message)).value
             if resolution.succeeded {
                 switch resolution.output {
                 case .coreResponse:
-                    let envelope = decodeCoreResponse(resolution.message)
+                    let envelope = await Self.decodeCoreResponseAsync(resolution.message)
                     deliverPlatformCommands(envelope)
                     scheduleOutlinerAutosaveIfNeeded(
                         after: effect,
@@ -455,17 +526,14 @@ public final class LGRuntime {
                         return
                     }
                 case let .hostUpdate(kind):
-                    enqueueApply(native.applyHostUpdate(
-                        kind: kind,
-                        payload: resolution.message
-                    ))
+                    _ = await enqueueNative(.hostUpdate(kind, resolution.message)).value
                 case .discard:
                     break
                 }
             }
             if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task") {
                 // A send may finish while backgrounded; do not restore already submitted drafts.
-                enqueueApply(native.applyHostUpdate(kind: "save-ui-session", payload: "null"))
+                _ = await enqueueNative(.hostUpdate("save-ui-session", "null")).value
             }
             lastError = resolution.succeeded ? nil : resolution.message
         }
@@ -491,7 +559,8 @@ public final class LGRuntime {
 
     private func cancelOutlinerAutosaveBeforeExecuting(_ effect: LGEffect) {
         guard effect.kind.contains("outliner"),
-              effect.kind != "move-outliner-caret" else { return }
+              effect.kind != "move-outliner-caret",
+              effect.kind != "hydrate-outliner-rows" else { return }
         cancelOutlinerAutosave()
     }
 
@@ -552,8 +621,8 @@ public final class LGRuntime {
             lastError = resolution.message
             return
         }
-        enqueueApply(native.applySnapshot(resolution.message))
-        let syncEnvelope = decodeCoreResponse(resolution.message)
+        _ = await enqueueNative(.snapshot(resolution.message)).value
+        let syncEnvelope = await Self.decodeCoreResponseAsync(resolution.message)
         deliverPlatformCommands(syncEnvelope)
 
         let syncResolution = await startSyncIfNeeded(envelope: syncEnvelope)
@@ -566,23 +635,11 @@ public final class LGRuntime {
 
     private func apply(_ patch: String) throws {
         guard !patch.isEmpty else { return }
+        let decoded = try LUIAppleBackend.decode(patch)
+        try renderer.apply(decoded: decoded)
         #if DEBUG
-        let gen = Self.patchGeneration(patch) ?? -1
-        print("LOGSEQ_LG_PATCH apply generation=\(gen)")
-        if let docs = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first {
-            let dir = docs.appendingPathComponent("lui-patches", isDirectory: true)
-            try? FileManager.default.createDirectory(
-                at: dir, withIntermediateDirectories: true
-            )
-            try? patch.write(
-                to: dir.appendingPathComponent("gen-\(gen).json"),
-                atomically: true, encoding: .utf8
-            )
-        }
+        Task.detached { Self.dumpPatchIfRequested(patch, generation: decoded.generation) }
         #endif
-        try renderer.apply(patchJSON: patch)
         lastError = nil
     }
 
@@ -595,7 +652,11 @@ public final class LGRuntime {
         guard !patch.isEmpty else { return }
         let epoch = patchApplyEpoch
         let decodeTask = Task.detached {
-            try LUIAppleBackend.decode(patch)
+            let decoded = try LUIAppleBackend.decode(patch)
+            #if DEBUG
+            Self.dumpPatchIfRequested(patch, generation: decoded.generation)
+            #endif
+            return decoded
         }
         let previous = patchTail
         patchTail = Task { [weak self] in
@@ -607,23 +668,7 @@ public final class LGRuntime {
                     Self.log.warning("dropped stale patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public) epoch=\(epoch, privacy: .public) current=\(self.patchApplyEpoch, privacy: .public)")
                     return
                 }
-                Self.log.notice("apply patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public)")
-                #if DEBUG
-                if let docs = FileManager.default.urls(
-                    for: .documentDirectory, in: .userDomainMask
-                ).first {
-                    let dir = docs.appendingPathComponent("lui-patches", isDirectory: true)
-                    try? FileManager.default.createDirectory(
-                        at: dir, withIntermediateDirectories: true
-                    )
-                    try? patch.write(
-                        to: dir.appendingPathComponent(
-                            "gen-\(Self.patchGeneration(patch) ?? -1).json"
-                        ),
-                        atomically: true, encoding: .utf8
-                    )
-                }
-                #endif
+                Self.log.notice("apply patch generation=\(decoded.generation, privacy: .public)")
                 try self.renderer.apply(decoded: decoded)
                 self.lastError = nil
             } catch {
@@ -640,7 +685,18 @@ public final class LGRuntime {
     private func invalidatePendingPatchApplies() {
         patchApplyEpoch += 1
         patchTail = nil
+        nativeTail = nil
     }
+
+    #if DEBUG
+    private nonisolated static func dumpPatchIfRequested(_ patch: String, generation: Int) {
+        guard ProcessInfo.processInfo.environment["LOGSEQ_DUMP_LUI_PATCHES"] == "1",
+              let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let directory = docs.appendingPathComponent("lui-patches", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? patch.write(to: directory.appendingPathComponent("gen-\(generation).json"), atomically: true, encoding: .utf8)
+    }
+    #endif
 
     private static func patchGeneration(_ patch: String) -> Int? {
         try? JSONDecoder().decode(

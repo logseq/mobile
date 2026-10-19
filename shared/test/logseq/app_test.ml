@@ -131,6 +131,15 @@ let rec descendant_with_extension runtime application parent identifier =
     in
     loop 0
 
+let native_row application parent =
+  descendant_with_extension (Lui_app.runtime application) application parent
+    "outliner-block-row"
+
+let native_row_payload application parent =
+  match extension_property application (native_row application parent) "payload" with
+  | Some (Lui_protocol.StringValue value) -> Yojson.Basic.from_string value
+  | _ -> failwith "Native row payload missing"
+
 let child_with_identifier runtime parent identifier =
   let children = children runtime parent in
   let rec loop index =
@@ -338,6 +347,11 @@ let empty_core_projection () =
     outliner_rows = [];
     has_older_journals = false;
     is_outliner_patch = false;
+    is_outliner_content_patch = false;
+    reference_update = None;
+    pending_reference_uuid = None;
+    hydrated_rows = [];
+    is_search_patch = false;
     outliner_row_splices = [];
   }
 
@@ -394,6 +408,7 @@ let graph id name encrypted ready =
 let journal_outline_row uuid page_id title journal_title journal_day depth =
   {
     Model.row_uuid = uuid;
+    row_loaded = true;
     row_title = title;
     markup_json = "[]";
     youtube_target_url = None;
@@ -2044,23 +2059,23 @@ let initial_shell_renders_the_graph_picker_without_a_selected_graph () =
     descendant_with_node_kind renderer updated_picker Lui_protocol.Scroll
   in
   check ~msg:"catalog updates retain the launch picker" (graph_row <> -1);
-  check ~msg:"the graph catalog uses main's plain scrolling card stack"
+  check ~msg:"the graph catalog uses a plain scrolling list"
     (graph_scroll <> -1);
-  check_eq ~msg:"a graph card keeps native list-item interaction"
+  check_eq ~msg:"a graph row keeps native list-item interaction"
     (node renderer graph_row)
     (Some Lui_protocol.ListItem);
-  check_eq ~msg:"main's graph cards do not add graph-type icons"
+  check_eq ~msg:"graph rows do not add graph-type icons"
     (descendant_count_with_node_kind renderer graph_row Lui_protocol.Icon)
     0;
-  check_eq ~msg:"graph cards preserve main's content inset"
-    (property_int renderer graph_row Lui_protocol.PaddingValue)
-    16;
-  check_eq ~msg:"graph cards preserve main's corner radius"
-    (property_int renderer graph_row Lui_protocol.CornerRadius)
-    16;
-  check_eq ~msg:"graph cards use the app theme surface"
-    (property_string renderer graph_row Lui_protocol.BackgroundValue)
-    "surface";
+  check_eq ~msg:"graph rows use a compact horizontal inset"
+    (property_int renderer graph_row Lui_protocol.PaddingHorizontal)
+    12;
+  check_eq ~msg:"graph rows keep a comfortable touch target"
+    (property_int renderer graph_row Lui_protocol.MinHeight)
+    44;
+  check_eq ~msg:"graph rows do not use card backgrounds"
+    (property renderer graph_row Lui_protocol.BackgroundValue)
+    None;
   dispatch application (Lui_protocol.Press graph_row);
   flush application;
   check_eq ~msg:"a launch graph uses the typed graph lifecycle"
@@ -2472,6 +2487,7 @@ let pending_sync_patches_preserve_the_current_screen_and_cursor () =
 let outline_row uuid title =
   {
     Model.row_uuid = uuid;
+    row_loaded = true;
     row_title = title;
     markup_json = "[]";
     youtube_target_url = None;
@@ -2899,10 +2915,9 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
     descendant_with_identifier renderer outliner
       "section.node.linked-references"
   in
-  let related_list =
-    descendant_with_identifier renderer outliner "list.node.related"
+  let related_group =
+    parent_with_child_identifier renderer outliner "outliner.block.reference"
   in
-  let related_group = List.nth (children renderer related_list) 0 in
   let add_first =
     descendant_with_identifier renderer outliner
       "button.outliner.add-first-block"
@@ -3142,12 +3157,13 @@ let journal_node_insertion_keeps_the_rendered_sibling_position () =
   let outliner =
     descendant_with_identifier renderer screen "list.outliner"
   in
-  let rows =
-    List.map
-      (fun node ->
-         property_string renderer node Lui_protocol.AccessibilityIdentifier)
-      (children renderer outliner)
+  let rec row_identifiers id =
+    let identifier = property_string renderer id Lui_protocol.AccessibilityIdentifier in
+    if String.starts_with ~prefix:"outliner.block." identifier then [identifier]
+    else List.fold_left (fun acc child -> List.rev_append (row_identifiers child) acc)
+      [] (children renderer id) |> List.rev
   in
+  let rows = row_identifiers outliner in
   check_eq
     ~msg:"inserting in the middle must retain the rendered sibling order"
     rows
@@ -4483,6 +4499,9 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
     {
       (empty_core_projection ()) with
       Model.projection_outliner_editing = Some stale;
+      projection_outliner_autocomplete_candidates = [
+        { Model.candidate_index = 0; candidate_label = "Old result";
+          candidate_value = "old-result" } ];
     }
   in
   let pending =
@@ -4505,6 +4524,8 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
   in
   check_eq ~msg:"an older core response cannot overwrite queued typing"
     preserved.outliner_editing (Some latest);
+  check_eq ~msg:"an older autocomplete response cannot publish stale candidates"
+    preserved.outliner_autocomplete_candidates [];
   check_eq ~msg:"the authoritative value applies after local typing settles"
     settled.outliner_editing (Some stale)
 
@@ -5497,27 +5518,27 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
     descendant_with_identifier renderer screen "layout.node.title"
   in
   let outliner =
-    descendant_with_identifier renderer screen "scroll.outliner"
+    descendant_with_identifier renderer screen "list.outliner"
   in
-  let content = List.nth (children renderer outliner) 0 in
+  let content = outliner in
   let top_inset = List.nth (children renderer content) 0 in
   let related =
     descendant_with_identifier renderer outliner
       "section.node.linked-references"
   in
   let breadcrumb =
-    descendant_with_identifier renderer related
+    descendant_with_identifier renderer outliner
       "breadcrumb.related-blocks"
   in
   let journal =
-    descendant_with_identifier renderer related "button.breadcrumb.journal"
+    descendant_with_identifier renderer outliner "button.breadcrumb.journal"
   in
   check_eq ~msg:"the route title comes from the core projection"
     (property_string renderer title Lui_protocol.TextValue)
     "Project";
-  check_eq ~msg:"node content uses the same outer inset as main"
+  check_eq ~msg:"node scrolling surface stays full width like main"
     (property_int renderer content Lui_protocol.PaddingHorizontal)
-    8;
+    (-1);
   check_eq
     ~msg:"node content uses explicit main spacing instead of a global gap"
     (property_int renderer content Lui_protocol.Gap)
@@ -5530,7 +5551,7 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
     3;
   check_eq ~msg:"node section titles add main's inner horizontal inset"
     (property_int renderer title_layout Lui_protocol.PaddingHorizontal)
-    8;
+    16;
   check ~msg:"node routes render their linked references section"
     (related <> -1);
   check ~msg:"related rows reuse the breadcrumb component with native separators"
@@ -6363,7 +6384,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     descendant_with_identifier renderer root "button.journal.page-b"
   in
   let first_section =
-    descendant_with_identifier renderer outliner "journal.section.page-a"
+    descendant_with_identifier renderer outliner "outliner.window"
   in
   let first_entry =
     parent_with_child_identifier renderer outliner "outliner.block.day-a"
@@ -6412,9 +6433,9 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check ~msg:"the second day's row stays inside the virtualized collection"
     (descendant_with_identifier renderer outliner "outliner.block.day-b"
     <> -1);
-  check_eq ~msg:"the first journal owns one viewport-preserving section"
+  check_eq ~msg:"journal rows share one bounded native row source"
     (node renderer first_section)
-    (Some Lui_protocol.Column);
+    (Some Lui_protocol.ListContainer);
   check_eq ~msg:"later journal blocks keep independent lazy entries"
     (node renderer second_entry)
     (Some Lui_protocol.Column);
@@ -6422,31 +6443,16 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     (List.nth first_entry_children 0) first_heading;
   check_eq ~msg:"the journal block follows its heading in one lazy item"
     (List.nth first_entry_children 1) first_block;
-  check_eq ~msg:"the first journal reserves the visible viewport"
-    (property_string renderer first_section
-       Lui_protocol.ContainerRelativeFrameValue)
-    "min-vertical";
-  check_eq ~msg:"the first journal leaves room for native chrome"
-    (property_int renderer first_section
-       Lui_protocol.ContainerRelativeFrameInset)
-    136;
+  let metadata = Lui_protocol.data_attrs_decode
+    (property_string renderer first_section Lui_protocol.DataAttrs) in
+  check_eq ~msg:"the native collection fills the viewport after the first journal"
+    (List.assoc "data-first-section-count" metadata) "1";
+  check_eq ~msg:"viewport retention leaves room for native chrome"
+    (List.assoc "data-first-section-inset" metadata) "136";
   check_eq ~msg:"later journal blocks use their intrinsic height"
     (property_string renderer second_entry
        Lui_protocol.ContainerRelativeFrameValue)
     "<missing>";
-  check ~msg:"the first journal row belongs to the first section"
-    (if first_section = -1 then false
-     else
-       descendant_with_identifier renderer first_section
-         "outliner.block.day-a"
-       <> -1);
-  check_eq
-    ~msg:"the next journal row does not leak into the first section"
-    (if first_section = -1 then -1
-     else
-       descendant_with_identifier renderer first_section
-         "outliner.block.day-b")
-    (-1);
   check_eq ~msg:"journal headings are noninteractive content"
     (node renderer first_heading)
     (Some Lui_protocol.Box);
@@ -6483,14 +6489,12 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     (descendant_count_with_identifier renderer root "journal.divider")
     1;
   check_eq ~msg:"journal bullets expose no press action"
-    (node renderer
-       (descendant_with_identifier renderer root
-          "button.outliner.zoom.day-a.A"))
-    (Some Lui_protocol.Icon);
+    (Yojson.Basic.Util.member "journalBullet" (native_row_payload application first_block))
+    (`Bool true);
   check_eq ~msg:"journal heading and bullet taps do not open a page"
     (App.model application).pending_effects []
 
-let only_the_first_journal_groups_blocks_for_viewport_retention () =
+let journal_rows_stay_flat_while_retaining_the_first_viewport () =
   let application = App.create (ios_backend ()) in
   let day_a_root =
     journal_outline_row "day-a-root" "page-a" "A" "August 27th" 20260827 0
@@ -6517,7 +6521,7 @@ let only_the_first_journal_groups_blocks_for_viewport_retention () =
     descendant_with_identifier renderer root "list.outliner"
   in
   let first_section =
-    descendant_with_identifier renderer outliner "journal.section.page-a"
+    descendant_with_identifier renderer outliner "outliner.window"
   in
   let first_entry =
     parent_with_child_identifier renderer outliner "outliner.block.day-a-root"
@@ -6543,20 +6547,14 @@ let only_the_first_journal_groups_blocks_for_viewport_retention () =
     (descendant_with_identifier renderer child_entry
        "button.journal.page-a")
     (-1);
-  check ~msg:"the first journal owns the single viewport-preserving section"
-    (first_section <> -1);
-  check ~msg:"all first-journal rows remain inside that section"
-    (if first_section = -1 then false
-     else
-       descendant_with_identifier renderer first_section
-         "outliner.block.day-a-child"
-       <> -1);
-  check_eq ~msg:"later journals stay outside the viewport section"
-    (if first_section = -1 then -1
-     else
-       descendant_with_identifier renderer first_section
-         "outliner.block.day-b")
-    (-1);
+  let metadata = Lui_protocol.data_attrs_decode
+    (property_string renderer first_section Lui_protocol.DataAttrs) in
+  check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
+    (List.assoc "data-first-section-count" metadata) "2";
+  check ~msg:"all journal rows use the same bounded source"
+    (List.for_all (fun entry ->
+       List.exists (fun item -> List.mem entry (children renderer item))
+         (children renderer first_section)) [first_entry; child_entry; next_entry]);
   check_eq ~msg:"later journals do not create nested section containers"
     (descendant_with_identifier renderer outliner "journal.section.page-b")
     (-1);
@@ -6860,24 +6858,13 @@ let core_snapshot_renders_keyed_outliner_rows () =
   let rendered_row =
     descendant_with_identifier renderer outliner "outliner.block.block-a"
   in
-  let action_row =
-    descendant_with_identifier renderer rendered_row
-      "outliner.block-action.block-a"
-  in
-  check_eq ~msg:"the LG row keeps main's stable block identifier"
-    (property_string renderer rendered_row
-       Lui_protocol.AccessibilityIdentifier)
+  check_eq ~msg:"rows retain their stable block identifier"
+    (property_string renderer rendered_row Lui_protocol.AccessibilityIdentifier)
     "outliner.block.block-a";
-  check_eq ~msg:"the LG row action keeps main's edit accessibility action"
-    (property_string renderer action_row Lui_protocol.AccessibilityLabel)
-    "Edit block Project note";
-  check_eq ~msg:"custom list-item content remains in the first native row"
-    (node renderer (List.nth (children renderer rendered_row) 0))
-    (Some Lui_protocol.Row);
-  check_eq ~msg:"block rows keep a compact two-point vertical inset"
-    (property_int renderer (List.nth (children renderer rendered_row) 0)
-       Lui_protocol.PaddingVertical)
-    2;
+  let payload = native_row_payload application rendered_row in
+  check_eq (Yojson.Basic.Util.member "uuid" payload) (`String "block-a");
+  check_eq (Yojson.Basic.Util.member "depth" payload) (`Int 2);
+  check_eq (Yojson.Basic.Util.member "title" payload) (`String "Project note");
   let editor =
     descendant_with_extension renderer application rendered_row
       "outliner-editor"
@@ -6936,6 +6923,239 @@ let outliner_rows_live_inside_a_native_virtual_list () =
     (descendant_with_identifier renderer root "scroll.outliner")
     (-1)
 
+let thousand_nested_rows () =
+  List.init 1_000 (fun index ->
+    { (outline_row ("large-" ^ string_of_int index) "Nested block") with
+      Model.depth = index mod 4;
+      has_children = index mod 4 < 3 })
+
+let check_flat_lazy_rows renderer collection rows =
+  check_eq ~msg:"the collection owns one native lazy scrolling surface"
+    (node renderer collection) (Some Lui_protocol.VirtualList);
+  let identifiers = Hashtbl.create (List.length rows) in
+  List.iter (fun (row : Model.outline_row) ->
+    Hashtbl.replace identifiers ("outliner.block." ^ row.row_uuid) ()) rows;
+  let rec count_rows id =
+    let own = if Hashtbl.mem identifiers
+      (property_string renderer id Lui_protocol.AccessibilityIdentifier)
+      then 1 else 0 in
+    List.fold_left (fun count child -> count + count_rows child) own
+      (children renderer id)
+  in
+  let items = List.fold_left (fun result child ->
+    if property_string renderer child Lui_protocol.AccessibilityIdentifier = "outliner.window" then
+      List.rev_append (children renderer child) result
+    else child :: result) [] (children renderer collection) |> List.rev in
+  let counts = List.map count_rows items in
+  check ~msg:"every block, including nested children, is an independent lazy item"
+    (List.for_all (fun count -> count <= 1) counts);
+  check ~msg:"only the initial native window is materialized"
+    (let mounted = List.fold_left (+) 0 counts in mounted > 0 && mounted <= 32);
+  let window = descendant_with_identifier renderer collection "outliner.window" in
+  let attributes = Lui_protocol.data_attrs_decode
+    (property_string renderer window Lui_protocol.DataAttrs) in
+  check ~msg:"the native collection retains the complete scrollable row count"
+    (int_of_string (List.assoc "data-virtual-count" attributes) >= List.length rows)
+
+let large_node_pages_virtualize_each_nested_block () =
+  let application = App.create (ios_backend ()) in
+  let rows = thousand_nested_rows () in
+  let route = { (node_projection "page-a" "page-a" "Large page" [] []) with
+    Model.node_outliner_rows = rows } in
+  start application;
+  send application (Model.RequestAppNode "page-a");
+  send application (apply_core_snapshot None (empty_sidebar_projection ()) []
+    false "" [] [ route ] None None [] [] rows false []);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let screen = descendant_with_identifier renderer
+    (Lui_app.root_node application) "screen.node" in
+  let collection = descendant_with_identifier renderer screen "list.outliner" in
+  check_flat_lazy_rows renderer collection rows
+
+let large_tag_and_reference_sections_virtualize_each_block () =
+  List.iter (fun is_tag ->
+    let application = App.create (ios_backend ()) in
+    let rows = thousand_nested_rows () in
+    let sidebar = { (empty_sidebar_projection ()) with
+      Model.selected_page = Some { Model.uuid = "page-a"; title = "Large page" };
+      selected_page_is_tag = is_tag;
+      related_rows = rows } in
+    start application;
+    send application (apply_core_snapshot None sidebar [] false "" [] [] None
+      None [] [] [] false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let collection = descendant_with_identifier renderer
+      (main_root renderer application) "list.outliner" in
+    check_flat_lazy_rows renderer collection rows
+  ) [ false; true ]
+
+let ten_thousand_blocks_mount_only_the_requested_window () =
+  List.iter (fun destination ->
+    let application = App.create (ios_backend ()) in
+    let rows = List.init 10_000 (fun index ->
+      { (outline_row ("window-" ^ string_of_int index) "Nested block") with
+        Model.depth = index mod 4; has_children = index mod 4 < 3;
+        page_id = "page-a"; journal_title = Some "Journal"; journal_day = Some 20261019 }) in
+    let page = { Model.uuid = "page-a"; title = "Large page" } in
+    let sidebar = { (empty_sidebar_projection ()) with
+      Model.selected_page = (if destination = "journals" then None else Some page); selected_page_is_tag = destination = "tag";
+      related_rows = if (destination = "tag" || destination = "mixed") then rows else [] } in
+    let routes = if destination = "node" then
+      [{ (node_projection "page-a" "page-a" "Large page" [] []) with
+          Model.node_outliner_rows = rows }] else [] in
+    start application;
+    if destination = "node" then send application (Model.RequestAppNode "page-a");
+    send application (apply_core_snapshot None sidebar [] false "" [] routes None
+      None [] [] (if destination = "tag" then [] else if destination = "mixed" then thousand_nested_rows () else rows) false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root () = if destination = "node" then
+      descendant_with_identifier renderer (Lui_app.root_node application) "screen.node"
+      else main_root renderer application in
+    let count_rows () =
+      let rec loop id =
+        (if extension_kind renderer id = Some "outliner-block-row" then 1 else 0)
+        + List.fold_left (fun count child -> count + loop child) 0 (children renderer id)
+      in loop (root ()) in
+    check ~msg:"10k rows must not create 10k protocol subtrees" (count_rows () <= 32);
+    check ~msg:"the initial window contains actual blocks" (count_rows () > 0);
+    let window = descendant_with_identifier renderer (root ()) "outliner.window" in
+    check ~msg:"the collection exposes a bounded row source" (window <> -1);
+    dispatch application (Lui_protocol.VisibleRange (window, (if destination = "mixed" then 10_980 else 9_980), (if destination = "mixed" then 10_999 else 9_999)));
+    flush application;
+    check ~msg:"scrolling can reach the final nested block"
+      (descendant_with_identifier renderer (root ()) "outliner.block.window-9999" <> -1);
+    check ~msg:"scrolling evicts distant row subtrees" (count_rows () <= 32);
+    check_eq ~msg:"rows far above the viewport are unmounted"
+      (descendant_with_identifier renderer (root ()) (if destination = "mixed" then "outliner.block.large-0" else "outliner.block.window-0")) (-1);
+    dispatch application (Lui_protocol.VisibleRange (window, 0, 19));
+    flush application;
+    check ~msg:"scrolling back restores the first block"
+      (descendant_with_identifier renderer (root ()) (if destination = "mixed" then "outliner.block.large-0" else "outliner.block.window-0") <> -1);
+    check ~msg:"the window stays bounded after reverse scrolling" (count_rows () <= 32)
+  ) ["root"; "node"; "tag"; "mixed"; "journals"]
+
+let distant_outline_contents_are_loaded_without_replacing_the_page () =
+  List.iter (fun is_tag ->
+    let application = App.create (ios_backend ()) in
+    let rows = List.init 10_000 (fun index ->
+      { (outline_row ("content-" ^ string_of_int index) (if index < 32 then "Loaded" else "")) with
+        Model.row_loaded = index < 32; depth = index mod 4;
+        has_children = index mod 4 < 3 }) in
+    let projection = { (empty_core_projection ()) with
+      Model.graph_name = Some "Work"; selected_graph_id = Some "graph";
+      sidebar = { (empty_sidebar_projection ()) with
+        selected_page = Some { Model.uuid = "page"; title = "Large page" };
+        selected_page_is_tag = is_tag; related_rows = if is_tag then rows else [] };
+      outliner_rows = if is_tag then [] else rows } in
+    start application;
+    send application (Model.ApplyCoreSnapshot projection);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root () = main_root renderer application in
+    let window = descendant_with_identifier renderer (root ()) "outliner.window" in
+    dispatch application (Lui_protocol.VisibleRange (window, 9_980, 9_999));
+    flush application;
+    let requested = List.concat_map (function
+      | Model.HydrateOutlinerRowsEffect (_, ids) -> ids | _ -> []) (App.model application).pending_effects in
+    check ~msg:"scrolling requests only the missing content window"
+      (List.length requested > 0 && List.length requested <= 32);
+    check ~msg:"the final nested block is included in the content request" (List.mem "content-9999" requested);
+    let content = List.map (fun id -> { (outline_row id "Hydrated block") with Model.row_loaded = true }) requested in
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+      Model.selected_graph_id = Some "graph"; is_outliner_content_patch = true; hydrated_rows = content });
+    flush application;
+    let current = App.model application in
+    let final_rows = if is_tag then current.related_rows else current.outliner_rows in
+    check_eq ~msg:"content patches retain the complete outline topology" (List.length final_rows) 10_000;
+    let last = List.nth final_rows 9_999 in
+    check_eq last.row_title "Hydrated block";
+    check_eq ~msg:"hydration preserves nested indentation" last.depth 3;
+    check ~msg:"hydrated content becomes available to the mounted row" last.row_loaded;
+    check_eq ~msg:"content-only patches preserve graph and page selection" current.selected_graph_id (Some "graph");
+    check ~msg:"the final block renders after hydration"
+      (descendant_with_identifier renderer (root ()) "outliner.block.content-9999" <> -1)
+  ) [false; true]
+
+let search_only_patches_preserve_the_open_outline () =
+  let current = { (Model.initial ()) with Model.selected_graph_id = Some "graph";
+    search_query = "latest"; search_loading = true;
+    outliner_rows = [outline_row "kept" "Keep this block"] } in
+  let hit = { Model.hit_uuid = "result"; hit_title = "Result"; breadcrumb = ""; breadcrumbs = []; is_page = true } in
+  let projection = { (empty_core_projection ()) with Model.is_search_patch = true;
+    selected_graph_id = Some "graph"; projection_search_query = "latest"; search_results = [hit] } in
+  let updated = Model.update current (Model.ApplyCoreSnapshot projection) in
+  check_eq updated.outliner_rows current.outliner_rows;
+  check_eq updated.selected_graph_id current.selected_graph_id;
+  check_eq updated.search_results [hit];
+  let stale = Model.update updated (Model.ApplyCoreSnapshot {projection with Model.projection_search_query = "older"; search_results = []}) in
+  check_eq ~msg:"late search responses cannot replace the latest results" stale.search_results [hit]
+
+let selected_page_waits_for_blocks_before_showing_empty_state () =
+  List.iter (fun cached ->
+    let application = App.create (ios_backend ()) in
+    let page = { Model.uuid = "page-a"; title = "Project" } in
+    let rows = if cached then
+      [{ (outline_row "cached" "Cached content") with Model.page_id = "page-a";
+         journal_title = Some "Project"; journal_day = Some 20261019 }] else [] in
+    let sidebar = { (empty_sidebar_projection ()) with Model.recent_pages = [page] } in
+    start application;
+    send application (apply_core_snapshot None sidebar [] false "" [] [] None
+      None [] [] rows false []);
+    send application (Model.SelectSidebarPage "page-a");
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = main_root renderer application in
+    check_eq ~msg:"unresolved pages never pretend to be empty"
+      (descendant_with_identifier renderer root "button.outliner.add-first-block") (-1);
+    check_eq ~msg:"only uncached pages show their loading state"
+      (descendant_with_identifier renderer root "status.page-loading" <> -1) (not cached);
+    let selected = { sidebar with Model.selected_page = Some page } in
+    send application (apply_core_snapshot None selected [] false "" [] [] None
+      None [] [] [] false []);
+    flush application;
+    check ~msg:"confirmed empty pages expose Add first block"
+      (descendant_with_identifier renderer (main_root renderer application)
+         "button.outliner.add-first-block" <> -1);
+    check_eq ~msg:"the authoritative empty response finishes loading"
+      (descendant_with_identifier renderer (main_root renderer application)
+         "status.page-loading") (-1)
+  ) [false; true]
+
+let reselecting_the_current_page_preserves_loaded_rows () =
+  List.iter (fun is_tag ->
+    let application = App.create (ios_backend ()) in
+    let page = { Model.uuid = "page-a"; title = "Project" } in
+    let rows = thousand_nested_rows () in
+    let sidebar = { (empty_sidebar_projection ()) with
+      Model.favorites = [ page ]; selected_page = Some page;
+      selected_page_is_tag = is_tag;
+      related_rows = if is_tag then rows else [] } in
+    start application;
+    send application (apply_core_snapshot None sidebar [] false "" [] [] None
+      None [] [] (if is_tag then [] else rows) false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = main_root renderer application in
+    let first = descendant_with_identifier renderer root "outliner.block.large-0" in
+    send application Model.OpenSidebar;
+    send application (Model.SelectSidebarPage "page-a");
+    flush application;
+    check_eq ~msg:"reselecting a loaded page retains its block identity during refresh"
+      (descendant_with_identifier renderer (main_root renderer application)
+         "outliner.block.large-0") first;
+    check_eq ~msg:"reselecting a tag keeps its kind and reference rows"
+      (App.model application).selected_page_is_tag is_tag;
+    check ~msg:"reselecting the already loaded root does not request another full snapshot"
+      (not (List.exists (function Model.SelectSidebarPageEffect _ -> true | _ -> false)
+        (App.model application).pending_effects));
+    check_eq ~msg:"a loaded page never returns to a loading placeholder"
+      (descendant_with_identifier renderer (main_root renderer application)
+         "status.page-loading") (-1)
+  ) [false; true]
+
 let projected_markup_renders_through_the_native_rich_block_extension () =
   let application = App.create (ios_backend ()) in
   let done_status =
@@ -6970,36 +7190,28 @@ let projected_markup_renders_through_the_native_rich_block_extension () =
   let rendered_row =
     descendant_with_identifier renderer outliner "outliner.block.block-a"
   in
-  let rich_content =
-    descendant_with_extension renderer application rendered_row
-      "outliner-block-content"
-  in
-  check_eq ~msg:"native collapse uses main's filled disclosure triangle"
-    (property_string renderer
-       (descendant_with_identifier renderer rendered_row
-          "button.outliner.collapse.block-a")
-       Lui_protocol.InlineIconName)
-    "app:disclosure-down";
-  check_eq ~msg:"non-editing markup uses the registered native rich renderer"
-    (extension_kind renderer rich_content)
-    (Some "outliner-block-content");
-  check_eq ~msg:"completed task styling reaches the native rich renderer"
-    (extension_property application rich_content "is-completed")
-    (Some (Lui_protocol.BoolValue true));
-  check_eq ~msg:"the native rich renderer receives its draggable block id"
-    (extension_property application rich_content "block-id")
-    (Some (Lui_protocol.StringValue "block-a"));
+  let rich_content = native_row application rendered_row in
+  let payload = native_row_payload application rendered_row in
+  check_eq ~msg:"completed styling reaches the native row"
+    (Yojson.Basic.Util.member "completed" payload) (`Bool true);
+  check_eq ~msg:"native rows retain draggable block identity"
+    (Yojson.Basic.Util.member "uuid" payload) (`String "block-a");
+  check_eq ~msg:"projected links retain their native markup"
+    (Yojson.Basic.Util.member "markup" payload)
+    (Yojson.Basic.from_string row.markup_json);
+  check_eq ~msg:"native disclosure receives child state"
+    (Yojson.Basic.Util.member "hasChildren" payload) (`Bool true);
   dispatch application
     (Lui_protocol.ExtensionEvent
        ( rich_content,
-         "outliner-block-content",
+         "outliner-block-row",
          "drag-start",
          Lui_protocol.String_map.singleton "uuid"
            (Lui_protocol.StringValue "block-a") ));
   dispatch application
     (Lui_protocol.ExtensionEvent
        ( rich_content,
-         "outliner-block-content",
+         "outliner-block-row",
          "drop",
          Lui_protocol.String_map.empty
          |> Lui_protocol.String_map.add "uuid"
@@ -7009,14 +7221,14 @@ let projected_markup_renders_through_the_native_rich_block_extension () =
   dispatch application
     (Lui_protocol.ExtensionEvent
        ( rich_content,
-         "outliner-block-content",
+         "outliner-block-row",
          "open-node",
          Lui_protocol.String_map.singleton "uuid"
            (Lui_protocol.StringValue "page-a") ));
   dispatch application
     (Lui_protocol.ExtensionEvent
        ( rich_content,
-         "outliner-block-content",
+         "outliner-block-row",
          "edit",
          Lui_protocol.String_map.singleton "uuid"
            (Lui_protocol.StringValue "block-a") ));
@@ -7056,40 +7268,15 @@ let projected_assets_render_and_open_through_the_native_extension () =
   let rendered_row =
     descendant_with_identifier renderer outliner "outliner.block.asset-a"
   in
-  let content_row = List.nth (children renderer rendered_row) 0 in
-  let content_children = children renderer content_row in
-  let action_row = List.nth content_children 3 in
-  let action_content = List.nth (children renderer action_row) 0 in
-  let content_column = List.nth (children renderer action_content) 0 in
-  let rich_content =
-    descendant_with_extension renderer application rendered_row
-      "outliner-block-content"
-  in
-  check_eq
-    ~msg:"asset rows keep the bullet and preview in one top-aligned row"
-    (property_string renderer content_row Lui_protocol.CrossAlignment)
-    "start";
-  check_eq
-    ~msg:"asset previews align to the leading edge of the block content"
-    (property_string renderer content_column Lui_protocol.CrossAlignment)
-    "start";
-  check_eq ~msg:"asset identity reaches the native extension"
-    (extension_property application rich_content "is-asset")
-    (Some (Lui_protocol.BoolValue true));
-  check_eq ~msg:"asset content type reaches the native extension"
-    (extension_property application rich_content "asset-type")
-    (Some (Lui_protocol.StringValue "image/jpeg"));
-  check_eq ~msg:"local path reaches the native extension"
-    (extension_property application rich_content "local-path")
-    (Some (Lui_protocol.StringValue "Assets/Photo.jpg"));
-  dispatch application (Lui_protocol.Press action_row);
-  flush application;
-  check_eq ~msg:"opening an asset crosses the typed platform-effect boundary"
-    (App.model application).pending_effects
-    [
-      Model.PresentAssetEffect
-        (1, "Photo.jpg", "image/jpeg", "Assets/Photo.jpg");
-    ]
+  let payload = native_row_payload application rendered_row in
+  check_eq ~msg:"asset identity reaches the native row"
+    (Yojson.Basic.Util.member "isAsset" payload) (`Bool true);
+  check_eq ~msg:"asset content type reaches the native preview"
+    (Yojson.Basic.Util.member "assetType" payload) (`String "image/jpeg");
+  check_eq ~msg:"cached image path reaches the native preview"
+    (Yojson.Basic.Util.member "localPath" payload) (`String "Assets/Photo.jpg");
+  check_eq ~msg:"mounting images never opens a generic file preview"
+    (App.model application).pending_effects []
 
 let outliner_row_press_publishes_a_typed_core_effect () =
   let current = Model.initial () in
@@ -7380,6 +7567,43 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
        Lui_protocol.ForegroundValue)
     "foreground"
 
+let ios_rows_use_one_native_layout_and_keep_typed_actions () =
+  check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
+    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+  let application = App.create (ios_backend ()) in
+  let row = { (outline_row "native-row" "Native title") with
+    Model.depth = 3; has_children = true;
+    tags = [{ Model.uuid = "tag"; title = "Tag" }] } in
+  start application;
+  send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] [] None None [] [] [row] false []);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let root = main_root renderer application in
+  let native = descendant_with_extension renderer application root "outliner-block-row" in
+  check ~msg:"iOS uses one native layout per block" (native <> -1);
+  let payload = match extension_property application native "payload" with
+    | Some (Lui_protocol.StringValue value) -> Yojson.Basic.from_string value
+    | _ -> failwith "Native row payload missing" in
+  let open Yojson.Basic.Util in
+  check_eq (payload |> member "depth") (`Int 3);
+  check_eq (payload |> member "title") (`String "Native title");
+  let emit name = dispatch application (Lui_protocol.ExtensionEvent
+    (native, "outliner-block-row", name,
+      Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "native-row"))) in
+  dispatch application (Lui_protocol.ExtensionEvent
+    (native, "outliner-block-row", "set-status",
+      Lui_protocol.String_map.empty
+      |> Lui_protocol.String_map.add "uuid" (Lui_protocol.StringValue "native-row")
+      |> Lui_protocol.String_map.add "count" (Lui_protocol.IntValue (-1))));
+  flush application;
+  check_eq ~msg:"invalid native task selections do not mutate the graph"
+    (App.model application).pending_effects [];
+  emit "collapse";
+  emit "edit";
+  flush application;
+  check_eq (App.model application).pending_effects
+    [Model.ToggleOutlinerCollapsedEffect (1, "native-row"); Model.TapOutlinerBlockEffect (2, "native-row")]
+
 let outliner_rows_render_status_tags_and_sync_failures () =
   let application = App.create (ios_backend ()) in
   let todo =
@@ -7404,101 +7628,20 @@ let outliner_rows_render_status_tags_and_sync_failures () =
   let rendered_row =
     descendant_with_identifier renderer root "outliner.block.block-a"
   in
-  let status_button =
-    descendant_with_identifier renderer rendered_row
-      "button.block-task-status"
-  in
-  let tag_button =
-    descendant_with_identifier renderer rendered_row "button.block-tag.tag-a"
-  in
-  let tag_row =
-    parent_with_child_identifier renderer rendered_row
-      "button.block-tag.tag-a"
-  in
-  let content_row = List.nth (children renderer rendered_row) 0 in
-  check_eq ~msg:"depth zero does not add spacing before main's bullet"
-    (property_int renderer content_row Lui_protocol.Gap)
-    0;
-  check ~msg:"task blocks expose their status control" (status_button <> -1);
-  check ~msg:"trailing tags remain interactive" (tag_button <> -1);
-  check_eq ~msg:"task status uses a plain inline-control style"
-    (property_string renderer status_button Lui_protocol.VariantValue)
-    "ghost";
-  check_eq
-    ~msg:"task status renders main's icon instead of a text caption"
-    (property_string renderer status_button Lui_protocol.InlineIconName)
-    "app:task-todo";
-  check_eq
-    ~msg:"task status does not prefix the block title with visible text"
-    (property_string renderer status_button Lui_protocol.TextValue)
-    "<missing>";
-  check_eq ~msg:"the icon still announces the task status"
-    (property_string renderer status_button Lui_protocol.AccessibilityLabel)
-    "Todo";
-  let runtime_root = Lui_app.root_node application in
-  let status_menu =
-    descendant_with_node_kind renderer status_button Lui_protocol.ContextMenu
-  in
-  let status_option =
-    descendant_with_identifier renderer status_button
-      "button.block-task-status-option.logseq.property/status.todo"
-  in
-  check ~msg:"block task status is backed by main's native button menu"
-    (status_menu <> -1);
-  check_eq ~msg:"block task status choices are native menu items"
-    (node renderer status_option)
-    (Some Lui_protocol.MenuItem);
-  check_eq
-    ~msg:"block task status choices preserve their semantic icons"
-    (property_string renderer status_option Lui_protocol.InlineIconName)
-    "app:task-todo";
-  check_eq
-    ~msg:"native block task status choices use a uniform secondary tint"
-    (property_string renderer status_option Lui_protocol.ForegroundValue)
-    "secondary";
-  check_eq ~msg:"block task status does not contain a custom dialog"
-    (descendant_count_with_node_kind renderer runtime_root
-       Lui_protocol.Dialog)
-    0;
-  dispatch application (Lui_protocol.Press status_option);
+  let payload = native_row_payload application rendered_row in
+  let open Yojson.Basic.Util in
+  check_eq (payload |> member "status" |> member "uuid") (`String "todo");
+  check_eq (payload |> member "status" |> member "icon") (`String "app:task-todo");
+  check_eq (payload |> member "tags")
+    (`List [`Assoc ["uuid", `String "tag-a"; "title", `String "Project"]]);
+  check_eq ~msg:"failed sync stays visible in the native row"
+    (payload |> member "syncFailed") (`Bool true);
+  dispatch application (Lui_protocol.ExtensionEvent
+    (native_row application rendered_row, "outliner-block-row", "open-node",
+      Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "tag-a")));
   flush application;
-  check_eq ~msg:"the native menu choice targets its owning block directly"
-    (App.model application).pending_effects
-    [ Model.SetOutlinerTaskStatusEffect (1, "block-a", todo) ];
-  check_eq ~msg:"block tags use a plain inline-control style"
-    (property_string renderer tag_button Lui_protocol.VariantValue)
-    "ghost";
-  check_eq ~msg:"trailing tags match main's caption typography"
-    (property_string renderer tag_button Lui_protocol.StyleClass)
-    "caption";
-  check_eq ~msg:"trailing tags use the platform accent color"
-    (property_string renderer tag_button Lui_protocol.ForegroundValue)
-    "accent";
-  check_eq ~msg:"multiple trailing tags use main's compact spacing"
-    (property_int renderer tag_row Lui_protocol.Gap)
-    6;
-  dispatch application (Lui_protocol.Press tag_button);
-  flush application;
-  check_eq ~msg:"tag presses use LG-owned node navigation"
-    (App.model application).app_navigation_path
-    [ Model.NodeRoute "tag-a" ];
-  check
-    ~msg:
-      "trailing tags share the block content row so their leading edge \
-       aligns"
-    (descendant_with_identifier renderer content_row "button.block-tag.tag-a"
-    <> -1);
-  check
-    ~msg:
-      "sync failures share the block content row so their leading edge \
-       aligns"
-    (descendant_with_identifier renderer content_row
-       "outliner.sync-failed.block-a"
-    <> -1);
-  check ~msg:"failed block sync remains visible"
-    (descendant_with_identifier renderer rendered_row
-       "outliner.sync-failed.block-a"
-    <> -1)
+  check_eq ~msg:"native tag presses retain typed navigation"
+    (App.model application).app_navigation_path [Model.NodeRoute "tag-a"]
 
 let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   let application = App.create (ios_backend ()) in
@@ -7987,76 +8130,18 @@ let outliner_rows_preserve_depth_zoom_and_collapse_controls () =
   let rendered_row =
     descendant_with_identifier renderer outliner "outliner.block.parent"
   in
-  let content_row = List.nth (children renderer rendered_row) 0 in
-  let content_children = children renderer content_row in
-  let indent = List.nth content_children 0 in
-  let zoom = List.nth content_children 1 in
-  let spacer = List.nth content_children 2 in
-  let action_row = List.nth content_children 3 in
-  let action_content = List.nth (children renderer action_row) 0 in
-  let content_column = List.nth (children renderer action_content) 0 in
-  let collapse =
-    descendant_with_identifier renderer content_row
-      "button.outliner.collapse.parent"
-  in
-  check_eq ~msg:"bullet and block body are siblings in one top-aligned row"
-    (property_string renderer content_row Lui_protocol.CrossAlignment)
-    "start";
-  check_eq ~msg:"depth uses main's 22-point indentation"
-    (property_int renderer indent Lui_protocol.WidthValue)
-    44;
-  check_eq ~msg:"the bullet-to-content gap matches main's compact spacing"
-    (property_int renderer spacer Lui_protocol.WidthValue)
-    2;
-  check_eq ~msg:"the tappable row content fills the remaining outliner width"
-    (property_float renderer action_row Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"block content stays leading-aligned for rich previews"
-    (property_string renderer content_column Lui_protocol.CrossAlignment)
-    "start";
-  check_eq
-    ~msg:
-      "a block without status must not reserve an empty status column \
-       and gap"
-    (List.length (children renderer action_content))
-    2;
-  check_eq ~msg:"zoom exposes uuid and title for dynamic UI tests"
-    (property_string renderer zoom Lui_protocol.AccessibilityIdentifier)
-    "button.outliner.zoom.parent.Parent";
-  check_eq ~msg:"zoom uses main's 24-point bullet hit width"
-    (property_int renderer zoom Lui_protocol.WidthValue)
-    24;
-  check_eq ~msg:"zoom uses main's 24-point bullet hit height"
-    (property_int renderer zoom Lui_protocol.HeightValue)
-    24;
-  check_eq
-    ~msg:"zoom renders main's circular bullet instead of a text glyph"
-    (property_string renderer zoom Lui_protocol.InlineIconName)
-    "app:outliner-bullet";
-  check_eq ~msg:"the bullet uses main's translucent secondary color"
-    (property_string renderer zoom Lui_protocol.ForegroundValue)
-    "border";
-  check_eq
-    ~msg:"the graphical bullet has no baseline-dependent text child"
-    (List.length (children renderer zoom))
-    0;
-  check_eq ~msg:"zoom uses main's plain bullet control style"
-    (property_string renderer zoom Lui_protocol.VariantValue)
-    "ghost";
-  check_eq ~msg:"collapse keeps main's stable identifier"
-    (property_string renderer collapse Lui_protocol.AccessibilityIdentifier)
-    "button.outliner.collapse.parent";
-  check_eq ~msg:"collapse keeps main's 28-point disclosure width"
-    (property_int renderer collapse Lui_protocol.WidthValue)
-    28;
-  check_eq ~msg:"collapse preserves the normal block row height"
-    (property_int renderer collapse Lui_protocol.HeightValue)
-    24;
-  check_eq ~msg:"collapse uses main's plain disclosure control style"
-    (property_string renderer collapse Lui_protocol.VariantValue)
-    "ghost";
-  dispatch application (Lui_protocol.Press zoom);
-  dispatch application (Lui_protocol.Press collapse);
+  let payload = native_row_payload application rendered_row in
+  let open Yojson.Basic.Util in
+  check_eq ~msg:"depth is preserved for native indentation" (payload |> member "depth") (`Int 2);
+  check_eq (payload |> member "hasChildren") (`Bool true);
+  check_eq (payload |> member "collapsed") (`Bool false);
+  check_eq ~msg:"normal pages keep an interactive zoom bullet"
+    (payload |> member "journalBullet") (`Bool false);
+  let native = native_row application rendered_row in
+  List.iter (fun name -> dispatch application (Lui_protocol.ExtensionEvent
+    (native, "outliner-block-row", name,
+     Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "parent"))))
+    ["open-node"; "collapse"];
   flush application;
   check_eq
     ~msg:"both controls route through LG without triggering row editing"
@@ -8086,16 +8171,12 @@ let journal_child_blocks_keep_zoom_navigation () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
-  let zoom =
-    descendant_with_identifier renderer root
-      "button.outliner.zoom.block-a.Journal child"
-  in
-  check ~msg:"journal child blocks expose the normal zoom button"
-    (zoom <> -1);
-  check_eq ~msg:"journal child zoom keeps the pressable button chrome"
-    (property_string renderer zoom Lui_protocol.VariantValue)
-    "ghost";
-  dispatch application (Lui_protocol.Press zoom);
+  let child = descendant_with_identifier renderer root "outliner.block.block-a" in
+  check_eq ~msg:"journal children keep an interactive zoom bullet"
+    (Yojson.Basic.Util.member "journalBullet" (native_row_payload application child)) (`Bool false);
+  dispatch application (Lui_protocol.ExtensionEvent
+    (native_row application child, "outliner-block-row", "open-node",
+      Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "block-a")));
   flush application;
   check_eq
     ~msg:
@@ -8271,29 +8352,14 @@ let native_outliner_controls_match_first_line_and_main_status_shapes () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
-  let bullet =
-    descendant_with_identifier renderer root
-      "button.outliner.zoom.control-row.Control"
-  in
-  let status_button =
-    descendant_with_identifier renderer root "button.block-task-status"
-  in
-  let collapse =
-    descendant_with_identifier renderer root
-      "button.outliner.collapse.control-row"
-  in
-  check_eq ~msg:"bullet follows the first body line as font size changes"
-    (property_string renderer bullet Lui_protocol.StyleClass)
-    "body-line";
-  check_eq ~msg:"gaining a child must not increase the parent row height"
-    (property_int renderer collapse Lui_protocol.HeightValue)
-    24;
-  check_eq ~msg:"native status icon keeps main's 22-point size"
-    (property_int renderer status_button Lui_protocol.WidthValue)
-    22;
-  check_eq ~msg:"every status uses the same semantic foreground"
-    (property_string renderer status_button Lui_protocol.ForegroundValue)
-    "secondary"
+  let payload = native_row_payload application root in
+  let open Yojson.Basic.Util in
+  check_eq ~msg:"native task glyph uses semantic status identity"
+    (payload |> member "status" |> member "icon") (`String "app:task-doing");
+  check_eq ~msg:"journal roots retain noninteractive bullet chrome"
+    (payload |> member "journalBullet") (`Bool true);
+  check_eq ~msg:"native disclosure receives its child state"
+    (payload |> member "hasChildren") (`Bool true)
 
 let composer_stages_multiple_assets_until_confirmed () =
   let asset =
@@ -8513,6 +8579,33 @@ let ui_session_preserves_independently_restored_composer_draft () =
         restored.composer_draft draft)
     [ "Older draft / latest edit"; "" ]
 
+let library_does_not_offer_an_empty_outline_editor () =
+  let base = { (Model.initial ()) with Model.selected_graph = Some "Work";
+    selected_page_ready = true } in
+  let page title = { base with Model.selected_page = Some { uuid = "page"; title } } in
+  check ~msg:"normal empty pages still allow a first block"
+    (View_base.node_can_add_first_block_ (page "Notes"));
+  check ~msg:"Library has no empty outliner prompt"
+    (not (View_base.node_can_add_first_block_ (page "Library")))
+
+let graph_picker_prioritizes_downloaded_and_recent_graphs () =
+  let graph id = { Model.id; name = id; is_encrypted = false; is_ready = true } in
+  let initial = { (Model.initial ()) with Model.graphs = List.map graph ["remote"; "old"; "recent"];
+    local_graph_ids = ["old"; "recent"] } in
+  let open_graph current graph_id =
+    let pending = Model.update current (Model.RequestOpenGraph graph_id) in
+    let id = pending.next_effect_id - 1 in
+    let in_flight = Model.update pending (Model.DequeueEffect id) in
+    Model.update in_flight (Model.ResolveEffect (id, true, "")) in
+  let opened = open_graph (open_graph initial "old") "recent" in
+  let ids current = List.map (fun (g : Model.graph) -> g.id) (View_base.model_graphs current) in
+  check_eq ~msg:"downloaded graphs precede remote ones and use most-recent order"
+    (ids opened) ["recent"; "old"; "remote"];
+  let restored = Model.update { initial with selected_graph_id = opened.selected_graph_id }
+    (Model.RestoreUISession (Model.ui_session opened)) in
+  check_eq ~msg:"recent graph ordering survives app relaunch"
+    (ids restored) ["recent"; "old"; "remote"]
+
 let quick_actions_open_from_existing_navigation () =
   let current =
     {
@@ -8685,7 +8778,7 @@ let cases =
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
     case "journal-section-markers-recompute-after-row-splices" journal_section_markers_recompute_after_row_splices;
     case "journal-home-keeps-first-day-viewport-and-later-block-items-flat" journal_home_keeps_first_day_viewport_and_later_block_items_flat;
-    case "only-the-first-journal-groups-blocks-for-viewport-retention" only_the_first_journal_groups_blocks_for_viewport_retention;
+    case "journal-rows-stay-flat-while-retaining-the-first-viewport" journal_rows_stay_flat_while_retaining_the_first_viewport;
     case "selected-pages-do-not-render-journal-home-headings" selected_pages_do_not_render_journal_home_headings;
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
@@ -8693,6 +8786,13 @@ let cases =
     case "search-renders-main-empty-states-and-result-sections" search_renders_main_empty_states_and_result_sections;
     case "native-search-clear-updates-lg-owned-query" native_search_clear_updates_lg_owned_query;
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
+    case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
+    case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
+    case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
+    case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
+    case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
+    case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
+    case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;
     case "outliner-rows-live-inside-a-native-virtual-list" outliner_rows_live_inside_a_native_virtual_list;
     case "projected-markup-renders-through-the-native-rich-block-extension" projected_markup_renders_through_the_native_rich_block_extension;
     case "projected-assets-render-and-open-through-the-native-extension" projected_assets_render_and_open_through_the_native_extension;
@@ -8704,6 +8804,7 @@ let cases =
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;
+    case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
@@ -8723,6 +8824,8 @@ let cases =
     case "composer-asset-failure-retains-draft-and-success-removes-it" composer_asset_failure_retains_draft_and_success_removes_it;
     case "block-node-breadcrumbs-preserve-navigation-context" block_node_breadcrumbs_preserve_navigation_context;
     case "composer-attachment-previews-remove-only-the-selected-draft" composer_attachment_previews_remove_only_the_selected_draft;
+    case "library-does-not-offer-empty-outline" library_does_not_offer_an_empty_outline_editor;
+    case "graph-picker-prioritizes-downloaded-and-recent" graph_picker_prioritizes_downloaded_and_recent_graphs;
     case "ui-session-restores-after-process-relaunch" ui_session_restores_after_process_relaunch;
     case "ui-session-preserves-independently-restored-composer-draft"
       ui_session_preserves_independently_restored_composer_draft;

@@ -50,3 +50,5 @@ val outliner_patch_result :
   string list ->
   Yojson.Basic.t list ->
   string
+
+val block_shell_json : Cache_model.block -> Yojson.Basic.t

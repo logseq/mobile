@@ -238,7 +238,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
     Some
-      { Model.row_uuid; row_title;
+      { Model.row_uuid; row_title; row_loaded = not (bool_member "isShell" fields);
         markup_json =
           (match List.assoc_opt "markup" fields with
            | Some markup -> Yojson.Basic.to_string markup
@@ -476,6 +476,13 @@ let core_projection fields =
         (selection_member fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
+    reference_update = (if bool_member "isReferencePatch" fields then
+      Option.map (fun uuid -> (uuid, related_rows_member "referenceBlocks" fields))
+        (string_member "referenceUuid" fields) else None);
+    pending_reference_uuid = string_member "pendingReferenceUuid" fields;
+    is_outliner_content_patch = bool_member "isOutlinerContentPatch" fields;
+    hydrated_rows = related_rows_member "hydratedBlocks" fields;
+    is_search_patch = bool_member "isSearchPatch" fields;
     sync_connected = bool_member "syncConnected" fields;
     applied_server_t = int_member "appliedServerT" fields;
     has_pending_semantic_operations =
