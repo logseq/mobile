@@ -1388,6 +1388,46 @@ let encrypted_graph_creation_provisions_uploads_and_cleans_up_in_order () =
   | Some path -> check (not (Sys.file_exists path))
   | None -> check false
 
+let journal_calendar_opens_existing_days_and_creates_missing_days () =
+  let pages = Hashtbl.create 4 in
+  Hashtbl.add pages 20261019 "existing-journal";
+  let staged = ref [] in
+  let session = Session.create_session { Session.default_options with
+    load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
+    sync_cursor = Some (fun () -> Some 91);
+    journal_page_id = Some (Hashtbl.find_opt pages);
+    stage_operation = Some (fun operation ->
+      staged := operation :: !staged;
+      (match operation.Ops.intent with
+       | Ops.Create_journal journal -> Hashtbl.replace pages journal.journal_day journal.page_uuid
+       | _ -> ()); Ok ());
+    prepare_operation = Some prepare_operation } in
+  ignore (dispatch_json session "configure"
+    "{\"baseUrl\":\"https://example.com\",\"graphId\":\"plain-1\",\"token\":\"access\"}");
+  let existing = dispatch_json session "ensureJournal" "20261019" in
+  check ~msg:"the calendar can resolve an existing journal" (Json_util.to_bool (member "ok" existing));
+  check_eq (json_string (member "uuid" (member "result" existing))) "existing-journal";
+  check_eq ~msg:"opening an existing journal does not write a transaction" !staged [];
+  let created = dispatch_json session "ensureJournal" "20261020" in
+  check (Json_util.to_bool (member "ok" created));
+  let uuid = json_string (member "uuid" (member "result" created)) in
+  (match !staged with
+   | [operation] -> (match operation.Ops.intent with
+     | Ops.Create_journal journal ->
+       check_eq journal.journal_day 20261020;
+       check_eq journal.page_uuid uuid;
+       check_eq ~msg:"new journals have the standard date title" journal.title "Oct 20th, 2026"
+     | _ -> check false)
+   | _ -> check false);
+  let again = dispatch_json session "ensureJournal" "20261020" in
+  check_eq (json_string (member "uuid" (member "result" again))) uuid;
+  check_eq ~msg:"repeated selection never duplicates the journal" (List.length !staged) 1;
+  List.iter (fun day ->
+    check ~msg:"calendar rejects invalid dates without writing" (not (Json_util.to_bool
+      (member "ok" (dispatch_json session "ensureJournal" day)))))
+    ["20260230"; "20261301"; "0"; "invalid"];
+  check_eq (List.length !staged) 1
+
 let semantic_capture_pump_never_calls_blocking_transport () =
   let legacy_send_count = ref 0 in
   let staged = ref [] in
@@ -5948,6 +5988,8 @@ let cases =
       task_update_pump_submits_title_before_status;
     case "encrypted graph creation provisions uploads and cleans up in order"
       encrypted_graph_creation_provisions_uploads_and_cleans_up_in_order;
+    case "journal calendar opens existing days and creates missing days"
+      journal_calendar_opens_existing_days_and_creates_missing_days;
     case "semantic capture pump never calls blocking transport"
       semantic_capture_pump_never_calls_blocking_transport;
     case "encrypted task stages journal before status and drains both requests"

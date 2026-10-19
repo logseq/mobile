@@ -57,6 +57,7 @@ type host_update =
   | Authentication of host_authentication
   | Open_quick_action of string
   | Open_capture
+  | Open_node of string
   | Asset_preview_resolved of string * string
 
 val decode : string -> string -> (host_update, string) result

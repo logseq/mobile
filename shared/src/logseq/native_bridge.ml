@@ -126,6 +126,7 @@ let host_action (update : Host_update.host_update) =
       (authentication.state, authentication.error_message)
   | Open_quick_action kind -> Model.OpenQuickAction kind
   | Open_capture -> Model.ExpandComposer
+  | Open_node uuid -> Model.RequestAppNode uuid
   | Asset_preview_resolved (title, path) ->
     Model.ResolveAssetPreview (title, path)
 
@@ -228,6 +229,8 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"persist-composer-draft\",\"text\":"
     ^ Lui_wire.quoted draft ^ "}"
+  | PresentJournalCalendarEffect id ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"present-journal-calendar\",\"text\":\"\"}"
   | PresentAttachmentEffect (id, kind) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"present-attachment\",\"text\":" ^ Lui_wire.quoted kind

@@ -246,6 +246,7 @@ type logseq_effect =
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
+  | PresentJournalCalendarEffect of int
   | PresentAttachmentEffect of int * string
   | PresentAssetEffect of int * string * string * string
   | PresentPageShareEffect of int * string * string list
@@ -476,6 +477,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | OpenJournalCalendar
   | OpenSettings
   | DismissSettings
   | OpenSettingsTabs
@@ -728,6 +730,7 @@ let effect_id eff =
   | SendTaskEffect (id, _, _) -> id
   | PersistComposerDraftEffect (id, _) -> id
   | PersistUISessionEffect (id, _) -> id
+  | PresentJournalCalendarEffect id -> id
   | PresentAttachmentEffect (id, _) -> id
   | PresentAssetEffect (id, _, _, _) -> id
   | PresentPageShareEffect (id, _, _) -> id
@@ -2394,6 +2397,7 @@ let rec update (current : logseq_model) action =
            (CloseAppNodeEffect (close_id, navigation_route_uuid route))
        end
      | None -> current)
+  | OpenJournalCalendar -> enqueue_effect current (PresentJournalCalendarEffect current.next_effect_id)
   | OpenSettings ->
     {
       current with
@@ -2676,6 +2680,16 @@ and apply_core_snapshot (current : logseq_model)
     let selected_graph_changed =
       current.selected_graph_id <> projection.selected_graph_id
     in
+    let active_projection_node_uuid =
+      Option.map (fun (route : node_projection) -> route.node_uuid) (last_opt projection.node_routes)
+    in
+    (* Deferred references must not collapse a retained screen during navigation. *)
+    let root_reference_pending =
+      let selected = Option.map (fun (page : sidebar_page) -> page.uuid) sidebar.selected_page in
+      not selected_graph_changed && selected <> None
+      && selected = Option.map (fun (page : sidebar_page) -> page.uuid) current.selected_page
+      && (projection.node_routes <> [] || projection.pending_reference_uuid = selected)
+    in
     let projection_is_journal_home =
       projection.node_routes = []
       &&
@@ -2699,8 +2713,14 @@ and apply_core_snapshot (current : logseq_model)
           projection.outliner_rows
       else projection.outliner_rows
     in
+    (* Returning to the root uses its cache, not the outgoing node's rows. *)
+    let previous_rows =
+      if projection.node_routes = [] && current.node_routes <> [] then
+        current.navigation_root_rows
+      else current.outliner_rows
+    in
     let projected_rows = if selected_graph_changed then projected_rows
-      else retain_shell_contents current.outliner_rows projected_rows in
+      else retain_shell_contents previous_rows projected_rows in
     let journal_rows =
       if projection_is_journal_home then projected_rows
       else
@@ -2768,8 +2788,10 @@ and apply_core_snapshot (current : logseq_model)
         selected_page_ready = true;
         selected_page_is_tag = sidebar.selected_page_is_tag;
         selected_page_is_property = sidebar.selected_page_is_property;
-        related_rows = (if selected_graph_changed then sidebar.related_rows else retain_shell_contents current.related_rows sidebar.related_rows);
-        linked_reference_rows = (if selected_graph_changed then sidebar.linked_reference_rows else retain_shell_contents current.linked_reference_rows sidebar.linked_reference_rows);
+        related_rows = (if root_reference_pending && not sidebar.selected_page_is_tag then current.related_rows
+          else if selected_graph_changed then sidebar.related_rows else retain_shell_contents current.related_rows sidebar.related_rows);
+        linked_reference_rows = (if root_reference_pending && sidebar.selected_page_is_tag then current.linked_reference_rows
+          else if selected_graph_changed then sidebar.linked_reference_rows else retain_shell_contents current.linked_reference_rows sidebar.linked_reference_rows);
         task_statuses = available_task_statuses projection.task_statuses;
         flashcards = projection.flashcards;
         flashcard_cloze_revealed =
@@ -2780,10 +2802,15 @@ and apply_core_snapshot (current : logseq_model)
           List.map (fun (route : node_projection) ->
             match List.find_opt (fun (previous : node_projection) -> previous.node_uuid = route.node_uuid) current.node_routes with
             | None -> route
-            | Some previous -> { route with
+            | Some previous ->
+              let reference_pending = projection.pending_reference_uuid = Some route.node_uuid
+                || active_projection_node_uuid <> Some route.node_uuid in
+              { route with
                 node_outliner_rows = retain_shell_contents previous.node_outliner_rows route.node_outliner_rows;
-                node_related_rows = retain_shell_contents previous.node_related_rows route.node_related_rows;
-                node_linked_reference_rows = retain_shell_contents previous.node_linked_reference_rows route.node_linked_reference_rows }) projection.node_routes);
+                node_related_rows = (if reference_pending && not route.node_is_tag then previous.node_related_rows
+                  else retain_shell_contents previous.node_related_rows route.node_related_rows);
+                node_linked_reference_rows = (if reference_pending && route.node_is_tag then previous.node_linked_reference_rows
+                  else retain_shell_contents previous.node_linked_reference_rows route.node_linked_reference_rows) }) projection.node_routes);
         navigation_root_rows = (if projection.node_routes = [] then projected_rows
           else if selected_graph_changed then projection.journal_outliner_rows
           else retain_shell_contents current.navigation_root_rows projection.journal_outliner_rows);

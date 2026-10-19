@@ -583,7 +583,17 @@ let main_header_connection model_source send : t =
       if_
         ~test:
           (Signal.map View_base.connection_control_visible_ model_source)
-        (active_overflow_menu model_source send);
+        (fun context parent ->
+          (if Lui_ui.host context = SwiftUIHost then
+             stack [
+               if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
+                 (button ~icon:(`app "calendar") ~label:"Go to journal"
+                    ~variant:`ghost ~size:`icon ~width:44 ~height:44
+                    ~accessibility_identifier:"button.journal-calendar"
+                    ~on_press:(press send Model.OpenJournalCalendar) []);
+               if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
+                 (active_overflow_menu model_source send) ]
+           else active_overflow_menu model_source send) context parent);
     ]
 
 let native_node_destination ~source:title_source content : t =

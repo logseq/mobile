@@ -106,6 +106,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
+    private let presentJournalCalendar: (@MainActor () -> Bool)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
     private let presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)?
     private let presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)?
@@ -121,6 +122,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
+        presentJournalCalendar: (@MainActor () -> Bool)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
         presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)? = nil,
         presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)? = nil,
@@ -135,6 +137,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         self.openExternalURL = openExternalURL
         self.exportGraphDatabase = exportGraphDatabase
         self.graphEffect = graphEffect
+        self.presentJournalCalendar = presentJournalCalendar
         self.presentAttachment = presentAttachment
         self.presentAsset = presentAsset
         self.presentPageShare = presentPageShare
@@ -275,6 +278,9 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                     message: succeeded ? "" : "The graph database is unavailable",
                     output: .discard
                 )
+            case "present-journal-calendar":
+                return LGEffectResolution(succeeded: presentJournalCalendar?() ?? false,
+                    message: "", output: .discard)
             case "present-attachment":
                 guard let presentAttachment else {
                     return LGEffectResolution(
@@ -707,7 +713,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             return await Self.resolution(from: await deleteLocalGraph(effect.text))
         case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
-             "present-attachment", "present-asset", "present-page-share", "sync-now":
+             "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
                 return LGEffectResolution(
                     succeeded: false,

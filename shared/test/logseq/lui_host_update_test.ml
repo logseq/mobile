@@ -36,6 +36,7 @@ let simple_host_updates () =
   check_eq (Ok (Local_graph_ids [ "a"; "b" ]))
     (decode "local-graph-ids" "[\"a\",\"b\"]");
   check_eq (Ok Open_capture) (decode "open-capture" "{}");
+  check_eq (Ok (Open_node "journal")) (decode "open-node" "\"journal\"");
   check_eq (Ok (Composer_draft "\xE7\xA8\x8D\xE5\x90\x8E\xE5\xA4\x84\xE7\x90\x86\nsecond line"))
     (decode "composer-draft" "\"\xE7\xA8\x8D\xE5\x90\x8E\xE5\xA4\x84\xE7\x90\x86\\nsecond line\"");
   check_eq (Ok (Graph_loading true)) (decode "graph-loading" "true");

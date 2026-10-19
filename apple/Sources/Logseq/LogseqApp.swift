@@ -93,6 +93,17 @@ public struct LogseqRootView : View {
                 store: runtime.store,
                 stageAsset: { payload in
                     try runtime.lgRuntime.applyHostUpdate(kind: "composer-asset", payload: payload)
+                },
+                openJournal: { day in
+                    let json = await LogseqCore.callAsync(LogseqRPCRequest(method: "dispatch",
+                        params: LogseqRPCParams(action: "ensureJournal", payload: String(day))))
+                    let response = try JSONDecoder().decode(LGJournalCalendarResponse.self, from: Data(json.utf8))
+                    guard response.ok, let uuid = response.result?.uuid else {
+                        throw NSError(domain: "LogseqJournal", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: response.error?.message ?? "Could not open journal"])
+                    }
+                    let encoded = String(decoding: try JSONEncoder().encode(uuid), as: UTF8.self)
+                    try runtime.lgRuntime.applyHostUpdate(kind: "open-node", payload: encoded)
                 }
             ))
     }
@@ -259,6 +270,7 @@ public struct LogseqRootView : View {
                 #endif
             },
             graphEffect: { effect in await graphLifecycle.execute(effect) },
+            presentJournalCalendar: { presentationCoordinator.presentJournalCalendar() },
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
             },
@@ -1018,4 +1030,11 @@ public final class LogseqAppDelegate : Sendable {
     public func onLowMemory() {
         logger.debug("onLowMemory")
     }
+}
+
+private struct LGJournalCalendarResponse: Decodable {
+    struct Result: Decodable { let uuid: String }
+    let ok: Bool
+    let result: Result?
+    let error: LogseqCoreError?
 }

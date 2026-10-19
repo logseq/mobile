@@ -2325,10 +2325,8 @@ let graph_and_sync_actions_update_retained_status_in_place () =
          (property_string renderer control Lui_protocol.VariantValue)
          "ghost")
     [ sidebar_control; sync_control ];
-  check ~msg:"the trailing action uses the platform-native menu"
-    (descendant_with_node_kind renderer connection_control
-       Lui_protocol.MenuTrigger
-    <> -1);
+  check ~msg:"the journal trailing action opens the calendar"
+    (descendant_with_identifier renderer connection_control "button.journal-calendar" <> -1);
   check_eq ~msg:"the journal root leaves its default navigation title empty"
     (property_string renderer title Lui_protocol.TextValue)
     "";
@@ -2347,7 +2345,13 @@ let graph_and_sync_actions_update_retained_status_in_place () =
   flush application;
   check_eq ~msg:"the compact control matches main's failure label"
     (property_string renderer sync_control Lui_protocol.AccessibilityLabel)
-    "Sync failed"
+    "Sync failed";
+  dispatch application (Lui_protocol.Press
+    (descendant_with_identifier renderer connection_control "button.journal-calendar"));
+  flush application;
+  check ~msg:"the calendar action reaches native presentation"
+    (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)
+       (App.model application).pending_effects)
 
 let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
   let application = App.create (ios_backend ()) in
@@ -7108,6 +7112,54 @@ let distant_outline_contents_are_loaded_without_replacing_the_page () =
       (descendant_with_identifier renderer (root ()) "outliner.block.content-9999" <> -1)
   ) [false; true]
 
+let returning_to_a_scrolled_page_keeps_hydrated_rows_mounted () =
+  let application = App.create (ios_backend ()) in
+  let rows = List.init 96 (fun index -> outline_row
+    ("return-" ^ string_of_int index) ("Cached block " ^ string_of_int index)) in
+  let shells = List.mapi (fun index row -> if index < 32 then row else
+    { row with Model.row_title = ""; markup_json = "[]"; row_loaded = false }) rows in
+  let root = { (empty_core_projection ()) with
+    Model.graph_name = Some "Work"; selected_graph_id = Some "graph";
+    sidebar = { (empty_sidebar_projection ()) with
+      selected_page = Some { Model.uuid = "page"; title = "Long page" };
+      related_rows = [outline_row "linked-ref" "Linked reference"] };
+    outliner_rows = rows; journal_outliner_rows = shells } in
+  start application;
+  send application (Model.ApplyCoreSnapshot root);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let page_root () = descendant_with_identifier renderer (main_root renderer application) "pane.selected-page" in
+  let window = descendant_with_identifier renderer (page_root ()) "outliner.window" in
+  dispatch application (Lui_protocol.VisibleRange (window, 64, 79));
+  flush application;
+  let mounted = descendant_with_identifier renderer (page_root ()) "outliner.block.return-70" in
+  check ~msg:"the distant block is mounted before following a page link" (mounted <> -1);
+  send application (Model.RequestAppNode "tag");
+  send application (Model.ApplyCoreSnapshot { root with
+    Model.outliner_rows = []; sidebar = { root.sidebar with related_rows = [] };
+    pending_reference_uuid = Some "tag";
+    node_routes = [{ (node_projection "tag" "tag" "Tag" [] []) with Model.node_is_tag = true }] });
+  flush application;
+  check_eq ~msg:"the covered page keeps linked references while another node is active"
+    (List.map (fun row -> row.Model.row_uuid) (App.model application).related_rows) ["linked-ref"];
+  send application (Model.BackAppNavigation 1);
+  send application (Model.ApplyCoreSnapshot { root with Model.outliner_rows = shells;
+    sidebar = { root.sidebar with related_rows = [] }; pending_reference_uuid = Some "page" });
+  flush application;
+  check_eq ~msg:"returning preserves the hydrated visible block without an empty frame"
+    (descendant_with_identifier renderer (page_root ()) "outliner.block.return-70") mounted;
+  check_eq ~msg:"returning preserves the same collection and its scroll position"
+    (descendant_with_identifier renderer (page_root ()) "outliner.window") window;
+  check_eq ~msg:"cached distant content stays available while refreshing"
+    (List.nth (App.model application).outliner_rows 70).row_title "Cached block 70";
+  check_eq ~msg:"references do not disappear while the returned page refreshes them"
+    (List.map (fun row -> row.Model.row_uuid) (App.model application).related_rows) ["linked-ref"];
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    Model.selected_graph_id = Some "graph"; reference_update = Some ("page", []) });
+  flush application;
+  check_eq ~msg:"an authoritative empty reference response still removes deleted references"
+    (App.model application).related_rows []
+
 let search_only_patches_preserve_the_open_outline () =
   let current = { (Model.initial ()) with Model.selected_graph_id = Some "graph";
     search_query = "latest"; search_loading = true;
@@ -8899,6 +8951,7 @@ let cases =
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
     case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
+    case "returning-to-a-scrolled-page-keeps-hydrated-rows-mounted" returning_to_a_scrolled_page_keeps_hydrated_rows_mounted;
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;

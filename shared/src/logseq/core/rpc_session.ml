@@ -849,6 +849,35 @@ let graph_asset session fields downloaded =
   | Error "graph_changed" -> Rpc.failure "graph_changed" "The active graph changed during asset download"
   | Error message -> Rpc.failure "asset_download_failed" message
 
+let ensure_journal session payload =
+  let day = Option.bind payload int_of_string_opt in
+  let valid day =
+    let year = day / 10000 and month = day / 100 mod 100 and date = day mod 100 in
+    let leap = year mod 4 = 0 && (year mod 100 <> 0 || year mod 400 = 0) in
+    let days = [|31; (if leap then 29 else 28); 31; 30; 31; 30; 31; 31; 30; 31; 30; 31|] in
+    year >= 1 && year <= 9999 && month >= 1 && month <= 12
+    && date >= 1 && date <= days.(month - 1)
+  in
+  match day with
+  | None -> Rpc.failure "invalid_params" "A journal date is required"
+  | Some day when not (valid day) -> Rpc.failure "invalid_params" "The journal date is invalid"
+  | Some day ->
+    let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
+    let result = match existing, projection_server_t session, (state session).config with
+      | Some uuid, _, _ -> Ok uuid
+      | None, Some base_t, Some _ ->
+        let uuid = Rpc.journal_page_uuid day in
+        let operation = { Ops.operation_id = fresh_squuid ();
+          base_t; state = Ops.Queued;
+          intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid ();
+            title = Rpc.journal_day_title day; journal_day = day; created_at = now_ms () } } in
+        Result.map (fun () -> uuid) (enqueue_semantic session operation)
+      | None, _, _ -> Error "Select a graph before creating a journal"
+    in
+    match result with
+    | Ok uuid -> Rpc.success (Rpc.json_object ["uuid", `String uuid])
+    | Error message -> Rpc.failure "journal_creation_failed" message
+
 let select_page session payload =
   match
     ( payload
@@ -1302,6 +1331,7 @@ let dispatch session action payload =
           };
         snapshot_visible session)
   | "selectGraph" -> select_graph session payload
+  | "ensureJournal" -> ensure_journal session payload
   | "selectPage" -> select_page session payload
   | "hydrateOutlinerRows" -> hydrate_outliner_rows session payload
   | "cachedImageGallery" ->

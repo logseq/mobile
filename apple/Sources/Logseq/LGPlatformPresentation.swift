@@ -25,6 +25,7 @@ struct LGAttachmentRequest {
 @MainActor
 @Observable
 public final class LGPlatformPresentationCoordinator {
+    public var journalCalendarPresented = false
     public var graphDownloadProgress: LogseqGraphDownloadProgress?
     public private(set) var attachmentService: LGAttachmentService?
     public private(set) var attachmentTargetBlockID: String?
@@ -36,6 +37,12 @@ public final class LGPlatformPresentationCoordinator {
     public private(set) var pendingDeletionBlockIDs: [String] = []
 
     public init() {
+    }
+
+    @discardableResult
+    public func presentJournalCalendar() -> Bool {
+        journalCalendarPresented = true
+        return true
     }
 
     @discardableResult
@@ -127,6 +134,44 @@ public final class LGPlatformPresentationCoordinator {
 }
 
 
+#if os(iOS)
+struct LGJournalCalendar: View {
+    let onSelect: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Date()
+    @State private var selected = false
+
+    var body: some View {
+        NavigationStack {
+            DatePicker("Choose a date", selection: $date, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("picker.journal-date")
+                .onChange(of: date) { _, value in select(value) }
+                .navigationTitle("Go to journal")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Today") { select(Date()) }
+                            .accessibilityIdentifier("button.journal-calendar.today")
+                    }
+                }
+        }
+    }
+
+    private func select(_ date: Date) {
+        guard !selected else { return }
+        selected = true
+        let parts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: date)
+        onSelect(parts.year! * 10000 + parts.month! * 100 + parts.day!)
+    }
+}
+#endif
+
 struct LGImportedAsset: Sendable {
     let title: String
     let assetType: String
@@ -204,6 +249,8 @@ struct LGPlatformPresentationHost: ViewModifier {
     @Bindable var coordinator: LGPlatformPresentationCoordinator
     let store: LogseqStore
     let stageAsset: @MainActor (String) throws -> Void
+    var openJournal: @MainActor (Int) async throws -> Void = { _ in }
+    @State private var journalError: String?
 
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
@@ -247,6 +294,21 @@ struct LGPlatformPresentationHost: ViewModifier {
                     .presentationDetents([.height(260)])
                     .interactiveDismissDisabled()
             }
+            .sheet(isPresented: $coordinator.journalCalendarPresented) {
+                LGJournalCalendar { day in
+                    coordinator.journalCalendarPresented = false
+                    Task {
+                        do { try await openJournal(day) }
+                        catch { journalError = error.localizedDescription }
+                    }
+                }
+                .presentationDetents([.height(460)])
+            }
+            .alert("Could not open journal", isPresented: Binding(
+                get: { journalError != nil }, set: { if !$0 { journalError = nil } }
+            )) {
+                Button("OK") { journalError = nil }
+            } message: { Text(journalError ?? "") }
             .sheet(isPresented: mediaPanelBinding) {
                 let request = coordinator.attachmentRequest
                 let target = request.targetBlockID

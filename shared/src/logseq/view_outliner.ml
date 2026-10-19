@@ -528,7 +528,9 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_divider_visible_ current r)
              model_source row_source)
-        (separator ~accessibility_identifier:"journal.divider" []);
+        (column ~gap:0
+           [ box ~height:26 [];
+             separator ~accessibility_identifier:"journal.divider" [] ]);
       if_
         ~test:
           (Signal.map2

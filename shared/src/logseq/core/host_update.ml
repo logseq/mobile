@@ -57,6 +57,7 @@ type host_update =
   | Authentication of host_authentication
   | Open_quick_action of string
   | Open_capture
+  | Open_node of string
   | Asset_preview_resolved of string * string
 
 let string_field name value = Util.to_string (Util.member name value)
@@ -135,6 +136,7 @@ let decode kind payload =
            })
     | "open-quick-action" -> Ok (Open_quick_action (Util.to_string value))
     | "open-capture" -> Ok Open_capture
+    | "open-node" -> Ok (Open_node (Util.to_string value))
     | "asset-preview-resolved" ->
       Ok
         (Asset_preview_resolved

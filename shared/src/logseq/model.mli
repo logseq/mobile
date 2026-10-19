@@ -243,6 +243,7 @@ type logseq_effect =
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
+  | PresentJournalCalendarEffect of int
   | PresentAttachmentEffect of int * string
   | PresentAssetEffect of int * string * string * string
   | PresentPageShareEffect of int * string * string list
@@ -473,6 +474,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | OpenJournalCalendar
   | OpenSettings
   | DismissSettings
   | OpenSettingsTabs
