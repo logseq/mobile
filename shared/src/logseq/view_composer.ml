@@ -1,4 +1,3 @@
-open Lui_protocol
 open Lui_elements
 
 let attachment_menu send : t =

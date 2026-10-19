@@ -21,7 +21,6 @@ let host_kind = function
   | 1 -> WebHost
   | 2 -> SwiftUIHost
   | 4 -> KotlinHost
-  | 6 -> GPUIHost
   | _ -> GenericHost
 
 let app () =
