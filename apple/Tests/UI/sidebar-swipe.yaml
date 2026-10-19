@@ -16,7 +16,7 @@ appId: com.logseq.logseq
           id: "button.sidebar"
       - swipe:
           start: "60%,27%"
-          end: "3%,27%"
+          end: "3%,24%"
           duration: 400
       - assertNotVisible:
           id: "button.sidebar.dismiss"
@@ -24,13 +24,13 @@ appId: com.logseq.logseq
           id: "button.sidebar"
       - swipe:
           start: "8%,45%"
-          end: "75%,45%"
+          end: "75%,48%"
           duration: 300
       - assertVisible:
           id: "button.sidebar.dismiss"
       - swipe:
           start: "60%,27%"
-          end: "3%,27%"
+          end: "3%,24%"
           duration: 250
       - assertVisible:
           id: "button.sidebar"

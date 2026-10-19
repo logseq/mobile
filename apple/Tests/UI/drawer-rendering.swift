@@ -54,14 +54,16 @@ private struct ContentRow: View {
                 }
             })
         })
+        try registry.register(LUIAppleExtension(identifier: "sidebar-content", fingerprint: "sidebar-content-v1") { _ in
+            AnyView(ScrollView { Text("Sidebar").frame(height: 3_000) })
+        })
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         try backend.apply(json: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
           {"op":"create-node","id":2,"kind":"drawer"},
           {"op":"create-extension","id":3,"identifier":"long-content","fingerprint":"long-content-v1"},
-          {"op":"create-node","id":4,"kind":"text"},
-          {"op":"set-prop","id":4,"property":"text","value":"Sidebar"},
+          {"op":"create-extension","id":4,"identifier":"sidebar-content","fingerprint":"sidebar-content-v1"},
           {"op":"insert-child","parent":1,"child":2,"index":0},
           {"op":"insert-child","parent":2,"child":3,"index":0},
           {"op":"insert-child","parent":2,"child":4,"index":1}
@@ -76,25 +78,35 @@ private struct ContentRow: View {
         func scrollViews(_ view: UIView) -> [UIScrollView] {
             (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
         }
-        guard let scroll = scrollViews(window).first else { finish("FAIL: missing content scroll view"); return }
-        scroll.setContentOffset(CGPoint(x: 0, y: 2_000), animated: false)
+        let scrolls = scrollViews(window).filter { $0.contentSize.height > $0.bounds.height }
+        guard scrolls.count == 2 else { finish("FAIL: missing drawer scroll views"); return }
+        for (index, scroll) in scrolls.enumerated() {
+            scroll.setContentOffset(CGPoint(x: 0, y: (index + 1) * 600), animated: false)
+        }
         try await Task.sleep(for: .milliseconds(200))
-        let offset = scroll.contentOffset
+        let offsets = scrolls.map(\.contentOffset)
         let mountedBodies = counter.bodies
         for (index, selected) in [true, false, true, false].enumerated() {
             try backend.apply(json: """
             {"generation":\(index + 2),"ops":[{"op":"set-prop","id":2,"property":"selected","value":\(selected)}]}
             """)
-            try await Task.sleep(for: .milliseconds(500))
+            try await Task.sleep(for: .milliseconds(80))
+            let panes = scrollViews(window).filter { $0.contentSize.height > $0.bounds.height }
+            guard panes.count == 2, panes.allSatisfy({ !$0.isScrollEnabled && !$0.showsVerticalScrollIndicator && !$0.showsHorizontalScrollIndicator }) else {
+                finish("FAIL: both drawer panes must stop scrolling and hide indicators during transitions"); return
+            }
+            try await Task.sleep(for: .milliseconds(420))
         }
         let repeatedBodies = counter.bodies - mountedBodies
         guard repeatedBodies == 0 else {
             finish("FAIL: drawer transitions reevaluated \(repeatedBodies) content rows")
             return
         }
-        guard scrollViews(window).first === scroll, scroll.contentOffset == offset,
-              scroll.isScrollEnabled else {
-            finish("FAIL: drawer transitions changed scroll identity, offset, or availability"); return
+        guard zip(scrolls, offsets).allSatisfy({ scroll, offset in
+            scrollViews(window).contains(where: { $0 === scroll })
+                && scroll.contentOffset == offset && scroll.isScrollEnabled
+        }) else {
+            finish("FAIL: drawer transitions changed scroll identity, offset, or availability: \(scrolls.map(\.contentOffset)) expected \(offsets)"); return
         }
         try backend.apply(json: """
         {"generation":6,"ops":[{"op":"set-extension-prop","id":3,"property":"revision","value":1}]}
