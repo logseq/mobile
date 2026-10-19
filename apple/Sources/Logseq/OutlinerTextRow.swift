@@ -12,7 +12,7 @@ struct OutlinerTextRow: UIViewRepresentable {
 
     func makeUIView(context: Context) -> OutlinerTextRowView { OutlinerTextRowView() }
     func updateUIView(_ view: OutlinerTextRowView, context: Context) {
-        view.update(row, statusTint: UIColor(row.status?.color(in: semanticColors) ?? .primary), emit: emit)
+        view.update(row, semanticColors: semanticColors, emit: emit)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: OutlinerTextRowView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
@@ -39,6 +39,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let failure = UILabel()
     private var tags: [UIButton] = []
     private var row: OutlinerRowPayload?
+    private var semanticColors: [String: Color] = [:]
     private var emit: ((String, String?, [String: LUIExtensionValue]) -> Void)?
 
     override init(frame: CGRect) {
@@ -67,9 +68,10 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ row: OutlinerRowPayload, statusTint: UIColor, emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void) {
+    func update(_ row: OutlinerRowPayload, semanticColors: [String: Color] = [:], emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void) {
         self.emit = emit
-        status.tintColor = statusTint
+        self.semanticColors = semanticColors
+        status.tintColor = UIColor(row.status?.color(in: semanticColors) ?? .primary)
         guard self.row != row else { return }
         self.row = row
         guides.update(row)
@@ -100,7 +102,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             status.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] complete in
                 guard let self, let row = self.row else { complete([]); return }
                 complete(row.statuses.enumerated().map { index, item in
-                    UIAction(title: item.title, image: self.statusImage(item.icon)) { [weak self] _ in
+                    UIAction(title: item.title, image: item.menuImage(in: self.semanticColors)) { [weak self] _ in
                         self?.emit?("set-status", nil, ["count": .int(index)])
                     }
                 })

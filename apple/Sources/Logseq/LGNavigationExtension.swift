@@ -476,6 +476,9 @@ private struct LGNavigationContent: View {
     let composerDismissalEnabled: Bool
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
+    #if os(iOS)
+    @State private var transitions = LGNavigationTransitions()
+    #endif
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
@@ -618,6 +621,9 @@ private struct LGNavigationContent: View {
     private var rootNavigationSurface: some View {
         transformedRootContent
             .padding(.top, navigationContentTopPadding)
+            #if os(iOS)
+            .background(LGNavigationControllerObserver(transitions: transitions).allowsHitTesting(false))
+            #endif
     }
 
 
@@ -735,10 +741,12 @@ private struct LGNavigationContent: View {
                 let removedCount = max(0, path.count - newPath.count)
                 path = newPath
                 if removedCount > 0 {
-                    Task { @MainActor in
-                        await Task.yield()
-                        emitBack(count: removedCount)
-                    }
+                    #if os(iOS)
+                    // Keep the outgoing route alive until UIKit finishes its pop.
+                    transitions.afterPop { emitBack(count: removedCount) }
+                    #else
+                    emitBack(count: removedCount)
+                    #endif
                 }
             }
         )
@@ -762,6 +770,63 @@ private struct LGNavigationContent: View {
         }
     }
 }
+
+#if os(iOS)
+@MainActor
+private final class LGNavigationTransitions {
+    weak var controller: UINavigationController?
+
+    func afterPop(_ completion: @escaping @MainActor () -> Void) {
+        guard let coordinator = controller?.transitionCoordinator else {
+            completion()
+            return
+        }
+        _ = coordinator.animate(alongsideTransition: nil) { context in
+            if !context.isCancelled { completion() }
+        }
+    }
+}
+
+@MainActor
+private struct LGNavigationControllerObserver: UIViewControllerRepresentable {
+    let transitions: LGNavigationTransitions
+
+    func makeUIViewController(context: Context) -> Observer {
+        Observer(transitions: transitions)
+    }
+
+    func updateUIViewController(_ controller: Observer, context: Context) {
+        controller.resolveNavigationController()
+    }
+
+    final class Observer: UIViewController {
+        let transitions: LGNavigationTransitions
+
+        init(transitions: LGNavigationTransitions) {
+            self.transitions = transitions
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        override func loadView() { view = UIView() }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            resolveNavigationController()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            resolveNavigationController()
+        }
+
+        func resolveNavigationController() {
+            if let navigationController { transitions.controller = navigationController }
+        }
+    }
+}
+#endif
 
 private struct LGBottomChromeSurface: ViewModifier {
     @ViewBuilder

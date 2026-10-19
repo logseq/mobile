@@ -4,6 +4,7 @@ import LogseqModel
 import LUIAppleBackend
 #if os(iOS)
 import UniformTypeIdentifiers
+import UIKit
 #endif
 
 struct OutlinerRowPayload: Decodable, Equatable {
@@ -18,6 +19,15 @@ struct OutlinerRowPayload: Decodable, Equatable {
         let icon: String
         let foreground: String?
         var id: String { uuid }
+
+        #if os(iOS)
+        func menuImage(in semanticColors: [String: Color]) -> UIImage? {
+            let key = icon.replacingOccurrences(of: "app:", with: "")
+            guard case let .assetName(name) = LGIconPolicy.icons[key] else { return nil }
+            return UIImage(named: name, in: .module, compatibleWith: nil)?
+                .withTintColor(UIColor(color(in: semanticColors)), renderingMode: .alwaysOriginal)
+        }
+        #endif
 
         func color(in semanticColors: [String: Color]) -> Color {
             guard let foreground else { return .primary }
@@ -131,7 +141,13 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 Menu {
                     ForEach(Array(row.statuses.enumerated()), id: \.element.id) { index, item in
                         Button { emit("set-status", extra: ["count": .int(index)]) } label: {
-                            SwiftUI.Label { Text(verbatim: item.title) } icon: { statusIcon(item) }
+                            SwiftUI.Label { Text(verbatim: item.title) } icon: {
+                                #if os(iOS)
+                                if let image = item.menuImage(in: semanticColors) { Image(uiImage: image) }
+                                #else
+                                statusIcon(item)
+                                #endif
+                            }
                         }
                         .accessibilityIdentifier("button.block-task-status-option." + item.uuid)
                     }
