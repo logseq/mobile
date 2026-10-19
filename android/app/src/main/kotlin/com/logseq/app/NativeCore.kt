@@ -10,6 +10,9 @@ package com.logseq.app
 // error, which likewise maps to null on the Kotlin side).
 internal object NativeCore {
     init {
+        // Let the JVM run JNI_OnLoad for the HTTPS and crypto callbacks.
+        // The shim's dlopen only resolves C symbols and does not initialize JNI.
+        System.loadLibrary("logseq_core")
         System.loadLibrary("logseq_jni")
     }
 
