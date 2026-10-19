@@ -138,11 +138,11 @@ val objects_for_tag :
   Datascript.db ->
   string ->
   Cache_model.block list
-val recent_journal_page_ids : int -> Datascript.db -> int list
+val recent_journal_page_ids : ?through_day:int -> int -> Datascript.db -> int list
 val journal_page_count : Datascript.db -> int
 val journal_page_uuid : Datascript.db -> int -> string option
 val blocks :
-  ?block_limit:int ->
+  ?block_limit:int -> ?through_day:int ->
   (string -> (string, string) result) ->
   int ->
   Datascript.db ->

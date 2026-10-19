@@ -15,7 +15,7 @@ type runtime_options =
   }
 
 type read_caches =
-  { blocks : (int * int option, Model.block list) Hashtbl.t
+  { blocks : (int * int option * int, Model.block list) Hashtbl.t
   ; page_blocks : (string, Model.block list) Hashtbl.t
   ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Model.block list) Hashtbl.t
@@ -409,13 +409,14 @@ let blocks runtime =
   let caches = caches_for_db runtime (db runtime) in
   let limit = (state runtime).journal_limit in
   let block_limit = (state runtime).journal_block_limit in
-  match Hashtbl.find_opt caches.blocks (limit, block_limit) with
+  let through_day = Model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
+  match Hashtbl.find_opt caches.blocks (limit, block_limit, through_day) with
   | Some blocks -> blocks
   | None ->
     let blocks =
-      Read.blocks ?block_limit (fun v -> Ok v) limit (db runtime)
+      Read.blocks ?block_limit ~through_day (fun v -> Ok v) limit (db runtime)
     in
-    Hashtbl.replace caches.blocks (limit, block_limit) blocks;
+    Hashtbl.replace caches.blocks (limit, block_limit, through_day) blocks;
     blocks
 
 let due_flashcards runtime now = Cards.due_cards (db runtime) now

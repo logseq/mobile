@@ -8,7 +8,7 @@ type runtime_options =
   }
 
 type read_caches =
-  { blocks : (int * int option, Cache_model.block list) Hashtbl.t
+  { blocks : (int * int option * int, Cache_model.block list) Hashtbl.t
   ; page_blocks : (string, Cache_model.block list) Hashtbl.t
   ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Cache_model.block list) Hashtbl.t

@@ -964,11 +964,14 @@ let rec take n list =
   | 0, _ | _, [] -> []
   | n, x :: rest -> x :: take (n - 1) rest
 
-let recent_journal_pages limit db =
+let today () =
+  Model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.))
+
+let recent_journal_pages ?(through_day = today ()) limit db =
   List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ())
   |> List.filter_map (fun (datom : Ds.datom) ->
     match datom.v with
-    | Ds.Int64 day -> Some (day, datom.e)
+    | Ds.Int64 day when day <= Int64.of_int through_day -> Some (day, datom.e)
     | _ -> None)
   |> List.sort (fun (left, _) (right, _) -> compare right left)
   |> fun sorted ->
@@ -981,8 +984,8 @@ let recent_journal_pages limit db =
   in
   collect limit [] sorted
 
-let recent_journal_page_ids limit db =
-  List.map snd (recent_journal_pages limit db)
+let recent_journal_page_ids ?through_day limit db =
+  List.map snd (recent_journal_pages ?through_day limit db)
 
 let journal_page_count db =
   List.fold_left
@@ -1001,9 +1004,9 @@ let journal_page_uuid db day =
       else None
     | _ -> None)
 
-let blocks ?block_limit decrypt_title journal_limit db =
+let blocks ?block_limit ?through_day decrypt_title journal_limit db =
   let entries =
-    recent_journal_pages journal_limit db
+    recent_journal_pages ?through_day journal_limit db
     |> List.concat_map (fun (day, page_eid) ->
       List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt "block/page" page_eid)
       |> List.map (fun (datom : Ds.datom) -> (day, datom.e)))

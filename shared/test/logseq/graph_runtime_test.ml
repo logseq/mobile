@@ -944,6 +944,38 @@ let journal_window_grows_by_two_pages_per_request () =
           check (Runtime.has_older_journals current))
         [ 3; 5 ])
 
+let journal_window_excludes_future_days_before_pagination () =
+  let today = Model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
+  List.iter (fun days -> with_store (fun path ->
+      let tx = List.concat_map (fun (index, day) ->
+        let page = index + 1 and block = index + 101 in
+        let id = string_of_int day in
+        [ add page "block/uuid" (Ds.Uuid ("page-" ^ id));
+          add page "block/title" (Ds.String id);
+          add page "block/name" (Ds.String id);
+          add page "block/journal-day" (Ds.Int64 (Int64.of_int day));
+          add block "block/uuid" (Ds.Uuid ("block-" ^ id));
+          add block "block/title" (Ds.String id);
+          add block "block/page" (Ds.Ref page);
+          add block "block/parent" (Ds.Ref page);
+          add block "block/created-at" (Ds.Int64 0L) ])
+        (List.mapi (fun i day -> i, day) days) in
+      let db = Ds.db_with tx (Ds.empty_db ~schema ()) in
+      let current = Runtime.create path 42 (Ds.conn_from_db db) Runtime.default_options in
+      let visible_days () = Runtime.blocks current |> List.filter_map
+        (fun (block : Model.block) -> Option.map snd block.journal) in
+      let eligible = List.filter (fun day -> day <= today) days in
+      check_eq ~msg:"future journals do not occupy the initial page" (visible_days ())
+        (match eligible with [] -> [] | day :: _ -> [day]);
+      check_eq ~msg:"only eligible journals count toward older pages"
+        (Runtime.has_older_journals current) (List.length eligible > 1);
+      Runtime.load_older_journals current;
+      check_eq ~msg:"pagination excludes future journals and includes today" (visible_days ()) eligible;
+      check (not (Runtime.has_older_journals current));
+      check_eq ~msg:"future journals remain accessible by opening their page"
+        (List.length (Runtime.blocks_for_page current "page-99991231")) 1))
+    [[99991231; today; 20000102; 20000101]; [99991231]]
+
 let submitted_echoes_and_accepted_cursors_confirm_only_visible_results () =
   with_runtime (fun path conn current ->
       check
@@ -1617,6 +1649,8 @@ let cases =
       encrypted_merge_encrypts_the_completed_title_once;
     case "journal window grows by two pages per request"
       journal_window_grows_by_two_pages_per_request;
+    case "journal window excludes future days before pagination"
+      journal_window_excludes_future_days_before_pagination;
     case "submitted echoes and accepted cursors confirm only visible results"
       submitted_echoes_and_accepted_cursors_confirm_only_visible_results;
     case "transport state updates do not replay unrelated late rows"
