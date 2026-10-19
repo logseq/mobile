@@ -45,9 +45,9 @@ class CognitoOAuthTest {
         assertEquals(
             "code/value",
             CognitoOAuth.authorizationCode(
-                "logseqchat://auth/callback?state=expected&code=code%2Fvalue",
+                "logseq://auth/callback?state=expected&code=code%2Fvalue",
                 expectedState = "expected",
-                redirectURI = "logseqchat://auth/callback"
+                redirectURI = "logseq://auth/callback"
             )
         )
     }

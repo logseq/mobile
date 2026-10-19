@@ -2,7 +2,6 @@ open Test_util
 
 module Value = Transit_core.Json
 module Codec = Transit_native.Transit.Json
-module Protocol = Sync_protocol
 module Payload = Mobile_payload
 
 let open_fields =
@@ -83,54 +82,10 @@ let graph_commands_reject_non_object_and_malformed_json () =
    | Error message -> check (String.length message > 0)
    | Ok _ -> check false)
 
-let event_payload event data =
-  Yojson.Basic.to_string
-    (`Assoc [ ("type", `String event); ("data", `String data) ])
-
 let sync_event_envelope_preserves_validation_order () =
-  List.iter
-    (fun (body, expected) ->
-      check_eq (Error expected) (Payload.decode_sync_event body))
-    [
-      ("null", "WebSocket sync event must be an object");
-      ("[]", "WebSocket sync event must be an object");
-      ("{}", "graph sync payload requires type");
-      ("{\"type\":null,\"data\":\"wire\"}", "graph sync payload requires type");
-      ("{\"type\":\"\",\"data\":\"wire\"}", "graph sync payload requires type");
-      ("{\"type\":\"reset\"}", "graph sync payload requires data");
-      ("{\"type\":\"reset\",\"data\":{}}", "graph sync payload requires data");
-      ("{\"type\":\"reset\",\"data\":\"\"}", "graph sync payload requires data");
-    ]
-
-let sync_event_envelope_decodes_transit_and_propagates_protocol_errors () =
-  let wire =
-    Codec.to_string
-      (Value.Map
-         [
-           (Value.Keyword "reason", Value.String "cursor-expired");
-           (Value.Keyword "snapshot-required", Value.Bool true);
-         ])
-  in
-  check_eq
-    (Ok
-       (Protocol.Reset
-          { Protocol.reason = "cursor-expired"; snapshot_required = true }))
-    (Payload.decode_sync_event (event_payload "reset" wire));
-  check_eq (Error "unsupported sync event: unknown")
-    (Payload.decode_sync_event (event_payload "unknown" "wire"));
-  check_eq
-    (Protocol.decode_event "graph-changes" "malformed")
-    (Payload.decode_sync_event (event_payload "graph-changes" "malformed"))
-
-let sync_event_json_errors_remain_unwrapped () =
-  let expected =
-    try
-      ignore (Yojson.Basic.from_string "{");
-      "unexpected parse success"
-    with
-    | Yojson.Json_error message -> message
-  in
-  check_eq (Error expected) (Payload.decode_sync_event "{")
+  List.iter (fun body -> check_error (Payload.decode_sync_event body))
+    [ "null"; "[]"; "{}"; "{\"type\":\"pull/ok\",\"t\":-1,\"txs\":[]}" ];
+  check_ok (Payload.decode_sync_event "{\"type\":\"pull/ok\",\"t\":42,\"txs\":[]}")
 
 let database_open_preserves_path_without_requiring_api_version () =
   check_eq (Some "graph.sqlite")
@@ -185,10 +140,6 @@ let cases =
       graph_commands_reject_non_object_and_malformed_json;
     case "sync event envelope preserves validation order"
       sync_event_envelope_preserves_validation_order;
-    case "sync event envelope decodes transit and propagates protocol errors"
-      sync_event_envelope_decodes_transit_and_propagates_protocol_errors;
-    case "sync event json errors remain unwrapped"
-      sync_event_json_errors_remain_unwrapped;
     case "database open preserves path without requiring api version"
       database_open_preserves_path_without_requiring_api_version;
     case "database open ignores other requests and invalid envelopes"

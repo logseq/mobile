@@ -3,7 +3,6 @@ module Assets = Asset_files
 module Read = Graph_read
 module Sync = Sync_session
 module Checkpoint = Sync_checkpoint
-module Protocol = Sync_protocol
 module Store = Graph_store
 module Payload = Mobile_payload
 module Ds = Datascript
@@ -247,24 +246,21 @@ let import_snapshot (host : mobile_graph) body =
   with error -> Error (Printexc.to_string error)
 
 let apply_sync_event (host : mobile_graph) body =
-  try
-    let ( let* ) = Result.bind in
-    let* event = Payload.decode_sync_event body in
-    match event with
-    | Protocol.Reset reset -> Error ("snapshot required: " ^ reset.reason)
-    | Protocol.Graph_changes change ->
-      (match !(host.current) with
-       | Some opened ->
-         let* () =
-           Sync.apply_change_set
-             (if opened.e2ee then host.crypto.decrypt_title opened.graph_id
-              else fun value -> Ok value)
-             opened.conn opened.checkpoint_path opened.state change
-         in
-         Runtime.rebase opened.read_runtime change.t change.operation_ids
-           (Protocol.changed_block_uuids change);
-         Ok ()
-       | None -> Error "graph runtime is not open")
-  with
-  | Yojson.Json_error message -> Error message
-  | error -> Error (Printexc.to_string error)
+  let ( let* ) = Result.bind in
+  let* journal = Journal_sync.decode body in
+  match !(host.current) with
+  | None -> Error "graph runtime is not open"
+  | Some opened when Option.fold ~none:false ~some:(fun id -> id <> opened.graph_id) journal.graph_id ->
+    Error "journal belongs to another graph"
+  | Some opened ->
+    let local_t = Sync.applied_server_t opened.state in
+    let* ids, changed = Journal_sync.apply
+        (if opened.e2ee then host.crypto.decrypt_title opened.graph_id else fun value -> Ok value)
+        opened.conn local_t journal in
+    if journal.t <= local_t then Ok ()
+    else
+      let* () = Checkpoint.save_checkpoint_atomic opened.checkpoint_path
+          (Checkpoint.create opened.graph_id opened.state.schema_version journal.t) in
+      opened.state.applied_server_t := journal.t;
+      Runtime.rebase opened.read_runtime journal.t ids changed;
+      Ok ()

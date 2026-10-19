@@ -2,7 +2,6 @@ open Test_util
 
 module Session = Sync_session
 module Checkpoint = Sync_checkpoint
-module Protocol = Sync_protocol
 module Snapshot = Snapshot
 module Store = Graph_store
 module Codec = Storage_codec
@@ -134,7 +133,7 @@ let snapshot_import_failure_is_atomic_and_events_persist_cursor () =
   in
   let metadata = expect_ok (Session.decode_snapshot_metadata body) in
   check_eq metadata.baseline_t 48192;
-  check_eq metadata.row_count 5;
+  check_eq metadata.row_count (Some 5);
   check_eq metadata.content_encoding (Some "gzip");
   with_files (fun active saved download ->
     write_file download (fixture_wire "Local title");
@@ -154,25 +153,7 @@ let snapshot_import_failure_is_atomic_and_events_persist_cursor () =
     check_eq (expect_ok (Store.read_row active 0)) original;
     check_eq (saved_cursor saved) (Some 48192);
     check_eq (Sys.file_exists (Store.staging_path active)) false;
-    let conn = expect_ok (Store.restore_conn active) in
-    let state = Session.create_state "graph-1" "65.33" 48192 in
-    let change : Protocol.sync_change_set =
-      {
-        format_version = 1;
-        graph_id = "graph-1";
-        schema_version = "65.33";
-        t_before = 48192;
-        t = 48193;
-        upserts = [];
-        deleted = [];
-        operation_ids = [];
-      }
-    in
-    ignore
-      (expect_ok
-         (Session.apply_change_set (fun v -> Ok v) conn saved state change));
-    check_eq (Session.applied_server_t state) 48193;
-    check_eq (saved_cursor saved) (Some 48193))
+    ignore (expect_ok (Store.restore_conn active)))
 
 let decrypt value =
   if String.starts_with ~prefix:"cipher:" value then
@@ -187,8 +168,8 @@ let encrypted_snapshot_persists_only_plaintext () =
         url = "https://sync.example/snapshot";
         content_encoding = None;
         baseline_t = 9;
-        schema_version = "65.33";
-        row_count = 5;
+        schema_version = Some "65.33";
+        row_count = Some 5;
       }
     in
     ignore

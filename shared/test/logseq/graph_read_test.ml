@@ -3,7 +3,6 @@ open Test_util
 module Read = Graph_read
 module Projection = Graph_projection
 module Model = Cache_model
-module Protocol = Sync_protocol
 module Storage = Storage_codec
 module Transit = Transit_core.Json
 module Ds = Datascript
@@ -103,20 +102,9 @@ let eid db uuid =
 
 let wire_id uuid = Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid uuid ]
 
-let wire_entity uuid attr value : Protocol.sync_entity =
-  { id = wire_id uuid; attrs = [ (Transit.Keyword attr, value) ] }
+let wire_entity uuid _attr _value = wire_id uuid
 
-let change t upserts deleted : Protocol.sync_change_set =
-  {
-    format_version = 1;
-    graph_id = "graph-1";
-    schema_version = "65.33";
-    t_before = t - 1;
-    t;
-    upserts;
-    deleted;
-    operation_ids = [];
-  }
+let change _t upserts deleted = upserts @ deleted
 
 let uuids blocks =
   List.map (fun (b : Model.block) -> b.uuid) blocks

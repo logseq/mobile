@@ -23,7 +23,7 @@ type snapshot_import =
   { graph_id : string
   ; schema_version : string
   ; baseline_t : int
-  ; expected_rows : int
+  ; expected_rows : int option
   ; progress : snapshot_progress ref
   }
 
@@ -125,7 +125,7 @@ let finish_parser parser =
   if !(parser.buffer) = "" then Ok ()
   else Error "incomplete framed snapshot stream"
 
-let create_import graph_id schema_version baseline_t expected_rows =
+let create_stream_import graph_id schema_version baseline_t expected_rows =
   {
     graph_id;
     schema_version;
@@ -134,6 +134,9 @@ let create_import graph_id schema_version baseline_t expected_rows =
     progress =
       ref { accepted_rows = 0; last_addr = None; has_root = false; has_tail = false };
   }
+
+let create_import graph_id schema_version baseline_t expected_rows =
+  create_stream_import graph_id schema_version baseline_t (Some expected_rows)
 
 let validate_rows state rows =
   let rec loop progress remaining =
@@ -162,7 +165,7 @@ let validate_rows state rows =
 let accept_rows state rows =
   let ( let* ) = Result.bind in
   let* progress = validate_rows state rows in
-  if progress.accepted_rows > state.expected_rows then
+  if Option.fold ~none:false ~some:(fun expected -> progress.accepted_rows > expected) state.expected_rows then
     Error "snapshot contains more rows than advertised"
   else begin
     state.progress := progress;
@@ -172,9 +175,9 @@ let accept_rows state rows =
 let finish_import state =
   let progress = !(state.progress) in
   if state.baseline_t < 0 then Error "snapshot baseline cursor must be non-negative"
-  else if state.expected_rows < 0 then
+  else if Option.fold ~none:false ~some:(fun expected -> expected < 0) state.expected_rows then
     Error "snapshot expected row count must be non-negative"
-  else if progress.accepted_rows <> state.expected_rows then
+  else if Option.fold ~none:false ~some:(fun expected -> progress.accepted_rows <> expected) state.expected_rows then
     Error "snapshot row count does not match server metadata"
   else if not progress.has_root then
     Error "snapshot is missing DataScript root row 0"

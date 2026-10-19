@@ -8,7 +8,6 @@ let () =
       "mobile_payload", Mobile_payload_test.cases;
       "search_index", Search_index_test.cases;
       "graph_sqlite", Graph_sqlite_test.cases;
-      "entity_sync", Entity_sync_test.cases;
       "http", Http_test.cases;
       "api", Api_test.cases;
       "sync_tx", Sync_tx_test.cases;
@@ -20,14 +19,13 @@ let () =
       "lui_host_update", Lui_host_update_test.cases;
       "lui_projection", Lui_projection_test.cases;
       "lui_snapshot", Lui_snapshot_test.cases;
-      "sync_protocol", Sync_protocol_test.cases;
+      "journal_sync", Journal_sync_test.cases;
       "markup", Markup_test.cases;
       "flashcards", Flashcards_test.cases;
       "mobile_session", Mobile_session_test.cases;
       "outliner", Outliner_test.cases;
       "snapshot", Snapshot_test.cases;
       "sync_checkpoint", Sync_checkpoint_test.cases;
-      "sync_state", Sync_state_test.cases;
       "logseq_storage_codec", Logseq_storage_codec_test.cases;
       "sync_session", Sync_session_test.cases;
       "outliner_effects", Outliner_effects_test.cases;

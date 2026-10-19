@@ -18,6 +18,9 @@ val store_pending : string -> string -> int -> string -> string -> unit
 val list_pending : string -> (string * int * string * string) list
 val set_pending_state : string -> string -> string -> unit
 val remove_pending : string -> string -> unit
+val store_pending_tx : string -> string -> string -> string -> unit
+val store_resolved_pending : string -> string -> int -> string -> string -> string -> string -> unit
+val pending_tx : string -> string -> (string * string) option
 
 val with_app_db : string -> (Sqlite3.db -> 'a) -> 'a
 val with_search_db : string -> (Sqlite3.db -> 'a) -> 'a

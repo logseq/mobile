@@ -24,7 +24,6 @@ type runtime_state =
   ; snapshot : Pending_projection.pending_projection_snapshot
   ; sidebar_cache : (Datascript.db * Graph_read.sidebar_pages) option
   ; read_cache : (Datascript.db * read_caches) option
-  ; prepared : (string, Pending_ops.pending_operation) Hashtbl.t
   ; journal_limit : int
   ; journal_block_limit : int option
   ; search_index_is_fresh : bool

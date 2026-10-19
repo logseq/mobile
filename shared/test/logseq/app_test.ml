@@ -470,32 +470,6 @@ let contains sub s =
   in
   loop 0
 
-let sync_state_change_set_validation () =
-  check_eq ~msg:"valid change sets should pass"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 1 "graph-1"
-       "65.33" 10 11)
-    None;
-  check_eq ~msg:"unsupported formats should be rejected"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 2 "graph-1"
-       "65.33" 10 11)
-    (Some "unsupported-format");
-  check_eq ~msg:"graph mismatches should be rejected"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 1 "graph-2"
-       "65.33" 10 11)
-    (Some "graph-mismatch");
-  check_eq ~msg:"schema mismatches should be rejected"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 1 "graph-1" "66"
-       10 11)
-    (Some "schema-mismatch");
-  check_eq ~msg:"stale cursors should be rejected"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 1 "graph-1"
-       "65.33" 9 11)
-    (Some "cursor-mismatch");
-  check_eq ~msg:"rewound cursors should be rejected"
-    (Sync_state.apply_change_set_error "graph-1" "65.33" 10 1 "graph-1"
-       "65.33" 10 9)
-    (Some "invalid-cursor")
-
 let sync_checkpoint_encoding_is_lg_owned () =
   let checkpoint = Sync_checkpoint.create "graph-1" "65.33" 48192 in
   let restored =
@@ -511,19 +485,6 @@ let sync_checkpoint_encoding_is_lg_owned () =
   check_eq ~msg:"LG sync checkpoint codec should reject non-map payloads"
     (Sync_checkpoint.decode "[]")
     (Error "graph sync checkpoint must be a Transit map")
-
-let sync_protocol_decoding_is_lg_owned () =
-  match
-    Sync_protocol.decode_change_set
-      "[\"^ \",\"~:format-version\",1,\"~:graph-id\",\"graph-1\",\"~:schema-version\",\"65.33\",\"~:t-before\",41,\"~:t\",42,\"~:upserts\",[[\"^ \",\"~:id\",[\"~:block/uuid\",\"~u7b45785d-710c-47f8-9e7e-e9c4f5229830\"],\"~:attrs\",[\"^ \",\"~:block/title\",\"Hello\"]]],\"~:deleted\",[],\"~:operation-ids\",[\"op-title\"]]"
-  with
-  | Ok change ->
-    check_eq ~msg:"LG sync protocol should decode graph ids" change.graph_id
-      "graph-1";
-    check_eq ~msg:"LG sync protocol should extract changed UUIDs"
-      (Sync_protocol.changed_block_uuids change)
-      [ "7b45785d-710c-47f8-9e7e-e9c4f5229830" ]
-  | Error message -> fail message
 
 let flashcard_state_codec_is_lg_owned () =
   check_eq ~msg:"flashcard ratings should use LG keywords"
@@ -1950,12 +1911,7 @@ let authentication_screen_uses_the_product_name_on_every_host () =
        check_eq ~msg:"the signed-out surface uses the installed product name"
          (descendant_count_with_property_string renderer root
             Lui_protocol.TextValue "Logseq")
-         1;
-       check_eq
-         ~msg:"the old product name is not exposed by either host"
-         (descendant_count_with_property_string renderer root
-            Lui_protocol.TextValue "Logseq Chat")
-         0)
+         1)
     [ ios_backend (); kotlin_backend () ]
 
 let outliner_editor_extension_contract_is_pinned () =
@@ -8591,9 +8547,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
-    case "sync-state-change-set-validation" sync_state_change_set_validation;
     case "sync-checkpoint-encoding-is-lg-owned" sync_checkpoint_encoding_is_lg_owned;
-    case "sync-protocol-decoding-is-lg-owned" sync_protocol_decoding_is_lg_owned;
     case "flashcard-state-codec-is-lg-owned" flashcard_state_codec_is_lg_owned;
     case "edn-codec-is-lg-owned" edn_codec_is_lg_owned;
     case "datascript-value-ref-conversion-is-lg-owned" datascript_value_ref_conversion_is_lg_owned;

@@ -25,8 +25,8 @@ val blocks : graph_projection -> Cache_model.block list
 val identity : Transit_core.Json.value -> entity_identity option
 val refresh_block : graph_projection -> Datascript.db -> string -> unit
 val changed_identities :
-  Sync_protocol.sync_change_set -> string list * string list
+  Transit_core.Json.value list -> string list * string list
 val related_entity_changed : string list -> Cache_model.block -> bool
 val status_changed : string list -> string list -> Cache_model.block -> bool
 val update :
-  graph_projection -> Datascript.db -> Sync_protocol.sync_change_set -> unit
+  graph_projection -> Datascript.db -> Transit_core.Json.value list -> unit

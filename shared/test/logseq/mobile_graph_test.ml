@@ -289,19 +289,8 @@ let event_payload event data =
   json_object
     [ ("type", `String event); ("data", `String (Transit.to_string data)) ]
 
-let change_event before after =
-  event_payload "graph-changes"
-    (Value.Map
-       [
-         (Value.Keyword "format-version", Value.Int 1);
-         (Value.Keyword "graph-id", Value.String "graph");
-         (Value.Keyword "schema-version", Value.String "1");
-         (Value.Keyword "t-before", Value.Int before);
-         (Value.Keyword "t", Value.Int after);
-         (Value.Keyword "upserts", Value.Array []);
-         (Value.Keyword "deleted", Value.Array []);
-         (Value.Keyword "operation-ids", Value.Array []);
-       ])
+let change_event _before after =
+  json_object [ "type", `String "pull/ok"; "t", `Int after; "txs", `List [] ]
 
 let snapshot_request dir encrypted db =
   let rows = expect_ok (Bootstrap.snapshot_rows db) in
@@ -431,18 +420,9 @@ let reset_and_invalid_events_do_not_require_an_open_graph () =
   check_eq
     (Mobile.apply_sync_event host (change_event 7 8))
     (Error "graph runtime is not open");
-  check_eq
-    (Mobile.apply_sync_event host
-       (event_payload "reset"
-          (Value.Map
-             [
-               (Value.Keyword "reason", Value.String "expired");
-               (Value.Keyword "snapshot-required", Value.Bool true);
-             ])))
-    (Error "snapshot required: expired");
-  check_eq
-    (Mobile.apply_sync_event host "null")
-    (Error "WebSocket sync event must be an object")
+  check_error
+    (Mobile.apply_sync_event host (event_payload "reset" (Value.Map [])));
+  check_error (Mobile.apply_sync_event host "null")
 
 let sync_events_persist_cursor_and_rebase_the_read_runtime () =
   with_directory (fun dir ->
@@ -456,11 +436,9 @@ let sync_events_persist_cursor_and_rebase_the_read_runtime () =
       check_eq
         (Checkpoint.load_checkpoint opened.checkpoint_path)
         (Ok (Some (Checkpoint.create "graph" "1" 8)));
-      check_eq
-        (Mobile.apply_sync_event host (change_event 6 9))
-        (Error "sync cursor mismatch");
-      check_eq (Sync.applied_server_t opened.state) 8;
-      check_eq (Runtime.state opened.read_runtime).server_t 8)
+      expect_ok (Mobile.apply_sync_event host (change_event 6 9));
+      check_eq (Sync.applied_server_t opened.state) 9;
+      check_eq (Runtime.state opened.read_runtime).server_t 9)
 
 let snapshot_import_activates_a_real_snapshot_and_reopens_it () =
   with_directory (fun dir ->

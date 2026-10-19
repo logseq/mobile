@@ -31,7 +31,6 @@ type runtime_state =
   ; snapshot : Projection.pending_projection_snapshot
   ; sidebar_cache : (Ds.db * Read.sidebar_pages) option
   ; read_cache : (Ds.db * read_caches) option
-  ; prepared : (string, Ops.pending_operation) Hashtbl.t
   ; journal_limit : int
   ; journal_block_limit : int option
   ; search_index_is_fresh : bool
@@ -142,60 +141,56 @@ let refresh_search_after_rebase runtime before operations changed_uuids =
            { !(runtime.state) with search_index_is_fresh = false })
     | None -> ()
 
-let confirmed_operation confirmed server_t authoritative
+let confirmed_operation confirmed server_t _authoritative
     (operation : Ops.pending_operation) =
-  (List.mem operation.operation_id confirmed
-   && Projection.satisfied authoritative operation.intent)
-  || ((match operation.state with
-       | Ops.Submitted -> true
-       | Ops.Accepted _ -> true
-       | _ -> false)
-      && Projection.satisfied authoritative operation.intent)
-  || Ops.committed_despite_later_changes server_t authoritative
-       operation
+  List.mem operation.operation_id confirmed
+  || match operation.state with
+     | Ops.Accepted t -> t <= server_t
+     | _ -> false
+
+let stored_transaction runtime database (operation : Ops.pending_operation) =
+  match Graph_sqlite.pending_tx runtime.path operation.operation_id with
+  | Some (tx, _) -> Ok tx
+  | None ->
+    (* Migrate the previous intent-only queue once. New entries always persist
+       the resolved datoms alongside the intent before publishing the overlay. *)
+    let ( let* ) = Result.bind in
+    let* () =
+      if operation.base_t <> (state runtime).server_t && not (Ops.safe_to_rebase operation.intent) then
+        Error "legacy structural intent has no recorded datoms and cannot be rebased safely"
+      else Ok ()
+    in
+    let* operations = Projection.compile database operation.intent in
+    let _, tx, reversed = Journal_sync.capture database operations in
+    Graph_sqlite.store_pending_tx runtime.path operation.operation_id tx reversed;
+    Ok tx
 
 let rebase_operation runtime server_t projected operation =
-  let persist_conflict (operation : Ops.pending_operation) message =
-    Ops.save runtime.path { operation with Ops.state = Conflicted message };
-    Ops.Conflicted message
-  in
-  let apply_tx tx =
-    projected := Ds.db_with tx !projected;
-    Ops.Applied
-  in
   match operation.Ops.state with
   | Ops.Conflicted message -> Ops.Conflicted message
-  | Ops.Accepted _ | Ops.Applied ->
-    (match Projection.compile !projected operation.intent with
-     | Ok tx -> apply_tx tx
-     | Error message -> persist_conflict operation message)
   | _ ->
-    Hashtbl.remove (state runtime).prepared operation.operation_id;
-    (match
-       if
-         operation.base_t <> server_t
-         && not (Ops.safe_to_rebase operation.intent)
-       then
-         Error
-           "the server changed while the structural operation was pending"
-       else Projection.compile !projected operation.intent
-     with
-     | Error message ->
-       persist_conflict { operation with Ops.base_t = server_t } message
-     | Ok tx ->
-       ignore (apply_tx tx);
-       if operation.base_t <> server_t then
-         Ops.save runtime.path
-           { operation with Ops.base_t = server_t; state = Queued };
-       Ops.Applied)
+    (try
+       match stored_transaction runtime !projected operation with
+       | Error message ->
+         Ops.save runtime.path { operation with state = Ops.Conflicted message };
+         Ops.Conflicted message
+       | Ok tx ->
+         projected := Journal_sync.replay !projected operation.operation_id
+                        (Ops.outliner_op operation.intent) tx;
+         if operation.base_t <> server_t then
+           Ops.save runtime.path
+             { operation with base_t = server_t;
+               state = (match operation.state with Ops.Retryable -> Ops.Queued | state -> state) };
+         Ops.Applied
+     with error ->
+       Metric_log.line ("db-sync/pending-replay-deferred tx-id=" ^ operation.operation_id
+                        ^ " error=" ^ Printexc.to_string error);
+       Ops.Queued)
 
 let rebase runtime server_t operation_ids changed_uuids =
   let started = Unix.gettimeofday () in
   let before = db runtime in
   let authoritative = Ds.conn_db runtime.conn in
-  List.iter
-    (fun id -> Hashtbl.remove (state runtime).prepared id)
-    operation_ids;
   let operations =
     List.filter
       (fun (operation : Ops.pending_operation) ->
@@ -209,7 +204,7 @@ let rebase runtime server_t operation_ids changed_uuids =
         else true)
       (Ops.list runtime.path)
   in
-  let projected = ref authoritative in
+  let projected = ref (Dev_sync.Sync_replay.display_db_from_server authoritative) in
   trace_stage "LOGSEQ_REBASE_METRIC" started "confirmed";
   runtime.state := { !(runtime.state) with server_t };
   let statuses =
@@ -264,7 +259,6 @@ let create_base path server_t conn options =
               };
             sidebar_cache = None;
             read_cache = None;
-            prepared = Hashtbl.create 64;
             journal_limit = 1;
             journal_block_limit = Some initial_journal_block_limit;
             search_index_is_fresh = false;
@@ -296,46 +290,34 @@ let pending_operations runtime =
     (Ops.list runtime.path)
 
 let db_before_operation runtime operation_id =
-  let authoritative = Ds.conn_db runtime.conn in
-  let operations = Ops.list runtime.path in
-  let rec take_while acc ops =
-    match ops with
-    | (op : Ops.pending_operation) :: rest
-      when op.operation_id <> operation_id ->
-      take_while (op :: acc) rest
-    | _ -> List.rev acc
+  let projected = ref (Dev_sync.Sync_replay.display_db_from_server (Ds.conn_db runtime.conn)) in
+  let rec loop = function
+    | [] -> !projected
+    | (operation : Ops.pending_operation) :: _ when operation.operation_id = operation_id -> !projected
+    | operation :: rest ->
+      ignore (rebase_operation runtime (state runtime).server_t projected operation);
+      loop rest
   in
-  let previous = take_while [] operations in
-  if List.length previous = List.length operations then authoritative
-  else
-    (Projection.build (state runtime).server_t authoritative previous)
-      .db
+  loop (Ops.list runtime.path)
 
 let prepare_sync runtime operation =
-  let operation =
-    match
-      List.find_opt
-        (fun (op : Ops.pending_operation) ->
-          op.operation_id = operation.Ops.operation_id)
-        (Ops.list runtime.path)
-    with
-    | Some op -> op
-    | None -> operation
+  let ( let* ) = Result.bind in
+  let* () =
+    if operation.Ops.base_t <> (state runtime).server_t
+       && not (List.exists (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id)
+                 (Ops.list runtime.path)) then
+      Error "operation was created against a stale server cursor"
+    else Ok ()
   in
-  if operation.base_t <> (state runtime).server_t then
-    Error "operation was created against a stale server cursor"
-  else begin
-    let before = db_before_operation runtime operation.operation_id in
-    let ( let* ) = Result.bind in
-    let* normalized = Ops.normalize_operation before operation in
-    let* tx = Projection.compile before normalized.intent in
-    let* wire =
-      Sync_tx.encode runtime.encrypt_title before tx
-    in
-    Hashtbl.replace (state runtime).prepared operation.operation_id
-      normalized;
-    Ok (Ops.outliner_op normalized.intent, wire)
-  end
+  let before = db_before_operation runtime operation.Ops.operation_id in
+  let* tx = stored_transaction runtime before operation in
+  let items = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string tx) in
+  let created = Dev_sync.Sync_replay.tx_self_created items in
+  if Dev_sync.Sync_replay.pending_tx_unresolvable (Ds.conn_db runtime.conn) ~created items then
+    Error "pending transaction is waiting for confirmed dependencies"
+  else
+    let* wire = Journal_sync.encode runtime.encrypt_title tx in
+    Ok (Ops.outliner_op operation.intent, wire)
 
 let transport_state (value : Ops.pending_state) =
   match value with
@@ -345,93 +327,44 @@ let transport_state (value : Ops.pending_state) =
   | _ -> false
 
 let stage runtime (operation : Ops.pending_operation) =
-  let s = state runtime in
-  let snapshot = s.snapshot in
-  let operation_id = operation.operation_id in
-  let known =
-    List.exists
-      (fun (id, _) -> id = operation_id)
-      snapshot.statuses
-  in
-  let existing = if known then Ops.list runtime.path else [] in
-  let replacing =
-    List.find_opt
-      (fun (op : Ops.pending_operation) -> op.operation_id = operation_id)
-      existing
-  in
-  let prepared = Hashtbl.find_opt s.prepared operation_id in
-  let operation =
-    match prepared with
-    | Some normalized ->
-      { normalized with Ops.state = operation.state }
-    | None -> operation
-  in
-  let state_only =
-    match replacing with
-    | Some previous
-      when transport_state operation.state
-           &&
-           (match previous.Ops.state with
-            | Ops.Conflicted _ -> false
-            | _ -> true) ->
-      Some
-        {
-          previous with
-          Ops.state = operation.state;
-          intent =
-            (match prepared with
-             | Some normalized -> normalized.intent
-             | None -> previous.intent);
-        }
-    | _ -> None
-  in
-  match state_only with
-  | Some operation ->
-    Ops.save runtime.path operation;
+  let existing = Ops.list runtime.path in
+  let previous = List.find_opt
+      (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id) existing in
+  match previous with
+  | Some previous when (match operation.state with Ops.Conflicted _ -> true | _ -> false) ->
+    Ops.save runtime.path { previous with state = operation.state };
+    rebase runtime (state runtime).server_t [] [];
     Ok ()
-  | None ->
-    (match replacing with
-     | None ->
-       if operation.base_t <> s.server_t then
-         Error "operation was created against a stale server cursor"
-       else
-         (match Projection.compile snapshot.db operation.intent with
-          | Error message -> Error message
-          | Ok tx ->
-            Ops.save runtime.path operation;
-            runtime.state :=
-              {
-                !(runtime.state) with
-                snapshot =
-                  {
-                    snapshot with
-                    Projection.db = Ds.db_with tx snapshot.db;
-                    statuses =
-                      snapshot.statuses @ [ (operation_id, Ops.Applied) ];
-                  };
-              };
-            refresh_search_affected runtime snapshot.db operation.intent;
-            Ok ())
-     | Some _ ->
-       let candidates =
-         List.filter
-           (fun (op : Ops.pending_operation) ->
-             op.operation_id <> operation_id)
-           existing
-         @ [ operation ]
-       in
-       let candidate =
-         Projection.build s.server_t (Ds.conn_db runtime.conn) candidates
-       in
-       (match List.assoc_opt operation_id candidate.statuses with
-        | Some Ops.Applied ->
-          Ops.save runtime.path operation;
-          runtime.state :=
-            { !(runtime.state) with snapshot = candidate };
-          refresh_search_affected runtime snapshot.db operation.intent;
-          Ok ()
-        | Some (Ops.Conflicted message) -> Error message
-        | _ -> Error "operation could not be projected"))
+  | None when (match operation.state with Ops.Accepted t -> t <= (state runtime).server_t | _ -> false) ->
+    Ok ()
+  | Some previous when transport_state operation.state ->
+    Ops.save runtime.path { previous with state = operation.state };
+    Ok ()
+  | _ ->
+    let s = state runtime in
+    if operation.base_t <> s.server_t then
+      Error "operation was created against a stale server cursor"
+    else
+      let before = match previous with
+        | None -> db runtime
+        | Some _ -> db_before_operation runtime operation.operation_id
+      in
+      let ( let* ) = Result.bind in
+      let* normalized = Ops.normalize_operation before operation in
+      let* operations = Projection.compile before normalized.intent in
+      let projected, tx, reversed = Journal_sync.capture before operations in
+      Graph_sqlite.store_resolved_pending runtime.path normalized.operation_id normalized.base_t
+        (Ops.state_string normalized.state)
+        (Yojson.Basic.to_string (Ops.intent_json normalized.intent)) tx reversed;
+      (match previous with
+       | Some _ -> rebase runtime s.server_t [] []
+       | None ->
+         runtime.state :=
+           { !(runtime.state) with snapshot =
+               { s.snapshot with Projection.db = projected;
+                 statuses = s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
+      refresh_search_affected runtime before operation.intent;
+      Ok ()
 
 let queued_operation runtime operation_id intent =
   {

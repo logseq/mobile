@@ -1,4 +1,3 @@
-module Protocol = Sync_protocol
 
 type open_graph_request =
   { graph_id : string
@@ -74,13 +73,4 @@ let decode_import payload =
     | _ -> Error "importSnapshot payload must be an object"
   with error -> Error (Printexc.to_string error)
 
-let decode_sync_event payload =
-  let ( let* ) = Result.bind in
-  try
-    match Yojson.Basic.from_string payload with
-    | `Assoc fields ->
-      let* event = required_string fields "type" in
-      let* data = required_string fields "data" in
-      Protocol.decode_event event data
-    | _ -> Error "WebSocket sync event must be an object"
-  with Yojson.Json_error message -> Error message
+let decode_sync_event = Journal_sync.decode

@@ -17,7 +17,8 @@ die() {
   exit 1
 }
 
-[[ $bundle_id != "com.logseq.logseq" ]] || die "refusing to install over the production Logseq bundle id"
+[[ $bundle_id != "com.logseq.logseq" || ${LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE:-0} == 1 ]] \
+  || die "refusing to install over the production Logseq bundle id; set LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE=1 to replace it"
 [[ -n $profile ]] || die "set LOGSEQ_IOS_PROFILE to a development provisioning profile for $bundle_id"
 [[ -f $profile ]] || die "provisioning profile was not found: $profile"
 
@@ -42,7 +43,8 @@ app_dir=$(tail -n 1 "$build_log")
 [[ -d $app_dir ]] || die "device build did not produce an app bundle: $app_dir"
 actual_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_dir/Info.plist")
 [[ $actual_bundle_id == "$bundle_id" ]] || die "built app bundle id is $actual_bundle_id, expected $bundle_id"
-[[ $actual_bundle_id != "com.logseq.logseq" ]] || die "refusing to install over the production Logseq bundle id"
+[[ $actual_bundle_id != "com.logseq.logseq" || ${LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE:-0} == 1 ]] \
+  || die "refusing to install over the production Logseq bundle id"
 [[ -f "$app_dir/embedded.mobileprovision" ]] || die "built app is missing embedded.mobileprovision"
 
 echo "Installing $actual_bundle_id to device: $device"

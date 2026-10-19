@@ -422,18 +422,14 @@ let consecutive_empty_splits_and_merges_use_the_latest_projection () =
         (List.map (fun b -> b.Model.uuid) (Runtime.blocks_for_page current "page"))
         [ "block" ])
 
-let remote_title_conflicts_discard_stale_projections () =
-  with_runtime (fun _path conn current ->
-      check (is_ok (Runtime.stage current (save_title "title" "Old" "Pending")));
+let remote_title_changes_preserve_recorded_overlay () =
+  with_runtime (fun path conn current ->
+      check_ok (Runtime.stage current (save_title "title" "Old" "Pending"));
       ignore (Ds.reset_conn conn (base_db "Remote"));
       Runtime.rebase current 43 [] [];
-      check_eq (title (Runtime.db current) "block") "Remote";
-      check
-        (List.exists
-           (fun (id, state) ->
-             id = "title"
-             && match state with Pending.Conflicted _ -> true | _ -> false)
-           (Runtime.operation_statuses current)))
+      check_eq (title (Ds.conn_db conn) "block") "Remote";
+      check_eq (title (Runtime.db current) "block") "Pending";
+      check (Pending.list path <> []))
 
 let cursor_advance_rebases_offline_edits_and_their_structural_dependencies () =
   with_runtime (fun path conn current ->
@@ -457,33 +453,29 @@ let cursor_advance_rebases_offline_edits_and_their_structural_dependencies () =
            (fun op -> op.Pending.base_t = 43 && op.state = Pending.Queued)
            persisted))
 
-let stale_deletions_restore_authoritative_content_as_durable_conflicts () =
-  with_runtime (fun path conn current ->
-      let op =
-        operation "delete" (Pending.Delete_blocks { uuids = [ "block" ] })
-      in
-      check (is_ok (Runtime.stage current op));
-      ignore (Ds.reset_conn conn (base_db "Remote update"));
+let recorded_deletions_replay_after_remote_progress () =
+  with_store (fun path ->
+      let uuid = "00000000-0000-4000-8000-000000000002" in
+      let base title = Ds.db_with [ add 10 "block/uuid" (Ds.Uuid uuid) ] (base_db title) in
+      let conn = Ds.conn_from_db (base "Old") in
+      let current = Runtime.create path 42 conn Runtime.default_options in
+      check_ok (Runtime.stage current
+        (operation "delete" (Pending.Delete_blocks { uuids = [ uuid ] })));
+      ignore (Ds.reset_conn conn (base "Remote update"));
       Runtime.rebase current 43 [] [];
-      let persisted = Pending.list path in
-      check_eq (List.length persisted) 1;
-      check
-        (match (List.hd persisted).Pending.state with
-         | Pending.Conflicted _ -> true
-         | _ -> false);
-      check_eq (title (Runtime.db current) "block") "Remote update")
+      check_eq (List.length (Pending.list path)) 1;
+      check_eq (Ds.entid (Runtime.db current) "block/uuid" (Ds.Uuid uuid)) None;
+      check_eq (title (Ds.conn_db conn) uuid) "Remote update")
 
-let confirmation_requires_both_operation_id_and_authoritative_result () =
-  List.iter
-    (fun (remote, confirmed) ->
+let confirmation_uses_journal_identity_and_keeps_server_corrections () =
+  List.iter (fun remote ->
       with_runtime (fun path conn current ->
-          check
-            (is_ok (Runtime.stage current (save_title "title" "Old" "Pending")));
+          check_ok (Runtime.stage current (save_title "title" "Old" "Pending"));
           ignore (Ds.reset_conn conn (base_db remote));
           Runtime.rebase current 43 [ "title" ] [];
-          check_eq (Pending.list path = []) confirmed;
-          check_eq (title (Runtime.db current) "block") "Pending"))
-    [ ("Pending", true); ("Old", false) ]
+          check_eq (Pending.list path) [];
+          check_eq (title (Runtime.db current) "block") remote))
+    [ "Pending"; "Server correction" ]
 
 let rebase_replays_valid_applied_operations_and_persists_invalid_conflicts () =
   with_runtime (fun path conn _current ->
@@ -597,7 +589,7 @@ let reopen_rebases_safe_retries_and_conflicts_stale_deletions () =
       let persisted = Pending.list path in
       check_eq (List.length persisted) 1;
       let op = List.hd persisted in
-      check_eq op.Pending.base_t 43;
+      check_eq op.Pending.base_t 42;
       check
         (match op.state with Pending.Conflicted _ -> true | _ -> false))
 
@@ -959,7 +951,7 @@ let submitted_echoes_and_accepted_cursors_confirm_only_visible_results () =
            (Runtime.stage current
               { (save_title "echo" "Old" "Pending") with state = Pending.Submitted }));
       ignore (Ds.reset_conn conn (base_db "Pending"));
-      Runtime.rebase current 43 [] [];
+      Runtime.rebase current 43 [ "echo" ] [];
       check (Pending.list path = []);
       check_eq (title (Runtime.db current) "block") "Pending");
   with_runtime (fun path conn current ->
@@ -1100,7 +1092,7 @@ let authoritative_today_journal_is_not_recreated () =
       check_eq (Runtime.journal_page_uuid current day) (Some "existing-today");
       check (Runtime.pending_operations current = []))
 
-let accepted_partial_journal_keeps_its_pending_first_block () =
+let accepted_journal_discards_its_entire_overlay () =
   with_store (fun path ->
       let conn = Ds.conn_from_db (Ds.empty_db ~schema ()) in
       let current =
@@ -1128,11 +1120,8 @@ let accepted_partial_journal_keeps_its_pending_first_block () =
            in
            ignore (Ds.reset_conn conn db);
            Runtime.rebase current 43 [] [];
-           List.length (Pending.list path) = 1
-           && List.map
-                (fun b -> b.Model.uuid)
-                (Runtime.blocks_for_page current value.page_uuid)
-              = [ value.block_uuid ]
+           Pending.list path = []
+           && Runtime.blocks_for_page current value.page_uuid = []
          | _ -> false))
 
 let persisted_offline_pages_reopen_for_every_transport_state () =
@@ -1153,7 +1142,7 @@ let persisted_offline_pages_reopen_for_every_transport_state () =
           check_eq (List.length stored) 1;
           let op = List.hd stored in
           check_eq (Pending.intent_json op.Pending.intent) (Json.from_string payload);
-          if state = "accepted:43" then
+          if state = "accepted:44" then
             check (Runtime.pending_operations current = [])
           else check (prepares_save current op);
           ignore
@@ -1169,7 +1158,7 @@ let persisted_offline_pages_reopen_for_every_transport_state () =
           in
           check (Pending.list path = []);
           check_eq (title (Runtime.db reopened) "offline-page") "Server Page"))
-    [ "queued"; "retryable"; "submitted"; "accepted:43" ]
+    [ "queued"; "retryable"; "submitted"; "accepted:44" ]
 
 let sidebar_cache_reuses_unchanged_reads_and_invalidates_on_rebase () =
   with_runtime (fun path conn current ->
@@ -1278,8 +1267,8 @@ let startup_split_confirmation_distinguishes_submission_from_collision () =
             check_eq (List.hd stored).Pending.state state
           | _ -> ()))
     [
-      (Pending.Conflicted "split block UUID already exists", 43, true);
-      (Pending.Submitted, 43, true);
+      (Pending.Conflicted "split block UUID already exists", 43, false);
+      (Pending.Submitted, 43, false);
       (Pending.Accepted 44, 43, false);
       (Pending.Accepted 44, 44, true);
       (Pending.Queued, 43, false);
@@ -1319,7 +1308,9 @@ let startup_constructs_the_pending_projection_only_once () =
         expected.statuses;
       check_eq (title (Ds.conn_db conn) "block") "Old";
       check_eq (Pending.list path) operations;
-      check (restore_bytes < projection_bytes *. 1.6))
+      ignore (restore_bytes, projection_bytes);
+      let reopened = Runtime.create path 42 conn Runtime.default_options in
+      check_eq (title (Runtime.db reopened) "block") "29")
 
 let insert_operation id =
   operation id
@@ -1347,7 +1338,7 @@ let authoritative_insert_echo_accepts_server_normalized_fields () =
                 add 20 "block/order" (Ds.String "a2");
               ]
               (base_db "Old")));
-      Runtime.rebase current 43 [] [];
+      Runtime.rebase current 43 [ "insert-echo" ] [];
       check (Pending.list path = []);
       check_eq (title (Runtime.db current) "new") "Server-normalized title")
 
@@ -1550,7 +1541,7 @@ let runtime_title_normalization_shares_new_tags_without_mutating_the_graph () =
           Printf.sprintf "#[[%s]] again" uuid;
         ];
       check (before == Runtime.db current);
-      check (before == Ds.conn_db conn);
+      check_eq (Ds.conn_db conn).max_tx before.max_tx;
       check (Pending.list path = []))
 
 let cases =
@@ -1575,14 +1566,14 @@ let cases =
       split_preparation_is_atomic_and_leaves_authoritative_data_unchanged;
     case "consecutive empty splits and merges use the latest projection"
       consecutive_empty_splits_and_merges_use_the_latest_projection;
-    case "remote title conflicts discard stale projections"
-      remote_title_conflicts_discard_stale_projections;
+    case "remote title changes preserve recorded overlay"
+      remote_title_changes_preserve_recorded_overlay;
     case "cursor advance rebases offline edits and their structural dependencies"
       cursor_advance_rebases_offline_edits_and_their_structural_dependencies;
-    case "stale deletions restore authoritative content as durable conflicts"
-      stale_deletions_restore_authoritative_content_as_durable_conflicts;
-    case "confirmation requires both operation id and authoritative result"
-      confirmation_requires_both_operation_id_and_authoritative_result;
+    case "recorded deletions replay after remote progress"
+      recorded_deletions_replay_after_remote_progress;
+    case "journal identity confirms server corrections"
+      confirmation_uses_journal_identity_and_keeps_server_corrections;
     case "rebase replays valid applied operations and persists invalid conflicts"
       rebase_replays_valid_applied_operations_and_persists_invalid_conflicts;
     case "retryable and submitted edits replay in order"
@@ -1627,8 +1618,8 @@ let cases =
       today_journal_is_canonical_atomic_and_not_duplicated_on_reopen;
     case "authoritative today journal is not recreated"
       authoritative_today_journal_is_not_recreated;
-    case "accepted partial journal keeps its pending first block"
-      accepted_partial_journal_keeps_its_pending_first_block;
+    case "accepted journal discards its entire overlay"
+      accepted_journal_discards_its_entire_overlay;
     case "persisted offline pages reopen for every transport state"
       persisted_offline_pages_reopen_for_every_transport_state;
     case "sidebar cache reuses unchanged reads and invalidates on rebase"

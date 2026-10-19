@@ -176,7 +176,12 @@ let rec prepare_pending_next (session : Types.session) (pump : Types.pending_syn
 
 let activate_semantic_request (session : Types.session) config accepted =
   let s = Types.state session in
-  if s.semantic_active = None then
+  let caught_up =
+    match Types.projection_server_t session, s.accepted_server_t with
+    | Some local, Some latest -> local >= latest
+    | _ -> true
+  in
+  if s.semantic_active = None && caught_up then
     match s.semantic_queue with
     | pending :: _ ->
       (match (Types.host session).prepare_operation with
@@ -314,7 +319,7 @@ let begin_pending_sync (session : Types.session) (config : Api.api_config) =
     end
   end
 
-let finish_semantic_active (session : Types.session) active succeeded
+let settle_semantic_active (session : Types.session) active succeeded
     accepted =
   let next_state =
     if not succeeded then Ops.Retryable
@@ -331,7 +336,10 @@ let finish_semantic_active (session : Types.session) active succeeded
      match accepted with
      | Some accepted -> Types.record_accepted_server_t session accepted
      | None -> ());
-  session.state := { !(session.state) with semantic_active = None };
+  session.state := { !(session.state) with semantic_active = None }
+
+let finish_semantic_active session active succeeded accepted =
+  settle_semantic_active session active succeeded accepted;
   if succeeded then
     match (Types.state session).config with
     | Some config -> activate_semantic_request session config accepted
@@ -531,7 +539,47 @@ let complete_semantic_response session (active : Types.semantic_active)
     let* succeeded, accepted =
       parse_semantic_completion input active.id
     in
-    finish_semantic_active session active succeeded accepted;
+    settle_semantic_active session active succeeded accepted;
+    (if not succeeded then
+       match Json_util.member "body" input with
+       | `String body ->
+         (match Json.from_string body with
+          | `Assoc _ as rejection when Json_util.member "type" rejection = `String "tx/reject" ->
+            (match Json_util.member "t" rejection with
+             | `Int t when t >= 0 -> Types.record_accepted_server_t session t
+             | _ -> ());
+            let reason = match Json_util.member "reason" rejection with
+              | `String reason -> reason
+              | _ -> "transaction rejected"
+            in
+            if reason <> "stale" && Json_util.member "retryable" rejection <> `Bool true then
+              (match (Types.host session).stage_operation with
+               | Some stage ->
+                 ignore (stage { active.pending.operation with Ops.state = Ops.Conflicted reason })
+               | None -> ())
+          | _ -> ())
+       | _ -> ());
+    let* () =
+      match succeeded, (Types.host session).apply_sync_event, Json_util.member "body" input with
+      | true, Some apply, `String body ->
+        let* journal = Journal_sync.decode body in
+        (match Types.projection_server_t session, journal.t_before with
+         | Some local, Some before when local < before -> Ok ()
+         | _ ->
+           let scoped_body = match (Types.state session).config, Json.from_string body with
+             | Some config, `Assoc fields ->
+               Json.to_string (`Assoc (("graphId", `String config.graph_id) :: List.remove_assoc "graphId" fields))
+             | _ -> body
+           in
+           apply scoped_body)
+      | _ -> Ok ()
+    in
+    if succeeded then begin
+      restore_semantic_queue session;
+      match (Types.state session).config with
+      | Some config -> activate_semantic_request session config accepted
+      | None -> ()
+    end;
     Ok ()
   with error ->
     Error ("invalid pending sync completion: " ^ Printexc.to_string error)

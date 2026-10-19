@@ -24,18 +24,15 @@ class AndroidGraphSnapshotDownloader {
         workingDirectory: String,
     ): AndroidDownloadedGraphSnapshot {
         val metadataUrl = snapshotMetadataUrl(baseUrl, graphId)
-        val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
         val cursor = JSONObject(
             readText(snapshotCursorUrl(baseUrl, graphId), accessToken, "Snapshot cursor"),
         )
+        val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
         val metadata = runCatching { JSONObject(metadataBody) }.getOrElse { error ->
             throw AndroidGraphSnapshotException("Snapshot metadata is not valid JSON", error)
         }
         if (!metadata.optBoolean("ok", false)) {
             throw AndroidGraphSnapshotException("Snapshot metadata did not report success")
-        }
-        if (metadata.optString("schema-version").isBlank()) {
-            throw AndroidGraphSnapshotException("Snapshot metadata schema version is invalid")
         }
         val snapshotUrl = runCatching { URL(metadataUrl, metadata.getString("url")) }
             .getOrElse { error ->
@@ -59,8 +56,9 @@ class AndroidGraphSnapshotDownloader {
         val download = File.createTempFile("logseq-graph-", ".download", directory)
         var decoded: File? = null
         try {
-            val rowCount = downloadFile(snapshotUrl, accessToken, download)
-            val snapshot = if (contentEncoding == "gzip") {
+            downloadFile(snapshotUrl, accessToken, download)
+            val hasGzipLayer = download.inputStream().use { it.read() == 0x1f && it.read() == 0x8b }
+            val snapshot = if (hasGzipLayer) {
                 File.createTempFile("logseq-graph-", ".snapshot", directory).also { output ->
                     decoded = output
                     GZIPInputStream(download.inputStream().buffered()).use { input ->
@@ -75,11 +73,10 @@ class AndroidGraphSnapshotDownloader {
             } else {
                 download
             }
-            if (cursor.optString("type") != "pull/ok" || !cursor.has("t")) {
+            if (cursor.optString("type") != "pull/ok" || cursor.optLong("t", -1) < 0) {
                 throw AndroidGraphSnapshotException("Snapshot cursor metadata is invalid")
             }
-            metadata.put("t", cursor.getInt("t"))
-            metadata.put("row-count", rowCount)
+            metadata.put("t", cursor.getLong("t"))
             return AndroidDownloadedGraphSnapshot(metadata.toString(), snapshot.absolutePath)
         } catch (error: Exception) {
             download.delete()
@@ -101,7 +98,7 @@ class AndroidGraphSnapshotDownloader {
     }
 
     internal fun snapshotCursorUrl(baseUrl: String, graphId: String): URL =
-        URL(snapshotMetadataUrl(baseUrl, graphId).toString().removeSuffix("/snapshot/download") + "/pull")
+        URL(snapshotMetadataUrl(baseUrl, graphId).toString().removeSuffix("/snapshot/download") + "/pull?since=9007199254740991")
 
     private fun readText(url: URL, accessToken: String, operation: String): String {
         val connection = open(url, accessToken)
@@ -113,16 +110,13 @@ class AndroidGraphSnapshotDownloader {
         }
     }
 
-    private fun downloadFile(url: URL, accessToken: String, destination: File): Int {
+    private fun downloadFile(url: URL, accessToken: String, destination: File) {
         val connection = open(url, accessToken)
         try {
             requireSuccess(connection, "Snapshot download")
-            val rowCount = connection.getHeaderField("x-snapshot-row-count")?.toIntOrNull()
-                ?: throw AndroidGraphSnapshotException("Snapshot row count is missing")
             connection.inputStream.buffered().use { input ->
                 destination.outputStream().buffered().use(input::copyTo)
             }
-            return rowCount
         } finally {
             connection.disconnect()
         }

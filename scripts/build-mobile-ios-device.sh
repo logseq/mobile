@@ -164,6 +164,7 @@ cp "$repo_root/apple/App/Info.plist" "$app_dir/Info.plist"
 cp "$profile" "$app_dir/embedded.mobileprovision"
 "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "$bundle_id" "$deployment_target" "iPhoneOS"
 cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
+"$repo_root/scripts/compile-ios-app-assets.sh" "$app_dir" iphoneos "$deployment_target"
 
 for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d $bundle ]] || continue
@@ -190,7 +191,7 @@ fi
   -I "$repo_root/apple/Sources/LogseqCoreABI/include" \
   "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
-widget_bundle_id=${LOGSEQ_IOS_WIDGET_BUNDLE_ID:-com.logseq.logseq.shortcuts}
+widget_bundle_id=${LOGSEQ_IOS_WIDGET_BUNDLE_ID:-$bundle_id.shortcuts}
 widget_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
   "$profile_plist" "$widget_bundle_id" "${LOGSEQ_IOS_WIDGET_PROFILE:-}")
 widget_dir="$app_dir/PlugIns/LogseqWidgets.appex"

@@ -404,7 +404,7 @@ private let testEmptySnapshotJSON = """
             graphID: "plain graph",
             accessToken: "oauth-token"
         )
-        #expect(cursor.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/pull")
+        #expect(cursor.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/pull?since=9007199254740991")
         #expect(cursor.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
     }
 
@@ -421,14 +421,16 @@ private let testEmptySnapshotJSON = """
         #expect(json["content-encoding"] as? String == "gzip")
     }
 
-    @Test func snapshotImportMetadataRequiresTheAuthoritativeServerSchema() throws {
-        #expect(throws: URLError.self) {
-            try LogseqGraphSyncHTTP.importMetadataBody(
-                snapshotMetadataBody: #"{"ok":true,"url":"/sync/graph/snapshot/stream"}"#,
-                pullBody: #"{"type":"pull/ok","t":10,"txs":[]}"#,
-                rowCount: 0
-            )
-        }
+    @Test func snapshotImportMetadataAcceptsTheDevDownloadContract() throws {
+        let body = try LogseqGraphSyncHTTP.importMetadataBody(
+            snapshotMetadataBody: #"{"ok":true,"url":"/sync/graph/snapshot/stream"}"#,
+            pullBody: #"{"type":"pull/ok","t":10,"txs":[]}"#,
+            rowCount: nil
+        )
+        let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        #expect(json["t"] as? Int == 10)
+        #expect(json["schema-version"] == nil)
+        #expect(json["row-count"] == nil)
     }
 
     @Test func gzipSnapshotIsDecodedBeforeNativeImport() throws {
@@ -471,8 +473,8 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func graphWebSocketEntityPullMessageCarriesAuthoritativeCursor() throws {
-        #expect(try LogseqGraphWebSocketProtocol.entityPullMessage(since: 48192)
-            == #"{"since":48192,"type":"entity/pull"}"#)
+        #expect(try LogseqGraphWebSocketProtocol.pullMessage(since: 48192)
+            == #"{"since":48192,"type":"pull"}"#)
     }
 
     @Test func graphWebSocketReconnectUsesBoundedExponentialBackoff() {

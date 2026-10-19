@@ -22,7 +22,7 @@ type snapshot_import =
   { graph_id : string
   ; schema_version : string
   ; baseline_t : int
-  ; expected_rows : int
+  ; expected_rows : int option
   ; progress : snapshot_progress ref
   }
 
@@ -37,6 +37,7 @@ val create_parser : int -> snapshot_parser
 val feed : snapshot_parser -> string -> (snapshot_row list, string) result
 val finish_parser : snapshot_parser -> (unit, string) result
 val create_import : string -> string -> int -> int -> snapshot_import
+val create_stream_import : string -> string -> int -> int option -> snapshot_import
 val validate_rows : snapshot_import -> snapshot_row list -> (snapshot_progress, string) result
 val accept_rows : snapshot_import -> snapshot_row list -> (unit, string) result
 val finish_import :

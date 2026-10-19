@@ -20,4 +20,4 @@ type import_snapshot_request =
 val database_open_path : string -> string option
 val decode_open : string -> (open_graph_request, string) result
 val decode_import : string -> (import_snapshot_request, string) result
-val decode_sync_event : string -> (Sync_protocol.sync_event, string) result
+val decode_sync_event : string -> (Journal_sync.journal, string) result

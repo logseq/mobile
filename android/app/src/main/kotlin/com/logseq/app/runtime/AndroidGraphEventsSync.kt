@@ -16,8 +16,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 // Kotlin port of iOS runGraphEventsOnce (ViewModel.swift): opens the
-// /sync/<graphID> WebSocket, pulls entity changes since the applied server
-// cursor, forwards every graph-changes/reset frame to the core through the
+// /sync/<graphID> WebSocket, pulls the journal since the applied server
+// cursor, forwards every pull/ok frame to the core through the
 // `applySyncEvent` dispatch action, and reports connectivity through the
 // `startWebSocket`/`stopWebSocket` actions so syncConnected drives the
 // status dot the same way it does on iOS.
@@ -86,8 +86,8 @@ internal class AndroidGraphEventsSync(
                             val frameType = envelope.optString("type")
                             android.util.Log.d("GraphEvents", "frame type=$frameType")
                             when (frameType) {
-                                "graph-changes", "reset" -> {
-                                    val applied = dispatch("applySyncEvent", frame.value)
+                                "pull/ok" -> {
+                                    val applied = dispatch("applySyncEvent", envelope.put("graphId", connection.graphId).toString())
                                     dispatchError(applied)?.let { code ->
                                         return if (code == "snapshot_required") {
                                             SessionOutcome.SnapshotRequired
@@ -103,7 +103,7 @@ internal class AndroidGraphEventsSync(
                                         pullInFlight = true
                                     }
                                 }
-                                "changed" -> {
+                                "hello", "changed" -> {
                                     val serverT = envelope.optLong("t", -1)
                                     if (serverT >= 0) {
                                         latestNotifiedServerT = maxOf(latestNotifiedServerT, serverT)
@@ -168,7 +168,7 @@ internal class AndroidGraphEventsSync(
     private fun sendPull(socket: WebSocket, since: Long) {
         socket.send(JSONObject()
             .put("since", since)
-            .put("type", "entity/pull")
+            .put("type", "pull")
             .toString())
     }
 

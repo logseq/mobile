@@ -3,7 +3,7 @@
   "userPoolId": "us-east-1_dtagLnju8",
   "appClientId": "69cs1lgme7p8kbgld8n5kseii6",
   "oauthDomain": "logseq-prod.auth.us-east-1.amazoncognito.com",
-  "redirectURI": "logseqchat://auth/callback",
-  "logoutURI": "logseqchat://auth/logout",
+  "redirectURI": "logseq://auth/callback",
+  "logoutURI": "logseq://auth/logout",
   "scopes": ["openid", "email", "profile", "aws.cognito.signin.user.admin"]
 }

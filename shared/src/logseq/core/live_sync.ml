@@ -107,18 +107,22 @@ let merge_pull_cursor metadata body =
 
 let download_snapshot cfg =
   let path = "/sync/" ^ Api.url_encode cfg.Api.graph_id in
-  let response =
-    expect "snapshot metadata" [ 200 ]
-      (Api.request cfg "GET" (path ^ "/snapshot/download") None)
+  let pull = expect "snapshot watermark" [ 200 ]
+      (Api.request cfg "GET" (path ^ "/pull?since=9007199254740991") None) in
+  let response = expect "snapshot metadata" [ 200 ]
+      (Api.request cfg "GET" (path ^ "/snapshot/download") None) in
+  let cursor =
+    match json_int "t" (json_object pull.Api.body) with
+    | Some t when t >= 0 -> t
+    | _ -> fail "snapshot watermark" "missing non-negative cursor"
   in
-  let metadata =
-    require_ok "decode snapshot metadata"
-      (Sync_session.decode_snapshot_metadata response.Api.body)
+  let fields = match Json.from_string response.Api.body with
+    | `Assoc fields -> fields
+    | _ -> fail "snapshot metadata" "expected object"
   in
-  let pull =
-    expect "snapshot pull" [ 200 ]
-      (Api.request cfg "GET" (path ^ "/pull") None)
-  in
+  let metadata = require_ok "decode snapshot metadata"
+      (Sync_session.decode_snapshot_metadata
+         (Json.to_string (`Assoc (("t", `Int cursor) :: List.remove_assoc "t" fields)))) in
   let metadata = merge_pull_cursor metadata pull.Api.body in
   let request =
     {
@@ -152,7 +156,14 @@ let has_title db decrypt expected =
               | Error _ -> value)
          | _ -> false)
 
-let rec submit_tx cfg current operation attempts =
+let apply_journal decrypt current body =
+  let journal = require_ok "decode journal" (Journal_sync.decode body) in
+  let ids, changed = require_ok "apply canonical journal"
+      (Journal_sync.apply decrypt current.Graph_runtime.conn
+         (Graph_runtime.state current).server_t journal) in
+  Graph_runtime.rebase current journal.t ids changed
+
+let rec submit_tx ?(decrypt = fun value -> Ok value) cfg current operation attempts =
   if attempts <= 0 then
     fail "tx/batch" "exhausted retries after stale cursor"
   else begin
@@ -173,10 +184,13 @@ let rec submit_tx cfg current operation attempts =
       , json_string "reason" fields )
     with
     | Some "tx/batch/ok", Some t, _ ->
-      Graph_runtime.rebase current t [ operation.Pending_ops.operation_id ] []
+      apply_journal decrypt current response.Api.body
     | Some "tx/reject", Some t, Some "stale" ->
-      Graph_runtime.rebase current t [] [];
-      submit_tx cfg current operation (attempts - 1)
+      let pull = expect "pull stale journal" [ 200 ]
+          (Api.request cfg "GET" ("/sync/" ^ Api.url_encode cfg.Api.graph_id
+             ^ "/pull?since=" ^ string_of_int (Graph_runtime.state current).server_t) None) in
+      apply_journal decrypt current pull.Api.body;
+      submit_tx ~decrypt cfg current operation (attempts - 1)
     | _ ->
       fail "tx/batch"
         (Printf.sprintf "unexpected response HTTP %d %s"
@@ -393,7 +407,7 @@ let run_mode base_url token e2ee =
           then
             fail "import snapshot"
               "Contents page is missing after snapshot import";
-          submit_tx cfg current
+          submit_tx ~decrypt cfg current
             (stage_insert current contents_page_uuid block_title)
             4;
           (let uuid, operation =
@@ -403,19 +417,13 @@ let run_mode base_url token e2ee =
            upload_asset_file cfg uuid asset_type checksum asset_bytes
              (if e2ee then "text/plain"
               else Api.content_type_for_asset_type asset_type);
-           submit_tx cfg current operation 4;
+           submit_tx ~decrypt cfg current operation 4;
            let downloaded = download_asset cfg uuid asset_type in
            if downloaded.Api.body <> asset_bytes then
              fail "asset download"
                (asset_mismatch asset_bytes downloaded.Api.body));
-          ignore
-            (expect "semantic capture" [ 200; 201 ]
-               (Api.capture_request (Some contents_page_uuid) cfg
-                  (Graph_runtime.fresh_uuid ())
-                  (if e2ee then
-                     require_ok "encrypt capture"
-                       (encrypt_text capture_title)
-                   else capture_title)));
+          submit_tx ~decrypt cfg current
+            (stage_insert current contents_page_uuid capture_title) 4;
           verify_titles cfg decrypt_protected label block_title
             asset_title capture_title))
 

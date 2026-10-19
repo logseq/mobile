@@ -92,7 +92,7 @@ private struct CognitoTokenStore: Sendable {
 {
     private var session: ASWebAuthenticationSession?
 
-    func authenticate(at url: URL, callbackURLScheme: String?) async throws -> URL {
+    func authenticate(at url: URL, callbackURLScheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: url,
@@ -177,6 +177,9 @@ private struct CognitoTokenStore: Sendable {
 
     func signIn() async throws -> String {
         try validateConfiguration()
+        guard let callbackScheme = URL(string: configuration.redirectURI)?.scheme else {
+            throw CognitoAuthProviderError.invalidConfiguration
+        }
         let state = try randomURLSafeString(byteCount: 24)
         let codeVerifier = try randomURLSafeString(byteCount: 64)
         let authorizationURL = try CognitoOAuthRequest.authorizationURL(
@@ -186,7 +189,7 @@ private struct CognitoTokenStore: Sendable {
         )
         let callbackURL = try await webAuthentication.authenticate(
             at: authorizationURL,
-            callbackURLScheme: URL(string: configuration.redirectURI)?.scheme
+            callbackURLScheme: callbackScheme
         )
         let code = try CognitoOAuthCallback.authorizationCode(
             from: callbackURL,

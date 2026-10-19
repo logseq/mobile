@@ -12,8 +12,6 @@ module Api = Api
 module Search = Search_index
 module Effects = Outliner_effects
 module Sync_session = Sync_session
-module Protocol = Sync_protocol
-module Entity_sync = Entity_sync
 module Codec = Storage_codec
 module Outliner = Outliner_state
 module Flashcards = Flashcards
@@ -1340,13 +1338,14 @@ let semantic_capture_pump_never_calls_blocking_transport () =
 
 let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
   let staged = ref [] in
+  let cursor = ref 91 in
   let session =
     Session.create_session
       {
         Session.default_options with
         load_graph_catalog = Some (fun () -> Some encrypted_graph_catalog);
         graph_unlocked = Some (fun _graph_id -> true);
-        sync_cursor = Some (fun () -> Some 91);
+        sync_cursor = Some (fun () -> Some !cursor);
         journal_page_id = Some (fun _day -> None);
         stage_operation =
           Some (fun operation -> staged := !staged @ [ operation ]; Ok ());
@@ -1370,6 +1369,7 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
      check_eq property.attr "logseq.property/status"
    | _ -> check false);
   let begin_response = dispatch_json session "beginPendingSync" "" in
+  cursor := 92;
   let complete_response =
     dispatch_json session "completePendingSync"
       "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}"
@@ -1383,6 +1383,7 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
           "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
       | None -> check false)
     [ begin_response; complete_response ];
+  cursor := 93;
   check
     (pending_request
        (dispatch_json session "completePendingSync"
@@ -1745,15 +1746,16 @@ let semantic_completion_persists_accepted_server_cursor () =
   check_eq operation.Ops.operation_id "op-accepted";
   check_eq operation.state (Ops.Accepted 44)
 
-let http_acceptance_advances_submission_but_not_applied_cursor () =
+let http_acceptance_waits_for_the_confirmed_journal_cursor () =
   let staged = ref [] in
+  let cursor = ref 42 in
   let session =
     configure_plain_session
       (Session.create_session
          {
            Session.default_options with
            load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
-           sync_cursor = Some (fun () -> Some 42);
+           sync_cursor = Some (fun () -> Some !cursor);
            graph_blocks =
              Some (fun () -> Some [ synced_block "remote" "Old" ]);
            stage_operation =
@@ -1785,6 +1787,8 @@ let http_acceptance_advances_submission_but_not_applied_cursor () =
     (response_result
        (dispatch_json session "updateBlock"
           "{\"uuid\":\"remote\",\"operationId\":\"second-after-response\",\"expectedTitle\":\"First\",\"title\":\"Second\",\"status\":null}"));
+  check_eq (pending_request (dispatch_json session "beginPendingSync" "")) None;
+  cursor := 43;
   check_eq
     (member "t-before"
        (member "bodyObject" (required_pending_request session)))
@@ -1853,6 +1857,7 @@ let rejected_and_offline_transactions_remain_retryable_with_stable_identity () =
   List.iter
     (fun offline ->
       let persisted = ref [] in
+      let cursor = ref 42 in
       let operation_id = if offline then "op-retry" else "op-rejected" in
       let session =
         configure_plain_session
@@ -1860,7 +1865,7 @@ let rejected_and_offline_transactions_remain_retryable_with_stable_identity () =
              {
                Session.default_options with
                load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
-               sync_cursor = Some (fun () -> Some 42);
+               sync_cursor = Some (fun () -> Some !cursor);
                graph_blocks =
                  Some (fun () -> Some [ synced_block "remote" "Old" ]);
                stage_operation =
@@ -1906,6 +1911,10 @@ let rejected_and_offline_transactions_remain_retryable_with_stable_identity () =
       let operation = List.hd !persisted in
       check_eq operation.Ops.operation_id operation_id;
       check_eq operation.state Ops.Retryable;
+      if not offline then begin
+        check_eq (pending_request (dispatch_json session "beginPendingSync" "")) None;
+        cursor := 43
+      end;
       let tx =
         List.hd
           (json_items "txs"
@@ -1956,15 +1965,16 @@ let split_block_stages_one_atomic_semantic_intent () =
    | _ -> check false);
   assert_semantic_request session "op-split" "split-block" 42
 
-let accepted_edit_immediately_releases_next_durable_operation () =
+let confirmed_journal_releases_next_durable_operation () =
   let persisted = ref [] in
+  let cursor = ref 42 in
   let session =
     configure_plain_session
       (Session.create_session
          {
            Session.default_options with
            load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
-           sync_cursor = Some (fun () -> Some 42);
+           sync_cursor = Some (fun () -> Some !cursor);
            graph_blocks =
              Some (fun () -> Some [ synced_block "source" "Old" ]);
            stage_operation =
@@ -1998,7 +2008,9 @@ let accepted_edit_immediately_releases_next_durable_operation () =
   let completion =
     complete_request session (required_pending_request session) "{\"t\":43}"
   in
-  let request = member "pendingSyncRequest" completion in
+  check_eq (member "pendingSyncRequest" completion) `Null;
+  cursor := 43;
+  let request = required_pending_request session in
   let tx = List.hd (json_items "txs" (member "bodyObject" request)) in
   check_eq (member "tx-id" tx) (`String "second")
 
@@ -2930,38 +2942,20 @@ let tag_completion_immediately_publishes_tag_metadata () =
 let asset_replay_uuid index =
   Printf.sprintf "00000000-0000-4000-8000-00000000000%d" index
 
-let asset_replay_change before accepted : Protocol.sync_change_set =
-  {
-    format_version = 1;
-    graph_id = "plain-1";
-    schema_version = "65.33";
-    t_before = before;
-    t = accepted;
-    upserts =
-      List.init (accepted - 41 - (before - 41)) (fun i ->
-          let index = before - 41 + i in
-          let uuid = asset_replay_uuid index in
-          {
-            Protocol.id =
-              Value.Array [ Value.Keyword "block/uuid"; Value.Uuid uuid ];
-            attrs =
-              [
-                (Value.Keyword "block/uuid", Value.Uuid uuid);
-                (Value.Keyword "block/title", Value.String "photo.jpg");
-              ];
-          });
-    deleted = [];
-    operation_ids = [];
-  }
+let asset_replay_message ?(typ = "pull/ok") before accepted =
+  let rows = List.init (accepted - before) (fun i ->
+      let index = before - 41 + i in
+      let uuid = asset_replay_uuid index in
+      let tx = Transit_native.Transit.Json.to_string
+          (Value.Array
+             [ Value.Array [ Value.Keyword "db/add"; Value.String uuid; Value.Keyword "block/uuid"; Value.Uuid uuid ];
+               Value.Array [ Value.Keyword "db/add"; Value.String uuid; Value.Keyword "block/title"; Value.String "photo.jpg" ] ]) in
+      Rpc.json_object [ "t", `Int (before + i + 1); "tx", `String tx ]) in
+  Json.to_string (Rpc.json_object
+      [ "type", `String typ; "t-before", `Int before; "t", `Int accepted; "txs", `List rows ])
 
 let replay_assets session before accepted =
-  response_result
-    (dispatch_json session "applySyncEvent"
-       (Json.to_string
-          (Rpc.json_object
-             [
-               ("before", `Int before); ("t", `Int accepted);
-             ])))
+  response_result (dispatch_json session "applySyncEvent" (asset_replay_message before accepted))
 
 let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
   List.iter
@@ -2992,27 +2986,15 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
                apply_sync_event =
                  Some
                    (fun payload ->
-                     let input = Json.from_string payload in
-                     let change =
-                       asset_replay_change
-                         (Json_util.to_int (member "before" input))
-                         (Json_util.to_int (member "t" input))
-                     in
-                     match
-                       Sync_session.apply_validated_change_set state change
-                         (fun change ->
-                           match
-                             Entity_sync.apply_change_set
-                               (fun title -> Ok title)
-                               conn change
-                           with
-                           | Error message -> Error message
-                           | Ok () ->
-                             incr applied;
-                             Ok ())
-                     with
-                     | Ok () -> Ok ()
-                     | Error _ -> Error "sync cursor mismatch");
+                     let ( let* ) = Result.bind in
+                     let* journal = Journal_sync.decode payload in
+                     let local = Sync_session.applied_server_t state in
+                     let* _ = Journal_sync.apply (fun value -> Ok value) conn local journal in
+                     if journal.t > local then begin
+                       incr applied;
+                       state.applied_server_t := journal.t
+                     end;
+                     Ok ());
              })
       in
       List.iter
@@ -3046,12 +3028,7 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
              ignore (replay_assets session before accepted));
           let completion =
             complete_request session transaction
-              (Json.to_string
-                 (Rpc.json_object
-                    [
-                      ("type", `String "tx/batch/ok");
-                      ("t", `Int accepted);
-                    ]))
+              (asset_replay_message ~typ:"tx/batch/ok" (accepted - 1) accepted)
           in
           let visible =
             Json_util.to_int (member "appliedServerT" completion)
@@ -3069,7 +3046,7 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
         [ 1; 2; 3 ];
       (if timing = `Deferred then
          ignore (replay_assets session 42 45));
-      check_eq !applied (if timing = `Deferred then 1 else 3);
+      check_eq !applied 3;
       check_eq (Sync_session.applied_server_t state) 45;
       check_eq
         (List.length
@@ -5858,8 +5835,8 @@ let cases =
       pending_sync_response_is_bounded_independently_of_page_size;
     case "semantic completion persists accepted server cursor"
       semantic_completion_persists_accepted_server_cursor;
-    case "http acceptance advances submission but not applied cursor"
-      http_acceptance_advances_submission_but_not_applied_cursor;
+    case "HTTP acceptance waits for confirmed journal cursor"
+      http_acceptance_waits_for_the_confirmed_journal_cursor;
     case "captures after acceptance still stage against authoritative cursor"
       captures_after_acceptance_still_stage_against_authoritative_cursor;
     case "rejected and offline transactions remain retryable with stable identity"
@@ -5868,8 +5845,8 @@ let cases =
       delete_block_stages_a_cursor_guarded_semantic_request;
     case "split block stages one atomic semantic intent"
       split_block_stages_one_atomic_semantic_intent;
-    case "accepted edit immediately releases next durable operation"
-      accepted_edit_immediately_releases_next_durable_operation;
+    case "confirmed journal releases next durable operation"
+      confirmed_journal_releases_next_durable_operation;
     case "merge backward stages one atomic semantic intent"
       merge_backward_stages_one_atomic_semantic_intent;
     case "move blocks stages one ordered batch"

@@ -32,6 +32,7 @@ val import_downloaded :
 val has_title :
   Datascript.db -> (string -> (string, string) result) -> string -> bool
 val submit_tx :
+  ?decrypt:(string -> (string, string) result) ->
   Api.api_config ->
   Graph_runtime.graph_runtime ->
   Pending_ops.pending_operation ->

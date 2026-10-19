@@ -68,7 +68,7 @@ let refresh_block projection db uuid =
      | Some block -> String_map.add uuid block !(projection.blocks_by_uuid)
      | None -> String_map.remove uuid !(projection.blocks_by_uuid))
 
-let changed_identities (change : Sync_protocol.sync_change_set) =
+let changed_identities identities =
   List.fold_left
     (fun (uuids, idents) value ->
       match identity value with
@@ -76,9 +76,7 @@ let changed_identities (change : Sync_protocol.sync_change_set) =
       | Some (Ident_identity ident) -> (uuids, ident :: idents)
       | None -> (uuids, idents))
     ([], [])
-    (List.map (fun (entity : Sync_protocol.sync_entity) -> entity.id)
-       change.upserts
-     @ change.deleted)
+    identities
 
 let related_entity_changed changed_uuids (block : Model.block) =
   List.exists
@@ -95,11 +93,11 @@ let status_changed changed_uuids changed_idents (block : Model.block) =
         | None -> false)
   | None -> false
 
-let update projection db (change : Sync_protocol.sync_change_set) =
+let update projection db identities =
   if not (Int_set.equal !(projection.recent_pages) (recent_pages db)) then
     rebuild projection db
   else
-    let changed_uuids, changed_idents = changed_identities change in
+    let changed_uuids, changed_idents = changed_identities identities in
     let affected =
       String_map.fold
         (fun _ (block : Model.block) affected ->

@@ -1313,7 +1313,11 @@ let dispatch session action payload =
        let semantic = s.semantic_active <> None in
        (match complete_pending_sync session payload with
         | Ok () ->
-          if semantic then pending_sync_patch session
+          if semantic && h.Types.apply_sync_event = None then pending_sync_patch session
+          else if semantic then begin
+            reconcile_authoritative_blocks session;
+            snapshot_visible session
+          end
           else snapshot_visible session
         | Error message ->
           Rpc.failure "invalid_pending_sync_completion" message)

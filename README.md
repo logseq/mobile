@@ -36,6 +36,12 @@ compiler, target, and source fingerprints, so later builds reuse them. Set
 `LOGSEQ_IOS_TOOLCHAIN_PREFIX` to use an existing compatible compiler
 directly.
 
+`scripts/install-mobile-ios-device.sh` uses signing and device settings from
+`.logseq-ios-device.env`. To replace an existing Logseq installation, use
+`LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq` and explicitly set
+`LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE=1`, with a profile and signing identity
+from the same Apple team as the installed app.
+
 ## Android
 
 Android is a standard Gradle project:
@@ -96,6 +102,18 @@ uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
 in the platform secure store, so neither client depends on Amplify or the AWS
 SDK.
 
-The production Cognito callback is `logseqchat://auth/callback`, separate from
-`logseq://` navigation links. Changing it also requires updating the Cognito
-app client's allowed callback and sign-out URLs.
+Sync uses dev's `pull` / `pull/ok` journal and `tx/batch` protocol. Only canonical
+server journal rows enter the persisted graph; pending edits store normalized
+datoms and replay on a display DB without durable storage. Snapshot bootstrap
+reads its cursor through the existing pull endpoint and its schema from the
+snapshot database, without requiring extra snapshot metadata or response headers.
+
+The normalization and overlay replay algorithms in `Dev_sync` are extracted
+verbatim from Logseq dev commit `53952776ef10805cba03009d444cf021f0d2c3ce`.
+`python3 scripts/vendor-dev-sync.py ../logseq-1 --check` verifies the pinned source;
+the same command without `--check` regenerates it. Mobile platform adapters are
+kept in `scripts/vendor-dev-sync-platform.ml`.
+
+The Cognito callback is `logseq://auth/callback`; sign-out uses
+`logseq://auth/logout`. Both URLs are registered in the Cognito app client's
+allowed callback and sign-out URLs.

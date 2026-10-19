@@ -1,10 +1,8 @@
 module Json = Yojson.Basic
 module Json_util = Yojson.Basic.Util
 module Checkpoint = Sync_checkpoint
-module Sync_state = Sync_state
 module Snapshot = Snapshot
 module Store = Graph_store
-module Entity_sync = Entity_sync
 module Ds = Datascript
 
 type sync_session_state =
@@ -13,20 +11,12 @@ type sync_session_state =
   ; applied_server_t : int ref
   }
 
-type sync_error =
-  | Unsupported_format
-  | Graph_mismatch
-  | Schema_mismatch
-  | Cursor_mismatch
-  | Invalid_cursor
-  | Apply_failed of string
-
 type snapshot_metadata =
   { url : string
   ; content_encoding : string option
   ; baseline_t : int
-  ; schema_version : string
-  ; row_count : int
+  ; schema_version : string option
+  ; row_count : int option
   }
 
 let create_state graph_id schema_version applied_server_t =
@@ -35,30 +25,6 @@ let create_state graph_id schema_version applied_server_t =
 let applied_server_t state = !(state.applied_server_t)
 
 let submission_accepted _state _server_t = ()
-
-let sync_error_of_code code =
-  match code with
-  | "unsupported-format" -> Unsupported_format
-  | "graph-mismatch" -> Graph_mismatch
-  | "schema-mismatch" -> Schema_mismatch
-  | "cursor-mismatch" -> Cursor_mismatch
-  | "invalid-cursor" -> Invalid_cursor
-  | _ -> Apply_failed ("Unknown LG sync-state error: " ^ code)
-
-let apply_validated_change_set state
-    (change : Sync_protocol.sync_change_set) apply =
-  match
-    Sync_state.apply_change_set_error state.graph_id
-      state.schema_version (applied_server_t state) change.format_version
-      change.graph_id change.schema_version change.t_before change.t
-  with
-  | Some code -> Error (sync_error_of_code code)
-  | None ->
-    (match apply change with
-     | Error message -> Error (Apply_failed message)
-     | Ok () ->
-       state.applied_server_t := change.t;
-       Ok ())
 
 let string_field name input =
   match Json_util.member name input with
@@ -80,8 +46,16 @@ let decode_snapshot_metadata body =
          let ( let* ) = Result.bind in
          let* url = string_field "url" input in
          let* baseline_t = non_negative_int_field "t" input in
-         let* schema_version = string_field "schema-version" input in
-         let* row_count = non_negative_int_field "row-count" input in
+         let* schema_version =
+           match Json_util.member "schema-version" input with
+           | `Null -> Ok None
+           | _ -> Result.map Option.some (string_field "schema-version" input)
+         in
+         let* row_count =
+           match Json_util.member "row-count" input with
+           | `Null -> Ok None
+           | _ -> Result.map Option.some (non_negative_int_field "row-count" input)
+         in
          let encoding =
            match Json_util.member "content-encoding" input with
            | `String value ->
@@ -117,7 +91,7 @@ let cleanup_staging active_path =
 
 let plaintext_datom decrypt (datom : Ds.datom) =
   let ( let* ) = Result.bind in
-  if Entity_sync.protected_attr datom.a then
+  if Sync_tx.protected_attr datom.a then
     match datom.v with
     | Ds.String ciphertext ->
       let* value = decrypt ciphertext in
@@ -174,7 +148,7 @@ let import_snapshot decrypt graph_id active_path checkpoint_path metadata
     download_path =
   let parser = Snapshot.create_parser (64 * 1024 * 1024) in
   let import =
-    Snapshot.create_import graph_id metadata.schema_version
+    Snapshot.create_stream_import graph_id (Option.value metadata.schema_version ~default:"")
       metadata.baseline_t metadata.row_count
   in
   let ( let* ) = Result.bind in
@@ -183,6 +157,36 @@ let import_snapshot decrypt graph_id active_path checkpoint_path metadata
   let* () = Snapshot.finish_parser parser in
   let* completed = Snapshot.finish_import import in
   let* db = Store.restore_db (Store.staging_path active_path) in
+  let* schema_version =
+    match metadata.schema_version with
+    | Some version -> Ok version
+    | None ->
+      let rec version_string = function
+        | Ds.String s -> Some s
+        | Ds.Int64 n -> Some (Int64.to_string n)
+        | Ds.Vector parts | Ds.List parts ->
+          let strings = List.filter_map version_string parts in
+          if List.length strings = List.length parts then Some (String.concat "." strings) else None
+        | Ds.Map fields ->
+          (match List.assoc_opt (Ds.Keyword "major") fields,
+                 List.assoc_opt (Ds.Keyword "minor") fields with
+           | Some major, Some minor -> version_string (Ds.Vector [ major; minor ])
+           | Some major, None -> version_string major
+           | _ -> None)
+        | _ -> None
+      in
+      let version =
+        match Ds.entity db (Ds.Ident "logseq.kv/schema-version") with
+        | Some entity ->
+          (match Ds.Entity.entity_attr_raw entity "kv/value" with
+           | Some (Ds.One_value value) -> version_string value
+           | _ -> None)
+        | None -> None
+      in
+      (match version with
+       | Some version when version <> "" -> Ok version
+       | _ -> Error "snapshot database is missing its graph schema version")
+  in
   let* () =
     match decrypt with
     | Some decrypt ->
@@ -193,10 +197,10 @@ let import_snapshot decrypt graph_id active_path checkpoint_path metadata
   let* () = Store.activate active_path in
   let* () =
     Checkpoint.save_checkpoint_atomic checkpoint_path
-      (Checkpoint.create graph_id metadata.schema_version
+      (Checkpoint.create graph_id schema_version
          metadata.baseline_t)
   in
-  Ok completed
+  Ok { completed with Snapshot.schema_version }
 
 let import_snapshot_file decrypt graph_id active_path checkpoint_path
     metadata download_path =
@@ -212,24 +216,3 @@ let import_snapshot_file decrypt graph_id active_path checkpoint_path
   with error ->
     cleanup_staging active_path;
     Error ("import graph snapshot: " ^ Printexc.to_string error)
-
-let error_message error =
-  match error with
-  | Unsupported_format -> "unsupported sync format"
-  | Graph_mismatch -> "sync graph mismatch"
-  | Schema_mismatch -> "sync schema mismatch"
-  | Cursor_mismatch -> "sync cursor mismatch"
-  | Invalid_cursor -> "invalid sync cursor"
-  | Apply_failed message -> message
-
-let apply_change_set decrypt conn checkpoint_path state change =
-  match
-    apply_validated_change_set state change (fun change ->
-        let ( let* ) = Result.bind in
-        let* () = Entity_sync.apply_change_set decrypt conn change in
-        Checkpoint.save_checkpoint_atomic checkpoint_path
-          (Checkpoint.create change.Sync_protocol.graph_id
-             change.schema_version change.t))
-  with
-  | Ok () -> Ok ()
-  | Error error -> Error (error_message error)

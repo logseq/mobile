@@ -1038,7 +1038,8 @@ private struct DeletePagePayload: Encodable {
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
-                accessToken: accessToken
+                accessToken: accessToken,
+                graphSchemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
             )
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
             let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
@@ -1078,7 +1079,7 @@ private struct DeletePagePayload: Encodable {
             return lastError == nil
         } catch {
             isSnapshotRefreshDeferred = false
-            lastError = LogseqCoreError(code: "snapshot_download_failed", message: "\(error)")
+            lastError = LogseqCoreError(code: "snapshot_download_failed", message: error.localizedDescription)
             return false
         }
     }
@@ -1111,7 +1112,7 @@ private struct DeletePagePayload: Encodable {
                 isSnapshotRefreshDeferred = false
                 syncPendingSoon()
                 try await socket.send(.string(
-                    try LogseqGraphWebSocketProtocol.entityPullMessage(since: cursor)
+                    try LogseqGraphWebSocketProtocol.pullMessage(since: cursor)
                 ))
                 var pullInFlight = true
                 var latestNotifiedServerT = cursor
@@ -1134,8 +1135,14 @@ private struct DeletePagePayload: Encodable {
                         throw URLError(.cannotParseResponse)
                     }
                     switch type {
-                    case "graph-changes", "reset":
-                        await dispatchRawAndWait("applySyncEvent", payload: text)
+                    case "pull/ok":
+                        var scopedEnvelope = envelope
+                        scopedEnvelope["graphId"] = graphID
+                        let scopedData = try JSONSerialization.data(withJSONObject: scopedEnvelope)
+                        guard let scopedText = String(data: scopedData, encoding: .utf8) else {
+                            throw URLError(.cannotParseResponse)
+                        }
+                        await dispatchRawAndWait("applySyncEvent", payload: scopedText)
                         if lastError != nil { break eventStream }
                         pullInFlight = false
                         syncPendingSoon()
@@ -1144,11 +1151,11 @@ private struct DeletePagePayload: Encodable {
                         let currentCursor: Int = snapshot.appliedServerT ?? -1
                         if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
                             try await socket.send(.string(
-                                try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                                try LogseqGraphWebSocketProtocol.pullMessage(since: currentCursor)
                             ))
                             pullInFlight = true
                         }
-                    case "changed":
+                    case "hello", "changed":
                         if let serverT = envelope["t"] as? Int {
                             latestNotifiedServerT = max(latestNotifiedServerT, serverT)
                         }
@@ -1158,7 +1165,7 @@ private struct DeletePagePayload: Encodable {
                             throw URLError(.cannotParseResponse)
                         }
                         try await socket.send(.string(
-                            try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                            try LogseqGraphWebSocketProtocol.pullMessage(since: currentCursor)
                         ))
                         pullInFlight = true
                     case "error":

@@ -57,6 +57,12 @@ check_plist "background fetch mode is present" "fetch" -c "Print :UIBackgroundMo
 check_plist "background audio mode is present" "audio" -c "Print :UIBackgroundModes:1"
 check_plist_exists "microphone usage description is present" -c "Print :NSMicrophoneUsageDescription"
 check_plist_exists "speech usage description is present" -c "Print :NSSpeechRecognitionUsageDescription"
+check_plist "primary app icon is declared" "AppIcon" -c "Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName"
+check_plist_exists "primary app icon files are declared" -c "Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0"
+if [[ ! -f "$app_dir/Assets.car" ]]; then
+  echo "not ok - compiled app icon asset catalog is missing" >&2
+  failures=$((failures + 1))
+fi
 check_plist "background refresh task identifier is present" "com.logseq.logseq.refresh" -c "Print :BGTaskSchedulerPermittedIdentifiers:0"
 
 if [[ $failures -ne 0 ]]; then

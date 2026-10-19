@@ -24,8 +24,8 @@ let pull_cursor_only_changes_on_recognized_success () =
     { Sync_session.url = "/snapshot";
       content_encoding = None;
       baseline_t = 7;
-      schema_version = "1";
-      row_count = 12 }
+      schema_version = Some "1";
+      row_count = Some 12 }
   in
   Test_util.check_eq
     (Live_sync.merge_pull_cursor metadata

@@ -90,6 +90,8 @@ let ensure_app_schema connection =
        logseq_pending_ops(operation_id) ON DELETE CASCADE)";
       "CREATE TABLE IF NOT EXISTS logseq_sync_state (key TEXT PRIMARY \
        KEY, value TEXT NOT NULL)";
+      "CREATE TABLE IF NOT EXISTS logseq_pending_txs (operation_id TEXT \
+       PRIMARY KEY, tx TEXT NOT NULL, reversed_tx TEXT NOT NULL)";
     ]
 
 let with_app_db path f =
@@ -125,6 +127,8 @@ let copy_app_tables source destination =
                app_source.logseq_pending_op_dependencies";
               "INSERT INTO main.logseq_sync_state (key, value) SELECT \
                key, value FROM app_source.logseq_sync_state";
+              "INSERT INTO main.logseq_pending_txs (operation_id, tx, reversed_tx) \
+               SELECT operation_id, tx, reversed_tx FROM app_source.logseq_pending_txs";
             ])))
 
 let nullable_text value =
@@ -210,8 +214,7 @@ let reader_row reader address =
       | Db.Rc.DONE -> None
       | _ -> fail connection "reading graph node")
 
-let store_pending path operation_id base_t state intent =
-  with_app_db path (fun connection ->
+let write_pending connection operation_id base_t state intent =
     command connection
       "INSERT INTO logseq_pending_ops (operation_id, base_t, state, \
        intent) VALUES (?, ?, ?, ?) ON CONFLICT(operation_id) DO UPDATE SET \
@@ -222,7 +225,10 @@ let store_pending path operation_id base_t state intent =
         Db.Data.INT (Int64.of_int base_t);
         Db.Data.TEXT state;
         Db.Data.TEXT intent;
-      ])
+      ]
+
+let store_pending path operation_id base_t state intent =
+  with_app_db path (fun connection -> write_pending connection operation_id base_t state intent)
 
 let list_pending path =
   with_app_db path (fun connection ->
@@ -244,9 +250,35 @@ let set_pending_state path operation_id state =
 
 let remove_pending path operation_id =
   with_app_db path (fun connection ->
+    transaction connection (fun () ->
+    command connection "DELETE FROM logseq_pending_txs WHERE operation_id = ?"
+      [ Db.Data.TEXT operation_id ];
     command connection
       "DELETE FROM logseq_pending_ops WHERE operation_id = ?"
-      [ Db.Data.TEXT operation_id ])
+      [ Db.Data.TEXT operation_id ]))
+
+let write_pending_tx connection operation_id tx reversed_tx =
+    command connection
+      "INSERT INTO logseq_pending_txs (operation_id, tx, reversed_tx) VALUES (?, ?, ?) \
+       ON CONFLICT(operation_id) DO UPDATE SET tx = excluded.tx, reversed_tx = excluded.reversed_tx"
+      [ Db.Data.TEXT operation_id; Db.Data.TEXT tx; Db.Data.TEXT reversed_tx ]
+
+let store_pending_tx path operation_id tx reversed_tx =
+  with_app_db path (fun connection -> write_pending_tx connection operation_id tx reversed_tx)
+
+let store_resolved_pending path operation_id base_t state intent tx reversed_tx =
+  with_app_db path (fun connection ->
+    transaction connection (fun () ->
+      write_pending connection operation_id base_t state intent;
+      write_pending_tx connection operation_id tx reversed_tx))
+
+let pending_tx path operation_id =
+  with_app_db path (fun connection ->
+    match query connection "SELECT tx, reversed_tx FROM logseq_pending_txs WHERE operation_id = ?"
+            [ Db.Data.TEXT operation_id ]
+            (fun statement -> Db.column_text statement 0, Db.column_text statement 1) with
+    | [] -> None
+    | value :: _ -> Some value)
 
 let ensure_search_schema connection =
   List.iter
