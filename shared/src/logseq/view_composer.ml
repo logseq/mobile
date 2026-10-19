@@ -39,9 +39,19 @@ let composer_attachment_button (_context : Lui_ui.ui_context) send : t =
     ~on_press:(press send Model.OpenAttachmentPicker)
     []
 
-let composer_task_status_button (_context : Lui_ui.ui_context) send : t =
-  button ~icon:(`app "task-todo") ~variant:`ghost ~size:`icon ~width:32
-    ~height:32 ~foreground:"border" ~label:"Task status"
+let composer_task_status_button (_context : Lui_ui.ui_context) model_source send : t =
+  let icon (current : Model.logseq_model) =
+    match current.selected_task_status with
+    | Some status ->
+      View_base.icon_of_wire_name (View_base.task_status_icon_name status)
+    | None -> `app "task-todo" in
+  let foreground (current : Model.logseq_model) =
+    match current.selected_task_status with
+    | Some status -> View_base.task_status_foreground status
+    | None -> "border" in
+  button ~icon_signal:(Signal.map icon model_source)
+    ~variant:`ghost ~size:`icon ~width:32 ~height:32
+    ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
     ~accessibility_identifier:"button.task-status"
     ~on_press:(press send Model.OpenTaskStatusPicker)
     []
@@ -238,7 +248,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                     ];
                stack
                  [
-                   composer_task_status_button context send;
+                   composer_task_status_button context model_source send;
                    if_
                      ~test:
                        (Signal.map View_base.model_task_status_picker_open_
