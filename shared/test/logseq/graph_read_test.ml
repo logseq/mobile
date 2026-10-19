@@ -826,8 +826,39 @@ let built_in_tag_filtering_and_recent_assignment_order_match_logseq () =
     (match tags with a :: b :: _ -> [ a; b ] | _ -> [])
     [ "Zeta"; "Alpha" ]
 
+let page_navigation_reads_only_the_requested_reference_range () =
+  let conn = new_conn [ "block/page"; "block/parent"; "block/refs" ] [] in
+  transact conn
+    ([ page "target" "target" "Target" [];
+       page "elsewhere" "elsewhere" "Elsewhere" [];
+       block "visible" "Visible" "target" "target" 1
+         [ refs "block/refs" [ "target" ] ] ]
+     @ List.init 8192 (fun index ->
+         let uuid = "unrelated-" ^ string_of_int index in
+         block uuid "Unrelated" "elsewhere" "elsewhere" index
+           [ refs "block/refs" [ "elsewhere" ] ]));
+  let storage = Ds.memory_storage () in
+  ignore (Ds.store ~storage (Ds.conn_db conn));
+  List.iter
+    (fun (label, load) ->
+       let reads = ref 0 in
+       let measured =
+         { storage with Ds.storage_restore =
+             (fun address -> incr reads; storage.storage_restore address) }
+       in
+       let db = Option.get (Ds.restore measured) in
+       reads := 0;
+       let blocks = load plain db "target" in
+       check_eq ~msg:(label ^ " returns only the selected page's blocks")
+         (uuids blocks) [ "visible" ];
+       check ~msg:(Printf.sprintf "%s reads a bounded index range: %d storage reads" label !reads)
+         (!reads < 24))
+    [ "page", Read.blocks_for_page; "references", Read.references_for_node ]
+
 let cases =
   [
+    case "page navigation reads only the requested reference range"
+      page_navigation_reads_only_the_requested_reference_range;
     case
       "incremental projection refreshes dependencies and evicts recycled journals"
       incremental_projection_refreshes_dependencies_and_evicts_recycled_journals;

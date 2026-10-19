@@ -379,7 +379,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
 
 let outliner_row_content context model_source retained_row_source
     row_source send search_open : t =
-  row ~gap:0 ~cross:`start ~padding_vertical:5
+  row ~gap:0 ~cross:`start ~padding_vertical:2
     [
       outliner_indent_view
         (Signal.map View_base.outliner_row_indent row_source);
@@ -410,7 +410,7 @@ let outliner_row (context : Lui_ui.ui_context) model_source
            (Signal.map View_base.outliner_row_identifier row_source)
          ~padding:0 ~corner_radius:10
          [
-           row ~gap:0 ~cross:`start ~padding_vertical:5
+           row ~gap:0 ~cross:`start ~padding_vertical:2
           [
             outliner_indent_view
               (Signal.map View_base.outliner_row_indent row_source);
@@ -732,7 +732,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     toolbar ~orientation:`horizontal ~label:"Outliner editor"
       ~accessibility_identifier:"toolbar.outliner.editor"
       ~style_class:"scroll-leading leading-inset-8"
-      ~toolbar_gap:4 ~placement:"bottom"
+      ~toolbar_gap:4
       [
         View_base.with_label_signal
           (Signal.map View_base.outliner_editor_task_label model_source)

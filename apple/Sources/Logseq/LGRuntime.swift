@@ -158,16 +158,21 @@ public final class LGRuntime {
         guard !initialPatch.isEmpty else {
             throw LGRuntimeError.emptyInitializationPatch
         }
+        // Before the first view exists, commit the complete local state now.
+        // Live updates keep collection-view coalescing enabled.
+        let coalescesCommits = renderer.backend.coalescesCommits
+        renderer.backend.coalescesCommits = false
+        defer { renderer.backend.coalescesCommits = coalescesCommits }
         invalidatePendingPatchApplies()
         try apply(initialPatch)
         isStarted = true
         while !pendingCoreResponses.isEmpty {
             let response = pendingCoreResponses.removeFirst()
-            try applyCoreResponse(response)
+            try applyCoreResponse(response, synchronously: true)
         }
         while !pendingHostUpdates.isEmpty {
             let update = pendingHostUpdates.removeFirst()
-            enqueueApply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
+            try apply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
         }
         scheduleEffectDrain()
     }
@@ -188,6 +193,10 @@ public final class LGRuntime {
     }
 
     public func applyCoreResponse(_ response: String) throws {
+        try applyCoreResponse(response, synchronously: false)
+    }
+
+    private func applyCoreResponse(_ response: String, synchronously: Bool) throws {
         guard isStarted else {
             pendingCoreResponses.append(response)
             return
@@ -198,7 +207,12 @@ public final class LGRuntime {
             deliverPlatformCommands(envelope)
             return
         }
-        enqueueApply(native.applySnapshot(response))
+        let patch = native.applySnapshot(response)
+        if synchronously {
+            try apply(patch)
+        } else {
+            enqueueApply(patch)
+        }
         recordAppliedCoreResponse(response, envelope: envelope)
         deliverPlatformCommands(envelope)
     }

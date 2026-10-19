@@ -6874,6 +6874,10 @@ let core_snapshot_renders_keyed_outliner_rows () =
   check_eq ~msg:"custom list-item content remains in the first native row"
     (node renderer (List.nth (children renderer rendered_row) 0))
     (Some Lui_protocol.Row);
+  check_eq ~msg:"block rows keep a compact two-point vertical inset"
+    (property_int renderer (List.nth (children renderer rendered_row) 0)
+       Lui_protocol.PaddingVertical)
+    2;
   let editor =
     descendant_with_extension renderer application rendered_row
       "outliner-editor"
@@ -7739,7 +7743,6 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     descendant_with_identifier renderer root "button.sidebar"
   in
   let navigation = extension_node application "native-navigation-stack" in
-  let wrapper = List.nth (children renderer navigation) 0 in
   let chrome = native_bottom_chrome renderer application in
   let autocomplete_bar =
     descendant_with_identifier renderer chrome
@@ -7757,9 +7760,11 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       "button.outliner.autocomplete.0"
   in
   let editor_toolbar =
-    descendant_with_identifier renderer wrapper
+    descendant_with_identifier renderer chrome
       "toolbar.outliner.editor"
   in
+  check_eq ~msg:"the editor is inline in the keyboard-following safe-area inset"
+    (property renderer editor_toolbar Lui_protocol.PlacementValue) None;
   let editor_buttons = children renderer editor_toolbar in
   let task_button = List.nth editor_buttons 0 in
   check

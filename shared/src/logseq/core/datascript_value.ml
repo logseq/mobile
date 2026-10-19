@@ -43,6 +43,12 @@ let optional_ref_eid db attr value =
   match value with Some value -> ref_eid db attr value | None -> None
 
 let datoms_by_ref db index attr eid =
+  let index =
+    match index with
+    | Ds.Aevt when Ds.Schema.schema_attr_is_avet_accessible db.Ds.schema attr ->
+      Ds.Avet
+    | _ -> index
+  in
   let seen_entities = Hashtbl.create 8 in
   let candidates =
     Seq.append
