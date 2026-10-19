@@ -7,10 +7,13 @@ import LUIAppleBackend
 /// remain SwiftUI children of OutlinerRow.
 struct OutlinerTextRow: UIViewRepresentable {
     let row: OutlinerRowPayload
+    @Environment(\.luiSemanticColors) private var semanticColors
     let emit: (String, String?, [String: LUIExtensionValue]) -> Void
 
     func makeUIView(context: Context) -> OutlinerTextRowView { OutlinerTextRowView() }
-    func updateUIView(_ view: OutlinerTextRowView, context: Context) { view.update(row, emit: emit) }
+    func updateUIView(_ view: OutlinerTextRowView, context: Context) {
+        view.update(row, statusTint: UIColor(row.status?.color(in: semanticColors) ?? .primary), emit: emit)
+    }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: OutlinerTextRowView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
         return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
@@ -64,8 +67,9 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ row: OutlinerRowPayload, emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void) {
+    func update(_ row: OutlinerRowPayload, statusTint: UIColor, emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void) {
         self.emit = emit
+        status.tintColor = statusTint
         guard self.row != row else { return }
         self.row = row
         guides.update(row)
@@ -91,7 +95,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         status.isHidden = row.status == nil
         if let task = row.status {
             status.setImage(statusImage(task.icon), for: .normal)
-            status.tintColor = .secondaryLabel
+            status.imageView?.contentMode = .center
             status.accessibilityLabel = task.title
             status.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] complete in
                 guard let self, let row = self.row else { complete([]); return }
@@ -135,7 +139,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private func statusImage(_ icon: String) -> UIImage? {
         let key = icon.replacingOccurrences(of: "app:", with: "")
         guard case let .assetName(name) = LGIconPolicy.icons[key] else { return nil }
-        return UIImage(named: name, in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
+        return UIImage(named: name, in: .module, compatibleWith: traitCollection)?.withRenderingMode(.alwaysTemplate)
     }
 
     private func layout(width: CGFloat, apply: Bool) -> CGFloat {

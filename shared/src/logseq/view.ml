@@ -12,12 +12,13 @@ let logseq_theme_tokens : (string * Lui_ui.theme_token_value) list =
     ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
-    ("task-backlog", Fixed "#A8A39E");
-    ("task-todo", Fixed "#78706B");
-    ("task-doing", Fixed "#C98A05");
-    ("task-in-review", Fixed "#1C4FD9");
-    ("task-done", Fixed "#17A34A");
-    ("task-canceled", Fixed "#DB2626");
+    (* Match master's Radix status palette in both appearances. *)
+    ("task-backlog", Adaptive { light = "#E8E8E8"; dark = "#2E2E2E" });
+    ("task-todo", Adaptive { light = "#858585"; dark = "#7E7E7E" });
+    ("task-doing", Adaptive { light = "#EBBC00"; dark = "#705E00" });
+    ("task-in-review", Fixed "#0090FF");
+    ("task-done", Adaptive { light = "#5BB98C"; dark = "#236E4A" });
+    ("task-canceled", Adaptive { light = "#EB9091"; dark = "#AA2429" });
     ("flashcard-again-background", Fixed "#FF3B301F");
     ("flashcard-hard-background", Fixed "#FF95001F");
     ("flashcard-good-background", Fixed "#007AFF1F");

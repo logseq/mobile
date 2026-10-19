@@ -65,6 +65,7 @@ struct OutlinerDropIndicator: View {
 #if os(iOS)
 struct OutlinerRowDropDelegate: DropDelegate {
     let geometry: OutlinerRowDropGeometry
+    var depth: Int = 0
     let onDrop: (OutlinerDropPlacement) -> Bool
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -72,7 +73,7 @@ struct OutlinerRowDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
-        geometry.placement = OutlinerDropZone.placement(locationY: info.location.y, rowHeight: geometry.height)
+        geometry.placement = OutlinerDropZone.placement(locationX: info.location.x, locationY: info.location.y, rowHeight: geometry.height, depth: depth)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -85,8 +86,10 @@ struct OutlinerRowDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         defer { geometry.placement = nil }
         return onDrop(OutlinerDropZone.placement(
+            locationX: info.location.x,
             locationY: info.location.y,
-            rowHeight: geometry.height
+            rowHeight: geometry.height,
+            depth: depth
         ))
     }
 }

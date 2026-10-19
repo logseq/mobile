@@ -98,7 +98,7 @@ let breadcrumb_button breadcrumb_source search_open send : t =
   let breadcrumb = Signal.sample breadcrumb_source in
   button
     ~text_signal:(reactive View_base.breadcrumb_title breadcrumb_source)
-    ~variant:`ghost ~style_class:"caption single-line" ~max_width:180 ~foreground:"muted-foreground"
+    ~variant:`ghost ~style_class:"caption single-line" ~padding:0 ~height:28 ~foreground:"muted-foreground"
     ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
     ~on_press:(fun _ ->
       ignore
@@ -116,7 +116,8 @@ let node_breadcrumb_button model_source breadcrumb_source send : t =
   breadcrumb_button breadcrumb_source search_open send
 
 let node_breadcrumbs model_source send : t =
-  breadcrumb ~gap:5 ~main:`start
+  scroll ~orientation:`horizontal ~height:32 ~padding_horizontal:16
+    [ breadcrumb ~gap:6 ~main:`start
     ~accessibility_identifier:"breadcrumb.node"
     [
       keyed
@@ -124,6 +125,7 @@ let node_breadcrumbs model_source send : t =
         ~key:View_base.breadcrumb_identifier ~cmp:compare
         ~mount:(fun breadcrumb_source ->
           node_breadcrumb_button model_source breadcrumb_source send);
+    ]
     ]
 
 let related_row_breadcrumbs row_source send : t =
@@ -380,7 +382,8 @@ let native_outliner_row model_source retained_source row_source send : t =
   attach context parent node;
   let summary (page : Model.sidebar_page) = `Assoc ["uuid", `String page.uuid; "title", `String page.title] in
   let status (status : Model.task_status) = `Assoc ["uuid", `String status.uuid;
-    "title", `String status.title; "icon", `String (View_base.task_status_icon_name status)] in
+    "title", `String status.title; "icon", `String (View_base.task_status_icon_name status);
+    "foreground", `String (View_base.task_status_foreground status)] in
   let payload (current : Model.logseq_model) (retained : View_rows.retained_row) =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
@@ -899,7 +902,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
         [
           box ~height:16 [];
           if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)
-            (box ~padding_horizontal:8 [ node_breadcrumbs model_source send ]);
+            (node_breadcrumbs model_source send);
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
                [ box ~height:26 [];

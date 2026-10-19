@@ -936,7 +936,12 @@ let drop_allocates_before_after_and_inside_orders () =
           (compare move.Ops.order "a0" > 0 && compare move.Ops.order "a2" < 0)
       | _ -> check false)
     [ ("last", State.Before); ("first", State.After) ];
-  check_eq (State.drop ctx selected "detached" State.Before) None
+  check_eq (State.drop ctx selected "detached" State.Before) None;
+  (match State.drop ctx (State.Sset.singleton "last-child") "last" State.After with
+   | Some [ move ] ->
+     check_eq ~msg:"a child can become its parent's following sibling" move.Ops.parent_uuid "page";
+     check (compare move.order "a2" > 0)
+   | _ -> check false)
 
 let ancestor_and_selected_root_traversal_terminate_on_cycles () =
   let a = row "cyclic-a" "cyclic-b" "a0" in

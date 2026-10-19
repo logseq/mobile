@@ -826,29 +826,6 @@ enum OutlinerAccessibilityTitle {
     }
 }
 
-enum OutlinerDropPlacement: Equatable {
-    case before
-    case inside
-    case after
-
-    var eventValue: String {
-        switch self {
-        case .before: return "before"
-        case .inside: return "inside"
-        case .after: return "after"
-        }
-    }
-}
-
-enum OutlinerDropZone {
-    static func placement(locationY: CGFloat, rowHeight: CGFloat) -> OutlinerDropPlacement {
-        let height = max(rowHeight, 1)
-        if locationY < height * 0.25 { return .before }
-        if locationY > height * 0.75 { return .after }
-        return .inside
-    }
-}
-
 struct OutlinerKeyboardHideCounter {
     private(set) var hideCount = 0
     private(set) var hasPendingHandoff = false

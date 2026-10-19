@@ -753,7 +753,7 @@ import Testing
 
     @Test func dropZoneMapsOnlyPointerGeometry() {
         #expect(OutlinerDropZone.placement(locationY: 10, rowHeight: 100) == .before)
-        #expect(OutlinerDropZone.placement(locationY: 50, rowHeight: 100) == .inside)
+        #expect(OutlinerDropZone.placement(locationX: 150, locationY: 50, rowHeight: 100) == .inside)
         #expect(OutlinerDropZone.placement(locationY: 90, rowHeight: 100) == .after)
         #expect(OutlinerDropZone.placement(locationY: 0, rowHeight: 0) == .before)
         #expect(OutlinerDropPlacement.before.eventValue == "before")

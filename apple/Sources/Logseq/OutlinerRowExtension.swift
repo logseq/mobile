@@ -16,7 +16,20 @@ struct OutlinerRowPayload: Decodable, Equatable {
         let uuid: String
         let title: String
         let icon: String
+        let foreground: String?
         var id: String { uuid }
+
+        func color(in semanticColors: [String: Color]) -> Color {
+            guard let foreground else { return .primary }
+            if let color = semanticColors[foreground] { return color }
+            let hex = foreground.hasPrefix("#") ? String(foreground.dropFirst()) : ""
+            guard (hex.count == 6 || hex.count == 8), let bits = UInt64(hex, radix: 16) else { return .primary }
+            let rgb = hex.count == 8 ? bits >> 8 : bits
+            return Color(red: Double((rgb >> 16) & 255) / 255,
+                         green: Double((rgb >> 8) & 255) / 255,
+                         blue: Double(rgb & 255) / 255,
+                         opacity: hex.count == 8 ? Double(bits & 255) / 255 : 1)
+        }
     }
     let uuid: String
     let title: String
@@ -67,6 +80,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let row: OutlinerRowPayload
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
+    @Environment(\.luiSemanticColors) private var semanticColors
 
     @ViewBuilder var body: some View {
         #if os(iOS)
@@ -76,7 +90,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
                 .onLongPressGesture { emit("long-press") }
                 .onDrag { emit("drag-start"); return NSItemProvider(object: row.uuid as NSString) }
-                .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry) {
+                .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry, depth: row.depth) {
                     emit("drop", extra: ["placement": .string($0.eventValue)])
                     return true
                 })
@@ -124,7 +138,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 } label: {
                     statusIcon(status).frame(width: 22, height: 24)
                 }
-                .tint(.secondary)
+                .tint(status.color(in: semanticColors))
                 .padding(.trailing, 7)
                 .accessibilityLabel(status.title)
                 .accessibilityIdentifier("button.block-task-status")
@@ -197,7 +211,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         let asset: String
         if case let .assetName(name) = LGIconPolicy.icons[key] { asset = name }
         else { asset = "task_todo" }
-        return IconImage(name: asset, size: 22)
+        return IconImage(name: asset, size: 22).foregroundStyle(status.color(in: semanticColors))
     }
 
     private func emit(_ name: String, uuid: String? = nil, extra: [String: LUIExtensionValue] = [:]) {
