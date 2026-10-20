@@ -70,8 +70,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handleAppIntent(intent: Intent?) {
         if (intent == null) return
-        AndroidAppEntryParser.deepLinkKind(intent.dataString)?.let { kind ->
-            publishAppEntry(mapOf("kind" to kind))
+        if (intent.action == Intent.ACTION_VIEW) {
+            AndroidAppEntryParser.deepLink(intent.dataString)?.let(::publishAppEntry)
             return
         }
         if (intent.action != Intent.ACTION_SEND &&
@@ -79,11 +79,10 @@ class MainActivity : ComponentActivity() {
         ) {
             return
         }
-        AndroidAppEntryParser.sharedBlockText(
-            intent.getStringExtra(Intent.EXTRA_TEXT),
-            intent.getStringExtra(Intent.EXTRA_TITLE),
-        )?.let { text ->
-            publishAppEntry(mapOf("kind" to "shared-text", "text" to text))
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val sharedTitle = intent.getStringExtra(Intent.EXTRA_TITLE)
+        if (!sharedText.isNullOrBlank() || !sharedTitle.isNullOrBlank()) {
+            publishAppEntry(mapOf("kind" to "shared-text", "text" to sharedText, "title" to sharedTitle))
         }
         sharedUris(intent).forEach { uri ->
             lifecycleScope.launch {

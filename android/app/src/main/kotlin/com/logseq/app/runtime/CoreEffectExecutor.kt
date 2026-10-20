@@ -83,9 +83,3 @@ internal class CoreEffectExecutor(
         )
     }
 }
-
-// Same shape as the Dart counterpart: microsecond timestamp hex twice.
-internal fun newCoreUuid(): String {
-    val timestamp = (System.currentTimeMillis() * 1_000).toString(16)
-    return "$timestamp-${timestamp.padStart(32, '0').substring(0, 32)}"
-}

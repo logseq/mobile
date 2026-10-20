@@ -17,23 +17,32 @@ struct SharedAsset: Codable, Sendable {
     let stagedFileName: String
 }
 
+struct SharedPayload: Codable, Sendable {
+    let text: String?
+    let title: String?
+    let url: String?
+}
+
 struct SharedItem: Codable, Sendable {
     enum Kind: String, Codable, Sendable {
         case text
         case asset
+        case payload
     }
 
     let id: String
     let kind: Kind
     let captureText: String?
     let captureAsset: SharedAsset?
+    let capturePayload: SharedPayload?
 
     static func text(_ text: String) -> SharedItem {
         SharedItem(
             id: UUID().uuidString.lowercased(),
             kind: .text,
             captureText: text,
-            captureAsset: nil
+            captureAsset: nil,
+            capturePayload: nil
         )
     }
 
@@ -42,7 +51,8 @@ struct SharedItem: Codable, Sendable {
             id: UUID().uuidString.lowercased(),
             kind: .asset,
             captureText: nil,
-            captureAsset: asset
+            captureAsset: asset,
+            capturePayload: nil
         )
     }
 }
@@ -128,12 +138,10 @@ private final class CaptureAccumulator: @unchecked Sendable {
             guard let self else { return }
             let snapshot = accumulator.snapshot()
             var captures: [SharedItem] = []
-            if let blockText = Self.blockText(
-                text: snapshot.text,
-                title: title,
-                url: snapshot.url
-            ) {
-                captures.append(.text(blockText))
+            if snapshot.text != nil || snapshot.url != nil || title != nil {
+                captures.append(SharedItem(id: UUID().uuidString.lowercased(), kind: .payload,
+                    captureText: nil, captureAsset: nil,
+                    capturePayload: SharedPayload(text: snapshot.text, title: title, url: snapshot.url)))
             }
             captures.append(contentsOf: snapshot.assets)
             guard !captures.isEmpty, Self.persist(captures) else {
@@ -289,18 +297,6 @@ private final class CaptureAccumulator: @unchecked Sendable {
             checksum: checksum,
             stagedFileName: stagedName
         )
-    }
-
-    nonisolated private static func blockText(text: String?, title: String?, url: String?) -> String? {
-        let link: String?
-        if let url {
-            link = title.map { $0 == url ? url : "[\($0)](\(url))" } ?? url
-        } else if let title, text?.contains(title) != true {
-            link = title
-        } else {
-            link = nil
-        }
-        return [text, link].compactMap { $0 }.joined(separator: "\n").trimmed
     }
 
     nonisolated static func persist(_ additions: [SharedItem]) -> Bool {

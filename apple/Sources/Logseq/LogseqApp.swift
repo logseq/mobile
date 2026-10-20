@@ -715,21 +715,10 @@ public struct LogseqRootView : View {
     }
 
     public func acceptSharedCaptureURL(_ url: URL) {
-        guard let deepLink = LogseqDeepLink(url) else { return }
-        switch deepLink {
-        case .captureText(let text):
-            SharedCaptureInbox.shared.enqueueText(text)
-            drainSharedCapturesIfReady()
-        case .openCapture:
-            pendingQuickAction = "capture"
-            presentPendingQuickAction()
-        case .openAudio:
-            pendingQuickAction = "audio"
-            presentPendingQuickAction()
-        case .openJournal:
-            pendingQuickAction = "journal"
-            presentPendingQuickAction()
-        }
+        SharedCaptureInbox.shared.enqueue(SharedCaptureItem(
+            id: UUID().uuidString.lowercased(), kind: .deepLink, captureLink: SharedDeepLink(url)
+        ))
+        drainSharedCapturesIfReady()
     }
 
     public func acceptSharedText(_ text: String) {
@@ -771,6 +760,19 @@ public struct LogseqRootView : View {
                 case .text:
                     guard let text = item.captureText else { return true }
                     return await self.store.captureSharedText(text, id: item.id)
+                case .payload:
+                    guard let payload = item.capturePayload else { return true }
+                    return await self.store.captureShared(text: payload.text, title: payload.title, url: payload.url, id: item.id)
+                case .deepLink:
+                    guard var link = item.captureLink else { return true }
+                    link.uuid = item.id
+                    guard let data = try? JSONEncoder().encode(link),
+                          await self.store.handleDeepLink(String(decoding: data, as: UTF8.self)) else { return false }
+                    if let action = self.store.deepLinkQuickAction {
+                        self.pendingQuickAction = action
+                        self.presentPendingQuickAction()
+                    }
+                    return true
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
                     guard let imported = try? SharedCaptureAssetImporter.importAsset(

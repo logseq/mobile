@@ -489,9 +489,7 @@ internal class LogseqRuntime(
                     )
                     .toString()
             )
-            AndroidAppEntryKind.SharedText -> applyAppEntryCoreRequest(
-                entry.coreRequest(newCoreUuid(), System.currentTimeMillis())
-            )
+            AndroidAppEntryKind.SharedText, AndroidAppEntryKind.DeepLink -> applyAppEntryCoreRequest(entry.coreRequest())
             AndroidAppEntryKind.SharedAsset ->
                 addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
         }
@@ -521,6 +519,9 @@ internal class LogseqRuntime(
             error("The native core rejected the Android app entry")
         }
         applyCoreResponse(response)
+        decoded.optJSONObject("result")?.optString("deepLinkQuickAction")?.takeIf(String::isNotEmpty)?.let { action ->
+            applyPatch(bridge.applyHostUpdate("open-quick-action", JSONObject.quote(action)))
+        }
     }
 
     // --- Attachments / audio ---
@@ -567,10 +568,7 @@ internal class LogseqRuntime(
             val transcript = AndroidAudioTranscriber.transcribe(asset.localPath).trim()
             if (transcript.isEmpty()) return
             val response = bridge.callCore(
-                asset.transcriptCoreRequest(
-                    transcriptUuid = "${asset.uuid}-transcript",
-                    transcript = transcript,
-                )
+                asset.transcriptCoreRequest(transcript)
             )
             applyCoreResponse(response)
             logRuntime("info", "ui", "Audio transcription completed")
@@ -703,21 +701,9 @@ internal data class RecordedAudioAsset(
         )
         .toString()
 
-    fun transcriptCoreRequest(transcriptUuid: String, transcript: String): String = JSONObject()
-        .put("apiVersion", 1)
-        .put("method", "dispatch")
-        .put(
-            "params",
-            JSONObject()
-                .put("action", "addChildBlock")
-                .put(
-                    "payload",
-                    JSONObject()
-                        .put("uuid", transcriptUuid)
-                        .put("title", transcript)
-                        .put("parentId", uuid)
-                        .toString(),
-                ),
-        )
+    fun transcriptCoreRequest(transcript: String): String = JSONObject()
+        .put("apiVersion", 1).put("method", "dispatch")
+        .put("params", JSONObject().put("action", "executeEffect").put("payload", JSONObject()
+            .put("kind", "recording-transcribed").put("uuid", uuid).put("text", transcript).toString()))
         .toString()
 }

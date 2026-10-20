@@ -1,40 +1,17 @@
 package com.logseq.app
 
 import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 internal object AndroidAppEntryParser {
-    fun deepLinkKind(value: String?): String? {
+    fun deepLink(value: String?): Map<String, Any?>? {
         val uri = value?.let { runCatching { URI(it) }.getOrNull() } ?: return null
-        if (!uri.query.isNullOrEmpty() || !uri.fragment.isNullOrEmpty()) return null
-        if (!uri.path.isNullOrEmpty()) return null
-        if (!uri.scheme.equals("logseq", ignoreCase = true)) return null
-        return when (uri.host?.lowercase()) {
-            "journal" -> "open-journal"
-            "capture" -> "open-capture"
-            else -> null
+        fun decode(value: String) = URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
+        val query = uri.rawQuery.orEmpty().split('&').filter(String::isNotEmpty).map { item ->
+            val pair = item.split('=', limit = 2)
+            mapOf("name" to decode(pair[0]), "value" to pair.getOrNull(1)?.let(::decode))
         }
+        return mapOf("kind" to "deep-link", "scheme" to uri.scheme, "host" to uri.host, "query" to query)
     }
-
-    fun sharedBlockText(text: String?, title: String?): String? {
-        val normalizedText = text?.trim()?.takeIf(String::isNotEmpty)
-        var normalizedTitle = title?.trim()?.takeIf(String::isNotEmpty)
-        if (normalizedText != null && normalizedTitle != null &&
-            normalizedText.contains(normalizedTitle)
-        ) {
-            normalizedTitle = null
-        }
-        if (normalizedText == null && normalizedTitle == null) return null
-        if (normalizedText != null && isWebUrl(normalizedText)) {
-            return if (normalizedTitle == null || normalizedTitle == normalizedText) {
-                normalizedText
-            } else {
-                "[$normalizedTitle]($normalizedText)"
-            }
-        }
-        return listOfNotNull(normalizedText, normalizedTitle).joinToString("\n")
-    }
-
-    private fun isWebUrl(value: String): Boolean =
-        value.startsWith("https://", ignoreCase = true) ||
-            value.startsWith("http://", ignoreCase = true)
 }

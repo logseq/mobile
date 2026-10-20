@@ -2,98 +2,34 @@ import Foundation
 
 import CryptoKit
 
-public struct SharedCapturePayload: Sendable, Equatable {
+public struct SharedCapturePayload: Codable, Sendable, Equatable {
     public let text: String?
     public let title: String?
     public let url: String?
 
     public init(text: String?, title: String?, url: String?) {
-        self.text = Self.nonEmpty(text)
-        self.title = Self.nonEmpty(title)
-        self.url = Self.nonEmpty(url)
-    }
-
-    public init(sharedText: String?, title: String?) {
-        let sharedText = Self.nonEmpty(sharedText)
-        let title = Self.nonEmpty(title)
-        if let sharedText, Self.isWebURL(sharedText) {
-            self.text = nil
-            self.title = title
-            self.url = sharedText
-        } else if let sharedText, let title, sharedText.contains(title) {
-            self.text = sharedText
-            self.title = nil
-            self.url = nil
-        } else {
-            self.text = sharedText
-            self.title = title
-            self.url = nil
-        }
-    }
-
-    public init?(captureURL: URL) {
-        guard captureURL.scheme?.lowercased() == "logseq",
-              captureURL.host?.lowercased() == "capture",
-              let components = URLComponents(url: captureURL, resolvingAgainstBaseURL: false)
-        else { return nil }
-
-        var values: [String: String] = [:]
-        for item in components.queryItems ?? [] {
-            if let value = Self.nonEmpty(item.value) {
-                values[item.name] = value
-            }
-        }
-        self.text = Self.nonEmpty(values["text"])
-        self.title = Self.nonEmpty(values["title"])
-        self.url = Self.nonEmpty(values["url"])
-        guard blockText != nil else { return nil }
-    }
-
-    public var blockText: String? {
-        let link: String?
-        if let url {
-            link = title.map { $0 == url ? url : "[\($0)](\(url))" } ?? url
-        } else {
-            link = title
-        }
-        return [text, link]
-            .compactMap { $0 }
-            .joined(separator: "\n")
-            .nilIfEmpty
-    }
-
-    private static func nonEmpty(_ value: String?) -> String? {
-        value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-    }
-
-    private static func isWebURL(_ value: String) -> Bool {
-        guard let components = URLComponents(string: value),
-              let scheme = components.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
-        else { return false }
-        return components.host?.nilIfEmpty != nil
+        self.text = text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.title = title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.url = url?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 }
 
-public enum LogseqDeepLink: Sendable, Equatable {
-    case captureText(String)
-    case openCapture
-    case openAudio
-    case openJournal
+public struct SharedDeepLink: Codable, Sendable, Equatable {
+    public struct QueryItem: Codable, Sendable, Equatable {
+        let name: String
+        let value: String?
+    }
+    var uuid: String?
+    let scheme: String?
+    let host: String?
+    let query: [QueryItem]
 
-    public init?(_ url: URL) {
-        guard url.scheme?.lowercased() == "logseq" else { return nil }
-        let payload = SharedCapturePayload(captureURL: url)
-        if payload != nil, payload!.blockText != nil {
-            self = .captureText(payload!.blockText!)
-        } else {
-            switch url.host?.lowercased() {
-            case "capture": self = .openCapture
-            case "audio": self = .openAudio
-            case "journal": self = .openJournal
-            default: return nil
-            }
-        }
+    public init(_ url: URL) {
+        uuid = nil
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        scheme = components?.scheme
+        host = components?.host
+        query = (components?.queryItems ?? []).map { QueryItem(name: $0.name, value: $0.value) }
     }
 }
 
@@ -123,12 +59,26 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     public enum Kind: String, Codable, Sendable {
         case text
         case asset
+        case payload
+        case deepLink
     }
 
     public let id: String
     public let kind: Kind
     public let captureText: String?
     public let captureAsset: SharedCaptureAsset?
+    public let capturePayload: SharedCapturePayload?
+    public let captureLink: SharedDeepLink?
+
+    public init(id: String, kind: Kind, captureText: String? = nil, captureAsset: SharedCaptureAsset? = nil,
+                capturePayload: SharedCapturePayload? = nil, captureLink: SharedDeepLink? = nil) {
+        self.id = id
+        self.kind = kind
+        self.captureText = captureText
+        self.captureAsset = captureAsset
+        self.capturePayload = capturePayload
+        self.captureLink = captureLink
+    }
 
     public static func text(id: String, text: String) -> SharedCaptureItem {
         SharedCaptureItem(id: id, kind: .text, captureText: text, captureAsset: nil)
@@ -180,8 +130,8 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 
     public func enqueue(payload: SharedCapturePayload, id: String = UUID().uuidString.lowercased()) {
-        guard let text = payload.blockText else { return }
-        enqueue(.text(id: id, text: text))
+        guard payload.text != nil || payload.title != nil || payload.url != nil else { return }
+        enqueue(SharedCaptureItem(id: id, kind: .payload, capturePayload: payload))
     }
 
     public func pendingItems() -> [SharedCaptureItem] {

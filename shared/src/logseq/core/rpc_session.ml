@@ -1346,6 +1346,37 @@ let rec dispatch session action payload =
       handle
   in
   match action with
+  | "completeAssetTranscription" -> object_action (fun _ fields ->
+    match Rpc.required_string fields "parentId", Rpc.required_string fields "text" with
+    | Ok parent_id, Ok text ->
+      let text = String.trim text in
+      let blocks = (base_outliner_context session).Outliner.blocks in
+      if text = "" || List.exists (fun (block : Model.block) -> block.parent_id = Some parent_id && block.title = text) blocks
+      then snapshot_visible session
+      else dispatch session "addChildBlock" (Some (Json.to_string (`Assoc [
+        "uuid", `String (fresh_squuid ()); "parentId", `String parent_id; "title", `String text])))
+    | _, Error message | Error message, _ -> Rpc.failure "invalid_transcript" message)
+  | "captureShared" -> object_action (fun _ fields ->
+    match Rpc.required_string fields "uuid", Shared_capture.text fields with
+    | Ok uuid, Ok text ->
+      let existing = Model.read_block (state session).model uuid <> None
+        || (match h.graph_node_destination with Some lookup -> lookup uuid <> None | None -> false) in
+      if existing then snapshot_visible session else
+        send_message session (Some (Json.to_string (`Assoc ["uuid", `String uuid; "text", `String text])))
+    | _, Error message | Error message, _ -> Rpc.failure "invalid_shared_capture" message)
+  | "handleDeepLink" -> object_action (fun _ fields ->
+    match Shared_capture.deep_link fields with
+    | Error message -> Rpc.failure "invalid_deep_link" message
+    | Ok (`Capture text) -> dispatch session "captureShared" (Some (Json.to_string
+        (`Assoc (("text", `String text) :: List.filter (fun (key, _) -> key <> "text" && key <> "title" && key <> "url") fields))))
+    | Ok action ->
+      let quick_action = match action with `Quick_action value -> `String value | _ -> `Null in
+      let response = Json.from_string (snapshot_visible session) in
+      (match response with
+       | `Assoc envelope ->
+         let result = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
+         Json.to_string (`Assoc (("result", `Assoc (("deepLinkQuickAction", quick_action) :: result)) :: List.remove_assoc "result" envelope))
+       | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"))
   | "bootstrapGraph" -> object_action (fun input fields ->
     let requested = Rpc.required_string fields "graphId" in
     match requested, s.config with

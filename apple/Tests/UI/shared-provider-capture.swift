@@ -39,6 +39,18 @@ import UniformTypeIdentifiers
             throw CheckError.failed("selected text was not persisted")
         }
         inbox.acknowledge(id: textItem.id)
+        let raw = SharedItem(id: UUID().uuidString.lowercased(), kind: .payload,
+            captureText: nil, captureAsset: nil,
+            capturePayload: SharedPayload(text: "https://example.com", title: "Example", url: nil))
+        guard ShareViewController.persist([raw]),
+              let queuedRaw = inbox.pendingItems().first(where: { $0.id == raw.id }),
+              queuedRaw.kind == .payload,
+              queuedRaw.capturePayload?.text == "https://example.com",
+              queuedRaw.capturePayload?.title == "Example",
+              queuedRaw.captureText == nil else {
+            throw CheckError.failed("raw share metadata did not survive the extension queue")
+        }
+        inbox.acknowledge(id: raw.id)
         let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
             UIColor.blue.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))

@@ -41,6 +41,7 @@ let () =
       "rpc", Rpc_test.cases;
       "core_effect", Core_effect_test.cases;
       "native_bootstrap", Native_bootstrap_test.cases;
+      "shared_capture", Shared_capture_test.cases;
       "app", App_test.cases;
       "autosave", Autosave_test.cases;
       "drive", Drive_scenario_test.cases;

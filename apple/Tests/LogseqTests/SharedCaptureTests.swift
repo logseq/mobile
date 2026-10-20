@@ -4,55 +4,22 @@ import Testing
 import LogseqModel
 
 @Suite struct SharedCaptureTests {
-    @Test func formatsSharedTextAndLinkAsOneJournalBlock() {
-        #expect(SharedCapturePayload(
-            text: "A useful excerpt",
-            title: "Example",
-            url: "https://example.com/article"
-        ).blockText == "A useful excerpt\n[Example](https://example.com/article)")
+    @Test @MainActor func rawSharePayloadSurvivesQueueingWithoutNativeNoteFormatting() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let inbox = SharedCaptureInbox(defaults: defaults)
+        let payload = SharedCapturePayload(text: "https://example.com", title: "Example", url: nil)
+        inbox.enqueue(payload: payload, id: "raw-share")
+        let item = try #require(inbox.pendingItems().first)
+        #expect(item.kind == .payload)
+        #expect(item.capturePayload == payload)
+        #expect(item.captureText == nil)
+        inbox.acknowledge(id: item.id)
     }
 
-    @Test func usesTheURLWhenAShareHasNoUsefulTitle() {
-        #expect(SharedCapturePayload(
-            text: nil,
-            title: "https://example.com/article",
-            url: "https://example.com/article"
-        ).blockText == "https://example.com/article")
-    }
-
-    @Test func parsesTheAppCaptureURLWithoutTreatingPlusAsSpace() throws {
-        let url = try #require(URL(string:
-            "logseq://capture?text=C%2B%2B&title=Video&url=https%3A%2F%2Fyoutu.be%2Fabc"
-        ))
-
-        #expect(SharedCapturePayload(captureURL: url)?.blockText
-            == "C++\n[Video](https://youtu.be/abc)")
-    }
-
-    @Test func duplicateCaptureParametersUseTheLastNonEmptyValue() throws {
-        let url = try #require(URL(string:
-            "logseq://capture?text=old&text=&text=new&title=Example"
-        ))
-
-        #expect(SharedCapturePayload(captureURL: url)?.blockText == "new\nExample")
-    }
-
-    @Test func distinguishesWidgetCaptureFromPopulatedQuickCaptureLinks() throws {
-        let widgetURL = try #require(URL(string: "logseq://capture"))
-        let populatedURL = try #require(URL(string: "logseq://capture?text=From%20widget"))
-        let unrelatedURL = try #require(URL(string: "logseq://journal"))
-
-        #expect(LogseqDeepLink(URL(string: "logseq://audio")!) == .openAudio)
-        #expect(LogseqDeepLink(widgetURL) == .openCapture)
-        #expect(LogseqDeepLink(populatedURL) == .captureText("From widget"))
-        #expect(LogseqDeepLink(unrelatedURL) == .openJournal)
-    }
-
-    @Test func normalizesAndroidSharedURLsIntoMarkdownLinks() {
-        #expect(SharedCapturePayload(sharedText: "https://example.com/article", title: "Example").blockText
-            == "[Example](https://example.com/article)")
-        #expect(SharedCapturePayload(sharedText: "A useful excerpt", title: "Example").blockText
-            == "A useful excerpt\nExample")
+    @Test func deepLinksPreserveDecodedQueryItemsForTheCore() throws {
+        let link = SharedDeepLink(try #require(URL(string: "logseq://capture?text=C%2B%2B&text=&title=Example")))
+        #expect(link.query.map(\.name) == ["text", "text", "title"])
+        #expect(link.query.map(\.value) == ["C++", "", "Example"])
     }
 
     @Test @MainActor func durableInboxDrainsEachCaptureExactlyOnce() {

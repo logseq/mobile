@@ -10,7 +10,7 @@ import org.json.JSONObject
 // android_imported_asset.dart: intents arriving on MainActivity are
 // normalized into entries (deep link, shared text, shared asset) and fed
 // to the core once bootstrap finishes.
-internal enum class AndroidAppEntryKind { OpenCapture, OpenJournal, SharedText, SharedAsset }
+internal enum class AndroidAppEntryKind { OpenCapture, OpenJournal, SharedText, SharedAsset, DeepLink }
 
 internal data class AndroidImportedAsset(
     val uuid: String,
@@ -64,27 +64,18 @@ internal data class AndroidImportedAsset(
 internal data class AndroidAppEntry(
     val kind: AndroidAppEntryKind,
     val text: String? = null,
+    val title: String? = null,
+    val deepLink: Map<String, Any?>? = null,
+    val captureUuid: String = java.util.UUID.randomUUID().toString(),
     val asset: AndroidImportedAsset? = null,
 ) {
-    fun coreRequest(uuid: String, nowMilliseconds: Long): String {
-        require(kind == AndroidAppEntryKind.SharedText) { "$kind is not a text capture" }
-        return JSONObject()
-            .put("apiVersion", 1)
-            .put("method", "dispatch")
-            .put(
-                "params",
-                JSONObject()
-                    .put("action", "send")
-                    .put(
-                        "payload",
-                        JSONObject()
-                            .put("text", text)
-                            .put("uuid", uuid)
-                            .put("now", nowMilliseconds)
-                            .toString(),
-                    ),
-            )
-            .toString()
+    fun coreRequest(): String {
+        val payload = if (kind == AndroidAppEntryKind.DeepLink) JSONObject(requireNotNull(deepLink))
+            else JSONObject().put("text", text).put("title", title)
+        payload.put("uuid", captureUuid)
+        val action = if (kind == AndroidAppEntryKind.DeepLink) "handleDeepLink" else "captureShared"
+        return JSONObject().put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", action).put("payload", payload.toString())).toString()
     }
 
     companion object {
@@ -94,9 +85,11 @@ internal data class AndroidAppEntry(
             "open-journal" -> AndroidAppEntry(kind = AndroidAppEntryKind.OpenJournal)
             "shared-text" -> {
                 val text = value["text"] as? String
-                require(!text.isNullOrBlank()) { "A shared-text entry needs text" }
-                AndroidAppEntry(kind = AndroidAppEntryKind.SharedText, text = text)
+                val title = value["title"] as? String
+                require(!text.isNullOrBlank() || !title.isNullOrBlank()) { "A shared-text entry needs content" }
+                AndroidAppEntry(kind = AndroidAppEntryKind.SharedText, text = text, title = title)
             }
+            "deep-link" -> AndroidAppEntry(kind = AndroidAppEntryKind.DeepLink, deepLink = value)
             "shared-asset" -> {
                 val asset = value["asset"] as? Map<String, Any?>
                     ?: throw IllegalArgumentException("A shared-asset entry needs an asset")

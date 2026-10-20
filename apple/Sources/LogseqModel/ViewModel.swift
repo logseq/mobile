@@ -1054,13 +1054,23 @@ private struct CreateSyncGraphPayload: Encodable {
     }
 
     public func captureSharedText(_ text: String, id: String) async -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        await captureShared(text: text, title: nil, url: nil, id: id)
+    }
+
+    public func captureShared(text: String?, title: String?, url: String?, id: String) async -> Bool {
+        struct Payload: Encodable { let uuid: String; let text: String?; let title: String?; let url: String? }
         lastError = nil
-        await dispatchEncodedAndWait(
-            "send",
-            SendBlockPayload(text: trimmed, uuid: id, now: Self.nowMilliseconds())
-        )
+        await dispatchEncodedAndWait("captureShared", Payload(uuid: id, text: text, title: title, url: url))
+        guard lastError == nil else { return false }
+        syncPending()
+        return true
+    }
+
+    public private(set) var deepLinkQuickAction: String?
+
+    public func handleDeepLink(_ payload: String) async -> Bool {
+        deepLinkQuickAction = nil
+        await dispatchRawAndWait("handleDeepLink", payload: payload)
         guard lastError == nil else { return false }
         syncPending()
         return true
@@ -1286,6 +1296,10 @@ private struct CreateSyncGraphPayload: Encodable {
         #endif
         do {
             let responseData = Data(responseJSON.utf8)
+            if actionName == "handleDeepLink" {
+                struct Envelope: Decodable { struct Result: Decodable { let deepLinkQuickAction: String? }; let result: Result? }
+                deepLinkQuickAction = try JSONDecoder().decode(Envelope.self, from: responseData).result?.deepLinkQuickAction
+            }
             if actionName == "bootstrapGraph" {
                 bootstrapPlan = try JSONDecoder().decode(LogseqBootstrapEnvelope.self, from: responseData).result?.graphBootstrap
                 graphSyncAllowed = bootstrapPlan?.syncAllowed == true

@@ -33,6 +33,8 @@ let request ~now ~fresh_id payload =
       let* value = text () in let* status = metadata () in
       json "sendTask" (["text", `String value; "status", status] @ identity ())
     | "send-asset" -> raw "addAsset"
+    | "recording-transcribed" -> let* uuid = string fields "uuid" in let* text = text () in
+      json "completeAssetTranscription" ["parentId", `String uuid; "text", `String text]
     | "load-page-references" -> raw "loadPageReferences"
     | "hydrate-outliner-rows" -> raw "hydrateOutlinerRows"
     | "search-nodes" -> raw "searchNodes"
