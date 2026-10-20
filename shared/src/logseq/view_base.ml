@@ -751,7 +751,8 @@ let node_tag_section_empty_ (current : Model.logseq_model) =
   node_tag_section_visible_ current && active_node_related_rows current = []
 
 let node_linked_reference_section_visible_ (current : Model.logseq_model) =
-  active_node_linked_reference_rows current <> []
+  not (node_tag_section_visible_ current)
+  && active_node_linked_reference_rows current <> []
 
 let page_content_ready_ (current : Model.logseq_model) =
   active_node_projection current <> None || current.selected_page_ready

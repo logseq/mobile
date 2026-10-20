@@ -7163,6 +7163,44 @@ let outliner_rows_live_inside_a_native_virtual_list () =
     (descendant_with_identifier renderer root "scroll.outliner")
     (-1)
 
+let tagged_nodes_replace_the_linked_references_section () =
+  List.iter (fun backend ->
+    List.iter (fun destination ->
+      List.iter (fun is_tag ->
+        List.iter (fun has_tagged_nodes ->
+          let application = App.create (backend ()) in
+          let related = if has_tagged_nodes then [outline_row "tagged" "Tagged book"] else [] in
+          let linked = [outline_row "reference" "Mentions Book"] in
+          let page = { Model.uuid = "book"; title = "Book" } in
+          let sidebar = { (empty_sidebar_projection ()) with
+            Model.selected_page = Some page;
+            selected_page_is_tag = is_tag;
+            related_rows = related; linked_reference_rows = linked } in
+          let routes = if destination = "main" then [] else
+            [{ (node_projection "book" "book" "Book" related linked) with
+               Model.node_is_tag = is_tag }] in
+          start application;
+          if destination = "node" then send application (Model.RequestAppNode "book")
+          else if destination = "search" then begin
+            send application Model.OpenSearch;
+            send application (Model.RequestSearchNode "book")
+          end;
+          send application (apply_core_snapshot None sidebar [] false "" [] routes
+            None None [] [] [] false []);
+          flush application;
+          let renderer = Lui_app.runtime application in
+          let root = if destination = "main" then main_root renderer application
+            else descendant_with_identifier renderer (Lui_app.root_node application) "screen.node" in
+          check ~msg:"the active page is rendered" (root <> -1);
+          let tagged = descendant_with_identifier renderer root "section.tag.tagged-nodes" in
+          let references = descendant_with_identifier renderer root "section.node.linked-references" in
+          check_eq ~msg:"tag pages show their Tagged nodes section" (tagged <> -1) is_tag;
+          check_eq ~msg:"tag pages never also show Linked references" (references <> -1) (not is_tag)
+        ) [false; true]
+      ) [false; true]
+    ) ["main"; "node"; "search"]
+  ) [ios_backend; kotlin_backend]
+
 let thousand_nested_rows () =
   List.init 1_000 (fun index ->
     { (outline_row ("large-" ^ string_of_int index) "Nested block") with
@@ -9390,6 +9428,7 @@ let cases =
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
     case "returning-to-a-scrolled-page-keeps-hydrated-rows-mounted" returning_to_a_scrolled_page_keeps_hydrated_rows_mounted;
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
+    case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;
     case "outliner-rows-live-inside-a-native-virtual-list" outliner_rows_live_inside_a_native_virtual_list;
