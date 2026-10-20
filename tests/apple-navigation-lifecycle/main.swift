@@ -8,6 +8,8 @@ let logger = Logger(subsystem: "com.logseq.navigation-regression", category: "te
 // Exercise the real retained renderer and SwiftUI toolbar closures in Release.
 @MainActor
 func runNavigationLifecycle() throws {
+    precondition(LGIconPolicy.icons["more-horiz"] == .systemName("ellipsis"),
+                 "Page and block menus must use the same native ellipsis as master")
     let registry = LUIAppleExtensionRegistry()
     try LGNavigationExtension.register(in: registry)
     let backend = try LUIAppleBackend(extensionRegistry: registry)

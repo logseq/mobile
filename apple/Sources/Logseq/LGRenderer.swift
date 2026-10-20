@@ -122,6 +122,7 @@ enum LGIconPolicy {
             "trash": .systemName("trash"),
         ]
         result["calendar"] = .systemName("calendar")
+        result["more-horiz"] = .systemName("ellipsis")
         result["add"] = .systemName("plus")
         result["document"] = .systemName("doc.text")
         result["folder"] = .systemName("folder")

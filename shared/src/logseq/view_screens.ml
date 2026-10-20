@@ -561,10 +561,8 @@ let active_overflow_menu model_source send : t =
      menu ~icon:(`app "more-vert") ~label:"More"
        ~accessibility_identifier:"button.overflow-menu" entries context parent
    else
-     stack ~width:44 ~height:44
-       [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
-           ~border_color:"foreground" [];
-         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+     box ~width:44 ~height:44
+       [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
            ~accessibility_identifier:"button.connection" entries ]
        context parent
 

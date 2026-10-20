@@ -7545,6 +7545,54 @@ let connection_menu_matches_active_page_actions () =
     (App.model application).pending_effects
     [ Model.SetPageFavoriteEffect (1, "page-a", false) ]
 
+let page_and_block_overflow_keeps_one_native_icon () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  let renderer = Lui_app.runtime application in
+  let page_a = { Model.uuid = "page-a"; title = "Project A" } in
+  let page_b = { Model.uuid = "page-b"; title = "Project B" } in
+  let project page routes =
+    send application
+      (Model.ApplyCoreSnapshot
+         { (empty_core_projection ()) with
+           selected_graph_id = Some "work";
+           sidebar = { (empty_sidebar_projection ()) with selected_page = page };
+           node_routes = routes });
+    flush application
+  in
+  let check_overflow () =
+    let navigation = extension_node application "native-navigation-stack" in
+    let trigger = descendant_with_identifier renderer navigation "button.connection" in
+    let cell = parent_with_child_identifier renderer navigation "button.connection" in
+    check ~msg:"pages and blocks expose the same overflow control" (trigger <> -1);
+    check_eq ~msg:"the overflow uses one native glyph without a separate ring layer"
+      (children renderer cell) [ trigger ];
+    check_eq ~msg:"the overflow icon keeps its horizontal ellipsis identity"
+      (property_string renderer trigger Lui_protocol.InlineIconName) "app:more-horiz";
+    check_eq ~msg:"the overflow keeps a stable 44-point hit target"
+      (property_int renderer cell Lui_protocol.WidthValue) 44;
+    check_eq ~msg:"the overflow keeps a square hit target"
+      (property_int renderer cell Lui_protocol.HeightValue) 44;
+    trigger
+  in
+  project (Some page_a) [];
+  let initial = check_overflow () in
+  project (Some page_b) [];
+  check_eq ~msg:"page switching retains the overflow trigger" (check_overflow ()) initial;
+  send application (Model.RequestAppNode "child");
+  project (Some page_b) [ node_projection "child" "page-b" "Child block" [] [] ];
+  check_eq ~msg:"opening a block retains the overflow trigger" (check_overflow ()) initial;
+  send application (Model.BackAppNavigation 1);
+  project (Some page_b) [];
+  check_eq ~msg:"returning from a block retains the overflow trigger" (check_overflow ()) initial;
+  project None [];
+  check ~msg:"journals retain their calendar entry"
+    (descendant_with_identifier renderer (Lui_app.root_node application)
+       "button.journal-calendar" <> -1);
+  project (Some page_a) [];
+  ignore (check_overflow ())
+
 let outliner_structure_controls_use_native_navigation_and_core_effects () =
   let collapsed =
     Model.update (Model.initial ())
@@ -9004,6 +9052,7 @@ let cases =
     case "active-page-actions-use-typed-core-and-platform-effects" active_page_actions_use_typed_core_and_platform_effects;
     case "page-delete-dialog-exposes-stable-material-actions" page_delete_dialog_exposes_stable_material_actions;
     case "connection-menu-matches-active-page-actions" connection_menu_matches_active_page_actions;
+    case "page-and-block-overflow-keeps-one-native-icon" page_and_block_overflow_keeps_one_native_icon;
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;

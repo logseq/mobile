@@ -32,6 +32,12 @@ for filename in ["LGNavigationExtension.swift", "LGLiquidGlassTweak.swift", "Log
         end = source.index("@MainActor\nprivate struct LGNavigationContent")
         source = source[:start] + source[end:]
     (package / "Sources/NavigationLifecycle" / filename).write_text(source)
+# Compile the production icon policy without the iOS-only application entry point.
+renderer_source = (root / "apple/Sources/Logseq/LGRenderer.swift").read_text()
+icon_policy = renderer_source.split("enum LGIconPolicy {", 1)[1].split("\n@MainActor", 1)[0]
+(package / "Sources/NavigationLifecycle/LGIconPolicy.swift").write_text(
+    "import LUIAppleBackend\n\nenum LGIconPolicy {" + icon_policy
+)
 scratch = root / "apple/.build/navigation-lifecycle"
 subprocess.run([
     "swift", "build", "--disable-sandbox", "--package-path", str(package),
