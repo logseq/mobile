@@ -284,49 +284,6 @@ private let testEmptySnapshotJSON = """
         #expect(store.lastError?.code == "database_not_open")
     }
 
-    @Test func snapshotMetadataRequestUsesSyncAPIAndOAuthBearerToken() throws {
-        let request = try LogseqGraphSyncHTTP.snapshotMetadataRequest(
-            baseURL: "http://127.0.0.1:8787/api",
-            graphID: "plain graph",
-            accessToken: "oauth-token"
-        )
-        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/snapshot/download")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
-
-        let cursor = try LogseqGraphSyncHTTP.snapshotCursorRequest(
-            baseURL: "http://127.0.0.1:8787/api",
-            graphID: "plain graph",
-            accessToken: "oauth-token"
-        )
-        #expect(cursor.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/pull?since=9007199254740991")
-        #expect(cursor.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
-    }
-
-    @Test func snapshotImportMetadataCombinesCurrentServerResponses() throws {
-        let body = try LogseqGraphSyncHTTP.importMetadataBody(
-            snapshotMetadataBody: #"{"ok":true,"key":"stream/graph.snapshot","url":"/sync/graph/snapshot/stream","schema-version":"65.33","content-encoding":"gzip"}"#,
-            pullBody: #"{"type":"pull/ok","t":48192,"txs":[]}"#,
-            rowCount: 7
-        )
-        let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
-        #expect(json["t"] as? Int == 48192)
-        #expect(json["schema-version"] as? String == "65.33")
-        #expect(json["row-count"] as? Int == 7)
-        #expect(json["content-encoding"] as? String == "gzip")
-    }
-
-    @Test func snapshotImportMetadataAcceptsTheDevDownloadContract() throws {
-        let body = try LogseqGraphSyncHTTP.importMetadataBody(
-            snapshotMetadataBody: #"{"ok":true,"url":"/sync/graph/snapshot/stream"}"#,
-            pullBody: #"{"type":"pull/ok","t":10,"txs":[]}"#,
-            rowCount: nil
-        )
-        let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
-        #expect(json["t"] as? Int == 10)
-        #expect(json["schema-version"] == nil)
-        #expect(json["row-count"] == nil)
-    }
-
     @Test func gzipSnapshotIsDecodedBeforeNativeImport() throws {
         let compressed = try #require(Data(base64Encoded: "H4sIAAAAAAAC/2NgYGB2dHIGAMqqG9MHAAAA"))
         let compressedURL = FileManager.default.temporaryDirectory
@@ -441,7 +398,7 @@ private let testEmptySnapshotJSON = """
         #expect(!recorder.all[0].contains("refreshGraphCatalog"))
     }
 
-    @Test @MainActor func authenticatedStartupDoesNotReopenAnAlreadyRestoredGraph() async throws {
+    @Test @MainActor func graphBootstrapExecutesTheSharedStorageDecision() async throws {
         let recorder = RequestRecorder()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("logseq-startup-\(UUID().uuidString)", isDirectory: true)
@@ -461,8 +418,8 @@ private let testEmptySnapshotJSON = """
         let store = LogseqStore { request in
             recorder.append(request)
             let result: String
-            if request.contains("\"action\":\"openGraph\"") {
-                result = #"{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"appliedServerT":42,"isSearching":false}"#
+            if request.contains("\"action\":\"bootstrapGraph\"") {
+                result = #"{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"appliedServerT":42,"isSearching":false,"graphBootstrap":{"kind":"ready","isEncrypted":false}}"#
             } else {
                 result = #"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[],"isSearching":false}"#
             }
@@ -486,9 +443,9 @@ private let testEmptySnapshotJSON = """
         #expect(authenticated)
 
         let openGraphRequests = recorder.all.filter {
-            $0.contains("\"action\":\"openGraph\"")
+            $0.contains("\"action\":\"bootstrapGraph\"")
         }
-        #expect(openGraphRequests.count == 1)
+        #expect(openGraphRequests.count == 2)
     }
 
     @Test @MainActor func cachedGraphRestoresWithoutNetworkWhenOffline() async throws {

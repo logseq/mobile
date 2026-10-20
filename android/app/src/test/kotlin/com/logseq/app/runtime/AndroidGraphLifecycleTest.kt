@@ -15,6 +15,7 @@ class AndroidGraphLifecycleTest {
         )
         override suspend fun downloadGraphSnapshot(
             baseUrl: String, graphId: String, accessToken: String, workingDirectory: String,
+            callCore: suspend (String) -> String,
         ): AndroidDownloadedSnapshot {
             downloads++
             assertEquals("access", accessToken)
@@ -31,7 +32,7 @@ class AndroidGraphLifecycleTest {
         val lifecycle = AndroidGraphLifecycle(
             callCore = { request ->
                 requests += JSONObject(request).getJSONObject("params")
-                """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[]}}"""
+                """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[],"graphBootstrap":{"kind":"download","isEncrypted":false}}}"""
             }, effects = storage, accessTokenProvider = { "access" },
         )
         val result = lifecycle.openGraphForResync("plain-1")
@@ -50,7 +51,7 @@ class AndroidGraphLifecycleTest {
             callCore = { request ->
                 if (JSONObject(request).getJSONObject("params").optString("action") == "importSnapshot")
                     """{"ok":false,"error":{"code":"snapshot_deferred","message":"Still editing"}}"""
-                else """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[]}}"""
+                else """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[],"graphBootstrap":{"kind":"download","isEncrypted":false}}}"""
             }, effects = storage, accessTokenProvider = { "access" },
         )
         val result = lifecycle.openGraphForResync("plain-1")

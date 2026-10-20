@@ -1,5 +1,6 @@
 ("Api"
 "Core_effect"
+"Snapshot_download"
 "Asset_files"
 "Cache_model"
 "Datascript_value"

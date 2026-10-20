@@ -209,12 +209,14 @@ class AndroidPlatformServices(private val activity: Activity) {
         graphId: String,
         accessToken: String,
         workingDirectory: String,
+        callCore: suspend (String) -> String,
     ): Map<String, String> = withContext(Dispatchers.IO) {
         val snapshot = snapshotDownloader.download(
             baseUrl = baseUrl,
             graphId = graphId,
             accessToken = accessToken,
             workingDirectory = workingDirectory,
+            callCore = callCore,
         )
         mapOf(
             "metadataBody" to snapshot.metadataBody,

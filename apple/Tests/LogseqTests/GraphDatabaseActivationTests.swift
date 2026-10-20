@@ -19,9 +19,9 @@ import Testing
 
         let store = LogseqStore { request in
             recorder.append(request)
-            let isGraph = request.contains("\"action\":\"openGraph\"")
+            let isGraph = request.contains("\"action\":\"bootstrapGraph\"")
             let result = isGraph
-                ? #"{"revision":2,"blocks":[],"selectedBlock":null,"graphName":"Graph","selectedGraphId":"graph-1","appliedServerT":42}"#
+                ? #"{"revision":2,"blocks":[],"selectedBlock":null,"graphName":"Graph","selectedGraphId":"graph-1","appliedServerT":42,"graphBootstrap":{"kind":"ready","isEncrypted":false}}"#
                 : #"{"revision":1,"blocks":[],"selectedBlock":null,"graphName":null,"selectedGraphId":null}"#
             return #"{"apiVersion":1,"ok":true,"result":\#(result),"error":null}"#
         }
@@ -37,7 +37,7 @@ import Testing
             allowSnapshotDownload: false
         ))
 
-        #expect(recorder.all.filter { $0.contains("\"action\":\"openGraph\"") }.count == 2)
+        #expect(recorder.all.filter { $0.contains("\"action\":\"bootstrapGraph\"") }.count == 2)
     }
 }
 

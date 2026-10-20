@@ -135,6 +135,8 @@ type session_state =
   ; selected_sidebar_page : Model.entity_summary option
   ; node_routes : node_route list
   ; node_base_state : Outliner.outliner_state option
+  ; bootstrap_generation : int
+  ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Cards.due_card list
   ; search_results : Search.indexed_search_hit list
@@ -277,6 +279,8 @@ let create_session options =
           selected_sidebar_page = None;
           node_routes = [];
           node_base_state = None;
+          bootstrap_generation = 0;
+          active_graph_id = None;
           accepted_server_t = None;
           flashcards = [];
           search_results = [];

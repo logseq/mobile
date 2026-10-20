@@ -18,6 +18,17 @@ class SnapshotServer(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def do_POST(self):
+        request = self.rfile.read(int(self.headers["Content-Length"]))
+        with self.server.core_lock:
+            self.server.core.stdin.write(request + b"\n")
+            self.server.core.stdin.flush()
+            response = self.server.core.stdout.readline()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
     def do_GET(self):
         if self.headers.get("Authorization") != "Bearer test-token":
             self.send_error(401)
@@ -62,6 +73,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--simulator", help="Run the same HTTP checks in a booted iOS simulator")
     args = parser.parse_args()
+    subprocess.run(["opam", "exec", "--switch=5.5.0", "--", "dune", "build", "shared/test/transport_host.exe"], cwd=ROOT, check=True)
     scratch = ROOT / ("apple/.build/snapshot-http-check-ios" if args.simulator
                       else "apple/.build/snapshot-http-check")
     build = ["swift", "build", "--package-path", str(ROOT / "apple"),
@@ -84,6 +96,9 @@ def main():
                         str(ROOT / "apple/Tests/UI/snapshot-download.swift"),
                         "-o", str(executable)], check=True)
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), SnapshotServer)
+        server.core = subprocess.Popen([str(ROOT / "_build/default/shared/test/transport_host.exe"), "snapshot-protocol"],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        server.core_lock = threading.Lock()
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -92,6 +107,8 @@ def main():
         finally:
             server.shutdown()
             server.server_close()
+            server.core.stdin.close()
+            server.core.wait(timeout=10)
         raise SystemExit(result.returncode)
 
 

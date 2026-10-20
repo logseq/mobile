@@ -137,18 +137,12 @@ final class LGGraphLifecycle {
         guard store.lastError == nil else { return false }
         guard let graphID else { return true }
 
-        let isEncrypted = store.snapshot.graphs?
-            .first(where: { $0.id == graphID })?.isEncrypted ?? false
-        if isEncrypted && store.snapshot.isGraphUnlocked != true {
-            return true
-        }
         guard await store.bootstrapSelectedGraph(
             graphID: graphID,
             baseURL: baseURL,
-            accessToken: accessToken,
-            isEncrypted: isEncrypted
+            accessToken: accessToken
         ) else { return false }
-        startSync(graphID: graphID, baseURL: baseURL, isEncrypted: isEncrypted)
+        if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
         return true
     }
 
@@ -162,14 +156,11 @@ final class LGGraphLifecycle {
 
         let baseURL = LogseqSettingsPolicy.storedBaseURL()
         let accessToken = (try? await authentication.apiToken()) ?? ""
-        let isEncrypted = store.snapshot.graphs?
-            .first(where: { $0.id == graphID })?.isEncrypted ?? false
         let opened = await store.bootstrapSelectedGraph(
             graphID: graphID,
             baseURL: baseURL,
             accessToken: accessToken,
-            allowSnapshotDownload: !accessToken.isEmpty,
-            isEncrypted: isEncrypted
+            allowSnapshotDownload: !accessToken.isEmpty
         )
         guard opened else { return resolution(succeeded: false) }
 
@@ -177,16 +168,13 @@ final class LGGraphLifecycle {
             UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
         }
         publishLocalGraphIDs()
-        if !accessToken.isEmpty,
-           !isEncrypted || store.snapshot.isGraphUnlocked == true {
-            startSync(graphID: graphID, baseURL: baseURL, isEncrypted: isEncrypted)
-        }
+        if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
         return resolution(succeeded: true)
     }
 
     private func unlockGraph(_ password: String) async -> LGEffectResolution {
         await store.unlockGraph(password)
-        guard store.lastError == nil, store.snapshot.isGraphUnlocked == true else {
+        guard store.lastError == nil else {
             return LGEffectResolution(
                 succeeded: false,
                 message: store.lastError?.message ?? "The graph is still locked",
@@ -205,18 +193,11 @@ final class LGGraphLifecycle {
         }
         let baseURL = LogseqSettingsPolicy.storedBaseURL()
         let accessToken = (try? await authentication.apiToken()) ?? ""
-        if !accessToken.isEmpty {
-            // The encrypted graph opens without a sync checkpoint while locked,
-            // so re-open it now that the keyring is unlocked to populate
-            // appliedServerT before starting the WebSocket loop.
-            _ = await store.bootstrapSelectedGraph(
-                graphID: graphID,
-                baseURL: baseURL,
-                accessToken: accessToken,
-                isEncrypted: true
-            )
-            startSync(graphID: graphID, baseURL: baseURL, isEncrypted: true)
-        }
+        guard await store.bootstrapSelectedGraph(
+            graphID: graphID, baseURL: baseURL, accessToken: accessToken,
+            allowSnapshotDownload: !accessToken.isEmpty
+        ) else { return resolution(succeeded: false) }
+        if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
         return resolution(succeeded: true)
     }
 
@@ -268,7 +249,7 @@ final class LGGraphLifecycle {
         )
     }
 
-    private func startSync(graphID: String, baseURL: String, isEncrypted: Bool) {
+    private func startSync(graphID: String, baseURL: String) {
         Task {
             await syncCoordinator.startForeground(graphID: graphID) { [weak self] graphID in
                 guard let self else { return }
@@ -281,7 +262,7 @@ final class LGGraphLifecycle {
                         guard let refreshedToken = try? await authentication.apiToken() else { return }
                         let succeeded = await store.bootstrapSelectedGraph(
                             graphID: graphID, baseURL: baseURL, accessToken: refreshedToken,
-                            forceSnapshot: true, isEncrypted: isEncrypted
+                            forceSnapshot: true
                         )
                         await store.completeSyncSnapshot(succeeded: succeeded)
                     }

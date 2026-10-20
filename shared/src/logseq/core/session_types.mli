@@ -128,6 +128,8 @@ type session_state =
   ; selected_sidebar_page : Cache_model.entity_summary option
   ; node_routes : node_route list
   ; node_base_state : Outliner_state.outliner_state option
+  ; bootstrap_generation : int
+  ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Flashcards.due_card list
   ; search_results : Search_index.indexed_search_hit list

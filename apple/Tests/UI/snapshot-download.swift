@@ -26,6 +26,22 @@ private final class ImportRecorder: @unchecked Sendable {
     }
 }
 
+private final class ProtocolResponse: @unchecked Sendable { var body = "" }
+
+private func executeSharedProtocol(_ request: String, baseURL: String) -> String {
+    var outgoing = URLRequest(url: URL(string: baseURL + "/core")!)
+    outgoing.httpMethod = "POST"
+    outgoing.httpBody = Data(request.utf8)
+    let response = ProtocolResponse()
+    let completed = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: outgoing) { data, _, error in
+        response.body = data.map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        completed.signal()
+    }.resume()
+    completed.wait()
+    return response.body
+}
+
 @main struct SnapshotDownloadCheck {
     @MainActor static func main() async throws {
         let baseURL = CommandLine.arguments[1]
@@ -59,6 +75,16 @@ private final class ImportRecorder: @unchecked Sendable {
             let recorder = ImportRecorder()
             let store = LogseqStore { request in
                 do { try recorder.record(request) } catch { fatalError("Invalid import: \(error)") }
+                if request.contains("snapshotDownloadPlan") || request.contains("resolveSnapshotDownload") {
+                    return executeSharedProtocol(request, baseURL: baseURL)
+                }
+                if request.contains("bootstrapGraph") {
+                    var root = try! JSONSerialization.jsonObject(with: Data(response.utf8)) as! [String: Any]
+                    var result = root["result"] as! [String: Any]
+                    result["graphBootstrap"] = ["kind": "download", "isEncrypted": false]
+                    root["result"] = result
+                    return String(decoding: try! JSONSerialization.data(withJSONObject: root), as: UTF8.self)
+                }
                 return response
             }
             store.applyLaunchResponse(response, actionName: "open", databasePath: directory.appendingPathComponent(graphID + ".sqlite").path)

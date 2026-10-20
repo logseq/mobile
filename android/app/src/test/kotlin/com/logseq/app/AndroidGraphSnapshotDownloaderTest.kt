@@ -1,29 +1,17 @@
 package com.logseq.app
 
+import kotlinx.coroutines.runBlocking
 import logseq.app.AndroidGraphSnapshotDownloader
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.json.JSONObject
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.nio.file.Files
 
 class AndroidGraphSnapshotDownloaderTest {
     @Test
-    fun `snapshot endpoints remove api suffix and encode graph ids`() {
-        val downloader = AndroidGraphSnapshotDownloader()
-
-        assertEquals(
-            "https://sync.example.com/sync/graph%20id/snapshot/download",
-            downloader.snapshotMetadataUrl("https://sync.example.com/api/", "graph id").toString(),
-        )
-        assertEquals(
-            "https://sync.example.com/sync/graph%20id/pull?since=9007199254740991",
-            downloader.snapshotCursorUrl("https://sync.example.com/api/", "graph id").toString(),
-        )
-    }
-
-    @Test
-    fun `downloads a dev snapshot without added metadata fields or row count header`() {
+    fun `downloads the shared snapshot plan and preserves binary bytes`() = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val requested = mutableListOf<String>()
         val bytes = byteArrayOf(0, 0, 0, 3, 65, 66, 67)
@@ -40,8 +28,19 @@ class AndroidGraphSnapshotDownloaderTest {
         server.start()
         val directory = Files.createTempDirectory("logseq-dev-snapshot").toFile()
         try {
+            val baseUrl = "http://127.0.0.1:${server.address.port}"
             val result = AndroidGraphSnapshotDownloader().download(
-                "http://127.0.0.1:${server.address.port}", "graph", "token", directory.path,
+                baseUrl, "graph", "token", directory.path,
+                callCore = { request ->
+                    val action = JSONObject(request).getJSONObject("params").getString("action")
+                    val fields = if (action == "snapshotDownloadPlan") {
+                        JSONObject().put("cursorURL", "$baseUrl/sync/graph/pull").put("metadataURL", "$baseUrl/sync/graph/snapshot/download")
+                    } else {
+                        JSONObject().put("downloadURL", "/sync/graph/snapshot/stream")
+                            .put("metadataBody", """{"ok":true,"url":"/sync/graph/snapshot/stream","t":42}""")
+                    }
+                    JSONObject().put("ok", true).put("result", fields).toString()
+                },
             )
             assertEquals("/sync/graph/pull", requested.first())
             assertEquals(bytes.toList(), java.io.File(result.filePath).readBytes().toList())

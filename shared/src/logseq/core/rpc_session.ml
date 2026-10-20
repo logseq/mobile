@@ -591,6 +591,7 @@ let switch_graph_model session payload =
                 {
                   !(session.state) with
                   model = load uuid;
+                  active_graph_id = Some uuid;
                   accepted_server_t = None;
                   pending_sync = None;
                   semantic_queue = [];
@@ -1345,6 +1346,45 @@ let rec dispatch session action payload =
       handle
   in
   match action with
+  | "bootstrapGraph" -> object_action (fun input fields ->
+    let requested = Rpc.required_string fields "graphId" in
+    match requested, s.config with
+    | Ok graph_id, Some config when graph_id = config.Api.graph_id ->
+      let forced = Yojson.Basic.Util.member "forceSnapshot" input = `Bool true in
+      let allowed = Yojson.Basic.Util.member "allowSnapshotDownload" input <> `Bool false in
+      let respond kind =
+        if kind = "download" then session.state := { !(session.state) with bootstrap_generation = (state session).bootstrap_generation + 1 };
+        let has_token = match Yojson.Basic.Util.member "hasAccessToken" input with
+          | `Bool value -> value | _ -> String.trim config.Api.token <> "" in
+        let sync_allowed = has_token && selected_graph_is_unlocked session && kind <> "locked" in
+        let snapshot = Json.from_string (snapshot_visible session) in
+        match snapshot with
+        | `Assoc envelope ->
+          let result = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
+          let plan = `Assoc ["kind", `String kind; "isEncrypted", `Bool (selected_graph_is_encrypted session);
+            "syncAllowed", `Bool sync_allowed; "generation", `Int (state session).bootstrap_generation] in
+          Json.to_string (`Assoc (("result", `Assoc (("graphBootstrap", plan) :: result)) :: List.remove_assoc "result" envelope))
+        | _ -> Rpc.failure "invalid_bootstrap" "No graph projection is available" in
+      if selected_graph_is_encrypted session && not (selected_graph_is_unlocked session) then respond "locked"
+      else if not forced && s.active_graph_id = Some graph_id && projection_server_t session <> None then respond "ready"
+      else
+        let path = Rpc.required_string fields "activePath" and checkpoint = Rpc.required_string fields "checkpointPath" in
+        (match path, checkpoint with
+         | Ok active, Ok checkpoint ->
+           let downloaded () = if allowed then respond "download"
+             else Rpc.failure "snapshot_unavailable" "The graph is not cached and snapshot download is unavailable" in
+           if not forced && Sys.file_exists active && Sys.file_exists checkpoint then
+             let payload = Json.to_string (`Assoc (("isEncrypted", `Bool (selected_graph_is_encrypted session)) :: List.remove_assoc "isEncrypted" fields)) in
+             let opened = dispatch session "openGraph" (Some payload) in
+             if Yojson.Basic.Util.member "ok" (Json.from_string opened) = `Bool true then respond "ready" else downloaded ()
+           else downloaded ()
+         | _ -> Rpc.failure "invalid_params" "Graph storage paths are required")
+    | _ -> Rpc.failure "graph_changed" "The requested graph is not selected")
+  | "snapshotDownloadPlan" | "resolveSnapshotDownload" ->
+    object_action (fun _ fields ->
+      let result = if action = "snapshotDownloadPlan" then Snapshot_download.plan fields
+        else Snapshot_download.resolve fields in
+      match result with Ok value -> Rpc.success value | Error message -> Rpc.failure "invalid_snapshot_download" message)
   | "executeEffect" ->
     (match Core_effect.request ~now:now_ms ~fresh_id:fresh_squuid payload with
      | Ok (action, payload) -> dispatch session action payload
@@ -1512,18 +1552,19 @@ let rec dispatch session action payload =
          Rpc.failure "invalid_params"
            "unlockGraph requires a selected graph and password")
   | "importSnapshot" ->
-    let forced, graph_id = match payload with
+    let forced, graph_id, generation = match payload with
       | Some body -> (try
           let input = Yojson.Basic.from_string body in
           (Yojson.Basic.Util.member "forceSnapshot" input = `Bool true,
-           Yojson.Basic.Util.member "graphId" input)
-        with _ -> (false, `Null))
-      | None -> (false, `Null) in
+           Yojson.Basic.Util.member "graphId" input, Yojson.Basic.Util.member "generation" input)
+        with _ -> (false, `Null, `Null))
+      | None -> (false, `Null, `Null) in
     let graph_changed = match s.config, graph_id with
       | Some config, `String id -> id <> config.Api.graph_id
       | _ -> false in
-    if forced && graph_changed then
-      Rpc.failure "graph_changed" "The selected graph changed during snapshot download"
+    let stale_generation = match generation with `Int value -> value <> s.bootstrap_generation | _ -> false in
+    if graph_changed || stale_generation then
+      Rpc.failure "graph_changed" "The graph operation changed during snapshot download"
     else if forced && sync_transport_editing session then
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
     else Rpc.import_snapshot payload h.Types.import_snapshot

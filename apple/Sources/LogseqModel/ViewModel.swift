@@ -415,6 +415,7 @@ private struct ImportSnapshotPayload: Encodable {
     let downloadPath: String
     let isEncrypted: Bool
     let forceSnapshot: Bool
+    let generation: Int?
 }
 
 private struct OpenGraphPayload: Encodable {
@@ -422,6 +423,9 @@ private struct OpenGraphPayload: Encodable {
     let activePath: String
     let checkpointPath: String
     let isEncrypted: Bool
+    let forceSnapshot: Bool
+    let allowSnapshotDownload: Bool
+    let hasAccessToken: Bool
 }
 
 private struct CreateSyncGraphPayload: Encodable {
@@ -463,7 +467,8 @@ private struct CreateSyncGraphPayload: Encodable {
     private let responseObserver: @MainActor (String) -> Void
     private var searchGeneration = 0
     private var openedDatabasePath: String?
-    private var activeGraphID: String?
+    public private(set) var graphSyncAllowed = false
+    private var bootstrapPlan: LogseqBootstrapPlan?
     private var debugDatabaseRoute = "unopened"
     private var pendingSyncTask: Task<Void, Never>?
     private var pendingSyncRequested = false
@@ -497,7 +502,6 @@ private struct CreateSyncGraphPayload: Encodable {
 
     public func open(path: String) {
         openedDatabasePath = path
-        activeGraphID = nil
         debugDatabaseRoute = "catalog:\(path)"
         #if DEBUG
         print("LOGSEQ_DB_ROUTE request=open route=\(debugDatabaseRoute)")
@@ -508,7 +512,6 @@ private struct CreateSyncGraphPayload: Encodable {
 
     public func openAndWait(path: String) async {
         openedDatabasePath = path
-        activeGraphID = nil
         debugDatabaseRoute = "catalog:\(path)"
         #if DEBUG
         print("LOGSEQ_DB_ROUTE request=open_and_wait route=\(debugDatabaseRoute)")
@@ -537,7 +540,6 @@ private struct CreateSyncGraphPayload: Encodable {
         openedDatabasePath = databasePath
         apply(responseJSON: responseJSON, actionName: actionName)
         if actionName == "openGraph", let graphID = snapshot.selectedGraphId {
-            activeGraphID = graphID
             debugDatabaseRoute = "graph:\(graphID)"
             #if DEBUG
             print("LOGSEQ_DB_ROUTE launch_applied route=\(debugDatabaseRoute)")
@@ -639,17 +641,7 @@ private struct CreateSyncGraphPayload: Encodable {
         await performAsyncAndWait(
             LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "refresh"))
         )
-        guard
-            lastError == nil,
-            let selectedGraphID,
-            snapshot.graphs?.contains(where: { $0.id == selectedGraphID }) == true
-        else { return }
-        await performAsyncAndWait(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "selectGraph", payload: selectedGraphID)
-            )
-        )
+
     }
 
     public func refresh() {
@@ -770,19 +762,6 @@ private struct CreateSyncGraphPayload: Encodable {
             lastError = LogseqCoreError(code: "database_not_open", message: "Open local storage before syncing")
             return false
         }
-        if !forceSnapshot,
-           activeGraphID == graphID,
-           snapshot.selectedGraphId == graphID,
-           snapshot.appliedServerT != nil {
-            #if DEBUG
-            print("LOGSEQ_DB_ROUTE bootstrap_early_return graph=\(graphID) route=\(debugDatabaseRoute)")
-            logger.info(
-                "LOGSEQ_DB_ROUTE bootstrap_early_return graph=\(graphID) "
-                    + "route=\(debugDatabaseRoute)"
-            )
-            #endif
-            return true
-        }
         do {
             let graphDirectory = LogseqGraphLocalStorage.directoryURL(
                 databasePath: openedDatabasePath,
@@ -791,27 +770,15 @@ private struct CreateSyncGraphPayload: Encodable {
             try FileManager.default.createDirectory(at: graphDirectory, withIntermediateDirectories: true)
             let activeURL = graphDirectory.appendingPathComponent("graph.sqlite")
             let checkpointURL = graphDirectory.appendingPathComponent("sync.checkpoint")
-            let openPayload = OpenGraphPayload(
-                graphId: graphID,
-                activePath: activeURL.path,
-                checkpointPath: checkpointURL.path,
-                isEncrypted: isEncrypted
-            )
-            if !forceSnapshot,
-               FileManager.default.fileExists(atPath: activeURL.path),
-               FileManager.default.fileExists(atPath: checkpointURL.path) {
-                await dispatchEncodedAndWait("openGraph", openPayload)
-                if lastError == nil {
-                    activeGraphID = graphID
-                    debugDatabaseRoute = "graph:\(graphID)"
-                    #if DEBUG
-                    print("LOGSEQ_DB_ROUTE open_graph_applied route=\(debugDatabaseRoute)")
-                    #endif
-                    return true
-                }
-            }
-
-            guard allowSnapshotDownload else { return false }
+            bootstrapPlan = nil
+            graphSyncAllowed = false
+            await dispatchEncodedAndWait("bootstrapGraph", OpenGraphPayload(
+                graphId: graphID, activePath: activeURL.path, checkpointPath: checkpointURL.path,
+                isEncrypted: isEncrypted, forceSnapshot: forceSnapshot, allowSnapshotDownload: allowSnapshotDownload,
+                hasAccessToken: !accessToken.isEmpty
+            ))
+            guard lastError == nil, let plan = bootstrapPlan else { return false }
+            if plan.kind != "download" { return true }
 
             let graphName = snapshot.graphs?.first(where: { $0.id == graphID })?.name ?? graphID
             let showsProgress = !forceSnapshot
@@ -838,6 +805,7 @@ private struct CreateSyncGraphPayload: Encodable {
                     }
                 }
             }
+            let coreCall = callCore
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
@@ -849,6 +817,9 @@ private struct CreateSyncGraphPayload: Encodable {
                         graphId: graphID, graphName: graphName, phase: phase,
                         completedItems: 0, totalItems: nil
                     ))
+                },
+                callCore: { request in
+                    await LogseqCoreExecutor.shared.call(coreCall, requestJSON: request, priority: .maintenance)
                 }
             )
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
@@ -864,8 +835,9 @@ private struct CreateSyncGraphPayload: Encodable {
                 checkpointPath: checkpointURL.path,
                 metadataBody: artifact.metadataBody,
                 downloadPath: artifact.filePath,
-                isEncrypted: isEncrypted,
-                forceSnapshot: forceSnapshot
+                isEncrypted: plan.isEncrypted,
+                forceSnapshot: forceSnapshot,
+                generation: plan.generation
             )
             let payloadData = try JSONEncoder().encode(payload)
             guard let payloadString = String(data: payloadData, encoding: .utf8) else {
@@ -878,7 +850,6 @@ private struct CreateSyncGraphPayload: Encodable {
                 )
             )
             if lastError == nil {
-                activeGraphID = graphID
                 debugDatabaseRoute = "graph:\(graphID)"
             }
             return lastError == nil
@@ -1315,6 +1286,10 @@ private struct CreateSyncGraphPayload: Encodable {
         #endif
         do {
             let responseData = Data(responseJSON.utf8)
+            if actionName == "bootstrapGraph" {
+                bootstrapPlan = try JSONDecoder().decode(LogseqBootstrapEnvelope.self, from: responseData).result?.graphBootstrap
+                graphSyncAllowed = bootstrapPlan?.syncAllowed == true
+            }
             if actionName == "beginSyncTransport" || actionName == "syncTransportEvent" {
                 syncTransport = try JSONDecoder().decode(LogseqSyncTransportEnvelope.self, from: responseData).result?.syncTransport
             }
@@ -1345,11 +1320,9 @@ private struct CreateSyncGraphPayload: Encodable {
                 snapshot = result
                 lastError = nil
                 if actionName == "openGraph" {
-                    activeGraphID = result.selectedGraphId
-                    debugDatabaseRoute = "graph:\(activeGraphID ?? "unknown")"
+                    debugDatabaseRoute = "graph:\(result.selectedGraphId ?? "unknown")"
                     syncError = nil
                 } else if actionName == "open" {
-                    activeGraphID = nil
                     debugDatabaseRoute = "catalog:\(openedDatabasePath ?? "unknown")"
                     syncError = nil
                 }

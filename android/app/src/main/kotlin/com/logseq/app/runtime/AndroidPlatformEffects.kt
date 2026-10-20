@@ -243,8 +243,9 @@ internal class AndroidPlatformEffects(
         graphId: String,
         accessToken: String,
         workingDirectory: String,
+        callCore: suspend (String) -> String,
     ): AndroidDownloadedSnapshot {
-        val value = platform.downloadGraphSnapshot(baseUrl, graphId, accessToken, workingDirectory)
+        val value = platform.downloadGraphSnapshot(baseUrl, graphId, accessToken, workingDirectory, callCore)
         return AndroidDownloadedSnapshot(
             metadataBody = value["metadataBody"] ?: error("Android did not return snapshot metadata"),
             filePath = value["filePath"] ?: error("Android did not return a snapshot path"),

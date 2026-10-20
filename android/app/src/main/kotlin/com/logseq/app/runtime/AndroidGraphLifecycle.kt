@@ -6,6 +6,7 @@ internal interface AndroidGraphStorage {
     fun loadStorageState(): AndroidStorageState
     suspend fun downloadGraphSnapshot(
         baseUrl: String, graphId: String, accessToken: String, workingDirectory: String,
+        callCore: suspend (String) -> String,
     ): AndroidDownloadedSnapshot
     fun persistSelectedGraphId(graphId: String)
     fun deleteTemporaryFile(path: String)
@@ -80,20 +81,15 @@ internal class AndroidGraphLifecycle(
 
         val state = effects.loadStorageState()
         val directory = "${state.graphsDirectory}/$graphId"
-        val isEncrypted = graphIsEncrypted(selected, graphId)
-        val isLocal = state.localGraphIds.contains(graphId)
-        trace("storage.loaded graphId=$graphId local=$isLocal")
+        val bootstrap = call("bootstrapGraph", JSONObject().put("graphId", graphId)
+            .put("activePath", "$directory/graph.sqlite").put("checkpointPath", "$directory/sync.checkpoint")
+            .put("forceSnapshot", forceSnapshot).toString())
+        failure(bootstrap)?.let { return it }
+        val plan = decodedResponse(bootstrap).getJSONObject("result").getJSONObject("graphBootstrap")
+        val isEncrypted = plan.getBoolean("isEncrypted")
         val opened: String
-        if (isLocal && !forceSnapshot) {
-            opened = call(
-                "openGraph",
-                payload = JSONObject()
-                    .put("graphId", graphId)
-                    .put("activePath", "$directory/graph.sqlite")
-                    .put("checkpointPath", "$directory/sync.checkpoint")
-                    .put("isEncrypted", isEncrypted)
-                    .toString(),
-            )
+        if (plan.getString("kind") != "download") {
+            opened = bootstrap
         } else {
             val token = accessTokenProvider() ?: ""
             trace("snapshot.download.start graphId=$graphId baseUrl=${state.baseUrl}")
@@ -102,6 +98,7 @@ internal class AndroidGraphLifecycle(
                 graphId = graphId,
                 accessToken = token,
                 workingDirectory = directory,
+                callCore = callCore,
             )
             trace("snapshot.download.complete graphId=$graphId path=${artifact.filePath}")
             try {
@@ -159,16 +156,6 @@ internal class AndroidGraphLifecycle(
     private fun selectedGraphId(response: String): String =
         decodedResponse(response).optJSONObject("result")
             ?.optString("selectedGraphId").orEmpty()
-
-    private fun graphIsEncrypted(response: String, graphId: String): Boolean {
-        val graphs = decodedResponse(response).optJSONObject("result")
-            ?.optJSONArray("graphs") ?: return false
-        for (index in 0 until graphs.length()) {
-            val graph = graphs.optJSONObject(index) ?: continue
-            if (graph.optString("id") == graphId) return graph.optBoolean("isEncrypted")
-        }
-        return false
-    }
 
     private fun decodedResponse(response: String): JSONObject = try {
         JSONObject(response)

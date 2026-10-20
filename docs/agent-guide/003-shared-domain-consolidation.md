@@ -101,7 +101,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Plan | Complete | Current main is the implementation workspace |
 | Obsolete APIs | In progress | Removed 269 production Swift lines and 434 retired-wrapper test lines; core baseline, 66 model and 125 UI tests pass; remaining send/search wrappers await live executor coverage |
 | Core effects | Complete | Shared executeEffect dispatcher replaces Swift/Kotlin mappings; transcript persistence/projection and binary-upload activation covered; 817 core, 109 Swift UI, 42 Android JVM tests pass |
-| Bootstrap | Pending | Shared commands and stale-result tests first |
+| Bootstrap | Complete | Core owns bootstrap/cache/lock/sync eligibility and snapshot protocol; generations reject stale same-graph downloads; 824 core, 63 model, 109 UI and 41 Android tests plus 12 actual HTTP cases pass |
 | Shared capture | Pending | Preserve existing queue format |
 | Editor/media | Pending | Preserve native transient input state |
 | Final verification | Pending | Full gates and native builds |

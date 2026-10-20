@@ -3,7 +3,6 @@ package logseq.app
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.zip.GZIPInputStream
 import org.json.JSONObject
@@ -17,35 +16,20 @@ class AndroidGraphSnapshotException(message: String, cause: Throwable? = null) :
     Exception(message, cause)
 
 class AndroidGraphSnapshotDownloader {
-    fun download(
+    suspend fun download(
         baseUrl: String,
         graphId: String,
         accessToken: String,
         workingDirectory: String,
+        callCore: suspend (String) -> String,
     ): AndroidDownloadedGraphSnapshot {
-        val metadataUrl = snapshotMetadataUrl(baseUrl, graphId)
-        val cursor = JSONObject(
-            readText(snapshotCursorUrl(baseUrl, graphId), accessToken, "Snapshot cursor"),
-        )
+        val plan = shared(callCore, "snapshotDownloadPlan", JSONObject().put("baseUrl", baseUrl).put("graphId", graphId))
+        val metadataUrl = URL(plan.getString("metadataURL"))
+        val cursorBody = readText(URL(plan.getString("cursorURL")), accessToken, "Snapshot cursor")
         val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
-        val metadata = runCatching { JSONObject(metadataBody) }.getOrElse { error ->
-            throw AndroidGraphSnapshotException("Snapshot metadata is not valid JSON", error)
-        }
-        if (!metadata.optBoolean("ok", false)) {
-            throw AndroidGraphSnapshotException("Snapshot metadata did not report success")
-        }
-        val snapshotUrl = runCatching { URL(metadataUrl, metadata.getString("url")) }
-            .getOrElse { error ->
-                throw AndroidGraphSnapshotException("Snapshot metadata URL is invalid", error)
-            }
-        val contentEncoding = metadata.optString("content-encoding", "identity")
-            .trim()
-            .lowercase()
-        if (contentEncoding !in setOf("identity", "gzip")) {
-            throw AndroidGraphSnapshotException(
-                "Unsupported snapshot content encoding: $contentEncoding",
-            )
-        }
+        val resolved = shared(callCore, "resolveSnapshotDownload", JSONObject()
+            .put("metadataBody", metadataBody).put("pullBody", cursorBody))
+        val snapshotUrl = URL(metadataUrl, resolved.getString("downloadURL"))
 
         val directory = File(workingDirectory)
         if (!directory.isDirectory && !directory.mkdirs()) {
@@ -73,11 +57,7 @@ class AndroidGraphSnapshotDownloader {
             } else {
                 download
             }
-            if (cursor.optString("type") != "pull/ok" || cursor.optLong("t", -1) < 0) {
-                throw AndroidGraphSnapshotException("Snapshot cursor metadata is invalid")
-            }
-            metadata.put("t", cursor.getLong("t"))
-            return AndroidDownloadedGraphSnapshot(metadata.toString(), snapshot.absolutePath)
+            return AndroidDownloadedGraphSnapshot(resolved.getString("metadataBody"), snapshot.absolutePath)
         } catch (error: Exception) {
             download.delete()
             decoded?.delete()
@@ -86,19 +66,13 @@ class AndroidGraphSnapshotDownloader {
         }
     }
 
-    internal fun snapshotMetadataUrl(baseUrl: String, graphId: String): URL {
-        var root = baseUrl.trim().trimEnd('/')
-        if (root.endsWith("/api")) root = root.removeSuffix("/api")
-        val encodedGraphId = URLEncoder.encode(graphId, StandardCharsets.UTF_8.name())
-            .replace("+", "%20")
-        return runCatching { URL("$root/sync/$encodedGraphId/snapshot/download") }
-            .getOrElse { error ->
-                throw AndroidGraphSnapshotException("Logseq API base URL is invalid", error)
-            }
+    private suspend fun shared(callCore: suspend (String) -> String, action: String, fields: JSONObject): JSONObject {
+        val response = JSONObject(callCore(JSONObject().put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", action).put("payload", fields.toString())).toString()))
+        if (!response.optBoolean("ok")) throw AndroidGraphSnapshotException(
+            response.optJSONObject("error")?.optString("message") ?: "The shared core rejected the snapshot download")
+        return response.getJSONObject("result")
     }
-
-    internal fun snapshotCursorUrl(baseUrl: String, graphId: String): URL =
-        URL(snapshotMetadataUrl(baseUrl, graphId).toString().removeSuffix("/snapshot/download") + "/pull?since=9007199254740991")
 
     private fun readText(url: URL, accessToken: String, operation: String): String {
         val connection = open(url, accessToken)
