@@ -97,6 +97,8 @@ Do not run `swift test` in this repository because the XCTest bridge hangs in
 the current environment. Use the supported gates instead:
 Run the model suite without that bridge using `python3 scripts/test-swift-model-suite.py`.
 It builds `LogseqModelTests` and launches Swift Testing directly.
+Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
+after building the simulator core. This also invokes Swift Testing directly.
 
 ```sh
 swift build --package-path apple --disable-sandbox --triple arm64-apple-ios17.0-simulator \

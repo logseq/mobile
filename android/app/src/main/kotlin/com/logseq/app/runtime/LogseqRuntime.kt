@@ -156,11 +156,9 @@ internal class LogseqRuntime(
                     afterCoreResponseApplied = { response ->
                         outlinerCommands.deliver(response)
                         trackSyncState(response)
-                        if (hasPendingSyncWork(response)) requestSyncNow()
                         ensureGraphEventsSync()
                     },
                 )
-                drain.autosaveDrain = { scope.launch { drain.drain(scope) } }
                 effectDrain = drain
 
                 val rootNode = bridge.initialize(authenticationCode = authenticationCode)

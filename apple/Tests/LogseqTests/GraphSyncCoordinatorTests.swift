@@ -219,9 +219,8 @@ import Testing
                 return true
             }
         }
-        let cancel = Task { await coordinator.cancelBackground() }
+        background.cancel()
         await gate.open()
-        await cancel.value
 
         #expect(await background.value == false)
         #expect(await events.snapshot() == ["foreground-start"])
@@ -296,25 +295,29 @@ private actor BackgroundExecutionProbe {
 private func waitForEvent(
     _ event: String,
     in recorder: SyncEventRecorder,
-    attempts: Int = 1_000
+    timeout: Duration = .seconds(2)
 ) async {
-    for _ in 0..<attempts {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
         if await recorder.snapshot().contains(event) {
             return
         }
-        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(1))
     }
+    Issue.record("Timed out waiting for sync event")
 }
 
 private func waitForEventCount(
     _ count: Int,
     in recorder: SyncEventRecorder,
-    attempts: Int = 1_000
+    timeout: Duration = .seconds(2)
 ) async {
-    for _ in 0..<attempts {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
         if await recorder.snapshot().count >= count {
             return
         }
-        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(1))
     }
+    Issue.record("Timed out waiting for sync event")
 }

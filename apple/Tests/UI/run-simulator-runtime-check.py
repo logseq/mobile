@@ -56,6 +56,14 @@ import SwiftUI
         app.mkdir()
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
+        testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
+        testing_args = []
+        if testing:
+            objects += [str(path) for path in sorted((BUILD / "LogseqTests.build").glob("*.o"))]
+            developer = Path(subprocess.check_output(["xcode-select", "-p"], text=True).strip())
+            frameworks = developer / "Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks"
+            testing_args = ["-F", str(frameworks), "-framework", "Testing",
+                            "-Xlinker", "-rpath", "-Xlinker", str(frameworks)]
         core = ROOT / "_build/ios-core/simulator"
         entitlements = directory / "entitlements.plist"
         build_entitlements = plistlib.loads((core / "simulator-entitlements.plist").read_bytes())
@@ -75,7 +83,7 @@ import SwiftUI
             runtime_exports += ["-Xlinker", "-dead_strip"]
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
-             "-I", str(BUILD / "LogseqCoreABI.build"), str(source), *objects, str(runtime),
+             "-I", str(BUILD / "LogseqCoreABI.build"), str(source), *objects, *testing_args, str(runtime),
              str(core / "logseq_https_darwin.o"), str(core / "logseq_crypto_darwin.o"),
              str(toolchain / "arm64-apple-ios17.0-simulator-5.5.0/lib/ocaml/libthreadsnat.a"),
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),
@@ -114,8 +122,9 @@ import SwiftUI
             return
         try:
             output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
-                                     SIMULATOR, bundle], capture_output=True, text=True, timeout=90 if benchmark else 30, env=launch_environment)
+                                     SIMULATOR, bundle], capture_output=True, text=True, timeout=180 if testing else (90 if benchmark else 30), env=launch_environment)
             print(output.stdout)
+            print(output.stderr)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
                 print(output.stderr, file=sys.stderr)
                 raise SystemExit("Simulator runtime check did not complete")

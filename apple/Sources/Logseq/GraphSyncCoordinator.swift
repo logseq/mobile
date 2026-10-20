@@ -75,6 +75,7 @@ actor GraphSyncCoordinator {
     }
 
     func runBackground(operation: @escaping BackgroundOperation) async -> Bool {
+        guard !Task.isCancelled else { return false }
         if let backgroundTask {
             return await backgroundTask.value
         }
@@ -92,7 +93,11 @@ actor GraphSyncCoordinator {
             return await operation()
         }
         backgroundTask = task
-        let result = await task.value
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         if backgroundGeneration == generation {
             backgroundTask = nil
         }

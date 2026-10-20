@@ -267,6 +267,7 @@ type logseq_effect =
   | DropOutlinerBlocksEffect of int * string * string
   | OutlinerToolbarEffect of int * string
   | ChooseOutlinerAutocompleteEffect of int * string
+  | SaveOutlinerEditingEffect of int * string
   | CancelOutlinerEditingEffect of int
   | OpenAppNodeEffect of int * string
   | OpenSearchResultEffect of int * string
@@ -759,6 +760,7 @@ let effect_id eff =
   | DropOutlinerBlocksEffect (id, _, _) -> id
   | OutlinerToolbarEffect (id, _) -> id
   | ChooseOutlinerAutocompleteEffect (id, _) -> id
+  | SaveOutlinerEditingEffect (id, _) -> id
   | CancelOutlinerEditingEffect id -> id
   | OpenAppNodeEffect (id, _) -> id
   | OpenSearchResultEffect (id, _)
@@ -1316,7 +1318,25 @@ let page_share_asset_paths rows =
       | None -> paths)
     [] rows
 
+let cancels_outliner_autosave = function
+  | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
+  | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
+  | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
+  | DropOutlinerBlocksEffect _ | OutlinerToolbarEffect _
+  | ChooseOutlinerAutocompleteEffect _ | CancelOutlinerEditingEffect _
+  | SetOutlinerTaskStatusEffect _ | SelectSidebarPageEffect _
+  | ClearSelectedPageEffect _ | OpenAppNodeEffect _ | CloseAppNodeEffect _
+  | OpenSearchNodeEffect _ | CloseSearchNodeEffect _ | OpenSearchResultEffect _
+  | OpenGraphEffect _ | DeleteLocalGraphEffect _ | SignOutEffect _ -> true
+  | _ -> false
+
+let cancel_outliner_autosave current =
+  { current with pending_effects = List.filter (function
+      | SaveOutlinerEditingEffect _ -> false
+      | _ -> true) current.pending_effects }
+
 let enqueue_effect (current : logseq_model) eff =
+  let current = if cancels_outliner_autosave eff then cancel_outliner_autosave current else current in
   {
     current with
     pending_effects = current.pending_effects @ [ eff ];
@@ -1325,6 +1345,7 @@ let enqueue_effect (current : logseq_model) eff =
   }
 
 let cancel_outliner_editing (current : logseq_model) =
+  let current = cancel_outliner_autosave current in
   match current.outliner_editing with
   | Some _ ->
     let updated =
@@ -2017,7 +2038,7 @@ let rec update (current : logseq_model) action =
          if succeeded then resolve_successful_effect current eff message
          else resolve_failed_effect current eff message
        in
-       {
+       let resolved = {
          resolved_current with
          in_flight_effects = remove_effect current.in_flight_effects id;
          effect_error =
@@ -2027,7 +2048,23 @@ let rec update (current : logseq_model) action =
             then None else Some message);
          last_core_response =
            (if succeeded then Some message else current.last_core_response);
-       }
+       } in
+       let edited_uuid = match eff with
+         | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
+         | _ -> None in
+       let saved = match succeeded, edited_uuid, resolved.outliner_editing with
+         | true, Some uuid, Some editing
+           when editing.editing_uuid = uuid && resolved.outliner_autocomplete = None
+             && not (List.exists cancels_outliner_autosave resolved.pending_effects) ->
+           let ready = cancel_outliner_autosave resolved in
+           enqueue_effect ready (SaveOutlinerEditingEffect (ready.next_effect_id, uuid))
+         | _ -> resolved in
+       let needs_sync = succeeded && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
+         && (match eff with SyncNowEffect _ -> false | _ -> true)
+         && not (List.exists (function SyncNowEffect _ -> true | _ -> false)
+              (saved.pending_effects @ saved.in_flight_effects)) in
+       if needs_sync then enqueue_effect saved (SyncNowEffect saved.next_effect_id) else saved
      | None -> current)
   | OpenAttachmentPicker ->
     { current with attachment_picker_open = true }

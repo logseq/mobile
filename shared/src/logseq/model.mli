@@ -264,6 +264,7 @@ type logseq_effect =
   | DropOutlinerBlocksEffect of int * string * string
   | OutlinerToolbarEffect of int * string
   | ChooseOutlinerAutocompleteEffect of int * string
+  | SaveOutlinerEditingEffect of int * string
   | CancelOutlinerEditingEffect of int
   | OpenAppNodeEffect of int * string
   | OpenSearchResultEffect of int * string

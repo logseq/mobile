@@ -42,19 +42,19 @@ struct Check {
         var failed = false
         let cases: [(String, Bool, String)] = [
             ("choose-outliner-autocomplete", false, "{}"),
-            ("change-outliner-text", true, "{}"),
+            ("change-outliner-text", false, "{}"),
             ("change-outliner-text", false, #"{"outlinerState":{"autocomplete":{"kind":"tag"}}}"#),
             ("change-outliner-text", false, #"{"outlinerState":{"autocomplete":null},"nodeRoutes":[{"outlinerState":{"autocomplete":{"kind":"node"}}}]}"#),
-            ("change-outliner-text", true, #"{"outlinerState":{"autocomplete":{"kind":"tag"}},"nodeRoutes":[{"outlinerState":{"autocomplete":null}}]}"#),
+            ("change-outliner-text", false, #"{"outlinerState":{"autocomplete":{"kind":"tag"}},"nodeRoutes":[{"outlinerState":{"autocomplete":null}}]}"#),
         ]
         for (kind, shouldSave, result) in cases {
             let native = NativeQueue()
             native.effects = ["{\"id\":1,\"kind\":\"\(kind)\",\"text\":\"Project\"}"]
             let recorder = Recorder()
             recorder.result = result
-            let runtime = LGRuntime(native: native, effectExecutor: recorder, outlinerAutosaveDelayNanoseconds: 1_000_000)
+            let runtime = LGRuntime(native: native, effectExecutor: recorder)
             await runtime.drainEffectsForTesting()
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: .milliseconds(1100))
             await runtime.drainEffectsForTesting()
             let passed = recorder.effects.contains("save-outliner-editing") == shouldSave
             print("\(passed ? "PASS" : "FAIL"): \(kind), effects=\(recorder.effects)")
@@ -64,14 +64,16 @@ struct Check {
         native.effects = [
             #"{"id":1,"kind":"change-outliner-text","text":"Draft"}"#,
             #"{"id":2,"kind":"hydrate-outliner-rows","text":"[]"}"#,
+            #"{"waitMs":1}"#,
+            #"{"id":3,"kind":"save-outliner-editing","text":"editing"}"#,
         ]
         let recorder = Recorder()
-        let runtime = LGRuntime(native: native, effectExecutor: recorder, outlinerAutosaveDelayNanoseconds: 1_000_000)
+        let runtime = LGRuntime(native: native, effectExecutor: recorder)
         await runtime.drainEffectsForTesting()
-        try? await Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(1100))
         await runtime.drainEffectsForTesting()
         let keepsAutosave = recorder.effects.contains("save-outliner-editing")
-        print("\(keepsAutosave ? "PASS" : "FAIL"): viewport hydration preserves pending autosave")
+        print("\(keepsAutosave ? "PASS" : "FAIL"): native runtime executes the core save after its deadline")
         failed = failed || !keepsAutosave
         if failed { exit(1) }
     }

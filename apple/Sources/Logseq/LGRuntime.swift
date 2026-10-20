@@ -46,21 +46,9 @@ private struct LGCoreResponseEnvelope: Decodable, Sendable {
         let graphName: String?
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
-        let outlinerState: OutlinerState?
-        let nodeRoutes: [NodeRoute]?
         let hasPendingSemanticOperations: Bool?
         let pendingSyncRequest: PendingSyncRequest?
     }
-
-    struct NodeRoute: Decodable, Sendable {
-        let outlinerState: OutlinerState?
-    }
-
-    struct OutlinerState: Decodable, Sendable {
-        let autocomplete: Autocomplete?
-    }
-
-    struct Autocomplete: Decodable, Sendable {}
 
     struct PendingSyncRequest: Decodable, Sendable {}
 }
@@ -112,15 +100,6 @@ public final class LGRuntime {
     @ObservationIgnored
     private var authoritativeCoreResponseInvalidated = false
 
-    @ObservationIgnored
-    private var outlinerAutosaveTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private var outlinerAutosavePending = false
-
-    @ObservationIgnored
-    private let outlinerAutosaveDelayNanoseconds: UInt64
-
     private static let log = Logger(subsystem: "com.logseq.logseq", category: "runtime")
 
     @ObservationIgnored
@@ -141,16 +120,11 @@ public final class LGRuntime {
     public init(
         native: any LGNativeCalling,
         effectExecutor: any LGEffectExecuting = LGCoreEffectExecutor(),
-        platformCommandHandler: (any LGPlatformCommandHandling)? = nil,
-        outlinerAutosaveDelayNanoseconds: UInt64 =
-            LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
-                eventType: "textChanged"
-            )
+        platformCommandHandler: (any LGPlatformCommandHandling)? = nil
     ) {
         self.native = native
         self.effectExecutor = effectExecutor
         self.platformCommandHandler = platformCommandHandler
-        self.outlinerAutosaveDelayNanoseconds = outlinerAutosaveDelayNanoseconds
         renderer = LGRenderer()
         renderer.onEvent = { [weak self] event in
             self?.receive(event)
@@ -199,7 +173,6 @@ public final class LGRuntime {
         guard isStarted else { return }
         queryWait?.cancel()
         queryWait = nil
-        cancelOutlinerAutosave()
         invalidatePendingPatchApplies()
         do {
             try apply(native.dispose())
@@ -463,11 +436,6 @@ public final class LGRuntime {
             }
             if encoded.isEmpty {
                 if wakeVersion != effectWakeVersion { continue }
-                if outlinerAutosavePending {
-                    outlinerAutosavePending = false
-                    await executeOutlinerAutosave()
-                    continue
-                }
                 return
             }
 
@@ -497,7 +465,6 @@ public final class LGRuntime {
                 return
             }
 
-            cancelOutlinerAutosaveBeforeExecuting(effect)
             Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
             let resolution = await effectExecutor.execute(effect)
             guard epoch == patchApplyEpoch else { return }
@@ -515,18 +482,6 @@ public final class LGRuntime {
                 case .coreResponse:
                     let envelope = await Self.decodeCoreResponseAsync(resolution.message)
                     deliverPlatformCommands(envelope)
-                    scheduleOutlinerAutosaveIfNeeded(
-                        after: effect,
-                        envelope: envelope
-                    )
-                    let syncResolution = await startSyncIfNeeded(
-                        envelope: envelope
-                    )
-                    Self.log.notice("startSync resolved id=\(effect.id, privacy: .public) succeeded=\(syncResolution.succeeded, privacy: .public)")
-                    if !syncResolution.succeeded {
-                        lastError = syncResolution.message
-                        return
-                    }
                 case let .hostUpdate(kind):
                     _ = await enqueueNative(.hostUpdate(kind, resolution.message)).value
                 case .discard:
@@ -559,82 +514,6 @@ public final class LGRuntime {
         ))
     }
 
-    private func cancelOutlinerAutosaveBeforeExecuting(_ effect: LGEffect) {
-        guard effect.kind.contains("outliner"),
-              effect.kind != "move-outliner-caret",
-              effect.kind != "hydrate-outliner-rows" else { return }
-        cancelOutlinerAutosave()
-    }
-
-    private func cancelOutlinerAutosave() {
-        outlinerAutosaveTask?.cancel()
-        outlinerAutosaveTask = nil
-        outlinerAutosavePending = false
-    }
-
-    private func scheduleOutlinerAutosaveIfNeeded(
-        after effect: LGEffect,
-        envelope: LGCoreResponseEnvelope?
-    ) {
-        let shouldSchedule: Bool
-        switch effect.kind {
-        case "change-outliner-text":
-            shouldSchedule = !responseHasOutlinerAutocomplete(envelope)
-        default:
-            shouldSchedule = false
-        }
-        guard shouldSchedule else { return }
-        outlinerAutosaveTask = Task { [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(nanoseconds: outlinerAutosaveDelayNanoseconds)
-            guard !Task.isCancelled else { return }
-            outlinerAutosaveTask = nil
-            outlinerAutosavePending = true
-            scheduleEffectDrain()
-        }
-    }
-
-    private func responseHasOutlinerAutocomplete(_ envelope: LGCoreResponseEnvelope?) -> Bool {
-        let activeState = envelope?.result?.nodeRoutes?.last?.outlinerState
-            ?? envelope?.result?.outlinerState
-        return activeState?.autocomplete != nil
-    }
-
-    private func startSyncIfNeeded(
-        envelope: LGCoreResponseEnvelope?
-    ) async -> LGEffectResolution {
-        guard let result = envelope?.result,
-           result.hasPendingSemanticOperations == true || result.pendingSyncRequest != nil else {
-            return LGEffectResolution(
-                succeeded: true,
-                message: "",
-                output: .discard
-            )
-        }
-        return await effectExecutor.execute(
-            LGEffect(id: 0, kind: "sync-now", text: "")
-        )
-    }
-
-    private func executeOutlinerAutosave() async {
-        let effect = LGEffect(id: 0, kind: "save-outliner-editing", text: "")
-        let resolution = await effectExecutor.execute(effect)
-        guard resolution.succeeded else {
-            lastError = resolution.message
-            return
-        }
-        _ = await enqueueNative(.snapshot(resolution.message)).value
-        let syncEnvelope = await Self.decodeCoreResponseAsync(resolution.message)
-        deliverPlatformCommands(syncEnvelope)
-
-        let syncResolution = await startSyncIfNeeded(envelope: syncEnvelope)
-        if syncResolution.succeeded {
-            lastError = nil
-        } else {
-            lastError = syncResolution.message
-        }
-    }
-
     private func apply(_ patch: String) throws {
         guard !patch.isEmpty else { return }
         let decoded = try LogseqLaunchTiming.measure("lui_patch_decode") { try LUIAppleBackend.decode(patch) }
@@ -642,7 +521,6 @@ public final class LGRuntime {
         #if DEBUG
         Task.detached { Self.dumpPatchIfRequested(patch, generation: decoded.generation) }
         #endif
-        lastError = nil
     }
 
     /// The core produces patches in generation order and applies must stay in
@@ -672,7 +550,6 @@ public final class LGRuntime {
                 }
                 Self.log.notice("apply patch generation=\(decoded.generation, privacy: .public)")
                 try self.renderer.apply(decoded: decoded)
-                self.lastError = nil
             } catch {
                 guard epoch == self.patchApplyEpoch else { return }
                 self.lastError = String(describing: error)

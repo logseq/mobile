@@ -119,7 +119,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Legacy cleanup | Complete | Removed 26 unreachable type groups and unused section/preorder projection; 604 production Swift lines and 1046 obsolete test lines removed; 776 core tests and LogseqModel build passed |
 | Shared sync driver | Complete | 782 core tests, 36 Android JVM tests, Swift model build, real WebSocket command harness and iOS simulator App/extension build passed; snapshot recovery and reconnect commands execute on both platforms |
 | Pending recovery | Complete | 789 core tests, 37 Android JVM tests, iOS App/extension build, Swift model build and native retry-delay harness passed; stable request/transaction identity, cleanup, graph switches and Unicode error summaries covered |
-| Shared autosave | Pending | |
+| Shared autosave | Complete | 799 core tests, 39 Android tests and native autosave command checks passed; shared idle-save/cancellation/sync effects replace both platform timers. A direct Swift Testing simulator host runs the 126-test UI suite; async fixtures, background cancellation and preservation of operation errors during render were fixed. Legacy Store projection cleanup follows in Stage 5 |
 | Single projection | Pending | |
 | Integration and verification | In progress | Stages 1–3 merged into latest main (`3e0b780`); 792 core, 39 Android and 104 standalone Swift model tests passed; App/Share/Widgets/Shortcuts build and actual core/native interrupted-upload regression passed; remaining migrations continue on main |
 

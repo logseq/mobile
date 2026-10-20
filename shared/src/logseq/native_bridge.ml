@@ -28,38 +28,42 @@ let app () =
   | Some value -> value
   | None -> invalid_arg "Logseq native runtime is not started"
 
-let query_deadlines = Hashtbl.create 8
+let effect_deadlines = Hashtbl.create 8
 
 let debounced_query = function
   | Model.SearchNodesEffect _ | Model.ChangeOutlinerTextEffect _
   | Model.MoveOutlinerCaretEffect _ -> true
   | _ -> false
 
-let note_query_deadlines () =
+let effect_delay_seconds eff = match eff with
+  | Model.SaveOutlinerEditingEffect _ -> 1.
+  | _ -> if debounced_query eff then 0.2 else 0.
+
+let note_effect_deadlines () =
   let pending = (App.model (app ())).Model.pending_effects in
   let active = Hashtbl.create 8 in
   List.iter (fun eff ->
-    if debounced_query eff then begin
+    if effect_delay_seconds eff > 0. then begin
       let id = Model.effect_id eff in
       Hashtbl.replace active id ();
-      if not (Hashtbl.mem query_deadlines id) then
-        Hashtbl.add query_deadlines id (Unix.gettimeofday () +. 0.2)
+      if not (Hashtbl.mem effect_deadlines id) then
+        Hashtbl.add effect_deadlines id (Unix.gettimeofday () +. effect_delay_seconds eff)
     end) pending;
   Hashtbl.filter_map_inplace (fun id deadline ->
-    if Hashtbl.mem active id then Some deadline else None) query_deadlines
+    if Hashtbl.mem active id then Some deadline else None) effect_deadlines
 
 let flush_event event =
   latest_patch := "";
   ignore (Lui_app.dispatch_event (app ()) event);
   ignore (Lui_app.flush (app ()));
-  note_query_deadlines ();
+  note_effect_deadlines ();
   !latest_patch
 
 let flush_action action =
   latest_patch := "";
   ignore (Lui_app.send (app ()) action);
   ignore (Lui_app.flush (app ()));
-  note_query_deadlines ();
+  note_effect_deadlines ();
   !latest_patch
 
 let apply_response encoded =
@@ -315,6 +319,9 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"choose-outliner-autocomplete\",\"text\":"
     ^ Lui_wire.quoted value ^ "}"
+  | SaveOutlinerEditingEffect (id, uuid) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"save-outliner-editing\",\"text\":"
+    ^ Lui_wire.quoted uuid ^ "}"
   | CancelOutlinerEditingEffect id ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
@@ -401,22 +408,25 @@ let take_effect () =
   let independent = function
     | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ -> true
     | _ -> false in
+  let urgent = List.exists (fun eff ->
+    not (independent eff) && not (debounced_query eff)
+    && (match eff with Model.SaveOutlinerEditingEffect _ -> false | _ -> true)) effects in
+  let now = Unix.gettimeofday () in
+  let remaining eff =
+    let waits = match eff with Model.SaveOutlinerEditingEffect _ -> true | _ -> debounced_query eff && not urgent in
+    if waits then max 0. (Option.value ~default:now
+      (Hashtbl.find_opt effect_deadlines (Model.effect_id eff)) -. now)
+    else 0. in
   match effects with
   | [] -> ""
-  | eff :: _ ->
-    let remaining =
-      if debounced_query eff
-         && List.for_all (fun eff -> debounced_query eff || independent eff) effects then
-        max 0. (Option.value ~default:0.
-          (Hashtbl.find_opt query_deadlines (Model.effect_id eff)) -. Unix.gettimeofday ())
-      else 0. in
-    let ready = if remaining > 0. then List.find_opt independent effects else Some eff in
-    match ready with
-    | None -> Printf.sprintf "{\"waitMs\":%d}"
-        (min 200 (max 1 (int_of_float (ceil (remaining *. 1000.)))))
+  | _ ->
+    match List.find_opt (fun eff -> remaining eff <= 0.) effects with
     | Some eff ->
       let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
       encode_effect_dispatch eff patch
+    | None ->
+      let delay = List.fold_left (fun delay eff -> min delay (remaining eff)) 0.2 effects in
+      Printf.sprintf "{\"waitMs\":%d}" (max 1 (int_of_float (ceil (delay *. 1000.))))
 
 let resolve_effect id succeeded message =
   flush_action (Model.ResolveEffect (id, succeeded, message))
@@ -439,7 +449,7 @@ let backend host_profile =
   }
 
 let start_application application =
-  Hashtbl.clear query_deadlines;
+  Hashtbl.clear effect_deadlines;
   current_app := Some application;
   ignore (Lui_app.start application);
   ignore (Lui_app.flush application);

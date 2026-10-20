@@ -184,7 +184,7 @@ import Testing
         #expect(OutlinerMarkupMarkdown.requiresAttributedText(linked))
         #expect(OutlinerMarkupMarkdown.make(nodes: plain, fallback: "") == "Plain block")
         #expect(OutlinerMarkupMarkdown.make(nodes: linked, fallback: "") ==
-            "Open [Page](logseq-node://page-id)")
+            "Open [\\[\\[Page\\]\\]](logseq-node://page-id)")
     }
 
     @Test func androidMarkupEscapesMarkdownLabelsWithoutBreakingNodeRoutes() {
@@ -195,7 +195,7 @@ import Testing
         ]
 
         #expect(OutlinerMarkupMarkdown.make(nodes: nodes, fallback: "") ==
-            "[Page \\[One\\]](logseq-node://page%20id) [\\#Project](logseq-node://tag-id)")
+            "[\\[\\[Page \\[One\\]\\]\\]](logseq-node://page%20id) [\\#Project](logseq-node://tag-id)")
     }
 
     @Test func androidRichContentOnlyInterceptsTouchesForInteractiveNodes() {

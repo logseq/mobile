@@ -110,6 +110,7 @@ struct LGRendererTests {
           {"op":"create-node","id":1,"kind":"root"},
           {"op":"create-extension","id":2,"identifier":"native-navigation-stack","fingerprint":"\(LGNavigationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":2,"property":"depth","value":0},
+          {"op":"set-extension-prop","id":2,"property":"back-depth","value":0},
           {"op":"set-extension-prop","id":2,"property":"bottom-occupies-layout-space","value":false},
           {"op":"set-extension-prop","id":2,"property":"composer-dismissal-enabled","value":false},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Journal"},
@@ -163,7 +164,7 @@ struct LGRendererTests {
     }
 
     @Test("routes renderer events through the LG native runtime")
-    func routesEventsThroughNativeRuntime() throws {
+    func routesEventsThroughNativeRuntime() async throws {
         let native = LGNativeRuntimeProbe()
         let runtime = LGRuntime(native: native)
 
@@ -174,6 +175,7 @@ struct LGRendererTests {
             LGRendererEvent(kind: .press, nodeID: 7)
         )
 
+        await runtime.drainEffectsForTesting()
         #expect(native.startedPlatforms == [2])
         #expect(native.pressedNodes == [7])
         #expect(runtime.renderer.rootID == 1)
@@ -192,7 +194,7 @@ struct LGRendererTests {
     }
 
     @Test("routes native extension events through one LG bridge")
-    func routesNativeExtensionEvents() throws {
+    func routesNativeExtensionEvents() async throws {
         let native = LGNativeRuntimeProbe()
         let runtime = LGRuntime(native: native)
         try runtime.start(platformCode: 2)
@@ -260,6 +262,7 @@ struct LGRendererTests {
             )
         )
 
+        await runtime.drainEffectsForTesting()
         #expect(native.extensionEvents == [
             LGExtensionEventProbe(
                 node: 17,
@@ -324,6 +327,7 @@ struct LGRendererTests {
         #expect(native.resolutions == [
             LGEffectResolutionProbe(id: 7, succeeded: true, message: "core response")
         ])
+        await runtime.drainEffectsForTesting()
         #expect(native.appliedSnapshots == ["core response"])
         #expect(native.effectApplicationCalls == ["snapshot", "resolution"])
         #expect(native.effects.isEmpty)
@@ -412,7 +416,7 @@ struct LGRendererTests {
     }
 
     @Test("applies a launch snapshot that arrives before the renderer starts")
-    func queuesLaunchSnapshotUntilStart() throws {
+    func queuesLaunchSnapshotUntilStart() async throws {
         let native = LGNativeRuntimeProbe()
         let runtime = LGRuntime(native: native)
 
@@ -421,6 +425,7 @@ struct LGRendererTests {
 
         try runtime.start(platformCode: 2)
 
+        await runtime.drainEffectsForTesting()
         #expect(native.startedPlatforms == [2])
         #expect(native.appliedSnapshots == ["launch response"])
         #expect(runtime.isStarted)
@@ -793,7 +798,8 @@ struct LGRendererTests {
         ))
         #expect(resolution.succeeded)
         #expect(resolution.output == .hostUpdate("asset-preview-resolved"))
-        #expect(resolution.message.contains(#""path":"/tmp/Photo.jpg""#))
+        let descriptor = try? JSONSerialization.jsonObject(with: Data(resolution.message.utf8)) as? [String: Any]
+        #expect(descriptor?["path"] as? String == "/tmp/Photo.jpg")
     }
 
     @Test("page mutations preserve semantic operation payloads")
@@ -1241,7 +1247,8 @@ struct LGRendererTests {
         #expect(request.params.action == "outlinerEvent")
         #expect(request.params.payload?.contains("setTaskStatus") == true)
         #expect(request.params.payload?.contains("block-a") == true)
-        #expect(request.params.payload?.contains("logseq.property/status.done") == true)
+        let payload = try JSONSerialization.jsonObject(with: Data(try #require(request.params.payload).utf8)) as? [String: Any]
+        #expect(payload?["statusIdent"] as? String == "logseq.property/status.done")
         #expect(resolution.succeeded)
     }
 
@@ -1313,7 +1320,10 @@ struct LGRendererTests {
     func successfulOutlinerAutosaveStartsSyncPump() async {
         let native = LGNativeRuntimeProbe()
         native.effects = [
-            "{\"id\":19,\"kind\":\"change-outliner-text\",\"text\":\"Updated\"}"
+            "{\"id\":19,\"kind\":\"change-outliner-text\",\"text\":\"Updated\"}",
+            "{\"waitMs\":1}",
+            "{\"id\":20,\"kind\":\"save-outliner-editing\",\"text\":\"editing\"}",
+            "{\"id\":21,\"kind\":\"sync-now\",\"text\":\"\"}",
         ]
         let executor = LGEffectExecutorProbe()
         executor.resolve = { effect in
@@ -1331,8 +1341,7 @@ struct LGRendererTests {
         }
         let runtime = LGRuntime(
             native: native,
-            effectExecutor: executor,
-            outlinerAutosaveDelayNanoseconds: 0
+            effectExecutor: executor
         )
 
         await runtime.drainEffectsForTesting()
@@ -1352,7 +1361,8 @@ struct LGRendererTests {
     func pendingOutlinerMutationStartsSyncPump() async {
         let native = LGNativeRuntimeProbe()
         native.effects = [
-            "{\"id\":20,\"kind\":\"outliner-toolbar\",\"text\":\"task\"}"
+            "{\"id\":20,\"kind\":\"outliner-toolbar\",\"text\":\"task\"}",
+            "{\"id\":21,\"kind\":\"sync-now\",\"text\":\"\"}",
         ]
         let executor = LGEffectExecutorProbe()
         executor.resolve = { effect in
@@ -1397,7 +1407,7 @@ struct LGRendererTests {
     }
 
     @Test("delivers each core platform command revision exactly once")
-    func deliversPlatformCommandsOnce() throws {
+    func deliversPlatformCommandsOnce() async throws {
         let native = LGNativeRuntimeProbe()
         let platformCommands = LGPlatformCommandHandlerProbe()
         let runtime = LGRuntime(
@@ -1415,14 +1425,16 @@ struct LGRendererTests {
         try runtime.applyCoreResponse(response)
         try runtime.applyCoreResponse(response)
 
+        await runtime.drainEffectsForTesting()
         #expect(platformCommands.batches.count == 1)
-        #expect(platformCommands.batches[0].revision == 7)
-        #expect(platformCommands.batches[0].graphName == "Work")
-        #expect(platformCommands.batches[0].commands.map(\.type) == ["setClipboardText"])
+        let batch = try #require(platformCommands.batches.first)
+        #expect(batch.revision == 7)
+        #expect(batch.graphName == "Work")
+        #expect(batch.commands.map(\.type) == ["setClipboardText"])
     }
 
     @Test("skips unchanged core snapshots without hiding later sync changes")
-    func skipsUnchangedCoreSnapshots() throws {
+    func skipsUnchangedCoreSnapshots() async throws {
         let native = LGNativeRuntimeProbe()
         let runtime = LGRuntime(native: native)
         try runtime.start(platformCode: 2)
@@ -1451,6 +1463,7 @@ struct LGRendererTests {
         try runtime.applyCoreResponse(changedPendingSync)
         try runtime.applyCoreResponse(changedPendingSync)
         try runtime.applyCoreResponse(authoritative)
+        await runtime.drainEffectsForTesting()
 
         #expect(native.appliedSnapshots == [
             authoritative,
@@ -1584,7 +1597,7 @@ private final class LGPlatformCommandHandlerProbe: LGPlatformCommandHandling {
 }
 
 @MainActor
-private final class LGNativeRuntimeProbe: LGNativeCalling {
+private final class LGNativeRuntimeProbe: @preconcurrency LGNativeCalling {
     var initialPatch = """
     {"generation":1,"ops":[
       {"op":"create-node","id":1,"kind":"root"},

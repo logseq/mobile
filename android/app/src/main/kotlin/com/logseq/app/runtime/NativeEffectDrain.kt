@@ -1,8 +1,5 @@
 package com.logseq.app.runtime
 
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 
 // Kotlin port of the former native_effect_drain.dart.
@@ -13,7 +10,7 @@ import org.json.JSONObject
 //   coreResponse → applySnapshot(response)
 //   hostUpdate   → applyHostUpdate(kind, payload)
 //   discard      → resolveEffect only
-// plus a 1s-debounced outliner autosave after outliner text edits.
+// Deadlines and save decisions are supplied by the shared core.
 internal interface NativeEffectRuntime {
     fun takeEffect(): String
     fun resolveEffect(id: Long, succeeded: Boolean, message: String): String
@@ -54,12 +51,7 @@ internal class NativeEffectDrain(
     private val onError: (Throwable) -> Unit = {},
     private val trace: (String) -> Unit = {},
     private val afterCoreResponseApplied: (suspend (String) -> Unit)? = null,
-    var outlinerAutosaveDelayMillis: Long = 1_000,
 ) {
-    private val autosaveScheduler = Executors.newSingleThreadScheduledExecutor()
-    private var autosaveTask: ScheduledFuture<*>? = null
-
-    @Volatile private var autosavePending = false
     @Volatile private var disposed = false
 
     private var activeDrain: kotlinx.coroutines.Job? = null
@@ -84,11 +76,6 @@ internal class NativeEffectDrain(
         while (!disposed) {
             val encoded = runtime.takeEffect()
             if (encoded.isEmpty()) {
-                if (autosavePending) {
-                    autosavePending = false
-                    executeOutlinerAutosave()
-                    continue
-                }
                 return
             }
 
@@ -109,7 +96,6 @@ internal class NativeEffectDrain(
             }
 
             apply(dispatch.patch, "dispatch kind=${dispatch.effect.kind}")
-            cancelOutlinerAutosaveBeforeExecuting(dispatch.effect)
             trace("start id=${dispatch.effect.id} kind=${dispatch.effect.kind}")
             val resolution = execute.execute(dispatch.effect)
             trace(
@@ -121,7 +107,6 @@ internal class NativeEffectDrain(
                     is NativeEffectResolution.CoreResponse -> {
                         apply(runtime.applySnapshot(resolution.response), "applySnapshot")
                         afterCoreResponseApplied?.invoke(resolution.response)
-                        scheduleOutlinerAutosaveIfNeeded(dispatch.effect, resolution.response)
                     }
                     is NativeEffectResolution.HostUpdate -> apply(
                         runtime.applyHostUpdate(resolution.kind, resolution.payload),
@@ -145,64 +130,6 @@ internal class NativeEffectDrain(
         disposed = true
         queryWake?.complete(Unit)
         queryWake = null
-        autosaveTask?.cancel(false)
-        autosaveTask = null
-        autosavePending = false
-        autosaveScheduler.shutdownNow()
-    }
-
-    private fun cancelOutlinerAutosaveBeforeExecuting(effect: NativeEffect) {
-        if (!effect.kind.contains("outliner") || effect.kind == "move-outliner-caret" || effect.kind == "hydrate-outliner-rows") return
-        autosaveTask?.cancel(false)
-        autosaveTask = null
-        autosavePending = false
-    }
-
-    private fun scheduleOutlinerAutosaveIfNeeded(effect: NativeEffect, response: String) {
-        val shouldSchedule = when (effect.kind) {
-            "choose-outliner-autocomplete" -> true
-            "change-outliner-text" -> !responseHasOutlinerAutocomplete(response)
-            else -> false
-        }
-        if (!shouldSchedule || disposed) return
-        autosaveTask?.cancel(false)
-        autosaveTask = autosaveScheduler.schedule({
-            autosavePending = true
-            // Trigger the drain; the pending flag is consumed at the top
-            // of the loop where the queue is empty.
-            autosaveDrain?.invoke()
-        }, outlinerAutosaveDelayMillis, TimeUnit.MILLISECONDS)
-    }
-
-    // The timer thread cannot suspend; the owning LogseqRuntime installs a
-    // hook that launches drain() on its scope.
-    var autosaveDrain: (() -> Unit)? = null
-
-    private fun responseHasOutlinerAutocomplete(response: String): Boolean = try {
-        val envelope = JSONObject(response)
-        val result = envelope.optJSONObject("result")
-        val state = result?.optJSONObject("outlinerState")
-        state?.has("autocomplete") == true
-    } catch (_: Exception) {
-        false
-    }
-
-    private suspend fun executeOutlinerAutosave() {
-        try {
-            val resolution = execute.execute(
-                NativeEffect(id = 0, kind = "save-outliner-editing", text = "")
-            )
-            if (!resolution.succeeded) {
-                error("Outliner autosave failed: ${resolution.message}")
-            }
-            check(resolution is NativeEffectResolution.CoreResponse) {
-                "Outliner autosave did not return a core response"
-            }
-            apply(runtime.applySnapshot(resolution.response), "applySnapshot(outliner-autosave)")
-            afterCoreResponseApplied?.invoke(resolution.response)
-        } catch (error: Throwable) {
-            onError(error)
-        }
     }
 
     private fun apply(patch: String, source: String) {
