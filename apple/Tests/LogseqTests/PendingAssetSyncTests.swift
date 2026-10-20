@@ -107,31 +107,7 @@ import Testing
         )
     }
 
-    @Test func duplicateAssetResponseResolvesTheExistingServerAsset() throws {
-        let body = #"{"assets":[{"uuid":"existing-asset","title":"IMG_0002","type":"jpg","size":2567402,"checksum":"abc123"}]}"#
 
-        #expect(LogseqPendingSyncDuplicateAssetResolver.isDuplicate(
-            status: 409,
-            body: #"{"error":"asset checksum already exists"}"#
-        ))
-        #expect(
-            try LogseqPendingSyncDuplicateAssetResolver.assetBody(
-                matchingChecksum: "abc123",
-                listBody: body
-            ) == #"{"checksum":"abc123","size":2567402,"title":"IMG_0002","type":"jpg","uuid":"existing-asset"}"#
-        )
-    }
-
-    @Test func duplicateAssetResponseRejectsOtherConflictsAndChecksums() throws {
-        #expect(!LogseqPendingSyncDuplicateAssetResolver.isDuplicate(
-            status: 409,
-            body: #"{"error":"graph not ready"}"#
-        ))
-        #expect(try LogseqPendingSyncDuplicateAssetResolver.assetBody(
-            matchingChecksum: "different",
-            listBody: #"{"assets":[{"uuid":"existing","checksum":"abc123"}]}"#
-        ) == nil)
-    }
 }
 
 private final class PendingSyncRequestRecorder: @unchecked Sendable {

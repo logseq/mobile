@@ -420,6 +420,7 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
     public let filePath: String?
     public let contentType: String
     public let headers: [String: String]
+    public let delayMs: Int
 
     public init(
         id: Int,
@@ -429,7 +430,8 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
         token: String,
         filePath: String?,
         contentType: String,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        delayMs: Int = 0
     ) {
         self.id = id
         self.method = method
@@ -439,10 +441,11 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
         self.filePath = filePath
         self.contentType = contentType
         self.headers = headers
+        self.delayMs = delayMs
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, method, url, body, token, filePath, contentType, headers
+        case id, method, url, body, token, filePath, contentType, headers, delayMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -455,6 +458,7 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
         filePath = try values.decodeIfPresent(String.self, forKey: .filePath)
         contentType = try values.decode(String.self, forKey: .contentType)
         headers = try values.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
+        delayMs = try values.decodeIfPresent(Int.self, forKey: .delayMs) ?? 0
     }
 }
 
@@ -467,52 +471,6 @@ public struct LogseqPendingSyncResult: Codable, Sendable {
         self.status = status
         self.body = body
         self.error = error
-    }
-}
-
-public enum LogseqPendingSyncResultPolicy {
-    private struct ServerMessage: Decodable {
-        let type: String?
-        let reason: String?
-        let error: String?
-        let errorDetail: String?
-
-        enum CodingKeys: String, CodingKey {
-            case type, reason, error
-            case errorDetail = "error-detail"
-        }
-    }
-
-    public static func failureMessage(for result: LogseqPendingSyncResult) -> String? {
-        if let error = result.error, !error.isEmpty {
-            return error
-        }
-        let message = result.body.flatMap(decodeServerMessage)
-        if let status = result.status, !(200..<300).contains(status) {
-            let reason = message?.error ?? message?.reason
-            return reason.map { "Sync server returned HTTP \(status): \($0)" }
-                ?? "Sync server returned HTTP \(status)"
-        }
-        guard message?.type == "tx/reject" else { return nil }
-        let reason = message?.reason ?? "transaction rejected"
-        guard let detail = message?.errorDetail, !detail.isEmpty else {
-            return "Sync server rejected the change: \(reason)"
-        }
-        return "Sync server rejected the change: \(reason) — \(detailSummary(detail))"
-    }
-
-    private static func decodeServerMessage(_ body: String) -> ServerMessage? {
-        try? JSONDecoder().decode(ServerMessage.self, from: Data(body.utf8))
-    }
-
-    private static func detailSummary(_ detail: String) -> String {
-        if detail.contains("DB write failed with invalid data") {
-            if detail.contains("should be a datetime") {
-                return "DB write failed with invalid data: should be a datetime"
-            }
-            return "DB write failed with invalid data"
-        }
-        return String(detail.prefix(240))
     }
 }
 

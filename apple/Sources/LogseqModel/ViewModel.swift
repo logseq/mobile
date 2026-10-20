@@ -498,6 +498,8 @@ private struct DeletePagePayload: Encodable {
     )
     public private(set) var lastError: LogseqCoreError?
     public private(set) var syncError: LogseqCoreError?
+    public private(set) var graphEventsRetryDelayMilliseconds = 0
+    private var syncTransport: LogseqSyncTransport?
     public private(set) var isRefreshing = false
     public private(set) var cursorAdvancedAfterMutation = false
     public private(set) var captureRequestRevision = 0
@@ -558,94 +560,6 @@ private struct DeletePagePayload: Encodable {
         self.callCore = call
         self.pendingTransport = pendingTransport
         self.responseObserver = responseObserver
-    }
-
-    public var sections: [LogseqBlockSection] {
-        makeSections(from: snapshot.blocks)
-    }
-
-    private func makeSections(from blocks: [LogseqBlock]) -> [LogseqBlockSection] {
-        let visibleBlocks = snapshot.selectedPage != nil
-            ? blocks
-            : blocks.filter { $0.journalDay != nil }
-        if let selectedPage = snapshot.selectedPage {
-            return [LogseqBlockSection(
-                id: selectedPage.uuid,
-                title: selectedPage.title,
-                blocks: Self.outlinerPreorder(visibleBlocks, pageId: selectedPage.uuid)
-            )]
-        }
-        var blocksByJournal: [String: [LogseqBlock]] = [:]
-        var titlesByJournal: [String: String] = [:]
-        for block in visibleBlocks {
-            blocksByJournal[block.journalSectionID, default: []].append(block)
-            titlesByJournal[block.journalSectionID] = block.dayTitle
-        }
-        return blocksByJournal.map { id, blocks in
-            let orderedBlocks = Self.outlinerPreorder(blocks, pageId: blocks.first?.pageId ?? "")
-            return LogseqBlockSection(id: id, title: titlesByJournal[id] ?? id, blocks: orderedBlocks)
-        }.sorted { left, right in
-            if let leftDay = Int(left.id), let rightDay = Int(right.id), leftDay != rightDay {
-                return leftDay < rightDay
-            }
-            return left.id < right.id
-        }
-    }
-
-    public func sections(for contentMode: LogseqContentMode) -> [LogseqBlockSection] {
-        guard contentMode == .outliner else { return sections }
-        let projectedBlocks = snapshot.outlinerRows.isEmpty && !snapshot.blocks.isEmpty
-            ? snapshot.blocks
-            : snapshot.outlinerRows.map(\.block)
-        let result = Array(makeSections(from: projectedBlocks).reversed())
-        return result
-    }
-
-    public func sections(for projection: LogseqNodeProjection) -> [LogseqBlockSection] {
-        [LogseqBlockSection(
-            id: projection.page.uuid,
-            title: projection.page.title,
-            blocks: Self.outlinerPreorder(projection.blocks, pageId: projection.page.uuid)
-        )]
-    }
-
-    private static func outlinerPreorder(_ blocks: [LogseqBlock], pageId: String) -> [LogseqBlock] {
-        let blockIds = Set(blocks.map(\.uuid))
-        var children: [String: [LogseqBlock]] = [:]
-        for block in blocks {
-            let parentId = block.parentId.flatMap { blockIds.contains($0) ? $0 : nil } ?? pageId
-            children[parentId, default: []].append(block)
-        }
-        func sorted(_ siblings: [LogseqBlock]) -> [LogseqBlock] {
-            siblings.sorted { left, right in
-                if let leftOrder = left.order {
-                    if let rightOrder = right.order, leftOrder != rightOrder {
-                        return leftOrder < rightOrder
-                    }
-                    if right.order == nil {
-                        return true
-                    }
-                } else if right.order != nil {
-                    return false
-                }
-                if left.createdAt != right.createdAt {
-                    return left.createdAt < right.createdAt
-                }
-                return left.uuid < right.uuid
-            }
-        }
-        var visited = Set<String>()
-        var result: [LogseqBlock] = []
-        func appendChildren(of parentId: String) {
-            for block in sorted(children[parentId] ?? []) where !visited.contains(block.uuid) {
-                visited.insert(block.uuid)
-                result.append(block)
-                appendChildren(of: block.uuid)
-            }
-        }
-        appendChildren(of: pageId)
-        result.append(contentsOf: sorted(blocks.filter { !visited.contains($0.uuid) }))
-        return result
     }
 
     public func open(path: String) {
@@ -1138,128 +1052,115 @@ private struct DeletePagePayload: Encodable {
         graphID: String, baseURL: String, accessToken: String,
         stopAfterFirstFrame: Bool = false
     ) async -> Bool {
-        let cursor: Int = snapshot.appliedServerT ?? -1
-        guard cursor >= 0 else {
-            // No checkpoint/cursor yet (e.g. an e2ee graph opened while still
-            // locked). Ask the caller to re-bootstrap, which re-opens the
-            // graph and repopulates appliedServerT, instead of spinning here.
-            return true
+        _ = baseURL
+        graphEventsRetryDelayMilliseconds = 0
+        syncTransport = nil
+        await dispatchRawAndWait("beginSyncTransport", payload: "{}")
+        guard let initial = syncTransport, initial.graphId == graphID else {
+            syncError = lastError ?? LogseqCoreError(
+                code: "websocket_connection_failed", message: "The core did not start the sync transport"
+            )
+            lastError = nil
+            return false
+        }
+        let generation = initial.generation
+        var socket: URLSessionWebSocketTask?
+        let cancellation = LogseqSocketCancellation()
+        var commands = initial.commands
+        var receivedFrame = false
+        func event(_ type: String, body: String? = nil, message: String? = nil) async -> [LogseqSyncTransport.Command] {
+            await dispatchEncodedAndWait("syncTransportEvent", LogseqSyncTransportEvent(
+                generation: generation, graphId: graphID, type: type, body: body, message: message
+            ))
+            return syncTransport?.commands ?? []
         }
         do {
-            let request = try LogseqGraphSyncHTTP.webSocketRequest(
-                baseURL: baseURL,
-                graphID: graphID,
-                accessToken: accessToken
-            )
-            let socket = URLSession.shared.webSocketTask(with: request)
-            socket.maximumMessageSize = 64 * 1024 * 1024
             return try await withTaskCancellationHandler {
-                socket.resume()
-                defer { socket.cancel(with: .goingAway, reason: nil) }
-                await dispatchRawAndWait("startWebSocket")
-                guard lastError == nil else { return false }
-                syncError = nil
-                isSnapshotRefreshDeferred = false
-                syncPendingSoon()
-                try await socket.send(.string(
-                    try LogseqGraphWebSocketProtocol.pullMessage(since: cursor)
-                ))
-                var pullInFlight = true
-                var latestNotifiedServerT = cursor
-                eventStream: while !Task.isCancelled {
+                defer { socket?.cancel(with: .goingAway, reason: nil) }
+                while !Task.isCancelled {
+                    while !commands.isEmpty {
+                        let command = commands.removeFirst()
+                        switch command.type {
+                        case "connect":
+                            guard let address = command.url, let url = URL(string: address) else {
+                                throw URLError(.badURL)
+                            }
+                            var request = URLRequest(url: url)
+                            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                            let task = URLSession.shared.webSocketTask(with: request)
+                            task.maximumMessageSize = 64 * 1024 * 1024
+                            socket = task
+                            cancellation.install(task)
+                            task.resume()
+                            commands += await event("opened")
+                            syncError = nil
+                            isSnapshotRefreshDeferred = false
+                        case "send":
+                            guard let socket, let body = command.body else { throw URLError(.cannotParseResponse) }
+                            try await socket.send(.string(body))
+                        case "close":
+                            socket?.cancel(with: .goingAway, reason: nil)
+                            socket = nil
+                        case "retry":
+                            graphEventsRetryDelayMilliseconds = command.delayMs ?? 0
+                            if let message = syncTransport?.error {
+                                syncError = LogseqCoreError(code: "websocket_connection_failed", message: message)
+                            }
+                            return false
+                        case "snapshot":
+                            syncError = nil
+                            return true
+                        case "sync-pending":
+                            syncPendingSoon()
+                            if stopAfterFirstFrame && receivedFrame {
+                                _ = await event("cancelled")
+                                return false
+                            }
+                        default:
+                            throw URLError(.cannotParseResponse)
+                        }
+                    }
+                    guard let socket else { return false }
                     let message = try await socket.receive()
                     let text: String
                     switch message {
                     case .string(let value): text = value
                     case .data(let data):
-                        guard let value = String(data: data, encoding: .utf8) else {
-                            throw URLError(.cannotDecodeContentData)
-                        }
+                        guard let value = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
                         text = value
-                    @unknown default:
-                        throw URLError(.cannotParseResponse)
+                    @unknown default: throw URLError(.cannotParseResponse)
                     }
-                    guard let data = text.data(using: .utf8),
-                          let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let type = envelope["type"] as? String else {
-                        throw URLError(.cannotParseResponse)
-                    }
-                    switch type {
-                    case "pull/ok":
-                        var scopedEnvelope = envelope
-                        scopedEnvelope["graphId"] = graphID
-                        let scopedData = try JSONSerialization.data(withJSONObject: scopedEnvelope)
-                        guard let scopedText = String(data: scopedData, encoding: .utf8) else {
-                            throw URLError(.cannotParseResponse)
-                        }
-                        await dispatchRawAndWait("applySyncEvent", payload: scopedText)
-                        if lastError != nil { break eventStream }
-                        pullInFlight = false
-                        syncPendingSoon()
-                        if lastError != nil { break eventStream }
-                        if stopAfterFirstFrame { break eventStream }
-                        let currentCursor: Int = snapshot.appliedServerT ?? -1
-                        if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
-                            try await socket.send(.string(
-                                try LogseqGraphWebSocketProtocol.pullMessage(since: currentCursor)
-                            ))
-                            pullInFlight = true
-                        }
-                    case "hello", "changed":
-                        if let serverT = envelope["t"] as? Int {
-                            latestNotifiedServerT = max(latestNotifiedServerT, serverT)
-                        }
-                        guard !pullInFlight else { continue }
-                        let currentCursor: Int = snapshot.appliedServerT ?? -1
-                        guard currentCursor >= 0 else {
-                            throw URLError(.cannotParseResponse)
-                        }
-                        try await socket.send(.string(
-                            try LogseqGraphWebSocketProtocol.pullMessage(since: currentCursor)
-                        ))
-                        pullInFlight = true
-                    case "error":
-                        throw URLError(.badServerResponse)
-                    default:
-                        continue
-                    }
+                    receivedFrame = true
+                    commands = await event("frame", body: text)
                 }
-                let streamError = lastError
-                if streamError?.code == "snapshot_required" {
-                    lastError = nil
-                }
-                if streamError?.code != "snapshot_required" {
-                    await dispatchRawAndWait("stopWebSocket")
-                }
-                if let streamError {
-                    if streamError.code == "snapshot_required" {
-                        return true
-                    }
-                    lastError = nil
-                    syncError = streamError
-                }
+                _ = await event("cancelled")
                 return false
             } onCancel: {
-                socket.cancel(with: .goingAway, reason: nil)
+                cancellation.cancel()
             }
         } catch {
-            if LogseqGraphWebSocketFailurePolicy.shouldReport(
-                error,
-                taskIsCancelled: Task.isCancelled
-            ) {
-                #if DEBUG
-                print("Logseq sync WebSocket failed: \(error)")
-                #endif
-                syncError = LogseqCoreError(
-                    code: "websocket_connection_failed",
-                    message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error)
-                )
+            socket?.cancel(with: .goingAway, reason: nil)
+            let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+            let commands = await event(cancelled ? "cancelled" : "failed",
+                message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))
+            graphEventsRetryDelayMilliseconds = commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
+            if !cancelled {
+                syncError = LogseqCoreError(code: "websocket_connection_failed",
+                    message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))
             }
-            if !LogseqGraphWebSocketReconnectPolicy.shouldReconnect(syncError) {
-                await dispatchRawAndWait("stopWebSocket")
-            }
+            lastError = nil
+            return commands.contains(where: { $0.type == "snapshot" })
         }
-        return false
+    }
+
+    public func completeSyncSnapshot(succeeded: Bool) async {
+        guard let transport = syncTransport else { return }
+        await dispatchEncodedAndWait("syncTransportEvent", LogseqSyncTransportEvent(
+            generation: transport.generation, graphId: transport.graphId,
+            type: succeeded ? "snapshot-applied" : "snapshot-failed",
+            message: succeeded ? nil : (lastError?.message ?? "Snapshot refresh failed")
+        ))
+        graphEventsRetryDelayMilliseconds = syncTransport?.commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
     }
 
     public func deferSnapshotRefreshWhileEditing() {
@@ -1739,17 +1640,10 @@ private struct DeletePagePayload: Encodable {
             )
             var pending = snapshot.pendingSyncRequest
             while let request = pending, !Task.isCancelled {
+                if request.delayMs > 0 { try? await Task.sleep(for: .milliseconds(request.delayMs)) }
+                guard !Task.isCancelled else { break }
                 let result = await pendingTransport(request)
                 if Task.isCancelled { break }
-                let failureMessage = LogseqPendingSyncResultPolicy.failureMessage(for: result)
-                if let failureMessage {
-                    syncError = LogseqCoreError(
-                        code: "pending_sync_failed",
-                        message: failureMessage
-                    )
-                } else if snapshot.syncConnected == true {
-                    syncError = nil
-                }
                 let completion = LogseqPendingSyncCompletion(
                     id: request.id,
                     status: result.status,
@@ -1757,10 +1651,6 @@ private struct DeletePagePayload: Encodable {
                     error: result.error
                 )
                 await dispatchEncodedAndWait("completePendingSync", completion)
-                if failureMessage != nil {
-                    pendingSyncRequested = false
-                    break
-                }
                 pending = snapshot.pendingSyncRequest
             }
             if Task.isCancelled {
@@ -1856,6 +1746,17 @@ private struct DeletePagePayload: Encodable {
         #endif
         do {
             let responseData = Data(responseJSON.utf8)
+            if actionName == "beginSyncTransport" || actionName == "syncTransportEvent" {
+                syncTransport = try JSONDecoder().decode(LogseqSyncTransportEnvelope.self, from: responseData).result?.syncTransport
+            }
+            if actionName == "beginPendingSync" || actionName == "completePendingSync" {
+                let pendingError = try JSONDecoder().decode(LogseqSyncTransportEnvelope.self, from: responseData).result?.pendingSyncError
+                if let pendingError {
+                    syncError = LogseqCoreError(code: "pending_sync_failed", message: pendingError)
+                } else if syncError?.code == "pending_sync_failed" {
+                    syncError = nil
+                }
+            }
             let response = try JSONDecoder().decode(LogseqRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
                 let mergedResult = mergedSnapshot(result)

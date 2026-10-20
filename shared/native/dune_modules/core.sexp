@@ -51,4 +51,5 @@
 "Sync_checkpoint"
 "Sync_tx"
 "Sync_session"
+"Sync_driver"
 )

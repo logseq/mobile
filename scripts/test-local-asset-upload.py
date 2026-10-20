@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drop local upload connections and run the production Swift transport against db-sync."""
+"""Drop upload connections and run the production shared pump and Swift transport against db-sync."""
 from pathlib import Path
 import http.client
 import http.server
@@ -11,15 +11,38 @@ import subprocess
 import tempfile
 import threading
 import urllib.request
+import urllib.parse
 import uuid
 
 root = Path(__file__).resolve().parents[1]
-server = os.environ.get("LOGSEQ_LIVE_BASE_URL", "http://127.0.0.1:8787")
-token = os.environ["LOGSEQ_LIVE_TOKEN"]
-request = urllib.request.Request(server + "/graphs", headers={"Authorization": "Bearer " + token})
-# Use only graphs created by the mobile upload test runner.
-catalog = json.load(urllib.request.urlopen(request))
-graph = next(g for g in catalog["graphs"] if g.get("graph-name", "").startswith("mobile-asset-e2e-") and not g.get("graph-e2ee?"))
+local_server = None
+token = os.environ.get("LOGSEQ_LIVE_TOKEN")
+if token:
+    server = os.environ.get("LOGSEQ_LIVE_BASE_URL", "http://127.0.0.1:8787")
+    request = urllib.request.Request(server + "/graphs", headers={"Authorization": "Bearer " + token})
+    catalog = json.load(urllib.request.urlopen(request))
+    graph = next(g for g in catalog["graphs"] if g.get("graph-name", "").startswith("mobile-asset-e2e-") and not g.get("graph-e2ee?"))
+else:
+    token = "local-transport-check"
+    graph = {"graph-id": str(uuid.uuid4())}
+    assets = {}
+    class LocalAssets(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_PUT(self):
+            assets[self.path] = self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+        def do_GET(self):
+            body = assets[self.path]
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    local_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), LocalAssets)
+    threading.Thread(target=local_server.serve_forever, daemon=True).start()
+    server = "http://127.0.0.1:" + str(local_server.server_port)
 asset_path = "/assets/" + graph["graph-id"] + "/" + str(uuid.uuid4()) + ".png"
 counts = {}
 class Proxy(http.server.BaseHTTPRequestHandler):
@@ -39,7 +62,9 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             self.connection.close()
             return
         body = self.rfile.read(int(self.headers["Content-Length"]))
-        connection = http.client.HTTPConnection("127.0.0.1", 8787)
+        destination = urllib.parse.urlsplit(server)
+        connection_type = http.client.HTTPSConnection if destination.scheme == "https" else http.client.HTTPConnection
+        connection = connection_type(destination.hostname, destination.port)
         connection.request("PUT", "/" + path, body, dict(self.headers))
         response = connection.getresponse()
         data = response.read()
@@ -58,7 +83,9 @@ try:
     with tempfile.TemporaryDirectory(prefix="logseq-upload-retry-") as tmp:
         tmp = Path(tmp)
         config = tmp / "config.json"
-        config.write_text(json.dumps({"baseURL": "http://127.0.0.1:" + str(proxy.server_port),
+        subprocess.run(["dune", "build", "shared/test/transport_host.exe"], cwd=root, check=True)
+        subprocess.run(["swift", "build", "--package-path", str(root / "apple"), "--product", "LogseqModel", "--disable-sandbox"], check=True)
+        config.write_text(json.dumps({"coreHarness": str(root / "_build/default/shared/test/transport_host.exe"), "baseURL": "http://127.0.0.1:" + str(proxy.server_port),
             "serverURL": server, "assetPath": asset_path, "token": token}))
         config.chmod(0o600)
         build = root / "apple/.build/arm64-apple-macosx/debug"
@@ -70,8 +97,12 @@ try:
         subprocess.run([str(binary), str(config)], check=True)
         assert all(counts.get(s, 0) >= 2 for s in ["interrupted", "lost-response"]), counts
         assert counts["forbidden"] == 1, counts
-        assert counts["unavailable"] == 3, counts
+        assert counts["unavailable"] == 4, counts
         assert counts["cancelled"] == 1, counts
-        print("PASS: real db-sync recovered interrupted requests with stable asset identity", counts)
+        print("PASS: shared core and native transport recovered interrupted uploads with stable asset identity", counts)
 finally:
     proxy.shutdown()
+    proxy.server_close()
+    if local_server:
+        local_server.shutdown()
+        local_server.server_close()

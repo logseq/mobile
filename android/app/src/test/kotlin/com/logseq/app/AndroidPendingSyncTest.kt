@@ -39,11 +39,25 @@ class AndroidPendingSyncTest {
             } finally { server.close() }
         }
         try {
-            val result = AndroidPendingSyncTransport.send(AndroidPendingSyncRequest(1, "PUT",
+            var completions = 0
+            val pending = AndroidPendingSyncRequest(1, "PUT",
                 "http://127.0.0.1:${server.localPort}/assets/graph/stable.png", null, "test", file.path,
-                "image/png", mapOf("x-amz-meta-checksum" to "stable-checksum")))
+                "image/png", mapOf("x-amz-meta-checksum" to "stable-checksum"))
+            AndroidPendingSyncPump(callCore = { input ->
+                val params = JSONObject(input).getJSONObject("params")
+                if (params.getString("action") == "completePendingSync") {
+                    completions += 1
+                    val completion = JSONObject(params.getString("payload"))
+                    if (completions == 2) assertEquals(200, completion.getInt("status"))
+                }
+                val request = if (completions < 2) JSONObject()
+                    .put("id", pending.id).put("method", pending.method).put("url", pending.url)
+                    .put("token", pending.token).put("filePath", pending.filePath)
+                    .put("contentType", pending.contentType).put("headers", JSONObject(pending.headers))
+                    .put("delayMs", if (completions == 1) 10 else 0) else JSONObject.NULL
+                JSONObject().put("ok", true).put("result", JSONObject().put("pendingSyncRequest", request)).toString()
+            }, applyResponse = {}, isCancelled = { false }).run()
             worker.join(6000)
-            assertEquals(200, result.status)
             assertEquals(2, requests.get())
             assertArrayEquals(bytes, bodies.single())
         } finally {

@@ -272,49 +272,23 @@ final class LGGraphLifecycle {
         Task {
             await syncCoordinator.startForeground(graphID: graphID) { [weak self] graphID in
                 guard let self else { return }
-                var reconnectAttempt = 0
                 while !Task.isCancelled && authentication.state == .signedIn {
                     guard let accessToken = try? await authentication.apiToken() else { return }
-                    let cursorBeforeConnection = store.snapshot.appliedServerT
                     let snapshotRequired = await store.runGraphEventsOnce(
-                        graphID: graphID,
-                        baseURL: baseURL,
-                        accessToken: accessToken
+                        graphID: graphID, baseURL: baseURL, accessToken: accessToken
                     )
-                    if store.snapshot.appliedServerT != cursorBeforeConnection {
-                        reconnectAttempt = 0
-                    }
-                    if LogseqGraphWebSocketReconnectPolicy.shouldReconnect(store.syncError) {
-                        let delay = LogseqGraphWebSocketReconnectPolicy.delaySeconds(
-                            attempt: reconnectAttempt
+                    if snapshotRequired {
+                        guard let refreshedToken = try? await authentication.apiToken() else { return }
+                        let succeeded = await store.bootstrapSelectedGraph(
+                            graphID: graphID, baseURL: baseURL, accessToken: refreshedToken,
+                            forceSnapshot: true, isEncrypted: isEncrypted
                         )
-                        reconnectAttempt += 1
-                        if !Task.isCancelled {
-                            try? await Task.sleep(for: .seconds(delay))
-                        }
-                        continue
+                        await store.completeSyncSnapshot(succeeded: succeeded)
                     }
-                    guard store.syncError == nil else { return }
-                    let shouldRefresh = LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-                        snapshotRequired: snapshotRequired,
-                        isEditingOutlinerBlock: store.snapshot.outlinerState.editing != nil
-                    )
-                    if snapshotRequired && !shouldRefresh {
-                        store.deferSnapshotRefreshWhileEditing()
-                    } else if shouldRefresh {
-                        guard let refreshedToken = try? await authentication.apiToken(),
-                              await store.bootstrapSelectedGraph(
-                                graphID: graphID,
-                                baseURL: baseURL,
-                                accessToken: refreshedToken,
-                                forceSnapshot: true,
-                                isEncrypted: isEncrypted
-                              )
-                        else { return }
-                    }
-                    if !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(1))
-                    }
+                    guard !Task.isCancelled else { return }
+                    let delay = store.graphEventsRetryDelayMilliseconds
+                    if delay > 0 { try? await Task.sleep(for: .milliseconds(delay)) }
+                    else if !snapshotRequired { return }
                 }
             }
         }

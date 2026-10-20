@@ -253,7 +253,6 @@ internal class LogseqRuntime(
         graphEventsGraphId = selectedGraphId
         val graphId = selectedGraphId
         graphEventsJob = scope.launch {
-            var attempt = 0
             while (isActive) {
                 val token = try {
                     platformEffects.restoreAccessToken()
@@ -262,47 +261,33 @@ internal class LogseqRuntime(
                     null
                 }
                 if (token.isNullOrBlank() || !isActive) break
+                val sync = AndroidGraphEventsSync(
+                    callCore = bridge::callCore,
+                    applyResponse = ::applyCoreResponse,
+                    onChangesApplied = { requestSyncNow() },
+                    isCancelled = { !isActive },
+                )
                 val outcome = try {
-                    AndroidGraphEventsSync(
-                        callCore = bridge::callCore,
-                        applyResponse = ::applyCoreResponse,
-                        appliedServerT = { appliedServerT },
-                        onChangesApplied = { requestSyncNow(); Unit },
-                        isCancelled = { !isActive },
-                        log = { level, message -> logRuntime(level, "core", message) },
-                    ).runSession(
-                        AndroidGraphEventsSync.Connection(
-                            graphId = graphId,
-                            baseUrl = storageBaseUrl,
-                            accessToken = token,
-                        )
-                    )
+                    sync.runSession(AndroidGraphEventsSync.Connection(graphId, storageBaseUrl, token))
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
                 } catch (error: Throwable) {
-                    AndroidGraphEventsSync.SessionOutcome.Failed(
-                        error.message ?: error.toString()
-                    )
+                    logRuntime("error", "core", "graph events stopped: $error")
+                    break
                 }
                 when (outcome) {
                     is AndroidGraphEventsSync.SessionOutcome.SnapshotRequired -> {
-                        // The server rejected our cursor: re-open the graph
-                        // through the same lifecycle path an open-graph
-                        // effect uses (re-downloads the snapshot).
                         logRuntime("info", "core", "snapshot required for $graphId")
-                        runCatching { graphLifecycle?.openGraphForResync(graphId) }
-                        attempt = 0
+                        val succeeded = runCatching { graphLifecycle?.openGraphForResync(graphId) }
+                            .getOrNull()?.succeeded == true
+                        val wait = sync.completeSnapshot(succeeded)
+                        if (wait > 0) kotlinx.coroutines.delay(wait)
                     }
-                    is AndroidGraphEventsSync.SessionOutcome.Failed -> {
-                        if (!isActive) break
-                        val wait = AndroidGraphEventsSync.backoffSeconds(attempt)
-                        attempt += 1
-                        logRuntime(
-                            "warn",
-                            "core",
-                            "graph events reconnect in ${wait}s: ${outcome.message}",
-                        )
-                        Log.d("GraphEvents", "reconnect in ${wait}s: ${outcome.message}")
-                        kotlinx.coroutines.delay(wait * 1000)
+                    is AndroidGraphEventsSync.SessionOutcome.Retry -> {
+                        logRuntime("warn", "core", "graph events retry in ${outcome.delayMilliseconds}ms: ${outcome.message}")
+                        kotlinx.coroutines.delay(outcome.delayMilliseconds)
                     }
+                    AndroidGraphEventsSync.SessionOutcome.Stopped -> break
                 }
             }
         }

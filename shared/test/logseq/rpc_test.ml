@@ -947,6 +947,256 @@ let graph_storage_success_can_fail_projection_validation () =
   check_eq !stored [ "{}"; "{}" ];
   check (!projected = [])
 
+let sync_driver_session ?blocks () =
+  let cursor = ref 10 in
+  let applied = ref [] in
+  let failure = ref None in
+  let session = configure_plain_session (Session.create_session
+    { Session.default_options with
+      sync_cursor = Some (fun () -> Some !cursor);
+      graph_blocks = Option.map (fun blocks () -> Some blocks) blocks;
+      apply_sync_event = Some (fun body ->
+        match !failure with
+        | Some error -> Error error
+        | None ->
+          applied := body :: !applied;
+          let frame = Json.from_string body in
+          (match member "t" frame with `Int t -> cursor := t | _ -> ());
+          Ok ()) }) in
+  session, cursor, applied, failure
+
+let begin_sync_transport session =
+  response_result (dispatch_json session "beginSyncTransport" "{}")
+
+let sync_transport response = member "syncTransport" response
+let sync_commands response = json_items "commands" (sync_transport response)
+let sync_command_kinds response = List.map (fun command -> json_string (member "type" command)) (sync_commands response)
+
+let sync_event session generation kind extra =
+  response_result (dispatch_json session "syncTransportEvent"
+    (Json.to_string (`Assoc (["generation", `Int generation; "graphId", `String "plain-1"; "type", `String kind] @ extra))))
+
+let sync_generation response = Json_util.to_int (member "generation" (sync_transport response))
+
+let shared_sync_driver_owns_pull_protocol_and_notification_coalescing () =
+  let session, cursor, applied, _ = sync_driver_session () in
+  let begun = begin_sync_transport session in
+  check_eq (sync_command_kinds begun) ["connect"];
+  check_eq (member "url" (List.hd (sync_commands begun))) (`String "ws://127.0.0.1:8787/sync/plain-1");
+  let generation = sync_generation begun in
+  let opened = sync_event session generation "opened" [] in
+  check_eq (sync_command_kinds opened) ["send"; "sync-pending"];
+  check_eq (Json.from_string (json_string (member "body" (List.hd (sync_commands opened)))))
+    (`Assoc ["type", `String "pull"; "since", `Int 10]);
+  check_eq (sync_commands (sync_event session generation "opened" [])) [];
+  List.iter (fun t ->
+    let response = sync_event session generation "frame"
+      ["body", `String (Json.to_string (`Assoc ["type", `String "changed"; "t", `Int t]))] in
+    check_eq ~msg:"notifications coalesce behind the in-flight pull" (sync_commands response) []) [11; 12; 14];
+  let pulled = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":12,"data":[]}|}] in
+  check_eq (sync_command_kinds pulled) ["sync-pending"; "send"];
+  check_eq !cursor 12;
+  check_eq (List.length !applied) 1;
+  check_eq (member "graphId" (Json.from_string (List.hd !applied))) (`String "plain-1");
+  let caught_up = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":14,"data":[]}|}] in
+  check_eq (sync_command_kinds caught_up) ["sync-pending"];
+  let unchanged = sync_event session generation "frame" ["body", `String {|{"type":"changed","t":14}|}] in
+  check_eq (sync_commands unchanged) []
+
+let shared_sync_driver_scopes_events_and_controls_reconnect () =
+  let session, _, applied, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let failed = sync_event session generation "failed" ["message", `String "connection lost"] in
+  check_eq (sync_command_kinds failed) ["close"; "retry"];
+  check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000);
+  let next = begin_sync_transport session in
+  let next_generation = sync_generation next in
+  check (next_generation > generation);
+  check_eq (sync_commands (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":100}|}])) [];
+  check_eq !applied [];
+  ignore (sync_event session next_generation "opened" []);
+  let failed = sync_event session next_generation "closed" [] in
+  check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 2000);
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  ignore (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":11}|}]);
+  let failed = sync_event session generation "failed" [] in
+  check_eq ~msg:"cursor progress resets reconnect backoff"
+    (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000)
+
+let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
+  let session, _, _, failure = sync_driver_session ~blocks:[synced_block "editing" "Draft"] () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let editing = outliner_block_event session "tapBlock" "editing" in
+  check_eq (member "uuid" (member "editing" (member "outlinerState" editing))) (`String "editing");
+  failure := Some "sync schema mismatch";
+  let reset = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":20}|}] in
+  check_eq (sync_command_kinds reset) ["close"; "retry"];
+  check_eq (member "snapshotRequired" (sync_transport reset)) (`Bool true);
+  ignore (outliner_event session {|{"type":"cancelEditing"}|});
+  let recover = begin_sync_transport session in
+  check_eq (sync_command_kinds recover) ["snapshot"];
+  failure := None;
+  ignore (sync_event session (sync_generation recover) "snapshot-applied" []);
+  check_eq (sync_command_kinds (begin_sync_transport session)) ["connect"]
+
+let shared_sync_driver_reports_malformed_frames_and_cancels_without_retry () =
+  let session, _, _, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let malformed = sync_event session generation "frame" ["body", `String "not JSON"] in
+  check_eq (sync_command_kinds malformed) ["close"; "retry"];
+  let generation = sync_generation (begin_sync_transport session) in
+  let cancelled = sync_event session generation "cancelled" [] in
+  check_eq (sync_command_kinds cancelled) ["close"];
+  check_eq (sync_commands (sync_event session generation "opened" [])) []
+
+let shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events () =
+  let session, _, applied, _ = sync_driver_session () in
+  List.iter (fun delay ->
+    let generation = sync_generation (begin_sync_transport session) in
+    ignore (sync_event session generation "opened" []);
+    let failed = sync_event session generation "failed" [] in
+    check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int delay))
+    [1000; 2000; 4000; 8000; 16000; 30000; 30000; 30000];
+  let old_generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session old_generation "opened" []);
+  let configured = response_result (dispatch_json session "configure"
+    {|{"baseUrl":"https://example.com/api","graphId":"plain-1","token":"access"}|}) in
+  check_eq ~msg:"changing the endpoint disconnects the old transport" (member "syncConnected" configured) (`Bool false);
+  check_eq (sync_commands (sync_event session old_generation "frame"
+    ["body", `String {|{"type":"pull/ok","t":99}|}])) [];
+  check_eq !applied [];
+  let next = begin_sync_transport session in
+  check_eq (member "url" (List.hd (sync_commands next))) (`String "wss://example.com/sync/plain-1")
+
+let shared_sync_driver_handles_missing_cursor_and_network_changes () =
+  let session = configure_plain_session (Session.create_session Session.default_options) in
+  let initial = begin_sync_transport session in
+  check_eq (sync_command_kinds initial) ["snapshot"];
+  let session, _, _, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let offline = sync_event session generation "network" ["available", `Bool false] in
+  check_eq (sync_command_kinds offline) ["close"];
+  let online = sync_event session generation "network" ["available", `Bool true] in
+  check_eq (sync_command_kinds online) ["retry"];
+  check_eq (member "delayMs" (List.hd (sync_commands online))) (`Int 0)
+
+let retry_asset_session ?(encrypted = false) () =
+  let staged = ref [] in
+  let cleaned = ref [] in
+  let session = Session.create_session
+    { Session.default_options with
+      load_graph_catalog = Some (fun () -> Some (if encrypted then encrypted_graph_catalog else plain_graph_catalog));
+      sync_cursor = Some (fun () -> Some 41);
+      journal_page_id = Some (fun _ -> Some "journal-page");
+      graph_unlocked = Some (fun _ -> true);
+      encrypt_title = Some (fun _ title -> Ok title);
+      encrypt_asset_file = Some (fun _ _ -> Ok ("/tmp/encrypted-retry-asset", 2048));
+      cleanup_file = (fun path -> cleaned := path :: !cleaned);
+      stage_operation = Some (fun operation -> staged := operation :: !staged; Ok ());
+      prepare_operation = Some prepare_operation } in
+  if encrypted then begin
+    ignore (configure_encrypted_session session);
+    ignore (dispatch_json session "selectGraph" "encrypted-1")
+  end else ignore (configure_plain_session session);
+  ignore (dispatch_json session "addAsset"
+    {|{"uuid":"retry-asset","title":"photo.png","now":2,"assetType":"png","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.png"}|});
+  session, staged, cleaned
+
+let pending_completion session request status body error =
+  response_result (dispatch_json session "completePendingSync"
+    (Json.to_string (`Assoc ["id", member "id" request; "status", status; "body", body; "error", error])))
+
+let required_pending response = match member "pendingSyncRequest" response with
+  | `Assoc _ as request -> request
+  | _ -> failwith "expected an active pending request"
+
+let shared_pending_retry_preserves_upload_and_bounds_attempts () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let request = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  List.iter (fun (status, error, delay) ->
+    let result = pending_completion session request status `Null error in
+    let retry = required_pending result in
+    List.iter (fun key -> check_eq ~msg:("retry preserves " ^ key) (member key retry) (member key request))
+      ["id"; "method"; "url"; "filePath"; "headers"; "body"];
+    check_eq (member "delayMs" retry) (`Int delay);
+    check_eq !cleaned [];
+    check_eq (List.length !staged) 1)
+    [`Null, `String "offline", 1000; `Int 429, `Null, 2000; `Int 503, `Null, 4000];
+  let exhausted = pending_completion session request (`Int 503) (`String "unavailable") `Null in
+  check_eq (member "pendingSyncRequest" exhausted) `Null;
+  check_eq (member "pendingSyncError" exhausted) (`String "Sync server returned HTTP 503");
+  check_eq !cleaned ["/tmp/encrypted-retry-asset"];
+  check_eq (List.length !staged) 1
+
+let shared_pending_retry_keeps_semantic_transaction_identity () =
+  let session, staged, _ = retry_asset_session () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
+  let retried = required_pending (pending_completion session transaction `Null `Null (`String "connection lost")) in
+  check_eq (member "id" retried) (member "id" transaction);
+  check_eq (member "body" retried) (member "body" transaction);
+  check_eq (member "delayMs" retried) (`Int 1000);
+  let accepted = pending_completion session retried (`Int 200) (`String {|{"acceptedT":42}|}) `Null in
+  check_eq (member "pendingSyncRequest" accepted) `Null;
+  check_eq (member "pendingSyncError" accepted) `Null;
+  check (List.exists (fun operation -> operation.Ops.state = Ops.Accepted 42) !staged)
+
+let shared_pending_retry_rejects_raw_upload_conflicts () =
+  let session, staged, _ = retry_asset_session () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let conflict = pending_completion session upload (`Int 409)
+    (`String {|{"error":"asset checksum already exists"}|}) `Null in
+  check_eq (member "pendingSyncRequest" conflict) `Null;
+  check_eq (member "pendingSyncError" conflict)
+    (`String "Sync server returned HTTP 409: asset checksum already exists");
+  check_eq (List.length !staged) 1
+
+let shared_pending_retry_reports_transaction_rejection () =
+  let session, staged, _ = retry_asset_session () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
+  let rejected = pending_completion session transaction (`Int 200)
+    (`String {|{"type":"tx/reject","reason":"invalid data","error-detail":"should be a datetime"}|}) `Null in
+  check_eq (member "pendingSyncRequest" rejected) `Null;
+  check_eq (member "pendingSyncError" rejected)
+    (`String "Sync server rejected the change: invalid data — should be a datetime");
+  check (List.exists (fun operation -> operation.Ops.state = Ops.Conflicted "invalid data") !staged)
+
+let shared_pending_error_summary_preserves_unicode () =
+  let session, _, _ = retry_asset_session () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
+  let detail = String.make 239 'x' ^ "中over" in
+  let body = Json.to_string (`Assoc ["type", `String "tx/reject"; "reason", `String "invalid"; "error-detail", `String detail]) in
+  let rejected = pending_completion session transaction (`Int 200) (`String body) `Null in
+  check_eq (member "pendingSyncError" rejected)
+    (`String ("Sync server rejected the change: invalid — " ^ String.make 239 'x' ^ "中"))
+
+let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  ignore (pending_completion session upload `Null `Null (`String "offline"));
+  ignore (response_result (dispatch_json session "cancelPendingSync" ""));
+  let late = pending_completion session upload (`Int 200) (`String "{}") `Null in
+  check_eq (member "pendingSyncRequest" late) `Null;
+  check_eq !cleaned ["/tmp/encrypted-retry-asset"];
+  check_eq (List.length !staged) 1
+
+let shared_pending_retry_graph_changes_discard_old_transport () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let changed = response_result (dispatch_json session "configure"
+    {|{"baseUrl":"http://other-server","graphId":"other-graph","token":"access"}|}) in
+  check_eq (member "pendingSyncRequest" changed) `Null;
+  check_eq !cleaned ["/tmp/encrypted-retry-asset"];
+  ignore (pending_completion session upload (`Int 200) (`String "{}") `Null);
+  check_eq (List.length !staged) 1
+
 let websocket_lifecycle_applies_events_exactly_once () =
   let applied = ref [] in
   let session =
@@ -1236,9 +1486,10 @@ let pending_sync_rejects_stale_completions_and_preserves_failed_block () =
           (member "ok"
              (dispatch_json session "completePendingSync"
                 "{\"id\":99,\"status\":201,\"body\":\"{}\",\"error\":null}"))));
-  ignore
-    (dispatch_json session "completePendingSync"
-       "{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}");
+  for _ = 0 to 3 do
+    ignore (dispatch_json session "completePendingSync"
+      {|{"id":1,"status":null,"body":null,"error":"offline"}|})
+  done;
   match Model.read_block (Session.state session).model "failed-async" with
   | Some block -> check_eq block.Model.sync_status "failed"
   | None -> check false
@@ -2036,7 +2287,8 @@ let rejected_and_offline_transactions_remain_retryable_with_stable_identity () =
                  "{\"uuid\":\"remote\",\"operationId\":\"%s\",\"expectedTitle\":\"Old\",\"title\":\"Pending\",\"status\":null}"
                  operation_id)));
       let request = required_pending_request session in
-      (if offline then
+      (if offline then begin
+         for _ = 0 to 3 do
          ignore
            (response_result
               (dispatch_json session "completePendingSync"
@@ -2048,6 +2300,8 @@ let rejected_and_offline_transactions_remain_retryable_with_stable_identity () =
                          ("body", `Null);
                          ("error", `String "offline");
                        ]))))
+         done
+       end
        else
          ignore
            (complete_request session request
@@ -5916,7 +6170,21 @@ let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
     [`String "Block 9999"; `String "Block 9998"]
 
 let cases =
-  [ case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
+  [
+    case "shared pending error summary preserves unicode" shared_pending_error_summary_preserves_unicode;
+    case "shared pending retry preserves uploads and bounds attempts" shared_pending_retry_preserves_upload_and_bounds_attempts;
+    case "shared pending retry keeps semantic transaction identity" shared_pending_retry_keeps_semantic_transaction_identity;
+    case "shared pending retry rejects raw upload conflicts" shared_pending_retry_rejects_raw_upload_conflicts;
+    case "shared pending retry reports transaction rejection" shared_pending_retry_reports_transaction_rejection;
+    case "shared pending retry cancellation ignores late results" shared_pending_retry_cancellation_cleans_once_and_ignores_late_results;
+    case "shared pending retry graph changes discard old transport" shared_pending_retry_graph_changes_discard_old_transport;
+ case "shared sync driver bounds backoff and rejects reconfigured events" shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events;
+    case "shared sync driver handles missing cursor and network changes" shared_sync_driver_handles_missing_cursor_and_network_changes;
+ case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
+    case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
+    case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
+    case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
+ case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
     case "semantic completion preserves error and status precedence"
       semantic_completion_preserves_error_and_status_precedence;
     case "required string lists preserve order and validate every item"

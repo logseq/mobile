@@ -2,6 +2,7 @@
 
 (executable
  (name test_main)
+ (modules (:standard \ transport_host))
 
  (flags (:standard -w -27-32-37-39-69))
  (foreign_stubs
@@ -36,3 +37,9 @@
   (source_tree logseq/drive))
  (action
   (run ./test_main.exe)))
+
+; A native test host keeps network waits outside the real shared session.
+(executable
+ (name transport_host)
+ (modules transport_host)
+ (libraries logseq_core yojson unix))

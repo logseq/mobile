@@ -47,13 +47,6 @@ private final class ImportRecorder: @unchecked Sendable {
             ("decoded-gzip", "65.33", "65.33"),
             ("corrupt-gzip", "65.33", nil),
         ]
-        let pull = try JSONSerialization.jsonObject(
-            with: Data(LogseqGraphWebSocketProtocol.pullMessage(since: 42).utf8)
-        ) as! [String: Any]
-        if pull["type"] as? String != "pull" || pull["since"] as? Int != 42 {
-            print("FAIL: WebSocket must use the dev journal pull protocol")
-            failures += 1
-        }
         for (graphID, catalogSchema, expectedSchema) in cases {
             let graph: [String: Any] = [
                 "id": graphID, "name": graphID, "isEncrypted": false, "isReady": true,

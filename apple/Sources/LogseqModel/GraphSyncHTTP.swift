@@ -6,12 +6,57 @@ public struct LogseqGraphSnapshotArtifact: Sendable {
     public let filePath: String
 }
 
-public enum LogseqGraphWebSocketFailurePolicy {
-    public static func shouldReport(_ error: Error, taskIsCancelled: Bool) -> Bool {
-        guard !taskIsCancelled, !(error is CancellationError) else { return false }
-        return (error as? URLError)?.code != .cancelled
+struct LogseqSyncTransport: Decodable {
+    struct Command: Decodable {
+        let type: String
+        let url: String?
+        let body: String?
+        let delayMs: Int?
     }
 
+    let generation: Int
+    let graphId: String
+    let error: String?
+    let commands: [Command]
+}
+
+struct LogseqSyncTransportEnvelope: Decodable {
+    struct Result: Decodable {
+        let syncTransport: LogseqSyncTransport?
+        let pendingSyncError: String?
+    }
+    let result: Result?
+}
+
+struct LogseqSyncTransportEvent: Encodable {
+    let generation: Int
+    let graphId: String
+    let type: String
+    var body: String? = nil
+    var message: String? = nil
+}
+
+final class LogseqSocketCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var socket: URLSessionWebSocketTask?
+    private var cancelled = false
+
+    func install(_ socket: URLSessionWebSocketTask) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.socket = socket
+        if cancelled { socket.cancel(with: .goingAway, reason: nil) }
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        cancelled = true
+        socket?.cancel(with: .goingAway, reason: nil)
+    }
+}
+
+public enum LogseqGraphWebSocketFailurePolicy {
     public static func userFacingMessage(_ error: Error) -> String {
         guard let urlError = error as? URLError else {
             return error.localizedDescription
@@ -32,46 +77,7 @@ public enum LogseqGraphWebSocketFailurePolicy {
 }
 
 
-public enum LogseqGraphWebSocketProtocol {
-    public static func pullMessage(since: Int) throws -> String {
-        let data = try JSONSerialization.data(
-            withJSONObject: ["since": since, "type": "pull"],
-            options: [.sortedKeys]
-        )
-        guard let message = String(data: data, encoding: .utf8) else {
-            throw URLError(.cannotParseResponse)
-        }
-        return message
-    }
-}
-
-public enum LogseqGraphWebSocketReconnectPolicy {
-    public static func delaySeconds(attempt: Int) -> Int {
-        let seconds: Int
-        switch min(max(attempt, 0), 5) {
-        case 0: seconds = 1
-        case 1: seconds = 2
-        case 2: seconds = 4
-        case 3: seconds = 8
-        case 4: seconds = 16
-        default: seconds = 30
-        }
-        return seconds
-    }
-
-    public static func shouldReconnect(_ error: LogseqCoreError?) -> Bool {
-        error?.code == "websocket_connection_failed"
-    }
-}
-
 public enum LogseqGraphSnapshotRefreshPolicy {
-    public static func shouldRefresh(
-        snapshotRequired: Bool,
-        isEditingOutlinerBlock: Bool
-    ) -> Bool {
-        snapshotRequired && !isEditingOutlinerBlock
-    }
-
     public static func shouldApplyDownloadedSnapshot(
         forceSnapshot: Bool,
         isEditingOutlinerBlock: Bool,
@@ -138,27 +144,6 @@ public enum LogseqGraphSyncHTTP {
         }
         // Read only the watermark, matching dev's snapshot bootstrap.
         components.queryItems = [URLQueryItem(name: "since", value: "9007199254740991")]
-        guard let url = components.url else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        return request
-    }
-
-    public static func webSocketRequest(
-        baseURL: String, graphID: String, accessToken: String
-    ) throws -> URLRequest {
-        let socketURL = try apiRoot(baseURL)
-            .appendingPathComponent("sync")
-            .appendingPathComponent(graphID)
-        guard var components = URLComponents(url: socketURL, resolvingAgainstBaseURL: false) else {
-            throw URLError(.badURL)
-        }
-        switch components.scheme?.lowercased() {
-        case "http": components.scheme = "ws"
-        case "https": components.scheme = "wss"
-        case "ws", "wss": break
-        default: throw URLError(.unsupportedURL)
-        }
         guard let url = components.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")

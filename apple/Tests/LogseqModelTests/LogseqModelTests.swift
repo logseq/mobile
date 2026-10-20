@@ -323,7 +323,7 @@ private let testEmptySnapshotJSON = """
             recorder.all.contains {
                 $0.contains("\"action\":\"setPageFavorite\"")
                     && $0.contains("page-1")
-                    && $0.contains("\"favorite\":true")
+                    && requestPayloadObject($0)?["favorite"] as? Bool == true
                     && $0.contains("favorite-1")
             }
         }
@@ -453,60 +453,7 @@ private let testEmptySnapshotJSON = """
         #expect(try Data(contentsOf: decodedURL) == Data([0, 0, 0, 3, 65, 66, 67]))
     }
 
-    @Test func graphWebSocketRequestUsesExistingSyncEndpoint() throws {
-        let request = try LogseqGraphSyncHTTP.webSocketRequest(
-            baseURL: "http://127.0.0.1:8787",
-            graphID: "plain-1",
-            accessToken: "fresh-token"
-        )
-        #expect(request.url?.absoluteString == "ws://127.0.0.1:8787/sync/plain-1")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
-    }
-
-    @Test func graphWebSocketRequestPreservesSecureTransportAndEscapesGraphID() throws {
-        let request = try LogseqGraphSyncHTTP.webSocketRequest(
-            baseURL: "https://sync.example/api",
-            graphID: "private graph",
-            accessToken: "token"
-        )
-        #expect(request.url?.absoluteString == "wss://sync.example/sync/private%20graph")
-    }
-
-    @Test func graphWebSocketEntityPullMessageCarriesAuthoritativeCursor() throws {
-        #expect(try LogseqGraphWebSocketProtocol.pullMessage(since: 48192)
-            == #"{"since":48192,"type":"pull"}"#)
-    }
-
-    @Test func graphWebSocketReconnectUsesBoundedExponentialBackoff() {
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 0) == 1)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 1) == 2)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 5) == 30)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 20) == 30)
-    }
-
-    @Test func onlyWebSocketConnectionFailuresAutomaticallyReconnect() {
-        #expect(LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
-            LogseqCoreError(code: "websocket_connection_failed", message: "offline")
-        ))
-        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
-            LogseqCoreError(code: "snapshot_required", message: "reset")
-        ))
-        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(nil))
-    }
-
     @Test func graphSnapshotRefreshWaitsForOutlinerEditingToFinish() {
-        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: true,
-            isEditingOutlinerBlock: true
-        ))
-        #expect(LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: true,
-            isEditingOutlinerBlock: false
-        ))
-        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: false,
-            isEditingOutlinerBlock: false
-        ))
         #expect(!LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
             forceSnapshot: true,
             isEditingOutlinerBlock: true,
@@ -545,21 +492,6 @@ private let testEmptySnapshotJSON = """
         ))
         #expect(!LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
             requestedWhileFinishing: false
-        ))
-    }
-
-    @Test func expectedWebSocketCancellationDoesNotPublishAConnectionFailure() {
-        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
-            CancellationError(),
-            taskIsCancelled: true
-        ))
-        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
-            URLError(.cancelled),
-            taskIsCancelled: false
-        ))
-        #expect(LogseqGraphWebSocketFailurePolicy.shouldReport(
-            URLError(.timedOut),
-            taskIsCancelled: false
         ))
     }
 
@@ -772,7 +704,7 @@ private let testEmptySnapshotJSON = """
 
         let expectedActionsAndPayloads: [(String, String?)] = [
             ("selectPage", "page-1"),
-            ("openNode", #"{\"uuid\":\"block-1\"}"#),
+            ("openNode", #"{"uuid":"block-1","reveal":false}"#),
             ("loadOlderJournals", nil),
             ("clearSelectedPage", nil),
             ("unlockGraph", "secret"),
@@ -785,7 +717,12 @@ private let testEmptySnapshotJSON = """
                 $0.contains("\"action\":\"\(action)\"")
             })
             if let payload {
-                #expect(request.contains("\"payload\":\"\(payload)\""))
+                if action == "openNode" {
+                    let expected = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! NSDictionary
+                    #expect((requestPayloadObject(request) as NSDictionary?) == expected)
+                } else {
+                    #expect(requestPayloadString(request) == payload)
+                }
             }
         }
     }
@@ -1254,6 +1191,9 @@ private let testEmptySnapshotJSON = """
             call: { request in
                 recorder.append(request)
                 if request.contains("\"action\":\"beginPendingSync\"") {
+                    if recorder.all.contains(where: { $0.contains("completePendingSync") }) {
+                        return pendingPumpSnapshot(query: "local", syncStatus: "submitted", request: nil)
+                    }
                     return pendingPumpSnapshot(
                         query: "",
                         syncStatus: "pending",
@@ -1303,6 +1243,9 @@ private let testEmptySnapshotJSON = """
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
             recorder.append(request)
+            if request.contains("beginSyncTransport") {
+                return #"{"apiVersion":1,"ok":false,"error":{"code":"invalid_sync_transport","message":"The sync server address is invalid."}}"#
+            }
             return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
         }
         store.refresh()
@@ -1315,25 +1258,12 @@ private let testEmptySnapshotJSON = """
         )
 
         #expect(store.lastError == nil)
-        #expect(store.syncError?.code == "websocket_connection_failed")
+        #expect(store.syncError?.code == "invalid_sync_transport")
         #expect(store.syncError?.message == "The sync server address is invalid.")
         store.openNode("page-1")
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"openNode\"") }
         }
-    }
-
-    @Test func successfulHTTPWithRejectedTransactionReportsTheServerReason() {
-        let result = LogseqPendingSyncResult(
-            status: 200,
-            body: #"{"type":"tx/reject","reason":"db transact failed","error-detail":"DB write failed with invalid data"}"#,
-            error: nil
-        )
-
-        #expect(
-            LogseqPendingSyncResultPolicy.failureMessage(for: result)
-                == "Sync server rejected the change: db transact failed — DB write failed with invalid data"
-        )
     }
 
     @Test @MainActor func rejectedTransactionStopsThePumpAndKeepsItsReason() async throws {
@@ -1350,7 +1280,9 @@ private let testEmptySnapshotJSON = """
         let store = LogseqStore(
             call: { call in
                 recorder.append(call)
-                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: request)
+                let completed = call.contains("completePendingSync")
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: completed ? nil : request,
+                    error: completed ? "Sync server rejected the change: db transact failed" : nil)
             },
             pendingTransport: { _ in
                 LogseqPendingSyncResult(
@@ -1833,337 +1765,6 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
     }
 
-    @Test @MainActor func sectionsDisplayJournalsChronologicallyAndBlocksByOutlinerOrder() async throws {
-        let store = LogseqStore { _ in
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "new",
-                    "title": "Newer",
-                    "pageId": "journal-today",
-                    "parentId": "journal-today",
-                    "order": "a2",
-                    "createdAt": 1776000200000,
-                    "updatedAt": 1776000200000,
-                    "journalTitle": "Apr 13th, 2026",
-                    "journalDay": 20260413
-                  },
-                  {
-                    "uuid": "yesterday",
-                    "title": "Yesterday",
-                    "pageId": "journal-yesterday",
-                    "parentId": "journal-yesterday",
-                    "order": "a0",
-                    "createdAt": 1775910000000,
-                    "updatedAt": 1775910000000,
-                    "journalTitle": "Apr 12th, 2026",
-                    "journalDay": 20260412
-                  },
-                  {
-                    "uuid": "old",
-                    "title": "Older",
-                    "pageId": "journal-today",
-                    "parentId": "journal-today",
-                    "order": "a1",
-                    "createdAt": 1776000000000,
-                    "updatedAt": 1776000000000,
-                    "journalTitle": "Apr 13th, 2026",
-                    "journalDay": 20260413
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 1776000200000,
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.refresh()
-
-        try await waitUntil {
-            let blockIDs = store.sections.flatMap { $0.blocks }.map { $0.uuid }
-            return blockIDs.count == 3
-        }
-
-        let blockIDs = store.sections.flatMap { $0.blocks }.map { $0.uuid }
-        #expect(blockIDs.count == 3)
-        #expect(blockIDs[0] == "yesterday")
-        #expect(blockIDs[1] == "old")
-        #expect(blockIDs[2] == "new")
-        #expect(store.sections.count == 2)
-        #expect(store.sections.first?.blocks.map(\.uuid) == ["yesterday"])
-        #expect(store.sections.last?.blocks.map(\.uuid) == ["old", "new"])
-        #expect(store.sections(for: LogseqContentMode.logseq).map(\.id) == ["20260412", "20260413"])
-        #expect(store.sections(for: LogseqContentMode.outliner).map(\.id) == ["20260413", "20260412"])
-    }
-
-    @Test @MainActor func sectionsUseJournalMetadataWithoutRenderingJournalPages() async throws {
-        let store = LogseqStore { _ in
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "today-new",
-                    "title": "Today new",
-                    "pageId": "journal-today",
-                    "createdAt": 300,
-                    "updatedAt": 300,
-                    "journalTitle": "Aug 13th, 2026",
-                    "journalDay": 20260813
-                  },
-                  {
-                    "uuid": "yesterday",
-                    "title": "Yesterday",
-                    "pageId": "journal-yesterday",
-                    "createdAt": 200,
-                    "updatedAt": 200,
-                    "journalTitle": "Aug 12th, 2026",
-                    "journalDay": 20260812
-                  },
-                  {
-                    "uuid": "today-old",
-                    "title": "Today old",
-                    "pageId": "journal-today",
-                    "createdAt": 100,
-                    "updatedAt": 100,
-                    "journalTitle": "Aug 13th, 2026",
-                    "journalDay": 20260813
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 300,
-                "graphName": "pat test",
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.refresh()
-        try await waitUntil { store.snapshot.blocks.count == 3 }
-
-        #expect(store.sections.count == 2)
-        #expect(store.sections[0].id == "20260812")
-        #expect(store.sections[0].title == "Aug 12th, 2026")
-        #expect(store.sections[0].blocks.map(\.uuid) == ["yesterday"])
-        #expect(store.sections[1].id == "20260813")
-        #expect(store.sections[1].blocks.map(\.uuid) == ["today-old", "today-new"])
-        #expect(store.sections.flatMap(\.blocks).count == 3)
-    }
-
-    @Test @MainActor func outlinerSectionsUseProjectedRowsForPendingBlocks() async throws {
-        let store = LogseqStore { _ in
-            """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 2,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "authoritative",
-                    "title": "Authoritative",
-                    "pageId": "journal-today",
-                    "createdAt": 100,
-                    "updatedAt": 100,
-                    "journalTitle": "Aug 16th, 2026",
-                    "journalDay": 20260816
-                  }
-                ],
-                "outlinerRows": [
-                  {
-                    "block": {
-                      "uuid": "authoritative",
-                      "title": "Authoritative",
-                      "pageId": "journal-today",
-                      "createdAt": 100,
-                      "updatedAt": 100,
-                      "journalTitle": "Aug 16th, 2026",
-                      "journalDay": 20260816
-                    },
-                    "depth": 0,
-                    "hasChildren": false,
-                    "isCollapsed": false
-                  },
-                  {
-                    "block": {
-                      "uuid": "pending-enter",
-                      "title": "",
-                      "pageId": "journal-today",
-                      "createdAt": 101,
-                      "updatedAt": 101,
-                      "journalTitle": "Aug 16th, 2026",
-                      "journalDay": 20260816,
-                      "syncStatus": "pending"
-                    },
-                    "depth": 0,
-                    "hasChildren": false,
-                    "isCollapsed": false
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 101,
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.refresh()
-        try await waitUntil { store.snapshot.revision == 2 }
-
-        #expect(store.sections(for: .logseq).flatMap(\.blocks).map(\.uuid) == ["authoritative"])
-        #expect(
-            store.sections(for: .outliner).flatMap(\.blocks).map(\.uuid)
-                == ["authoritative", "pending-enter"]
-        )
-    }
-
-    @Test @MainActor func journalSectionsUsePageMembershipAndOutlinerPreorder() async throws {
-        let store = LogseqStore { _ in
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "second-root",
-                    "title": "Second root",
-                    "pageId": "journal-today",
-                    "parentId": "journal-today",
-                    "order": "a2",
-                    "createdAt": 100,
-                    "updatedAt": 100,
-                    "journalTitle": "Aug 15th, 2026",
-                    "journalDay": 20260815
-                  },
-                  {
-                    "uuid": "other-page",
-                    "title": "Other page",
-                    "pageId": "project-page",
-                    "parentId": "project-page",
-                    "order": "a0",
-                    "createdAt": 500,
-                    "updatedAt": 500
-                  },
-                  {
-                    "uuid": "child",
-                    "title": "Child",
-                    "pageId": "journal-today",
-                    "parentId": "first-root",
-                    "order": "a0",
-                    "createdAt": 300,
-                    "updatedAt": 300,
-                    "journalTitle": "Aug 15th, 2026",
-                    "journalDay": 20260815
-                  },
-                  {
-                    "uuid": "first-root",
-                    "title": "First root",
-                    "pageId": "journal-today",
-                    "parentId": "journal-today",
-                    "order": "a1",
-                    "createdAt": 400,
-                    "updatedAt": 400,
-                    "journalTitle": "Aug 15th, 2026",
-                    "journalDay": 20260815
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 500,
-                "graphName": "sync 2",
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.refresh()
-        try await waitUntil { store.snapshot.blocks.count == 4 }
-
-        #expect(store.sections.count == 1)
-        #expect(store.sections[0].blocks.map(\.uuid) == ["first-root", "child", "second-root"])
-        #expect(store.sections[0].blocks.map(\.order) == ["a1", "a0", "a2"])
-    }
-
-    @Test @MainActor func regularPageUsesItsTitleAndOutlinerPreorder() async throws {
-        let store = LogseqStore { _ in
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "child",
-                    "title": "Child",
-                    "pageId": "project-page",
-                    "parentId": "root",
-                    "order": "a0",
-                    "createdAt": 200,
-                    "updatedAt": 200
-                  },
-                  {
-                    "uuid": "second-root",
-                    "title": "Second root",
-                    "pageId": "project-page",
-                    "parentId": "project-page",
-                    "order": "a2",
-                    "createdAt": 300,
-                    "updatedAt": 300
-                  },
-                  {
-                    "uuid": "root",
-                    "title": "Root",
-                    "pageId": "project-page",
-                    "parentId": "project-page",
-                    "order": "a1",
-                    "createdAt": 100,
-                    "updatedAt": 100
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 300,
-                "graphName": "Test",
-                "selectedPage": {"uuid":"project-page","title":"Project Alpha"},
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.refresh()
-        try await waitUntil { store.snapshot.blocks.count == 3 }
-
-        #expect(store.sections.count == 1)
-        #expect(store.sections[0].id == "project-page")
-        #expect(store.sections[0].title == "Project Alpha")
-        #expect(store.sections[0].blocks.map(\.uuid) == ["root", "child", "second-root"])
-    }
-
     @Test func contentModeTogglesBetweenLogseqAndOutliner() {
         #expect(LogseqContentMode.defaultMode == .outliner)
         #expect(LogseqContentMode.logseq.toggled == .outliner)
@@ -2276,13 +1877,18 @@ private let testEmptySnapshotJSON = """
                 "hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
                 """
             }
-            let hasPending = request.contains("\"type\":\"saveEditing\"")
+            let hasPending = requestPayloadObject(request)?["type"] as? String == "toolbar"
             return """
             {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
             "selectedBlock":null,"outlinerRows":[],"hasPendingSemanticOperations":\(hasPending),\
             "isOutlinerPatch":true},"error":null}
             """
         }
+
+        store.applyLaunchResponse(
+            #"{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"syncConnected":true}}"#,
+            actionName: "refresh", databasePath: "/tmp/autosave-fixture.sqlite"
+        )
 
         store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "indent"))
         store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "outdent"))
@@ -2316,25 +1922,30 @@ private let testEmptySnapshotJSON = """
             """
         }
 
+        store.applyLaunchResponse(
+            #"{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"syncConnected":true}}"#,
+            actionName: "refresh", databasePath: "/tmp/autosave-fixture.sqlite"
+        )
+
         store.outlinerEvent(LogseqOutlinerEvent(
             type: "textChanged", title: "first", caretUTF16Offset: 5
         ))
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"title\":\"first\"") }
+            recorder.all.contains { requestPayloadObject($0)?["title"] as? String == "first" }
         }
         try await Task.sleep(for: .milliseconds(700))
         store.outlinerEvent(LogseqOutlinerEvent(
             type: "textChanged", title: "second", caretUTF16Offset: 6
         ))
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"title\":\"second\"") }
+            recorder.all.contains { requestPayloadObject($0)?["title"] as? String == "second" }
         }
         try await Task.sleep(for: .milliseconds(500))
-        #expect(!recorder.all.contains { $0.contains("\"type\":\"saveEditing\"") })
+        #expect(!recorder.all.contains { requestPayloadObject($0)?["type"] as? String == "saveEditing" })
         #expect(!recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
 
         try await waitUntil(timeout: 2.0) {
-            recorder.all.filter { $0.contains("\"type\":\"saveEditing\"") }.count == 1
+            recorder.all.filter { requestPayloadObject($0)?["type"] as? String == "saveEditing" }.count == 1
         }
         try await waitUntil(timeout: 2.0) {
             recorder.all.filter { $0.contains("\"action\":\"beginPendingSync\"") }.count == 1
@@ -2625,7 +2236,6 @@ private let testEmptySnapshotJSON = """
             type: "textChanged", title: "new", caretUTF16Offset: 3
         ))
 
-        try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.all.allSatisfy { !$0.contains("outlinerEvent") })
         try await waitUntil {
             recorder.all.contains { $0.contains("outlinerEvent") }
@@ -2673,7 +2283,7 @@ private let testEmptySnapshotJSON = """
             recorder.all.filter { $0.contains("outlinerEvent") }.count == 2
         }
         let events = recorder.all.filter { $0.contains("outlinerEvent") }
-        #expect(events[0].contains("\"action\":\"task\""))
+        #expect(requestPayloadObject(events[0])?["action"] as? String == "task")
         #expect(events[1].contains("textChanged"))
         #expect(events[1].contains("latest"))
     }
@@ -2985,10 +2595,21 @@ private actor SuspendedPendingTransport {
     }
 }
 
+private func requestPayloadString(_ request: String) -> String? {
+    let envelope = try? JSONSerialization.jsonObject(with: Data(request.utf8)) as? [String: Any]
+    return (envelope?["params"] as? [String: Any])?["payload"] as? String
+}
+
+private func requestPayloadObject(_ request: String) -> [String: Any]? {
+    guard let payload = requestPayloadString(request) else { return nil }
+    return try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any]
+}
+
 private func pendingPumpSnapshot(
     query: String,
     syncStatus: String,
-    request: LogseqPendingSyncRequest?
+    request: LogseqPendingSyncRequest?,
+    error: String? = nil
 ) -> String {
     let requestJSON: String
     if let request,
@@ -3004,6 +2625,7 @@ private func pendingPumpSnapshot(
       "ok": true,
       "result": {
         "revision": 1,
+        "syncConnected": true,
         "searchQuery": "\(query)",
         "blocks": [{
           "uuid": "local-1",
@@ -3017,7 +2639,8 @@ private func pendingPumpSnapshot(
         "lastRefreshAt": 1776000000000,
         "graphName": "Test",
         "isSearching": \(!query.isEmpty),
-        "pendingSyncRequest": \(requestJSON)
+        "pendingSyncRequest": \(requestJSON),
+        "pendingSyncError": \(String(data: try! JSONEncoder().encode(error), encoding: .utf8)!)
       },
       "error": null
     }
@@ -3230,37 +2853,37 @@ struct TestData : Codable, Hashable {
 }
 
 @Suite(.serialized) struct LogseqCoreExecutorTests {
-    @Test func synchronousAndAsynchronousCallsUseTheSameSerialThread() async {
-        let firstStarted = DispatchSemaphore(value: 0)
+    @Test func synchronousAndAsynchronousCallsUseTheSameSerialThread() async throws {
+        let recorder = RequestRecorder()
         let releaseFirst = DispatchSemaphore(value: 0)
-        let secondStarted = DispatchSemaphore(value: 0)
 
         let first = Task {
             await LogseqCoreExecutor.shared.call(
                 { _ in
-                    firstStarted.signal()
+                    recorder.append("first started")
                     releaseFirst.wait()
                     return "first"
                 },
                 requestJSON: "first"
             )
         }
-        #expect(firstStarted.wait(timeout: .now() + 1) == .success)
+        try await waitUntilAsync { recorder.all.contains("first started") }
 
         let second = Task.detached {
             LogseqCoreExecutor.shared.callSync(
                 { _ in
-                    secondStarted.signal()
+                    recorder.append("second started")
                     return "second"
                 },
                 requestJSON: "second"
             )
         }
-        #expect(secondStarted.wait(timeout: .now() + 0.05) == .timedOut)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!recorder.all.contains("second started"))
 
         releaseFirst.signal()
         #expect(await first.value == "first")
         #expect(await second.value == "second")
-        #expect(secondStarted.wait(timeout: .now() + 1) == .success)
+        #expect(recorder.all.contains("second started"))
     }
 }

@@ -41,6 +41,10 @@ internal class CoreEffectExecutor(
         val action: String
         var payload: String? = null
         when (effect.kind) {
+            "send-asset" -> {
+                action = "addAsset"
+                payload = effect.text
+            }
             "send-capture" -> {
                 action = "send"
                 payload = JSONObject()

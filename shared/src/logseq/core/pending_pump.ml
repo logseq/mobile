@@ -8,7 +8,7 @@ module Ops = Pending_ops
 
 let pending_request_json (session : Types.session) =
   let s = Types.state session in
-  match s.semantic_active with
+  let request = match s.semantic_active with
   | Some active ->
     Rpc.request_json active.id active.request None "application/json" []
   | None ->
@@ -24,6 +24,11 @@ let pending_request_json (session : Types.session) =
                (Some upload.file_path) upload.content_type upload.headers)
         | None -> `Null)
      | None -> `Null)
+  in
+  match request, s.pending_retry with
+  | `Assoc fields, Some retry when List.assoc_opt "id" fields = Some (`Int retry.request_id) ->
+    `Assoc (("delayMs", `Int retry.delay_ms) :: fields)
+  | _ -> request
 
 let pending_block_unchanged session sent =
   match Model.read_block (Types.state session).model sent.Model.uuid with
@@ -603,8 +608,59 @@ let complete_transport_response session (pump : Types.pending_sync)
   with error ->
     Error ("invalid pending sync completion: " ^ Printexc.to_string error)
 
+let completion_failure input =
+  match completion_error input with
+  | Some _ as error -> error
+  | None ->
+    let body = match Json_util.member "body" input with
+      | `String body -> (try Json.from_string body with Yojson.Json_error _ -> `Null)
+      | _ -> `Null in
+    let text key = match body with
+      | `Assoc _ -> (match Json_util.member key body with `String text when text <> "" -> Some text | _ -> None)
+      | _ -> None in
+    match Json_util.member "status" input with
+    | `Int status when status < 200 || status >= 300 ->
+      let reason = match text "error" with Some _ as reason -> reason | None -> text "reason" in
+      Some ("Sync server returned HTTP " ^ string_of_int status
+        ^ Option.fold ~none:"" ~some:(fun reason -> ": " ^ reason) reason)
+    | _ when text "type" = Some "tx/reject" ->
+      let detail = Option.map (fun value ->
+        let contains pattern =
+          let size = String.length pattern in
+          let rec loop index = index + size <= String.length value &&
+            (String.sub value index size = pattern || loop (index + 1)) in
+          loop 0 in
+        if contains "DB write failed with invalid data" then
+          "DB write failed with invalid data" ^ (if contains "should be a datetime" then ": should be a datetime" else "")
+        else String.sub value 0 (Outliner_state.byte_index_of_utf16 value 240)) (text "error-detail") in
+      Some ("Sync server rejected the change: " ^ Option.value ~default:"transaction rejected" (text "reason")
+        ^ Option.fold ~none:"" ~some:(fun value -> " — " ^ value) detail)
+    | _ -> None
+
 let complete_pending_sync (session : Types.session) payload =
   let input = Json.from_string payload in
+  let complete expected handle =
+    let ( let* ) = Result.bind in
+    let* _ = validate_completion_id input expected in
+    let transient = completion_error input <> None ||
+      (match Json_util.member "status" input with
+       | `Int status -> status = 408 || status = 429 || (status >= 500 && status <= 599)
+       | _ -> false) in
+    let attempt = match (Types.state session).pending_retry with
+      | Some retry when retry.request_id = expected -> retry.attempt
+      | _ -> 0 in
+    if transient && attempt < 3 then begin
+      session.state := { !(session.state) with
+        pending_retry = Some { Types.request_id = expected; attempt = attempt + 1;
+          delay_ms = 1000 lsl attempt };
+        pending_sync_error = completion_failure input };
+      Ok ()
+    end else begin
+      let* () = handle () in
+      session.state := { !(session.state) with pending_retry = None;
+        pending_sync_error = completion_failure input };
+      Ok ()
+    end in
   let id =
     match input with
     | `Assoc _ ->
@@ -626,14 +682,14 @@ let complete_pending_sync (session : Types.session) payload =
   match (Types.state session).semantic_active with
   | Some active ->
     if stale active.id then Ok ()
-    else complete_semantic_response session active input
+    else complete active.id (fun () -> complete_semantic_response session active input)
   | None ->
     (match (Types.state session).pending_sync with
      | Some pump ->
        (match !(pump.active) with
         | Some active ->
           if stale active.id then Ok ()
-          else complete_transport_response session pump active input
+          else complete active.id (fun () -> complete_transport_response session pump active input)
         | None ->
           if finished then Ok ()
           else Error "pending sync has no active request")
@@ -658,4 +714,4 @@ let cancel_pending_sync (session : Types.session) =
       | Some active -> cleanup_pending_active session active
       | None -> ())
    | None -> ());
-  session.state := { !(session.state) with pending_sync = None }
+  session.state := { !(session.state) with pending_sync = None; pending_retry = None; pending_sync_error = None }
