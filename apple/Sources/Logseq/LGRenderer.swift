@@ -160,7 +160,7 @@ public final class LGRenderer {
     let imagePreviews = LGImagePreviewStore()
 
     public init() {
-        let backend = Self.makeBackend()
+        let backend = LogseqLaunchTiming.measure("renderer_backend_initialize") { Self.makeBackend() }
         self.backend = backend
         backend.onEvent = { [weak self] event in
             guard let mapped = Self.map(event) else { return }

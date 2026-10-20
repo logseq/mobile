@@ -67,6 +67,7 @@ public struct LogseqRootView : View {
     private var appContent: some View {
         LGRendererRoot(renderer: runtime.lgRuntime.renderer)
             .onAppear {
+                LogseqAppDelegate.shared.reportLaunchStage("root_appeared")
                 DispatchQueue.main.async {
                     LogseqAppDelegate.shared.onFirstUIRendered()
                 }
@@ -974,10 +975,10 @@ public final class LogseqAppDelegate : Sendable {
         let now = Date().timeIntervalSince1970
         launchStartedAt = now
         print(String(format: "LOGSEQ_LAUNCH_METRIC start=%.6f", now))
-        let runtime = LogseqLogseqRuntime.shared
-        runtime.startLocalLaunchLoad()
+        let runtime = LogseqLaunchTiming.measure("runtime_initialization") { LogseqLogseqRuntime.shared }
+        LogseqLaunchTiming.measure("local_graph_load") { runtime.startLocalLaunchLoad() }
         runtime.startAuthenticationRestore()
-        runtime.startLGRenderer()
+        LogseqLaunchTiming.measure("renderer_start") { runtime.startLGRenderer() }
         logger.debug("onInit")
     }
 
@@ -986,8 +987,9 @@ public final class LogseqAppDelegate : Sendable {
         logger.debug("onLaunch")
     }
 
-    public func onFirstUIRendered() {
+    @MainActor public func onFirstUIRendered() {
         reportLaunchMetric("first_ui_rendered")
+        LogseqLaunchTiming.finish()
     }
 
     public func onJournalsUIReady() {
@@ -1006,6 +1008,9 @@ public final class LogseqAppDelegate : Sendable {
     private func reportLaunchMetric(_ name: String) {
         guard let elapsedMilliseconds = launchElapsedMilliseconds() else { return }
         print(String(format: "LOGSEQ_LAUNCH_METRIC %@_ms=%.3f", name, elapsedMilliseconds))
+        if let processElapsed = LogseqLaunchTiming.elapsedMilliseconds() {
+            print(String(format: "LOGSEQ_PROCESS_LAUNCH_METRIC %@_ms=%.3f", name, processElapsed))
+        }
     }
 
     @MainActor public func onResume() {

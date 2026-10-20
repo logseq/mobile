@@ -4,9 +4,11 @@ set -euo pipefail
 # Requires an app with a selected graph already cached.
 # Set LOGSEQ_IOS_DEVICE=iPhone to measure a physical device.
 # Restart the process without clearing the graph or authentication state.
+# Optionally set LOGSEQ_PROCESS_LAUNCH_BUDGET_MS to include pre-main work in the gate.
 device="${LOGSEQ_IOS_SIMULATOR:-booted}"
 bundle_id="${LOGSEQ_IOS_BUNDLE_ID:-com.logseq.logseq}"
 budget_ms="${LOGSEQ_JOURNALS_READY_BUDGET_MS:-200}"
+process_budget_ms="${LOGSEQ_PROCESS_LAUNCH_BUDGET_MS:-}"
 launch_log="$(mktemp -t logseq-journals-launch).log"
 launch_pid=""
 
@@ -94,7 +96,7 @@ if stage("store_opened") > appeared_ms or stage("store_opened") > stage("first_u
     sys.exit("the first UI must receive the complete local snapshot synchronously")
 PYTHON
 
-grep -E '(LOGSEQ_.*METRIC|LUI_APPEAR_METRIC)' "$launch_log"
+grep -E '(LOGSEQ_.*METRIC|LOGSEQ_LAUNCH_STEP|LUI_APPEAR_METRIC)' "$launch_log"
 
 awk -v actual="$metric" -v budget="$budget_ms" 'BEGIN {
   if (actual > budget) {
@@ -103,3 +105,19 @@ awk -v actual="$metric" -v budget="$budget_ms" 'BEGIN {
   }
   printf "journals onAppear: %.3fms (budget %.3fms)\n", actual, budget
 }'
+
+# This includes pre-main work, unlike the application-initialization timer above.
+# The callback is a UI lifecycle milestone, not a GPU presentation timestamp.
+if [[ -n "$process_budget_ms" ]]; then
+  python3 - "$launch_log" "$process_budget_ms" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+match = re.search(r"LOGSEQ_PROCESS_LAUNCH_METRIC first_ui_rendered_ms=([0-9.]+)", text)
+if not match:
+    sys.exit("missing process launch metric; install a build with process timing enabled")
+actual, budget = float(match[1]), float(sys.argv[2])
+print(f"process creation to first UI callback: {actual:.3f}ms (budget {budget:.3f}ms)")
+if actual > budget:
+    sys.exit("process launch exceeded budget")
+PY
+fi
