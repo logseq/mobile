@@ -1083,7 +1083,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~text:"Settings" ~style_class:"navigation-form"
+    sheet ~text:"Settings" ~style_class:"navigation-form navigation-inline-title"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1255,7 +1255,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    sheet ~text:"Sync status" ~style_class:"navigation-form" ~detents:"medium"
+    sheet ~text:"Sync status" ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [

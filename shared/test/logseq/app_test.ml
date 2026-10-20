@@ -1152,9 +1152,9 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"the settings root owns the native sheet title"
     (property_string renderer settings_sheet Lui_protocol.TextValue)
     "Settings";
-  check_eq ~msg:"the settings root uses the native grouped form sheet"
+  check_eq ~msg:"the settings form keeps its title in the native top header"
     (property_string renderer settings_sheet Lui_protocol.StyleClass)
-    "navigation-form";
+    "navigation-form navigation-inline-title";
   check ~msg:"settings retain their baseline screen identifier"
     (settings_screen <> -1);
   check_eq ~msg:"the settings content uses the native form layout"
@@ -2441,9 +2441,9 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
   let sync_now =
     descendant_with_identifier renderer application_root "button.sync-now"
   in
-  check_eq ~msg:"sync details use main's native navigation Form sheet"
+  check_eq ~msg:"sync details keep the title in the native header like the journal calendar"
     (property_string renderer sheet Lui_protocol.StyleClass)
-    "navigation-form";
+    "navigation-form navigation-inline-title";
   check_eq ~msg:"sync details open in a compact native sheet like the journal calendar"
     (property_string renderer sheet Lui_protocol.Detents)
     "medium";
