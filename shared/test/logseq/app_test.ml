@@ -4476,9 +4476,9 @@ let ios_capture_and_search_match_main_native_metrics () =
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;
-  check_eq ~msg:"Capture insets its label without moving its glass surface."
+  check_eq ~msg:"Capture sits directly after the camera hit target"
     (property_int renderer capture Lui_protocol.PaddingHorizontal)
-    30;
+    0;
   check_eq
     ~msg:"Liquid Glass remains independent from app content spacing"
     (extension_property application capture_glass "leading-inset")
@@ -4798,9 +4798,6 @@ let kotlin_composer_matches_ios_chrome () =
   check_eq ~msg:"the Android capture row fills its dock slot like iOS"
     (property_float renderer placement Lui_protocol.GrowValue)
     1.0;
-  check_eq ~msg:"collapsed Capture is a ghost like iOS"
-    (property_string renderer collapsed Lui_protocol.VariantValue)
-    "ghost";
   check_eq ~msg:"collapsed Capture uses the iOS glass surface"
     (property_string renderer collapsed Lui_protocol.BackgroundValue)
     "glass";
@@ -4810,7 +4807,10 @@ let kotlin_composer_matches_ios_chrome () =
   check_eq ~msg:"collapsed Capture fills the available dock width"
     (property_float renderer collapsed Lui_protocol.GrowValue)
     1.0;
-  dispatch application (Lui_protocol.Press collapsed);
+  let expand =
+    descendant_with_identifier renderer collapsed "button.composer.expand"
+  in
+  dispatch application (Lui_protocol.Press expand);
   flush application;
   let expanded_composer =
     descendant_with_identifier renderer chrome "surface.composer.root"
@@ -4856,6 +4856,41 @@ let kotlin_sidebar_uses_compact_material_drawer_metrics () =
   check_eq ~msg:"SafeArea already owns Android system-bar spacing"
     (property_int renderer top_spacer Lui_protocol.HeightValue)
     8
+
+let collapsed_capture_camera_opens_directly () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    send application (Model.SelectGraph "Work");
+    send application (Model.ChangeComposerDraft "Unsent note");
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = Lui_app.root_node application in
+    let camera = descendant_with_identifier renderer root "button.composer.camera" in
+    check ~msg:"collapsed Capture exposes a camera shortcut" (camera <> -1);
+    check_eq ~msg:"the shortcut displays the camera icon"
+      (property_string renderer camera Lui_protocol.InlineIconName)
+      "app:toolbar-camera";
+    let before = App.model application in
+    dispatch application (Lui_protocol.Press camera);
+    flush application;
+    let current = App.model application in
+    check_eq ~msg:"one tap presents the camera directly"
+      current.pending_effects
+      (before.pending_effects
+       @ [Model.PresentAttachmentEffect (before.next_effect_id, "camera")]);
+    check ~msg:"the camera shortcut does not open the attachment menu"
+      (not current.attachment_picker_open);
+    check ~msg:"the camera shortcut does not focus the text composer"
+      (not current.composer_expanded);
+    check_eq ~msg:"opening the camera preserves unsent text"
+      current.composer_draft "Unsent note";
+    let capture = descendant_with_identifier renderer root "button.composer.expand" in
+    dispatch application (Lui_protocol.Press capture);
+    flush application;
+    check ~msg:"the adjacent Capture button still opens the text composer"
+      (App.model application).composer_expanded)
+    [ios_backend; kotlin_backend]
 
 let composer_attachment_selection_is_owned_by_lg () =
   let opened =
@@ -9034,6 +9069,7 @@ let cases =
     case "kotlin-composer-matches-ios-chrome" kotlin_composer_matches_ios_chrome;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
+    case "collapsed-capture-camera-opens-directly" collapsed_capture_camera_opens_directly;
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
     case "composer-attachment-picker-owns-each-presented-action" composer_attachment_picker_owns_each_presented_action;
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;

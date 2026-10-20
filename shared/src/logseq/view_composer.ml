@@ -214,6 +214,24 @@ let composer_surface ?key ?accessibility_identifier ?attachments
    | Some handler -> with_press handler capsule)
     context parent
 
+let collapsed_composer (context : Lui_ui.ui_context) send : t =
+  row ~grow:1.0 ~height:58 ~gap:0 ~cross:`center
+    ~background:"glass" ~corner_radius:999
+    ~border_width:(if Lui_ui.host context = KotlinHost then 1 else 0)
+    ~border_color:"border"
+    [
+      with_press (press send Model.ExpandComposer)
+        (box ~width:8 ~height:58 []);
+      button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+        ~width:44 ~height:58 ~foreground:"foreground" ~label:"Camera"
+        ~accessibility_identifier:"button.composer.camera"
+        ~on_press:(press send (Model.ChooseAttachment "camera")) [];
+      button ~variant:`ghost ~grow:1.0 ~height:58 ~padding_horizontal:0
+        ~foreground:"muted-foreground" ~text_alignment:`start ~style_class:"body"
+        ~label:"Capture" ~accessibility_identifier:"button.composer.expand"
+        ~on_press:(press send Model.ExpandComposer) ~text:"Capture" [];
+    ]
+
 let composer_view (context : Lui_ui.ui_context) model_source send : t =
   box ~accessibility_identifier:"surface.composer.root" ~grow:1.0
     ~min_height:58
@@ -267,19 +285,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
            ());
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
-        (if Lui_ui.host context = KotlinHost then
-           button ~variant:`ghost ~grow:1.0 ~height:58
-             ~padding_horizontal:30 ~background:"glass"
-             ~foreground:"muted-foreground" ~corner_radius:999
-             ~border_width:1 ~border_color:"border" ~text_alignment:`start ~style_class:"body"
-             ~label:"Capture" ~accessibility_identifier:"button.composer.expand"
-             ~on_press:(press send Model.ExpandComposer)
-             ~text:"Capture" []
-         else
-           Lui_element_combine.composer_collapsed
-             ~label:"Capture"
-             ~accessibility_identifier:"button.composer.expand"
-             ~on_press:(press send Model.ExpandComposer) ());
+        (collapsed_composer context send);
     ]
 
 let outliner_task_status_row block_id status_source send : t =

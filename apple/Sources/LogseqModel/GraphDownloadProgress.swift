@@ -14,7 +14,6 @@ public struct LogseqGraphDownloadProgress: Codable, Equatable, Identifiable, Sen
     static var report: ((String, String, Int64, Int64?) -> Void)?
 }
 
-@_cdecl("logseq_receive_graph_import_progress")
 func receiveGraphImportProgress(_ graphID: UnsafePointer<CChar>?, _ phase: UnsafePointer<CChar>?,
                                 _ completed: Int64, _ total: Int64) {
     guard let graphID, let phase else { return }
