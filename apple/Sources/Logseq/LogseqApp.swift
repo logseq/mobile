@@ -610,6 +610,7 @@ public struct LogseqRootView : View {
                 )
             )
             LogseqAppDelegate.shared.reportLaunchStage("catalog_opened")
+            configureGraph()
             guard !graphID.isEmpty,
                   let catalogData = catalogResponse.data(using: .utf8),
                   let catalog = try? JSONDecoder().decode(
@@ -624,7 +625,6 @@ public struct LogseqRootView : View {
             }
             let isEncrypted = catalog.result?.graphs?
                 .first(where: { $0.id == graphID })?.isEncrypted ?? false
-            configureGraph()
             let graphResponse = openGraph(isEncrypted: isEncrypted)
             return LocalLaunchResult(
                 catalogResponse: catalogResponse,
