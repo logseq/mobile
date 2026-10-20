@@ -5,33 +5,20 @@ module Outliner = Outliner_state
 module Effects = Outliner_effects
 module Cards = Flashcards
 
-let youtube_url url =
-  let lower = String.lowercase_ascii url in
-  String_kit.includes ~sub:"youtube.com" lower
-  || String_kit.includes ~sub:"youtu.be" lower
+let youtube_url url = Media.youtube_id url <> None
 
 let youtube_target_urls (blocks : Model.block list) =
-  let _, targets =
-    List.fold_left
-      (fun (current, targets) (block : Model.block) ->
-        let current, target =
-          List.fold_left
-            (fun (current, target) node ->
-              match node with
-              | Markup.Markup_video url ->
-                ((if youtube_url url then Some url else current), target)
-              | Markup.Markup_youtube_timestamp _ ->
-                (current, (match current with Some url -> Some url | None -> target))
-              | _ -> (current, target))
-            (current, None)
-            (Markup.parse block.references block.tags block.title)
-        in
-        ( current
-        , match target with
-          | Some url -> targets @ [ (block.uuid, url) ]
-          | None -> targets ))
-      (None, []) blocks
-  in
+  let _, reversed = List.fold_left (fun (current, targets) (block : Model.block) ->
+    let markup = Markup.to_yojson (Markup.parse block.references block.tags block.title) in
+    let resolved, current = Media.resolve_markup ?preceding:current markup in
+    let targets = match Media.first_timestamp_target resolved with
+      | Some url -> (block.uuid, url) :: targets | None -> targets in
+    current, targets) (None, []) blocks in
+  List.rev reversed
+
+let youtube_target_map blocks =
+  let targets = Hashtbl.create 16 in
+  List.iter (fun (id, url) -> Hashtbl.replace targets id url) (youtube_target_urls blocks);
   targets
 
 let summary_json (summary : Model.entity_summary) =
@@ -188,7 +175,12 @@ let search_hit_json (hit : Search_index.indexed_search_hit) =
 let outliner_row_json youtube_target_url serialize_block
     (row : Outliner.outliner_row) =
   Wire.json_object
-    ([ ("block", serialize_block row.block)
+    ([ ("block", (match serialize_block row.block with
+         | `Assoc fields -> (match List.assoc_opt "markup" fields with
+             | Some markup -> let markup, _ = Media.resolve_markup ?preceding:youtube_target_url markup in
+               `Assoc (("markup", markup) :: List.remove_assoc "markup" fields)
+             | None -> `Assoc fields)
+         | value -> value))
      ; ("depth", `Int row.depth)
      ; ("hasChildren", `Bool row.has_children)
      ; ("isCollapsed", `Bool row.is_collapsed)
@@ -200,13 +192,13 @@ let outliner_row_json youtube_target_url serialize_block
 let outliner_rows_json serialize_block context state =
   let rows = Outliner.visible_rows context state in
   let targets =
-    youtube_target_urls (List.map (fun row -> row.Outliner.block) rows)
+    youtube_target_map (List.map (fun row -> row.Outliner.block) rows)
   in
   Wire.json_list
     (List.map
        (fun row ->
          outliner_row_json
-           (List.assoc_opt row.Outliner.block.Model.uuid targets)
+           (Hashtbl.find_opt targets row.Outliner.block.Model.uuid)
            serialize_block row)
        rows)
 
@@ -292,7 +284,7 @@ let structural_outliner_delta anchored before_context before_state
   let delete_count = List.length before_rows - start - suffix in
   let insert_count = List.length after_rows - start - suffix in
   let targets =
-    youtube_target_urls
+    youtube_target_map
       (List.map (fun row -> row.Outliner.block) after_rows)
   in
   let splices =
@@ -308,8 +300,7 @@ let structural_outliner_delta anchored before_context before_state
                    (List.map
                       (fun row ->
                         outliner_row_json
-                          (List.assoc_opt row.Outliner.block.Model.uuid
-                             targets)
+                          (Hashtbl.find_opt targets row.Outliner.block.Model.uuid)
                           visible_block_json row)
                       (sub_list after_rows start insert_count)) )
              ]);

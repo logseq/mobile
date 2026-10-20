@@ -204,7 +204,6 @@ internal fun OutlinerBlockContent(
                     encoded = context.string("markup-json") ?: "",
                     fallback = title,
                     completedDecoration = decoration,
-                    youtubeTargetUrl = context.string("youtube-target-url") ?: "",
                     onOpenNode = { context.emit("open-node", "uuid" to it) },
                     onTapFallback = { context.emit("edit", "uuid" to uuid) },
                 )
@@ -238,7 +237,6 @@ private fun ProjectedMarkup(
     encoded: String,
     fallback: String,
     completedDecoration: TextDecoration?,
-    youtubeTargetUrl: String,
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
 ) {
@@ -255,7 +253,7 @@ private fun ProjectedMarkup(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for ((index, chunk) in markupChunks(nodes).withIndex()) {
             if (chunk.size == 1 && isRichNode(chunk.first())) {
-                MarkupRichNode(chunk.first(), youtubeTargetUrl, onOpenNode)
+                MarkupRichNode(chunk.first(), onOpenNode)
             } else {
                 val annotated = markupAnnotatedString(chunk, completedDecoration)
                 MarkupInlineText(
@@ -266,7 +264,6 @@ private fun ProjectedMarkup(
                         .testTag("block.rich.inline.$index"),
                     onOpenNode = onOpenNode,
                     onTapFallback = onTapFallback,
-                    youtubeTargetUrl = youtubeTargetUrl,
                 )
             }
         }
@@ -368,7 +365,7 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
         }
         "youtubeTimestamp" -> {
             val seconds = node.optString("style")
-            pushStringAnnotation(TAG_TIMESTAMP, seconds)
+            pushStringAnnotation(TAG_TIMESTAMP, node.optString("embedURL"))
             withStyle(
                 SpanStyle(
                     color = Color(0xff2d6cdf),
@@ -391,7 +388,6 @@ private fun MarkupInlineText(
     modifier: Modifier,
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
-    youtubeTargetUrl: String,
 ) {
     val context = LocalContext.current
     ClickableText(
@@ -407,12 +403,7 @@ private fun MarkupInlineText(
                 ?.let { openExternalUrl(context, it.item); return@ClickableText }
             annotated.getStringAnnotations(TAG_TIMESTAMP, offset, offset).firstOrNull()
                 ?.let {
-                    val seconds = it.item.toIntOrNull() ?: 0
-                    openExternalUrl(
-                        context,
-                        "$youtubeTargetUrl&t=${seconds}s".takeIf { youtubeTargetUrl.isNotEmpty() }
-                            ?: it.item,
-                    )
+                    if (it.item.isNotEmpty()) openExternalUrl(context, it.item)
                 }
             // ClickableText consumes every tap; unannotated taps still
             // mean "edit this block" (iOS taps the row text to edit).
@@ -424,7 +415,6 @@ private fun MarkupInlineText(
 @Composable
 private fun MarkupRichNode(
     node: JSONObject,
-    youtubeTargetUrl: String,
     onOpenNode: (String) -> Unit,
 ) {
     when (node.optString("type")) {
@@ -456,16 +446,10 @@ private fun MarkupRichNode(
             code = node.optString("text"),
             language = node.optString("style"),
         )
-        "video" -> AndroidEmbeddedMedia(url = node.optString("url"), isVideo = true)
-        "iframe" -> AndroidEmbeddedMedia(url = node.optString("url"), isVideo = false)
+        "video" -> AndroidEmbeddedMedia(url = node.optString("embedURL").ifEmpty { node.optString("url") }, isVideo = true, headers = mediaHeaders(node))
+        "iframe" -> AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = false, headers = mediaHeaders(node))
         "youtubeTimestamp" -> {
-            val seconds = node.optString("style").toIntOrNull() ?: 0
-            val url = if (youtubeTargetUrl.isNotEmpty()) {
-                "$youtubeTargetUrl&t=${seconds}s"
-            } else {
-                node.optString("url")
-            }
-            AndroidEmbeddedMedia(url = url, isVideo = true, startSeconds = seconds)
+            AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = true, headers = mediaHeaders(node))
         }
         "cloze" -> AndroidCloze(node.optString("text"))
         else -> Text(node.optString("text"), style = outlinerBodyStyle)
@@ -607,38 +591,19 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
 
 // --- embedded media / math / cloze / code ---
 
-internal fun androidEmbeddedMediaUri(value: String, startSeconds: Int = 0): Uri? {
-    val uri = runCatching { Uri.parse(value.trim()) }.getOrNull() ?: return null
-    val scheme = uri.scheme ?: return null
-    if (scheme != "http" && scheme != "https") return null
-    val host = uri.host?.lowercase() ?: return null
-    val isYoutube = host == "youtu.be" ||
-        host == "youtube.com" ||
-        host.endsWith(".youtube.com") ||
-        host == "youtube-nocookie.com" ||
-        host.endsWith(".youtube-nocookie.com")
-    if (!isYoutube) return uri
-    val segments = uri.pathSegments
-    val videoId = when {
-        host == "youtu.be" -> segments.firstOrNull()
-        segments.firstOrNull() == "embed" -> segments.getOrNull(1)
-        uri.path == "/watch" -> uri.getQueryParameter("v")
-        else -> null
-    } ?: return null
-    if (!Regex("^[A-Za-z0-9_-]{6,}$").matches(videoId)) return null
-    val builder = Uri.Builder()
-        .scheme("https")
-        .authority("www.youtube-nocookie.com")
-        .appendPath("embed")
-        .appendPath(videoId)
-        .appendQueryParameter("playsinline", "1")
-    if (startSeconds > 0) builder.appendQueryParameter("start", "$startSeconds")
-    return builder.build()
+private fun mediaHeaders(node: JSONObject): Map<String, String> {
+    val headers = node.optJSONObject("mediaHeaders") ?: return emptyMap()
+    return headers.keys().asSequence().associateWith { headers.getString(it) }
+}
+
+internal fun androidEmbeddedMediaUri(value: String): Uri? {
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
+    return uri.takeIf { !value.isBlank() && it.scheme in listOf("http", "https") }
 }
 
 @Composable
-internal fun AndroidEmbeddedMedia(url: String, isVideo: Boolean, startSeconds: Int = 0) {
-    val uri = remember(url, startSeconds) { androidEmbeddedMediaUri(url, startSeconds) }
+internal fun AndroidEmbeddedMedia(url: String, isVideo: Boolean, headers: Map<String, String> = emptyMap()) {
+    val uri = remember(url) { androidEmbeddedMediaUri(url) }
     if (uri == null) {
         Text(
             if (isVideo) "Invalid video URL" else "Invalid embed URL",
@@ -654,9 +619,10 @@ internal fun AndroidEmbeddedMedia(url: String, isVideo: Boolean, startSeconds: I
                 settings.javaScriptEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = true
                 webViewClient = WebViewClient()
-                loadUrl(uri.toString())
+                loadUrl(uri.toString(), headers)
             }
         },
+        update = { webView -> if (webView.url != uri.toString()) webView.loadUrl(uri.toString(), headers) },
         modifier = Modifier
             .fillMaxWidth()
             .height(220.dp)

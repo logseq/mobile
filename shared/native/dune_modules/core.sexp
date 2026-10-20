@@ -2,6 +2,7 @@
 "Core_effect"
 "Snapshot_download"
 "Shared_capture"
+"Media"
 "Asset_files"
 "Cache_model"
 "Datascript_value"

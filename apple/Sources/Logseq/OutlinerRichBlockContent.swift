@@ -13,21 +13,13 @@ import WebKit
 struct OutlinerMixedRichMarkupContent: View {
     let nodes: [LogseqMarkupNode]
     let fallback: String
-    let precedingYouTubeURL: String?
     let youtubePlaybackStarts: [String: Int]
     let onSeekYouTube: (String, Int) -> Void
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
 
-    private var targetedNodes: [LogseqMarkupNode] {
-        OutlinerYouTubeTimestampPolicy.associateTargets(
-            nodes,
-            precedingYouTubeURL: precedingYouTubeURL
-        )
-    }
-
     private var chunks: [[LogseqMarkupNode]] {
-        OutlinerRichMarkupPolicy.chunks(targetedNodes)
+        OutlinerRichMarkupPolicy.chunks(nodes)
     }
 
     var body: AnyView {
@@ -253,16 +245,16 @@ struct OutlinerRichBlockContent: View {
                 )
             case .video:
                 EmbeddedVideo(
-                    url: EmbeddedMediaPolicy.safeURL(node.url),
+                    node: node,
                     startSeconds: youtubeStartSeconds
                 )
             case .iframe:
-                EmbeddedWebContent(url: EmbeddedMediaPolicy.safeURL(node.url))
+                EmbeddedWebContent(url: node.embedURL.flatMap { URL(string: $0) }, headers: node.mediaHeaders)
             case .youtubeTimestamp:
                 YouTubeTimestamp(
                     label: node.text ?? "",
                     url: node.url,
-                    seconds: OutlinerYouTubeTimestampPolicy.seconds(node),
+                    seconds: node.seconds,
                     onSeek: onSeekYouTube
                 )
             case .cloze:
@@ -393,27 +385,32 @@ private struct NativeLatexView: View {
     }
 }
 
+enum NativeMediaRequest {
+    static func positionedURL(_ source: String?, parameter: String?, seconds: Int?) -> URL? {
+        guard let source, let url = URL(string: source) else { return nil }
+        guard let parameter, let seconds, seconds >= 0,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        components.queryItems = (components.queryItems ?? []).filter { $0.name != parameter }
+            + [URLQueryItem(name: parameter, value: String(seconds))]
+        return components.url
+    }
+}
+
 private struct EmbeddedVideo: View {
-    let url: URL?
+    let node: LogseqMarkupNode
     let startSeconds: Int?
 
     @ViewBuilder var body: some View {
-        if let url,
-           let embedURL = EmbeddedMediaPolicy.webVideoEmbedURL(
-            url,
-            startSeconds: startSeconds
-           ) {
-            EmbeddedWebContent(url: embedURL)
-        } else if let url {
+        if let embedURL = NativeMediaRequest.positionedURL(node.embedURL, parameter: node.positionParameter, seconds: startSeconds) {
+            EmbeddedWebContent(url: embedURL, headers: node.mediaHeaders)
+        } else if let source = node.url, let url = URL(string: source) {
             #if os(iOS)
-            NativeAppleVideo(url: url)
-                .frame(height: 220)
+            NativeAppleVideo(url: url).frame(height: 220)
             #else
             Link(url.absoluteString, destination: url)
             #endif
         } else {
-            Text("Invalid video URL")
-                .foregroundStyle(.secondary)
+            Text("Invalid video URL").foregroundStyle(.secondary)
         }
     }
 }
@@ -435,12 +432,13 @@ private struct NativeAppleVideo: View {
 
 private struct EmbeddedWebContent: View {
     let url: URL?
+    var headers: [String: String] = [:]
 
 
     @ViewBuilder var body: some View {
         if let url {
             #if os(iOS)
-            AppleWebView(url: url)
+            AppleWebView(url: url, headers: headers)
                 .frame(height: 240)
             #else
             Link(url.absoluteString, destination: url)
@@ -455,6 +453,7 @@ private struct EmbeddedWebContent: View {
 #if os(iOS)
 private struct AppleWebView: UIViewRepresentable {
     let url: URL
+    let headers: [String: String]
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -465,17 +464,17 @@ private struct AppleWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.loadedURL != url else { return }
-        context.coordinator.loadedURL = url
         var request = URLRequest(url: url)
-        for (field, value) in EmbeddedMediaPolicy.webRequestHeaders(for: url) {
+        for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)
         }
+        guard context.coordinator.loadedRequest != request else { return }
+        context.coordinator.loadedRequest = request
         webView.load(request)
     }
 
     final class Coordinator {
-        var loadedURL: URL?
+        var loadedRequest: URLRequest?
     }
 }
 #endif

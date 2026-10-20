@@ -6,6 +6,8 @@ let outliner_editor_view block_id_source title_source caret_source send : t
  fun context parent ->
    let node = Lui_ui.extension context "outliner-editor" in
    attach context parent node;
+   Lui_ui.extension_property context node "input-policy"
+     (View_base.string_wire_value Outliner_state.native_input_policy);
    Lui_ui.extension_property_signal context node "block-id"
      (Signal.map View_base.string_wire_value block_id_source);
    Lui_ui.extension_property_signal context node "title"

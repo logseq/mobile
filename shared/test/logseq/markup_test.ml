@@ -135,29 +135,25 @@ let block_markup_boundaries () =
     ]
 
 let playable_and_web_embeds () =
-  List.iter
-    (fun (source, expected) ->
-       check_eq (Yojson.Basic.from_string expected) (markup_json source))
-    [
-      ( "{{video https://cdn.example.com/demo.mp4}}"
-      , "[{\"type\":\"video\",\"url\":\"https://cdn.example.com/demo.mp4\"}]" );
-      ( "{{iframe https://example.com/embed}}"
-      , "[{\"type\":\"iframe\",\"url\":\"https://example.com/embed\"}]" );
-      ( "{{video https://www.youtube.com/watch?v=dQw4w9WgXcQ}}"
-      , "[{\"type\":\"video\",\"url\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"}]" );
-      ( "{{youtube dQw4w9WgXcQ}}"
-      , "[{\"type\":\"video\",\"url\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"}]" );
-      ( "{{vimeo 76979871}}"
-      , "[{\"type\":\"video\",\"url\":\"https://player.vimeo.com/video/76979871\"}]" );
-      ( "{{bilibili BV1xx411c7mD}}"
-      , "[{\"type\":\"iframe\",\"url\":\"https://player.bilibili.com/player.html?bvid=BV1xx411c7mD\"}]" );
-      ( "{{twitter https://x.com/logseq/status/1234567890}}"
-      , "[{\"type\":\"iframe\",\"url\":\"https://platform.twitter.com/embed/Tweet.html?id=1234567890\"}]" );
-      ( "{{youtube-timestamp 83}}"
-      , "[{\"type\":\"youtubeTimestamp\",\"text\":\"01:23\",\"style\":\"83\"}]" );
-      ( "{{youtube-timestamp 01:01:23}}"
-      , "[{\"type\":\"youtubeTimestamp\",\"text\":\"01:01:23\",\"style\":\"3683\"}]" );
-    ]
+  List.iter (fun (source, expected) ->
+    check (Yojson.Basic.equal (Yojson.Basic.from_string expected) (markup_json source))) [
+    "{{video https://cdn.example.com/demo.mp4}}",
+      {|[{"type":"video","url":"https://cdn.example.com/demo.mp4"}]|};
+    "{{iframe https://example.com/embed}}",
+      {|[{"type":"iframe","url":"https://example.com/embed","embedURL":"https://example.com/embed","mediaHeaders":{},"positionParameter":"start"}]|};
+    "{{youtube dQw4w9WgXcQ}}",
+      {|[{"type":"video","url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","embedURL":"https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?playsinline=1","mediaHeaders":{"Referer":"https://logseq.com/"},"positionParameter":"start"}]|};
+    "{{vimeo 76979871}}",
+      {|[{"type":"video","url":"https://player.vimeo.com/video/76979871","embedURL":"https://player.vimeo.com/video/76979871","mediaHeaders":{},"positionParameter":"start"}]|};
+    "{{bilibili BV1xx411c7mD}}",
+      {|[{"type":"iframe","url":"https://player.bilibili.com/player.html?bvid=BV1xx411c7mD","embedURL":"https://player.bilibili.com/player.html?bvid=BV1xx411c7mD","mediaHeaders":{},"positionParameter":"start"}]|};
+    "{{twitter https://x.com/logseq/status/1234567890}}",
+      {|[{"type":"iframe","url":"https://platform.twitter.com/embed/Tweet.html?id=1234567890","embedURL":"https://platform.twitter.com/embed/Tweet.html?id=1234567890","mediaHeaders":{},"positionParameter":"start"}]|};
+    "{{youtube-timestamp 83}}",
+      {|[{"type":"youtubeTimestamp","text":"01:23","style":"83","url":null,"seconds":83}]|};
+    "{{youtube-timestamp 01:01:23}}",
+      {|[{"type":"youtubeTimestamp","text":"01:01:23","style":"3683","url":null,"seconds":3683}]|};
+  ]
 
 let mixed_embeds_retain_surrounding_text () =
   check_eq

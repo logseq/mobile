@@ -214,7 +214,6 @@ struct OutlinerRowPayload: Decodable, Equatable {
 
     private var title: some View {
         OutlinerMixedRichMarkupContent(nodes: row.markup, fallback: row.title,
-            precedingYouTubeURL: row.youtubeURL.isEmpty ? nil : row.youtubeURL,
             youtubePlaybackStarts: playback.starts,
             onSeekYouTube: { playback.starts[$0] = $1 },
             allowsLinkInteraction: { context.isUserInteractionEnabled },

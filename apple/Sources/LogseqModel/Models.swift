@@ -33,6 +33,10 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
     public let text: String?
     public let style: String?
     public let url: String?
+    public let embedURL: String?
+    public let mediaHeaders: [String: String]
+    public let positionParameter: String?
+    public let seconds: Int?
     public let uuid: String?
     public let title: String?
     public let children: [LogseqMarkupNode]
@@ -42,6 +46,10 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         text: String? = nil,
         style: String? = nil,
         url: String? = nil,
+        embedURL: String? = nil,
+        mediaHeaders: [String: String] = [:],
+        positionParameter: String? = nil,
+        seconds: Int? = nil,
         uuid: String? = nil,
         title: String? = nil,
         children: [LogseqMarkupNode] = []
@@ -50,13 +58,17 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         self.text = text
         self.style = style
         self.url = url
+        self.embedURL = embedURL
+        self.mediaHeaders = mediaHeaders
+        self.positionParameter = positionParameter
+        self.seconds = seconds
         self.uuid = uuid
         self.title = title
         self.children = children
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, text, style, url, uuid, title, children
+        case type, text, style, url, uuid, title, children, embedURL, mediaHeaders, positionParameter, seconds
     }
 
     public init(from decoder: Decoder) throws {
@@ -65,6 +77,10 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         text = try values.decodeIfPresent(String.self, forKey: .text)
         style = try values.decodeIfPresent(String.self, forKey: .style)
         url = try values.decodeIfPresent(String.self, forKey: .url)
+        embedURL = try values.decodeIfPresent(String.self, forKey: .embedURL)
+        mediaHeaders = try values.decodeIfPresent([String: String].self, forKey: .mediaHeaders) ?? [:]
+        positionParameter = try values.decodeIfPresent(String.self, forKey: .positionParameter)
+        seconds = try values.decodeIfPresent(Int.self, forKey: .seconds)
         uuid = try values.decodeIfPresent(String.self, forKey: .uuid)
         title = try values.decodeIfPresent(String.self, forKey: .title)
         children = try values.decodeIfPresent([LogseqMarkupNode].self, forKey: .children) ?? []

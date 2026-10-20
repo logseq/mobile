@@ -183,7 +183,6 @@ private struct LGRichBlock: View {
                 OutlinerMixedRichMarkupContent(
                     nodes: markupNodes,
                     fallback: stringProperty("title"),
-                    precedingYouTubeURL: youtubeTargetURL,
                     youtubePlaybackStarts: playback.starts,
                     onSeekYouTube: { url, seconds in
                         playback.starts[url] = seconds
@@ -239,11 +238,6 @@ private struct LGRichBlock: View {
     private var androidContentHandlesTouches: Bool {
         boolProperty("is-asset")
             || OutlinerMarkupInteractionPolicy.hasInteractiveContent(markupNodes)
-    }
-
-    private var youtubeTargetURL: String? {
-        let value = stringProperty("youtube-target-url")
-        return value.isEmpty ? nil : value
     }
 
     private func stringProperty(_ name: String) -> String {

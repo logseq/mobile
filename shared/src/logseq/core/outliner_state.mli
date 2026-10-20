@@ -1,3 +1,5 @@
+val native_input_policy : string
+
 (** Outliner reducer state, commands, and pure editing operations. *)
 
 module Sset : Set.S with type elt = string

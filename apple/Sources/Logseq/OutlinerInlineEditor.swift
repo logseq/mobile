@@ -7,6 +7,7 @@ struct OutlinerInlineEditor: View {
     let text: String
     let blockID: String
     let desiredCaretUTF16Offset: Int?
+    var inputPolicy: String = "{}"
     let onTextChange: (String, Int) -> Void
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
@@ -23,6 +24,7 @@ struct OutlinerInlineEditor: View {
             text: text,
             accessibilityIdentifier: "field.outliner.block.\(blockID)",
             desiredCaretUTF16Offset: desiredCaretUTF16Offset,
+            inputPolicy: inputPolicy,
             onTextChange: onTextChange,
             onReturn: onReturn,
             onBackspace: onBackspace,
@@ -132,6 +134,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let text: String
     let accessibilityIdentifier: String
     let desiredCaretUTF16Offset: Int?
+    var inputPolicy: String = "{}"
     let onTextChange: (String, Int) -> Void
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
@@ -336,10 +339,11 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 return false
             }
             if isInlineLineBreak { return true }
-            if let deletion = InlineEditorPairDeletion.deletingEmptyNodeReference(
+            if textView.markedTextRange == nil, let deletion = NativeEditorInputPolicy.deletingEmptyPair(
                 from: textView.text ?? "",
                 range: range,
-                replacementText: replacement
+                replacementText: replacement,
+                inputPolicy: parent.inputPolicy
             ) {
                 textView.text = deletion.text
                 textView.selectedRange = NSRange(

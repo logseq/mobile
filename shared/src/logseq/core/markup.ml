@@ -115,7 +115,7 @@ let rec node_to_yojson node =
   in
   `Assoc fields
 
-let to_yojson nodes = `List (List.map node_to_yojson nodes)
+let to_yojson nodes = fst (Media.resolve_markup (`List (List.map node_to_yojson nodes)))
 
 let config =
   {

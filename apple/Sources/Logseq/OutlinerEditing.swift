@@ -132,141 +132,26 @@ enum InlineEditorFocusPolicy {
     }
 }
 
-enum InlineEditorPairDeletion {
-    static func deletingEmptyNodeReference(
-        from text: String,
-        range: NSRange,
-        replacementText: String
-    ) -> (text: String, caretUTF16Offset: Int)? {
-        guard replacementText.isEmpty, range.length == 1, range.location > 0 else {
-            return nil
-        }
+enum NativeEditorInputPolicy {
+    private struct Policy: Decodable {
+        struct EmptyPair: Decodable { let text: String; let deleteOffset: Int }
+        let emptyPairs: [EmptyPair]?
+    }
+
+    static func deletingEmptyPair(from text: String, range: NSRange, replacementText: String,
+                                  inputPolicy: String = "{}") -> (text: String, caretUTF16Offset: Int)? {
+        guard replacementText.isEmpty, range.length == 1,
+              let policy = try? JSONDecoder().decode(Policy.self, from: Data(inputPolicy.utf8)) else { return nil }
         let value = text as NSString
-        let pairRange = NSRange(location: range.location - 1, length: 4)
-        guard NSMaxRange(pairRange) <= value.length,
-              value.substring(with: pairRange) == "[[]]" else {
-            return nil
+        for rule in policy.emptyPairs ?? [] {
+            let length = (rule.text as NSString).length
+            guard length > 1, rule.deleteOffset >= 0, rule.deleteOffset < length,
+                  range.location >= rule.deleteOffset else { continue }
+            let pair = NSRange(location: range.location - rule.deleteOffset, length: length)
+            guard NSMaxRange(pair) <= value.length, value.substring(with: pair) == rule.text else { continue }
+            return (value.replacingCharacters(in: pair, with: ""), pair.location)
         }
-        return (
-            value.replacingCharacters(in: pairRange, with: ""),
-            pairRange.location
-        )
-    }
-}
-
-enum EmbeddedMediaPolicy {
-    private static let youtubeHosts = [
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "youtube-nocookie.com",
-        "www.youtube-nocookie.com",
-    ]
-
-    static func safeURL(_ value: String?) -> URL? {
-        guard let value,
-              let url = URL(string: value),
-              url.scheme == "https" || url.scheme == "http" else { return nil }
-        return url
-    }
-
-    static func youtubeEmbedURL(_ url: URL, startSeconds: Int? = nil) -> URL? {
-        let host = (url.host ?? "").lowercased()
-        var videoID: String?
-        if host == "youtu.be" || host == "www.youtu.be" {
-            videoID = url.pathComponents.dropFirst().first
-        } else if youtubeHosts.contains(host) {
-            if url.path == "/watch" {
-                videoID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "v" })?.value
-            } else if url.pathComponents.count >= 3,
-                      ["embed", "shorts", "live"].contains(url.pathComponents[1]) {
-                videoID = url.pathComponents[2]
-            }
-        }
-        guard let videoID,
-              isValidYouTubeVideoID(videoID)
-        else { return nil }
-
-        let sourceQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        var start = startSeconds.flatMap { $0 > 0 ? $0 : nil }
-        if start == nil, let rawStart = sourceQuery
-            .first(where: { $0.name == "start" || $0.name == "t" })?.value,
-           let parsedStart = Int(rawStart), parsedStart > 0 {
-            start = parsedStart
-        }
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "www.youtube-nocookie.com"
-        components.path = "/embed/\(videoID)"
-        components.queryItems = [URLQueryItem(name: "playsinline", value: "1")]
-        if let start {
-            components.queryItems?.append(URLQueryItem(name: "start", value: String(start)))
-        }
-        return components.url
-    }
-
-    private static func isValidYouTubeVideoID(_ value: String) -> Bool {
-        guard value.count == 11 else { return false }
-        let allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-        for character in value where !allowed.contains(character) {
-            return false
-        }
-        return true
-    }
-
-    static func webVideoEmbedURL(_ url: URL, startSeconds: Int? = nil) -> URL? {
-        if let youtube = youtubeEmbedURL(url, startSeconds: startSeconds) { return youtube }
-        let host = (url.host ?? "").lowercased()
-        return host == "player.vimeo.com" ? url : nil
-    }
-
-    static func webRequestHeaders(for url: URL) -> [String: String] {
-        let host = (url.host ?? "").lowercased()
-        guard youtubeHosts.contains(host) else { return [:] }
-        return ["Referer": "https://logseq.com/"]
-    }
-
-    static func webReferer(for url: URL) -> String? {
-        webRequestHeaders(for: url)["Referer"]
-    }
-}
-
-enum OutlinerYouTubeTimestampPolicy {
-    static func associateTargets(
-        _ nodes: [LogseqMarkupNode],
-        precedingYouTubeURL: String? = nil
-    ) -> [LogseqMarkupNode] {
-        var currentYouTubeURL = precedingYouTubeURL
-        return nodes.map { node in
-            if node.type == .video,
-               let source = node.url,
-               let url = EmbeddedMediaPolicy.safeURL(source),
-               EmbeddedMediaPolicy.youtubeEmbedURL(url) != nil {
-                currentYouTubeURL = source
-                return node
-            }
-            guard node.type == .youtubeTimestamp,
-                  node.url == nil,
-                  let currentYouTubeURL else { return node }
-            return LogseqMarkupNode(
-                type: node.type,
-                text: node.text,
-                style: node.style,
-                url: currentYouTubeURL,
-                uuid: node.uuid,
-                title: node.title,
-                children: node.children
-            )
-        }
-    }
-
-    static func seconds(_ node: LogseqMarkupNode) -> Int? {
-        guard node.type == .youtubeTimestamp,
-              let value = node.style,
-              let seconds = Int(value),
-              seconds >= 0 else { return nil }
-        return seconds
+        return nil
     }
 }
 

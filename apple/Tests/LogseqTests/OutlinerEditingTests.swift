@@ -4,6 +4,22 @@ import Foundation
 import Testing
 @testable import Logseq
 
+@Suite struct NativeInputPolicyTests {
+    @Test func appliesOnlyCoreDeclaredEmptyPairRulesAtUTF16Ranges() {
+        let policy = #"{"emptyPairs":[{"text":"()","deleteOffset":0}]}"#
+        let deleted = NativeEditorInputPolicy.deletingEmptyPair(from: "😀() tail",
+            range: NSRange(location: 2, length: 1), replacementText: "", inputPolicy: policy)
+        #expect(deleted?.text == "😀 tail")
+        #expect(deleted?.caretUTF16Offset == 2)
+        #expect(NativeEditorInputPolicy.deletingEmptyPair(from: "[[]]",
+            range: NSRange(location: 1, length: 1), replacementText: "", inputPolicy: "{}") == nil)
+        #expect(NativeEditorInputPolicy.deletingEmptyPair(from: "()",
+            range: NSRange(location: 0, length: 2), replacementText: "", inputPolicy: policy) == nil)
+        #expect(NativeEditorInputPolicy.deletingEmptyPair(from: "()",
+            range: NSRange(location: 0, length: 1), replacementText: "x", inputPolicy: policy) == nil)
+    }
+}
+
 @Suite struct OutlinerEditingTests {
     @Test func keyboardHideDiagnosticsSpanInlineEditorHandoffs() {
         var counter = OutlinerKeyboardHideCounter()
@@ -214,72 +230,6 @@ import Testing
             LogseqMarkupNode(type: .video, url: "https://example.com/video.mp4"),
         ]))
     }
-
-    @Test func youtubeLinksNormalizeToPrivacyEnhancedInlineEmbeds() throws {
-        let videoID = "dQw4w9WgXcQ"
-        let sources = [
-            "https://youtu.be/\(videoID)",
-            "https://www.youtube.com/watch?v=\(videoID)",
-            "https://m.youtube.com/shorts/\(videoID)",
-            "https://youtube.com/live/\(videoID)",
-            "https://www.youtube-nocookie.com/embed/\(videoID)",
-        ]
-
-        for source in sources {
-            let url = try #require(URL(string: source))
-            let embed = try #require(EmbeddedMediaPolicy.youtubeEmbedURL(url))
-            let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
-            #expect(components.host == "www.youtube-nocookie.com")
-            #expect(components.path == "/embed/\(videoID)")
-            #expect(components.queryItems?.contains(URLQueryItem(name: "playsinline", value: "1")) == true)
-        }
-    }
-
-    @Test func youtubeEmbedsPreserveNumericStartTimeAndRejectInvalidIDs() throws {
-        let timed = try #require(URL(string: "https://youtu.be/dQw4w9WgXcQ?t=43"))
-        let embed = try #require(EmbeddedMediaPolicy.youtubeEmbedURL(timed))
-        let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
-
-        #expect(components.queryItems?.contains(URLQueryItem(name: "start", value: "43")) == true)
-        #expect(EmbeddedMediaPolicy.webRequestHeaders(for: embed)["Referer"] == "https://logseq.com/")
-        #expect(EmbeddedMediaPolicy.youtubeEmbedURL(
-            try #require(URL(string: "https://youtube.com/watch?v=not-valid"))
-        ) == nil)
-        #expect(EmbeddedMediaPolicy.youtubeEmbedURL(
-            try #require(URL(string: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ"))
-        ) == nil)
-    }
-
-    @Test func youtubeTimestampTargetsTheNearestPlayerAndOverridesItsStartTime() throws {
-        let source = "https://youtu.be/dQw4w9WgXcQ?t=12"
-        let nodes = OutlinerYouTubeTimestampPolicy.associateTargets([
-            LogseqMarkupNode(type: .video, url: source),
-            LogseqMarkupNode(type: .youtubeTimestamp, text: "01:23", style: "83"),
-        ])
-
-        #expect(nodes[1].url == source)
-        #expect(OutlinerYouTubeTimestampPolicy.seconds(nodes[1]) == 83)
-        let sourceURL = try #require(URL(string: source))
-        let embed = try #require(EmbeddedMediaPolicy.webVideoEmbedURL(
-            sourceURL,
-            startSeconds: 83
-        ))
-        let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
-        let starts = components.queryItems?
-            .filter { $0.name == "start" }
-            .compactMap(\.value)
-        #expect(starts == ["83"])
-    }
-
-    @Test func youtubeTimestampDoesNotAttachToUntrustedOrNonYouTubeVideoURLs() {
-        let nodes = OutlinerYouTubeTimestampPolicy.associateTargets([
-            LogseqMarkupNode(type: .video, url: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ"),
-            LogseqMarkupNode(type: .youtubeTimestamp, text: "00:05", style: "5"),
-        ])
-
-        #expect(nodes[1].url == nil)
-    }
-
 
     @Test func inlineEditorAppliesTheNewBlockDuringResponderHandoff() {
         #expect(InlineEditorTextReconciliationPolicy.decision(

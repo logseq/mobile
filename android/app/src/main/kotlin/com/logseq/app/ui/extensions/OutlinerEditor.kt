@@ -43,6 +43,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
     val modelTitle = context.string("title") ?: ""
     val modelCaret = context.int("caret-utf16-offset") ?: -1
+    val inputPolicy = context.string("input-policy") ?: "{}"
 
     val focusRequester = remember { FocusRequester() }
     var value by remember {
@@ -106,7 +107,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     BasicTextField(
         value = value,
-        onValueChange = { next ->
+        onValueChange = { incoming ->
+            val location = incoming.selection.start
+            val deletion = if (incoming.composition == null && value.selection.collapsed && location >= 0
+                && value.text.length == incoming.text.length + 1 && location < value.text.length
+                && value.text.removeRange(location, location + 1) == incoming.text) {
+                applyEmptyPairDeletion(inputPolicy, value.text, location, 1, "")
+            } else null
+            val next = deletion?.let { TextFieldValue(it.first, TextRange(it.second)) } ?: incoming
             if (applyingModel) {
                 value = next
                 return@BasicTextField

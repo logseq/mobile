@@ -103,7 +103,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Core effects | Complete | Shared executeEffect dispatcher replaces Swift/Kotlin mappings; transcript persistence/projection and binary-upload activation covered; 817 core, 109 Swift UI, 42 Android JVM tests pass |
 | Bootstrap | Complete | Core owns bootstrap/cache/lock/sync eligibility and snapshot protocol; generations reject stale same-graph downloads; 824 core, 63 model, 109 UI and 41 Android tests plus 12 actual HTTP cases pass |
 | Shared capture | Complete | Shared canonicalization, idempotent IDs and deep-link routing; raw metadata queue reads legacy entries; late Android ASR results become shared effects; 828 core, 105 UI, 40 Android tests and real text/photo/screenshot/PDF/Markdown provider checks pass |
-| Editor/media | Pending | Preserve native transient input state |
+| Editor/media | Complete | Core projects validated media URLs, embed requests and timestamp targets; core declares synchronous input rules consumed by native IME/caret adapters; 832 core, 63 model, 102 UI and 41 Android JVM tests pass |
 | Final verification | Pending | Full gates and native builds |
 
 ## Testing Details

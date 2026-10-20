@@ -1,3 +1,5 @@
+let native_input_policy = {|{"emptyPairs":[{"text":"[[]]","deleteOffset":1}]}|}
+
 module Sset = Set.Make (String)
 module Model = Cache_model
 module Ops = Pending_ops
