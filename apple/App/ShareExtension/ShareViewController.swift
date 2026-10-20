@@ -9,7 +9,7 @@ private enum SharedCaptureConstants {
     static let logger = Logger(subsystem: "com.logseq.logseq.ShareViewController", category: "SharedCapture")
 }
 
-private struct SharedAsset: Codable, Sendable {
+struct SharedAsset: Codable, Sendable {
     let title: String
     let assetType: String
     let size: Int
@@ -17,7 +17,7 @@ private struct SharedAsset: Codable, Sendable {
     let stagedFileName: String
 }
 
-private struct SharedItem: Codable, Sendable {
+struct SharedItem: Codable, Sendable {
     enum Kind: String, Codable, Sendable {
         case text
         case asset
@@ -47,7 +47,7 @@ private struct SharedItem: Codable, Sendable {
     }
 }
 
-private enum LoadedProviderCapture: Sendable {
+enum LoadedProviderCapture: Sendable {
     case text(String)
     case url(String)
     case asset(SharedItem)
@@ -136,15 +136,22 @@ private final class CaptureAccumulator: @unchecked Sendable {
                 captures.append(.text(blockText))
             }
             captures.append(contentsOf: snapshot.assets)
-            if !captures.isEmpty {
-                Self.persist(captures)
+            guard !captures.isEmpty, Self.persist(captures) else {
+                let alert = UIAlertController(title: "Could not save to Logseq",
+                    message: "The shared content could not be saved. Please try sharing it again.",
+                    preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Close", style: .cancel) { _ in
+                    self.extensionContext?.cancelRequest(withError: CocoaError(.fileWriteUnknown))
+                })
+                self.present(alert, animated: true)
+                return
             }
             SharedCaptureConstants.logger.notice("Capture completed with \(captures.count) items")
             self.extensionContext?.completeRequest(returningItems: nil)
         }
     }
 
-    nonisolated private static func load(
+    nonisolated static func load(
         _ route: ShareCaptureRoute,
         from provider: NSItemProvider,
         completion: @escaping (LoadedProviderCapture?) -> Void
@@ -162,6 +169,17 @@ private final class CaptureAccumulator: @unchecked Sendable {
                 }
                 completion(.asset(.asset(asset)))
             }
+        case .fileURL:
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                let url = (item as? URL) ?? (item as? NSURL).map { $0 as URL }
+                    ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                guard let url, url.isFileURL else { completion(nil); return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+                    ?? UTType(filenameExtension: url.pathExtension) ?? .data
+                completion((try? stage(url, type: type)).map { .asset(.asset($0)) })
+            }
         case .url:
             provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
                 let value = (item as? URL)?.absoluteString
@@ -170,9 +188,20 @@ private final class CaptureAccumulator: @unchecked Sendable {
                 completion(value?.trimmed.map(LoadedProviderCapture.url))
             }
         case .text:
-            provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
-                let value = (item as? String) ?? (item as? NSString).map { String($0) }
-                completion(value?.trimmed.map(LoadedProviderCapture.text))
+            let identifier = provider.registeredTypeIdentifiers.first {
+                UTType($0)?.conforms(to: .plainText) == true
+            } ?? UTType.plainText.identifier
+            provider.loadDataRepresentation(forTypeIdentifier: identifier) { data, _ in
+                let encoding: String.Encoding = identifier.contains("utf16") ? .utf16 : .utf8
+                if let data, let value = String(data: data, encoding: encoding)?.trimmed {
+                    completion(.text(value))
+                    return
+                }
+                provider.loadItem(forTypeIdentifier: identifier) { item, _ in
+                    let value = (item as? String) ?? (item as? NSString).map { String($0) }
+                        ?? (item as? NSAttributedString)?.string
+                    completion(value?.trimmed.map(LoadedProviderCapture.text))
+                }
             }
         }
     }
@@ -188,16 +217,26 @@ private final class CaptureAccumulator: @unchecked Sendable {
                 return
             }
             provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
-                guard let data,
-                      let asset = try? stage(
+                if let data,
+                   let asset = try? stage(
                         data,
                         suggestedName: provider.suggestedName,
                         type: type
-                      ) else {
+                      ) {
+                    completion(asset)
+                    return
+                }
+                guard type.conforms(to: .image), provider.canLoadObject(ofClass: UIImage.self) else {
                     completion(nil)
                     return
                 }
-                completion(asset)
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    guard let image = object as? UIImage, let data = image.pngData() else {
+                        completion(nil)
+                        return
+                    }
+                    completion(try? stage(data, suggestedName: provider.suggestedName, type: .png))
+                }
             }
         }
     }
@@ -264,12 +303,12 @@ private final class CaptureAccumulator: @unchecked Sendable {
         return [text, link].compactMap { $0 }.joined(separator: "\n").trimmed
     }
 
-    nonisolated private static func persist(_ additions: [SharedItem]) {
+    nonisolated static func persist(_ additions: [SharedItem]) -> Bool {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: SharedCaptureConstants.appGroup
         ) else {
             SharedCaptureConstants.logger.error("App group container is unavailable")
-            return
+            return false
         }
         let directory = container.appendingPathComponent("SharedCaptureQueue", isDirectory: true)
         do {
@@ -283,9 +322,10 @@ private final class CaptureAccumulator: @unchecked Sendable {
             }
         } catch {
             SharedCaptureConstants.logger.error("Failed to persist shared captures: \(error)")
-            return
+            return false
         }
         SharedCaptureConstants.logger.notice("Persisted \(additions.count) shared captures")
+        return true
     }
 }
 

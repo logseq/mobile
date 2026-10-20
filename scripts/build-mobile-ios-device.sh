@@ -223,6 +223,30 @@ plutil -replace application-identifier -string "$team_id.$widget_bundle_id" "$wi
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$widget_entitlements" "$widget_dir"
 
+share_bundle_id=${LOGSEQ_IOS_SHARE_BUNDLE_ID:-$bundle_id.ShareViewController}
+share_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
+  "$profile_plist" "$share_bundle_id" "${LOGSEQ_IOS_SHARE_PROFILE:-}")
+share_dir="$app_dir/PlugIns/LogseqShareExtension.appex"
+share_profile_plist="$core_build_dir/share-profile.plist"
+share_entitlements="$core_build_dir/share-entitlements.plist"
+xcodebuild -project "$repo_root/apple/App/Logseq.xcodeproj" \
+  -target LogseqShareExtension -configuration "$configuration_name" \
+  -sdk iphoneos -arch arm64 ONLY_ACTIVE_ARCH=YES \
+  IPHONEOS_DEPLOYMENT_TARGET="$deployment_target" \
+  PRODUCT_BUNDLE_IDENTIFIER="$share_bundle_id" \
+  CONFIGURATION_BUILD_DIR="$widget_build_dir" CODE_SIGNING_ALLOWED=NO -quiet build
+cp -R "$widget_build_dir/LogseqShareExtension.appex" "$share_dir"
+for key in CFBundleShortVersionString CFBundleVersion; do
+  value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$app_dir/Info.plist")
+  /usr/libexec/PlistBuddy -c "Set :$key $value" "$share_dir/Info.plist"
+done
+cp "$share_profile" "$share_dir/embedded.mobileprovision"
+security cms -D -i "$share_profile" > "$share_profile_plist"
+plutil -extract Entitlements xml1 -o "$share_entitlements" "$share_profile_plist"
+plutil -replace application-identifier -string "$team_id.$share_bundle_id" "$share_entitlements"
+codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
+  --entitlements "$share_entitlements" "$share_dir"
+
 plutil -extract Entitlements xml1 -o "$entitlements" "$profile_plist"
 plutil -replace application-identifier -string "$expected_app_id" "$entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
@@ -230,5 +254,6 @@ codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --tim
 codesign --verify --deep --strict "$app_dir"
 
 python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
+python3 "$repo_root/scripts/verify-ios-share-extension.py" "$app_dir"
 python3 "$repo_root/scripts/verify-ios-native-symbols.py" "$app_dir"
 echo "$app_dir"

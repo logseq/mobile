@@ -20,6 +20,7 @@ let block uuid title page created : Model.block =
     breadcrumbs = [];
     priority = None;
     status = None;
+    display_type = None;
     is_asset = false;
     asset_type = None;
     asset_size = None;

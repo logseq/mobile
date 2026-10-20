@@ -8753,6 +8753,21 @@ let composer_stages_multiple_assets_until_confirmed () =
     (List.length staged.pending_effects) 0;
   check_eq ~msg:"confirmation creates each asset"
     (List.length sent.pending_effects) 2;
+  check_eq ~msg:"capture releases the composer before local effects or uploads finish"
+    sent.composer_assets [];
+  check_eq ~msg:"pending local captures survive a background session save"
+    (Model.ui_session sent).assets [asset; other];
+  let next = Model.update sent (Model.StageComposerAsset { asset with uuid = "asset-c" }) in
+  check_eq ~msg:"an earlier capture cannot disable a new attachment draft"
+    (View_base.composer_send_disabled_ next) false;
+  let removed = Model.update next (Model.RemoveComposerAsset "asset-c") in
+  check_eq ~msg:"a new draft can be removed while an earlier capture is pending"
+    removed.composer_assets [];
+  let next_sent = Model.update next Model.SendComposer in
+  check_eq ~msg:"another capture queues without waiting for the first upload"
+    (List.length next_sent.pending_effects) 3;
+  check_eq ~msg:"the next capture also clears its attachment draft"
+    next_sent.composer_assets [];
   check_eq ~msg:"repeated confirmation does not duplicate assets"
     (List.length (Model.update sent Model.SendComposer).pending_effects)
     2;
@@ -8776,6 +8791,11 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
   in
   let sent = Model.update staged Model.SendComposer in
   let active = Model.update sent (Model.DequeueEffect 1) in
+  let newer = { asset with Model.uuid = "asset-newer" } in
+  let with_newer = Model.update active (Model.StageComposerAsset newer) in
+  let failed_with_newer = Model.update with_newer (Model.ResolveEffect (1, false, "local persistence failed")) in
+  check_eq ~msg:"a local save failure restores only that attachment beside the new draft"
+    failed_with_newer.composer_assets [newer; asset];
   let failed = Model.update active (Model.ResolveEffect (1, false, "offline")) in
   let completed = Model.update active (Model.ResolveEffect (1, true, "{}")) in
   check_eq ~msg:"failed assets remain available for retry"
@@ -8795,7 +8815,11 @@ let sidebar_settings_opens_sheet_directly () =
   dispatch application (Lui_protocol.Press settings);
   flush application;
   check ~msg:"a single settings click opens the sheet" (App.model application).settings_open;
-  check ~msg:"settings dismisses the sidebar" (not (App.model application).sidebar_open)
+  check ~msg:"settings preserves the sidebar" (App.model application).sidebar_open;
+  send application Model.DismissSettings;
+  flush application;
+  check ~msg:"dismissing settings returns to the open sidebar"
+    (App.model application).sidebar_open
 
 let search_reveal_mounts_only_the_target_window () =
   List.iter (fun count ->

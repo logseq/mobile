@@ -593,21 +593,11 @@ private struct DeletePagePayload: Encodable {
     }
 
     public func sections(for contentMode: LogseqContentMode) -> [LogseqBlockSection] {
-        #if DEBUG
-        let startedAt = Date()
-        #endif
         guard contentMode == .outliner else { return sections }
         let projectedBlocks = snapshot.outlinerRows.isEmpty && !snapshot.blocks.isEmpty
             ? snapshot.blocks
             : snapshot.outlinerRows.map(\.block)
         let result = Array(makeSections(from: projectedBlocks).reversed())
-        #if DEBUG
-        let milliseconds = Date().timeIntervalSince(startedAt) * 1_000
-        logger.info(
-            "Section timing: mode=\(contentMode.rawValue), ms=\(String(format: "%.2f", milliseconds)), "
-                + "blocks=\(projectedBlocks.count), sections=\(result.count)"
-        )
-        #endif
         return result
     }
 
@@ -1799,10 +1789,6 @@ private struct DeletePagePayload: Encodable {
         )
         #if DEBUG
         let coreMilliseconds = Date().timeIntervalSince(coreStartedAt) * 1_000
-        let coreTiming =
-            "Core timing: action=\(actionName), coreMs=\(String(format: "%.2f", coreMilliseconds)), "
-                + "requestBytes=\(requestJSON.utf8.count), responseBytes=\(responseJSON.utf8.count)"
-        logger.info(coreTiming)
         print(
             "Logseq debug: async core action returned \(actionName) "
                 + "coreMs=\(String(format: "%.2f", coreMilliseconds)) "
@@ -1875,11 +1861,6 @@ private struct DeletePagePayload: Encodable {
                 let mergedResult = mergedSnapshot(result)
                 #if DEBUG
                 let applyMilliseconds = Date().timeIntervalSince(applyStartedAt) * 1_000
-                logger.info(
-                    "Apply timing: action=\(actionName), applyMs=\(String(format: "%.2f", applyMilliseconds)), "
-                        + "blocks=\(mergedResult.blocks.count), rows=\(mergedResult.outlinerRows.count), "
-                        + "patch=\(result.isOutlinerPatch)"
-                )
                 print(
                     "Logseq debug: core action applied \(actionName) "
                         + "revision=\(mergedResult.revision) blocks=\(mergedResult.blocks.count) "

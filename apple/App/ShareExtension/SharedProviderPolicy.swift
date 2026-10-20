@@ -2,6 +2,7 @@ import UniformTypeIdentifiers
 
 enum ShareCaptureRoute: Equatable, Sendable {
     case asset(String)
+    case fileURL
     case url
     case text
 }
@@ -14,7 +15,9 @@ enum ShareCaptureRoutePolicy {
         if let semanticAsset {
             routes.append(.asset(semanticAsset.identifier))
         }
-        if types.contains(where: { $0.conforms(to: .url) }) {
+        if types.contains(where: { $0.conforms(to: .fileURL) }) {
+            routes.append(.fileURL)
+        } else if types.contains(where: { $0.conforms(to: .url) }) {
             routes.append(.url)
         }
         if types.contains(where: { $0.conforms(to: .plainText) }) {
@@ -28,7 +31,8 @@ enum ShareCaptureRoutePolicy {
 
     private static func isSemanticAsset(_ type: UTType) -> Bool {
         type.conforms(to: .image) || type.conforms(to: .audio) ||
-            type.conforms(to: .movie) || type.conforms(to: .pdf)
+            type.conforms(to: .movie) || type.conforms(to: .pdf) ||
+            type.preferredFilenameExtension?.lowercased() == "md"
     }
 
     private static func isGenericData(_ type: UTType) -> Bool {

@@ -156,6 +156,24 @@ let tag_eids_for_title db title =
          (inline_tag_names title))
   | None -> []
 
+let tag_behavior_tx db uuid tag_eid =
+  let reference = lookup uuid in
+  let display =
+    match Graph_read.tag_display_type db tag_eid with
+    | Some display ->
+      [Ds.Add (reference, "logseq.property.node/display-type", Ds.Keyword display)]
+    | None -> [] in
+  let task =
+    match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task") with
+    | Some task_eid
+      when List.mem tag_eid (Graph_read.class_descendants db task_eid)
+           && one_value db reference "logseq.property/status" = None ->
+      (match Graph_read.default_task_status_eid db with
+       | Some eid -> [Ds.Add (reference, "logseq.property/status", Ds.Ref eid)]
+       | None -> [])
+    | _ -> [] in
+  display @ task
+
 let title_tx db uuid title =
   let reference = lookup uuid in
   let retractions =
@@ -184,6 +202,7 @@ let title_tx db uuid title =
   @ List.map
       (fun eid -> Ds.Add (reference, "block/tags", Ds.Ref eid))
       (tag_eids_for_title db title)
+  @ List.concat_map (tag_behavior_tx db uuid) (tag_eids_for_title db title)
 
 let uuid_for_eid db eid =
   match one_value db (Ds.Entity_id eid) "block/uuid" with
@@ -243,6 +262,7 @@ let insert_tx db (block : Outliner.outliner_block) created_at =
        @ many_refs "block/refs" (refs_for_title db block.title)
        @ many_refs "block/tags" (tag_eids_for_title db block.title));
   ]
+  @ List.concat_map (tag_behavior_tx db block.uuid) (tag_eids_for_title db block.title)
 
 let outliner_mutation_tx db (mutation : Outliner.mutation) =
   match mutation with
@@ -634,8 +654,9 @@ let rec compile db (intent : Ops.pending_intent) =
      with
      | Some block_eid, Some tag_eid ->
        Ok
-         (if has_ref db block_eid "block/tags" tag_eid then []
-          else [ Ds.Add (lookup value.uuid, "block/tags", Ds.Ref tag_eid) ])
+         ((if has_ref db block_eid "block/tags" tag_eid then []
+           else [ Ds.Add (lookup value.uuid, "block/tags", Ds.Ref tag_eid) ])
+          @ tag_behavior_tx db value.uuid tag_eid)
      | None, _ -> Error "block no longer exists"
      | _ -> Error "tag no longer exists")
   | Ops.Set_favorite value ->

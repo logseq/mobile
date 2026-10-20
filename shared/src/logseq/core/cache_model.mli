@@ -28,6 +28,7 @@ type block =
   ; breadcrumbs : entity_summary list
   ; priority : status option
   ; status : status option
+  ; display_type : string option
   ; is_asset : bool
   ; asset_type : string option
   ; asset_size : int option

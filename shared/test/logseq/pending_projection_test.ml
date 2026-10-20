@@ -1134,7 +1134,100 @@ let projected_properties_are_queryable_without_changing_authoritative_indexes
        (Ds.Db.datoms db Ds.Aevt ~a:"user.property/effort" ()))
     []
 
+let built_in_tag_db () =
+  with_tx (base_db ())
+    (List.concat_map (fun (eid, uuid, ident) ->
+       [add eid "block/uuid" (Ds.Uuid uuid);
+        add eid "db/ident" (Ds.Keyword ident);
+        add eid "block/title" (Ds.String uuid);
+        add eid "block/name" (Ds.String uuid);
+        add eid "block/tags" (Ds.Ref 4);
+        add eid "logseq.property.class/hide-from-node" (Ds.Bool true)])
+       [100, "math", "logseq.class/Math-block";
+        101, "quote", "logseq.class/Quote-block";
+        102, "code", "logseq.class/Code-block";
+        103, "task", "logseq.class/Task"]
+     @ [add 104 "db/ident" (Ds.Keyword "logseq.property/status.todo");
+        add 104 "block/uuid" (Ds.Uuid "todo");
+        add 104 "block/title" (Ds.String "Todo");
+        add 105 "db/ident" (Ds.Keyword "logseq.property/status.done");
+        add 105 "block/uuid" (Ds.Uuid "done");
+        add 105 "block/title" (Ds.String "Done")])
+
+let built_in_tags_initialize_behavior_and_render_through_cache () =
+  List.iter (fun kind ->
+    let db = apply_intent (built_in_tag_db ())
+      (Ops.Add_tag {uuid = "block"; tag_uuid = kind}) in
+    check_eq ~msg:(kind ^ " initializes the display property")
+      (value db "block" "logseq.property.node/display-type")
+      (Some (Ds.Keyword kind));
+    let verify block =
+      let markup = Yojson.Basic.Util.member "markup" (Rpc.block_json block)
+        |> Yojson.Basic.Util.to_list in
+      check_eq ~msg:(kind ^ " reaches the native markup renderer")
+        (Yojson.Basic.Util.member "type" (List.hd markup))
+        (`String (if kind = "code" then "codeBlock" else kind)) in
+    let block = Option.get (Read.block (fun x -> Ok x) db 10) in
+    verify block;
+    let window = Read.read_page_window (fun x -> Ok x) (Read.page_reader db "page") in
+    verify (List.hd window.rows).block;
+    let cache = Cache_model.create None in
+    Cache_model.upsert_blocks cache [block] 1;
+    verify (Option.get (Cache_model.read_block cache "block"));
+    let plain = Option.get (Read.block (fun x -> Ok x) (base_db ()) 10) in
+    Cache_model.upsert_blocks cache [plain] 2;
+    check_eq ~msg:"removing the display type invalidates cached markup"
+      (Yojson.Basic.Util.member "type"
+        (List.hd (Yojson.Basic.Util.to_list (Yojson.Basic.Util.member "markup"
+          (Rpc.block_json (Option.get (Cache_model.read_block cache "block")))))))
+      (`String "text"))
+    ["math"; "quote"; "code"];
+  let db = apply_intent (built_in_tag_db ())
+    (Ops.Add_tag {uuid = "block"; tag_uuid = "task"}) in
+  check_eq ~msg:"Task initializes the Todo status"
+    (value db "block" "logseq.property/status") (Some (Ds.Ref 104));
+  let block = Option.get (Read.block (fun x -> Ok x) db 10) in
+  check_eq (Option.map (fun (status : Cache_model.status) -> status.ident) block.status)
+    (Some (Some "logseq.property/status.todo"));
+  let done_db = with_tx (built_in_tag_db ()) [add 10 "logseq.property/status" (Ds.Ref 105)] in
+  let done_db = apply_intent done_db (Ops.Add_tag {uuid = "block"; tag_uuid = "task"}) in
+  check_eq ~msg:"adding Task preserves an existing status"
+    (value done_db "block" "logseq.property/status") (Some (Ds.Ref 105));
+  let ordinary = apply_intent (base_db ())
+    (Ops.Add_tag {uuid = "block"; tag_uuid = "project"}) in
+  check_eq ~msg:"ordinary tags do not change display type"
+    (value ordinary "block" "logseq.property.node/display-type") None
+
+let inline_built_in_tags_initialize_behavior () =
+  List.iter (fun (kind, attr, expected) ->
+    let db = apply_intent (built_in_tag_db ())
+      (save_title "block" "Old" ("Note #[[" ^ kind ^ "]]")) in
+    check_eq ~msg:("inline " ^ kind ^ " initializes its behavior")
+      (value db "block" attr) (Some expected))
+    ["math", "logseq.property.node/display-type", Ds.Keyword "math";
+     "quote", "logseq.property.node/display-type", Ds.Keyword "quote";
+     "task", "logseq.property/status", Ds.Ref 104]
+
+let existing_display_properties_and_tagged_tasks_are_rendered () =
+  let original = built_in_tag_db () in
+  let db = with_tx original
+    [add 10 "logseq.property.node/display-type" (Ds.Keyword "math")] in
+  let block = Option.get (Read.block (fun x -> Ok x) db 10) in
+  let node = List.hd (Yojson.Basic.Util.to_list
+    (Yojson.Basic.Util.member "markup" (Rpc.block_json block))) in
+  check_eq (Yojson.Basic.Util.member "type" node) (`String "math");
+  let task_db = with_tx original [add 10 "block/tags" (Ds.Ref 103)] in
+  let task = Option.get (Read.block (fun x -> Ok x) task_db 10) in
+  check_eq ~msg:"existing Task tags without status still expose the default control"
+    (Option.map (fun (status : Cache_model.status) -> status.ident) task.status)
+    (Some (Some "logseq.property/status.todo"))
+
 let cases =
+  [ case "built-in tags initialize behavior and render through cache"
+      built_in_tags_initialize_behavior_and_render_through_cache;
+    case "inline built-in tags initialize behavior" inline_built_in_tags_initialize_behavior;
+    case "existing display properties and tagged tasks are rendered"
+      existing_display_properties_and_tagged_tasks_are_rendered ] @
   [
     case
       "title replay updates references without mutating authoritative db"

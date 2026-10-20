@@ -28,6 +28,21 @@ struct SharedProviderPolicyTests {
             message: "PDF files must be captured as assets"
         )
         expect(
+            [.asset("public.png")],
+            for: ["public.png", "public.data"],
+            message: "screenshots must be captured as PNG assets"
+        )
+        expect(
+            [.asset("net.daringfireball.markdown"), .text],
+            for: ["net.daringfireball.markdown", "public.utf8-plain-text"],
+            message: "Markdown documents must keep their file representation"
+        )
+        expect(
+            [.fileURL, .text],
+            for: ["public.file-url", "public.utf8-plain-text"],
+            message: "shared files must be copied rather than saved as temporary links"
+        )
+        expect(
             [.text, .asset("public.data")],
             for: ["public.data", "public.utf8-plain-text"],
             message: "generic data must not steal a text share"

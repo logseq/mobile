@@ -11,7 +11,6 @@ struct LogseqAppLogger {
     private let systemLogger = os.Logger(subsystem: "com.logseq.logseq", category: "Logseq")
 
     func debug(_ message: String) {
-        LogseqRuntimeLog.shared.append(level: .debug, source: .ui, message: message)
         systemLogger.debug("\(message, privacy: .public)")
     }
 

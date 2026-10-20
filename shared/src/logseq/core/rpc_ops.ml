@@ -382,6 +382,7 @@ let merge_live_block_metadata (optimistic : Model.block)
     references = live.references;
     breadcrumbs = live.breadcrumbs;
     status = live.status;
+    display_type = live.display_type;
     is_asset = live.is_asset;
     asset_type = live.asset_type;
     asset_size = live.asset_size;

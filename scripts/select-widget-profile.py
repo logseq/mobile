@@ -27,4 +27,4 @@ for path in candidates:
         and bool(set(host.get("ProvisionedDevices", [])) & set(profile.get("ProvisionedDevices", [])))):
         print(path)
         sys.exit(0)
-sys.exit("No compatible widget development profile. Set LOGSEQ_IOS_WIDGET_PROFILE.")
+sys.exit(f"No compatible development profile for {sys.argv[2]}. Provide an extension profile path.")

@@ -180,5 +180,6 @@ codesign --force --sign - --entitlements "$signature_entitlements" \
   --timestamp=none --generate-entitlement-der "$app_dir"
 
 python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
+python3 "$repo_root/scripts/verify-ios-share-extension.py" "$app_dir"
 python3 "$repo_root/scripts/verify-ios-native-symbols.py" "$app_dir"
 echo "$app_dir"

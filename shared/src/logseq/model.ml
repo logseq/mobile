@@ -1464,16 +1464,10 @@ let resolve_failed_effect (current : logseq_model) eff message =
     { current with sync_state = FailedState message }
   | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
     { current with new_graph_password_required = true }
+  | SendAssetEffect (_, asset) ->
+    if List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) current.composer_assets then current
+    else { current with composer_assets = current.composer_assets @ [asset] }
   | _ -> rollback_navigation_effect current eff
-
-let composer_assets_sending_ (current : logseq_model) =
-  let effects = current.pending_effects @ current.in_flight_effects in
-  List.exists
-    (fun eff ->
-      match eff with
-      | SendAssetEffect _ -> true
-      | _ -> false)
-    effects
 
 let resolve_successful_effect (current : logseq_model) eff _message =
   match eff with
@@ -1660,7 +1654,16 @@ let ui_session (current : logseq_model) =
     graph_id = current.selected_graph_id;
     recent_graph_ids = current.recent_graph_ids;
     destination = current.destination;
-    assets = current.composer_assets;
+    assets =
+      List.fold_left
+        (fun assets eff ->
+          match eff with
+          | SendAssetEffect (_, asset)
+            when not (List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) assets) ->
+            assets @ [asset]
+          | _ -> assets)
+        current.composer_assets
+        (current.in_flight_effects @ current.pending_effects);
     composer_expanded = current.composer_expanded;
     search_open = current.search_open;
     query = current.search_query;
@@ -1954,8 +1957,6 @@ let rec update (current : logseq_model) action =
       composer_assets = current.composer_assets @ [ asset ];
     }
   | RemoveComposerAsset uuid ->
-    if composer_assets_sending_ current then current
-    else
       {
         current with
         composer_assets =
@@ -1964,8 +1965,9 @@ let rec update (current : logseq_model) action =
             current.composer_assets;
       }
   | SendComposer ->
-    if composer_assets_sending_ current then current
-    else begin
+    begin
+      let assets = current.composer_assets in
+      let current = { current with composer_assets = [] } in
       let submission = String.trim current.composer_draft in
       let with_text =
         if submission = "" then current
@@ -1996,7 +1998,7 @@ let rec update (current : logseq_model) action =
         (fun updated asset ->
           enqueue_effect updated
             (SendAssetEffect (updated.next_effect_id, asset)))
-        with_text current.composer_assets
+        with_text assets
     end
   | DequeueEffect id ->
     let pending = current.pending_effects in
@@ -2431,7 +2433,6 @@ let rec update (current : logseq_model) action =
   | OpenSettings ->
     {
       current with
-      sidebar_open = false;
       graph_menu_open = false;
       connection_menu_open = false;
       settings_open = true;

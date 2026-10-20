@@ -166,8 +166,7 @@ private struct LGSearchPresentation: View {
         baseContent
             .fullScreenCover(isPresented: presentedBinding) {
                 LGSearchSession(context: context)
-                    .presentationBackground(.clear)
-                    .transaction { $0.disablesAnimations = false }
+                    .presentationBackground(.background)
             }
             .transaction(value: presented) { $0.disablesAnimations = true }
     }
@@ -194,16 +193,11 @@ private struct LGSearchSession: View {
     #if os(iOS)
     @State private var nativeSearchPresented = true
     @FocusState private var searchFocused: Bool
-    @State private var visible = false
     @State private var closing = false
     #endif
 
     var body: some View {
         searchNavigation
-            #if os(iOS)
-            .opacity(visible ? 1 : 0)
-            .onAppear { withAnimation(.easeOut(duration: 0.18)) { visible = true } }
-            #endif
     }
 
     private var searchNavigation: some View {
@@ -287,14 +281,8 @@ private struct LGSearchSession: View {
                     .accessibilityIdentifier("button.search.close")
                 }
             }
-            .overlay(alignment: .topLeading) {
-                LGNativeSearchActivator(
-                    focusRequested: nativeSearchPresented,
-                    presentationAction: { nativeSearchPresented = true },
-                    focusAction: { searchFocused = true }
-                )
-                .frame(width: 1, height: 1)
-                .allowsHitTesting(false)
+            .task {
+                searchFocused = true
             }
             .onScrollPhaseChange { _, newPhase in
                 if newPhase == .tracking || newPhase == .interacting {
@@ -307,11 +295,7 @@ private struct LGSearchSession: View {
         guard !closing else { return }
         closing = true
         searchFocused = false
-        withAnimation(.easeOut(duration: 0.18)) { visible = false }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
-            emitDismiss()
-        }
+        emitDismiss()
     }
 
     private var nativeSearchPresentedBinding: Binding<Bool> {
@@ -365,103 +349,6 @@ private struct LGSearchSession: View {
         }
     }
 }
-
-#if os(iOS)
-@MainActor
-private struct LGNativeSearchActivator: UIViewRepresentable {
-    let focusRequested: Bool
-    let presentationAction: () -> Void
-    let focusAction: () -> Void
-
-    func makeUIView(context: Context) -> ObserverView {
-        ObserverView(
-            focusRequested: focusRequested,
-            presentationAction: presentationAction,
-            focusAction: focusAction
-        )
-    }
-
-    func updateUIView(_ view: ObserverView, context: Context) {
-        view.focusRequested = focusRequested
-        view.presentationAction = presentationAction
-        view.focusAction = focusAction
-        view.focusSearchFieldIfNeeded()
-    }
-
-    final class ObserverView: UIView {
-        var focusRequested: Bool
-        var presentationAction: () -> Void
-        var focusAction: () -> Void
-        private var hasRequestedPresentation = false
-        private var hasFocused = false
-        private var focusScheduled = false
-
-        init(
-            focusRequested: Bool,
-            presentationAction: @escaping () -> Void,
-            focusAction: @escaping () -> Void
-        ) {
-            self.focusRequested = focusRequested
-            self.presentationAction = presentationAction
-            self.focusAction = focusAction
-            super.init(frame: .zero)
-            isUserInteractionEnabled = false
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            guard window != nil, !hasRequestedPresentation else { return }
-            hasRequestedPresentation = true
-            // Request input as soon as the search surface enters the window.
-            // Keyboard presentation and the search transition can run together.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, window != nil else { return }
-                presentationAction()
-                focusSearchFieldIfNeeded()
-            }
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            focusSearchFieldIfNeeded()
-        }
-
-        func focusSearchFieldIfNeeded() {
-            guard focusRequested, window != nil, !hasFocused, !focusScheduled else { return }
-            focusScheduled = true
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                focusScheduled = false
-                guard focusRequested, !hasFocused,
-                      let searchField = window?.firstDescendant(of: UISearchTextField.self),
-                      searchField.isFirstResponder || searchField.becomeFirstResponder()
-                else { return }
-                hasFocused = true
-                focusAction()
-            }
-        }
-    }
-}
-
-private extension UIView {
-    func firstDescendant<ViewType: UIView>(of type: ViewType.Type) -> ViewType? {
-        if let match = self as? ViewType {
-            return match
-        }
-        for child in subviews {
-            if let match = child.firstDescendant(of: type) {
-                return match
-            }
-        }
-        return nil
-    }
-}
-#endif
 
 @MainActor
 private struct LGNavigationContent: View {

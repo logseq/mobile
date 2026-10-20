@@ -56,29 +56,35 @@ let status_response_json (status : Model.status) =
           ]
         | _ -> []))
 
-(* markup/parse output is pure in (references, tags, title); memoize per uuid
-   so a block's markup is parsed once until its title or summaries change. *)
+(* Cache markup until its source text, references, tags, or display type changes. *)
 let markup_cache :
-    (string, string * Model.entity_summary list * Model.entity_summary list * Json.t)
+    (string, string * Model.entity_summary list * Model.entity_summary list * string option * Json.t)
     Hashtbl.t =
   Hashtbl.create 256
 
 let markup_json_encode (block : Model.block) =
-  let encoded =
-    Markup.to_yojson
-      (Markup.parse block.references block.tags block.title)
+  let nodes =
+    match block.display_type with
+    | Some "math" -> [Markup.Markup_math (block.title, true)]
+    | Some "code" -> [Markup.Markup_code_block (None, block.title)]
+    | Some "quote" ->
+      [Markup.Markup_quote (Markup.parse block.references block.tags block.title)]
+    | _ -> Markup.parse block.references block.tags block.title
+  in
+  let encoded = Markup.to_yojson nodes
   in
   if Hashtbl.length markup_cache > 8192 then Hashtbl.reset markup_cache;
   Hashtbl.replace markup_cache block.uuid
-    (block.title, block.references, block.tags, encoded);
+    (block.title, block.references, block.tags, block.display_type, encoded);
   encoded
 
 let markup_json (block : Model.block) =
   match Hashtbl.find_opt markup_cache block.uuid with
-  | Some (title, references, tags, encoded)
+  | Some (title, references, tags, display_type, encoded)
     when title = block.title
          && references = block.references
-         && tags = block.tags ->
+         && tags = block.tags
+         && display_type = block.display_type ->
     encoded
   | _ -> markup_json_encode block
 

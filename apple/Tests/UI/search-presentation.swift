@@ -26,6 +26,7 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
         let registry = LUIAppleExtensionRegistry()
         try LGSearchPresentationExtension.register(in: registry)
         let backend = try LUIAppleBackend(extensionRegistry: registry)
+        var generation = 1
         try backend.apply(json: """
         {"generation":1,"ops":[
           {"op":"create-extension","id":1,"identifier":"native-search-presentation","fingerprint":"\(LGSearchPresentationExtension.fingerprint)"},
@@ -34,11 +35,25 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
           {"op":"set-extension-prop","id":1,"property":"query","value":""},
           {"op":"set-extension-prop","id":1,"property":"title","value":"Search"},
           {"op":"create-node","id":2,"kind":"column"},
+          {"op":"set-prop","id":2,"property":"grow","value":1.0},
+          {"op":"set-prop","id":2,"property":"background","value":"#ff0000"},
           {"op":"create-node","id":3,"kind":"column"},
+          {"op":"set-prop","id":3,"property":"grow","value":1.0},
+          {"op":"set-prop","id":3,"property":"background","value":"#ffffff"},
           {"op":"insert-child","parent":1,"child":2,"index":0},
           {"op":"insert-child","parent":1,"child":3,"index":1}
         ]}
         """)
+        backend.onEvent = { event in
+            guard case .extension(let node, _, let name, let values) = event,
+                  node == 1, name == "query-changed",
+                  case .string(let query) = values["query"] else { return }
+            generation += 1
+            let encoded = String(decoding: try! JSONEncoder().encode(query), as: UTF8.self)
+            try! backend.apply(json: """
+            {"generation":\(generation),"ops":[{"op":"set-extension-prop","id":1,"property":"query","value":\(encoded)}]}
+            """)
+        }
         let host = UIHostingController(rootView: NavigationStack {
             LUISwiftUIRoot(backend: backend, rootID: 1)
                 .toolbar { ToolbarItem(placement: .topBarLeading) { Text("Journals") } }
@@ -51,12 +66,16 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
         func input() -> UISearchTextField? {
             descendants(window).compactMap { $0 as? UISearchTextField }.first { $0.isFirstResponder }
         }
+        let activationStart = ProcessInfo.processInfo.systemUptime
+        while UIApplication.shared.applicationState != .active
+            && ProcessInfo.processInfo.systemUptime - activationStart < 5 {
+            await step()
+        }
         for _ in 0..<40 { await step() }
-        var generation = 1
         func present(_ value: Bool) throws {
             generation += 1
             try backend.apply(json: """
-            {"generation":\(generation),"ops":[{"op":"set-extension-prop","id":1,"property":"presented","value":\(value)}]}
+            {"generation":\(generation),"ops":[{"op":"set-extension-prop","id":1,"property":"query","value":""},{"op":"set-extension-prop","id":1,"property":"presented","value":\(value)}]}
             """)
         }
         var failures = 0

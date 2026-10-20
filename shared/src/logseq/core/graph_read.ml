@@ -74,6 +74,29 @@ let entity_is_instance_of db eid class_ident =
       (ref_eids db eid "block/tags")
   | None -> false
 
+let tag_display_type db tag_eid =
+  List.find_map (fun (ident, display) ->
+    match Ds.entid db "db/ident" (Ds.Keyword ident) with
+    | Some eid when List.mem tag_eid (class_descendants db eid) -> Some display
+    | _ -> None)
+    ["logseq.class/Math-block", "math";
+     "logseq.class/Quote-block", "quote";
+     "logseq.class/Code-block", "code"]
+
+let display_type_for_eid db eid =
+  match value db eid "logseq.property.node/display-type" with
+  | Some (Ds.Keyword ("math" | "quote" | "code" as display)) -> Some display
+  | _ -> List.find_map (tag_display_type db) (ref_eids db eid "block/tags")
+
+let default_task_status_eid db =
+  let configured =
+    Option.bind (Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status"))
+      (fun eid -> Ds_value.optional_ref_eid db "logseq.property/default-value"
+        (value db eid "logseq.property/default-value")) in
+  match configured with
+  | Some _ -> configured
+  | None -> Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status.todo")
+
 let entity_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
   let title = protected_string decrypt_title (value db eid "block/title") in
@@ -125,10 +148,16 @@ let breadcrumbs decrypt_title db eid =
   breadcrumbs_loop decrypt_title db [] eid []
 
 let choice_for_eid decrypt_title db eid property =
-  match
+  let selected =
     Ds_value.optional_ref_eid db property
       (value db eid property)
-  with
+  in
+  let selected =
+    if selected = None && property = "logseq.property/status"
+       && value db eid property = None
+       && entity_is_instance_of db eid "logseq.class/Task"
+    then default_task_status_eid db else selected in
+  match selected with
   | Some status_eid ->
     let ident =
       match value db status_eid "db/ident" with
@@ -243,7 +272,8 @@ let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db ei
            references = entity_summaries decrypt_title db eid "block/refs";
            breadcrumbs = ancestors;
            priority = choice_for_eid decrypt_title db eid "logseq.property/priority";
-           status = choice_for_eid decrypt_title db eid "logseq.property/status";
+           status = status_for_eid decrypt_title db eid;
+           display_type = display_type_for_eid db eid;
            is_asset = entity_is_instance_of db eid "logseq.class/Asset";
            asset_type =
              string_value (value db eid "logseq.property.asset/type");
@@ -511,6 +541,7 @@ let page_block decrypt_title db eid =
         breadcrumbs = [];
         priority = None;
         status = None;
+        display_type = display_type_for_eid db eid;
         is_asset = false;
         asset_type = None;
         asset_size = None;
@@ -537,6 +568,8 @@ let tag_available_for_completion db eid =
            "logseq.class/Journal";
            "logseq.class/Whiteboard";
            "logseq.class/Pdf-annotation";
+           "logseq.class/Comment";
+           "logseq.class/Comments";
          ])
   | _ -> true
 
@@ -857,7 +890,7 @@ let window_block_fields =
   ["block/uuid"; "block/title"; "block/name"; "block/page"; "block/parent";
    "block/order"; "block/created-at"; "block/updated-at";
    "logseq.property.asset/type"; "logseq.property.asset/size";
-   "logseq.property.asset/checksum"]
+   "logseq.property.asset/checksum"; "logseq.property.node/display-type"]
 
 let read_page_window ?(offset = 0) ?(limit = 32) decrypt_title reader =
   if offset < 0 || limit < 0 || limit > 32 then

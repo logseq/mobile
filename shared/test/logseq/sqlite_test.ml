@@ -273,6 +273,7 @@ let rpc_restart_isolates_the_open_graph () =
         breadcrumbs = [];
         priority = None;
         status = None;
+        display_type = None;
         is_asset = false;
         asset_type = None;
         asset_size = None;

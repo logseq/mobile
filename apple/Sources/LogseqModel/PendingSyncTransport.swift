@@ -50,7 +50,12 @@ public enum LogseqPendingSyncFilePath {
 
 public enum LogseqPendingSyncHTTPTransport {
     public static func send(_ pending: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
+        await send(pending, retriesRemaining: 2)
+    }
+
+    private static func send(_ pending: LogseqPendingSyncRequest, retriesRemaining: Int) async -> LogseqPendingSyncResult {
         do {
+            try Task.checkCancellation()
             guard let url = URL(string: pending.url) else {
                 LogseqRuntimeLog.shared.append(
                     level: .error,
@@ -156,6 +161,18 @@ public enum LogseqPendingSyncHTTPTransport {
                 error: nil
             )
         } catch {
+            // Reuse the exact request: raw PUTs keep their asset UUID, and journal
+            // transactions keep their tx-id and cursor when an acknowledgement is lost.
+            if !Task.isCancelled, retriesRemaining > 0,
+               let networkError = error as? URLError,
+               [.networkConnectionLost, .timedOut, .cannotConnectToHost].contains(networkError.code) {
+                do {
+                    try await Task.sleep(for: .milliseconds(500 * (3 - retriesRemaining)))
+                    return await send(pending, retriesRemaining: retriesRemaining - 1)
+                } catch {
+                    return LogseqPendingSyncResult(status: nil, body: nil, error: "Pending sync was cancelled")
+                }
+            }
             LogseqRuntimeLog.shared.append(
                 level: .error,
                 source: .core,

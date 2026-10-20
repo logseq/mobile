@@ -801,6 +801,8 @@ let built_in_tag_filtering_and_recent_assignment_order_match_logseq () =
          (10, "Property", "logseq.class/Property");
          (11, "Whiteboard", "logseq.class/Whiteboard");
          (12, "Pdf", "logseq.class/Pdf-annotation");
+         (13, "Comment", "logseq.class/Comment");
+         (14, "Comments", "logseq.class/Comments");
        ]
      |> List.concat);
   transact conn

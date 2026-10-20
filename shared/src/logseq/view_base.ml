@@ -327,9 +327,8 @@ let composer_collapsed_ (current : Model.logseq_model) =
   not current.composer_expanded
 
 let composer_send_disabled_ (current : Model.logseq_model) =
-  Model.composer_assets_sending_ current
-  || (String_kit.is_blank current.composer_draft
-      && current.composer_assets = [])
+  String_kit.is_blank current.composer_draft
+  && current.composer_assets = []
 
 let task_status_identifier (status : Model.task_status) =
   "button.task-status.option." ^ status.uuid
