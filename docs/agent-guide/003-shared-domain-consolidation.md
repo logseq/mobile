@@ -99,12 +99,12 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | Plan | Complete | Current main is the implementation workspace |
-| Obsolete APIs | Complete | Removed unused send/search/navigation/flashcard/status wrappers and payloads; preserved serialization, main-actor responsiveness, durable response and transport tests through production capture and graph entry points; 59 model tests pass |
+| Obsolete APIs | Complete | Removed unused send/search/navigation/flashcard/status wrappers and payloads; preserved serialization, main-actor responsiveness, durable response and transport tests through production capture and graph entry points; 56 model tests pass |
 | Core effects | Complete | Shared executeEffect dispatcher replaces Swift/Kotlin mappings; transcript persistence/projection and binary-upload activation covered; 817 core, 109 Swift UI, 42 Android JVM tests pass |
 | Bootstrap | Complete | Core owns bootstrap/cache/lock/sync eligibility and snapshot protocol; generations reject stale same-graph downloads; 824 core, 63 model, 109 UI and 41 Android tests plus 12 actual HTTP cases pass |
 | Shared capture | Complete | Shared canonicalization, idempotent IDs and deep-link routing; raw metadata queue reads legacy entries; late Android ASR results become shared effects; 828 core, 105 UI, 40 Android tests and real text/photo/screenshot/PDF/Markdown provider checks pass |
 | Editor/media | Complete | Core projects validated media URLs, embed requests and timestamp targets; core declares synchronous input rules consumed by native IME/caret adapters; 832 core, 63 model, 102 UI and 41 Android JVM tests pass |
-| Final verification | In progress | Full gates, native builds and integration checks |
+| Final verification | Complete | 832 core, 56 model, 102 UI, 41 Android tests; both native builds, transport/provider/bootstrap/editor/search integrations pass |
 
 ## Testing Details
 
@@ -138,15 +138,50 @@ The core now owns application effect translation, graph bootstrap and sync eligi
 Editor syntax rules are declared by the core and applied synchronously by a generic native UTF-16 adapter; waiting for an asynchronous core response inside UIKit or Compose backspace handling would break IME and caret timing.
 Legacy queue entries, pending asset intents without transcripts, and additive markup fields remain decodable.
 The legacy YouTube target wire property remains for compatibility, with no native domain interpretation.
+The unused Swift built-in task-status list/choice merger and identity-only pending-pump helper have also been removed.
 
-The final deletion pass removed four wrapper-only tests; meaningful scheduler, nonblocking transport and durable UI publication cases now exercise production capture/graph adapters.
+The final deletion pass removed seven wrapper/passthrough-only tests; meaningful scheduler, nonblocking transport and durable UI publication cases now exercise production capture/graph adapters.
 Actual shared-core tests cover search semantics and journal pagination.
 The native integration fixture opens a fresh graph before exercising mutations, matching production startup; opening only the catalog is not sufficient.
 
 
-## Question
+## Verification record
 
-No user input is required to begin.
-The user authorized execution directly on main and separate commits for each major change.
+Verified on 2026-10-21, directly on main.
+
+| Check | Result |
+| --- | --- |
+| Shared native gate, `dune build @shared/native/runtest` | 832 tests pass; final gate rechecked successfully |
+| `scripts/test-swift-model-suite.py` | 56 tests in 5 suites pass |
+| `scripts/test-swift-ui-suite.py` | 102 tests in 11 suites pass |
+| Android `:app:testDebugUnitTest -PlogseqRequireNativeCore=false` | 41 tests pass, no failures/errors/skips |
+| iOS simulator build | Main app, Share Extension, Widgets and four Shortcuts packaged and verified |
+| Android native arm64 build | `liblogseq_core.so` built successfully |
+| `scripts/test-ios-shared-domain.py` | Real graph creation/import, capture/task/transcript persistence across reopen, and actual LUI-issued UTF-16 input policy pass |
+| `scripts/test-ios-snapshot-download.py` | 12 real HTTP cases pass, including malformed cursor and layered/corrupt gzip |
+| `scripts/test-ios-sync-commands.py` | Actual socket sends core bytes and returns opaque frames with generation |
+| `scripts/test-ios-sync-recovery.py` | Six close/failure/cancellation modes pass |
+| `scripts/test-ios-first-sync-graph.py` | Cold launch uses the configured self-hosted server |
+| `scripts/test-ios-encrypted-graph-setup.py` | Native account/graph keys and WebCrypto interoperability pass |
+| `scripts/test-ios-share-providers.py` | Actual text/photo/screenshot/PDF/Markdown provider, queue and import checks pass |
+| `scripts/test-ios-install-regressions.py` | Both checks pass |
+| `scripts/test-ios-device-scripts.sh` | Passes with isolated local configuration and current build expectations |
+| `scripts/test-ios-native-interactions.py` | 12 caret comparisons, rapid Return/Shift+Enter, delayed caret acknowledgements, core autosave and three search presentation/dismissal cycles pass |
+
+The native Return fixture originally used a nested synchronous RunLoop, which prevented its queued model acknowledgement from running inside the async app test host.
+It now awaits the event loop; rapid Enter/Shift+Enter typing and delayed caret acknowledgements pass without changing product input behavior.
+Device-script checks also referenced a removed production-build restriction and sourced developer signing defaults; those tests now inspect current build settings and isolate configuration.
+
+The final native search check exposed an existing iOS 26 search-field relocation: UIKit borrowed the already focused search field into the toolbar, causing two focus acquisitions and one focus loss during each opening.
+Sampling showed `UISearchController` borrowing the field and triggering keyboard relayout.
+The iOS 26 renderer now embeds one `UISearchTextField` directly and keeps pending native typing until matching core acknowledgements arrive.
+New stable-focus and delayed Unicode typing assertions fail against the prior renderer and pass against the new one.
+Visual inspection also caught an empty-content sizing issue; the search surface now fills its viewport, and a geometric check verifies the input stays at the bottom above the keyboard.
+The final simulator screenshot was visually checked at `/tmp/logseq-consolidation-search.png`.
+The fixture separately exercises a plain UIKit text field to account for system keyboard initialization before applying the unchanged 0.8-second first-search and 0.45-second reopening limits; it does not preload the keyboard in production.
+The final verified search run took 185/62/61 ms, with one focus acquisition and no intermediate focus loss in each cycle.
+
+Compared with the starting revision `972f784`, production Swift changed by +325/-1508 lines (net -1183).
+No XCTest invocation, physical-device installation, TestFlight submission, or Android emulator run is part of this consolidation.
 
 ---
