@@ -7,6 +7,9 @@ bundle_id=${2:?usage: configure-ios-info-plist.sh INFO_PLIST BUNDLE_ID DEPLOYMEN
 deployment_target=${3:?usage: configure-ios-info-plist.sh INFO_PLIST BUNDLE_ID DEPLOYMENT_TARGET SUPPORTED_PLATFORM}
 supported_platform=${4:?usage: configure-ios-info-plist.sh INFO_PLIST BUNDLE_ID DEPLOYMENT_TARGET SUPPORTED_PLATFORM}
 plistbuddy=/usr/libexec/PlistBuddy
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+app_version=$(awk -F ' = ' '$1 == "MARKETING_VERSION" { print $2 }' "$repo_root/version.xcconfig")
+build_revision=$(git -C "$repo_root" rev-parse --short=8 HEAD)
 
 set_string() {
   local key=$1
@@ -33,8 +36,9 @@ set_string "CFBundleIdentifier" "$bundle_id"
 set_string "CFBundleInfoDictionaryVersion" "6.0"
 set_string "CFBundleName" "Logseq"
 set_string "CFBundlePackageType" "APPL"
-set_string "CFBundleShortVersionString" "0.0.1"
+set_string "CFBundleShortVersionString" "$app_version"
 set_string "CFBundleVersion" "1"
+set_string "LogseqRevision" "$build_revision"
 set_bool "ITSAppUsesNonExemptEncryption" "false"
 set_bool "LSRequiresIPhoneOS" "true"
 set_string "MinimumOSVersion" "$deployment_target"

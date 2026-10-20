@@ -47,6 +47,10 @@ check_plist_exists() {
   exit 1
 }
 
+app_version=$(awk -F ' = ' '$1 == "MARKETING_VERSION" { print $2 }' "$repo_root/version.xcconfig")
+build_revision=$(git -C "$repo_root" rev-parse --short=8 HEAD)
+check_plist "shared app version is present" "$app_version" -c "Print :CFBundleShortVersionString"
+check_plist "mobile build commit is present" "$build_revision" -c "Print :LogseqRevision"
 check_plist "iPhone device family is declared" "1" -c "Print :UIDeviceFamily:0"
 check_plist "iPad device family is declared" "2" -c "Print :UIDeviceFamily:1"
 check_plist_exists "generated launch screen is present" -c "Print :UILaunchScreen:UILaunchScreen"

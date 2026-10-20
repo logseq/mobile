@@ -1,4 +1,5 @@
 import java.net.URLClassLoader
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -10,6 +11,9 @@ plugins {
 // takes minutes (and needs the OCaml cross toolchain), so Gradle calls it
 // at most once per ABI unless the script is re-run.
 val repoRoot = rootDir.parentFile
+val appVersion = Properties().apply {
+    File(repoRoot, "version.xcconfig").reader().use { load(it) }
+}.getProperty("MARKETING_VERSION")
 val buildRevision = providers.exec {
     workingDir(repoRoot)
     commandLine("git", "rev-parse", "--short=8", "HEAD")
@@ -53,7 +57,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "2.0.2"
+        versionName = appVersion
         buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

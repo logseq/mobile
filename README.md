@@ -4,6 +4,10 @@ Logseq is a native SwiftUI app for iOS and a Kotlin/Jetpack Compose
 app for Android. Both clients share an OCaml application model and core, backed by
 the OCaml DataScript library and the lui reactive UI layer.
 
+iOS and Android share the app version in `version.xcconfig`. Android builds,
+the iOS build scripts, and the TestFlight lane embed the mobile repository's
+current Git commit as the settings revision.
+
 Shared core sources live in `shared/src/logseq/core`, with executable entry points
 in `shared/src/logseq/entry`. The `shared/native` directory contains Dune configuration and
 native platform bridges; generated OCaml stays under `_build`. Core tests live

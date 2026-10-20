@@ -1,5 +1,5 @@
 PRODUCT_BUNDLE_IDENTIFIER = com.logseq.logseq
-MARKETING_VERSION = 2.0.2
+#include "../../version.xcconfig"
 CURRENT_PROJECT_VERSION = 1
 
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon

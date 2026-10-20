@@ -2,6 +2,8 @@
 # for the Apple app.
 # You can find the documentation at https://docs.fastlane.tools
 
+require "shellwords"
+
 default_platform(:ios)
 
 platform :ios do
@@ -20,16 +22,10 @@ platform :ios do
       readonly: is_ci
     )
 
-    # MARKETING_VERSION lives in Logseq.xcconfig (there is no static
-    # CFBundleShortVersionString in Info.plist), so read the resolved build
-    # setting instead of get_version_number's plist lookup.
-    settings = sh(
-      "xcodebuild -project Logseq.xcodeproj -scheme 'Logseq App' " \
-      "-configuration Release -showBuildSettings | " \
-      "grep ' MARKETING_VERSION' | awk '{print $NF}'",
-      log: false
-    ).strip
-    version_number = settings.empty? ? "0.0.1" : settings
+    repo_root = File.expand_path("../../..", __dir__)
+    version_number = File.read(File.join(repo_root, "version.xcconfig"))
+      .match(/^MARKETING_VERSION\s*=\s*(.+)$/)[1].strip
+    revision = sh("git -C #{Shellwords.escape(repo_root)} rev-parse --short=8 HEAD", log: false).strip
 
     latest_build_number = latest_testflight_build_number(
       version: version_number,
@@ -49,7 +45,7 @@ platform :ios do
       destination: "generic/platform=iOS",
       scheme: "Logseq App",
       configuration: "Release",
-      xcargs: "-allowProvisioningUpdates -skipPackagePluginValidation -skipMacroValidation CURRENT_PROJECT_VERSION=#{build_number}"
+      xcargs: "-allowProvisioningUpdates -skipPackagePluginValidation -skipMacroValidation CURRENT_PROJECT_VERSION=#{build_number} LOGSEQ_BUILD_REVISION=#{revision}"
     )
 
     upload_to_testflight(
@@ -57,6 +53,5 @@ platform :ios do
       skip_waiting_for_build_processing: true,
     )
 
-    slack(message: "Logseq iOS build (#{build_number}) successfully uploaded to TestFlight 🎉!")
   end
 end
