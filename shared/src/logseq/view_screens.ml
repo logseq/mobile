@@ -245,7 +245,12 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
     send : t =
   box ~grow:1.0 ~accessibility_identifier:"layout.outliner.horizontal-inset"
     [
-      View_base.with_selected_signal visible_source
+      (* Each graph owns a fresh native scroll view and virtual window. *)
+      keyed
+        ~source:(Signal.map (fun (current : Model.logseq_model) ->
+          [Option.value ~default:"local" current.selected_graph_id]) model_source)
+        ~key:Fun.id ~cmp:String.compare
+        ~mount:(fun _ -> View_base.with_selected_signal visible_source
         (virtual_list ~grow:1.0
            ~data_attrs_signal:(Signal.map (fun current ->
              ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
@@ -298,7 +303,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
             (box ~padding_horizontal:8
                [ View_outliner.add_first_block_button model_source send ]);
           box ~height:120 [];
-          ]);
+          ]));
     ]
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send

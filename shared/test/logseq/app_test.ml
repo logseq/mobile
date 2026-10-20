@@ -7209,6 +7209,46 @@ let reference_breadcrumbs_keep_their_navigation_context () =
     ) [false; true]
   ) [ios_backend; kotlin_backend]
 
+let switching_graphs_resets_the_journal_viewport () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    let apply graph_id =
+      let rows = List.init 250 (fun index ->
+        journal_outline_row (graph_id ^ "-" ^ string_of_int index) "today"
+          "Journal block" "Today" 20261021 0) in
+      send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        Model.graph_name = Some "Same graph name"; selected_graph_id = Some graph_id;
+        outliner_rows = rows; journal_outliner_rows = rows });
+      flush application in
+    let renderer = Lui_app.runtime application in
+    let collection () = descendant_with_identifier renderer
+      (main_root renderer application) "list.outliner" in
+    let window () = descendant_with_identifier renderer (collection ()) "outliner.window" in
+    let start_index () = Lui_protocol.data_attrs_decode
+      (property_string renderer (window ()) Lui_protocol.DataAttrs)
+      |> List.assoc "data-virtual-start" |> int_of_string in
+    apply "graph-a";
+    let first = collection () in
+    dispatch application (Lui_protocol.VisibleRange (window (), 200, 219));
+    flush application;
+    check ~msg:"the original journal is scrolled away from the top" (start_index () > 0);
+    apply "graph-a";
+    check_eq ~msg:"ordinary refreshes retain the native scroll container" (collection ()) first;
+    check ~msg:"same-graph refreshes preserve the visible window" (start_index () > 0);
+    apply "graph-b";
+    check ~msg:"a different graph gets a fresh native scroll container" (collection () <> first);
+    check_eq ~msg:"the new graph starts at the first journal window" (start_index ()) 0;
+    check ~msg:"the newest block is immediately mounted"
+      (descendant_with_identifier renderer (collection ()) "outliner.block.graph-b-0" <> -1);
+    let second = collection () in
+    dispatch application (Lui_protocol.VisibleRange (window (), 100, 119));
+    flush application;
+    apply "graph-a";
+    check ~msg:"returning to an earlier graph also resets the native scroll container" (collection () <> second);
+    check_eq ~msg:"returning to a graph starts its journals at the top" (start_index ()) 0
+  ) [ios_backend; kotlin_backend]
+
 let tagged_nodes_replace_the_linked_references_section () =
   List.iter (fun backend ->
     List.iter (fun destination ->
@@ -9476,6 +9516,7 @@ let cases =
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
     case "reference-breadcrumbs-keep-their-navigation-context" reference_breadcrumbs_keep_their_navigation_context;
     case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
+    case "switching-graphs-resets-the-journal-viewport" switching_graphs_resets_the_journal_viewport;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;
     case "outliner-rows-live-inside-a-native-virtual-list" outliner_rows_live_inside_a_native_virtual_list;
