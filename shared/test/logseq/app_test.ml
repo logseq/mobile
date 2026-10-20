@@ -7617,6 +7617,7 @@ let native_toolbar_navigation_replay () =
     send application (Model.ApplyCoreSnapshot
       { (empty_core_projection ()) with selected_graph_id = Some "toolbar-replay";
         graph_name = Some "Toolbar replay"; sync_connected = true;
+        outliner_rows = [{ (outline_row "toolbar-row" "Page content") with page_id = page.uuid }];
         sidebar = { (empty_sidebar_projection ()) with selected_page = Some page;
           favorites = pages };
         node_routes = routes });
@@ -7629,7 +7630,8 @@ let native_toolbar_navigation_replay () =
   List.iteri (fun index page -> project page []; record ("page-" ^ string_of_int index)) pages;
   let page = List.hd pages in
   send application (Model.RequestAppNode "child");
-  project page [node_projection "child" page.uuid "Child block with a long title" [] []];
+  project page [{ (node_projection "child" page.uuid "Child block with a long title" [] []) with
+    node_outliner_rows = [{ (outline_row "child" "Child block with a long title") with page_id = page.uuid }] }];
   record "block";
   send application (Model.BackAppNavigation 1);
   project page [];

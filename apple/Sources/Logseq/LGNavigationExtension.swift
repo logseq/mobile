@@ -573,6 +573,7 @@ private struct LGNavigationContent: View {
                     }
                 }
                 #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
                 #endif
         }

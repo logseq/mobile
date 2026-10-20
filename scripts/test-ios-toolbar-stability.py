@@ -91,4 +91,15 @@ for stage in json.loads((source / "stages.json").read_text()):
     assert green >= 5, stage["name"] + ": sync indicator disappeared from the rendered toolbar"
     height = max(glyph_y) - min(glyph_y) + 1 if glyph_y else 0
     assert 2 <= height <= 14, stage["name"] + ": overflow glyph changed shape (height " + str(height) + ")"
-print("PASS: every page and block keeps the rendered sync indicator and native ellipsis")
+    if stage["name"].startswith("page-") or stage["name"] == "back":
+        full = subprocess.check_output(["ffmpeg", "-loglevel", "error", "-i", str(screenshot),
+            "-vf", "scale=402:-1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"])
+        # Measure rendered heading ink below the compact toolbar. An automatic
+        # large-title navigation bar reserves an empty row and pushes this past 180pt.
+        title_y = next((y for y in range(120, 300) if sum(
+            max(full[(y * 402 + x) * 3:(y * 402 + x) * 3 + 3]) < 100
+            for x in range(10, 380)) >= 5), None)
+        assert title_y is not None and title_y <= 148, (
+            stage["name"] + ": empty navigation title space pushes content to " + str(title_y) + "pt")
+        print(stage["name"] + ": content heading begins at " + str(title_y) + "pt")
+print("PASS: toolbar controls stay visible and content has no empty large-title row")
