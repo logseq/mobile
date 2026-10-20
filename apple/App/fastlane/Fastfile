@@ -48,6 +48,9 @@ platform :ios do
       xcargs: "-allowProvisioningUpdates -skipPackagePluginValidation -skipMacroValidation CURRENT_PROJECT_VERSION=#{build_number} LOGSEQ_BUILD_REVISION=#{revision}"
     )
 
+    sh("python3", File.join(repo_root, "scripts/verify-ios-native-symbols.py"),
+       File.join(lane_context[SharedValues::XCODEBUILD_ARCHIVE], "Products/Applications/Logseq.app"))
+
     upload_to_testflight(
       skip_submission: true,
       skip_waiting_for_build_processing: true,
