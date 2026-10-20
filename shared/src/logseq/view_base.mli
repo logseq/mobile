@@ -185,6 +185,7 @@ val active_node_breadcrumbs : Model.logseq_model -> Model.sidebar_page list
 val active_node_has_breadcrumbs_ : Model.logseq_model -> bool
 val active_node_title : Model.logseq_model -> string
 val main_title : Model.logseq_model -> string
+val outliner_scroll_identity : Model.logseq_model -> string
 val current_content_active_ : Model.logseq_model -> bool
 val current_content_is_tag_ : Model.logseq_model -> bool
 val current_content_is_property_ : Model.logseq_model -> bool

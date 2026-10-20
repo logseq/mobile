@@ -58,7 +58,7 @@ let retained_row_editing_caret (retained : retained_row) =
    lightweight collection metadata keeps the entire outline scrollable. *)
 let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
-  if Lui_ui.host context <> Lui_protocol.SwiftUIHost then
+  if not (List.mem (Lui_ui.host context) [Lui_protocol.SwiftUIHost; Lui_protocol.KotlinHost]) then
     Lui_elements.keyed ~source ~key ~cmp ~mount context parent
   else
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in

@@ -41,6 +41,13 @@ let search_result_row hit_source send : t =
      Lui_ui.string_property context node InlineIconName "app:document";
    node
 
+let search_section_heading title identifier : t =
+ fun context parent ->
+   let title = heading ~level:5 ~accessibility_identifier:identifier ~value:title [] in
+   (if Lui_ui.host context = KotlinHost then
+      box ~padding_horizontal:20 ~padding_vertical:8 [title]
+    else title) context parent
+
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
     [
@@ -89,9 +96,7 @@ let search_screen model_source send : t =
                ~test:
                  (Signal.map View_base.page_search_results_present_
                     model_source)
-               (heading ~level:5
-                  ~accessibility_identifier:"search.section.pages"
-                  ~value:"Pages" []);
+               (search_section_heading "Pages" "search.section.pages");
              keyed
                ~source:
                  (Signal.map View_base.page_search_results model_source)
@@ -101,9 +106,7 @@ let search_screen model_source send : t =
                ~test:
                  (Signal.map View_base.block_search_results_present_
                     model_source)
-               (heading ~level:5
-                  ~accessibility_identifier:"search.section.blocks"
-                  ~value:"Blocks" []);
+               (search_section_heading "Blocks" "search.section.blocks");
              keyed
                ~source:
                  (Signal.map View_base.block_search_results model_source)
@@ -121,6 +124,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
         View_composer.composer_view context model_source send;
         button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:58
           ~height:58 ~background:"glass" ~corner_radius:29 ~label:"Search"
+          ~border_width:1 ~border_color:"border"
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
@@ -243,6 +247,8 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
     [
       View_base.with_selected_signal visible_source
         (virtual_list ~grow:1.0
+           ~data_attrs_signal:(Signal.map (fun current ->
+             ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
            ~style_class:"retained-pane scroll-section-titles"
            ~accessibility_identifier:"list.outliner"
         [
@@ -290,21 +296,6 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = KotlinHost then
-    stack ~grow:1.0
-      [
-        if_
-          ~test:(Signal.map View_base.journal_home_visible_ model_source)
-          (box ~grow:1.0 ~accessibility_identifier:"pane.journals"
-             [
-               root_outliner_view context
-                 (Signal.map View_base.journal_navigation_model
-                    model_source)
-                 (Signal.map View_base.journal_home_visible_ model_source)
-                 send;
-             ]);
-      ]
-  else
     box ~grow:1.0 ~accessibility_identifier:"pane.journals"
       [
         root_outliner_view context
@@ -494,7 +485,7 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
          (fun current ->
            View_base.main_title (main_header_model context current))
          model_source)
-    ~style_class:"headline" ~accessibility_identifier:"title.main" []
+    ~style_class:"headline navigation-title" ~accessibility_identifier:"title.main" []
 
 let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
   stack
@@ -584,16 +575,14 @@ let main_header_connection model_source send : t =
         ~test:
           (Signal.map View_base.connection_control_visible_ model_source)
         (fun context parent ->
-          (if Lui_ui.host context = SwiftUIHost then
-             stack [
+          (stack [
                if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
                  (button ~icon:(`app "calendar") ~label:"Go to journal"
                     ~variant:`ghost ~size:`icon ~width:44 ~height:44
                     ~accessibility_identifier:"button.journal-calendar"
                     ~on_press:(press send Model.OpenJournalCalendar) []);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
-                 (active_overflow_menu model_source send) ]
-           else active_overflow_menu model_source send) context parent);
+                 (active_overflow_menu model_source send) ] context parent));
     ]
 
 let native_node_destination ~source:title_source content : t =
@@ -659,29 +648,23 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      let _ =
        stack ~grow:1.0
          [
-           if_
-             ~test:
-               (Signal.map View_base.kotlin_app_root_visible_ model_source)
-             (logseq_main_view context model_source send);
-           keyed
-             ~source:
-               (Signal.map View_base.active_app_node_routes model_source)
-             ~key:View_base.node_projection_identifier ~cmp:compare
-             ~mount:(fun route_source ->
-               native_node_screen context model_source ~source:route_source send);
+           column ~grow:1.0
+             ~display_signal:(Signal.map (fun current ->
+               if View_base.kotlin_app_root_visible_ current then `contents else `none) model_source)
+             [logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send];
+           column ~grow:1.0
+             ~display_signal:(Signal.map (fun (current : Model.logseq_model) ->
+               if current.search_open then `none else `contents) model_source)
+             [native_node_stack context model_source
+               ~source:(Signal.map Model.app_node_routes model_source) send];
            if_
              ~test:
                (Signal.map View_base.kotlin_search_root_visible_
                   model_source)
              (column ~grow:1.0 ~background:"background"
                 [ search_screen model_source send ]);
-           keyed
-             ~source:
-               (Signal.map View_base.active_search_node_routes
-                  model_source)
-             ~key:View_base.node_projection_identifier ~cmp:compare
-             ~mount:(fun route_source ->
-               native_node_screen context model_source ~source:route_source send);
+           native_node_stack context model_source
+             ~source:(Signal.map View_base.search_node_routes model_source) send;
          ]
          context (Some node)
      in
@@ -746,7 +729,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [
              column ~grow:1.0
                [
-                 row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
+                 if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
+                 (row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
                    ~accessibility_identifier:"header.main"
                    [
                      column ~width:44 ~height:44 ~corner_radius:22
@@ -763,7 +747,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
                              main_header_connection model_source send;
                            ];
                        ];
-                   ];
+                   ]);
                  stack ~grow:1.0
                    [ native_search_view context model_source send ];
                ];

@@ -9,8 +9,7 @@ import org.json.JSONObject
 // (or must not) honor — same drop rules as the Dart applier so core
 // views keep working unmodified:
 //   - container-relative-frame(-inset): always dropped
-//   - selected on virtual-list: dropped
-//   - padding-horizontal/vertical on kinds other than row/column/grid/box
+//   - padding-horizontal/vertical on unsupported avatar/tooltip metadata
 //   - style-class on dialog/sheet
 //   - icon-placement unless leading/trailing on (toggle-)button
 //   - role unless "treeitem" on row/column/panel/card/box/list-item
@@ -90,9 +89,8 @@ internal class LuiPatchFilter(
             value: Any?,
         ): Boolean = when (property) {
             "container-relative-frame", "container-relative-frame-inset" -> true
-            "selected" -> kind == "virtual-list"
             "padding-horizontal", "padding-vertical" ->
-                kind !in setOf("row", "column", "grid", "box")
+                kind in setOf("avatar", "tooltip")
             "style-class" -> kind == "dialog" || kind == "sheet"
             "icon-placement" ->
                 (kind != "button" && kind != "toggle-button") ||

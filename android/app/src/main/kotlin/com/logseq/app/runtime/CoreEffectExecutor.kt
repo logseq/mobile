@@ -249,6 +249,7 @@ internal class CoreEffectExecutor(
 
     companion object {
         private val platformEffectKinds = setOf(
+            "present-journal-calendar",
             "persist-composer-draft",
             "present-attachment",
             "present-asset",

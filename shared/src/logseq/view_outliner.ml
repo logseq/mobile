@@ -162,7 +162,9 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
-            box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
+            icon ~name_signal:(Signal.map (fun (row : Model.outline_row) ->
+                `app (if row.is_collapsed && row.has_children then "outliner-bullet-closed" else "outliner-bullet")) row_source)
+              ~width:24 ~height:24 ~foreground:"border"
               ~accessibility_identifier:
                 ("outliner.bullet-glyph."
                  ^ View_base.outliner_row_uuid current_row)
@@ -206,7 +208,10 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
 
 let outliner_status_icon identifier test name row_source : t =
   if_ ~test:(Signal.map test row_source)
-    (icon ~name ~size:`lg ~width:22 ~height:22 ~foreground:"foreground"
+    (icon ~name ~size:`lg ~width:22 ~height:22
+       ~foreground_signal:(Signal.map (fun (row : Model.outline_row) ->
+         match row.row_status with Some status -> View_base.task_status_foreground status
+         | None -> "foreground") row_source)
        ~accessibility_identifier:identifier [])
 
 let outliner_status_control (context : Lui_ui.ui_context) model_source
@@ -332,6 +337,15 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       if_ ~test:has_status_source
         (column ~cross:`start
            [ outliner_status_control context model_source row_source send ]);
+      reactive (fun (row : Model.outline_row) ->
+        match row.row_priority with
+        | None -> box []
+        | Some priority ->
+          let ident = Option.value ~default:"" priority.ident in
+          let level = match List.rev (String.split_on_char '/' ident) with
+            | name :: _ when name <> "" -> name | _ -> String.lowercase_ascii priority.title in
+          icon ~name:(`app ("priority-" ^ level)) ~width:20 ~height:24
+            ~foreground:"muted-foreground" ~tooltip:priority.title []) row_source;
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
@@ -907,6 +921,8 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.outliner"
+        ~data_attrs_signal:(Signal.map (fun current ->
+          ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
         [
           box ~height:16 [];
           if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)

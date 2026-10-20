@@ -23,6 +23,8 @@ internal data class DeleteConfirmationRequest(
 // the app composable — the Compose analogue of the previous app's
 // dialog/bottom-sheet helpers.
 internal object LogseqDialogs {
+    var journalCalendar by mutableStateOf<CompletableDeferred<Int?>?>(null)
+        private set
     var recordingRequest by mutableStateOf<AudioRecordingRequest?>(null)
         private set
     var deleteConfirmation by mutableStateOf<DeleteConfirmationRequest?>(null)
@@ -58,6 +60,12 @@ internal object LogseqDialogs {
         } finally {
             deleteConfirmation = null
         }
+    }
+
+    suspend fun chooseJournalDate(): Int? {
+        val result = CompletableDeferred<Int?>()
+        journalCalendar = result
+        return try { result.await() } finally { journalCalendar = null }
     }
 
     fun notifyError(message: String) {

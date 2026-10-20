@@ -39,7 +39,7 @@ val outliner_zoom_control :
   (Model.logseq_action -> 'a) -> bool -> Lui_elements.t
 val outliner_status_icon :
   string ->
-  ('a -> bool) -> Lui_elements.icon -> 'a Signal.signal -> Lui_elements.t
+  (Model.outline_row -> bool) -> Lui_elements.icon -> Model.outline_row Signal.signal -> Lui_elements.t
 val outliner_status_control :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

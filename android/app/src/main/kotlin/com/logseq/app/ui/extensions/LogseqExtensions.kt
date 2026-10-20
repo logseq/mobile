@@ -1,6 +1,8 @@
 package com.logseq.app.ui.extensions
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -22,17 +24,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.lui.LuiExtensionContext
 import dev.lui.LuiExtensionEventSchema
 import dev.lui.LuiExtensionProperty
@@ -226,116 +234,93 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             context.emit("back", "count" to 1)
         }
     }
-    val childIds = context.children
-    if (childIds.size == 2) {
-        // Second child is the bottom chrome. Hoist it out of the content
-        // column like iOS's safeAreaInset/overlay so the composer's
-        // internal `grow` props can't starve the journal; intrinsic
-        // sizing keeps it at natural height instead of letting those
-        // props claim the whole screen.
-        if (occupies) {
-            Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) { context.child(childIds[0]) }
-                Box(Modifier.height(IntrinsicSize.Min)) {
-                    context.child(childIds[1])
+    var journalTitle by remember { mutableStateOf<String?>(null) }
+    CompositionLocalProvider(
+        dev.lui.LocalLuiSectionTitle provides journalTitle,
+        dev.lui.LocalLuiSectionTitleChanged provides { journalTitle = it },
+    ) {
+        val childIds = context.children
+        if (childIds.size == 2) {
+            // Second child is the bottom chrome. Hoist it out of the content
+            // column like iOS's safeAreaInset/overlay so the composer's
+            // internal `grow` props can't starve the journal; intrinsic
+            // sizing keeps it at natural height instead of letting those
+            // props claim the whole screen.
+            if (occupies) {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) { context.child(childIds[0]) }
+                    Box(Modifier.height(IntrinsicSize.Min)) {
+                        context.child(childIds[1])
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .height(IntrinsicSize.Min),
+                    ) {
+                        context.child(childIds[1])
+                    }
                 }
             }
         } else {
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .height(IntrinsicSize.Min),
-                ) {
-                    context.child(childIds[1])
-                }
-            }
+            context.Children()
         }
-    } else {
-        context.Children()
     }
 }
 
-// Search presentation — the standard children are the app content and are
-// always rendered (mirroring the SwiftUI `baseContent`); `presented` adds
-// the search chrome on top, matching iOS's .searchable layout: a close
-// circle top-left, centered bold title, the results list filling the
-// space, and a bottom capsule with a magnifier, the text field, and a
-// clear circle.
+// Search owns the content area and bottom controls while retaining the app below it.
 @Composable
 private fun SearchPresentation(context: LuiExtensionContext) {
-    val presented = context.flag("presented")
-    if (!presented) {
+    if (!context.flag("presented")) {
         context.Children()
         return
     }
-    val title = context.string("title") ?: ""
-    val query = context.string("query") ?: ""
-
-    BackHandler {
-        context.emit("dismiss")
+    val title = context.string("title").orEmpty().ifEmpty { "Search" }
+    val query = context.string("query").orEmpty()
+    val depth = context.int("depth") ?: 0
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(depth) {
+        if (depth == 0) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        } else keyboard?.hide()
     }
+    DisposableEffect(Unit) {
+        onDispose { keyboard?.hide() }
+    }
+    BackHandler {
+        if (depth > 0) context.emit("back", "count" to 1) else context.emit("dismiss")
+    }
+    val border = BorderStroke(1.dp, dev.lui.luiThemeColor("border") ?: MaterialTheme.colorScheme.outlineVariant)
+    val glass = dev.lui.luiThemeColor("glass") ?: MaterialTheme.colorScheme.surface
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("native-search-presentation"),
-        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxSize().testTag("native-search-presentation"),
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .size(44.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                ) {
-                    IconButton(onClick = { context.emit("dismiss") }) {
-                        Icon(
-                            Icons.Filled.Close,
-                            contentDescription = "Close search",
-                        )
-                    }
-                }
-                Text(
-                    title.ifEmpty { "Search" },
-                    modifier = Modifier.align(Alignment.Center),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Box(modifier = Modifier.weight(1f)) {
-                context.Children()
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+            Box(Modifier.weight(1f)) { context.Children() }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                     .padding(bottom = 16.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp),
+                    modifier = Modifier.weight(1f).height(58.dp),
                     shape = RoundedCornerShape(29.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    border = border,
+                    color = glass,
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Icon(Icons.Filled.Search, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         var fieldValue by remember(query) { mutableStateOf(query) }
                         TextField(
                             value = fieldValue,
@@ -343,10 +328,9 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                                 fieldValue = it
                                 context.emit("query-changed", "query" to it)
                             },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("field.search"),
-                            placeholder = { Text(title.ifEmpty { "Search" }) },
+                            modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("field.search"),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                            placeholder = { Text(title) },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
@@ -358,25 +342,21 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                             ),
                         )
                         if (fieldValue.isNotEmpty()) {
-                            Surface(
-                                modifier = Modifier.size(32.dp),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        fieldValue = ""
-                                        context.emit("query-changed", "query" to "")
-                                    },
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Clear",
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
+                            IconButton(onClick = {
+                                fieldValue = ""
+                                context.emit("query-changed", "query" to "")
+                            }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                             }
                         }
+                    }
+                }
+                Surface(shape = CircleShape, color = glass, border = border) {
+                    IconButton(
+                        onClick = { context.emit("dismiss") },
+                        modifier = Modifier.size(58.dp).testTag("button.search.close"),
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close search", modifier = Modifier.size(24.dp))
                     }
                 }
             }

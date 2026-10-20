@@ -267,10 +267,19 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
            ());
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
-        (Lui_element_combine.composer_collapsed
-           ~label:"Capture"
-           ~accessibility_identifier:"button.composer.expand"
-           ~on_press:(press send Model.ExpandComposer) ());
+        (if Lui_ui.host context = KotlinHost then
+           button ~variant:`ghost ~grow:1.0 ~height:58
+             ~padding_horizontal:30 ~background:"glass"
+             ~foreground:"muted-foreground" ~corner_radius:999
+             ~border_width:1 ~border_color:"border" ~text_alignment:`start ~style_class:"body"
+             ~label:"Capture" ~accessibility_identifier:"button.composer.expand"
+             ~on_press:(press send Model.ExpandComposer)
+             ~text:"Capture" []
+         else
+           Lui_element_combine.composer_collapsed
+             ~label:"Capture"
+             ~accessibility_identifier:"button.composer.expand"
+             ~on_press:(press send Model.ExpandComposer) ());
     ]
 
 let outliner_task_status_row block_id status_source send : t =
@@ -278,7 +287,7 @@ let outliner_task_status_row block_id status_source send : t =
   menu_item
     ~text_signal:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
-    ~foreground:"secondary"
+    ~foreground:(View_base.task_status_foreground status)
     ~accessibility_identifier:
       (View_base.outliner_task_status_option_identifier status)
     ~on_press:(fun _ ->

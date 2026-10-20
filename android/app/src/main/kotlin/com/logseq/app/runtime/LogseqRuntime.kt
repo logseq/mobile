@@ -52,6 +52,7 @@ internal class LogseqRuntime(
         platform = platformServices,
         attachmentsImporter = assetImporter::import,
         syncNow = ::requestSyncNow,
+        presentJournalCalendar = ::presentJournalCalendar,
     )
 
     val backend = LuiBackend(
@@ -74,7 +75,9 @@ internal class LogseqRuntime(
             ).asImageBitmap(),
         )
     }
-    private val patchFilter = LuiPatchFilter { patch -> backend.applyJson(patch) }
+    private val patchFilter = LuiPatchFilter { patch ->
+        check(backend.applyJson(patch)) { "Could not apply UI update: ${backend.lastError}" }
+    }
     private val bridge = LogseqNativeBridge(onPatch = ::applyPatch)
 
     private var coreEffects: CoreEffectExecutor? = null
@@ -530,6 +533,23 @@ internal class LogseqRuntime(
             AndroidAppEntryKind.SharedAsset ->
                 addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
         }
+    }
+
+    private suspend fun presentJournalCalendar(): NativeEffectResolution {
+        val day = com.logseq.app.ui.extensions.LogseqDialogs.chooseJournalDate()
+            ?: return NativeEffectResolution.Discard()
+        val response = JSONObject(bridge.callCore(
+            JSONObject().put("apiVersion", 1).put("method", "dispatch")
+                .put("params", JSONObject().put("action", "ensureJournal")
+                    .put("payload", day.toString())).toString()
+        ))
+        if (!response.optBoolean("ok")) {
+            return NativeEffectResolution.Failure(
+                response.optJSONObject("error")?.optString("message") ?: "Could not open journal"
+            )
+        }
+        val uuid = response.getJSONObject("result").getString("uuid")
+        return NativeEffectResolution.HostUpdate(kind = "open-node", payload = JSONObject.quote(uuid))
     }
 
     private suspend fun applyAppEntryCoreRequest(request: String) {

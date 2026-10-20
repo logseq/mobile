@@ -52,6 +52,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
     }
     MaterialTheme(
         colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
+        typography = LogseqTheme.typography,
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
             dev.lui.LocalLuiThemeDark provides dark,
@@ -59,6 +60,9 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
             // surface; the LUI default maps it to the (bluish) M3 surface, so
             // pin the token to the neutral value it reads as over #fcfcfc.
             dev.lui.LocalLuiSemanticColors provides mapOf(
+                "border" to if (dark) androidx.compose.ui.graphics.Color(0xFF424244)
+                    else androidx.compose.ui.graphics.Color(0xFFD1D1D6),
+                "muted-foreground" to androidx.compose.ui.graphics.Color(0xFF8E8E93),
                 "glass" to
                     if (dark) androidx.compose.ui.graphics.Color(0xFF26272C)
                     else androidx.compose.ui.graphics.Color(0xFFF7F7F7),
@@ -93,6 +97,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
             }
             AudioRecordingDialog()
             DeleteConfirmationDialog()
+            JournalCalendarDialog()
         }
     }
 }

@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
@@ -50,10 +51,13 @@ import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -98,6 +102,9 @@ internal fun OutlinerBlockContent(
     val isAsset = context.flag("is-asset")
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
+    var rowPosition by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current.density
+    var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     val hoverColor by animateColorAsState(
@@ -105,26 +112,37 @@ internal fun OutlinerBlockContent(
         label = "dropHighlight",
     )
 
-    val dropTarget = remember {
+    val dropTarget = remember(uuid, density) {
         object : DragAndDropTarget {
+            private fun placement(event: DragAndDropEvent): String {
+                val drag = event.toAndroidDragEvent()
+                return outlinerDropPlacement(
+                    (drag.y - rowPosition.y) / density,
+                    rowHeightPx / density,
+                    (drag.x - rowPosition.x) / density,
+                )
+            }
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 dragHover = false
                 val clip = event.toAndroidDragEvent().clipData
                 val source = clip?.takeIf { it.itemCount > 0 }
                     ?.getItemAt(0)?.text?.toString() ?: return false
                 if (source == uuid) return false
-                val height = rowHeightPx.toFloat()
-                val localY = event.toAndroidDragEvent().y
                 context.emit(
                     "drop",
                     "uuid" to uuid,
-                    "placement" to outlinerDropPlacement(localY, height),
+                    "placement" to placement(event),
                 )
                 return true
             }
 
             override fun onEntered(event: DragAndDropEvent) {
                 dragHover = true
+                hoverPlacement = placement(event)
+            }
+
+            override fun onMoved(event: DragAndDropEvent) {
+                hoverPlacement = placement(event)
             }
 
             override fun onExited(event: DragAndDropEvent) {
@@ -143,6 +161,7 @@ internal fun OutlinerBlockContent(
             .fillMaxWidth()
             .onGloballyPositioned {
                 rowHeightPx = it.size.height
+                rowPosition = it.positionInRoot()
                 // First placed block ≈ first frame with real journal content.
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
@@ -191,15 +210,24 @@ internal fun OutlinerBlockContent(
                 )
             }
         }
+        if (dragHover) {
+            val indicator = MaterialTheme.colorScheme.primary
+            Canvas(Modifier.matchParentSize().testTag("outliner.drop.$hoverPlacement")) {
+                val y = if (hoverPlacement == "before") 1.dp.toPx() else size.height - 1.dp.toPx()
+                val start = if (hoverPlacement == "inside") 20.dp.toPx() else 0f
+                drawLine(indicator, Offset(start, y), Offset(size.width, y), strokeWidth = 2.dp.toPx())
+                drawCircle(indicator, radius = 3.dp.toPx(), center = Offset(start + 3.dp.toPx(), y))
+            }
+        }
     }
 }
 
-internal fun outlinerDropPlacement(localY: Float, rowHeight: Float): String {
+internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Float = 0f): String {
     val height = if (rowHeight <= 0) 1f else rowHeight
     return when {
-        localY < height * 0.25f -> "before"
-        localY > height * 0.75f -> "after"
-        else -> "inside"
+        localY < minOf(16f, height * 0.25f) -> "before"
+        localX > 100f -> "inside"
+        else -> "after"
     }
 }
 

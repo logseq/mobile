@@ -7,12 +7,52 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.logseq.app.R
 
 // Port of the former Dart theme — M3 fidelity scheme seeded
 // on the Logseq accent; the light/dark surfaces match the previous theme so
 // backend-side token lookups (surface-container-* names in LuiTheme)
 // resolve to the same colors the previous app showed.
 internal object LogseqTheme {
+    val inter = FontFamily(
+        Font(R.font.inter_regular, FontWeight.Normal),
+        Font(R.font.inter_medium, FontWeight.Medium),
+        Font(R.font.inter_semibold, FontWeight.SemiBold),
+        Font(R.font.inter_bold, FontWeight.Bold),
+        Font(R.font.inter_regular_italic, FontWeight.Normal, FontStyle.Italic),
+        Font(R.font.inter_medium_italic, FontWeight.Medium, FontStyle.Italic),
+        Font(R.font.inter_semibold_italic, FontWeight.SemiBold, FontStyle.Italic),
+        Font(R.font.inter_bold_italic, FontWeight.Bold, FontStyle.Italic),
+    )
+
+    private fun TextStyle.withInter() = copy(fontFamily = inter, letterSpacing = 0.sp)
+
+    val typography = Typography().let { base ->
+        base.copy(
+            displayLarge = base.displayLarge.withInter(),
+            displayMedium = base.displayMedium.withInter(),
+            displaySmall = base.displaySmall.withInter(),
+            headlineLarge = base.headlineLarge.withInter(),
+            headlineMedium = base.headlineMedium.withInter(),
+            headlineSmall = base.headlineSmall.withInter(),
+            titleLarge = base.titleLarge.withInter(),
+            titleMedium = base.titleMedium.withInter(),
+            titleSmall = base.titleSmall.withInter(),
+            bodyLarge = base.bodyLarge.withInter(),
+            bodyMedium = base.bodyMedium.withInter(),
+            bodySmall = base.bodySmall.withInter(),
+            labelLarge = base.labelLarge.withInter(),
+            labelMedium = base.labelMedium.withInter(),
+            labelSmall = base.labelSmall.withInter(),
+        )
+    }
+
     val accent = Color(0xff2d6cdf)
     val lightSurface = Color(0xfff8f9ff)
     val darkSurface = Color(0xff101318)

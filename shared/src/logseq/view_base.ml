@@ -697,6 +697,14 @@ let active_node_title (current : Model.logseq_model) =
   | Some route -> route.node_title
   | None -> "Untitled"
 
+let outliner_scroll_identity (current : Model.logseq_model) =
+  let graph = Option.value ~default:"local" current.selected_graph_id in
+  let destination = match active_node_projection current, current.selected_page with
+    | Some route, _ -> "node:" ^ route.node_uuid
+    | None, Some page -> "page:" ^ page.uuid
+    | None, None -> "journals" in
+  graph ^ ":" ^ destination
+
 let main_title (current : Model.logseq_model) =
   if current.destination = FlashcardsDestination then "Flashcards"
   else if current.destination = GraphsDestination then "Graphs"

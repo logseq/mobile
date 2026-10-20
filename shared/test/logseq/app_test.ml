@@ -2353,6 +2353,21 @@ let graph_and_sync_actions_update_retained_status_in_place () =
     (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)
        (App.model application).pending_effects)
 
+let kotlin_journal_calendar_uses_the_shared_native_presentation_effect () =
+  let application = App.create (kotlin_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let calendar = descendant_with_identifier renderer
+    (Lui_app.root_node application) "button.journal-calendar" in
+  check ~msg:"Android journals expose the same calendar entry as iOS" (calendar <> -1);
+  dispatch application (Lui_protocol.Press calendar);
+  flush application;
+  check ~msg:"Android calendar uses the shared presentation effect"
+    (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)
+       (App.model application).pending_effects)
+
 let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
   let application = App.create (ios_backend ()) in
   let projection =
@@ -5692,7 +5707,7 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
     (Some Lui_protocol.Text);
   check_eq ~msg:"the Kotlin navigation title maps to the iOS headline class"
     (property_string renderer navigation_title Lui_protocol.StyleClass)
-    "headline";
+    "headline navigation-title";
   check ~msg:"the composed Kotlin child owns the bottom controls"
     (descendant_with_identifier renderer navigation_chrome "button.search"
     <> -1);
@@ -5766,7 +5781,7 @@ let kotlin_navigation_renders_each_active_node_row_once () =
   check_eq ~msg:"the visible Android back action pops exactly one route"
     (App.model application).app_navigation_path []
 
-let kotlin_selected_pages_unmount_the_hidden_journal_pane () =
+let kotlin_selected_pages_retain_the_hidden_journal_pane () =
   let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
   let row =
@@ -5800,12 +5815,10 @@ let kotlin_selected_pages_unmount_the_hidden_journal_pane () =
   check ~msg:"Kotlin renders the selected page"
     (descendant_with_identifier renderer navigation "pane.selected-page"
     <> -1);
-  check_eq
-    ~msg:
-      "Kotlin removes the hidden journal so it cannot paint or receive \
-       input behind the selected page"
-    (descendant_with_identifier renderer navigation "pane.journals")
-    (-1)
+  let journal = descendant_with_identifier renderer navigation "pane.journals" in
+  check ~msg:"Kotlin retains the journal's scroll state behind the selected page" (journal <> -1);
+  let list = descendant_with_identifier renderer journal "list.outliner" in
+  check ~msg:"the retained journal is not placed or interactive" (not (property_bool renderer list Lui_protocol.Selected))
 
 let kotlin_selected_page_navigation_renders_the_opened_node () =
   let application = App.create (kotlin_backend ()) in
@@ -5857,10 +5870,8 @@ let kotlin_selected_page_navigation_renders_the_opened_node () =
     (descendant_count_with_identifier renderer navigation
        "outliner.block.route-row")
     1;
-  check_eq
-    ~msg:"Kotlin unmounts the selected-page root while a node route is active"
-    (descendant_with_identifier renderer navigation "pane.selected-page")
-    (-1)
+  check ~msg:"Kotlin retains the source page beneath the opened node"
+    (descendant_with_identifier renderer navigation "pane.selected-page" <> -1)
 
 let native_navigation_retains_the_journal_and_every_node_route () =
   let application = App.create (ios_backend ()) in
@@ -7073,6 +7084,31 @@ let ten_thousand_blocks_mount_only_the_requested_window () =
     check ~msg:"the window stays bounded after reverse scrolling" (count_rows () <= 32)
   ) ["root"; "node"; "tag"; "mixed"; "journals"]
 
+let kotlin_large_pages_mount_only_the_requested_window () =
+  let application = App.create (kotlin_backend ()) in
+  start application;
+  let rows = List.init 10_000 (fun index ->
+    { (outline_row ("android-window-" ^ string_of_int index) "Nested block") with
+      Model.depth = index mod 4; has_children = index mod 4 < 3;
+      page_id = "page-a" }) in
+  send application (apply_core_snapshot None (empty_sidebar_projection ()) [] true "" [] []
+    None None [] [] rows false []);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let root = main_root renderer application in
+  let window = descendant_with_identifier renderer root "outliner.window" in
+  check ~msg:"Android uses the same bounded collection as iOS" (window <> -1);
+  check ~msg:"the first Android block is mounted"
+    (descendant_with_identifier renderer root "outliner.block.android-window-0" <> -1);
+  check_eq ~msg:"distant Android rows are not mounted eagerly"
+    (descendant_with_identifier renderer root "outliner.block.android-window-9999") (-1);
+  dispatch application (Lui_protocol.VisibleRange (window, 9980, 9999));
+  flush application;
+  check ~msg:"Android can reach the final nested block"
+    (descendant_with_identifier renderer root "outliner.block.android-window-9999" <> -1);
+  check_eq ~msg:"the old Android window is evicted"
+    (descendant_with_identifier renderer root "outliner.block.android-window-0") (-1)
+
 let distant_outline_contents_are_loaded_without_replacing_the_page () =
   List.iter (fun is_tag ->
     let application = App.create (ios_backend ()) in
@@ -7592,12 +7628,12 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
   check
     ~msg:"Kotlin renders a dedicated visual bullet inside its hit target"
     (bullet <> -1);
-  check_eq ~msg:"Kotlin uses iOS main's seven-point bullet diameter"
+  check_eq ~msg:"Kotlin uses the same 24-point vector slot as iOS"
     (property_int renderer bullet Lui_protocol.WidthValue)
-    7;
-  check_eq ~msg:"the outliner bullet remains circular"
+    24;
+  check_eq ~msg:"the bullet asset remains square"
     (property_int renderer bullet Lui_protocol.HeightValue)
-    7;
+    24;
   check_eq ~msg:"the zoom control keeps iOS main's 24-point layout slot"
     (property_int renderer zoom_button Lui_protocol.WidthValue)
     24;
@@ -7613,9 +7649,9 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
   check_eq ~msg:"the task status glyph keeps iOS main's square frame"
     (property_int renderer status_icon Lui_protocol.HeightValue)
     22;
-  check_eq ~msg:"Kotlin matches iOS by using the row foreground for Todo"
+  check_eq ~msg:"Kotlin matches master's Todo status color"
     (property_string renderer status_icon Lui_protocol.ForegroundValue)
-    "foreground";
+    "task-todo";
   check_eq
     ~msg:
       "the transparent zoom target does not re-add a large Material \
@@ -7646,10 +7682,10 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
     (property_string renderer updated_status_icon Lui_protocol.IconName)
     "app:task-done";
   check_eq
-    ~msg:"retained status changes preserve iOS row foreground styling"
+    ~msg:"retained status changes update to the master Done color"
     (property_string renderer updated_status_icon
        Lui_protocol.ForegroundValue)
-    "foreground"
+    "task-done"
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
@@ -8899,6 +8935,7 @@ let cases =
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
+    case "kotlin-journal-calendar-uses-native-presentation" kotlin_journal_calendar_uses_the_shared_native_presentation_effect;
     case "kotlin-composer-matches-ios-chrome" kotlin_composer_matches_ios_chrome;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
@@ -8927,7 +8964,7 @@ let cases =
     case "ios-node-navigation-is-owned-by-the-native-stack" ios_node_navigation_is_owned_by_the_native_stack;
     case "kotlin-navigation-and-search-own-composed-standard-children" kotlin_navigation_and_search_own_composed_standard_children;
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
-    case "kotlin-selected-pages-unmount-the-hidden-journal-pane" kotlin_selected_pages_unmount_the_hidden_journal_pane;
+    case "kotlin-selected-pages-retain-the-hidden-journal-pane" kotlin_selected_pages_retain_the_hidden_journal_pane;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
@@ -8952,6 +8989,7 @@ let cases =
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
+    case "kotlin-large-pages-mount-only-the-requested-window" kotlin_large_pages_mount_only_the_requested_window;
     case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
     case "returning-to-a-scrolled-page-keeps-hydrated-rows-mounted" returning_to_a_scrolled_page_keeps_hydrated_rows_mounted;

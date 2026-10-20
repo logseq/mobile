@@ -133,6 +133,9 @@ internal class AndroidPlatformEffects(
     private val platform: AndroidPlatformServices,
     private val attachmentsImporter: suspend (String) -> List<Map<String, Any>>,
     private val syncNow: () -> Boolean = { false },
+    private val presentJournalCalendar: suspend () -> NativeEffectResolution = {
+        NativeEffectResolution.Discard(succeeded = false, message = "Journal calendar is unavailable")
+    },
 ) {
     suspend fun initialAuthenticationCode(): Int = try {
         if (authentication.hasStoredSession()) 3 else 1
@@ -162,6 +165,7 @@ internal class AndroidPlatformEffects(
 
     suspend fun execute(effect: NativeEffect): NativeEffectResolution = try {
         when (effect.kind) {
+            "present-journal-calendar" -> presentJournalCalendar()
             "persist-composer-draft" -> {
                 platform.persistComposerDraft(effect.text)
                 NativeEffectResolution.Discard()
