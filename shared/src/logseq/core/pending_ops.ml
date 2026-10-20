@@ -96,6 +96,7 @@ type pending_asset =
   ; asset_type : string
   ; asset_size : int
   ; asset_checksum : string
+  ; transcript : pending_insert option
   }
 
 type pending_moves =
@@ -326,7 +327,7 @@ let affected_uuids db intent =
     else []
   | Save_title value -> [ value.uuid ]
   | Insert_block value -> [ value.uuid ]
-  | Create_asset value -> [ value.uuid ]
+  | Create_asset value -> value.uuid :: (match value.transcript with Some child -> [child.uuid] | None -> [])
   | Move_block value -> [ value.uuid ]
   | Add_tag value -> [ value.uuid ]
   | Create_tag value -> [ value.uuid ]
@@ -353,6 +354,8 @@ let inserted_result_exists db intent =
     Option.is_some (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
   | Create_asset value ->
     Option.is_some (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
+    && (match value.transcript with None -> true | Some child ->
+      Option.is_some (Ds.entid db "block/uuid" (Ds.Uuid child.uuid)))
   | _ -> false
 
 let split_result_exists db intent =
@@ -594,7 +597,7 @@ let intent_json intent =
           ("assetType", `String value.asset_type);
           ("assetSize", `Int value.asset_size);
           ("assetChecksum", `String value.asset_checksum);
-        ] )
+        ] @ (match value.transcript with None -> [] | Some child -> ["transcript", json_object (insert_fields child)]) )
     | Move_block value ->
       ( "move-block"
       , [
@@ -728,6 +731,13 @@ let intent_of_json input =
         asset_type = string_field fields "assetType";
         asset_size = int_field fields "assetSize";
         asset_checksum = string_field fields "assetChecksum";
+        transcript = (match field fields "transcript" with
+          | None | Some `Null -> None
+          | Some input ->
+            let child = object_fields input "asset transcript must be an object" in
+            Some { uuid = string_field child "uuid"; title = string_field child "title";
+              page_uuid = string_field child "pageUuid"; parent_uuid = string_field child "parentUuid";
+              order = string_field child "order"; created_at = int_field child "createdAt" });
       }
   | "move-block" -> Move_block (move_of_json input)
   | "move-blocks" ->

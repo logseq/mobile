@@ -71,6 +71,7 @@ let intents : Ops.pending_intent list =
         asset_type = "png";
         asset_size = 2048;
         asset_checksum = "abc123";
+        transcript = None;
       };
     move "block";
     Ops.Move_blocks { moves = [ move_value "first"; move_value "second" ] };

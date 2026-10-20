@@ -77,7 +77,7 @@ class AndroidPendingSyncTest {
         val payload = "{\"uuid\":\"stable\",\"localPath\":\"/local/photo.png\"}"
         val result = executor.execute(NativeEffect(id = 1, kind = "send-asset", text = payload))
         assertTrue(result.succeeded)
-        assertEquals("addAsset", called!!.getJSONObject("params").getString("action"))
-        assertEquals(payload, called!!.getJSONObject("params").getString("payload"))
+        assertEquals("executeEffect", called!!.getJSONObject("params").getString("action"))
+        assertEquals(payload, JSONObject(called!!.getJSONObject("params").getString("payload")).getString("text"))
     }
 }

@@ -20,8 +20,8 @@ class CoreEffectExecutorTest {
         )
         val resolution = executor.execute(NativeEffect(id = 1, kind = "confirm-outliner-delete", text = ""))
         val params = JSONObject(requests.single()).getJSONObject("params")
-        assertEquals("outlinerEvent", params.getString("action"))
-        assertEquals("confirmDelete", JSONObject(params.getString("payload")).getString("type"))
+        assertEquals("executeEffect", params.getString("action"))
+        assertEquals("confirm-outliner-delete", JSONObject(params.getString("payload")).getString("kind"))
         assertTrue(resolution.succeeded)
     }
 }

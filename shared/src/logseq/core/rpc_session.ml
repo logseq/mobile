@@ -1336,7 +1336,7 @@ let sync_transport_event session _input fields =
         ~editing:(sync_transport_editing session) ~apply_frame event previous in
       publish_sync_transport session transport
 
-let dispatch session action payload =
+let rec dispatch session action payload =
   let s = state session in
   let h = host session in
   let object_action handle =
@@ -1345,6 +1345,10 @@ let dispatch session action payload =
       handle
   in
   match action with
+  | "executeEffect" ->
+    (match Core_effect.request ~now:now_ms ~fresh_id:fresh_squuid payload with
+     | Ok (action, payload) -> dispatch session action payload
+     | Error message -> Rpc.failure "invalid_effect" message)
   | "outlinerEvent" ->
     (match payload with
      | Some payload -> dispatch_outliner_event session payload

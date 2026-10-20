@@ -70,6 +70,7 @@ type pending_asset =
   ; asset_type : string
   ; asset_size : int
   ; asset_checksum : string
+  ; transcript : pending_insert option
   }
 
 type pending_moves =

@@ -1,4 +1,5 @@
 ("Api"
+"Core_effect"
 "Asset_files"
 "Cache_model"
 "Datascript_value"

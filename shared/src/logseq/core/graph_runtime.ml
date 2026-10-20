@@ -339,7 +339,10 @@ let stage runtime (operation : Ops.pending_operation) =
     Ok ()
   | None when (match operation.state with Ops.Accepted t -> t <= (state runtime).server_t | _ -> false) ->
     Ok ()
-  | Some previous when transport_state operation.state ->
+  | Some previous when transport_state operation.state
+      || (match previous.state, operation.state, previous.intent, operation.intent with
+          | Ops.Applied, Ops.Queued, Ops.Create_asset _, Ops.Create_asset _ -> true
+          | _ -> false) ->
     Ops.save runtime.path { previous with state = operation.state };
     Ok ()
   | _ ->

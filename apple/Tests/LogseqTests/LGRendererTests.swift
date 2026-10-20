@@ -377,42 +377,23 @@ struct LGRendererTests {
         #expect(runtime.lastError == "Connection refused")
     }
 
-    @Test("task capture effects preserve the complete task status")
-    func taskCaptureEffectsPreserveTaskStatus() async throws {
-        var capturedRequest: LogseqRPCRequest?
+    @Test("native core effects forward opaque metadata to the shared executor")
+    func forwardsOpaqueCoreEffects() async throws {
+        var captured: LogseqRPCRequest?
         let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+            captured = request
+            return #"{"apiVersion":1,"ok":false,"error":{"code":"invalid_effect","message":"Rejected by shared core"}}"#
         }
-        let metadata = """
-        {"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo","iconType":"tabler-icon","iconId":"Todo","iconColor":null}
-        """
-
-        let resolution = await executor.execute(
-            LGEffect(
-                id: 8,
-                kind: "send-task",
-                text: "Follow up",
-                metadata: metadata
-            )
-        )
-        let request = try #require(capturedRequest)
-        let payloadData = try #require(request.params.payload?.data(using: .utf8))
-        let payload = try JSONDecoder().decode(LGSendTaskPayloadProbe.self, from: payloadData)
-
-        #expect(request.params.action == "sendTask")
-        #expect(payload.text == "Follow up")
-        #expect(!payload.uuid.isEmpty)
-        #expect(payload.now > 0)
-        #expect(payload.status == LGTaskStatusPayloadProbe(
-            uuid: "todo",
-            ident: "logseq.property/status.todo",
-            title: "Todo",
-            iconType: "tabler-icon",
-            iconId: "Todo",
-            iconColor: nil
-        ))
-        #expect(resolution.succeeded)
+        let effect = LGEffect(id: 42, kind: "send-task", text: "A note", uuid: "block", value: 3, metadata: "opaque metadata")
+        let result = await executor.execute(effect)
+        let request = try #require(captured)
+        #expect(request.params.action == "executeEffect")
+        let payload = try JSONSerialization.jsonObject(with: Data(try #require(request.params.payload).utf8)) as? [String: Any]
+        #expect(payload?["id"] as? Int == 42)
+        #expect(payload?["metadata"] as? String == "opaque metadata")
+        #expect(payload?["value"] as? Int == 3)
+        #expect(!result.succeeded)
+        #expect(result.message == "invalid_effect\nRejected by shared core")
     }
 
     @Test("applies a launch snapshot that arrives before the renderer starts")
@@ -429,183 +410,6 @@ struct LGRendererTests {
         #expect(native.startedPlatforms == [2])
         #expect(native.appliedSnapshots == ["launch response"])
         #expect(runtime.isStarted)
-    }
-
-    @Test("search effects dispatch the existing core search action")
-    func searchEffectsUseCoreSearch() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 9, kind: "search-nodes", text: "project alpha")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "searchNodes")
-        #expect(request.params.payload == "project alpha")
-        #expect(resolution.succeeded)
-    }
-
-    @Test("outliner tap effects dispatch the existing core reducer action")
-    func outlinerTapEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 10, kind: "tap-outliner-block", text: "block-a")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("tapBlock") == true)
-        #expect(request.params.payload?.contains("block-a") == true)
-        #expect(resolution.succeeded)
-    }
-
-    @Test("outliner collapse effects reuse the existing core reducer")
-    func outlinerCollapseEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let collapse = await executor.execute(
-            LGEffect(id: 11, kind: "toggle-outliner-collapsed", text: "parent")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("toggleCollapsed") == true)
-        #expect(collapse.succeeded)
-    }
-
-    @Test("add-first-block effects reuse the existing core reducer")
-    func addFirstBlockEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 13, kind: "add-root-block", text: "page-a")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("addRootBlock") == true)
-        #expect(request.params.payload?.contains("page-a") == true)
-        #expect(resolution.succeeded)
-    }
-
-    @Test("node navigation effects dispatch the existing core actions")
-    func nodeNavigationEffectsUseCoreNavigation() async throws {
-        var capturedRequests: [LogseqRPCRequest] = []
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequests.append(request)
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let open = await executor.execute(
-            LGEffect(id: 20, kind: "open-node", text: "node-a")
-        )
-        let close = await executor.execute(
-            LGEffect(id: 21, kind: "close-node", text: "node-a")
-        )
-
-        #expect(capturedRequests.map(\.params.action) == ["openNode", "closeNode"])
-        #expect(capturedRequests[0].params.payload?.contains("node-a") == true)
-        #expect(capturedRequests[1].params.payload == nil)
-        #expect(open.succeeded)
-        #expect(close.succeeded)
-    }
-
-    @Test("sidebar navigation effects dispatch the existing core actions")
-    func sidebarNavigationEffectsUseCoreNavigation() async throws {
-        var capturedRequests: [LogseqRPCRequest] = []
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequests.append(request)
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let select = await executor.execute(
-            LGEffect(id: 22, kind: "select-sidebar-page", text: "page-a")
-        )
-        let clear = await executor.execute(
-            LGEffect(id: 23, kind: "clear-selected-page", text: "")
-        )
-        let older = await executor.execute(
-            LGEffect(id: 24, kind: "load-older-journals", text: "")
-        )
-
-        #expect(capturedRequests.map(\.params.action) == [
-            "selectPage", "clearSelectedPage", "loadOlderJournals",
-        ])
-        #expect(capturedRequests[0].params.payload == "page-a")
-        #expect(capturedRequests[1].params.payload == nil)
-        #expect(capturedRequests[2].params.payload == nil)
-        #expect(select.succeeded)
-        #expect(clear.succeeded)
-        #expect(older.succeeded)
-    }
-
-    @Test("flashcard effects preserve review identity, rating, time, and operation id")
-    func flashcardEffectsUseCoreFlashcards() async throws {
-        var capturedRequests: [LogseqRPCRequest] = []
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequests.append(request)
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let load = await executor.execute(
-            LGEffect(id: 24, kind: "load-flashcards", text: "")
-        )
-        let review = await executor.execute(
-            LGEffect(
-                id: 25,
-                kind: "review-flashcard",
-                text: "good",
-                uuid: "card-a"
-            )
-        )
-
-        #expect(capturedRequests.map(\.params.action) == ["loadFlashcards", "reviewFlashcard"])
-        let loadPayload = try #require(capturedRequests[0].params.payload)
-        let loadTime = try #require(Int64(loadPayload))
-        #expect(loadTime > 0)
-        let reviewPayload = try #require(capturedRequests[1].params.payload)
-        let reviewData = Data(reviewPayload.utf8)
-        let payload = try JSONDecoder().decode(FlashcardReviewPayload.self, from: reviewData)
-        #expect(payload.uuid == "card-a")
-        #expect(payload.rating == "good")
-        #expect(payload.now > 0)
-        #expect(!payload.operationId.isEmpty)
-        #expect(load.succeeded)
-        #expect(review.succeeded)
-    }
-
-    @Test("flashcard review rejects effects without a card UUID")
-    func flashcardReviewRequiresUUID() async {
-        var callCount = 0
-        let executor = LGCoreEffectExecutor { _ in
-            callCount += 1
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 26, kind: "review-flashcard", text: "again")
-        )
-
-        #expect(!resolution.succeeded)
-        #expect(resolution.message.contains("UUID"))
-        #expect(callCount == 0)
     }
 
     @Test("graph catalog effects reuse the existing core graph lifecycle")
@@ -640,13 +444,13 @@ struct LGRendererTests {
         )
 
         #expect(capturedRequests.map(\.params.action) == [
-            "refresh", "selectGraph", "createSyncGraph",
+            "executeEffect", "executeEffect", "executeEffect",
         ])
-        #expect(capturedRequests[1].params.payload == "graph-a")
+        #expect(capturedRequests[1].params.payload?.contains("graph-a") == true)
         let createPayload = try #require(capturedRequests[2].params.payload)
         #expect(createPayload.contains("New graph"))
-        #expect(createPayload.contains("isEncrypted"))
-        #expect(createPayload.contains("true"))
+        #expect(createPayload.contains("value"))
+        #expect(createPayload.contains("1"))
         #expect(deletedGraphID == "graph-a")
         #expect(refresh.succeeded)
         #expect(open.succeeded)
@@ -800,34 +604,6 @@ struct LGRendererTests {
         #expect(resolution.output == .hostUpdate("asset-preview-resolved"))
         let descriptor = try? JSONSerialization.jsonObject(with: Data(resolution.message.utf8)) as? [String: Any]
         #expect(descriptor?["path"] as? String == "/tmp/Photo.jpg")
-    }
-
-    @Test("page mutations preserve semantic operation payloads")
-    func pageMutationEffectsUseCoreBoundary() async throws {
-        var requests: [LogseqRPCRequest] = []
-        let executor = LGCoreEffectExecutor { request in
-            requests.append(request)
-            return #"{"apiVersion":1,"ok":true,"result":null}"#
-        }
-
-        #expect((await executor.execute(LGEffect(
-            id: 42,
-            kind: "set-page-favorite",
-            text: "page-a",
-            value: 1
-        ))).succeeded)
-        #expect((await executor.execute(LGEffect(
-            id: 43,
-            kind: "delete-page",
-            text: "page-a"
-        ))).succeeded)
-
-        #expect(requests.map(\.params.action) == ["setPageFavorite", "deletePage"])
-        #expect(requests[0].params.payload?.contains(#""pageUuid":"page-a""#) == true)
-        #expect(requests[0].params.payload?.contains(#""favorite":true"#) == true)
-        #expect(requests[0].params.payload?.contains(#""operationId":"#) == true)
-        #expect(requests[1].params.payload?.contains(#""pageUuid":"page-a""#) == true)
-        #expect(requests[1].params.payload?.contains(#""operationId":"#) == true)
     }
 
     @Test("page sharing stays on the platform presentation boundary")
@@ -1204,118 +980,6 @@ struct LGRendererTests {
         )])
     }
 
-    @Test("outliner selection effects reuse the existing core reducer")
-    func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequests: [LogseqRPCRequest] = []
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequests.append(request)
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let longPress = await executor.execute(
-            LGEffect(id: 13, kind: "long-press-outliner-block", text: "parent")
-        )
-        let copy = await executor.execute(
-            LGEffect(id: 14, kind: "outliner-toolbar", text: "copy")
-        )
-
-        #expect(capturedRequests.count == 2)
-        #expect(capturedRequests[0].params.payload?.contains("longPressBlock") == true)
-        #expect(capturedRequests[0].params.payload?.contains("parent") == true)
-        #expect(capturedRequests[1].params.payload?.contains("toolbar") == true)
-        #expect(capturedRequests[1].params.payload?.contains("copy") == true)
-        #expect(longPress.succeeded)
-        #expect(copy.succeeded)
-    }
-
-    @Test("outliner task status effects reuse the existing core event")
-    func outlinerTaskStatusEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return #"{"apiVersion":1,"ok":true,"result":null}"#
-        }
-
-        let resolution = await executor.execute(LGEffect(
-            id: 16,
-            kind: "set-outliner-task-status",
-            text: "block-a",
-            metadata: #"{"uuid":"done","ident":"logseq.property/status.done","title":"Done","iconType":"tabler-icon","iconId":"Done","iconColor":null}"#
-        ))
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("setTaskStatus") == true)
-        #expect(request.params.payload?.contains("block-a") == true)
-        let payload = try JSONSerialization.jsonObject(with: Data(try #require(request.params.payload).utf8)) as? [String: Any]
-        #expect(payload?["statusIdent"] as? String == "logseq.property/status.done")
-        #expect(resolution.succeeded)
-    }
-
-    @Test("outliner drop effects preserve the core event contract")
-    func outlinerDropEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return #"{"apiVersion":1,"ok":true,"result":null}"#
-        }
-
-        let resolution = await executor.execute(LGEffect(
-            id: 17,
-            kind: "drop-outliner-blocks",
-            text: "target-a",
-            metadata: "before"
-        ))
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("dropBlocks") == true)
-        #expect(request.params.payload?.contains("target-a") == true)
-        #expect(request.params.payload?.contains("before") == true)
-        #expect(resolution.succeeded)
-    }
-
-    @Test("autocomplete effects reuse the existing core reducer")
-    func autocompleteEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(
-                id: 15,
-                kind: "choose-outliner-autocomplete",
-                text: "page-a"
-            )
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("chooseAutocomplete") == true)
-        #expect(request.params.payload?.contains("page-a") == true)
-        #expect(resolution.succeeded)
-    }
-
-    @Test("autosave effects reuse the existing core save action")
-    func autosaveEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 0, kind: "save-outliner-editing", text: "")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("saveEditing") == true)
-        #expect(resolution.succeeded)
-    }
-
     @Test("successful outliner autosave starts the sync pump")
     func successfulOutlinerAutosaveStartsSyncPump() async {
         let native = LGNativeRuntimeProbe()
@@ -1386,40 +1050,6 @@ struct LGRendererTests {
             "outliner-toolbar",
             "sync-now",
         ])
-    }
-
-    @Test("native deletion confirmation uses the shared core event")
-    func confirmsDeletionThroughCore() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return #"{"apiVersion":1,"ok":true,"result":null}"#
-        }
-        let resolution = await executor.execute(LGEffect(id: 19, kind: "confirm-outliner-delete", text: ""))
-        let request = try #require(capturedRequest)
-        let payload = try #require(request.params.payload)
-        let event = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any]
-        #expect(request.params.action == "outlinerEvent")
-        #expect(event?["type"] as? String == "confirmDelete")
-        #expect(resolution.succeeded)
-    }
-
-    @Test("destination changes cancel the existing core editor")
-    func cancelEditingEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequest: LogseqRPCRequest?
-        let executor = LGCoreEffectExecutor { request in
-            capturedRequest = request
-            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
-        }
-
-        let resolution = await executor.execute(
-            LGEffect(id: 18, kind: "cancel-outliner-editing", text: "")
-        )
-        let request = try #require(capturedRequest)
-
-        #expect(request.params.action == "outlinerEvent")
-        #expect(request.params.payload?.contains("cancelEditing") == true)
-        #expect(resolution.succeeded)
     }
 
     @Test("delivers each core platform command revision exactly once")
@@ -1548,22 +1178,6 @@ private struct FlashcardReviewPayload: Decodable {
     let rating: String
     let now: Int64
     let operationId: String
-}
-
-private struct LGSendTaskPayloadProbe: Decodable {
-    let text: String
-    let uuid: String
-    let now: Int64
-    let status: LGTaskStatusPayloadProbe
-}
-
-private struct LGTaskStatusPayloadProbe: Decodable, Equatable {
-    let uuid: String
-    let ident: String?
-    let title: String
-    let iconType: String?
-    let iconId: String?
-    let iconColor: String?
 }
 
 private struct LGEffectResolutionProbe: Equatable {

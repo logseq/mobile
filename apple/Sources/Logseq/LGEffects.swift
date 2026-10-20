@@ -3,7 +3,11 @@ import LUIAppleBackend
 import Observation
 import LogseqModel
 
-public struct LGEffect: Decodable, Equatable, Sendable {
+private enum LGEffectEncodingError: Error {
+    case invalidUTF8
+}
+
+public struct LGEffect: Codable, Equatable, Sendable {
     public let id: Int
     public let kind: String
     public let text: String
@@ -398,67 +402,6 @@ public protocol LGEffectExecuting {
 }
 
 
-private struct LGAssetTranscript: Decodable {
-    let uuid: String
-    let transcript: String?
-    let transcriptUUID: String?
-}
-
-private struct LGAssetTranscriptChild: Encodable {
-    let uuid: String
-    let title: String
-    let parentId: String
-    let now: Int64
-}
-
-private struct LGSendCapturePayload: Encodable {
-    let text: String
-    let uuid: String
-    let now: Int64
-}
-
-private struct LGSendTaskPayload: Encodable {
-    let text: String
-    let uuid: String
-    let now: Int64
-    let status: LGTaskStatusPayload
-}
-
-private struct LGTaskStatusPayload: Codable, Equatable, Sendable {
-    let uuid: String
-    let ident: String?
-    let title: String
-    let iconType: String?
-    let iconId: String?
-    let iconColor: String?
-}
-
-private struct LGReviewFlashcardPayload: Encodable {
-    let uuid: String
-    let rating: String
-    let now: Int64
-    let operationId: String
-}
-
-private struct LGCreateGraphPayload: Encodable {
-    let name: String
-    let isEncrypted: Bool
-    let password: String?
-}
-
-private struct LGSetPageFavoritePayload: Encodable {
-    let pageUuid: String
-    let favorite: Bool
-    let operationId: String
-    let now: Int64
-}
-
-private struct LGDeletePagePayload: Encodable {
-    let pageUuid: String
-    let operationId: String
-    let now: Int64
-}
-
 private struct LGCoreEffectResponse: Decodable {
     let ok: Bool
     let error: LogseqCoreError?
@@ -482,462 +425,34 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
     }
 
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
-        let request: LogseqRPCRequest
         switch effect.kind {
-        case "send-asset":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "addAsset", payload: effect.text)
-            )
-        case "send-capture":
-            do {
-                let payload = LGSendCapturePayload(
-                    text: effect.text,
-                    uuid: UUID().uuidString.lowercased(),
-                    now: Int64(Date().timeIntervalSince1970 * 1_000)
-                )
-                let payloadData = try JSONEncoder().encode(payload)
-                guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the capture payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "send", payload: payloadJSON)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "send-task":
-            do {
-                guard let metadata = effect.metadata else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "The task capture effect did not include a task status"
-                    )
-                }
-                let status = try JSONDecoder().decode(
-                    LGTaskStatusPayload.self,
-                    from: Data(metadata.utf8)
-                )
-                let payload = LGSendTaskPayload(
-                    text: effect.text,
-                    uuid: UUID().uuidString.lowercased(),
-                    now: Int64(Date().timeIntervalSince1970 * 1_000),
-                    status: status
-                )
-                let payloadData = try JSONEncoder().encode(payload)
-                guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the task capture payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "sendTask", payload: payloadJSON)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "load-page-references":
-            request = LogseqRPCRequest(method: "dispatch",
-                params: LogseqRPCParams(action: "loadPageReferences", payload: effect.text))
-        case "hydrate-outliner-rows":
-            request = LogseqRPCRequest(method: "dispatch",
-                params: LogseqRPCParams(action: "hydrateOutlinerRows", payload: effect.text))
-        case "search-nodes":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "searchNodes", payload: effect.text)
-            )
-        case "open-node", "open-search-result":
-            do {
-                let payloadData = try JSONEncoder().encode(
-                    LogseqNodeRouteRequest(uuid: effect.text, reveal: effect.kind == "open-search-result")
-                )
-                guard let payload = String(data: payloadData, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the node route payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "openNode", payload: payload)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "close-node":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "closeNode")
-            )
-        case "select-sidebar-page":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "selectPage", payload: effect.text)
-            )
-        case "clear-selected-page":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "clearSelectedPage")
-            )
-        case "load-older-journals":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "loadOlderJournals")
-            )
-        case "set-page-favorite":
-            do {
-                let data = try JSONEncoder().encode(LGSetPageFavoritePayload(
-                    pageUuid: effect.text,
-                    favorite: effect.value == 1,
-                    operationId: UUID().uuidString.lowercased(),
-                    now: Int64(Date().timeIntervalSince1970 * 1_000)
-                ))
-                guard let payload = String(data: data, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the page favorite payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "setPageFavorite", payload: payload)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "delete-page":
-            do {
-                let data = try JSONEncoder().encode(LGDeletePagePayload(
-                    pageUuid: effect.text,
-                    operationId: UUID().uuidString.lowercased(),
-                    now: Int64(Date().timeIntervalSince1970 * 1_000)
-                ))
-                guard let payload = String(data: data, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the page deletion payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "deletePage", payload: payload)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "load-flashcards":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(
-                    action: "loadFlashcards",
-                    payload: String(Int64(Date().timeIntervalSince1970 * 1_000))
-                )
-            )
-        case "refresh-graphs":
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "refresh")
-            )
-        case "open-graph":
-            if let platformEffect {
-                return await platformEffect(effect)
-            }
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "selectGraph", payload: effect.text)
-            )
-        case "unlock-graph":
-            if let platformEffect {
-                return await platformEffect(effect)
-            }
-            request = LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "unlockGraph", payload: effect.text)
-            )
-        case "create-graph":
-            if let platformEffect {
-                return await platformEffect(effect)
-            }
-            do {
-                let data = try JSONEncoder().encode(LGCreateGraphPayload(
-                    name: effect.text,
-                    isEncrypted: effect.value == 1,
-                    password: effect.metadata
-                ))
-                guard let payload = String(data: data, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the graph creation payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "createSyncGraph", payload: payload)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "delete-local-graph":
-            if let platformEffect {
-                return await platformEffect(effect)
-            }
-            guard let deleteLocalGraph else {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: "Local graph deletion is unavailable"
-                )
-            }
-            return await Self.resolution(from: await deleteLocalGraph(effect.text))
         case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
              "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: "Platform settings handling is unavailable"
-                )
+                return LGEffectResolution(succeeded: false, message: "Platform settings handling is unavailable")
             }
             return await platformEffect(effect)
-        case "review-flashcard":
-            guard let uuid = effect.uuid else {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: "Flashcard review is missing its card UUID"
-                )
+        case "open-graph", "unlock-graph", "create-graph":
+            if let platformEffect { return await platformEffect(effect) }
+        case "delete-local-graph":
+            if let platformEffect { return await platformEffect(effect) }
+            guard let deleteLocalGraph else {
+                return LGEffectResolution(succeeded: false, message: "Local graph deletion is unavailable")
             }
-            do {
-                let payload = LGReviewFlashcardPayload(
-                    uuid: uuid,
-                    rating: effect.text,
-                    now: Int64(Date().timeIntervalSince1970 * 1_000),
-                    operationId: UUID().uuidString.lowercased()
-                )
-                let data = try JSONEncoder().encode(payload)
-                guard let payloadJSON = String(data: data, encoding: .utf8) else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "Could not encode the flashcard review payload as UTF-8"
-                    )
-                }
-                request = LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "reviewFlashcard", payload: payloadJSON)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "tap-outliner-block", "toggle-outliner-collapsed",
-             "long-press-outliner-block", "add-root-block":
-            do {
-                let eventType = switch effect.kind {
-                case "toggle-outliner-collapsed": "toggleCollapsed"
-                case "long-press-outliner-block": "longPressBlock"
-                case "add-root-block": "addRootBlock"
-                default: "tapBlock"
-                }
-                request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: eventType, uuid: effect.text)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "drop-outliner-blocks":
-            guard let placement = effect.metadata else {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: "The outliner drop effect is missing its placement"
-                )
-            }
-            do {
-                request = try Self.outlinerRequest(LogseqOutlinerEvent(
-                    type: "dropBlocks",
-                    targetUuid: effect.text,
-                    placement: placement
-                ))
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "set-outliner-task-status":
-            do {
-                guard let metadata = effect.metadata else {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: "The task status effect is missing its status payload"
-                    )
-                }
-                let status = try JSONDecoder().decode(
-                    LGTaskStatusPayload.self,
-                    from: Data(metadata.utf8)
-                )
-                request = try Self.outlinerRequest(LogseqOutlinerEvent(
-                    type: "setTaskStatus",
-                    uuid: effect.text,
-                    statusIdent: status.ident,
-                    statusUuid: status.uuid
-                ))
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "outliner-toolbar":
-            do {
-                request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: "toolbar", action: effect.text)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "choose-outliner-autocomplete":
-            do {
-                request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: "chooseAutocomplete", value: effect.text)
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "save-outliner-editing":
-            do {
-                request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: "saveEditing")
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "confirm-outliner-delete":
-            do {
-                request = try Self.outlinerRequest(LogseqOutlinerEvent(type: "confirmDelete"))
-            } catch {
-                return LGEffectResolution(succeeded: false, message: String(describing: error))
-            }
-        case "cancel-outliner-editing":
-            do {
-                request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: "cancelEditing")
-                )
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
-        case "change-outliner-text", "return-outliner-editor",
-             "backspace-outliner-editor", "move-outliner-caret":
-            guard let uuid = effect.uuid, let value = effect.value else {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: "The LG outliner effect is missing its UUID or integer value"
-                )
-            }
-            let event: LogseqOutlinerEvent
-            switch effect.kind {
-            case "change-outliner-text":
-                event = LogseqOutlinerEvent(
-                    type: "textChanged",
-                    uuid: uuid,
-                    title: effect.text,
-                    caretUTF16Offset: value
-                )
-            case "return-outliner-editor":
-                event = LogseqOutlinerEvent(
-                    type: "returnPressed",
-                    uuid: uuid,
-                    title: effect.text,
-                    caretUTF16Offset: value
-                )
-            case "backspace-outliner-editor":
-                event = LogseqOutlinerEvent(
-                    type: "backspacePressed",
-                    uuid: uuid,
-                    title: effect.text,
-                    selectionLength: value
-                )
-            default:
-                event = LogseqOutlinerEvent(
-                    type: "caretMoved",
-                    uuid: uuid,
-                    caretUTF16Offset: value
-                )
-            }
-            do {
-                request = try Self.outlinerRequest(event)
-            } catch {
-                return LGEffectResolution(
-                    succeeded: false,
-                    message: String(describing: error)
-                )
-            }
+            return await Self.resolution(from: await deleteLocalGraph(effect.text))
         default:
-            return LGEffectResolution(
-                succeeded: false,
-                message: "Unsupported LG effect: \(effect.kind)"
-            )
+            break
         }
-
-        let responseJSON = await callCore(request)
-        let resolution = await Self.resolution(from: responseJSON)
-        if effect.kind == "send-asset", resolution.succeeded,
-           let asset = try? JSONDecoder().decode(LGAssetTranscript.self, from: Data(effect.text.utf8)),
-           let title = asset.transcript, !title.isEmpty, let uuid = asset.transcriptUUID {
-            do {
-                let payload = try JSONEncoder().encode(LGAssetTranscriptChild(
-                    uuid: uuid, title: title, parentId: asset.uuid,
-                    now: Int64(Date().timeIntervalSince1970 * 1_000)
-                ))
-                return await Self.resolution(from: await callCore(LogseqRPCRequest(
-                    method: "dispatch", params: LogseqRPCParams(
-                        action: "addChildBlock", payload: String(decoding: payload, as: UTF8.self)
-                    )
-                )))
-            } catch {
-                return LGEffectResolution(succeeded: false, message: String(describing: error))
-            }
+        do {
+            let payload = String(decoding: try JSONEncoder().encode(effect), as: UTF8.self)
+            let request = LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
+                action: "executeEffect", payload: payload
+            ))
+            return await Self.resolution(from: await callCore(request))
+        } catch {
+            return LGEffectResolution(succeeded: false, message: String(describing: error))
         }
-        return resolution
     }
 
     private static func resolution(from responseJSON: String) async -> LGEffectResolution {
@@ -967,21 +482,4 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         }
     }
 
-    private static func outlinerRequest(
-        _ event: LogseqOutlinerEvent
-    ) throws -> LogseqRPCRequest {
-        let payloadData = try JSONEncoder().encode(event)
-        guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
-            throw LGEffectEncodingError.invalidUTF8
-        }
-        return LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: "outlinerEvent", payload: payloadJSON)
-        )
-    }
 }
-
-private enum LGEffectEncodingError: Error {
-    case invalidUTF8
-}
-

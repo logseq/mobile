@@ -3786,6 +3786,7 @@ let asset_workflow_captures_view_before_caching_and_loads_stage_afterward () =
                   asset_type = "png";
                   asset_size = 12;
                   asset_checksum = "hash";
+        transcript = None;
                 };
           })
       (fun () ->
@@ -5576,6 +5577,7 @@ let optimistic_assets_replace_in_place_and_preserve_local_path () =
         asset_type = "image/png";
         asset_size = 12;
         asset_checksum = "hash";
+        transcript = None;
       }
   in
   let asset =

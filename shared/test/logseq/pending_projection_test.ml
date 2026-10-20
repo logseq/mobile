@@ -417,6 +417,7 @@ let asset_projection_keeps_upload_metadata_and_built_in_class () =
         asset_type = "png";
         asset_size = 2048;
         asset_checksum = "abc123";
+        transcript = None;
       }
   in
   let db = apply_intent (base_db ()) intent in
@@ -1222,6 +1223,17 @@ let existing_display_properties_and_tagged_tasks_are_rendered () =
     (Option.map (fun (status : Cache_model.status) -> status.ident) task.status)
     (Some (Some "logseq.property/status.todo"))
 
+let asset_transcript_survives_persistence_and_projects_atomically () =
+  let intent = Ops.intent_of_json (Yojson.Basic.from_string
+    {|{"type":"create-asset","uuid":"recording","title":"recording.m4a","pageUuid":"page","parentUuid":"block","order":"a2","createdAt":100,"assetType":"m4a","assetSize":12,"assetChecksum":"abc","transcript":{"uuid":"transcript","title":"Spoken note","pageUuid":"page","parentUuid":"recording","order":"a0","createdAt":100}}|}) in
+  let restored = Ops.intent_of_json (Ops.intent_json intent) in
+  let before = base_db () in
+  let after = apply_intent before restored in
+  check_eq (title after "transcript") "Spoken note";
+  check_eq (title after "recording") "recording.m4a";
+  check (Projection.satisfied after restored);
+  check_eq (Ds.entid before "block/uuid" (Ds.Uuid "transcript")) None
+
 let cases =
   [ case "built-in tags initialize behavior and render through cache"
       built_in_tags_initialize_behavior_and_render_through_cache;
@@ -1229,6 +1241,8 @@ let cases =
     case "existing display properties and tagged tasks are rendered"
       existing_display_properties_and_tagged_tasks_are_rendered ] @
   [
+    case "asset transcript survives persistence and projects atomically"
+      asset_transcript_survives_persistence_and_projects_atomically;
     case
       "title replay updates references without mutating authoritative db"
       title_replay_updates_references_without_mutating_authoritative_db;

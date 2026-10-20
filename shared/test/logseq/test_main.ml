@@ -39,6 +39,7 @@ let () =
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;
       "rpc", Rpc_test.cases;
+      "core_effect", Core_effect_test.cases;
       "app", App_test.cases;
       "autosave", Autosave_test.cases;
       "drive", Drive_scenario_test.cases;

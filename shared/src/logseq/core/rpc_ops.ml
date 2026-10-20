@@ -214,6 +214,7 @@ let asset_datoms_operation cursor state (block : Model.block) load_context
                     asset_type;
                     asset_size;
                     asset_checksum;
+                    transcript = None;
                   };
             }
         | None -> Error "asset destination is not available")
@@ -286,7 +287,7 @@ let rec project_outliner_intent (blocks : Model.block list)
         asset_checksum = Some value.asset_checksum;
       }
     in
-    if List.exists (fun block -> block.Model.uuid = value.uuid) blocks
+    let blocks = if List.exists (fun block -> block.Model.uuid = value.uuid) blocks
     then
       List.map
         (fun (block : Model.block) ->
@@ -294,7 +295,12 @@ let rec project_outliner_intent (blocks : Model.block list)
             { asset with Model.local_path = block.local_path }
           else block)
         blocks
-    else blocks @ [ asset ]
+    else blocks @ [ asset ] in
+    (match value.transcript with
+     | None -> blocks
+     | Some child ->
+       if List.exists (fun (block : Model.block) -> block.uuid = child.uuid) blocks then blocks
+       else project_outliner_intent blocks (Ops.Insert_block child))
   | Ops.Split_block value ->
     (match
        List.find_opt (fun block -> block.Model.uuid = value.uuid) blocks
@@ -532,6 +538,13 @@ let add_asset payload cache clock load_target prepare_view prepare_operation
            , target ) =
          metadata
        in
+       let* transcript = Wire.graph_workflow_result "invalid_params"
+         (let* title = Wire.optional_string fields "transcript" in
+          let* child_id = Wire.optional_string fields "transcriptUUID" in
+          match title, child_id with
+          | None, _ | Some "", _ -> Ok None
+          | Some title, Some child_id when child_id <> "" && child_id <> uuid -> Ok (Some (child_id, title))
+          | _ -> Error "A transcript requires a distinct transcriptUUID") in
        let now =
          match requested_now with
          | Some now -> now
@@ -547,18 +560,30 @@ let add_asset payload cache clock load_target prepare_view prepare_operation
         | _ -> ());
        Model.cache_local_asset cache uuid title asset_type asset_size
          checksum local_path now target;
+       let cache_transcript submitted = match transcript with
+         | None -> ()
+         | Some (child_id, title) ->
+           ignore (Model.cache_local_child cache child_id title uuid now);
+           if submitted then ignore (Model.mark_block_submitted cache child_id) in
        (match (load_stage (), Model.read_block cache uuid) with
         | Some stage, Some block ->
           let* operation =
             Wire.graph_workflow_result "asset_projection_failed"
               (prepare_operation block)
           in
+          let operation = match operation.Ops.intent, transcript with
+            | Ops.Create_asset asset, Some (child_id, title) ->
+              { operation with Ops.intent = Ops.Create_asset { asset with transcript = Some {
+                Ops.uuid = child_id; title; page_uuid = asset.page_uuid;
+                parent_uuid = asset.uuid; order = "a0"; created_at = now } } }
+            | _ -> operation in
           let* () =
             Wire.graph_workflow_result "stage_operation_failed"
               (stage operation)
           in
+          cache_transcript true;
           Ok (completed ())
-        | _ -> Ok (completed ())))
+        | _ -> cache_transcript false; Ok (completed ())))
   | None -> Wire.failure "invalid_params" "addAsset requires a JSON payload"
 
 let child_operation base_t context uuid title parent_id now fresh_id =

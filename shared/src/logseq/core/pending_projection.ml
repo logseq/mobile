@@ -412,9 +412,15 @@ let rec compile db (intent : Ops.pending_intent) =
     else if
       Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Asset") = None
     then Error "the graph does not define logseq.class/Asset"
+    else if (match value.transcript with
+      | None -> false
+      | Some child -> child.uuid = value.uuid || child.parent_uuid <> value.uuid
+        || child.page_uuid <> value.page_uuid
+        || Ds.entid db "block/uuid" (Ds.Uuid child.uuid) <> None)
+    then Error "asset transcript identity or location is invalid"
     else
       Ok
-        [
+        ([
           entity_tx
             (Ds.Temp_id ("pending/" ^ value.uuid))
             [ ("block/uuid", Ds.One_value (Ds.Uuid value.uuid))
@@ -450,7 +456,11 @@ let rec compile db (intent : Ops.pending_intent) =
                      ; (Ds.Keyword "type", Ds.String value.asset_type)
                      ]) )
             ];
-        ]
+        ] @ (match value.transcript with
+          | None -> []
+          | Some child -> insert_tx db
+              { Outliner.uuid = child.uuid; title = child.title; page_uuid = child.page_uuid;
+                parent_uuid = child.parent_uuid; order = child.order } child.created_at))
   | Ops.Move_block value ->
     (match
        ( Ds.entid db "block/uuid" (Ds.Uuid value.uuid)
@@ -815,6 +825,7 @@ let rec satisfied db (intent : Ops.pending_intent) =
                  ("checksum", Ops.String_value value.asset_checksum)
                ; ("type", Ops.String_value value.asset_type)
                ]))
+    && (match value.transcript with None -> true | Some child -> satisfied db (Ops.Insert_block child))
   | Ops.Move_block value ->
     block_location_matches db value.uuid value.page_uuid
       value.parent_uuid value.order

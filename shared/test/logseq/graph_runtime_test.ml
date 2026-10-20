@@ -1588,8 +1588,31 @@ let page_windows_follow_pending_edits_and_collapse_changes () =
     check_eq (List.map (fun (row : Graph_read.page_window_row) -> row.block.title)
       (Runtime.page_window current "page").rows) ["New"])
 
+let upload_activation_preserves_the_staged_asset_transaction () =
+  with_runtime (fun path _conn current ->
+    let asset = Pending.intent_of_json (Json.from_string
+      {|{"type":"create-asset","uuid":"recording","title":"recording.m4a","pageUuid":"page","parentUuid":"block","order":"a2","createdAt":100,"assetType":"m4a","assetSize":12,"assetChecksum":"abc","transcript":{"uuid":"transcript","title":"Spoken note","pageUuid":"page","parentUuid":"recording","order":"a0","createdAt":100}}|}) in
+    (* A resolved pending transaction is durable even while the binary upload is pending. *)
+    let staged = { (operation "asset:recording" asset) with Pending.state = Pending.Applied } in
+    (* This fixture uses the same schema and actual SQLite pending log as the runtime. *)
+    let before = Runtime.db current in
+    let before = Ds.db_with [add 7 "db/ident" (Ds.Keyword "logseq.class/Asset")] before in
+    let options = { Runtime.default_options with auto_create_today = false } in
+    let current = Runtime.create path 42 (Ds.conn_from_db before) options in
+    check_ok (Runtime.stage current staged);
+    let restored = List.hd (Pending.list path) in
+    let without_transcript = match restored.intent with
+      | Pending.Create_asset value -> Pending.Create_asset { value with transcript = None }
+      | _ -> failwith "expected asset" in
+    check_ok (Runtime.stage current { restored with state = Pending.Queued; intent = without_transcript });
+    check_eq (title (Runtime.db current) "transcript") "Spoken note";
+    check (match (List.hd (Pending.list path)).intent with
+      | Pending.Create_asset value -> value.transcript <> None | _ -> false))
+
 let cases =
   [
+    case "upload activation preserves the staged asset transaction"
+      upload_activation_preserves_the_staged_asset_transaction;
     case "page windows follow pending edits and collapse changes" page_windows_follow_pending_edits_and_collapse_changes;
     case "semantic values preserve native primitives"
       semantic_values_preserve_native_primitives;
