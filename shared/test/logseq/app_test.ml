@@ -654,9 +654,9 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
   check_eq ~msg:"pending work does not hide an offline connection"
     (View_base.sync_indicator_label offline_pending)
     "Not connected";
-  check_eq ~msg:"offline status uses main's opaque red indicator"
+  check_eq ~msg:"offline status uses the yellow indicator"
     (View_base.sync_indicator_foreground offline_pending)
-    "error-foreground";
+    "warning-foreground";
   check_eq ~msg:"offline pending work remains addressable as disconnected"
     (View_base.sync_accessibility_identifier offline_pending)
     "sync.disconnected";
@@ -671,6 +671,29 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
        (Model.update offline_pending
           (Model.ChangeOutlinerText ("offline-block", "Draft", 5))))
     "Not connected"
+
+let sync_indicator_uses_only_yellow_or_green () =
+  List.iter
+    (fun sync_state ->
+      List.iter
+        (fun has_pending_semantic_operations ->
+          List.iter
+            (fun has_pending_sync_request ->
+              let current =
+                { (Model.initial ()) with Model.sync_state;
+                  has_pending_semantic_operations; has_pending_sync_request }
+              in
+              let expected =
+                match sync_state with
+                | SyncedState when not has_pending_semantic_operations && not has_pending_sync_request ->
+                  "success-foreground"
+                | _ -> "warning-foreground"
+              in
+              check_eq ~msg:"only a fully synced connection is green; all other states are yellow"
+                (View_base.sync_indicator_foreground current) expected)
+            [false; true])
+        [false; true])
+    [OfflineState; FailedState "Connection failed"; SyncingState; SyncedState]
 
 let settings_navigation_tabs_and_diagnostics_are_lg_owned () =
   let initial =
@@ -9127,6 +9150,7 @@ let cases =
     case "empty-outliner-rows-use-the-main-untitled-accessibility-title" empty_outliner_rows_use_the_main_untitled_accessibility_title;
     case "synced-header-control-uses-the-main-accessibility-label" synced_header_control_uses_the_main_accessibility_label;
     case "sync-indicator-prioritizes-connectivity-before-pending-work" sync_indicator_prioritizes_connectivity_before_pending_work;
+    case "sync-indicator-uses-only-yellow-or-green" sync_indicator_uses_only_yellow_or_green;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
     case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;

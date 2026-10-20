@@ -162,18 +162,10 @@ let sync_accessibility_identifier (current : Model.logseq_model) =
 
 let sync_indicator_foreground (current : Model.logseq_model) =
   match current.sync_state with
-  | OfflineState -> "error-foreground"
-  | FailedState _ -> "error-foreground"
-  | _ ->
-    if
-      current.has_pending_semantic_operations
-      || current.has_pending_sync_request
-    then "warning-foreground"
-    else
-      (match current.sync_state with
-       | SyncedState -> "success-foreground"
-       | SyncingState -> "warning-foreground"
-       | _ -> "error-foreground")
+  | SyncedState
+    when not current.has_pending_semantic_operations
+         && not current.has_pending_sync_request -> "success-foreground"
+  | _ -> "warning-foreground"
 
 let sync_connection_label (current : Model.logseq_model) =
   match current.sync_state with
