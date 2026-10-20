@@ -4,6 +4,11 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
+# Keep developer signing defaults out of checks that intentionally omit them.
+export LOGSEQ_IOS_CONFIG=/tmp/logseq-device-script-check-no-config
+export LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq.script-check
+unset LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE LOGSEQ_IOS_PROFILE
+
 failures=0
 
 if ! grep -Fq 'scripts/build-mobile-ocaml.sh' \
@@ -193,10 +198,11 @@ check_succeeds() {
   echo "ok - $name"
 }
 
-check_rejects \
-  "device build refuses production Logseq bundle id" \
-  "refusing to build the production Logseq bundle id" \
+check_succeeds \
+  "device build accepts production bundle settings without building" \
+  "configuration=debug" \
   env LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq \
+    LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
 check_rejects \
@@ -316,12 +322,15 @@ check_rejects \
   "profile creation requires API issuer id" \
   "set APP_STORE_CONNECT_ISSUER_ID" \
   env -u APP_STORE_CONNECT_ISSUER_ID \
+    APP_STORE_CONNECT_API_KEY_ID=fake-key-id \
     "$repo_root/scripts/create-mobile-ios-profile.sh"
 
 check_rejects \
   "profile creation requires API private key file" \
   "App Store Connect API key file was not found" \
   env APP_STORE_CONNECT_API_KEY_PATH=/tmp/logseq-missing-auth-key.p8 \
+    APP_STORE_CONNECT_API_KEY_ID=fake-key-id \
+    APP_STORE_CONNECT_ISSUER_ID=fake-issuer-id \
     "$repo_root/scripts/create-mobile-ios-profile.sh"
 
 fake_key=$(mktemp /tmp/logseq-fake-auth-key.XXXXXX)
@@ -333,7 +342,7 @@ KEY
 
 check_succeeds \
   "profile creation dry run ensures bundle id before profile" \
-  "Would ensure bundle id com.logseq.logseq" \
+  "Would ensure bundle id com.logseq.logseq.script-check" \
   env LOGSEQ_IOS_DRY_RUN=1 \
     APP_STORE_CONNECT_API_KEY_ID=fake-key-id \
     APP_STORE_CONNECT_ISSUER_ID=fake-issuer-id \
