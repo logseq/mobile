@@ -5,6 +5,20 @@ import LUIAppleBackend
 
 let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
 
+@MainActor private final class SearchFocusEvents: NSObject {
+    var begins = 0
+    var ends = 0
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(began), name: UITextField.textDidBeginEditingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(ended), name: UITextField.textDidEndEditingNotification, object: nil)
+    }
+    @objc private func began(_ note: Notification) { if note.object is UISearchTextField { begins += 1 } }
+    @objc private func ended(_ note: Notification) { if note.object is UISearchTextField { ends += 1 } }
+    func reset() { begins = 0; ends = 0 }
+    deinit { NotificationCenter.default.removeObserver(self) }
+}
+
 @main struct SearchPresentationCheck {
     static func main() { UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(SearchCheckDelegate.self)) }
 }
@@ -52,15 +66,20 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
           {"op":"insert-child","parent":1,"child":3,"index":1}
         ]}
         """)
-        backend.onEvent = { event in
-            guard case .extension(let node, _, let name, let values) = event,
-                  node == 1, name == "query-changed",
-                  case .string(let query) = values["query"] else { return }
+        var delayedQueries: [String]?
+        func applyQuery(_ query: String) {
             generation += 1
             let encoded = String(decoding: try! JSONEncoder().encode(query), as: UTF8.self)
             try! backend.apply(json: """
             {"generation":\(generation),"ops":[{"op":"set-extension-prop","id":1,"property":"query","value":\(encoded)}]}
             """)
+        }
+        backend.onEvent = { event in
+            guard case .extension(let node, _, let name, let values) = event,
+                  node == 1, name == "query-changed",
+                  case .string(let query) = values["query"] else { return }
+            if delayedQueries != nil { delayedQueries?.append(query) }
+            else { applyQuery(query) }
         }
         let host = SearchCheckHost(rootView: NavigationStack {
             LUISwiftUIRoot(backend: backend, rootID: 1)
@@ -83,6 +102,19 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             finish("FAIL: the search fixture did not become visible")
             return
         }
+        // Measure UIKit's cold keyboard startup separately from search presentation.
+        let baseline = UITextField(frame: CGRect(x: 20, y: 200, width: 300, height: 44))
+        baseline.placeholder = "Native keyboard baseline"
+        host.view.addSubview(baseline)
+        let keyboardStart = ProcessInfo.processInfo.systemUptime
+        baseline.becomeFirstResponder()
+        baseline.insertText("UIKit")
+        guard baseline.text == "UIKit" else { finish("FAIL: native keyboard baseline cannot accept input"); return }
+        let coldKeyboardMilliseconds = Int((ProcessInfo.processInfo.systemUptime - keyboardStart) * 1000)
+        baseline.resignFirstResponder()
+        baseline.removeFromSuperview()
+        for _ in 0..<120 { await step() }
+        let focus = SearchFocusEvents()
         func present(_ value: Bool) throws {
             generation += 1
             try backend.apply(json: """
@@ -90,9 +122,10 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             """)
         }
         var failures = 0
-        var output: [String] = []
+        var output: [String] = ["Native keyboard responder setup: \(coldKeyboardMilliseconds) ms"]
         func record(_ message: String) { output.append(message); print(message) }
         for cycle in 0..<3 {
+            focus.reset()
             let start = ProcessInfo.processInfo.systemUptime
             try present(true)
             while input() == nil && ProcessInfo.processInfo.systemUptime - start < 2 { await step() }
@@ -108,8 +141,25 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             }
             input()?.insertText("Fixture")
             if input()?.text != "Fixture" { record("FAIL: first typed characters are lost"); failures += 1 }
+            delayedQueries = []
+            input()?.insertText(" 中文😀")
+            input()?.insertText(" tail")
+            let expectedText = "Fixture 中文😀 tail"
+            for query in delayedQueries ?? [] {
+                applyQuery(query)
+                await step()
+                if input()?.text != expectedText {
+                    record("FAIL: delayed core acknowledgements overwrite newer native typing")
+                    failures += 1
+                }
+            }
+            delayedQueries = nil
             // Finish the transition before exercising dismissal and a fresh presentation.
             for _ in 0..<120 { await step() }
+            if focus.begins != 1 || focus.ends != 0 {
+                record("FAIL: search must retain one responder while opening and typing; begins=\(focus.begins) ends=\(focus.ends)")
+                failures += 1
+            }
             try present(false)
             let closeStart = ProcessInfo.processInfo.systemUptime
             while input() != nil && ProcessInfo.processInfo.systemUptime - closeStart < 2 { await step() }

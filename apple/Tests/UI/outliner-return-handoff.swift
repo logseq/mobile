@@ -48,17 +48,17 @@ private struct EditorHost: View {
 
 @main
 struct ReturnHandoffCheck {
-    @MainActor static func main() {
+    @MainActor static func main() async {
         let model = EditorModel()
         let host = UIHostingController(rootView: EditorHost(model: model))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         window.rootViewController = host; window.makeKeyAndVisible()
-        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.15)); host.view.layoutIfNeeded() }
+        func settle() async { try? await Task.sleep(for: .milliseconds(150)); host.view.layoutIfNeeded() }
         func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
         func editor() -> UITextView { descendants(host.view).compactMap { $0 as? UITextView }.first! }
         func marker() -> UIView { descendants(host.view).first { $0.tag == 77 }! }
         var failures = 0
-        settle()
+        await settle()
         func type(_ text: String, in view: UITextView) {
             if view.delegate?.textView?(view, shouldChangeTextIn: view.selectedRange, replacementText: text) ?? true {
                 view.insertText(text)
@@ -66,7 +66,7 @@ struct ReturnHandoffCheck {
         }
         let original = editor()
         type("\n", in: original)
-        settle()
+        await settle()
         let next = editor()
         let bulletTop = marker().convert(.zero, to: host.view).y
         let editorTop = next.convert(.zero, to: host.view).y
@@ -78,7 +78,7 @@ struct ReturnHandoffCheck {
             print("FAIL: new block editor top=\(editorTop) bullet top=\(bulletTop) caret=\(position)"); failures += 1
         }
         type("Second block", in: next)
-        settle()
+        await settle()
         let beforeShift = model.returns
         func shiftEnter() {
             let commands = editor().keyCommands ?? []
@@ -92,31 +92,31 @@ struct ReturnHandoffCheck {
             }
         }
         shiftEnter()
-        settle()
+        await settle()
         if model.returns != beforeShift || model.title != "Second block\n" {
             print("FAIL: Shift+Enter must insert a newline in the current block; returns=\(model.returns) title=\(model.title.debugDescription)"); failures += 1
         }
         model.title = "😀alpha beta"; model.blockID = "selection"; model.caret = model.title.utf16.count
-        settle()
+        await settle()
         editor().selectedRange = NSRange(location: 2, length: 5)
         let beforeSelection = model.returns
         shiftEnter()
-        settle()
+        await settle()
         if model.returns != beforeSelection || model.title != "😀\n beta" || editor().selectedRange.location != 3 {
             print("FAIL: Shift+Enter must replace a UTF-16 selection with a newline"); failures += 1
         }
         model.title = "Before"; model.blockID = "rapid"; model.caret = 6
-        settle()
+        await settle()
         let beforeRapid = model.returns
         type("\n", in: editor())
         shiftEnter()
         type("After", in: editor())
-        settle()
+        await settle()
         if model.returns != beforeRapid + 1 || model.title != "\nAfter" || editor().selectedRange.location != 6 {
-            print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text"); failures += 1
+            print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text; returns=\(model.returns) expected=\(beforeRapid + 1) title=\(model.title.debugDescription) caret=\(editor().selectedRange.location)"); failures += 1
         }
         model.title = "Matrix parent 20261018"; model.blockID = "delayed-selection"; model.caret = model.title.utf16.count
-        settle()
+        await settle()
         model.pendingCarets = []
         editor().selectedRange = NSRange(location: 6, length: 0)
         editor().selectedRange = NSRange(location: 0, length: 6)
@@ -127,7 +127,7 @@ struct ReturnHandoffCheck {
         }
         for caret in acknowledgements {
             model.caret = caret
-            settle()
+            await settle()
             if editor().selectedRange != NSRange(location: 0, length: 6) {
                 print("FAIL: delayed caret acknowledgement=\(caret) erased native selection=\(editor().selectedRange)")
                 failures += 1

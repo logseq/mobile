@@ -193,6 +193,7 @@ private struct LGSearchSession: View {
     #if os(iOS)
     @State private var nativeSearchPresented = true
     @State private var closing = false
+    @ScaledMetric(relativeTo: .body) private var searchFieldHeight: CGFloat = 44
     #endif
 
     var body: some View {
@@ -257,15 +258,13 @@ private struct LGSearchSession: View {
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle(searchTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: queryBinding,
-                isPresented: nativeSearchPresentedBinding,
-                placement: .toolbar,
-                prompt: "Search pages and blocks"
-            )
-            .searchPresentationToolbarBehavior(.avoidHidingContent)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                LGNativeSearchField(query: queryBinding)
+                    .frame(height: searchFieldHeight)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
             .toolbar {
-                DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: exitSearch) {
                         Image("close", bundle: .module)
@@ -338,6 +337,59 @@ private struct LGSearchSession: View {
         }
     }
 }
+
+#if os(iOS)
+private struct LGNativeSearchField: UIViewControllerRepresentable {
+    @Binding var query: String
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.onChange = { query = $0 }
+        controller.apply(query: query)
+    }
+
+    final class Controller: UIViewController, UITextFieldDelegate {
+        private let field = UISearchTextField()
+        private var pendingText: String?
+        var onChange: (String) -> Void = { _ in }
+
+        override func loadView() {
+            field.placeholder = String(localized: "Search pages and blocks", bundle: .module)
+            field.accessibilityLabel = field.placeholder
+            field.accessibilityIdentifier = "field.search"
+            field.font = .preferredFont(forTextStyle: .body)
+            field.adjustsFontForContentSizeCategory = true
+            field.returnKeyType = .search
+            field.delegate = self
+            field.addTarget(self, action: #selector(changed), for: .editingChanged)
+            view = field
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            field.becomeFirstResponder()
+        }
+
+        func apply(query: String) {
+            loadViewIfNeeded()
+            // Earlier core echoes must not replace newer typing or marked text.
+            if pendingText == query { pendingText = nil }
+            if pendingText == nil, field.text != query, field.markedTextRange == nil {
+                field.text = query
+            }
+        }
+
+        @objc private func changed() {
+            let text = field.text ?? ""
+            pendingText = text
+            onChange(text)
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool { false }
+    }
+}
+#endif
 
 @MainActor
 private struct LGNavigationContent: View {
