@@ -10,6 +10,10 @@ plugins {
 // takes minutes (and needs the OCaml cross toolchain), so Gradle calls it
 // at most once per ABI unless the script is re-run.
 val repoRoot = rootDir.parentFile
+val buildRevision = providers.exec {
+    workingDir(repoRoot)
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+}.standardOutput.asText.map(String::trim)
 val androidAbi = providers.gradleProperty("logseqAndroidAbi").orNull ?: "arm64-v8a"
 val nativeLibrary = File("src/main/jniLibs/$androidAbi/liblogseq_core.so")
 
@@ -49,7 +53,8 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "2.0.2"
+        buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

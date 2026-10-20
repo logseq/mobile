@@ -8,7 +8,6 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
-import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import logseq.app.AndroidGraphSnapshotDownloader
@@ -68,7 +67,7 @@ class AndroidPlatformServices(private val activity: Activity) {
                     .filter(String::isNotEmpty),
                 "baseURL" to baseUrl,
                 "version" to packageInfo.versionName.orEmpty().ifBlank { "Development" },
-                "revision" to PackageInfoCompat.getLongVersionCode(packageInfo).toString(),
+                "revision" to BuildConfig.GIT_REVISION,
             ),
         )
     }
