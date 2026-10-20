@@ -983,9 +983,7 @@ private struct CreateSyncGraphPayload: Encodable {
             await self?.runPendingSyncPump()
             guard let self else { return }
             self.pendingSyncTask = nil
-            if LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
-                requestedWhileFinishing: self.pendingSyncRequested
-            ) {
+            if self.pendingSyncRequested {
                 self.syncPending()
             }
         }

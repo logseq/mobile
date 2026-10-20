@@ -88,14 +88,6 @@ public enum LogseqGraphWebSocketFailurePolicy {
 }
 
 
-public enum LogseqPendingSyncPumpPolicy {
-    public static func shouldRestartAfterFinishing(
-        requestedWhileFinishing: Bool
-    ) -> Bool {
-        requestedWhileFinishing
-    }
-}
-
 public enum LogseqGraphSyncHTTP {
     private struct Plan: Decodable { let cursorURL: String; let metadataURL: String }
     private struct Download: Decodable { let metadataBody: String; let downloadURL: String; let contentEncoding: String }

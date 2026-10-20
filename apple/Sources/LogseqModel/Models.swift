@@ -106,45 +106,7 @@ public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
     public let icon: LogseqIcon?
     public var id: String { uuid }
 
-    public static let backlog = LogseqTaskStatus(
-        uuid: "backlog", ident: "logseq.property/status.backlog", title: "Backlog",
-        icon: LogseqIcon(type: "tabler-icon", id: "Backlog")
-    )
-    public static let todo = LogseqTaskStatus(
-        uuid: "todo", ident: "logseq.property/status.todo", title: "Todo",
-        icon: LogseqIcon(type: "tabler-icon", id: "Todo")
-    )
-    public static let doing = LogseqTaskStatus(
-        uuid: "doing", ident: "logseq.property/status.doing", title: "Doing",
-        icon: LogseqIcon(type: "tabler-icon", id: "InProgress50")
-    )
-    public static let inReview = LogseqTaskStatus(
-        uuid: "in-review", ident: "logseq.property/status.in-review", title: "In Review",
-        icon: LogseqIcon(type: "tabler-icon", id: "InReview")
-    )
-    public static let done = LogseqTaskStatus(
-        uuid: "done", ident: "logseq.property/status.done", title: "Done",
-        icon: LogseqIcon(type: "tabler-icon", id: "Done")
-    )
-    public static let canceled = LogseqTaskStatus(
-        uuid: "canceled", ident: "logseq.property/status.canceled", title: "Canceled",
-        icon: LogseqIcon(type: "tabler-icon", id: "Cancelled")
-    )
 
-    public static let builtIn = [backlog, todo, doing, inReview, done, canceled]
-
-    public static func availableChoices(catalog: [Self]) -> [Self] {
-        var result: [Self] = []
-        var identities = Set<String>()
-        for status in catalog + builtIn {
-            let identity = status.ident ?? status.uuid
-            if !identities.contains(identity) {
-                identities.insert(identity)
-                result.append(status)
-            }
-        }
-        return result
-    }
 }
 
 public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {

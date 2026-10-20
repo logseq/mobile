@@ -37,8 +37,7 @@ import LogseqModel
         let (_, captured) = try await execute("send-capture", text: "Native shared capture 中文")
         let block = captured.blocks.first { $0.title == "Native shared capture 中文" }
         precondition(block != nil, "The real core must expose the new capture: \(captured)")
-        let status = captured.taskStatuses?.first { $0.title == "Todo" } ?? LogseqTaskStatus.todo
-        let metadata = String(decoding: try JSONEncoder().encode(status), as: UTF8.self)
+        let metadata = #"{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}"#
         let (_, task) = try await execute("send-task", text: "Native shared task", metadata: metadata)
         precondition(task.blocks.contains { $0.title == "Native shared task" && $0.status?.title == "Todo" })
         let (_, asset) = try await execute("send-asset", text:

@@ -167,51 +167,11 @@ private let testEmptySnapshotJSON = """
         #expect(request.headers["x-amz-meta-type"] == "png")
     }
 
-    @Test func builtInTaskStatusesMatchLogseq() {
-        #expect(LogseqTaskStatus.builtIn.map(\.title) == [
-            "Backlog", "Todo", "Doing", "In Review", "Done", "Canceled"
-        ])
-        #expect(LogseqTaskStatus.builtIn.compactMap { $0.icon?.id } == [
-            "Backlog", "Todo", "InProgress50", "InReview", "Done", "Cancelled"
-        ])
-    }
-
     @Test func snapshotDecodesCustomTaskStatusCatalog() throws {
         let data = Data(##"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Test","isSearching":false,"taskStatuses":[{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}]}"##.utf8)
         let snapshot = try JSONDecoder().decode(LogseqSnapshot.self, from: data)
         #expect(snapshot.taskStatuses?.first?.title == "Waiting")
         #expect(snapshot.taskStatuses?.first?.icon?.color == "#7c3aed")
-    }
-
-    @Test func taskStatusChoicesPreferGraphCatalogIdentityOverFallbacks() {
-        let graphTodo = LogseqTaskStatus(
-            uuid: "8e7f7d42-graph-todo",
-            ident: "logseq.property/status.todo",
-            title: "Todo",
-            icon: LogseqIcon(type: "tabler-icon", id: "circle")
-        )
-        let waiting = LogseqTaskStatus(
-            uuid: "custom-waiting",
-            ident: "user.status/waiting",
-            title: "Waiting",
-            icon: nil
-        )
-        let statusWithoutIdent = LogseqTaskStatus(
-            uuid: "custom-without-ident",
-            ident: nil,
-            title: "Custom",
-            icon: nil
-        )
-
-        let choices = LogseqTaskStatus.availableChoices(
-            catalog: [graphTodo, waiting, statusWithoutIdent, statusWithoutIdent]
-        )
-
-        #expect(choices.first?.uuid == graphTodo.uuid)
-        #expect(choices.contains { $0.uuid == waiting.uuid })
-        #expect(choices.filter { $0.uuid == statusWithoutIdent.uuid }.count == 1)
-        #expect(!choices.contains { $0.uuid == LogseqTaskStatus.todo.uuid })
-        #expect(choices.filter { $0.ident == graphTodo.ident }.count == 1)
     }
 
     @Test func snapshotPreservesGraphEncryptionAndReadiness() throws {
@@ -302,15 +262,6 @@ private let testEmptySnapshotJSON = """
         }
 
         #expect(try Data(contentsOf: decodedURL) == Data([0, 0, 0, 3, 65, 66, 67]))
-    }
-
-    @Test func pendingPumpRestartsWhenWorkArrivesDuringTaskCleanup() {
-        #expect(LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
-            requestedWhileFinishing: true
-        ))
-        #expect(!LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
-            requestedWhileFinishing: false
-        ))
     }
 
     @Test func webSocketConnectionFailuresHaveUsefulUserFacingMessages() {
