@@ -1508,10 +1508,19 @@ let dispatch session action payload =
          Rpc.failure "invalid_params"
            "unlockGraph requires a selected graph and password")
   | "importSnapshot" ->
-    let forced = match payload with
-      | Some body -> (try Yojson.Basic.Util.member "forceSnapshot" (Yojson.Basic.from_string body) = `Bool true with _ -> false)
-      | None -> false in
-    if forced && sync_transport_editing session then
+    let forced, graph_id = match payload with
+      | Some body -> (try
+          let input = Yojson.Basic.from_string body in
+          (Yojson.Basic.Util.member "forceSnapshot" input = `Bool true,
+           Yojson.Basic.Util.member "graphId" input)
+        with _ -> (false, `Null))
+      | None -> (false, `Null) in
+    let graph_changed = match s.config, graph_id with
+      | Some config, `String id -> id <> config.Api.graph_id
+      | _ -> false in
+    if forced && graph_changed then
+      Rpc.failure "graph_changed" "The selected graph changed during snapshot download"
+    else if forced && sync_transport_editing session then
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
     else Rpc.import_snapshot payload h.Types.import_snapshot
       (fun payload -> switch_graph_model session payload)

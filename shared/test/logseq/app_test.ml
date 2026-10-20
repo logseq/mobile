@@ -336,6 +336,7 @@ let empty_core_projection () =
     has_pending_semantic_operations = false;
     has_pending_sync_request = false;
     is_pending_sync_patch = false;
+    is_pending_sync_projection = false;
     is_graph_catalog_patch = false;
     projection_search_query = "";
     search_results = [];

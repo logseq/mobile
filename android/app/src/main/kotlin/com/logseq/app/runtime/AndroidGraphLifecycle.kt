@@ -2,12 +2,21 @@ package com.logseq.app.runtime
 
 import org.json.JSONObject
 
+internal interface AndroidGraphStorage {
+    fun loadStorageState(): AndroidStorageState
+    suspend fun downloadGraphSnapshot(
+        baseUrl: String, graphId: String, accessToken: String, workingDirectory: String,
+    ): AndroidDownloadedSnapshot
+    fun persistSelectedGraphId(graphId: String)
+    fun deleteTemporaryFile(path: String)
+}
+
 // Kotlin port of the former android_graph_lifecycle.dart: openGraph /
 // createGraph / unlockGraph effects, including the remote-snapshot
 // download path for graphs that are not stored locally.
 internal class AndroidGraphLifecycle(
     private val callCore: suspend (String) -> String,
-    private val effects: AndroidPlatformEffects,
+    private val effects: AndroidGraphStorage,
     private val accessTokenProvider: suspend () -> String? = { "" },
     private val trace: (String) -> Unit = {},
 ) {
@@ -52,20 +61,20 @@ internal class AndroidGraphLifecycle(
         else -> "graph_operation_failed"
     }
 
-    // Re-run the open flow (select + remote snapshot re-import when needed)
-    // after the sync WebSocket reports that our cursor fell off the
-    // server's retained range. iOS handles this by returning from
-    // runGraphEventsOnce so startSync re-bootstraps.
+    // Execute the core's snapshot recovery command without resetting editor state.
+    // The core validates editing and graph ownership immediately before import.
     suspend fun openGraphForResync(graphId: String): NativeEffectResolution =
-        openGraph(graphId)
+        openGraph(graphId, forceSnapshot = true)
 
     // The first snapshots after open ship an empty sidebar so the scan
     // stays off the launch path; this fills favorites/recent afterwards.
     suspend fun loadSidebar(): String = call("loadSidebar")
 
-    private suspend fun openGraph(graphId: String): NativeEffectResolution {
+    private suspend fun openGraph(graphId: String, forceSnapshot: Boolean = false): NativeEffectResolution {
         trace("open.start graphId=$graphId")
-        val selected = call("selectGraph", payload = graphId)
+        val selected = if (forceSnapshot) {
+            callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
+        } else call("selectGraph", payload = graphId)
         failure(selected)?.let { return it }
         trace("select.complete graphId=$graphId")
 
@@ -75,7 +84,7 @@ internal class AndroidGraphLifecycle(
         val isLocal = state.localGraphIds.contains(graphId)
         trace("storage.loaded graphId=$graphId local=$isLocal")
         val opened: String
-        if (isLocal) {
+        if (isLocal && !forceSnapshot) {
             opened = call(
                 "openGraph",
                 payload = JSONObject()
@@ -105,6 +114,7 @@ internal class AndroidGraphLifecycle(
                         .put("checkpointPath", "$directory/sync.checkpoint")
                         .put("metadataBody", artifact.metadataBody)
                         .put("downloadPath", artifact.filePath)
+                        .put("forceSnapshot", forceSnapshot)
                         .put("isEncrypted", isEncrypted)
                         .toString(),
                 )

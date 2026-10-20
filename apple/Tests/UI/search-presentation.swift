@@ -9,6 +9,14 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
     static func main() { UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(SearchCheckDelegate.self)) }
 }
 
+@MainActor private final class SearchCheckHost<Content: View>: UIHostingController<Content> {
+    private(set) var appeared = false
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        appeared = true
+    }
+}
+
 @MainActor final class SearchCheckDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -54,7 +62,7 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             {"generation":\(generation),"ops":[{"op":"set-extension-prop","id":1,"property":"query","value":\(encoded)}]}
             """)
         }
-        let host = UIHostingController(rootView: NavigationStack {
+        let host = SearchCheckHost(rootView: NavigationStack {
             LUISwiftUIRoot(backend: backend, rootID: 1)
                 .toolbar { ToolbarItem(placement: .topBarLeading) { Text("Journals") } }
         })
@@ -67,11 +75,14 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             descendants(window).compactMap { $0 as? UISearchTextField }.first { $0.isFirstResponder }
         }
         let activationStart = ProcessInfo.processInfo.systemUptime
-        while UIApplication.shared.applicationState != .active
+        while (UIApplication.shared.applicationState != .active || !host.appeared)
             && ProcessInfo.processInfo.systemUptime - activationStart < 5 {
             await step()
         }
-        for _ in 0..<40 { await step() }
+        guard UIApplication.shared.applicationState == .active, host.appeared else {
+            finish("FAIL: the search fixture did not become visible")
+            return
+        }
         func present(_ value: Bool) throws {
             generation += 1
             try backend.apply(json: """

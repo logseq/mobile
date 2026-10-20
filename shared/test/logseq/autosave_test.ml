@@ -159,7 +159,27 @@ let externally_restored_pending_work_wakes_sync_once () = with_editor (fun sessi
   check_eq ~msg:"an active sync pump owns its remaining operations" (pending_kinds ()) [];
   ignore (Native_bridge.resolve_effect (effect_id sync) true response))
 
+let full_pending_responses_do_not_restart_a_completed_pump () = with_editor (fun session _ ->
+  ignore (call session ["type", `String "textChanged"; "title", `String "Draft"; "caretUTF16Offset", `Int 5]);
+  ignore (Native_bridge.apply_response (call session ["type", `String "saveEditing"]));
+  let sync = take_ready () in
+  check_eq (kind sync) "sync-now";
+  ignore (Native_bridge.resolve_effect (effect_id sync) true "");
+  let dispatch action payload = Rpc_session.call session (J.to_string (`Assoc [
+    "apiVersion", `Int 1; "method", `String "dispatch";
+    "params", `Assoc ["action", `String action; "payload", `String payload;
+      "projection", `String "snapshot"]])) in
+  let started = dispatch "beginPendingSync" "" in
+  ignore (Native_bridge.apply_response started);
+  check_eq ~msg:"the pump's own full snapshots cannot request another pump" (pending_kinds ()) [];
+  let id = member "result" (J.from_string started) |> member "pendingSyncRequest" |> member "id" in
+  let failed = dispatch "completePendingSync" (J.to_string (`Assoc [
+    "id", id; "status", `Int 403; "body", `String "denied"; "error", `Null])) in
+  ignore (Native_bridge.apply_response failed);
+  check_eq ~msg:"a permanent failure cannot bypass the retry budget through snapshot wakeups" (pending_kinds ()) [])
+
 let cases = [
+  case "full pending responses never restart their own pump" full_pending_responses_do_not_restart_a_completed_pump;
   case "external pending work wakes sync once" externally_restored_pending_work_wakes_sync_once;
   case "platform deletion confirmation uses shared effects" platform_delete_confirmation_uses_shared_effects;
   case "idle save commits once then wakes sync" idle_save_commits_once_then_wakes_sync;

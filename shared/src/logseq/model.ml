@@ -219,6 +219,7 @@ type core_projection =
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
   ; is_pending_sync_patch : bool
+  ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
   ; search_results : search_hit list
@@ -1826,7 +1827,7 @@ let rec update (current : logseq_model) action =
   | ApplyCoreSnapshot projection ->
     let applied = apply_core_snapshot current projection in
     let updated =
-      if not projection.is_pending_sync_patch
+      if not projection.is_pending_sync_patch && not projection.is_pending_sync_projection
         && (applied.has_pending_semantic_operations || applied.has_pending_sync_request)
         && not (List.exists (function SyncNowEffect _ -> true | _ -> false)
           (applied.pending_effects @ applied.in_flight_effects))

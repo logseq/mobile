@@ -495,6 +495,7 @@ let core_projection fields =
        | None | Some `Null -> false
        | Some _ -> true);
     is_pending_sync_patch = bool_member "isPendingSyncPatch" fields;
+    is_pending_sync_projection = bool_member "isPendingSyncProjection" fields;
     is_graph_catalog_patch = bool_member "isGraphCatalogPatch" fields }
 
 let error_message fields =

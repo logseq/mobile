@@ -6239,8 +6239,17 @@ let forced_snapshot_import_is_atomic_with_editing () =
   ignore (response_result (dispatch_json session "importSnapshot" payload));
   check_eq !imported 1
 
+let forced_snapshot_import_rejects_a_changed_graph () =
+  let imported = ref 0 in
+  let session = configure_plain_session (Session.create_session {Session.default_options with
+    import_snapshot = Some (fun _ -> incr imported; Ok ())}) in
+  let response = dispatch_json session "importSnapshot" {|{"graphId":"previous-graph","forceSnapshot":true}|} in
+  check_eq ~msg:"a late download cannot switch the graph back" !imported 0;
+  check_eq (response_error_code response) "graph_changed"
+
 let cases =
   [
+    case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
     case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;

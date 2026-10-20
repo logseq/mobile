@@ -136,7 +136,7 @@ internal class AndroidPlatformEffects(
     private val presentJournalCalendar: suspend () -> NativeEffectResolution = {
         NativeEffectResolution.Discard(succeeded = false, message = "Journal calendar is unavailable")
     },
-) {
+) : AndroidGraphStorage {
     suspend fun initialAuthenticationCode(): Int = try {
         if (authentication.hasStoredSession()) 3 else 1
     } catch (_: Throwable) {
@@ -145,7 +145,7 @@ internal class AndroidPlatformEffects(
 
     suspend fun restoreAccessToken(): String? = authentication.restoreAccessToken()
 
-    fun loadStorageState(): AndroidStorageState =
+    override fun loadStorageState(): AndroidStorageState =
         AndroidStorageState.fromPlatformMap(platform.loadStorageState())
 
     suspend fun coreStartupState(
@@ -238,7 +238,7 @@ internal class AndroidPlatformEffects(
     suspend fun importAttachments(kind: String): List<Map<String, Any>> =
         attachmentsImporter(kind)
 
-    suspend fun downloadGraphSnapshot(
+    override suspend fun downloadGraphSnapshot(
         baseUrl: String,
         graphId: String,
         accessToken: String,
@@ -251,8 +251,8 @@ internal class AndroidPlatformEffects(
         )
     }
 
-    fun persistSelectedGraphId(graphId: String) = platform.persistSelectedGraphId(graphId)
-    fun deleteTemporaryFile(path: String) = platform.deleteTemporaryFile(path)
+    override fun persistSelectedGraphId(graphId: String) = platform.persistSelectedGraphId(graphId)
+    override fun deleteTemporaryFile(path: String) = platform.deleteTemporaryFile(path)
     fun resolveAssetPath(path: String): String = platform.resolveAssetPath(path)
     fun appendRuntimeLog(level: String, source: String, message: String) {
         platform.appendRuntimeLog(level, source, message)

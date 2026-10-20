@@ -216,6 +216,7 @@ type core_projection =
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
   ; is_pending_sync_patch : bool
+  ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
   ; search_results : search_hit list

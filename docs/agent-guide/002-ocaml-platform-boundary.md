@@ -121,7 +121,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Pending recovery | Complete | 789 core tests, 37 Android JVM tests, iOS App/extension build, Swift model build and native retry-delay harness passed; stable request/transaction identity, cleanup, graph switches and Unicode error summaries covered |
 | Shared autosave | Complete | 799 core tests, 39 Android tests and native autosave command checks passed; shared idle-save/cancellation/sync effects replace both platform timers. A direct Swift Testing simulator host runs the 126-test UI suite; async fixtures, background cancellation and preservation of operation errors during render were fixed. Legacy Store projection cleanup follows in Stage 5 |
 | Single projection | Complete | Core-owned snapshot projection removes the Swift patch/splice reducer and old Store typing/autosave pipeline. Native delete confirmations enter the shared effect queue; external pending work wakes one shared sync effect. 804 core, 78 standalone Swift model, 127 Swift UI and 40 Android JVM tests passed; Android native core and iOS App/Share/Widgets/Shortcuts builds passed |
-| Integration and verification | In progress | Stages 1–3 merged into latest main (`3e0b780`); 792 core, 39 Android and 104 standalone Swift model tests passed; App/Share/Widgets/Shortcuts build and actual core/native interrupted-upload regression passed; remaining migrations continue on main |
+| Integration and verification | Complete | Integrated on main; 806 core, 78 Swift model, 127 Swift UI and 42 Android JVM tests passed. Final iOS simulator App/Share/Widgets/Shortcuts and Android arm64 native core builds passed; simulator launch, shared-provider import, search, editor and actual HTTP/WebSocket regressions passed |
 
 ## Testing Details
 
@@ -157,3 +157,19 @@ Any unsupported build environment will be recorded with the exact failed command
 The native Store requests `projection: "snapshot"` for maintenance RPC calls. The core replaces successful partial projections with its canonical visible snapshot; errors and ordinary full responses are preserved. Interactive LUI effects keep the existing bounded patches, including 32-content viewport hydration on 10,000-row pages. Swift holds decoded data for platform services and does not merge graph rows, splices or selections.
 
 The retired Store-only editor API had no production caller after native deletion confirmation was moved to the shared host/effect contract. Its timer, coalescing and native patch tests were removed with the API; active editor behavior remains covered by shared reducer/session tests, the core/native autosave integration suite and native IME tests. `LogseqContentMode`, `LogseqBlockSection`, mutation-cursor bookkeeping and the Swift snapshot-refresh predicate were also unused or replaced. Snapshot import now checks editing inside the serialized core, including edits begun during download.
+
+Final integration fixes cover forced Android snapshot recovery, rejection of late downloads after graph changes, and preventing pending-sync results from scheduling their own pump. The `isPendingSyncProjection` response marker survives complete native Store projections, so a permanent HTTP failure cannot restart its exhausted retry budget through UI updates. Android recovery downloads and imports fresh data, preserves editor state until the core validates import, and publishes the recovered snapshot.
+
+Search presentation now uses the system searchable activation and keyboard focus. The redundant SwiftUI focus binding, task and scroll handler were removed; native scroll dismissal remains. The simulator search fixture waits for the host view's actual appearance before measuring interaction. The unchanged first-open/reopen limits and typed-text/dismissal checks passed at 508/179/114 ms.
+
+## Final Verification
+
+- Shared native core: 806 tests, including actual session/bridge autosave, shared sync, stable upload retries, snapshot import safety and passive pump projections.
+- Swift model suite: 78 tests through the direct Swift Testing runner; native UI suite: 127 tests in the simulator app host. Both runners bypass the unsupported XCTest bridge.
+- Android JVM suite: 42 tests with no failures or skips.
+- Native simulator regressions: shared autosave commands, serial effect delivery, Return handoff, 12 caret layout comparisons, search input/dismissal/reopening and text/photo/screenshot/PDF/Markdown provider import.
+- Actual OCaml session plus Swift HTTP transport: interrupted upload, lost response, permanent 403, bounded 503 retries and cancellation; original 1 MiB asset bytes and identity preserved.
+- Snapshot HTTP handling: 12 schema/cursor/row-count/compression/error cases; real WebSocket command execution forwards opaque frames and generation IDs.
+- iOS simulator core/App/Share/Widgets build and signed-out app launch passed, including four App Shortcuts and native HTTP/upload/crypto/runtime export checks. Final Android arm64 OCaml/JNI/SQLite library build also passed.
+
+Compared with integrated main (`3e0b780`), production Swift sources remove 1,339 net lines (205 added, 1,544 deleted). Native Swift remains responsible for SwiftUI/UIKit rendering, retained view identity, IME/caret and editor geometry, OS presentation, camera/photos/audio, Share/App Intents/Widgets, secure credentials and native HTTP/WebSocket/timer execution. OCaml owns application projection, editor semantics/autosave, synchronization protocol, recovery commands, retry budgets and error summaries.

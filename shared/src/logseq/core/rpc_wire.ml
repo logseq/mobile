@@ -399,6 +399,17 @@ let required_bool fields name =
 
 let debug message = prerr_endline ("Logseq core " ^ message)
 
+let mark_pending_sync_projection response =
+  match Json.from_string response with
+  | `Assoc fields when List.assoc_opt "ok" fields = Some (`Bool true) ->
+    Json.to_string (`Assoc (List.map (fun (key, value) ->
+      if key = "result" then
+        (key, match value with
+         | `Assoc fields -> `Assoc (("isPendingSyncProjection", `Bool true) :: fields)
+         | _ -> value)
+      else (key, value)) fields))
+  | _ -> response
+
 let route snapshot dispatch (input : Json.t) =
   match input with
   | `Assoc entries ->
@@ -423,17 +434,20 @@ let route snapshot dispatch (input : Json.t) =
                 (match decoded with
                  | Ok (action, payload) ->
                    let response = dispatch action payload in
-                   if List.assoc_opt "projection" params = Some (`String "snapshot") then
-                     let result = Json.from_string response in
-                     (match result with
-                      | `Assoc fields when List.assoc_opt "ok" fields = Some (`Bool true) ->
-                        (match List.assoc_opt "result" fields with
-                         | Some (`Assoc fields) when List.exists (fun (key, value) ->
-                             String.starts_with ~prefix:"is" key
-                             && String.ends_with ~suffix:"Patch" key && value = `Bool true) fields -> snapshot ()
-                         | _ -> response)
-                      | _ -> response)
-                   else response
+                   let projected =
+                     if List.assoc_opt "projection" params = Some (`String "snapshot") then
+                       let result = Json.from_string response in
+                       (match result with
+                        | `Assoc fields when List.assoc_opt "ok" fields = Some (`Bool true) ->
+                          (match List.assoc_opt "result" fields with
+                           | Some (`Assoc fields) when List.exists (fun (key, value) ->
+                               String.starts_with ~prefix:"is" key
+                               && String.ends_with ~suffix:"Patch" key && value = `Bool true) fields -> snapshot ()
+                           | _ -> response)
+                        | _ -> response)
+                     else response in
+                   if List.mem action ["beginPendingSync"; "completePendingSync"; "cancelPendingSync"]
+                   then mark_pending_sync_projection projected else projected
                  | Error message -> failure "invalid_params" message)
               | _ -> failure "unknown_method" ("unknown method: " ^ method_))
            | None -> failure "invalid_request" "missing field: params"

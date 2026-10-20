@@ -192,7 +192,6 @@ private struct LGSearchSession: View {
     let context: LUIAppleExtensionViewContext
     #if os(iOS)
     @State private var nativeSearchPresented = true
-    @FocusState private var searchFocused: Bool
     @State private var closing = false
     #endif
 
@@ -264,7 +263,6 @@ private struct LGSearchSession: View {
                 placement: .toolbar,
                 prompt: "Search pages and blocks"
             )
-            .searchFocused($searchFocused)
             .searchPresentationToolbarBehavior(.avoidHidingContent)
             .toolbar {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -281,20 +279,11 @@ private struct LGSearchSession: View {
                     .accessibilityIdentifier("button.search.close")
                 }
             }
-            .task {
-                searchFocused = true
-            }
-            .onScrollPhaseChange { _, newPhase in
-                if newPhase == .tracking || newPhase == .interacting {
-                    searchFocused = false
-                }
-            }
     }
 
     private func exitSearch() {
         guard !closing else { return }
         closing = true
-        searchFocused = false
         emitDismiss()
     }
 
