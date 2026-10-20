@@ -2788,9 +2788,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"the graph switch displays the selected graph name"
     (property_string renderer graph_switch Lui_protocol.TextValue)
     "sync 2";
-  check_eq ~msg:"the graph switch uses the reusable navigation heading role"
-    (property_string renderer graph_switch Lui_protocol.RoleValue)
-    "navigation-heading";
+  check_eq ~msg:"the graph switch is a native menu button"
+    (node renderer graph_switch) (Some Lui_protocol.Button);
   check_eq ~msg:"the graph switch keeps the disclosure affordance"
     (property_string renderer graph_switch Lui_protocol.InlineIconName)
     "app:chevron-down";
@@ -2841,12 +2840,11 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let switch_button =
     descendant_with_identifier renderer reopened_sidebar "button.graph-switch"
   in
-  dispatch application (Lui_protocol.Press switch_button);
-  flush application;
   let menu =
-    descendant_with_identifier renderer reopened_sidebar "menu.graph-switch"
+    descendant_with_identifier renderer switch_button "menu.graph-switch"
   in
-  check ~msg:"the graph heading opens a native menu" (menu <> -1);
+  check_eq ~msg:"the graph button owns a system menu without a popup portal"
+    (node renderer menu) (Some Lui_protocol.ContextMenu);
   if menu <> -1 then begin
     let current_item =
       child_with_identifier renderer menu "menu.graph.current"
@@ -2862,14 +2860,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (App.model application).destination Model.JournalsDestination;
     check ~msg:"opening the graph menu keeps the drawer visible"
       (property_bool renderer root Lui_protocol.Selected);
-    dispatch application (Lui_protocol.Dismiss menu);
-    flush application;
-    check_eq ~msg:"native menu dismissal removes the retained menu"
-      (descendant_with_identifier renderer reopened_sidebar
-         "menu.graph-switch")
-      (-1);
-    dispatch application (Lui_protocol.Press switch_button);
-    flush application;
+    check ~msg:"system presentation does not require model-owned popup state"
+      (not (App.model application).graph_menu_open);
     let reopened_menu =
       descendant_with_identifier renderer reopened_sidebar
         "menu.graph-switch"
@@ -4946,17 +4938,16 @@ let composer_attachment_picker_owns_each_presented_action () =
     let renderer = Lui_app.runtime application in
     let root = Lui_app.root_node application in
     let identifier = "button.attachment." ^ service in
-    check_eq ~msg:"closed attachment pickers do not leave native menu actions mounted"
-      (descendant_with_identifier renderer root identifier) (-1);
     let trigger = descendant_with_identifier renderer root "button.attachment" in
-    dispatch application (Lui_protocol.Press trigger);
-    flush application;
-    let action = descendant_with_identifier renderer root identifier in
-    check ~msg:"the attachment trigger presents each action" (action <> -1);
+    let menu = descendant_with_node_kind renderer trigger Lui_protocol.ContextMenu in
+    check ~msg:"the attachment button owns a system menu before the tap"
+      (menu <> -1);
+    let action = descendant_with_identifier renderer trigger identifier in
+    check ~msg:"the system menu exposes each attachment service" (action <> -1);
     dispatch application (Lui_protocol.Press action);
     flush application;
-    check_eq ~msg:"selecting an attachment dismisses the picker"
-      (descendant_with_identifier renderer root identifier) (-1);
+    check ~msg:"system menu actions do not open a model-owned popup"
+      (not (App.model application).attachment_picker_open);
     check_eq ~msg:"the selected service reaches native presentation exactly once"
       (App.model application).pending_effects
       [Model.PresentAttachmentEffect (1, service)])
@@ -5073,6 +5064,11 @@ let composer_task_status_menu_preserves_main_actions () =
     descendant_with_identifier renderer navigation
       "button.task-status.option.todo"
   in
+  let trigger =
+    descendant_with_identifier renderer navigation "button.task-status"
+  in
+  let menu = descendant_with_node_kind renderer trigger Lui_protocol.ContextMenu in
+  check ~msg:"the task status button owns a system menu" (menu <> -1);
   check ~msg:"the task status menu renders Todo" (option <> -1);
   check_eq ~msg:"the native task status action preserves its label"
     (property_string renderer option Lui_protocol.TextValue)
@@ -5082,7 +5078,19 @@ let composer_task_status_menu_preserves_main_actions () =
     "app:task-todo";
   check_eq ~msg:"the task status menu preserves main's semantic color"
     (property_string renderer option Lui_protocol.ForegroundValue)
-    "task-todo"
+    "task-todo";
+  dispatch application (Lui_protocol.Press option);
+  flush application;
+  check_eq ~msg:"the system menu selects the same semantic task status"
+    (App.model application).selected_task_status (Some todo);
+  check ~msg:"the selected status is checked in the system menu"
+    (property_bool renderer option Lui_protocol.Selected);
+  let clear = descendant_with_identifier renderer trigger "button.task-status.clear" in
+  check ~msg:"a selected status exposes the clear action" (clear <> -1);
+  dispatch application (Lui_protocol.Press clear);
+  flush application;
+  check_eq ~msg:"clearing the status updates the composer"
+    (App.model application).selected_task_status None
 
 let task_capture_has_a_stable_native_effect_payload () =
   let todo =
@@ -8842,7 +8850,7 @@ let quick_capture_confirms_only_successful_local_saves () =
             { Model.uuid = "photo"; title = "photo.jpg"; local_path = "/tmp/photo.jpg"; payload = "{}" })
         else begin
           if kind = "task" then begin
-            let status = { Model.uuid = "todo"; ident = Some "todo"; title = "Todo";
+            let status = { Model.uuid = "todo"; ident = Some "logseq.property/status.todo"; title = "Todo";
               icon_type = None; icon_id = None; icon_color = None } in
             send application (Model.ApplyCoreSnapshot
               { (empty_core_projection ()) with graph_name = Some "Work"; task_statuses = [status] });

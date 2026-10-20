@@ -11,6 +11,7 @@ val composer_asset_view :
   (Model.logseq_action -> 'a) ->
   Lui_elements.t
 val task_status_row :
+  Model.logseq_model Signal.signal ->
   Model.task_status Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val task_status_picker_dialog :

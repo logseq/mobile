@@ -43,6 +43,13 @@ let sidebar_graph_menu_item model_source graph_source send : t =
          ignore (send (Model.SelectSidebarGraph (sample graph_source).id)))
        []))
 
+let sidebar_graph_menu_items model_source send =
+  [ keyed
+      ~source:(Signal.map View_base.model_graphs model_source)
+      ~key:View_base.sidebar_graph_identifier ~cmp:compare
+      ~mount:(fun graph_source ->
+        sidebar_graph_menu_item model_source graph_source send) ]
+
 let sidebar_section_heading title icon : t =
   column ~gap:0
     [
@@ -85,13 +92,13 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          [ sidebar_graph_switch_content model_source ])
   else
     View_base.with_label "Switch graph"
-      (list_item
-      ~text:(reactive View_base.graph_label model_source)
-      ~role:`navigation_heading
+      (button ~variant:`ghost ~grow:1.0 ~min_height:44
+      ~text_signal:(Signal.map View_base.graph_label model_source)
+      ~text_alignment:`start ~style_class:"semibold" ~foreground:"foreground"
       ~icon:(`app "chevron-down") ~icon_placement:`trailing
       ~accessibility_identifier:"button.graph-switch"
-      ~on_press:(press send Model.OpenGraphMenu)
-      [])
+      [context_menu ~accessibility_identifier:"menu.graph-switch"
+         (sidebar_graph_menu_items model_source send)])
 
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
@@ -154,22 +161,13 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
             [
               sidebar_graph_switch context model_source send;
               if_
-                ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
+                ~test:(Signal.map (fun current -> Lui_ui.host context = KotlinHost
+                  && View_base.model_graph_menu_open_ current) model_source)
                 (dropdown_menu ~anchor:`below ~anchor_alignment:`start
                    ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
                    ~style_class:"anchored-popover" ~gap:0
                    ~on_dismiss:(press send Model.DismissGraphMenu)
-                   [
-                     keyed
-                       ~source:
-                         (Signal.map
-                            View_base.model_graphs
-                            model_source)
-                       ~key:View_base.sidebar_graph_identifier ~cmp:compare
-                       ~mount:(fun graph_source ->
-                         sidebar_graph_menu_item model_source graph_source
-                           send);
-                   ]);
+                   (sidebar_graph_menu_items model_source send));
             ];
           button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
             ~width:44 ~height:44 ~label:"Settings"

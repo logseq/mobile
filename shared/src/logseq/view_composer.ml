@@ -1,7 +1,6 @@
 open Lui_elements
 
-let attachment_picker_menu send : t =
- fun context parent ->
+let attachment_picker_items context send =
   let items = [
       menu_item ~icon:(`app "toolbar-attachment")
         ~accessibility_identifier:"button.attachment.files"
@@ -28,33 +27,21 @@ let attachment_picker_menu send : t =
           ignore (send (Model.ChooseAttachment "audio")))
         [];
     ] in
-  let items = if Lui_ui.host context = KotlinHost then items else List.rev items in
+  if Lui_ui.host context = KotlinHost then items else List.rev items
+
+let attachment_picker_menu send : t =
+ fun context parent ->
   dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
     ~style_class:"anchored-popover" ~gap:0
-    ~on_dismiss:(press send Model.CloseAttachmentPicker) items context parent
+    ~on_dismiss:(press send Model.CloseAttachmentPicker)
+    (attachment_picker_items context send) context parent
 
-let composer_attachment_button (_context : Lui_ui.ui_context) send : t =
+let composer_attachment_button (context : Lui_ui.ui_context) send : t =
+  let native_menu = Lui_ui.host context <> KotlinHost in
   button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
     ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
-    ~on_press:(press send Model.OpenAttachmentPicker)
-    []
-
-let composer_task_status_button (_context : Lui_ui.ui_context) model_source send : t =
-  let icon (current : Model.logseq_model) =
-    match current.selected_task_status with
-    | Some status ->
-      View_base.icon_of_wire_name (View_base.task_status_icon_name status)
-    | None -> `app "task-todo" in
-  let foreground (current : Model.logseq_model) =
-    match current.selected_task_status with
-    | Some status -> View_base.task_status_foreground status
-    | None -> "border" in
-  button ~icon_signal:(Signal.map icon model_source)
-    ~variant:`ghost ~size:`icon ~width:32 ~height:32
-    ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
-    ~accessibility_identifier:"button.task-status"
-    ~on_press:(press send Model.OpenTaskStatusPicker)
-    []
+    ?on_press:(if native_menu then None else Some (press send Model.OpenAttachmentPicker))
+    (if native_menu then [context_menu (attachment_picker_items context send)] else [])
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -94,12 +81,16 @@ let composer_asset_view (context : Lui_ui.ui_context) asset_source send : t =
         ];
     ]
 
-let task_status_row status_source send : t =
+let task_status_row model_source status_source send : t =
   let status = Signal.sample status_source in
   menu_item
     ~text_signal:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
+    ~selected_signal:(Signal.map (fun (current : Model.logseq_model) ->
+      match current.selected_task_status with
+      | Some selected -> selected.uuid = status.uuid
+      | None -> false) model_source)
     ~accessibility_identifier:(View_base.task_status_identifier status)
     ~on_press:(fun _ ->
       ignore
@@ -108,15 +99,12 @@ let task_status_row status_source send : t =
               (Signal.sample status_source).uuid)))
     []
 
-let task_status_picker_dialog model_source send : t =
-  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
-    ~style_class:"anchored-popover" ~gap:0
-    ~on_dismiss:(press send Model.CloseTaskStatusPicker)
+let task_status_picker_items model_source send =
     [
       keyed
         ~source:(Signal.map View_base.model_task_statuses model_source)
         ~key:View_base.task_status_identifier ~cmp:compare
-        ~mount:(fun status_source -> task_status_row status_source send);
+        ~mount:(fun status_source -> task_status_row model_source status_source send);
       if_
         ~test:(Signal.map View_base.task_status_selected_ model_source)
         (menu_item ~accessibility_identifier:"button.task-status.clear"
@@ -124,6 +112,30 @@ let task_status_picker_dialog model_source send : t =
            ~on_press:(press send Model.ClearTaskStatus)
            []);
     ]
+
+let composer_task_status_button (context : Lui_ui.ui_context) model_source send : t =
+  let icon (current : Model.logseq_model) =
+    match current.selected_task_status with
+    | Some status ->
+      View_base.icon_of_wire_name (View_base.task_status_icon_name status)
+    | None -> `app "task-todo" in
+  let foreground (current : Model.logseq_model) =
+    match current.selected_task_status with
+    | Some status -> View_base.task_status_foreground status
+    | None -> "border" in
+  let native_menu = Lui_ui.host context <> KotlinHost in
+  button ~icon_signal:(Signal.map icon model_source)
+    ~variant:`ghost ~size:`icon ~width:32 ~height:32
+    ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
+    ~accessibility_identifier:"button.task-status"
+    ?on_press:(if native_menu then None else Some (press send Model.OpenTaskStatusPicker))
+    (if native_menu then [context_menu (task_status_picker_items model_source send)] else [])
+
+let task_status_picker_dialog model_source send : t =
+  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
+    ~style_class:"anchored-popover" ~gap:0
+    ~on_dismiss:(press send Model.CloseTaskStatusPicker)
+    (task_status_picker_items model_source send)
 
 let with_press handler (elem : t) : t =
  fun context parent ->
@@ -260,7 +272,8 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                       if_
                         ~test:
                           (Signal.map
-                             View_base.model_attachment_picker_open_
+                             (fun current -> Lui_ui.host context = KotlinHost
+                               && View_base.model_attachment_picker_open_ current)
                              model_source)
                         (attachment_picker_menu send);
                     ];
@@ -269,7 +282,8 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                    composer_task_status_button context model_source send;
                    if_
                      ~test:
-                       (Signal.map View_base.model_task_status_picker_open_
+                       (Signal.map (fun current -> Lui_ui.host context = KotlinHost
+                         && View_base.model_task_status_picker_open_ current)
                           model_source)
                      (task_status_picker_dialog model_source send);
                  ];

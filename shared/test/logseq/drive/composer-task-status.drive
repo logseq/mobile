@@ -1,5 +1,5 @@
-# The composer task-status button opens its picker listing the seeded
-# statuses; picking one selects it for the next capture.
+# The composer system menu retains its seeded actions; picking a status
+# checks it for the next capture, and clearing it removes the selection.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
@@ -14,4 +14,7 @@ press prop:accessibility-identifier=button.task-status
 wait prop:accessibility-identifier=button.task-status.option.ts-1
 expect prop:accessibility-identifier=button.task-status.option.ts-1
 press prop:accessibility-identifier=button.task-status.option.ts-1
-expect-absent prop:accessibility-identifier=button.task-status.option.ts-1
+expect-prop prop:accessibility-identifier=button.task-status.option.ts-1 selected true
+press prop:accessibility-identifier=button.task-status.clear
+expect-prop prop:accessibility-identifier=button.task-status.option.ts-1 selected false
+expect-absent prop:accessibility-identifier=button.task-status.clear
