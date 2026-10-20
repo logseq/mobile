@@ -378,6 +378,7 @@ type logseq_model =
   ; composer_draft : string
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
+  ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
   ; next_effect_id : int
@@ -415,6 +416,7 @@ type logseq_action =
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
   | DismissAssetPreview
+  | DismissCaptureConfirmation of int
   | CloseSearch
   | ExpandComposer
   | FocusComposer
@@ -692,6 +694,7 @@ let initial () =
     composer_draft = "";
     composer_assets = [];
     composer_autofocus = false;
+    capture_confirmation = None;
     pending_effects = [];
     in_flight_effects = [];
     next_effect_id = 1;
@@ -1490,16 +1493,22 @@ let resolve_failed_effect (current : logseq_model) eff message =
     { current with sync_state = FailedState message }
   | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
     { current with new_graph_password_required = true }
+  | SendCaptureEffect _ | SendTaskEffect _ ->
+    { current with capture_confirmation = None }
   | SendAssetEffect (_, asset) ->
+    let current = { current with capture_confirmation = None } in
     if List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) current.composer_assets then current
     else { current with composer_assets = current.composer_assets @ [asset] }
   | _ -> rollback_navigation_effect current eff
 
 let resolve_successful_effect (current : logseq_model) eff _message =
   match eff with
-  | SendAssetEffect (_, asset) ->
+  | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
+    { current with capture_confirmation = Some id }
+  | SendAssetEffect (id, asset) ->
     {
       current with
+      capture_confirmation = Some id;
       composer_assets =
         List.filter
           (fun (candidate : composer_asset) -> candidate.uuid <> asset.uuid)
@@ -1945,6 +1954,10 @@ let rec update (current : logseq_model) action =
         Some { preview_title = title; preview_path = path };
     }
   | DismissAssetPreview -> { current with asset_preview = None }
+  | DismissCaptureConfirmation id ->
+    if current.capture_confirmation = Some id then
+      { current with capture_confirmation = None }
+    else current
   | CloseSearch ->
     let path = current.search_navigation_path in
     let editing_ended =
@@ -2002,8 +2015,10 @@ let rec update (current : logseq_model) action =
   | SendComposer ->
     begin
       let assets = current.composer_assets in
-      let current = { current with composer_assets = [] } in
       let submission = String.trim current.composer_draft in
+      let current = { current with composer_assets = [];
+        capture_confirmation =
+          (if submission = "" && assets = [] then current.capture_confirmation else None) } in
       let with_text =
         if submission = "" then current
         else begin

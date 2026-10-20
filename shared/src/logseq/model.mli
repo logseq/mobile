@@ -375,6 +375,7 @@ type logseq_model =
   ; composer_draft : string
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
+  ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
   ; next_effect_id : int
@@ -412,6 +413,7 @@ type logseq_action =
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
   | DismissAssetPreview
+  | DismissCaptureConfirmation of int
   | CloseSearch
   | ExpandComposer
   | FocusComposer

@@ -8827,6 +8827,87 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
   check_eq ~msg:"successful assets leave the draft"
     completed.composer_assets []
 
+let quick_capture_confirms_only_successful_local_saves () =
+  List.iter (fun backend ->
+    List.iter (fun kind ->
+      List.iter (fun succeeded ->
+        let application = App.create (backend ()) in
+        start application;
+        send application (Model.SelectGraph "Work");
+        if kind = "asset" then
+          send application (Model.StageComposerAsset
+            { Model.uuid = "photo"; title = "photo.jpg"; local_path = "/tmp/photo.jpg"; payload = "{}" })
+        else begin
+          if kind = "task" then begin
+            let status = { Model.uuid = "todo"; ident = Some "todo"; title = "Todo";
+              icon_type = None; icon_id = None; icon_color = None } in
+            send application (Model.ApplyCoreSnapshot
+              { (empty_core_projection ()) with graph_name = Some "Work"; task_statuses = [status] });
+            send application (Model.ChooseTaskStatus "todo")
+          end;
+          send application (Model.ChangeComposerDraft "Remember this")
+        end;
+        send application Model.SendComposer;
+        flush application;
+        let capture_effect = List.find (function
+          | Model.SendCaptureEffect _ | SendTaskEffect _ | SendAssetEffect _ -> true
+          | _ -> false) (App.model application).pending_effects in
+        let id = Model.effect_id capture_effect in
+        send application (Model.DequeueEffect id);
+        flush application;
+        let renderer = Lui_app.runtime application in
+        let toast () = descendant_with_node_kind renderer (Lui_app.root_node application) Lui_protocol.Toast in
+        check_eq ~msg:"pending local saves do not show confirmation" (toast ()) (-1);
+        send application (Model.ResolveEffect (id, succeeded, if succeeded then "" else "Local save failed"));
+        flush application;
+        if succeeded then begin
+          check ~msg:"a successful quick capture shows confirmation" (toast () <> -1);
+          check_eq ~msg:"confirmation identifies today's journal"
+            (property_string renderer (toast ()) Lui_protocol.AccessibilityLabel) "Added to today";
+          check_eq ~msg:"confirmation dismisses automatically"
+            (property_int renderer (toast ()) Lui_protocol.DurationValue) 2500;
+          dispatch application (Lui_protocol.Dismiss (toast ()));
+          flush application;
+          check_eq ~msg:"dismissal removes the confirmation" (toast ()) (-1)
+        end else begin
+          check_eq ~msg:"failed local saves never report success" (toast ()) (-1);
+          check_eq ~msg:"save errors remain available" (App.model application).effect_error
+            (Some "Local save failed")
+        end)
+        [false; true])
+      ["text"; "task"; "asset"])
+    [ios_backend; kotlin_backend]
+
+let quick_capture_restarts_confirmation_for_each_save () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  let renderer = Lui_app.runtime application in
+  let toast () = descendant_with_node_kind renderer (Lui_app.root_node application) Lui_protocol.Toast in
+  send application Model.SendComposer;
+  flush application;
+  check_eq ~msg:"empty captures have no success message" (toast ()) (-1);
+  let save text =
+    send application (Model.ChangeComposerDraft text);
+    send application Model.SendComposer;
+    flush application;
+    check_eq ~msg:"a new capture clears the previous confirmation" (toast ()) (-1);
+    let capture_effect = List.find (function Model.SendCaptureEffect _ -> true | _ -> false)
+      (App.model application).pending_effects in
+    let id = Model.effect_id capture_effect in
+    send application (Model.DequeueEffect id);
+    send application (Model.ResolveEffect (id, true, ""));
+    flush application;
+    toast ()
+  in
+  let first = save "First capture" in
+  check ~msg:"first capture confirms success" (first <> -1);
+  let second = save "Second capture" in
+  check ~msg:"each save mounts a fresh confirmation timer" (second <> -1 && second <> first);
+  dispatch application (Lui_protocol.Dismiss first);
+  flush application;
+  check_eq ~msg:"an earlier dismissal cannot hide a later confirmation" (toast ()) second
+
 let sidebar_settings_opens_sheet_directly () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -9223,6 +9304,8 @@ let cases =
     case "search-lifecycle-keeps-query-owned-by-the-lg-model" search_lifecycle_keeps_query_owned_by_the_lg_model;
     case "bottom-chrome-presentation-is-mutually-exclusive" bottom_chrome_presentation_is_mutually_exclusive;
     case "composer-matches-the-main-branch-expand-draft-and-send-contract" composer_matches_the_main_branch_expand_draft_and_send_contract;
+    case "quick-capture-confirms-only-successful-local-saves" quick_capture_confirms_only_successful_local_saves;
+    case "quick-capture-restarts-confirmation-for-each-save" quick_capture_restarts_confirmation_for_each_save;
     case "ios-capture-and-search-match-main-native-metrics" ios_capture_and_search_match_main_native_metrics;
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;

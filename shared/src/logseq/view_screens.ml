@@ -941,6 +941,16 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       ]
   in
   let stack_grow = Lui_ui.platform context = AndroidOS in
+  let content_children = content_children @ [
+    keyed
+      ~source:(Signal.map (fun (current : Model.logseq_model) ->
+        Option.to_list current.capture_confirmation) model_source)
+      ~key:string_of_int ~cmp:compare
+      ~mount:(fun id_source ->
+        toast ~duration:2500 ~label:"Added to today"
+          ~on_dismiss:(press send (Model.DismissCaptureConfirmation (Signal.sample id_source)))
+          [text ~value:"Added to today" ~accessibility_identifier:"capture.confirmation" []]);
+  ] in
   if stack_grow then
     if Lui_ui.host context = KotlinHost then
       stack ~grow:1.0 content_children
