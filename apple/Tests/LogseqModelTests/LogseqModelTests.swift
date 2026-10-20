@@ -493,17 +493,6 @@ private let testEmptySnapshotJSON = """
         #expect(decodedPayload?["token"] as? String == token)
     }
 
-    @Test @MainActor func journalPaginationAvailabilitySurvivesSnapshotMerging() async throws {
-        let store = LogseqStore { _ in
-            #"{"apiVersion":1,"ok":true,"result":{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","isSearching":false,"hasOlderJournals":true},"error":null}"#
-        }
-
-        store.loadOlderJournals()
-
-        try await waitUntil { store.snapshot.revision == 2 }
-        #expect(store.snapshot.hasOlderJournals)
-    }
-
     @Test @MainActor func configureDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
@@ -618,7 +607,7 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.title == "Remote block")
     }
 
-    @Test @MainActor func sendPublishesCoreResultBeforeSyncing() async throws {
+    @Test @MainActor func sharedCapturePublishesCoreResultBeforeSyncing() async throws {
         let recorder = RequestRecorder()
         let request = LogseqPendingSyncRequest(
             id: 1,
@@ -645,10 +634,10 @@ private let testEmptySnapshotJSON = """
             }
         )
 
-        store.send("Offline capture")
+        capture(store, "Offline capture")
 
         try await waitUntil {
-            recorder.first?.contains("\"action\":\"send\"") == true
+            recorder.first?.contains("\"action\":\"captureShared\"") == true
         }
 
         try await waitUntil {
@@ -687,7 +676,7 @@ private let testEmptySnapshotJSON = """
             }
         )
 
-        store.send("Offline capture")
+        capture(store, "Offline capture")
 
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
@@ -696,11 +685,11 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.appliedServerT == 43)
     }
 
-    @Test @MainActor func sendDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
+    @Test @MainActor func sharedCaptureDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"send\"") {
+            if request.contains("\"action\":\"captureShared\"") {
                 Thread.sleep(forTimeInterval: 0.25)
             }
             return """
@@ -730,13 +719,13 @@ private let testEmptySnapshotJSON = """
         }
 
         let start = Date()
-        store.send("Slow local capture")
+        capture(store, "Slow local capture")
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed < 0.1)
         #expect(store.snapshot.blocks.isEmpty)
         try await waitUntil {
-            recorder.first?.contains("\"action\":\"send\"") == true
+            recorder.first?.contains("\"action\":\"captureShared\"") == true
                 && store.snapshot.blocks.first?.title == "Slow local capture"
         }
         #expect(store.snapshot.blocks.first?.isPendingSync == true)
@@ -769,7 +758,7 @@ private let testEmptySnapshotJSON = """
                 if request.contains("\"action\":\"completePendingSync\"") {
                     return pendingPumpSnapshot(query: "local", syncStatus: "submitted", request: nil)
                 }
-                if request.contains("\"action\":\"searchNodes\"") {
+                if request.contains("\"action\":\"selectGraph\"") {
                     return pendingPumpSnapshot(query: "local", syncStatus: "pending", request: nil)
                 }
                 return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
@@ -779,14 +768,14 @@ private let testEmptySnapshotJSON = """
             }
         )
 
-        store.send("Offline capture")
+        capture(store, "Offline capture")
         try await waitUntilAsync { await transport.hasStarted }
 
-        store.openNode("page-1")
-        _ = store.addChildBlock("Offline child", parentId: "local-1")
+        Task { _ = await store.selectGraphAndWait("page-1") }
+        capture(store, "Offline child")
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"openNode\"") }
-                && recorder.all.contains { $0.contains("\"action\":\"addChildBlock\"") }
+            recorder.all.contains { $0.contains("\"action\":\"selectGraph\"") }
+                && recorder.all.filter { $0.contains("\"action\":\"captureShared\"") }.count == 2
         }
         #expect(await transport.isWaiting)
 
@@ -806,7 +795,7 @@ private let testEmptySnapshotJSON = """
             }
             return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
         }
-        store.refresh()
+        store.refreshSoon()
         try await waitUntil { store.snapshot.appliedServerT == 51 }
 
         _ = await store.runGraphEventsOnce(
@@ -818,9 +807,9 @@ private let testEmptySnapshotJSON = """
         #expect(store.lastError == nil)
         #expect(store.syncError?.code == "invalid_sync_transport")
         #expect(store.syncError?.message == "The sync server address is invalid.")
-        store.openNode("page-1")
+        Task { _ = await store.selectGraphAndWait("page-1") }
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"openNode\"") }
+            recorder.all.contains { $0.contains("\"action\":\"selectGraph\"") }
         }
     }
 
@@ -902,14 +891,14 @@ private let testEmptySnapshotJSON = """
         #expect(!recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") })
     }
 
-    @Test @MainActor func sendPublishesOnlyAfterTheLocalWriteIsDurable() async throws {
+    @Test @MainActor func sharedCapturePublishesOnlyAfterTheLocalWriteIsDurable() async throws {
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"send\"") {
+            if request.contains("\"action\":\"captureShared\"") {
                 Thread.sleep(forTimeInterval: 0.25)
             }
-            let uuid = latestSendUUID(in: recorder) ?? "local-durable"
+            let uuid = latestCaptureUUID(in: recorder) ?? "local-durable"
             return """
             {
               "apiVersion": 1,
@@ -937,84 +926,13 @@ private let testEmptySnapshotJSON = """
         }
 
         let start = Date()
-        store.send("Durable capture")
+        capture(store, "Durable capture")
 
         #expect(Date().timeIntervalSince(start) < 0.1)
         #expect(store.snapshot.blocks.isEmpty)
         try await waitUntil {
             store.snapshot.blocks.first?.title == "Durable capture"
                 && store.snapshot.blocks.first?.isPendingSync == true
-        }
-    }
-
-    @Test @MainActor func searchNodesDispatchesCacheOnlySearch() async throws {
-        let recorder = RequestRecorder()
-        let store = LogseqStore { request in
-            recorder.append(request)
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "searchQuery": "offline",
-                "blocks": [],
-                "selectedBlock": null,
-                "lastRefreshAt": null,
-                "graphName": null,
-                "isSearching": true
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.searchNodes("offline")
-
-        try await waitUntil {
-            recorder.first?.contains("\"action\":\"searchNodes\"") == true
-                && store.snapshot.searchQuery == "offline"
-        }
-
-        let request = try #require(recorder.first)
-        #expect(request.contains("\"action\":\"searchNodes\""))
-        #expect(!request.contains("\"action\":\"search\""))
-        #expect(store.snapshot.searchQuery == "offline")
-    }
-
-    @Test @MainActor func searchNodesDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
-        let recorder = RequestRecorder()
-        let store = LogseqStore { request in
-            recorder.append(request)
-            if request.contains("\"action\":\"searchNodes\"") {
-                Thread.sleep(forTimeInterval: 0.25)
-            }
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "searchQuery": "slow",
-                "blocks": [],
-                "selectedBlock": null,
-                "lastRefreshAt": null,
-                "graphName": null,
-                "isSearching": true
-              },
-              "error": null
-            }
-            """
-        }
-
-        let start = Date()
-        store.searchNodes("slow")
-        let elapsed = Date().timeIntervalSince(start)
-
-        #expect(elapsed < 0.05)
-        try await waitUntil {
-            recorder.first?.contains("\"action\":\"searchNodes\"") == true
-                && store.snapshot.searchQuery == "slow"
         }
     }
 
@@ -1083,8 +1001,8 @@ private let testEmptySnapshotJSON = """
             return testEmptySnapshotJSON
         }
 
-        store.refresh()
-        store.refresh()
+        store.refreshSoon()
+        store.refreshSoon()
 
         try await waitUntil(timeout: 1.0) {
             recorder.all.contains { $0.contains("\"action\":\"refresh\"") }
@@ -1112,19 +1030,19 @@ private let testEmptySnapshotJSON = """
 
         let start = Date()
         store.open(path: "/tmp/serialized-core.sqlite")
-        store.searchNodes("queued")
+        Task { _ = await store.selectGraphAndWait("queued") }
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed < 0.1)
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchNodes")
+            probe.events.contains("finish selectGraph")
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start searchNodes",
-            "finish searchNodes",
+            "start selectGraph",
+            "finish selectGraph",
             "start open",
             "finish open",
         ])
@@ -1147,18 +1065,18 @@ private let testEmptySnapshotJSON = """
             token: "token",
             refreshAfterApply: false
         )
-        store.selectPage("page-1")
+        Task { _ = await store.selectGraphAndWait("page-1") }
 
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish selectPage")
+            probe.events.contains("finish selectGraph")
                 && probe.events.filter { $0 == "finish configure" }.count == 2
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start selectPage",
-            "finish selectPage",
+            "start selectGraph",
+            "finish selectGraph",
             "start configure",
             "finish configure",
         ])
@@ -1178,22 +1096,22 @@ private let testEmptySnapshotJSON = """
         try await waitUntil {
             probe.events.contains("start configure")
         }
-        store.searchNodes("after error")
+        Task { _ = await store.selectGraphAndWait("after error") }
 
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchNodes")
+            probe.events.contains("finish selectGraph")
         }
         try await waitUntil(timeout: 2.0) {
-            store.snapshot.searchQuery == "after error" && store.lastError == nil
+            store.snapshot.selectedGraphId == "after error" && store.lastError == nil
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start searchNodes",
-            "finish searchNodes",
+            "start selectGraph",
+            "finish selectGraph",
         ])
-        #expect(store.snapshot.searchQuery == "after error")
+        #expect(store.snapshot.selectedGraphId == "after error")
         #expect(store.lastError == nil)
     }
 
@@ -1214,17 +1132,17 @@ private let testEmptySnapshotJSON = """
         try await waitUntil {
             probe.events.contains("start configure")
         }
-        secondStore.searchNodes("queued across stores")
+        Task { _ = await secondStore.selectGraphAndWait("queued across stores") }
 
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchNodes")
+            probe.events.contains("finish selectGraph")
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start searchNodes",
-            "finish searchNodes",
+            "start selectGraph",
+            "finish selectGraph",
         ])
     }
 
@@ -1239,7 +1157,7 @@ private let testEmptySnapshotJSON = """
 
         for index in 0..<4 {
             let store = index % 2 == 0 ? firstStore : secondStore
-            store.searchNodes("thread-affinity-\(index)")
+            Task { _ = await store.selectGraphAndWait("thread-affinity-\(index)") }
         }
 
         try await waitUntil(timeout: 2.0) {
@@ -1249,88 +1167,13 @@ private let testEmptySnapshotJSON = """
         #expect(probe.operatingSystemThreadNames == ["LogseqCore"])
     }
 
-    @Test @MainActor func searchNodesKeepsDurableCaptureVisible() async throws {
-        let recorder = RequestRecorder()
-        let store = LogseqStore { request in
-            recorder.append(request)
-            if request.contains("\"action\":\"searchNodes\"") {
-                let uuid = latestSendUUID(in: recorder) ?? "local-search"
-                return """
-                {
-                  "apiVersion": 1,
-                  "ok": true,
-                  "result": {
-                    "revision": 1,
-                    "searchQuery": "E2E capture",
-                    "blocks": [{
-                      "uuid": "\(uuid)",
-                      "title": "E2E capture responsive",
-                      "pageId": "journal/2026-08-13",
-                      "createdAt": 1776000000000,
-                      "updatedAt": 1776000000000,
-                      "syncStatus": "pending"
-                    }],
-                    "selectedBlock": null,
-                    "lastRefreshAt": null,
-                    "graphName": "pat test",
-                    "isSearching": true
-                  },
-                  "error": null
-                }
-                """
-            }
-            if request.contains("\"action\":\"send\"") {
-                Thread.sleep(forTimeInterval: 0.25)
-            }
-            let uuid = latestSendUUID(in: recorder) ?? "local-search"
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [{
-                  "uuid": "\(uuid)",
-                  "title": "E2E capture responsive",
-                  "pageId": "journal/2026-08-13",
-                  "createdAt": 1776000000000,
-                  "updatedAt": 1776000000000,
-                  "syncStatus": "pending"
-                }],
-                "selectedBlock": null,
-                "lastRefreshAt": null,
-                "graphName": "pat test",
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.send("E2E capture responsive")
-        try await waitUntil {
-            store.snapshot.blocks.first?.title == "E2E capture responsive"
-        }
-
-        store.searchNodes("E2E capture")
-
-        try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"searchNodes\"") }
-                && store.snapshot.searchQuery == "E2E capture"
-        }
-
-        #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
-    }
-
-
     @Test @MainActor func nativeStoreRequestsCoreOwnedSnapshots() async throws {
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
             recorder.append(request)
             return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
         }
-        store.refresh()
+        store.refreshSoon()
         try await waitUntil { !recorder.all.isEmpty }
         let request = try #require(recorder.all.first)
         let json = try #require(JSONSerialization.jsonObject(with: Data(request.utf8)) as? [String: Any])
@@ -1593,14 +1436,14 @@ private final class CoreCallConcurrencyProbe: @unchecked Sendable {
         if action == failingAction {
             return #"{"apiVersion":1,"ok":false,"result":null,"error":{"code":"test_error","message":"Expected test failure"}}"#
         }
-        let query = action == "searchNodes" ? (decoded?.params.payload ?? "") : ""
+        let query = action == "selectGraph" ? (decoded?.params.payload ?? "") : ""
         return """
         {
           "apiVersion": 1,
           "ok": true,
           "result": {
             "revision": 1,
-            "searchQuery": "\(query)",
+            "selectedGraphId": "\(query)",
             "blocks": [],
             "selectedBlock": null,
             "lastRefreshAt": null,
@@ -1622,40 +1465,18 @@ private struct TestRPCParams: Decodable {
     let payload: String?
 }
 
-private struct TestSendPayload: Decodable {
-    let uuid: String
+@MainActor private func capture(_ store: LogseqStore, _ text: String) {
+    Task { _ = await store.captureSharedText(text, id: UUID().uuidString.lowercased()) }
 }
 
-private func latestSendUUID(in recorder: RequestRecorder) -> String? {
+private func latestCaptureUUID(in recorder: RequestRecorder) -> String? {
     for request in recorder.all.reversed() {
-        guard request.contains("\"action\":\"send\"") else { continue }
-        if let uuid = extractSendUUID(from: request) {
-            return uuid
-        }
-    }
-    return nil
-}
-
-private func extractSendUUID(from request: String) -> String? {
-    let escapedMarker = "\\\"uuid\\\":\\\""
-    if let uuid = extractValue(from: request, after: escapedMarker, before: "\\\"") {
+        guard let decoded = try? JSONDecoder().decode(TestRPCRequest.self, from: Data(request.utf8)),
+              decoded.params.action == "captureShared",
+              let payload = requestPayloadObject(request), let uuid = payload["uuid"] as? String else { continue }
         return uuid
     }
-
-    let marker = "\"uuid\":\""
-    return extractValue(from: request, after: marker, before: "\"")
-}
-
-private func extractValue(from text: String, after marker: String, before terminator: String) -> String? {
-    let parts = text.components(separatedBy: marker)
-    guard parts.count > 1 else {
-        return nil
-    }
-    let tailParts = parts[1].components(separatedBy: terminator)
-    guard let value = tailParts.first, !value.isEmpty else {
-        return nil
-    }
-    return value
+    return nil
 }
 
 @MainActor private func waitUntil(

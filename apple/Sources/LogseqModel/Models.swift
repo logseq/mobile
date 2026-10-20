@@ -394,16 +394,6 @@ public struct LogseqNodeProjection: Codable, Identifiable {
     public var id: String { uuid }
 }
 
-public struct LogseqNodeRouteRequest: Codable, Sendable {
-    public let uuid: String
-    public let reveal: Bool
-
-    public init(uuid: String, reveal: Bool = false) {
-        self.uuid = uuid
-        self.reveal = reveal
-    }
-}
-
 public struct LogseqPendingSyncRequest: Codable, Sendable {
     public let id: Int
     public let method: String

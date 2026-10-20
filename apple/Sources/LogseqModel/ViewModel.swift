@@ -383,12 +383,6 @@ private struct ConfigurePayload: Encodable {
     let token: String
 }
 
-private struct SendBlockPayload: Encodable {
-    let text: String
-    let uuid: String
-    let now: Int64
-}
-
 private struct AddAssetPayload: Encodable {
     let uuid: String
     let title: String
@@ -398,13 +392,6 @@ private struct AddAssetPayload: Encodable {
     let assetChecksum: String
     let localPath: String
     let targetBlockId: String?
-}
-
-private struct AddChildBlockPayload: Encodable {
-    let uuid: String
-    let title: String
-    let parentId: String
-    let now: Int64
 }
 
 private struct ImportSnapshotPayload: Encodable {
@@ -465,7 +452,6 @@ private struct CreateSyncGraphPayload: Encodable {
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
     private let responseObserver: @MainActor (String) -> Void
-    private var searchGeneration = 0
     private var openedDatabasePath: String?
     public private(set) var graphSyncAllowed = false
     private var bootstrapPlan: LogseqBootstrapPlan?
@@ -644,10 +630,6 @@ private struct CreateSyncGraphPayload: Encodable {
 
     }
 
-    public func refresh() {
-        refresh(afterApply: nil)
-    }
-
     @discardableResult public func selectGraphAndWait(_ graphID: String) async -> Bool {
         await performAsyncAndWait(
             LogseqRPCRequest(
@@ -665,84 +647,6 @@ private struct CreateSyncGraphPayload: Encodable {
         ) else { return false }
         await dispatchRawAndWait("createSyncGraph", payload: payload)
         return lastError == nil
-    }
-
-    public func selectPage(_ pageID: String) {
-        performAsync(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "selectPage", payload: pageID)
-            ),
-            afterApply: nil
-        )
-    }
-
-    public func openNode(_ nodeID: String) {
-        dispatchEncoded("openNode", LogseqNodeRouteRequest(uuid: nodeID))
-    }
-
-    /// Opens a node route and reports whether the core resolved it, so the
-    /// caller can undo optimistic navigation instead of spinning forever.
-    public func openNode(_ nodeID: String, onResolved: @escaping (Bool) -> Void) {
-        do {
-            let payloadData = try JSONEncoder().encode(LogseqNodeRouteRequest(uuid: nodeID))
-            guard let payload = String(data: payloadData, encoding: .utf8) else {
-                lastError = LogseqCoreError(
-                    code: "request_encoding", message: "Could not encode openNode payload"
-                )
-                onResolved(false)
-                return
-            }
-            performAsync(
-                LogseqRPCRequest(
-                    method: "dispatch",
-                    params: LogseqRPCParams(action: "openNode", payload: payload)
-                ),
-                afterApply: {
-                    onResolved(self.snapshot.nodeRoutes.contains { $0.uuid == nodeID })
-                }
-            )
-        } catch {
-            lastError = LogseqCoreError(code: "request_encoding", message: "\(error)")
-            onResolved(false)
-        }
-    }
-
-    public func closeNode() {
-        performAsync(LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: "closeNode")
-        ))
-    }
-
-    public func clearSelectedPage() {
-        performAsync(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "clearSelectedPage")
-            ),
-            afterApply: nil
-        )
-    }
-
-    @discardableResult public func clearSelectedPageAndWait() async -> Bool {
-        await performAsyncAndWait(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "clearSelectedPage")
-            )
-        )
-        return lastError == nil
-    }
-
-    public func loadOlderJournals() {
-        performAsync(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "loadOlderJournals")
-            ),
-            afterApply: nil
-        )
     }
 
     public func unlockGraph(_ password: String) async {
@@ -1022,37 +926,6 @@ private struct CreateSyncGraphPayload: Encodable {
         }
     }
 
-    public func searchNodes(_ query: String) {
-        searchGeneration += 1
-        let generation = searchGeneration
-        performAsync(
-            LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "searchNodes", payload: query)),
-            shouldApply: {
-                self.searchGeneration == generation
-            }
-        )
-    }
-
-    public func send(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let now = Self.nowMilliseconds()
-        let uuid = UUID().uuidString.lowercased()
-        do {
-            let payloadData = try JSONEncoder().encode(SendBlockPayload(text: trimmed, uuid: uuid, now: now))
-            guard let payload = String(data: payloadData, encoding: .utf8) else {
-                lastError = LogseqCoreError(code: "request_encoding", message: "Could not encode send payload")
-                logger.error("Core request encoding failed: send payload was not UTF-8")
-                return
-            }
-            performAsyncThenSyncPending(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "send", payload: payload)))
-        } catch {
-            lastError = LogseqCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: send, message: \(String(describing: error))")
-            self.syncPending()
-        }
-    }
-
     public func captureSharedText(_ text: String, id: String) async -> Bool {
         await captureShared(text: text, title: nil, url: nil, id: id)
     }
@@ -1103,26 +976,6 @@ private struct CreateSyncGraphPayload: Encodable {
         return true
     }
 
-    @discardableResult public func addChildBlock(_ title: String, parentId: String) -> String {
-        let uuid = UUID().uuidString.lowercased()
-        dispatchEncoded(
-            "addChildBlock",
-            AddChildBlockPayload(
-                uuid: uuid, title: title, parentId: parentId, now: Self.nowMilliseconds()
-            )
-        )
-        return uuid
-    }
-
-    private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
-        guard let payload = encodePayload(payloadValue, action: action) else { return }
-        let request = LogseqRPCRequest(
-            method: "dispatch",
-            params: LogseqRPCParams(action: action, payload: payload)
-        )
-        performAsyncThenSyncPending(request)
-    }
-
     public func syncPending() {
         pendingSyncRequested = true
         guard pendingSyncTask == nil else { return }
@@ -1163,15 +1016,6 @@ private struct CreateSyncGraphPayload: Encodable {
         Task {
             await performAsyncAndWait(request, shouldApply: shouldApply)
             afterApply?()
-        }
-    }
-
-    private func performAsyncThenSyncPending(_ request: LogseqRPCRequest) {
-        Task {
-            await performAsyncAndWait(request)
-            if snapshot.syncConnected == true {
-                syncPending()
-            }
         }
     }
 
@@ -1380,7 +1224,7 @@ private struct CreateSyncGraphPayload: Encodable {
 
     private static func corePriority(for action: String) -> LogseqCorePriority {
         switch action {
-        case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
+        case "selectGraph", "captureShared", "handleDeepLink", "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
              "select", "clearSelection", "loadOlderJournals", "searchNodes", "send", "sendTask",
              "addAsset", "addChildBlock", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction

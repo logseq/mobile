@@ -99,12 +99,12 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | Plan | Complete | Current main is the implementation workspace |
-| Obsolete APIs | In progress | Removed 269 production Swift lines and 434 retired-wrapper test lines; core baseline, 66 model and 125 UI tests pass; remaining send/search wrappers await live executor coverage |
+| Obsolete APIs | Complete | Removed unused send/search/navigation/flashcard/status wrappers and payloads; preserved serialization, main-actor responsiveness, durable response and transport tests through production capture and graph entry points; 59 model tests pass |
 | Core effects | Complete | Shared executeEffect dispatcher replaces Swift/Kotlin mappings; transcript persistence/projection and binary-upload activation covered; 817 core, 109 Swift UI, 42 Android JVM tests pass |
 | Bootstrap | Complete | Core owns bootstrap/cache/lock/sync eligibility and snapshot protocol; generations reject stale same-graph downloads; 824 core, 63 model, 109 UI and 41 Android tests plus 12 actual HTTP cases pass |
 | Shared capture | Complete | Shared canonicalization, idempotent IDs and deep-link routing; raw metadata queue reads legacy entries; late Android ASR results become shared effects; 828 core, 105 UI, 40 Android tests and real text/photo/screenshot/PDF/Markdown provider checks pass |
 | Editor/media | Complete | Core projects validated media URLs, embed requests and timestamp targets; core declares synchronous input rules consumed by native IME/caret adapters; 832 core, 63 model, 102 UI and 41 Android JVM tests pass |
-| Final verification | Pending | Full gates and native builds |
+| Final verification | In progress | Full gates, native builds and integration checks |
 
 ## Testing Details
 
@@ -128,6 +128,21 @@ A later recognition result is a separate native service event; the core creates 
 - Commit each major stage after its relevant checks pass.
 - Record deviations with evidence in this document.
 - Do not install or publish a new build as part of this source consolidation unless requested.
+
+## Boundary audit
+
+The remaining Swift is responsible for native rendering and OS integration: UIKit/SwiftUI view identity, keyboard/IME state, caret geometry, Return handoff buffering, WebKit/AVPlayer presentation, authentication/keychain access, native HTTP/WebSocket streaming, file staging, background task lifetime, App Group queue storage, share providers, widgets and App Intents.
+These responsibilities still require native adapters and should stay in Swift.
+
+The core now owns application effect translation, graph bootstrap and sync eligibility, stale download generations, snapshot protocol metadata, canonical shared text and deep links, asset/transcript mutations, media URL normalization and timestamp association.
+Editor syntax rules are declared by the core and applied synchronously by a generic native UTF-16 adapter; waiting for an asynchronous core response inside UIKit or Compose backspace handling would break IME and caret timing.
+Legacy queue entries, pending asset intents without transcripts, and additive markup fields remain decodable.
+The legacy YouTube target wire property remains for compatibility, with no native domain interpretation.
+
+The final deletion pass removed four wrapper-only tests; meaningful scheduler, nonblocking transport and durable UI publication cases now exercise production capture/graph adapters.
+Actual shared-core tests cover search semantics and journal pagination.
+The native integration fixture opens a fresh graph before exercising mutations, matching production startup; opening only the catalog is not sufficient.
+
 
 ## Question
 
