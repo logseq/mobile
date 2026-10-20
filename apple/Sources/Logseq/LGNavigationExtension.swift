@@ -486,6 +486,7 @@ private struct LGNavigationContent: View {
 
     @ViewBuilder
     var body: some View {
+        let _ = context.revision
         navigationLayout
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
@@ -543,12 +544,12 @@ private struct LGNavigationContent: View {
                         }
                 }
                 .toolbar {
-                    if let toolbarStartIndex {
+                    if let toolbarStartIndex,
+                       let leadingID = childID(at: toolbarStartIndex) {
                         if #available(iOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                let childID = context.childIDs[toolbarStartIndex]
-                                context.content(for: childID)
-                                    .id(context.contentRevision(for: childID))
+                                context.content(for: leadingID)
+                                    .id(context.contentRevision(for: leadingID))
                                     .modifier(LGLiquidGlassSurface(shape: .circle))
                                     .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
                                         iconWidth: 24,
@@ -562,7 +563,7 @@ private struct LGNavigationContent: View {
                             .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex])
+                                context.content(for: leadingID)
                             }
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
                                 rootToolbarTitle(index: toolbarStartIndex + 1)
@@ -570,13 +571,13 @@ private struct LGNavigationContent: View {
                         }
                         #if os(iOS)
                         ToolbarItemGroup(placement: .topBarTrailing) {
-                            context.content(for: context.childIDs[toolbarStartIndex + 2])
-                            context.content(for: context.childIDs[toolbarStartIndex + 3])
+                            childContent(at: toolbarStartIndex + 2)
+                            childContent(at: toolbarStartIndex + 3)
                         }
                         #else
                         ToolbarItemGroup(placement: .primaryAction) {
-                            context.content(for: context.childIDs[toolbarStartIndex + 2])
-                            context.content(for: context.childIDs[toolbarStartIndex + 3])
+                            childContent(at: toolbarStartIndex + 2)
+                            childContent(at: toolbarStartIndex + 3)
                         }
                         #endif
                     }
@@ -606,11 +607,21 @@ private struct LGNavigationContent: View {
         }
     }
 
+    // Toolbar closures may outlive their retained extension during root replacement.
+    // Resolve each slot from one snapshot, and let removed content render empty.
+    private func childID(at index: Int) -> Int? {
+        let childIDs = context.childIDs
+        guard childIDs.indices.contains(index) else { return nil }
+        return childIDs[index]
+    }
+
+    private func childContent(at index: Int) -> AnyView {
+        guard let childID = childID(at: index) else { return AnyView(EmptyView()) }
+        return context.content(for: childID)
+    }
+
     private var rootContent: AnyView {
-        guard context.childIDs.count > rootIndex else {
-            return AnyView(EmptyView())
-        }
-        return context.content(for: context.childIDs[rootIndex])
+        childContent(at: rootIndex)
     }
 
     private var transformedRootContent: AnyView {
@@ -654,7 +665,7 @@ private struct LGNavigationContent: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityIdentifier("title.main")
         } else {
-            context.content(for: context.childIDs[index])
+            childContent(at: index)
                 .fixedSize(horizontal: true, vertical: false)
         }
     }
@@ -677,23 +688,21 @@ private struct LGNavigationContent: View {
         if let toolbarStartIndex {
             #if os(iOS)
             ToolbarItemGroup(placement: .topBarTrailing) {
-                context.content(for: context.childIDs[toolbarStartIndex + 2])
-                context.content(for: context.childIDs[toolbarStartIndex + 3])
+                childContent(at: toolbarStartIndex + 2)
+                childContent(at: toolbarStartIndex + 3)
             }
             #else
             ToolbarItemGroup(placement: .primaryAction) {
-                context.content(for: context.childIDs[toolbarStartIndex + 2])
-                context.content(for: context.childIDs[toolbarStartIndex + 3])
+                childContent(at: toolbarStartIndex + 2)
+                childContent(at: toolbarStartIndex + 3)
             }
             #endif
         }
     }
 
     private var bottomChrome: AnyView {
-        guard let bottomChromeIndex,
-              context.childIDs.count > bottomChromeIndex
-        else { return AnyView(EmptyView()) }
-        return context.content(for: context.childIDs[bottomChromeIndex])
+        guard let bottomChromeIndex else { return AnyView(EmptyView()) }
+        return childContent(at: bottomChromeIndex)
     }
 
     @ViewBuilder
