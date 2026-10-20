@@ -288,6 +288,7 @@ let snapshot session context_blocks blocks =
              | Some value -> `Int value
              | None -> `Null )
          ; ("syncConnected", `Bool s.sync_connected)
+         ; ("syncTransport", Sync_driver.to_yojson s.sync_transport)
          ; ( "taskStatuses"
            , Rpc.json_list
                (List.map Rpc.status_response_json
@@ -708,6 +709,16 @@ let configure session _input fields =
         !(session.state) with
         accepted_server_t = None;
         config = Some config;
+        sync_connected =
+          (match (state session).config with
+           | Some previous when previous.Api.graph_id = config.graph_id
+               && previous.base_url = config.base_url -> (state session).sync_connected
+           | _ -> false);
+        sync_transport =
+          (match (state session).config with
+           | Some previous when previous.Api.graph_id = config.graph_id
+               && previous.base_url = config.base_url -> (state session).sync_transport
+           | _ -> Sync_driver.invalidate (state session).sync_transport);
       };
     if
       List.exists
@@ -1259,6 +1270,58 @@ let reload_flashcards session now =
          | None -> []);
     }
 
+let sync_transport_editing session =
+  let s = state session in
+  Outliner.editing_uuid s.outliner_state <> None
+  || List.exists (fun (route : Types.node_route) -> Outliner.editing_uuid route.state <> None) s.node_routes
+
+let publish_sync_transport session transport =
+  session.Types.state := { (state session) with
+    sync_transport = transport; sync_connected = Sync_driver.connected transport };
+  snapshot_visible session
+
+let begin_sync_transport session _input _fields =
+  match (state session).config with
+  | Some config when config.Api.graph_id <> "" ->
+    (match Sync_driver.begin_connection config
+       ~cursor:(projection_server_t session) ~editing:(sync_transport_editing session)
+       (state session).sync_transport with
+     | Ok transport -> publish_sync_transport session transport
+     | Error message -> Rpc.failure "invalid_sync_transport" message)
+  | _ -> Rpc.failure "graph_not_configured" "Select a graph before starting sync"
+
+let sync_transport_event session _input fields =
+  let field name = Option.value ~default:`Null (List.assoc_opt name fields) in
+  let previous = (state session).sync_transport in
+  let current_graph = match (state session).config with Some config -> config.Api.graph_id | None -> "" in
+  if field "generation" <> `Int (Sync_driver.generation previous)
+     || field "graphId" <> `String current_graph
+     || current_graph <> Sync_driver.graph_id previous then
+    publish_sync_transport session (Sync_driver.without_commands previous)
+  else
+    let message = match field "message" with `String value -> value | _ -> "Transport failed" in
+    let event = match field "type" with
+      | `String "opened" -> Some Sync_driver.Opened
+      | `String "frame" -> (match field "body" with `String value -> Some (Sync_driver.Frame value) | _ -> None)
+      | `String "failed" | `String "snapshot-failed" -> Some (Sync_driver.Failed message)
+      | `String "closed" -> Some Sync_driver.Closed
+      | `String "cancelled" -> Some Sync_driver.Cancelled
+      | `String "snapshot-applied" -> Some Sync_driver.Snapshot_applied
+      | `String "network" -> (match field "available" with `Bool value -> Some (Sync_driver.Network value) | _ -> None)
+      | _ -> None in
+    match event with
+    | None -> Rpc.failure "invalid_sync_transport_event" "Sync event requires a supported type and payload"
+    | Some event ->
+      let apply_frame body = match (host session).Types.apply_sync_event with
+        | None -> Error "Graph sync transport is unavailable"
+        | Some apply ->
+          (match apply body with
+           | Error _ as error -> error
+           | Ok () -> reconcile_authoritative_blocks session; Ok (projection_server_t session)) in
+      let transport = Sync_driver.receive ~cursor:(projection_server_t session)
+        ~editing:(sync_transport_editing session) ~apply_frame event previous in
+      publish_sync_transport session transport
+
 let dispatch session action payload =
   let s = state session in
   let h = host session in
@@ -1275,6 +1338,8 @@ let dispatch session action payload =
        Rpc.failure "invalid_params"
          "outlinerEvent requires a JSON payload")
   | "configure" -> object_action (configure session)
+  | "beginSyncTransport" -> object_action (begin_sync_transport session)
+  | "syncTransportEvent" -> object_action (sync_transport_event session)
   | "refresh" ->
     (match s.config with
      | Some config ->

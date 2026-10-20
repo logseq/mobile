@@ -107,7 +107,8 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 3. Record measured code removal, remaining platform responsibilities, verification output and any environment limitations in this plan.
 4. Reconcile the finished changes into the original workspace, preserving all unrelated and prior feature edits.
 5. Re-run checks affected by integration and leave the result reviewable.
-6. Mark the goal complete only after all required stages have been implemented and verified.
+6. Commit each major stage separately after validation, as requested by the user.
+7. Mark the goal complete only after all required stages have been implemented and verified.
 
 ## Progress
 
@@ -115,7 +116,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | --- | --- | --- |
 | Plan and isolation | Complete | Worktree based on `ab3ce02`; prior workspace preserved |
 | Legacy cleanup | Complete | Removed 26 unreachable type groups and unused section/preorder projection; 604 production Swift lines and 1046 obsolete test lines removed; 776 core tests and LogseqModel build passed |
-| Shared sync driver | Pending | |
+| Shared sync driver | Complete | 782 core tests, 36 Android JVM tests, Swift model build, real WebSocket command harness and iOS simulator App/extension build passed; snapshot recovery and reconnect commands execute on both platforms |
 | Pending recovery | Pending | |
 | Shared autosave | Pending | |
 | Single projection | Pending | |

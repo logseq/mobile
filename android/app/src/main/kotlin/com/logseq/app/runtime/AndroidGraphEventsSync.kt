@@ -15,29 +15,23 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-// Kotlin port of iOS runGraphEventsOnce (ViewModel.swift): opens the
-// /sync/<graphID> WebSocket, pulls the journal since the applied server
-// cursor, forwards every pull/ok frame to the core through the
-// `applySyncEvent` dispatch action, and reports connectivity through the
-// `startWebSocket`/`stopWebSocket` actions so syncConnected drives the
-// status dot the same way it does on iOS.
+// Executes socket commands from the shared core; frames remain opaque here.
 internal class AndroidGraphEventsSync(
     private val callCore: suspend (String) -> String,
     private val applyResponse: suspend (String) -> Unit,
-    private val appliedServerT: () -> Long,
     private val onChangesApplied: suspend () -> Unit,
     private val isCancelled: () -> Boolean,
-    private val log: (String, String) -> Unit,
 ) {
     data class Connection(val graphId: String, val baseUrl: String, val accessToken: String)
 
     sealed class SessionOutcome {
-        // The core asked for a fresh snapshot (cursor reset); the caller
-        // should re-open/re-import the graph before reconnecting.
         object SnapshotRequired : SessionOutcome()
-        // The socket failed; reconnecting with backoff is worthwhile.
-        data class Failed(val message: String) : SessionOutcome()
+        data class Retry(val delayMilliseconds: Long, val message: String?) : SessionOutcome()
+        object Stopped : SessionOutcome()
     }
+
+    private var generation = -1
+    private var graphId = ""
 
     private sealed class Frame {
         data class Text(val value: String) : Frame()
@@ -46,107 +40,95 @@ internal class AndroidGraphEventsSync(
     }
 
     suspend fun runSession(connection: Connection): SessionOutcome {
-        val cursor = appliedServerT()
-        if (cursor < 0) {
-            log("warn", "graph events skipped: no appliedServerT yet")
-            return SessionOutcome.SnapshotRequired
-        }
-        val url = webSocketUrl(connection.baseUrl, connection.graphId)
-            ?: return SessionOutcome.Failed("Unsupported sync base URL: ${connection.baseUrl}")
+        graphId = connection.graphId
         val frames = Channel<Frame>(capacity = Channel.UNLIMITED)
         val client = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer ${connection.accessToken}")
-            .build()
-        var socketRef: WebSocket? = null
+        var socket: WebSocket? = null
         try {
-            android.util.Log.d("GraphEvents", "connecting $url")
-            val socket = openSocket(client, request, frames, isCancelled)
-            socketRef = socket
-            try {
-                android.util.Log.d("GraphEvents", "connected; startWebSocket")
-                val opened = dispatch("startWebSocket")
-                dispatchError(opened)?.let { return SessionOutcome.Failed(it) }
-                android.util.Log.d("GraphEvents", "pull since=$cursor")
-                sendPull(socket, cursor)
-                var pullInFlight = true
-                var latestNotifiedServerT = cursor
-                while (!isCancelled()) {
-                    when (val frame = frames.receive()) {
-                        is Frame.Failure ->
-                            return SessionOutcome.Failed(frame.message)
-                        Frame.Closed ->
-                            return SessionOutcome.Failed("WebSocket closed")
-                        is Frame.Text -> {
-                            val envelope = JSONObject(frame.value)
-                            val frameType = envelope.optString("type")
-                            android.util.Log.d("GraphEvents", "frame type=$frameType")
-                            when (frameType) {
-                                "pull/ok" -> {
-                                    val applied = dispatch("applySyncEvent", envelope.put("graphId", connection.graphId).toString())
-                                    dispatchError(applied)?.let { code ->
-                                        return if (code == "snapshot_required") {
-                                            SessionOutcome.SnapshotRequired
-                                        } else {
-                                            SessionOutcome.Failed(code)
-                                        }
-                                    }
-                                    pullInFlight = false
-                                    onChangesApplied()
-                                    val currentCursor = appliedServerT()
-                                    if (currentCursor >= 0 && latestNotifiedServerT > currentCursor) {
-                                        sendPull(socket, currentCursor)
-                                        pullInFlight = true
-                                    }
-                                }
-                                "hello", "changed" -> {
-                                    val serverT = envelope.optLong("t", -1)
-                                    if (serverT >= 0) {
-                                        latestNotifiedServerT = maxOf(latestNotifiedServerT, serverT)
-                                    }
-                                    if (!pullInFlight) {
-                                        val currentCursor = appliedServerT()
-                                        if (currentCursor < 0) {
-                                            return SessionOutcome.Failed("appliedServerT became invalid")
-                                        }
-                                        sendPull(socket, currentCursor)
-                                        pullInFlight = true
-                                    }
-                                }
-                                "error" ->
-                                    return SessionOutcome.Failed(
-                                        envelope.optString("message", "sync error frame")
-                                    )
-                                else -> continue
-                            }
+            var transport = dispatch("beginSyncTransport", "{}")
+            generation = transport.getInt("generation")
+            if (transport.getString("graphId") != graphId) return SessionOutcome.Stopped
+            while (!isCancelled()) {
+                val commands = ArrayDeque<JSONObject>()
+                fun enqueue(state: JSONObject) {
+                    val values = state.getJSONArray("commands")
+                    for (index in 0 until values.length()) commands.addLast(values.getJSONObject(index))
+                }
+                enqueue(transport)
+                while (commands.isNotEmpty()) {
+                    val command = commands.removeFirst()
+                    when (command.getString("type")) {
+                        "connect" -> {
+                            val request = Request.Builder().url(command.getString("url"))
+                                .header("Authorization", "Bearer ${connection.accessToken}").build()
+                            socket = openSocket(client, request, frames, isCancelled)
+                            transport = event("opened")
+                            enqueue(transport)
                         }
+                        "send" -> check(socket?.send(command.getString("body")) == true) { "WebSocket send failed" }
+                        "close" -> { socket?.cancel(); socket = null }
+                        "retry" -> return SessionOutcome.Retry(
+                            command.getLong("delayMs"), transport.optString("error").takeIf { it.isNotEmpty() && it != "null" }
+                        )
+                        "snapshot" -> return SessionOutcome.SnapshotRequired
+                        "sync-pending" -> onChangesApplied()
+                        else -> error("Unsupported sync transport command")
                     }
                 }
-                return SessionOutcome.Failed("cancelled")
-            } finally {
-                socket.close(1000, null)
+                if (socket == null) return SessionOutcome.Stopped
+                transport = when (val frame = frames.receive()) {
+                    is Frame.Text -> event("frame", body = frame.value)
+                    is Frame.Failure -> event("failed", message = frame.message)
+                    Frame.Closed -> event("closed")
+                }
             }
+            event("cancelled")
+            return SessionOutcome.Stopped
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                if (generation >= 0) runCatching { event("cancelled") }
+            }
+            throw error
         } catch (error: Throwable) {
-            return SessionOutcome.Failed(error.message ?: error.toString())
+            if (generation < 0) throw error
+            val transport = event("failed", message = error.message ?: error.toString())
+            return retryOutcome(transport)
         } finally {
-            socketRef?.cancel()
+            socket?.cancel()
+            frames.close()
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
-            // iOS dispatches stopWebSocket unless the session ended with a
-            // snapshot_required stream error; keeping it unconditional is
-            // equivalent here because a snapshot re-import re-opens the
-            // socket and dispatches startWebSocket again.
-            if (!isCancelled()) {
-                runCatching { dispatch("stopWebSocket") }
-            }
         }
     }
 
-    private suspend fun dispatch(action: String, payload: String? = null): String {
+    suspend fun completeSnapshot(succeeded: Boolean): Long {
+        val transport = event(if (succeeded) "snapshot-applied" else "snapshot-failed",
+            message = if (succeeded) null else "Snapshot refresh failed")
+        return (retryOutcome(transport) as? SessionOutcome.Retry)?.delayMilliseconds ?: 0
+    }
+
+    private fun retryOutcome(transport: JSONObject): SessionOutcome {
+        val commands = transport.getJSONArray("commands")
+        for (index in 0 until commands.length()) {
+            val command = commands.getJSONObject(index)
+            if (command.getString("type") == "retry") {
+                return SessionOutcome.Retry(command.getLong("delayMs"), transport.optString("error"))
+            }
+        }
+        return SessionOutcome.Stopped
+    }
+
+    private suspend fun event(type: String, body: String? = null, message: String? = null): JSONObject {
+        val payload = JSONObject().put("type", type).put("generation", generation).put("graphId", graphId)
+        if (body != null) payload.put("body", body)
+        if (message != null) payload.put("message", message)
+        return dispatch("syncTransportEvent", payload.toString())
+    }
+
+    private suspend fun dispatch(action: String, payload: String? = null): JSONObject {
         val params = JSONObject().put("action", action)
         if (payload != null) params.put("payload", payload)
         val request = JSONObject()
@@ -156,20 +138,9 @@ internal class AndroidGraphEventsSync(
             .toString()
         val response = callCore(request)
         applyResponse(response)
-        return response
-    }
-
-    private fun dispatchError(response: String): String? =
-        runCatching {
-            val error = JSONObject(response).optJSONObject("error") ?: return null
-            error.optString("code").ifEmpty { error.optString("message") }
-        }.getOrNull()
-
-    private fun sendPull(socket: WebSocket, since: Long) {
-        socket.send(JSONObject()
-            .put("since", since)
-            .put("type", "pull")
-            .toString())
+        val envelope = JSONObject(response)
+        check(envelope.optBoolean("ok")) { envelope.optJSONObject("error")?.optString("message") ?: "Core sync transport failed" }
+        return envelope.getJSONObject("result").getJSONObject("syncTransport")
     }
 
     private suspend fun openSocket(
@@ -218,29 +189,4 @@ internal class AndroidGraphEventsSync(
         }
     }
 
-    companion object {
-        // Mirrors LogseqGraphSyncHTTP.webSocketRequest: http(s) -> ws(s),
-        // path /sync/<graphID>.
-        internal fun webSocketUrl(baseUrl: String, graphId: String): String? {
-            val trimmed = baseUrl.trimEnd('/')
-            val scheme = when {
-                trimmed.startsWith("http://") -> "ws://"
-                trimmed.startsWith("https://") -> "wss://"
-                trimmed.startsWith("ws://") || trimmed.startsWith("wss://") -> ""
-                else -> return null
-            }
-            val rest = if (scheme.isEmpty()) trimmed else scheme + trimmed.substringAfter("://")
-            return "$rest/sync/$graphId"
-        }
-
-        // iOS reconnect cadence: 1,2,4,8,16,30,30,...
-        internal fun backoffSeconds(attempt: Int): Long = when {
-            attempt <= 0 -> 1
-            attempt == 1 -> 2
-            attempt == 2 -> 4
-            attempt == 3 -> 8
-            attempt == 4 -> 16
-            else -> 30
-        }
-    }
 }

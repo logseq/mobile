@@ -126,6 +126,7 @@ type session_state =
   ; flashcards : Flashcards.due_card list
   ; search_results : Search_index.indexed_search_hit list
   ; search_query : string
+  ; sync_transport : Sync_driver.t
   ; sync_connected : bool
   ; pending_sync : pending_sync option
   ; next_pending_request_id : int

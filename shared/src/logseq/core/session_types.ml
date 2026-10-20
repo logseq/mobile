@@ -133,6 +133,7 @@ type session_state =
   ; flashcards : Cards.due_card list
   ; search_results : Search.indexed_search_hit list
   ; search_query : string
+  ; sync_transport : Sync_driver.t
   ; sync_connected : bool
   ; pending_sync : pending_sync option
   ; next_pending_request_id : int
@@ -272,6 +273,7 @@ let create_session options =
           flashcards = [];
           search_results = [];
           search_query = "";
+          sync_transport = Sync_driver.empty;
           sync_connected = false;
           pending_sync = None;
           next_pending_request_id = 0;

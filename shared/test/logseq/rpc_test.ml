@@ -947,6 +947,144 @@ let graph_storage_success_can_fail_projection_validation () =
   check_eq !stored [ "{}"; "{}" ];
   check (!projected = [])
 
+let sync_driver_session ?blocks () =
+  let cursor = ref 10 in
+  let applied = ref [] in
+  let failure = ref None in
+  let session = configure_plain_session (Session.create_session
+    { Session.default_options with
+      sync_cursor = Some (fun () -> Some !cursor);
+      graph_blocks = Option.map (fun blocks () -> Some blocks) blocks;
+      apply_sync_event = Some (fun body ->
+        match !failure with
+        | Some error -> Error error
+        | None ->
+          applied := body :: !applied;
+          let frame = Json.from_string body in
+          (match member "t" frame with `Int t -> cursor := t | _ -> ());
+          Ok ()) }) in
+  session, cursor, applied, failure
+
+let begin_sync_transport session =
+  response_result (dispatch_json session "beginSyncTransport" "{}")
+
+let sync_transport response = member "syncTransport" response
+let sync_commands response = json_items "commands" (sync_transport response)
+let sync_command_kinds response = List.map (fun command -> json_string (member "type" command)) (sync_commands response)
+
+let sync_event session generation kind extra =
+  response_result (dispatch_json session "syncTransportEvent"
+    (Json.to_string (`Assoc (["generation", `Int generation; "graphId", `String "plain-1"; "type", `String kind] @ extra))))
+
+let sync_generation response = Json_util.to_int (member "generation" (sync_transport response))
+
+let shared_sync_driver_owns_pull_protocol_and_notification_coalescing () =
+  let session, cursor, applied, _ = sync_driver_session () in
+  let begun = begin_sync_transport session in
+  check_eq (sync_command_kinds begun) ["connect"];
+  check_eq (member "url" (List.hd (sync_commands begun))) (`String "ws://127.0.0.1:8787/sync/plain-1");
+  let generation = sync_generation begun in
+  let opened = sync_event session generation "opened" [] in
+  check_eq (sync_command_kinds opened) ["send"; "sync-pending"];
+  check_eq (Json.from_string (json_string (member "body" (List.hd (sync_commands opened)))))
+    (`Assoc ["type", `String "pull"; "since", `Int 10]);
+  check_eq (sync_commands (sync_event session generation "opened" [])) [];
+  List.iter (fun t ->
+    let response = sync_event session generation "frame"
+      ["body", `String (Json.to_string (`Assoc ["type", `String "changed"; "t", `Int t]))] in
+    check_eq ~msg:"notifications coalesce behind the in-flight pull" (sync_commands response) []) [11; 12; 14];
+  let pulled = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":12,"data":[]}|}] in
+  check_eq (sync_command_kinds pulled) ["sync-pending"; "send"];
+  check_eq !cursor 12;
+  check_eq (List.length !applied) 1;
+  check_eq (member "graphId" (Json.from_string (List.hd !applied))) (`String "plain-1");
+  let caught_up = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":14,"data":[]}|}] in
+  check_eq (sync_command_kinds caught_up) ["sync-pending"];
+  let unchanged = sync_event session generation "frame" ["body", `String {|{"type":"changed","t":14}|}] in
+  check_eq (sync_commands unchanged) []
+
+let shared_sync_driver_scopes_events_and_controls_reconnect () =
+  let session, _, applied, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let failed = sync_event session generation "failed" ["message", `String "connection lost"] in
+  check_eq (sync_command_kinds failed) ["close"; "retry"];
+  check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000);
+  let next = begin_sync_transport session in
+  let next_generation = sync_generation next in
+  check (next_generation > generation);
+  check_eq (sync_commands (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":100}|}])) [];
+  check_eq !applied [];
+  ignore (sync_event session next_generation "opened" []);
+  let failed = sync_event session next_generation "closed" [] in
+  check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 2000);
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  ignore (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":11}|}]);
+  let failed = sync_event session generation "failed" [] in
+  check_eq ~msg:"cursor progress resets reconnect backoff"
+    (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000)
+
+let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
+  let session, _, _, failure = sync_driver_session ~blocks:[synced_block "editing" "Draft"] () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let editing = outliner_block_event session "tapBlock" "editing" in
+  check_eq (member "uuid" (member "editing" (member "outlinerState" editing))) (`String "editing");
+  failure := Some "sync schema mismatch";
+  let reset = sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":20}|}] in
+  check_eq (sync_command_kinds reset) ["close"; "retry"];
+  check_eq (member "snapshotRequired" (sync_transport reset)) (`Bool true);
+  ignore (outliner_event session {|{"type":"cancelEditing"}|});
+  let recover = begin_sync_transport session in
+  check_eq (sync_command_kinds recover) ["snapshot"];
+  failure := None;
+  ignore (sync_event session (sync_generation recover) "snapshot-applied" []);
+  check_eq (sync_command_kinds (begin_sync_transport session)) ["connect"]
+
+let shared_sync_driver_reports_malformed_frames_and_cancels_without_retry () =
+  let session, _, _, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let malformed = sync_event session generation "frame" ["body", `String "not JSON"] in
+  check_eq (sync_command_kinds malformed) ["close"; "retry"];
+  let generation = sync_generation (begin_sync_transport session) in
+  let cancelled = sync_event session generation "cancelled" [] in
+  check_eq (sync_command_kinds cancelled) ["close"];
+  check_eq (sync_commands (sync_event session generation "opened" [])) []
+
+let shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events () =
+  let session, _, applied, _ = sync_driver_session () in
+  List.iter (fun delay ->
+    let generation = sync_generation (begin_sync_transport session) in
+    ignore (sync_event session generation "opened" []);
+    let failed = sync_event session generation "failed" [] in
+    check_eq (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int delay))
+    [1000; 2000; 4000; 8000; 16000; 30000; 30000; 30000];
+  let old_generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session old_generation "opened" []);
+  let configured = response_result (dispatch_json session "configure"
+    {|{"baseUrl":"https://example.com/api","graphId":"plain-1","token":"access"}|}) in
+  check_eq ~msg:"changing the endpoint disconnects the old transport" (member "syncConnected" configured) (`Bool false);
+  check_eq (sync_commands (sync_event session old_generation "frame"
+    ["body", `String {|{"type":"pull/ok","t":99}|}])) [];
+  check_eq !applied [];
+  let next = begin_sync_transport session in
+  check_eq (member "url" (List.hd (sync_commands next))) (`String "wss://example.com/sync/plain-1")
+
+let shared_sync_driver_handles_missing_cursor_and_network_changes () =
+  let session = configure_plain_session (Session.create_session Session.default_options) in
+  let initial = begin_sync_transport session in
+  check_eq (sync_command_kinds initial) ["snapshot"];
+  let session, _, _, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let offline = sync_event session generation "network" ["available", `Bool false] in
+  check_eq (sync_command_kinds offline) ["close"];
+  let online = sync_event session generation "network" ["available", `Bool true] in
+  check_eq (sync_command_kinds online) ["retry"];
+  check_eq (member "delayMs" (List.hd (sync_commands online))) (`Int 0)
+
 let websocket_lifecycle_applies_events_exactly_once () =
   let applied = ref [] in
   let session =
@@ -5916,7 +6054,13 @@ let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
     [`String "Block 9999"; `String "Block 9998"]
 
 let cases =
-  [ case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
+  [ case "shared sync driver bounds backoff and rejects reconfigured events" shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events;
+    case "shared sync driver handles missing cursor and network changes" shared_sync_driver_handles_missing_cursor_and_network_changes;
+ case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
+    case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
+    case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
+    case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
+ case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
     case "semantic completion preserves error and status precedence"
       semantic_completion_preserves_error_and_status_precedence;
     case "required string lists preserve order and validate every item"

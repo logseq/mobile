@@ -453,60 +453,7 @@ private let testEmptySnapshotJSON = """
         #expect(try Data(contentsOf: decodedURL) == Data([0, 0, 0, 3, 65, 66, 67]))
     }
 
-    @Test func graphWebSocketRequestUsesExistingSyncEndpoint() throws {
-        let request = try LogseqGraphSyncHTTP.webSocketRequest(
-            baseURL: "http://127.0.0.1:8787",
-            graphID: "plain-1",
-            accessToken: "fresh-token"
-        )
-        #expect(request.url?.absoluteString == "ws://127.0.0.1:8787/sync/plain-1")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
-    }
-
-    @Test func graphWebSocketRequestPreservesSecureTransportAndEscapesGraphID() throws {
-        let request = try LogseqGraphSyncHTTP.webSocketRequest(
-            baseURL: "https://sync.example/api",
-            graphID: "private graph",
-            accessToken: "token"
-        )
-        #expect(request.url?.absoluteString == "wss://sync.example/sync/private%20graph")
-    }
-
-    @Test func graphWebSocketEntityPullMessageCarriesAuthoritativeCursor() throws {
-        #expect(try LogseqGraphWebSocketProtocol.pullMessage(since: 48192)
-            == #"{"since":48192,"type":"pull"}"#)
-    }
-
-    @Test func graphWebSocketReconnectUsesBoundedExponentialBackoff() {
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 0) == 1)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 1) == 2)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 5) == 30)
-        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 20) == 30)
-    }
-
-    @Test func onlyWebSocketConnectionFailuresAutomaticallyReconnect() {
-        #expect(LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
-            LogseqCoreError(code: "websocket_connection_failed", message: "offline")
-        ))
-        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
-            LogseqCoreError(code: "snapshot_required", message: "reset")
-        ))
-        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(nil))
-    }
-
     @Test func graphSnapshotRefreshWaitsForOutlinerEditingToFinish() {
-        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: true,
-            isEditingOutlinerBlock: true
-        ))
-        #expect(LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: true,
-            isEditingOutlinerBlock: false
-        ))
-        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
-            snapshotRequired: false,
-            isEditingOutlinerBlock: false
-        ))
         #expect(!LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
             forceSnapshot: true,
             isEditingOutlinerBlock: true,
@@ -545,21 +492,6 @@ private let testEmptySnapshotJSON = """
         ))
         #expect(!LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
             requestedWhileFinishing: false
-        ))
-    }
-
-    @Test func expectedWebSocketCancellationDoesNotPublishAConnectionFailure() {
-        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
-            CancellationError(),
-            taskIsCancelled: true
-        ))
-        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
-            URLError(.cancelled),
-            taskIsCancelled: false
-        ))
-        #expect(LogseqGraphWebSocketFailurePolicy.shouldReport(
-            URLError(.timedOut),
-            taskIsCancelled: false
         ))
     }
 
@@ -1303,6 +1235,9 @@ private let testEmptySnapshotJSON = """
         let recorder = RequestRecorder()
         let store = LogseqStore { request in
             recorder.append(request)
+            if request.contains("beginSyncTransport") {
+                return #"{"apiVersion":1,"ok":false,"error":{"code":"invalid_sync_transport","message":"The sync server address is invalid."}}"#
+            }
             return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
         }
         store.refresh()
@@ -1315,7 +1250,7 @@ private let testEmptySnapshotJSON = """
         )
 
         #expect(store.lastError == nil)
-        #expect(store.syncError?.code == "websocket_connection_failed")
+        #expect(store.syncError?.code == "invalid_sync_transport")
         #expect(store.syncError?.message == "The sync server address is invalid.")
         store.openNode("page-1")
         try await waitUntil {
