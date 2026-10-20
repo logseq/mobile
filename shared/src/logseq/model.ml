@@ -2100,7 +2100,7 @@ let rec update (current : logseq_model) action =
     let id = current.next_effect_id in
     enqueue_effect current (AddRootBlockEffect (id, uuid))
   | LoadOlderJournals ->
-    if load_older_journals_active_ current then current
+    if current.graph_loading || load_older_journals_active_ current then current
     else begin
       let id = current.next_effect_id in
       enqueue_effect current (LoadOlderJournalsEffect id)

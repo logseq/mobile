@@ -275,14 +275,22 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
               (Signal.map View_rows.retained_outliner_rows
                  model_source)
             send;
-          if_
-            ~test:(Signal.map View_base.older_journals_visible_
-                     model_source)
-            (box ~height:1
-               ~accessibility_identifier:"outliner.load-older-sentinel"
-               ~on_appear:(fun _ ->
-                 ignore (send Model.LoadOlderJournals))
-               []);
+          (* The virtual list retains positional slots. A keyed child inside
+             a stable container renews appearance even for short journals. *)
+          box ~padding:0
+            [ keyed
+                ~source:(Signal.map (fun (current : Model.logseq_model) ->
+                  if View_base.older_journals_visible_ current then
+                    [Option.value ~default:"local" current.selected_graph_id]
+                  else []) model_source)
+                ~key:Fun.id ~cmp:String.compare
+                ~mount:(fun _ ->
+                  box ~height:1
+                    ~accessibility_identifier:"outliner.load-older-sentinel"
+                    ~on_appear:(fun _ ->
+                      ignore (send Model.LoadOlderJournals))
+                    []);
+            ];
           View_outliner.page_loading_view model_source;
           if_
             ~test:(Signal.map View_base.main_can_add_first_block_

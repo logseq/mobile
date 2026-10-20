@@ -576,6 +576,8 @@ let journal_tree_retained_ (current : Model.logseq_model) =
 let older_journals_visible_ (current : Model.logseq_model) =
   journal_root_visible_ current && current.has_older_journals
   && current.selected_page = None
+  && not current.graph_loading
+  && not (Model.load_older_journals_active_ current)
 
 let journal_section_marker_for markers block_id =
   List.find_opt

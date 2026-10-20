@@ -6313,6 +6313,86 @@ let older_journals_use_an_invisible_scroll_sentinel () =
        "outliner.load-older-sentinel")
     (-1)
 
+let short_journals_rearm_pagination_after_each_response () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let today = journal_outline_row "today" "today-page" "Short" "Today" 20260829 0 in
+    let yesterday = journal_outline_row "yesterday" "yesterday-page" "Older" "Yesterday" 20260828 0 in
+    let oldest = journal_outline_row "oldest" "oldest-page" "Last" "Earlier" 20260827 0 in
+    let projection = { (empty_core_projection ()) with
+      graph_name = Some "Lambda"; selected_graph_id = Some "lambda";
+      outliner_rows = [today]; has_older_journals = true } in
+    start application;
+    let project projection = send application (Model.ApplyCoreSnapshot projection); flush application in
+    project projection;
+    let renderer = Lui_app.runtime application in
+    let sentinel () = descendant_with_identifier renderer (main_root renderer application)
+      "outliner.load-older-sentinel" in
+    let first = sentinel () in
+    check ~msg:"a short journal exposes pagination" (first <> -1);
+    project projection;
+    check_eq ~msg:"unrelated snapshots retain the current marker" (sentinel ()) first;
+    dispatch application (Lui_protocol.Appear first);
+    flush application;
+    check_eq ~msg:"appearance requests older journals" (App.model application).pending_effects
+      [Model.LoadOlderJournalsEffect 1];
+    check_eq ~msg:"the marker retires while its request is pending" (sentinel ()) (-1);
+    send application (Model.DequeueEffect 1);
+    project { projection with outliner_rows = [today; yesterday] };
+    check_eq ~msg:"a response cannot reappear before its request resolves" (sentinel ()) (-1);
+    send application (Model.ResolveEffect (1, true, ""));
+    flush application;
+    let second = sentinel () in
+    check ~msg:"short content gets a fresh appearance after pagination" (second <> -1 && second <> first);
+    dispatch application (Lui_protocol.Appear second);
+    flush application;
+    check_eq ~msg:"the still-visible boundary can request the next batch"
+      (App.model application).pending_effects [Model.LoadOlderJournalsEffect 2];
+    send application (Model.DequeueEffect 2);
+    project { projection with outliner_rows = [today; yesterday; oldest]; has_older_journals = false };
+    send application (Model.ResolveEffect (2, true, ""));
+    flush application;
+    check_eq ~msg:"all journal dates remain visible" (App.model application).journal_outliner_rows
+      [today; yesterday; oldest];
+    check_eq ~msg:"pagination stops at the oldest journal" (sentinel ()) (-1)
+  ) [ios_backend; kotlin_backend]
+
+let graph_switch_rearms_journal_pagination () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let row = journal_outline_row "today" "today-page" "Short" "Today" 20260829 0 in
+    let projection graph_id = { (empty_core_projection ()) with
+      graph_name = Some graph_id; selected_graph_id = Some graph_id;
+      outliner_rows = [row]; has_older_journals = true } in
+    start application;
+    let project graph_id = send application (Model.ApplyCoreSnapshot (projection graph_id)); flush application in
+    project "work";
+    let renderer = Lui_app.runtime application in
+    let sentinel () = descendant_with_identifier renderer (main_root renderer application)
+      "outliner.load-older-sentinel" in
+    let previous = sentinel () in
+    check ~msg:"the outgoing graph has a pagination marker" (previous <> -1);
+    project "lambda";
+    let current = sentinel () in
+    check ~msg:"switching graphs renews the marker even with equally short journals"
+      (current <> -1 && current <> previous);
+    send application (Model.ApplyGraphLoading true);
+    flush application;
+    check_eq ~msg:"opening storage suspends pagination from retained content" (sentinel ()) (-1);
+    send application Model.LoadOlderJournals;
+    flush application;
+    check_eq ~msg:"late appearance events cannot paginate the graph being replaced"
+      (App.model application).pending_effects [];
+    send application (Model.ApplyGraphLoading false);
+    flush application;
+    let ready = sentinel () in
+    check ~msg:"opening storage renews the visible pagination marker" (ready <> -1 && ready <> current);
+    dispatch application (Lui_protocol.Appear ready);
+    flush application;
+    check_eq ~msg:"the selected graph can load older journals"
+      (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1]
+  ) [ios_backend; kotlin_backend]
+
 let older_journals_only_appear_at_the_journal_root () =
   let available =
     {
@@ -9106,6 +9186,8 @@ let cases =
     case "closed-search-does-not-render-core-node-routes" closed_search_does_not_render_core_node_routes;
     case "empty-node-routes-add-the-first-block-through-the-core" empty_node_routes_add_the_first_block_through_the_core;
     case "older-journals-use-an-invisible-scroll-sentinel" older_journals_use_an_invisible_scroll_sentinel;
+    case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
+    case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
     case "journal-section-markers-recompute-after-row-splices" journal_section_markers_recompute_after_row_splices;
