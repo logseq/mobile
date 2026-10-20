@@ -1025,6 +1025,19 @@ let shared_sync_driver_scopes_events_and_controls_reconnect () =
   check_eq ~msg:"cursor progress resets reconnect backoff"
     (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000)
 
+let shared_sync_driver_idle_recovery_resets_after_a_healthy_pull () =
+  let session, cursor, _, _ = sync_driver_session () in
+  for _ = 1 to 8 do
+    let generation = sync_generation (begin_sync_transport session) in
+    ignore (sync_event session generation "opened" []);
+    ignore (sync_event session generation "frame"
+      ["body", `String {|{"type":"pull/ok","t":10,"data":[]}|}]);
+    check_eq !cursor 10;
+    let failed = sync_event session generation "failed" ["message", `String "idle transport closed"] in
+    check_eq ~msg:"healthy idle subscriptions reset retry delay without requiring graph edits"
+      (member "delayMs" (List.nth (sync_commands failed) 1)) (`Int 1000)
+  done
+
 let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
   let session, _, _, failure = sync_driver_session ~blocks:[synced_block "editing" "Draft"] () in
   let generation = sync_generation (begin_sync_transport session) in
@@ -6249,6 +6262,7 @@ let forced_snapshot_import_rejects_a_changed_graph () =
 
 let cases =
   [
+    case "idle sync recovery resets after a healthy pull" shared_sync_driver_idle_recovery_resets_after_a_healthy_pull;
     case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;

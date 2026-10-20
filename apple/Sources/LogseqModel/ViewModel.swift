@@ -1040,6 +1040,7 @@ private struct DeletePagePayload: Encodable {
             return false
         }
         let generation = initial.generation
+        let startedAt = Date()
         var socket: URLSessionWebSocketTask?
         let cancellation = LogseqSocketCancellation()
         var commands = initial.commands
@@ -1114,11 +1115,15 @@ private struct DeletePagePayload: Encodable {
                 cancellation.cancel()
             }
         } catch {
+            let transportError = error as NSError
+            let closeCode = socket?.closeCode.rawValue ?? -1
             socket?.cancel(with: .goingAway, reason: nil)
-            let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+            // A cancelled URLSession transport still needs recovery while its owning task is active.
+            let cancelled = Task.isCancelled
             let commands = await event(cancelled ? "cancelled" : "failed",
                 message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))
             graphEventsRetryDelayMilliseconds = commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
+            logger.info("Logseq sync transport ended domain=\(transportError.domain) code=\(transportError.code) closeCode=\(closeCode) ownerCancelled=\(cancelled) lifetimeSeconds=\(Int(Date().timeIntervalSince(startedAt))) retryMs=\(graphEventsRetryDelayMilliseconds)")
             if !cancelled {
                 syncError = LogseqCoreError(code: "websocket_connection_failed",
                     message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))

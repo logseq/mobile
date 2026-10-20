@@ -99,6 +99,9 @@ Run the model suite without that bridge using `python3 scripts/test-swift-model-
 It builds `LogseqModelTests` and launches Swift Testing directly.
 Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
 after building the simulator core. This also invokes Swift Testing directly.
+Check WebSocket peer closures, transport cancellation, and owner-task cancellation
+with `python3 scripts/test-ios-sync-recovery.py`; add `--simulator` to run the
+same real-socket checks with the iOS Foundation runtime.
 
 ```sh
 swift build --package-path apple --disable-sandbox --triple arm64-apple-ios17.0-simulator \

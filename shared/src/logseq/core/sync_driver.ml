@@ -127,7 +127,7 @@ let receive_frame ~cursor ~editing ~apply_frame body state =
          | Ok (Some cursor) ->
            let pending = state.notified_t > cursor in
            { state with pull_in_flight = pending; response_t = int_field "t" frame;
-             applied_t = cursor; attempt = (if cursor > state.applied_t then 0 else state.attempt);
+             applied_t = cursor; attempt = 0;
              commands = (if pending then [Sync_pending; pull cursor] else [Sync_pending]); error = None })
     | Some "reset" -> require_snapshot ~editing state
     | Some "error" ->
