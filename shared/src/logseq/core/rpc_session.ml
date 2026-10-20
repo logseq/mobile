@@ -1317,6 +1317,7 @@ let dispatch session action payload =
      | None -> graph_catalog_snapshot session)
   | "createSyncGraph" ->
     Rpc.create_sync_graph s.config payload h.send
+      h.Types.ensure_user_keys
       h.Types.provision_graph_key
       (fun config encrypted ->
         Rpc.upload_initial_graph_snapshot config encrypted

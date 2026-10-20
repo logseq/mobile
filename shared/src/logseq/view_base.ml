@@ -1049,6 +1049,7 @@ let new_graph_name_empty_ (current : Model.logseq_model) =
 
 let graph_create_disabled_ (current : Model.logseq_model) =
   new_graph_name_empty_ current || Model.graph_create_active_ current
+  || Model.graph_creation_password_invalid_ current
 
 let empty_graphs_loading_ (current : Model.logseq_model) =
   graphs_empty_ current && Model.graph_refresh_active_ current

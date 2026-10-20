@@ -123,9 +123,28 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
            ];
        ])
 
+let graph_encryption_setup_fields model_source send =
+  if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+    current.new_graph_encrypted && current.new_graph_password_required) model_source)
+    (column ~gap:12 [
+      text ~style_class:"footnote" ~foreground:"muted-foreground"
+        ~value:"Choose an E2EE password for your encrypted graphs. Keep it safe; you will need it on other devices." [];
+      secure_field ~label:"E2EE password" ~placeholder:"E2EE password"
+        ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.new_graph_password) model_source)
+        ~accessibility_identifier:"field.graph-create.password"
+        ~on_input:(on_input send (fun value -> Model.ChangeNewGraphPassword value)) [];
+      secure_field ~label:"Confirm E2EE password" ~placeholder:"Confirm E2EE password"
+        ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.new_graph_password_confirmation) model_source)
+        ~accessibility_identifier:"field.graph-create.password-confirmation"
+        ~on_input:(on_input send (fun value -> Model.ChangeNewGraphPasswordConfirmation value)) [];
+    ])
+
 let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:"Add sync graph" ~height:480
+    View_base.with_int_prop_signal HeightValue
+      (Signal.map (fun (current : Model.logseq_model) ->
+        if current.new_graph_encrypted && current.new_graph_password_required then 640 else 480) model_source)
+    (sheet ~text:"Add sync graph" ~height:480
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
@@ -145,6 +164,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                     (on_input send (fun text ->
                          Model.ChangeNewGraphName text))
                   [];
+                graph_encryption_setup_fields model_source send;
                 switch_
                   ~checked_signal:
                     (Signal.map View_base.model_new_graph_encrypted_
@@ -196,7 +216,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ];
               ];
           ];
-      ]
+      ])
   else
     sheet ~text:"Add sync graph" ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.graph-create"
@@ -213,6 +233,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
               ~on_input:
                 (on_input send (fun text -> Model.ChangeNewGraphName text))
               [];
+            graph_encryption_setup_fields model_source send;
             list_item ~padding:0
               ~accessibility_identifier:"row.graph-encryption"
               ~on_press:(fun _ ->

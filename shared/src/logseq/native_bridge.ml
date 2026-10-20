@@ -356,10 +356,11 @@ let encode_effect (eff : Model.logseq_effect) =
   | UnlockGraphEffect (id, password) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"unlock-graph\",\"text\":"
     ^ Lui_wire.quoted password ^ "}"
-  | CreateGraphEffect (id, name, is_encrypted) ->
+  | CreateGraphEffect (id, name, is_encrypted, password) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"create-graph\",\"text\":"
     ^ Lui_wire.quoted name ^ ",\"value\":"
-    ^ (if is_encrypted then "1" else "0") ^ "}"
+    ^ (if is_encrypted then "1" else "0")
+    ^ ",\"metadata\":" ^ Lui_wire.quoted password ^ "}"
   | DeleteLocalGraphEffect (id, graph_id) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"delete-local-graph\",\"text\":"

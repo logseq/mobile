@@ -57,6 +57,14 @@ import SwiftUI
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
         core = ROOT / "_build/ios-core/simulator"
+        entitlements = directory / "entitlements.plist"
+        build_entitlements = plistlib.loads((core / "simulator-entitlements.plist").read_bytes())
+        team = build_entitlements["application-identifier"].split(".", 1)[0]
+        identifier = f"{team}.{bundle}"
+        entitlements.write_bytes(plistlib.dumps({
+            "application-identifier": identifier,
+            "keychain-access-groups": [identifier],
+        }))
         runtime = max(core.glob("native-link-inputs/*/logseq_runtime.o"), key=lambda path: path.stat().st_mtime)
         toolchain = ROOT / "_build/apple-toolchains/ios"
         optimization = ["-O"] if CONFIGURATION == "release" else []
@@ -71,7 +79,9 @@ import SwiftUI
              str(core / "logseq_https_darwin.o"), str(core / "logseq_crypto_darwin.o"),
              str(toolchain / "arm64-apple-ios17.0-simulator-5.5.0/lib/ocaml/libthreadsnat.a"),
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),
-             "-lffi", "-lsqlite3", "-lz", "-framework", "Security", *runtime_exports, "-o", str(app / "RuntimeCheck")])
+             "-lffi", "-lsqlite3", "-lz", "-framework", "Security", *runtime_exports,
+             "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__entitlements",
+             "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
         (app / "Info.plist").write_bytes(plistlib.dumps({

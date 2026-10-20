@@ -141,3 +141,25 @@ let decrypt_title keyring graph_id ciphertext =
   let ( let* ) = Result.bind in
   let* key = graph_key keyring graph_id in
   E2ee.decrypt_string keyring.crypto key ciphertext
+
+let password_required_message =
+  "Set an E2EE password before creating your first encrypted graph."
+
+let ensure_user_keys keyring config password =
+  let ( let* ) = Result.bind in
+  let* body = response_body "fetch user E2EE keys"
+      (keyring.fetch (Api.user_keys_request config)) in
+  let* input = protect "decode user E2EE keys" (fun () -> Yojson.Basic.from_string body) in
+  match input with
+  | `Assoc [] ->
+    (match password with
+     | None -> Error password_required_message
+     | Some password when String_kit.is_blank password -> Error password_required_message
+     | Some password ->
+       let* public_key, encrypted_private_key = E2ee.prepare_user_keys keyring.crypto password in
+       let* _ = response_body "upload user E2EE keys"
+         (keyring.fetch (Api.upsert_user_keys_request config public_key encrypted_private_key)) in
+       keyring.save_password password)
+  | _ ->
+    let* _ = protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body body) in
+    Ok ()

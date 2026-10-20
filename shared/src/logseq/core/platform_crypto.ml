@@ -52,6 +52,20 @@ let binary_field name fields =
 
 let crypto call : E2ee.e2ee_crypto =
   {
+    generate_rsa_key_pair = (fun () ->
+      let ( let* ) = Result.bind in
+      let* fields = invoke call "generateRSAKeyPair" [] in
+      let* public_key = binary_field "publicKey" fields in
+      let* private_key = binary_field "privateKey" fields in
+      Ok (public_key, private_key));
+    encrypt_private_key = (fun password private_key ->
+      let ( let* ) = Result.bind in
+      let* fields = invoke call "encryptPrivateKey"
+        ["password", `String password; "privateKey", `String (hex private_key)] in
+      let* salt = binary_field "salt" fields in
+      let* iv = binary_field "iv" fields in
+      let* ciphertext = binary_field "ciphertext" fields in
+      Ok (salt, iv, ciphertext));
     decrypt_private_key =
       (fun password iterations salt iv ciphertext ->
         let ( let* ) = Result.bind in

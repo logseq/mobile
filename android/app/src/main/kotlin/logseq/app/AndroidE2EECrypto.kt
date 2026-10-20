@@ -6,6 +6,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import java.security.KeyPairGenerator
 import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -47,6 +48,18 @@ object AndroidE2EECrypto {
     }
 
     private fun handle(request: JSONObject): JSONObject = when (request.getString("operation")) {
+        "generateRSAKeyPair" -> {
+            val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(4096) }.generateKeyPair()
+            JSONObject().put("ok", true).put("publicKey", pair.public.encoded.hex())
+                .put("privateKey", pair.private.encoded.hex())
+        }
+        "encryptPrivateKey" -> {
+            val salt = randomBytes(16)
+            val key = pbkdf2(request.getString("password").toByteArray(Charsets.UTF_8), salt, 600000)
+            val (iv, ciphertext) = aesEncrypt(key, request.hex("privateKey"))
+            JSONObject().put("ok", true).put("salt", salt.hex()).put("iv", iv.hex())
+                .put("ciphertext", ciphertext.hex())
+        }
         "decryptPrivateKey" -> success(
             "value",
             decryptPrivateKey(
@@ -98,9 +111,13 @@ object AndroidE2EECrypto {
         iv: ByteArray,
         ciphertext: ByteArray
     ): ByteArray {
+        return aesDecrypt(pbkdf2(password.encodeToByteArray(), salt, iterations), iv, ciphertext)
+    }
+
+    private fun pbkdf2(password: ByteArray, salt: ByteArray, iterations: Int): ByteArray {
         require(iterations > 0) { "invalid iterations" }
         val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(password.encodeToByteArray(), "HmacSHA256"))
+        mac.init(SecretKeySpec(password, "HmacSHA256"))
         var previous = mac.doFinal(salt + byteArrayOf(0, 0, 0, 1))
         val derived = previous.copyOf()
         repeat(iterations - 1) {
@@ -109,7 +126,7 @@ object AndroidE2EECrypto {
                 derived[index] = (derived[index].toInt() xor previous[index].toInt()).toByte()
             }
         }
-        return aesDecrypt(derived, iv, ciphertext)
+        return derived
     }
 
     private fun rsaCipher(

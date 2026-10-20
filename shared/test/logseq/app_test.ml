@@ -3671,7 +3671,7 @@ let graph_catalog_and_lifecycle_state_are_owned_by_lg () =
     create_dismissed.effect_error None;
   check_eq ~msg:"graph creation trims its name and preserves encryption"
     submitted.pending_effects
-    [ Model.CreateGraphEffect (1, "New graph", false) ];
+    [ Model.CreateGraphEffect (1, "New graph", false, "") ];
   check_eq ~msg:"deletion confirmation retains the selected graph"
     delete_requested.pending_graph_deletion (Some local);
   check_eq ~msg:"remote-only graphs cannot enter local deletion"
@@ -6312,6 +6312,45 @@ let older_journals_use_an_invisible_scroll_sentinel () =
     (descendant_with_identifier renderer (main_root renderer application)
        "outliner.load-older-sentinel")
     (-1)
+
+let encrypted_graph_creation_requests_and_confirms_account_password () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    send application Model.OpenCreateGraph;
+    send application (Model.ChangeNewGraphName "Private");
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let find id = descendant_with_identifier renderer (main_root renderer application) id in
+    check_eq ~msg:"existing accounts are not asked to replace their password"
+      (find "field.graph-create.password") (-1);
+    send application Model.SubmitCreateGraph;
+    send application (Model.DequeueEffect 1);
+    send application (Model.ResolveEffect (1, false,
+      "e2ee_password_required\nSet an E2EE password before creating your first encrypted graph."));
+    flush application;
+    let password = find "field.graph-create.password" in
+    let confirmation = find "field.graph-create.password-confirmation" in
+    check ~msg:"first encrypted graph offers account encryption setup" (password <> -1 && confirmation <> -1);
+    check ~msg:"setup requires a password" (View_base.graph_create_disabled_ (App.model application));
+    dispatch application (Lui_protocol.TextChanged (password, "strong password"));
+    dispatch application (Lui_protocol.TextChanged (confirmation, "different"));
+    flush application;
+    check ~msg:"mismatched passwords cannot initialize encryption" (View_base.graph_create_disabled_ (App.model application));
+    dispatch application (Lui_protocol.TextChanged (confirmation, "strong password"));
+    flush application;
+    check ~msg:"a confirmed password permits encrypted creation" (not (View_base.graph_create_disabled_ (App.model application)));
+    send application Model.SubmitCreateGraph;
+    flush application;
+    let request = Native_bridge.encode_effect (List.hd (App.model application).pending_effects)
+      |> Yojson.Basic.from_string in
+    check_eq ~msg:"confirmed setup reaches the native graph creation effect"
+      (Yojson.Basic.Util.member "metadata" request) (`String "strong password");
+    send application Model.DismissCreateGraph;
+    send application Model.OpenCreateGraph;
+    flush application;
+    check_eq ~msg:"dismissing creation clears password setup" (find "field.graph-create.password") (-1)
+  ) [ios_backend; kotlin_backend]
 
 let short_journals_rearm_pagination_after_each_response () =
   List.iter (fun backend ->
@@ -9186,6 +9225,7 @@ let cases =
     case "closed-search-does-not-render-core-node-routes" closed_search_does_not_render_core_node_routes;
     case "empty-node-routes-add-the-first-block-through-the-core" empty_node_routes_add_the_first_block_through_the_core;
     case "older-journals-use-an-invisible-scroll-sentinel" older_journals_use_an_invisible_scroll_sentinel;
+    case "encrypted-graph-creation-requests-and-confirms-account-password" encrypted_graph_creation_requests_and_confirms_account_password;
     case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;

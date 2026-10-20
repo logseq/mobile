@@ -1,4 +1,5 @@
 #if LOGSEQ_CORE && os(iOS)
+import CommonCrypto
 import CryptoKit
 import Foundation
 import Security
@@ -74,18 +75,50 @@ private enum E2EECrypto {
 
     static func pbkdf2SHA256(password: Data, salt: Data, iterations: Int) throws -> Data {
         guard iterations > 0 else { throw E2EECryptoError.invalidRequest("invalid iterations") }
-        let key = SymmetricKey(data: password)
-        var firstInput = Data(salt)
-        firstInput.append(contentsOf: [0, 0, 0, 1])
-        var previous = Data(HMAC<SHA256>.authenticationCode(for: firstInput, using: key))
-        var result = [UInt8](previous)
-        if iterations > 1 {
-            for _ in 2...iterations {
-                previous = Data(HMAC<SHA256>.authenticationCode(for: previous, using: key))
-                for index in result.indices { result[index] ^= previous[index] }
+        guard let rounds = UInt32(exactly: iterations) else {
+            throw E2EECryptoError.invalidRequest("invalid iterations")
+        }
+        var result = Data(count: 32)
+        let status = result.withUnsafeMutableBytes { output in
+            password.withUnsafeBytes { passwordBytes in
+                salt.withUnsafeBytes { saltBytes in
+                    CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.bindMemory(to: Int8.self).baseAddress, password.count,
+                        saltBytes.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), rounds,
+                        output.bindMemory(to: UInt8.self).baseAddress, 32)
+                }
             }
         }
-        return Data(result)
+        guard status == kCCSuccess else { throw E2EECryptoError.crypto("PBKDF2 failed") }
+        return result
+    }
+
+    static func der(_ tag: UInt8, _ contents: Data) -> Data {
+        var length = contents.count
+        if length < 128 { return Data([tag, UInt8(length)]) + contents }
+        var bytes: [UInt8] = []
+        while length > 0 {
+            bytes.insert(UInt8(length & 0xff), at: 0)
+            length >>= 8
+        }
+        return Data([tag, 0x80 | UInt8(bytes.count)] + bytes) + contents
+    }
+
+    static func generateRSAKeyPair() throws -> (Data, Data) {
+        let attributes: [CFString: Any] = [kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: 4096]
+        var error: Unmanaged<CFError>?
+        guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
+              let publicKey = SecKeyCopyPublicKey(privateKey),
+              let privateData = SecKeyCopyExternalRepresentation(privateKey, &error) as Data?,
+              let publicData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+            if let error { throw error.takeRetainedValue() }
+            throw E2EECryptoError.crypto("RSA key generation failed")
+        }
+        let algorithm = Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00])
+        let spki = der(0x30, algorithm + der(0x03, Data([0]) + publicData))
+        let pkcs8 = der(0x30, Data([0x02, 0x01, 0x00]) + algorithm + der(0x04, privateData))
+        return (spki, pkcs8)
     }
 
     static func aesOpen(key: Data, iv: Data, ciphertextAndTag: Data) throws -> Data {
@@ -292,6 +325,20 @@ private enum E2EECrypto {
             throw E2EECryptoError.invalidRequest("missing operation")
         }
         switch operation {
+        case "generateRSAKeyPair":
+            let (publicKey, privateKey) = try generateRSAKeyPair()
+            return ["ok": true, "publicKey": hex(publicKey), "privateKey": hex(privateKey)]
+
+        case "encryptPrivateKey":
+            guard let password = request["password"] as? String else {
+                throw E2EECryptoError.invalidRequest("missing password")
+            }
+            let salt = try randomBytes(count: 16)
+            let derived = try pbkdf2SHA256(password: Data(password.utf8), salt: salt, iterations: 600000)
+            let (iv, ciphertext) = try aesSeal(key: derived,
+                plaintext: hexData(request["privateKey"], field: "privateKey"))
+            return ["ok": true, "salt": hex(salt), "iv": hex(iv), "ciphertext": hex(ciphertext)]
+
         case "decryptPrivateKey":
             guard let password = request["password"] as? String,
                   let iterations = request["iterations"] as? Int

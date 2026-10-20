@@ -19,6 +19,7 @@ internal class AndroidGraphLifecycle(
                     payload = JSONObject()
                         .put("name", effect.text)
                         .put("isEncrypted", effect.value == 1L)
+                        .put("password", effect.metadata ?: JSONObject.NULL)
                         .toString(),
                 )
                 failure(created)?.let { return it }

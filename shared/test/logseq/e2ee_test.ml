@@ -29,6 +29,8 @@ let status_value = Value.Keyword "logseq.property/status.todo"
 
 let crypto calls : E2ee.e2ee_crypto =
   {
+    generate_rsa_key_pair = (fun () -> Error "unused");
+    encrypt_private_key = (fun _ _ -> Error "unused");
     decrypt_private_key =
       (fun password iterations salt iv ciphertext ->
          calls := !calls @ [

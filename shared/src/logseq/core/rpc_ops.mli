@@ -163,6 +163,7 @@ val create_sync_graph :
   Api.api_config option ->
   string option ->
   (Api.api_request -> (Api.api_response, string) result) ->
+  (Api.api_config -> string option -> (unit, string) result) option ->
   (Api.api_config -> (unit, string) result) option ->
   (Api.api_config -> bool -> (unit, string) result) ->
   (Api.api_config -> (unit, string) result) ->

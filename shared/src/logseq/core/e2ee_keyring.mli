@@ -38,3 +38,6 @@ val encrypt_asset :
   e2ee_keyring -> string -> string -> (string, string) result
 val decrypt_title :
   e2ee_keyring -> string -> string -> (string, string) result
+
+val password_required_message : string
+val ensure_user_keys : e2ee_keyring -> Api.api_config -> string option -> (unit, string) result

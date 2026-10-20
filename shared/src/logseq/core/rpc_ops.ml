@@ -749,7 +749,7 @@ let delete_page payload delete configured clock completed =
        in
        Ok (completed ()))
 
-let create_sync_graph config payload send provision initialize discover
+let create_sync_graph config payload send ensure_user_keys provision initialize discover
     created =
   match (config, payload) with
   | None, _ ->
@@ -762,6 +762,19 @@ let create_sync_graph config payload send provision initialize discover
        let result =
          let ( let* ) = Result.bind in
          let* name, encrypted = Wire.graph_creation_payload payload in
+         let* () =
+           if not encrypted then Ok ()
+           else match ensure_user_keys with
+           | None -> Ok ()
+           | Some ensure ->
+             let fields = Yojson.Basic.from_string payload in
+             let password = Api.option_string_member "password" fields in
+             (match ensure config password with
+              | Ok () -> Ok ()
+              | Error message ->
+                Error ((if message = E2ee_keyring.password_required_message then
+                          "e2ee_password_required" else "e2ee_user_keys_failed"), message))
+         in
          let* response =
            Wire.graph_workflow_result "graph_create_failed"
              (send (Api.create_graph_request config name "65.33" encrypted))

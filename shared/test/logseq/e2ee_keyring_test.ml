@@ -12,6 +12,8 @@ let expect_ok result =
 
 let crypto : E2ee.e2ee_crypto =
   {
+    generate_rsa_key_pair = (fun () -> Error "unused");
+    encrypt_private_key = (fun _ _ -> Error "unused");
     decrypt_private_key = (fun _ _ _ _ _ -> Ok "private-key");
     decrypt_graph_key = (fun _ _ -> Ok "remote-graph-key");
     encrypt_graph_key = (fun _ _ -> Error "unused");

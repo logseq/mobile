@@ -1,7 +1,9 @@
 (** E2EE key package decoding and graph-key value (de|en)cryption helpers. *)
 
 type e2ee_crypto =
-  { decrypt_private_key :
+  { generate_rsa_key_pair : unit -> (string * string, string) result
+  ; encrypt_private_key : string -> string -> (string * string * string, string) result
+  ; decrypt_private_key :
       string -> int -> string -> string -> string -> (string, string) result
   ; decrypt_graph_key : string -> string -> (string, string) result
   ; encrypt_graph_key : string -> string -> (string, string) result
@@ -37,3 +39,5 @@ val decrypt_string :
 
 val encrypt_bytes : e2ee_crypto -> string -> string -> (string, string) result
 val decrypt_bytes : e2ee_crypto -> string -> string -> (string, string) result
+
+val prepare_user_keys : e2ee_crypto -> string -> (string * string, string) result

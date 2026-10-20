@@ -101,6 +101,7 @@ type host_options =
   ; load_cached_graph_key : (Api.api_config -> (unit, string) result) option
   ; unlock_graph :
       (Api.api_config -> string -> (unit, string) result) option
+  ; ensure_user_keys : (Api.api_config -> string option -> (unit, string) result) option
   ; provision_graph_key : (Api.api_config -> (unit, string) result) option
   ; graph_unlocked : (string -> bool) option
   ; encrypt_title : (string -> string -> (string, string) result) option
@@ -180,6 +181,7 @@ let default_options =
     has_older_journals = None;
     load_cached_graph_key = None;
     unlock_graph = None;
+    ensure_user_keys = None;
     provision_graph_key = None;
     graph_unlocked = None;
     encrypt_title = None;

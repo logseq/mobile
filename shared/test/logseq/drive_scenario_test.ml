@@ -113,7 +113,7 @@ let host_responses host model =
              (List.map (fun (g : Model.graph) -> g.id) host.graphs)
         :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
         :: resolved
-      | Model.CreateGraphEffect (id, name, encrypted) ->
+      | Model.CreateGraphEffect (id, name, encrypted, _password) ->
         let graph = graph_entry name name encrypted in
         host.graphs <- host.graphs @ [ graph ];
         Model.DequeueEffect id

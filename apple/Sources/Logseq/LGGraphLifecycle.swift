@@ -81,7 +81,8 @@ final class LGGraphLifecycle {
         case "create-graph":
             guard await store.createSyncGraph(
                 name: effect.text,
-                isEncrypted: effect.value == 1
+                isEncrypted: effect.value == 1,
+                password: effect.metadata
             ), let graphID = store.snapshot.selectedGraphId, !graphID.isEmpty else {
                 return resolution(succeeded: false)
             }
@@ -263,7 +264,7 @@ final class LGGraphLifecycle {
         LGGraphEffectResolution.make(
             succeeded: succeeded,
             snapshot: store.snapshot,
-            errorMessage: store.lastError?.message
+            errorMessage: store.lastError.map { $0.code + "\n" + $0.message }
         )
     }
 

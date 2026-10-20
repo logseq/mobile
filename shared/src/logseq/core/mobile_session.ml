@@ -95,6 +95,7 @@ let host_options (database : Database.mobile_database) ring catalog =
     unlock_graph =
       Some (fun config password ->
         discard_value (Keyring.unlock ring config password));
+    ensure_user_keys = Some (fun config password -> Keyring.ensure_user_keys ring config password);
     provision_graph_key =
       Some (fun config -> discard_value (Keyring.provision ring config));
     graph_unlocked =

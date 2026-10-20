@@ -443,6 +443,7 @@ private struct LGReviewFlashcardPayload: Encodable {
 private struct LGCreateGraphPayload: Encodable {
     let name: String
     let isEncrypted: Bool
+    let password: String?
 }
 
 private struct LGSetPageFavoritePayload: Encodable {
@@ -682,7 +683,8 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             do {
                 let data = try JSONEncoder().encode(LGCreateGraphPayload(
                     name: effect.text,
-                    isEncrypted: effect.value == 1
+                    isEncrypted: effect.value == 1,
+                    password: effect.metadata
                 ))
                 guard let payload = String(data: data, encoding: .utf8) else {
                     return LGEffectResolution(

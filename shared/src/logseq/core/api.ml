@@ -114,6 +114,11 @@ let initial_snapshot_upload_request config file_path checksum =
     headers = [];
   }
 
+let upsert_user_keys_request config public_key encrypted_private_key =
+  request config "POST" "/e2ee/user-keys"
+    (json_body ["public-key", `String public_key;
+                "encrypted-private-key", `String encrypted_private_key])
+
 let user_keys_request config = request config "GET" "/e2ee/user-keys" None
 
 let graph_key_path config =

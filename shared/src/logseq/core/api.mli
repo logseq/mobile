@@ -106,3 +106,5 @@ val graphs_from_graphs_body : string -> api_graph list
 val graph_from_graphs_body : string -> (string * string option) option
 val user_keys_from_body : string -> api_user_keys
 val graph_key_from_body : string -> string
+
+val upsert_user_keys_request : api_config -> string -> string -> api_request

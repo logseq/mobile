@@ -464,6 +464,7 @@ private struct OpenGraphPayload: Encodable {
 private struct CreateSyncGraphPayload: Encodable {
     let name: String
     let isEncrypted: Bool
+    let password: String?
 }
 
 private struct ReviewFlashcardPayload: Encodable {
@@ -838,9 +839,9 @@ private struct DeletePagePayload: Encodable {
         return lastError == nil && snapshot.selectedGraphId == graphID
     }
 
-    public func createSyncGraph(name: String, isEncrypted: Bool) async -> Bool {
+    public func createSyncGraph(name: String, isEncrypted: Bool, password: String? = nil) async -> Bool {
         guard let payload = encodePayload(
-            CreateSyncGraphPayload(name: name, isEncrypted: isEncrypted),
+            CreateSyncGraphPayload(name: name, isEncrypted: isEncrypted, password: password),
             action: "createSyncGraph"
         ) else { return false }
         await dispatchRawAndWait("createSyncGraph", payload: payload)

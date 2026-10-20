@@ -2,7 +2,9 @@ module Value = Transit_core.Json
 module Codec = Transit_native.Transit.Json
 
 type e2ee_crypto =
-  { decrypt_private_key :
+  { generate_rsa_key_pair : unit -> (string * string, string) result
+  ; encrypt_private_key : string -> string -> (string * string * string, string) result
+  ; decrypt_private_key :
       string -> int -> string -> string -> string -> (string, string) result
   ; decrypt_graph_key : string -> string -> (string, string) result
   ; encrypt_graph_key : string -> string -> (string, string) result
@@ -116,3 +118,11 @@ let decrypt_string crypto graph_key source =
   match value with
   | Value.String value -> Ok value
   | _ -> Error "decrypted protected value is not a string"
+
+let prepare_user_keys crypto password =
+  let ( let* ) = Result.bind in
+  let* public_key, private_key = crypto.generate_rsa_key_pair () in
+  let* salt, iv, ciphertext = crypto.encrypt_private_key password private_key in
+  Ok (Codec.to_string (Value.Binary public_key),
+      Codec.to_string (Value.Array [Value.String "20251210"; Value.Binary salt;
+                                   Value.Binary iv; Value.Binary ciphertext]))

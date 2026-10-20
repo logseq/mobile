@@ -279,7 +279,7 @@ type logseq_effect =
   | RefreshGraphsEffect of int
   | OpenGraphEffect of int * string
   | UnlockGraphEffect of int * string
-  | CreateGraphEffect of int * string * bool
+  | CreateGraphEffect of int * string * bool * string
   | DeleteLocalGraphEffect of int * string
   | SaveSettingsEffect of int * settings_projection
   | ExportGraphDatabaseEffect of int
@@ -326,6 +326,9 @@ type logseq_model =
   ; flashcard_answer_revealed : bool
   ; create_graph_open : bool
   ; new_graph_name : string
+  ; new_graph_password : string
+  ; new_graph_password_confirmation : string
+  ; new_graph_password_required : bool
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
   ; pending_page_deletion : sidebar_page option
@@ -456,6 +459,8 @@ type logseq_action =
   | DismissCreateGraph
   | ChangeNewGraphName of string
   | ToggleNewGraphEncrypted of bool
+  | ChangeNewGraphPassword of string
+  | ChangeNewGraphPasswordConfirmation of string
   | SubmitCreateGraph
   | RequestDeleteGraph of string
   | CancelDeleteGraph
@@ -628,3 +633,5 @@ val ui_session : logseq_model -> ui_session
 val restore_session_routes :
   logseq_model -> navigation_route list -> bool -> logseq_model
 val restore_ui_session : logseq_model -> ui_session -> logseq_model
+
+val graph_creation_password_invalid_ : logseq_model -> bool

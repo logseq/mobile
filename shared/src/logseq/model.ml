@@ -282,7 +282,7 @@ type logseq_effect =
   | RefreshGraphsEffect of int
   | OpenGraphEffect of int * string
   | UnlockGraphEffect of int * string
-  | CreateGraphEffect of int * string * bool
+  | CreateGraphEffect of int * string * bool * string
   | DeleteLocalGraphEffect of int * string
   | SaveSettingsEffect of int * settings_projection
   | ExportGraphDatabaseEffect of int
@@ -329,6 +329,9 @@ type logseq_model =
   ; flashcard_answer_revealed : bool
   ; create_graph_open : bool
   ; new_graph_name : string
+  ; new_graph_password : string
+  ; new_graph_password_confirmation : string
+  ; new_graph_password_required : bool
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
   ; pending_page_deletion : sidebar_page option
@@ -459,6 +462,8 @@ type logseq_action =
   | DismissCreateGraph
   | ChangeNewGraphName of string
   | ToggleNewGraphEncrypted of bool
+  | ChangeNewGraphPassword of string
+  | ChangeNewGraphPasswordConfirmation of string
   | SubmitCreateGraph
   | RequestDeleteGraph of string
   | CancelDeleteGraph
@@ -637,6 +642,9 @@ let initial () =
     flashcard_answer_revealed = false;
     create_graph_open = false;
     new_graph_name = "";
+    new_graph_password = "";
+    new_graph_password_confirmation = "";
+    new_graph_password_required = false;
     new_graph_encrypted = true;
     pending_graph_deletion = None;
     pending_page_deletion = None;
@@ -766,7 +774,7 @@ let effect_id eff =
   | RefreshGraphsEffect id -> id
   | OpenGraphEffect (id, _) -> id
   | UnlockGraphEffect (id, _) -> id
-  | CreateGraphEffect (id, _, _) -> id
+  | CreateGraphEffect (id, _, _, _) -> id
   | DeleteLocalGraphEffect (id, _) -> id
   | SaveSettingsEffect (id, _) -> id
   | ExportGraphDatabaseEffect id -> id
@@ -778,6 +786,11 @@ let effect_id eff =
 
 let effect_with_id effects target =
   List.find_opt (fun eff -> effect_id eff = target) effects
+
+let graph_creation_password_invalid_ (current : logseq_model) =
+  current.new_graph_encrypted && current.new_graph_password_required
+  && (String_kit.is_blank current.new_graph_password
+      || current.new_graph_password <> current.new_graph_password_confirmation)
 
 let contains_sign_in_effect_ effects =
   List.exists
@@ -1449,6 +1462,8 @@ let resolve_failed_effect (current : logseq_model) eff message =
     }
   | RefreshGraphsEffect _ ->
     { current with sync_state = FailedState message }
+  | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
+    { current with new_graph_password_required = true }
   | _ -> rollback_navigation_effect current eff
 
 let composer_assets_sending_ (current : logseq_model) =
@@ -1497,6 +1512,9 @@ let resolve_successful_effect (current : logseq_model) eff _message =
       destination = JournalsDestination;
       create_graph_open = false;
       new_graph_name = "";
+      new_graph_password = "";
+      new_graph_password_confirmation = "";
+      new_graph_password_required = false;
     }
   | DeleteLocalGraphEffect (_, graph_id) ->
     let deleting_selected =
@@ -2000,7 +2018,11 @@ let rec update (current : logseq_model) action =
        {
          resolved_current with
          in_flight_effects = remove_effect current.in_flight_effects id;
-         effect_error = (if succeeded then None else Some message);
+         effect_error =
+           (if succeeded || (match eff with
+              | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message
+              | _ -> false)
+            then None else Some message);
          last_core_response =
            (if succeeded then Some message else current.last_core_response);
        }
@@ -2261,19 +2283,27 @@ let rec update (current : logseq_model) action =
       current with
       create_graph_open = false;
       new_graph_name = "";
+      new_graph_password = "";
+      new_graph_password_confirmation = "";
+      new_graph_password_required = false;
       new_graph_encrypted = true;
       effect_error = None;
     }
   | ChangeNewGraphName name -> { current with new_graph_name = name }
   | ToggleNewGraphEncrypted encrypted ->
     { current with new_graph_encrypted = encrypted }
+  | ChangeNewGraphPassword password -> { current with new_graph_password = password }
+  | ChangeNewGraphPasswordConfirmation password -> { current with new_graph_password_confirmation = password }
   | SubmitCreateGraph ->
     let name = String.trim current.new_graph_name in
-    if name = "" || graph_create_active_ current then current
+    if name = "" || graph_create_active_ current
+       || graph_creation_password_invalid_ current
+    then current
     else begin
       let id = current.next_effect_id in
       enqueue_effect current
-        (CreateGraphEffect (id, name, current.new_graph_encrypted))
+        (CreateGraphEffect (id, name, current.new_graph_encrypted,
+          if current.new_graph_encrypted then current.new_graph_password else ""))
     end
   | RequestDeleteGraph graph_id ->
     if
