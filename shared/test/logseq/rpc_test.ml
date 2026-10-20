@@ -6184,6 +6184,33 @@ let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
   check_eq (List.map (fun value -> member "title" value) (json_items "hydratedBlocks" hydrated))
     [`String "Block 9999"; `String "Block 9998"]
 
+let mobile_reference_hydration_preserves_ancestry () =
+  List.iter (fun node_route ->
+    let page : Model.entity_summary = { uuid = "source-page"; title = "Source page" } in
+    let parent : Model.entity_summary = { uuid = "parent"; title = "Parent block" } in
+    let body = List.init 40 (fun index ->
+      { (Model.local_block ("reference-" ^ string_of_int index) "References its own page" page.uuid None 1) with
+        Model.parent_id = Some page.uuid; order = Some (Printf.sprintf "a%06d" index) }) in
+    let references = List.map (fun (block : Model.block) ->
+      { block with breadcrumbs = [page; parent] }) body in
+    let session = Session.create_session { Session.default_options with
+      outliner_projection_limit = Some 32;
+      graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
+      graph_node_destination = Some (fun _ -> Some (page, false));
+      graph_page_blocks = Some (fun _ -> Some body);
+      graph_node_references = Some (fun _ -> Some references) } in
+    ignore (response_result (dispatch_json session "selectPage" page.uuid));
+    if node_route then ignore (response_result (dispatch_json session "openNode" "{\"uuid\":\"source-page\"}"));
+    let loaded = response_result (dispatch_json session "loadPageReferences" page.uuid) in
+    check_eq ~msg:"the distant reference starts as a compact shell"
+      (member "isShell" (List.nth (json_items "referenceBlocks" loaded) 39)) (`Bool true);
+    let hydrated = response_result (dispatch_json session "hydrateOutlinerRows" "[\"reference-39\"]") in
+    let reference = List.hd (json_items "hydratedBlocks" hydrated) in
+    check_eq ~msg:"hydrating a shared body/reference block retains clickable ancestry"
+      (List.map (member "uuid") (json_items "breadcrumbs" reference))
+      [`String page.uuid; `String parent.uuid]
+  ) [false; true]
+
 let snapshot_dispatch session action payload =
   Json.from_string (Session.call session (Json.to_string (`Assoc [
     "apiVersion", `Int 1; "method", `String "dispatch";
@@ -6283,6 +6310,7 @@ let cases =
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
     case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
  case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
+ case "mobile reference hydration preserves ancestry" mobile_reference_hydration_preserves_ancestry;
     case "semantic completion preserves error and status precedence"
       semantic_completion_preserves_error_and_status_precedence;
     case "required string lists preserve order and validate every item"

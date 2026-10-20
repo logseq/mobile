@@ -797,15 +797,18 @@ let hydrate_outliner_rows session payload =
       let wanted = Hashtbl.create 32 and found = Hashtbl.create 32 in
       List.iter (fun id -> Hashtbl.replace wanted id ()) ids;
       let collect blocks = List.iter (fun (block : Model.block) ->
-        if Hashtbl.mem wanted block.uuid then Hashtbl.replace found block.uuid block) blocks in
-      collect (outliner_context session).Outliner.blocks;
-      if Hashtbl.length found < Hashtbl.length wanted then collect (base_outliner_context session).Outliner.blocks;
-      if Hashtbl.length found < Hashtbl.length wanted then collect (snapshot_related_blocks session);
-      if Hashtbl.length found < Hashtbl.length wanted then collect (snapshot_linked_reference_blocks session);
+        if Hashtbl.mem wanted block.uuid && not (Hashtbl.mem found block.uuid)
+        then Hashtbl.add found block.uuid block) blocks in
+      (* Reference projections carry ancestry that ordinary outline rows omit. *)
+      collect (snapshot_related_blocks session);
+      collect (snapshot_linked_reference_blocks session);
       List.iter (fun route ->
-        if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_context session route).Outliner.blocks;
         if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_related_blocks session route);
         if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_linked_reference_blocks session route)) (state session).node_routes;
+      if Hashtbl.length found < Hashtbl.length wanted then collect (outliner_context session).Outliner.blocks;
+      if Hashtbl.length found < Hashtbl.length wanted then collect (base_outliner_context session).Outliner.blocks;
+      List.iter (fun route ->
+        if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_context session route).Outliner.blocks) (state session).node_routes;
       Rpc.success (Rpc.json_object ["isOutlinerContentPatch", `Bool true;
         "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
         "hydratedBlocks", Rpc.json_list (List.filter_map (fun id ->

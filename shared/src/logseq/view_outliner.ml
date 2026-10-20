@@ -130,7 +130,7 @@ let node_breadcrumbs model_source send : t =
     ]
     ]
 
-let related_row_breadcrumbs row_source send : t =
+let related_row_breadcrumbs model_source row_source send : t =
   breadcrumb ~gap:5 ~main:`start
     ~accessibility_identifier:"breadcrumb.related-blocks"
     [
@@ -138,7 +138,7 @@ let related_row_breadcrumbs row_source send : t =
         ~source:(Signal.map View_base.outliner_row_breadcrumbs row_source)
         ~key:View_base.breadcrumb_identifier ~cmp:compare
         ~mount:(fun breadcrumb_source ->
-          breadcrumb_button breadcrumb_source false send);
+          node_breadcrumb_button model_source breadcrumb_source send);
     ]
 
 let outliner_tag tag_source send : t =
@@ -822,7 +822,7 @@ let node_related_row context model_source ~source:row_source send : t =
     [
       if_ ~test:structured_breadcrumb_source
         (box ~padding_horizontal:8
-           [ box ~height:10 []; related_row_breadcrumbs row_source send ]);
+           [ box ~height:10 []; related_row_breadcrumbs model_source row_source send ]);
       if_ ~test:fallback_breadcrumb_source
         (box ~padding_horizontal:8
            [

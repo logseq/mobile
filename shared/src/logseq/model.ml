@@ -1772,7 +1772,10 @@ let hydrate_rows content rows =
     match Hashtbl.find_opt by_id row.row_uuid with
     | None -> row
     | Some value -> { value with depth = row.depth; has_children = row.has_children;
-        is_collapsed = row.is_collapsed; opens_as_page = row.opens_as_page }) rows
+        is_collapsed = row.is_collapsed; opens_as_page = row.opens_as_page;
+        (* Body hydration can omit ancestry already supplied by a reference projection. *)
+        row_breadcrumbs = (if value.row_breadcrumbs = [] then row.row_breadcrumbs else value.row_breadcrumbs);
+        row_breadcrumb = (if value.row_breadcrumb = "" then row.row_breadcrumb else value.row_breadcrumb) }) rows
 
 let retain_shell_contents previous rows =
   let by_id = Hashtbl.create (List.length previous) in

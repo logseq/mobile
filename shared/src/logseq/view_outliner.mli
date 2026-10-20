@@ -27,6 +27,7 @@ val node_breadcrumbs :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val related_row_breadcrumbs :
+  Model.logseq_model Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_tag :

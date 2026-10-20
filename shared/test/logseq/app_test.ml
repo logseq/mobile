@@ -7163,6 +7163,52 @@ let outliner_rows_live_inside_a_native_virtual_list () =
     (descendant_with_identifier renderer root "scroll.outliner")
     (-1)
 
+let reference_breadcrumbs_keep_their_navigation_context () =
+  List.iter (fun backend ->
+    List.iter (fun search ->
+      let application = App.create (backend ()) in
+      let source = { Model.uuid = "source"; title = "Source page" } in
+      let parent = { Model.uuid = "parent"; title = "Parent block" } in
+      let reference = { (outline_row "reference" "Linked note") with
+        Model.row_breadcrumb = "Source page › Parent block";
+        row_breadcrumbs = [source; parent] } in
+      let route = node_projection "target" "target" "Target" [reference] [] in
+      start application;
+      if search then begin
+        send application Model.OpenSearch;
+        send application (Model.RequestSearchNode "target")
+      end else send application (Model.RequestAppNode "target");
+      send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] [route]
+        None None [] [] [] false []);
+      flush application;
+      let renderer = Lui_app.runtime application in
+      let root = descendant_with_identifier renderer (Lui_app.root_node application) "screen.node" in
+      let breadcrumbs = descendant_with_identifier renderer root "breadcrumb.related-blocks" in
+      check ~msg:"linked references render their source ancestry" (breadcrumbs <> -1);
+      send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        Model.is_outliner_content_patch = true;
+        selected_graph_id = Some "test-graph";
+        hydrated_rows = [outline_row "reference" "Updated linked note"] });
+      flush application;
+      let breadcrumbs = descendant_with_identifier renderer root "breadcrumb.related-blocks" in
+      check ~msg:"plain body hydration cannot erase existing reference ancestry" (breadcrumbs <> -1);
+      let page = descendant_with_identifier renderer breadcrumbs "button.breadcrumb.source" in
+      let ancestor = descendant_with_identifier renderer breadcrumbs "button.breadcrumb.parent" in
+      check_eq ~msg:"the source page keeps its label"
+        (property_string renderer page Lui_protocol.TextValue) source.title;
+      check_eq ~msg:"the parent block keeps its label"
+        (property_string renderer ancestor Lui_protocol.TextValue) parent.title;
+      dispatch application (Lui_protocol.Press ancestor);
+      flush application;
+      let current = App.model application in
+      let expected = [Model.NodeRoute "target"; Model.NodeRoute "parent"] in
+      check_eq ~msg:"reference ancestors navigate within the originating stack"
+        (if search then current.search_navigation_path else current.app_navigation_path) expected;
+      check_eq ~msg:"search breadcrumbs leave the underlying app stack unchanged"
+        (if search then current.app_navigation_path else current.search_navigation_path) []
+    ) [false; true]
+  ) [ios_backend; kotlin_backend]
+
 let tagged_nodes_replace_the_linked_references_section () =
   List.iter (fun backend ->
     List.iter (fun destination ->
@@ -9428,6 +9474,7 @@ let cases =
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
     case "returning-to-a-scrolled-page-keeps-hydrated-rows-mounted" returning_to_a_scrolled_page_keeps_hydrated_rows_mounted;
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
+    case "reference-breadcrumbs-keep-their-navigation-context" reference_breadcrumbs_keep_their_navigation_context;
     case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;
