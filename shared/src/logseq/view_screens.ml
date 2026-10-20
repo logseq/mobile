@@ -259,7 +259,6 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                  model_source)
             (column ~gap:0
                [
-                 box ~height:26 [];
                  box ~padding_horizontal:16
                    ~accessibility_identifier:"layout.selected-page.title"
                    [

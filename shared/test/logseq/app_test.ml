@@ -6509,17 +6509,21 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"journal titles keep main's inner horizontal inset"
     (property_int renderer heading_surface Lui_protocol.PaddingHorizontal)
     8;
-  check_eq ~msg:"journal titles keep main's bottom inset"
-    (property_int renderer heading_surface Lui_protocol.PaddingVertical)
+  check_eq ~msg:"journal titles keep their bottom inset separate from top spacing"
+    (property_int renderer (List.nth heading_surface_children 2) Lui_protocol.HeightValue)
     12;
   check_eq ~msg:"journal titles express their extra top inset as layout"
     (if heading_top_space = -1 then None
      else node renderer heading_top_space)
     (Some Lui_protocol.Box);
   check_eq
-    ~msg:"journal title top spacing completes main's 26-point inset"
+    ~msg:"the first journal title uses only the list's top inset"
     (property_int renderer heading_top_space Lui_protocol.HeightValue)
-    14;
+    0;
+  let second_surface = List.hd (children renderer second_heading) in
+  check_eq ~msg:"later journal titles retain balanced spacing below the divider"
+    (property_int renderer (List.hd (children renderer second_surface)) Lui_protocol.HeightValue)
+    26;
   check_eq ~msg:"journal titles retain semantic heading typography"
     (if heading_content = -1 then None else node renderer heading_content)
     (Some Lui_protocol.Heading);

@@ -567,9 +567,14 @@ let outliner_entry context model_source retained_row_source row_source
              box
                ~padding_horizontal:
                  (if Lui_ui.host context = KotlinHost then 9 else 8)
-               ~padding_vertical:12
                [
-                 box ~height:14 [];
+                 View_base.with_int_prop_signal HeightValue
+                   (Signal.map2
+                      (fun (current : Model.logseq_model) (r : Model.outline_row) ->
+                        if View_base.outliner_journal_divider_visible_ current r
+                        then 26 else 0)
+                      model_source row_source)
+                   (box []);
                  heading ~level:3 ~style_class:"scroll-section-title"
                    ~value_signal:
                      (Signal.map2
@@ -578,6 +583,7 @@ let outliner_entry context model_source retained_row_source row_source
                           View_base.outliner_journal_title current r)
                         model_source row_source)
                    [];
+                 box ~height:12 [];
                ];
            ]);
       outliner_row context model_source retained_row_source row_source
@@ -929,8 +935,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
             (node_breadcrumbs model_source send);
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
-               [ box ~height:26 [];
-                 box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
+               [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
                    [ heading ~level:3 ~value:(reactive View_base.active_node_title model_source)
                        ~accessibility_identifier:"title.node" [] ];
                  box ~height:12 [] ]);
