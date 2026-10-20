@@ -48,16 +48,6 @@ import LogseqModel
         #expect(LogseqDeepLink(unrelatedURL) == .openJournal)
     }
 
-    @Test @MainActor func captureEntryPointPublishesAPlatformNeutralUIRequest() {
-        let store = LogseqStore { _ in "{}" }
-
-        #expect(store.captureRequestRevision == 0)
-        store.requestCapture()
-        #expect(store.captureRequestRevision == 1)
-        store.requestCapture()
-        #expect(store.captureRequestRevision == 2)
-    }
-
     @Test func normalizesAndroidSharedURLsIntoMarkdownLinks() {
         #expect(SharedCapturePayload(sharedText: "https://example.com/article", title: "Example").blockText
             == "[Example](https://example.com/article)")

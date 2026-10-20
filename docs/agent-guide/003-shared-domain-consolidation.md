@@ -99,7 +99,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | Plan | Complete | Current main is the implementation workspace |
-| Obsolete APIs | Pending | Production reference audit follows |
+| Obsolete APIs | In progress | Removed 269 production Swift lines and 434 retired-wrapper test lines; core baseline, 66 model and 125 UI tests pass; remaining send/search wrappers await live executor coverage |
 | Core effects | Pending | Real application/session tests first |
 | Bootstrap | Pending | Shared commands and stale-result tests first |
 | Shared capture | Pending | Preserve existing queue format |

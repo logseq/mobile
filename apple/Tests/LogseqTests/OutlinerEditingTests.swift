@@ -271,23 +271,6 @@ import Testing
         #expect(starts == ["83"])
     }
 
-    @Test func youtubeTimestampTargetsTheNearestPlayerAcrossBlocks() {
-        let source = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        let targets = OutlinerYouTubeTimestampPolicy.targetURLsByBlockID([
-            (
-                id: "video-block",
-                nodes: [LogseqMarkupNode(type: .video, url: source)]
-            ),
-            (
-                id: "timestamp-block",
-                nodes: [LogseqMarkupNode(type: .youtubeTimestamp, text: "01:23", style: "83")]
-            ),
-        ])
-
-        #expect(targets["timestamp-block"] == source)
-        #expect(targets["video-block"] == nil)
-    }
-
     @Test func youtubeTimestampDoesNotAttachToUntrustedOrNonYouTubeVideoURLs() {
         let nodes = OutlinerYouTubeTimestampPolicy.associateTargets([
             LogseqMarkupNode(type: .video, url: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ"),

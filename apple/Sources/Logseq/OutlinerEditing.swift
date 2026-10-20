@@ -261,28 +261,6 @@ enum OutlinerYouTubeTimestampPolicy {
         }
     }
 
-    static func targetURLsByBlockID(
-        _ blocks: [(id: String, nodes: [LogseqMarkupNode])]
-    ) -> [String: String] {
-        var currentYouTubeURL: String?
-        var result: [String: String] = [:]
-        for block in blocks {
-            for node in block.nodes {
-                if node.type == .video,
-                   let source = node.url,
-                   let url = EmbeddedMediaPolicy.safeURL(source),
-                   EmbeddedMediaPolicy.youtubeEmbedURL(url) != nil {
-                    currentYouTubeURL = source
-                } else if node.type == .youtubeTimestamp,
-                          node.url == nil,
-                          let currentYouTubeURL {
-                    result[block.id] = currentYouTubeURL
-                }
-            }
-        }
-        return result
-    }
-
     static func seconds(_ node: LogseqMarkupNode) -> Int? {
         guard node.type == .youtubeTimestamp,
               let value = node.style,

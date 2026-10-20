@@ -383,48 +383,10 @@ private struct ConfigurePayload: Encodable {
     let token: String
 }
 
-private struct UpdateBlockPayload: Encodable {
-    let uuid: String
-    let operationId: String
-    let expectedTitle: String
-    let title: String
-    let status: TaskStatusPayload?
-}
-
-private struct UpdateBlockStatusPayload: Encodable {
-    let uuid: String
-    let operationId: String
-    let expectedStatusUuid: String?
-    let expectedStatusIdent: String?
-    let status: TaskStatusPayload
-}
-
-private struct DeleteBlockPayload: Encodable {
-    let uuid: String
-    let operationId: String
-    let expectedServerT: Int
-}
-
 private struct SendBlockPayload: Encodable {
     let text: String
     let uuid: String
     let now: Int64
-}
-
-private struct SendTaskPayload: Encodable {
-    let text: String
-    let uuid: String
-    let now: Int64
-    let status: TaskStatusPayload
-}
-
-private struct TaskStatusPayload: Encodable {
-    let uuid: String
-    let ident: String?
-    let title: String
-    let iconType: String?
-    let iconId: String?
-    let iconColor: String?
 }
 
 private struct AddAssetPayload: Encodable {
@@ -468,26 +430,6 @@ private struct CreateSyncGraphPayload: Encodable {
     let password: String?
 }
 
-private struct ReviewFlashcardPayload: Encodable {
-    let uuid: String
-    let rating: String
-    let now: Int64
-    let operationId: String
-}
-
-private struct SetPageFavoritePayload: Encodable {
-    let pageUuid: String
-    let favorite: Bool
-    let operationId: String
-    let now: Int64
-}
-
-private struct DeletePagePayload: Encodable {
-    let pageUuid: String
-    let operationId: String
-    let now: Int64
-}
-
 @MainActor @Observable public final class LogseqStore {
     public private(set) var snapshot = LogseqSnapshot(
         revision: 0,
@@ -502,7 +444,6 @@ private struct DeletePagePayload: Encodable {
     public private(set) var graphEventsRetryDelayMilliseconds = 0
     private var syncTransport: LogseqSyncTransport?
     public private(set) var isRefreshing = false
-    public private(set) var captureRequestRevision = 0
     @ObservationIgnored public var graphDownloadProgressChanged: (@MainActor (LogseqGraphDownloadProgress?) -> Void)?
     private var graphDownloadProgress: LogseqGraphDownloadProgress?
     private var graphDownloadGeneration = 0
@@ -715,16 +656,6 @@ private struct DeletePagePayload: Encodable {
         refresh(afterApply: nil)
     }
 
-    public func selectGraph(_ graphID: String) {
-        performAsync(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(action: "selectGraph", payload: graphID)
-            ),
-            afterApply: nil
-        )
-    }
-
     @discardableResult public func selectGraphAndWait(_ graphID: String) async -> Bool {
         await performAsyncAndWait(
             LogseqRPCRequest(
@@ -812,11 +743,6 @@ private struct DeletePagePayload: Encodable {
         return lastError == nil
     }
 
-    public func requestCapture() {
-        clearSelectedPage()
-        captureRequestRevision += 1
-    }
-
     public func loadOlderJournals() {
         performAsync(
             LogseqRPCRequest(
@@ -824,68 +750,6 @@ private struct DeletePagePayload: Encodable {
                 params: LogseqRPCParams(action: "loadOlderJournals")
             ),
             afterApply: nil
-        )
-    }
-
-    public func loadFlashcards(now: Int64? = nil) {
-        performAsync(
-            LogseqRPCRequest(
-                method: "dispatch",
-                params: LogseqRPCParams(
-                    action: "loadFlashcards",
-                    payload: String(now ?? Self.nowMilliseconds())
-                )
-            ),
-            afterApply: nil
-        )
-    }
-
-    public func reviewFlashcard(
-        uuid: String,
-        rating: String,
-        now: Int64? = nil,
-        operationID: String? = nil
-    ) {
-        dispatchEncoded(
-            "reviewFlashcard",
-            ReviewFlashcardPayload(
-                uuid: uuid,
-                rating: rating,
-                now: now ?? Self.nowMilliseconds(),
-                operationId: operationID ?? UUID().uuidString.lowercased()
-            )
-        )
-    }
-
-    public func setPageFavorite(
-        pageUUID: String,
-        favorite: Bool,
-        now: Int64? = nil,
-        operationID: String? = nil
-    ) {
-        dispatchEncoded(
-            "setPageFavorite",
-            SetPageFavoritePayload(
-                pageUuid: pageUUID,
-                favorite: favorite,
-                operationId: operationID ?? UUID().uuidString.lowercased(),
-                now: now ?? Self.nowMilliseconds()
-            )
-        )
-    }
-
-    public func deletePage(
-        pageUUID: String,
-        now: Int64? = nil,
-        operationID: String? = nil
-    ) {
-        dispatchEncoded(
-            "deletePage",
-            DeletePagePayload(
-                pageUuid: pageUUID,
-                operationId: operationID ?? UUID().uuidString.lowercased(),
-                now: now ?? Self.nowMilliseconds()
-            )
         )
     }
 
@@ -1231,45 +1095,6 @@ private struct DeletePagePayload: Encodable {
         return true
     }
 
-    public func sendTask(_ text: String, status: LogseqTaskStatus) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let now = Self.nowMilliseconds()
-        let uuid = UUID().uuidString.lowercased()
-        let statusPayload = TaskStatusPayload(
-            uuid: status.uuid, ident: status.ident, title: status.title,
-            iconType: status.icon?.type, iconId: status.icon?.id, iconColor: status.icon?.color
-        )
-        dispatchEncoded("sendTask", SendTaskPayload(text: trimmed, uuid: uuid, now: now, status: statusPayload))
-    }
-
-    @discardableResult public func addAsset(
-        title: String, assetType: String, assetSize: Int,
-        assetChecksum: String, localPath: String, targetBlockId: String? = nil
-    ) -> String {
-        #if DEBUG
-        print(
-            "LOGSEQ_DB_ROUTE add_asset route=\(debugDatabaseRoute) "
-                + "snapshot_graph=\(snapshot.selectedGraphId ?? "none") path=\(localPath)"
-        )
-        logger.info(
-            "LOGSEQ_DB_ROUTE add_asset route=\(debugDatabaseRoute) "
-                + "snapshot_graph=\(snapshot.selectedGraphId ?? "none")"
-        )
-        #endif
-        let now = Self.nowMilliseconds()
-        let uuid = UUID().uuidString.lowercased()
-        dispatchEncoded(
-            "addAsset",
-            AddAssetPayload(
-                uuid: uuid, title: title, now: now, assetType: assetType,
-                assetSize: assetSize, assetChecksum: assetChecksum, localPath: localPath,
-                targetBlockId: targetBlockId
-            )
-        )
-        return uuid
-    }
-
     public func captureSharedAsset(
         id: String,
         title: String,
@@ -1340,78 +1165,6 @@ private struct DeletePagePayload: Encodable {
         } onCancel: {
             task.cancel()
         }
-    }
-
-    public func update(block: LogseqBlock, title: String) {
-        update(block: block, title: title, status: block.status)
-    }
-
-    public func update(block: LogseqBlock, title: String, status: LogseqTaskStatus?) {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let statusPayload = status.map {
-            TaskStatusPayload(
-                uuid: $0.uuid, ident: $0.ident, title: $0.title,
-                iconType: $0.icon?.type, iconId: $0.icon?.id, iconColor: $0.icon?.color
-            )
-        }
-        dispatchEncoded(
-            "updateBlock",
-            UpdateBlockPayload(
-                uuid: block.uuid,
-                operationId: UUID().uuidString.lowercased(),
-                expectedTitle: block.title,
-                title: trimmed,
-                status: statusPayload
-            )
-        )
-    }
-
-    public func updateStatus(block: LogseqBlock, status: LogseqTaskStatus) {
-        let statusPayload = TaskStatusPayload(
-            uuid: status.uuid, ident: status.ident, title: status.title,
-            iconType: status.icon?.type, iconId: status.icon?.id, iconColor: status.icon?.color
-        )
-        dispatchEncoded(
-            "updateBlockStatus",
-            UpdateBlockStatusPayload(
-                uuid: block.uuid,
-                operationId: UUID().uuidString.lowercased(),
-                expectedStatusUuid: block.status?.uuid,
-                expectedStatusIdent: block.status?.ident,
-                status: statusPayload
-            )
-        )
-    }
-
-    public func delete(block: LogseqBlock) {
-        guard let expectedServerT = snapshot.appliedServerT else {
-            lastError = LogseqCoreError(
-                code: "delete_requires_server_cursor",
-                message: "Delete requires an authoritative server cursor"
-            )
-            return
-        }
-        dispatchEncoded(
-            "deleteBlock",
-            DeleteBlockPayload(
-                uuid: block.uuid,
-                operationId: UUID().uuidString.lowercased(),
-                expectedServerT: expectedServerT
-            )
-        )
-    }
-
-    public func select(_ block: LogseqBlock) {
-        performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "select", payload: block.uuid)))
-    }
-
-    public func clearSelection() {
-        performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "clearSelection")))
-    }
-
-    public func clearRelated() {
-        performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "clearRelated")))
     }
 
     @MainActor public func runPendingSyncLoop() async {
