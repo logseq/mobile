@@ -8,13 +8,20 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
 @MainActor private final class SearchFocusEvents: NSObject {
     var begins = 0
     var ends = 0
+    var keyboardTop: CGFloat?
     override init() {
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(began), name: UITextField.textDidBeginEditingNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(ended), name: UITextField.textDidEndEditingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
     }
     @objc private func began(_ note: Notification) { if note.object is UISearchTextField { begins += 1 } }
     @objc private func ended(_ note: Notification) { if note.object is UISearchTextField { ends += 1 } }
+    @objc private func keyboardChanged(_ note: Notification) {
+        guard let value = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
+        let frame = value.cgRectValue
+        keyboardTop = frame.height > 0 ? frame.minY : nil
+    }
     func reset() { begins = 0; ends = 0 }
     deinit { NotificationCenter.default.removeObserver(self) }
 }
@@ -156,6 +163,16 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             delayedQueries = nil
             // Finish the transition before exercising dismissal and a fresh presentation.
             for _ in 0..<120 { await step() }
+            if let field = input() {
+                window.layoutIfNeeded()
+                let frame = field.convert(field.bounds, to: window)
+                let viewportBottom = min(window.bounds.maxY - window.safeAreaInsets.bottom, focus.keyboardTop ?? window.bounds.maxY)
+                let gap = viewportBottom - frame.maxY
+                if gap < -1 || gap > 32 || frame.width < window.bounds.width * 0.7 {
+                    record("FAIL: search field must stay above the keyboard at the bottom of the viewport; frame=\(frame) viewportBottom=\(viewportBottom)")
+                    failures += 1
+                }
+            }
             if focus.begins != 1 || focus.ends != 0 {
                 record("FAIL: search must retain one responder while opening and typing; begins=\(focus.begins) ends=\(focus.ends)")
                 failures += 1

@@ -255,6 +255,7 @@ private struct LGSearchSession: View {
     @available(iOS 26.0, *)
     private func nativeBottomSearch(_ content: AnyView) -> some View {
         content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .scrollDismissesKeyboard(.immediately)
             .navigationTitle(searchTitle)
             .navigationBarTitleDisplayMode(.inline)
