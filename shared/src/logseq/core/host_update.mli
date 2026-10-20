@@ -56,6 +56,7 @@ type host_update =
   | Graph_loading of bool
   | Authentication of host_authentication
   | Open_quick_action of string
+  | Confirm_outliner_delete
   | Open_capture
   | Open_node of string
   | Asset_preview_resolved of string * string

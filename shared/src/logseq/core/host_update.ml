@@ -56,6 +56,7 @@ type host_update =
   | Graph_loading of bool
   | Authentication of host_authentication
   | Open_quick_action of string
+  | Confirm_outliner_delete
   | Open_capture
   | Open_node of string
   | Asset_preview_resolved of string * string
@@ -135,6 +136,7 @@ let decode kind payload =
                Util.to_string_option (Util.member "errorMessage" value);
            })
     | "open-quick-action" -> Ok (Open_quick_action (Util.to_string value))
+    | "confirm-outliner-delete" -> Ok Confirm_outliner_delete
     | "open-capture" -> Ok Open_capture
     | "open-node" -> Ok (Open_node (Util.to_string value))
     | "asset-preview-resolved" ->

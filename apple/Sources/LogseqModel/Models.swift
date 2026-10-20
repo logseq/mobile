@@ -1,23 +1,5 @@
 import Foundation
 
-public enum LogseqContentMode: String, Codable, Sendable {
-    case logseq
-    case outliner
-
-    public static let defaultMode: Self = .outliner
-
-    public var toggled: Self {
-        self == .logseq ? .outliner : .logseq
-    }
-
-    public func presentationMode(hasSelectedPage: Bool = false) -> Self {
-        hasSelectedPage ? .outliner : self
-    }
-
-    public static func supportsModeSwitch(hasSelectedPage: Bool) -> Bool {
-        !hasSelectedPage
-    }
-}
 
 public struct LogseqEntitySummary: Codable, Hashable, Identifiable, Sendable {
     public let uuid: String
@@ -286,11 +268,6 @@ public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
     }()
 }
 
-public struct LogseqBlockSection: Identifiable, Hashable {
-    public let id: String
-    public let title: String
-    public let blocks: [LogseqBlock]
-}
 
 public struct LogseqOutlineRow: Codable, Identifiable, Hashable {
     public let block: LogseqBlock
@@ -802,11 +779,13 @@ public struct LogseqRPCParams: Encodable, Sendable {
     public let action: String?
     public let payload: String?
     public let path: String?
+    public let projection: String?
 
-    public init(action: String?, payload: String? = nil, path: String? = nil) {
+    public init(action: String?, payload: String? = nil, path: String? = nil, projection: String? = nil) {
         self.action = action
         self.payload = payload
         self.path = path
+        self.projection = projection
     }
 }
 

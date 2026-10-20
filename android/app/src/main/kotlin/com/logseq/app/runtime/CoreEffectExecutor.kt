@@ -160,6 +160,7 @@ internal class CoreEffectExecutor(
             "save-outliner-editing" -> return outlinerRequest(
                 JSONObject().put("type", "saveEditing")
             )
+            "confirm-outliner-delete" -> return outlinerRequest(JSONObject().put("type", "confirmDelete"))
             "cancel-outliner-editing" -> return outlinerRequest(
                 JSONObject().put("type", "cancelEditing")
             )

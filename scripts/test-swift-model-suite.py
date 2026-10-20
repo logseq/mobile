@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def main():
     build = ["swift", "build", "--package-path", str(ROOT / "apple"), "--disable-sandbox"]
     subprocess.run(build + ["--target", "LogseqModelTests"], check=True)
+    subprocess.run(build + ["--product", "LogseqModel"], check=True)
     output = pathlib.Path(subprocess.check_output(build + ["--show-bin-path"], text=True).strip())
     developer = pathlib.Path(subprocess.check_output(["xcode-select", "-p"], text=True).strip())
     frameworks = developer / "Platforms/MacOSX.platform/Developer/Library/Frameworks"

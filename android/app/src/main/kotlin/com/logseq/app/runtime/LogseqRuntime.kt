@@ -210,16 +210,9 @@ internal class LogseqRuntime(
         withContext(patchDispatcher) { applyPatch(bridge.applySnapshot(response)) }
         outlinerCommands.deliver(response)
         trackSyncState(response)
-        if (hasPendingSyncWork(response)) requestSyncNow()
         ensureGraphEventsSync()
+        effectDrain?.let { drain -> scope.launch { drain.drain(scope) } }
     }
-
-    private fun hasPendingSyncWork(response: String): Boolean =
-        runCatching {
-            val result = JSONObject(response).optJSONObject("result") ?: return false
-            result.optBoolean("hasPendingSemanticOperations") ||
-                result.optJSONObject("pendingSyncRequest") != null
-        }.getOrDefault(false)
 
     // The core reports the sync cursor and selected graph on every
     // snapshot; cache them so the WebSocket loop can pull entity changes
@@ -318,22 +311,6 @@ internal class LogseqRuntime(
                 log = { level, message -> logRuntime(level, "core", message) },
             ).run()
         } while (pendingSyncRequested && job.isActive)
-    }
-
-    private suspend fun sendOutlinerEvent(event: JSONObject) {
-        val response = bridge.callCore(
-            JSONObject()
-                .put("apiVersion", 1)
-                .put("method", "dispatch")
-                .put(
-                    "params",
-                    JSONObject()
-                        .put("action", "outlinerEvent")
-                        .put("payload", event.toString()),
-                )
-                .toString()
-        )
-        applyCoreResponse(response)
     }
 
     // --- Effects ---
@@ -638,7 +615,8 @@ internal class LogseqRuntime(
         val confirmed = com.logseq.app.ui.extensions.LogseqDialogs
             .confirmDeletion(blockIds.size > 1)
         if (confirmed) {
-            sendOutlinerEvent(JSONObject().put("type", "confirmDelete"))
+            applyPatch(bridge.applyHostUpdate("confirm-outliner-delete", "null"))
+            effectDrain?.let { drain -> scope.launch { drain.drain(scope) } }
         }
     }
 

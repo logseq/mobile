@@ -267,6 +267,7 @@ type logseq_effect =
   | DropOutlinerBlocksEffect of int * string * string
   | OutlinerToolbarEffect of int * string
   | ChooseOutlinerAutocompleteEffect of int * string
+  | ConfirmOutlinerDeleteEffect of int
   | SaveOutlinerEditingEffect of int * string
   | CancelOutlinerEditingEffect of int
   | OpenAppNodeEffect of int * string
@@ -408,6 +409,7 @@ type logseq_action =
   | LongPressOutlinerBlock of string
   | BeginOutlinerDrag of string
   | DropOutlinerBlocks of string * string
+  | ConfirmOutlinerDelete
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
@@ -760,6 +762,7 @@ let effect_id eff =
   | DropOutlinerBlocksEffect (id, _, _) -> id
   | OutlinerToolbarEffect (id, _) -> id
   | ChooseOutlinerAutocompleteEffect (id, _) -> id
+  | ConfirmOutlinerDeleteEffect id -> id
   | SaveOutlinerEditingEffect (id, _) -> id
   | CancelOutlinerEditingEffect id -> id
   | OpenAppNodeEffect (id, _) -> id
@@ -1323,6 +1326,7 @@ let cancels_outliner_autosave = function
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
   | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
   | DropOutlinerBlocksEffect _ | OutlinerToolbarEffect _
+  | ConfirmOutlinerDeleteEffect _
   | ChooseOutlinerAutocompleteEffect _ | CancelOutlinerEditingEffect _
   | SetOutlinerTaskStatusEffect _ | SelectSidebarPageEffect _
   | ClearSelectedPageEffect _ | OpenAppNodeEffect _ | CloseAppNodeEffect _
@@ -1820,7 +1824,14 @@ let rec update (current : logseq_model) action =
       { current with search_results = results; search_loading = false }
     else current
   | ApplyCoreSnapshot projection ->
-    let updated = apply_core_snapshot current projection in
+    let applied = apply_core_snapshot current projection in
+    let updated =
+      if not projection.is_pending_sync_patch
+        && (applied.has_pending_semantic_operations || applied.has_pending_sync_request)
+        && not (List.exists (function SyncNowEffect _ -> true | _ -> false)
+          (applied.pending_effects @ applied.in_flight_effects))
+      then enqueue_effect applied (SyncNowEffect applied.next_effect_id)
+      else applied in
     (match projection.pending_reference_uuid with
      | Some uuid when not (List.exists (function
          | LoadPageReferencesEffect (_, candidate) -> candidate = uuid
@@ -1884,6 +1895,8 @@ let rec update (current : logseq_model) action =
     let id = current.next_effect_id in
     enqueue_effect current
       (DropOutlinerBlocksEffect (id, target_uuid, placement))
+  | ConfirmOutlinerDelete ->
+    enqueue_effect current (ConfirmOutlinerDeleteEffect current.next_effect_id)
   | PerformOutlinerToolbarAction action ->
     let updated =
       if action = "task" then
@@ -2403,8 +2416,9 @@ let rec update (current : logseq_model) action =
   | OpenSyncDetails -> { current with sync_details_open = true }
   | CloseSyncDetails -> { current with sync_details_open = false }
   | SyncNow ->
-    let id = current.next_effect_id in
-    enqueue_effect current (SyncNowEffect id)
+    if List.exists (function SyncNowEffect _ -> true | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) then current
+    else enqueue_effect current (SyncNowEffect current.next_effect_id)
   | SetOutlinerTaskStatus (block_id, status_id) ->
     (match task_status_by_id current.task_statuses status_id with
      | Some status ->

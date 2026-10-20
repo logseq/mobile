@@ -1388,6 +1388,22 @@ struct LGRendererTests {
         ])
     }
 
+    @Test("native deletion confirmation uses the shared core event")
+    func confirmsDeletionThroughCore() async throws {
+        var capturedRequest: LogseqRPCRequest?
+        let executor = LGCoreEffectExecutor { request in
+            capturedRequest = request
+            return #"{"apiVersion":1,"ok":true,"result":null}"#
+        }
+        let resolution = await executor.execute(LGEffect(id: 19, kind: "confirm-outliner-delete", text: ""))
+        let request = try #require(capturedRequest)
+        let payload = try #require(request.params.payload)
+        let event = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any]
+        #expect(request.params.action == "outlinerEvent")
+        #expect(event?["type"] as? String == "confirmDelete")
+        #expect(resolution.succeeded)
+    }
+
     @Test("destination changes cancel the existing core editor")
     func cancelEditingEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequest: LogseqRPCRequest?

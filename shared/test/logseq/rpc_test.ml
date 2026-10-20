@@ -6169,8 +6169,81 @@ let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
   check_eq (List.map (fun value -> member "title" value) (json_items "hydratedBlocks" hydrated))
     [`String "Block 9999"; `String "Block 9998"]
 
+let snapshot_dispatch session action payload =
+  Json.from_string (Session.call session (Json.to_string (`Assoc [
+    "apiVersion", `Int 1; "method", `String "dispatch";
+    "params", `Assoc ["action", `String action; "payload", `String payload;
+      "projection", `String "snapshot"]])))
+
+let snapshot_projection_replaces_native_patch_reduction () =
+  let projected = ref [synced_block "first" "First"; synced_block "second" "Second"] in
+  let session = configure_plain_session (Session.create_session {
+    Session.default_options with
+    sync_cursor = Some (fun () -> Some 91);
+    graph_blocks = Some (fun () -> Some !projected);
+    stage_operation = Some (fun operation ->
+      (match operation.Ops.intent with
+       | Ops.Save_title change -> projected := List.map (fun (block : Model.block) ->
+           if block.uuid = change.uuid then {block with title = change.title} else block) !projected
+       | Ops.Delete_blocks change -> projected := List.filter (fun (block : Model.block) ->
+           not (List.mem block.uuid change.uuids)) !projected
+       | _ -> ()); Ok ());
+    prepare_operation = Some prepare_operation;
+  }) in
+  let dispatch event = response_result (snapshot_dispatch session "outlinerEvent" event) in
+  let check_full result =
+    check_eq (member "isOutlinerPatch" result) (`Bool false);
+    check_eq (member "isPendingSyncPatch" result) `Null;
+    check_eq (member "selectedGraphId" result) (`String "plain-1");
+    check_eq (List.length (json_items "outlinerRows" result)) (List.length !projected) in
+  let tapped = dispatch {|{"type":"tapBlock","uuid":"first"}|} in
+  check_full tapped;
+  check_eq (editing_uuid tapped) "first";
+  ignore (dispatch {|{"type":"textChanged","title":"After","caretUTF16Offset":5}|});
+  let saved = dispatch {|{"type":"saveEditing"}|} in
+  check_full saved;
+  check_eq (member "title" (List.hd (json_items "blocks" saved))) (`String "After");
+  ignore (dispatch {|{"type":"cancelEditing"}|});
+  ignore (dispatch {|{"type":"longPressBlock","uuid":"first"}|});
+  ignore (dispatch {|{"type":"toolbar","action":"delete"}|});
+  let deleted = dispatch {|{"type":"confirmDelete"}|} in
+  check_full deleted;
+  check_eq (List.map (member "uuid") (json_items "blocks" deleted)) [`String "second"];
+  check_eq (json_items "selectedBlockIds" (member "outlinerState" deleted)) [];
+  let pending = response_result (snapshot_dispatch session "beginPendingSync" "") in
+  check_full pending;
+  check_eq (List.map (member "uuid") (json_items "blocks" pending)) [`String "second"];
+  check (member "pendingSyncRequest" pending <> `Null);
+  let failure = snapshot_dispatch session "unknown" "" in
+  check_eq (response_error_code failure) "unknown_action"
+
+let snapshot_projection_keeps_interactive_patches_compact () =
+  let session = Session.create_session {Session.default_options with
+    graph_blocks = Some (fun () -> Some [synced_block "first" "First"; synced_block "second" "Second"])} in
+  let tapped = outliner_event session {|{"type":"tapBlock","uuid":"first"}|} in
+  check_eq (member "isOutlinerPatch" tapped) (`Bool true);
+  check_eq (json_items "blocks" tapped) [];
+  check_eq (json_items "outlinerRows" tapped) []
+
+let forced_snapshot_import_is_atomic_with_editing () =
+  let imported = ref 0 in
+  let session = Session.create_session {Session.default_options with
+    graph_blocks = Some (fun () -> Some [synced_block "first" "First"]);
+    import_snapshot = Some (fun _ -> incr imported; Ok ())} in
+  ignore (outliner_event session {|{"type":"tapBlock","uuid":"first"}|});
+  let payload = {|{"graphId":"plain-1","forceSnapshot":true}|} in
+  let deferred = dispatch_json session "importSnapshot" payload in
+  check_eq ~msg:"editing is checked inside the serialized core before storage replacement" !imported 0;
+  check_eq (response_error_code deferred) "snapshot_deferred";
+  ignore (outliner_event session {|{"type":"cancelEditing"}|});
+  ignore (response_result (dispatch_json session "importSnapshot" payload));
+  check_eq !imported 1
+
 let cases =
   [
+    case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
+    case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
+    case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;
     case "shared pending error summary preserves unicode" shared_pending_error_summary_preserves_unicode;
     case "shared pending retry preserves uploads and bounds attempts" shared_pending_retry_preserves_upload_and_bounds_attempts;
     case "shared pending retry keeps semantic transaction identity" shared_pending_retry_keeps_semantic_transaction_identity;

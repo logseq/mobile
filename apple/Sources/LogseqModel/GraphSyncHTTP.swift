@@ -77,28 +77,6 @@ public enum LogseqGraphWebSocketFailurePolicy {
 }
 
 
-public enum LogseqGraphSnapshotRefreshPolicy {
-    public static func shouldApplyDownloadedSnapshot(
-        forceSnapshot: Bool,
-        isEditingOutlinerBlock: Bool,
-        hasPendingLocalChanges: Bool
-    ) -> Bool {
-        _ = hasPendingLocalChanges
-        return !forceSnapshot || !isEditingOutlinerBlock
-    }
-}
-
-public enum LogseqOutlinerAutosavePolicy {
-    public static func serverSyncDelayNanoseconds(eventType: String) -> UInt64 {
-        switch eventType {
-        case "textChanged", "returnPressed", "backspacePressed":
-            return UInt64(1_000_000_000)
-        default:
-            return UInt64(150_000_000)
-        }
-    }
-}
-
 public enum LogseqPendingSyncPumpPolicy {
     public static func shouldRestartAfterFinishing(
         requestedWhileFinishing: Bool

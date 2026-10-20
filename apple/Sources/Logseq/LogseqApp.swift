@@ -90,7 +90,9 @@ public struct LogseqRootView : View {
             }
             .modifier(LGPlatformPresentationHost(
                 coordinator: runtime.presentationCoordinator,
-                store: runtime.store,
+                confirmOutlinerDelete: {
+                    try? runtime.lgRuntime.applyHostUpdate(kind: "confirm-outliner-delete", payload: "null")
+                },
                 stageAsset: { payload in
                     try runtime.lgRuntime.applyHostUpdate(kind: "composer-asset", payload: payload)
                 },

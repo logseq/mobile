@@ -848,6 +848,12 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                     message: String(describing: error)
                 )
             }
+        case "confirm-outliner-delete":
+            do {
+                request = try Self.outlinerRequest(LogseqOutlinerEvent(type: "confirmDelete"))
+            } catch {
+                return LGEffectResolution(succeeded: false, message: String(describing: error))
+            }
         case "cancel-outliner-editing":
             do {
                 request = try Self.outlinerRequest(

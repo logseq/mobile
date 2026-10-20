@@ -136,7 +136,32 @@ let late_text_resolution_after_navigation_does_not_arm_save () = with_editor (fu
   check ~msg:"a late response cannot schedule a save on another route"
     (not (List.mem "save-outliner-editing" (pending_kinds ()))))
 
+let platform_delete_confirmation_uses_shared_effects () = with_editor (fun session _ ->
+  ignore (Native_bridge.apply_response (call session ["type", `String "cancelEditing"]));
+  ignore (Native_bridge.apply_response (call session ["type", `String "longPressBlock"; "uuid", `String "editing"]));
+  ignore (Native_bridge.apply_response (call session ["type", `String "toolbar"; "action", `String "delete"]));
+  ignore (Native_bridge.apply_host_update "confirm-outliner-delete" "null");
+  let dispatch = take_ready () in
+  check_eq (kind dispatch) "confirm-outliner-delete";
+  apply_effect session dispatch ["type", `String "confirmDelete"];
+  check ~msg:"platform confirmations use the core mutation sync policy"
+    (List.mem "sync-now" (pending_kinds ())))
+
+let externally_restored_pending_work_wakes_sync_once () = with_editor (fun session _ ->
+  ignore (call session ["type", `String "textChanged"; "title", `String "Restored"; "caretUTF16Offset", `Int 8]);
+  let response = call session ["type", `String "saveEditing"] in
+  ignore (Native_bridge.apply_response response);
+  check_eq ~msg:"external core responses share the mutation wake policy" (pending_kinds ()) ["sync-now"];
+  ignore (Native_bridge.apply_response response);
+  check_eq (pending_kinds ()) ["sync-now"];
+  let sync = take_ready () in
+  ignore (Native_bridge.apply_response response);
+  check_eq ~msg:"an active sync pump owns its remaining operations" (pending_kinds ()) [];
+  ignore (Native_bridge.resolve_effect (effect_id sync) true response))
+
 let cases = [
+  case "external pending work wakes sync once" externally_restored_pending_work_wakes_sync_once;
+  case "platform deletion confirmation uses shared effects" platform_delete_confirmation_uses_shared_effects;
   case "idle save commits once then wakes sync" idle_save_commits_once_then_wakes_sync;
   case "autocomplete suppresses idle save" autocomplete_suppresses_idle_save;
   case "completion resumes the save deadline" completion_resumes_the_save_deadline;

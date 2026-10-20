@@ -421,7 +421,19 @@ let route snapshot dispatch (input : Json.t) =
                   Ok (action, payload)
                 in
                 (match decoded with
-                 | Ok (action, payload) -> dispatch action payload
+                 | Ok (action, payload) ->
+                   let response = dispatch action payload in
+                   if List.assoc_opt "projection" params = Some (`String "snapshot") then
+                     let result = Json.from_string response in
+                     (match result with
+                      | `Assoc fields when List.assoc_opt "ok" fields = Some (`Bool true) ->
+                        (match List.assoc_opt "result" fields with
+                         | Some (`Assoc fields) when List.exists (fun (key, value) ->
+                             String.starts_with ~prefix:"is" key
+                             && String.ends_with ~suffix:"Patch" key && value = `Bool true) fields -> snapshot ()
+                         | _ -> response)
+                      | _ -> response)
+                   else response
                  | Error message -> failure "invalid_params" message)
               | _ -> failure "unknown_method" ("unknown method: " ^ method_))
            | None -> failure "invalid_request" "missing field: params"

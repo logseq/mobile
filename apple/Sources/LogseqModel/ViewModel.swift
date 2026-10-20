@@ -452,6 +452,7 @@ private struct ImportSnapshotPayload: Encodable {
     let metadataBody: String
     let downloadPath: String
     let isEncrypted: Bool
+    let forceSnapshot: Bool
 }
 
 private struct OpenGraphPayload: Encodable {
@@ -501,9 +502,7 @@ private struct DeletePagePayload: Encodable {
     public private(set) var graphEventsRetryDelayMilliseconds = 0
     private var syncTransport: LogseqSyncTransport?
     public private(set) var isRefreshing = false
-    public private(set) var cursorAdvancedAfterMutation = false
     public private(set) var captureRequestRevision = 0
-    public private(set) var isSnapshotRefreshDeferred = false
     @ObservationIgnored public var graphDownloadProgressChanged: (@MainActor (LogseqGraphDownloadProgress?) -> Void)?
     private var graphDownloadProgress: LogseqGraphDownloadProgress?
     private var graphDownloadGeneration = 0
@@ -525,15 +524,8 @@ private struct DeletePagePayload: Encodable {
     private var openedDatabasePath: String?
     private var activeGraphID: String?
     private var debugDatabaseRoute = "unopened"
-    private var mutationServerT: Int?
     private var pendingSyncTask: Task<Void, Never>?
-    private var pendingSyncDebounceTask: Task<Void, Never>?
     private var pendingSyncRequested = false
-    private var outlinerEventTask: Task<Void, Never>?
-    private var outlinerProjectionGeneration = 0
-    private var pendingOutlinerTransientEvent: LogseqOutlinerEvent?
-    private var outlinerTransientFlushTask: Task<Void, Never>?
-    private var outlinerAutosaveTask: Task<Void, Never>?
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
         self.init(call: call, responseObserver: { _ in })
@@ -914,9 +906,6 @@ private struct DeletePagePayload: Encodable {
             lastError = LogseqCoreError(code: "database_not_open", message: "Open local storage before syncing")
             return false
         }
-        if forceSnapshot {
-            isSnapshotRefreshDeferred = true
-        }
         if !forceSnapshot,
            activeGraphID == graphID,
            snapshot.selectedGraphId == graphID,
@@ -951,7 +940,6 @@ private struct DeletePagePayload: Encodable {
                 if lastError == nil {
                     activeGraphID = graphID
                     debugDatabaseRoute = "graph:\(graphID)"
-                    isSnapshotRefreshDeferred = false
                     #if DEBUG
                     print("LOGSEQ_DB_ROUTE open_graph_applied route=\(debugDatabaseRoute)")
                     #endif
@@ -1000,17 +988,6 @@ private struct DeletePagePayload: Encodable {
                 }
             )
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
-            let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
-                || snapshot.nodeRoutes.last?.outlinerState.editing != nil
-            guard LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
-                forceSnapshot: forceSnapshot,
-                isEditingOutlinerBlock: isEditingOutlinerBlock,
-                hasPendingLocalChanges: snapshot.hasPendingSemanticOperations
-                    || snapshot.pendingSyncRequest != nil
-            ) else {
-                isSnapshotRefreshDeferred = true
-                return true
-            }
             if showsProgress {
                 reportDownloadProgress(LogseqGraphDownloadProgress(
                     graphId: graphID, graphName: graphName, phase: "importing",
@@ -1023,7 +1000,8 @@ private struct DeletePagePayload: Encodable {
                 checkpointPath: checkpointURL.path,
                 metadataBody: artifact.metadataBody,
                 downloadPath: artifact.filePath,
-                isEncrypted: isEncrypted
+                isEncrypted: isEncrypted,
+                forceSnapshot: forceSnapshot
             )
             let payloadData = try JSONEncoder().encode(payload)
             guard let payloadString = String(data: payloadData, encoding: .utf8) else {
@@ -1038,11 +1016,9 @@ private struct DeletePagePayload: Encodable {
             if lastError == nil {
                 activeGraphID = graphID
                 debugDatabaseRoute = "graph:\(graphID)"
-                isSnapshotRefreshDeferred = forceSnapshot
             }
             return lastError == nil
         } catch {
-            isSnapshotRefreshDeferred = false
             lastError = LogseqCoreError(code: "snapshot_download_failed", message: error.localizedDescription)
             return false
         }
@@ -1094,7 +1070,6 @@ private struct DeletePagePayload: Encodable {
                             task.resume()
                             commands += await event("opened")
                             syncError = nil
-                            isSnapshotRefreshDeferred = false
                         case "send":
                             guard let socket, let body = command.body else { throw URLError(.cannotParseResponse) }
                             try await socket.send(.string(body))
@@ -1111,7 +1086,7 @@ private struct DeletePagePayload: Encodable {
                             syncError = nil
                             return true
                         case "sync-pending":
-                            syncPendingSoon()
+                            syncPending()
                             if stopAfterFirstFrame && receivedFrame {
                                 _ = await event("cancelled")
                                 return false
@@ -1161,13 +1136,6 @@ private struct DeletePagePayload: Encodable {
             message: succeeded ? nil : (lastError?.message ?? "Snapshot refresh failed")
         ))
         graphEventsRetryDelayMilliseconds = syncTransport?.commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
-    }
-
-    public func deferSnapshotRefreshWhileEditing() {
-        isSnapshotRefreshDeferred = true
-        if lastError?.code == "snapshot_required" {
-            lastError = nil
-        }
     }
 
     private func dispatchEncodedAndWait<T: Encodable>(
@@ -1229,8 +1197,6 @@ private struct DeletePagePayload: Encodable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let now = Self.nowMilliseconds()
-        mutationServerT = snapshot.appliedServerT
-        cursorAdvancedAfterMutation = false
         let uuid = UUID().uuidString.lowercased()
         do {
             let payloadData = try JSONEncoder().encode(SendBlockPayload(text: trimmed, uuid: uuid, now: now))
@@ -1251,8 +1217,6 @@ private struct DeletePagePayload: Encodable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         lastError = nil
-        mutationServerT = snapshot.appliedServerT
-        cursorAdvancedAfterMutation = false
         await dispatchEncodedAndWait(
             "send",
             SendBlockPayload(text: trimmed, uuid: id, now: Self.nowMilliseconds())
@@ -1349,8 +1313,6 @@ private struct DeletePagePayload: Encodable {
     }
 
     public func syncPending() {
-        pendingSyncDebounceTask?.cancel()
-        pendingSyncDebounceTask = nil
         pendingSyncRequested = true
         guard pendingSyncTask == nil else { return }
         pendingSyncTask = Task { [weak self] in
@@ -1445,161 +1407,6 @@ private struct DeletePagePayload: Encodable {
 
     public func clearRelated() {
         performAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "clearRelated")))
-    }
-
-    public func outlinerEvent(_ event: LogseqOutlinerEvent) {
-        #if DEBUG
-        logger.info(
-            "Outliner event queued: type=\(event.type), uuid=\(event.uuid ?? "nil"), "
-                + "action=\(event.action ?? "nil")"
-        )
-        #endif
-        if event.type != "textChanged" && event.type != "caretMoved" {
-            outlinerAutosaveTask?.cancel()
-            outlinerAutosaveTask = nil
-        }
-        let isAtomicStructureEvent =
-            (event.type == "returnPressed" && event.title != nil
-                && event.caretUTF16Offset != nil)
-            || (event.type == "backspacePressed" && event.title != nil)
-        if event.type == "textChanged" || isAtomicStructureEvent {
-            outlinerProjectionGeneration += 1
-        }
-        let generation = outlinerProjectionGeneration
-        if isAtomicStructureEvent {
-            outlinerTransientFlushTask?.cancel()
-            outlinerTransientFlushTask = nil
-            pendingOutlinerTransientEvent = nil
-            enqueueOutlinerEvent(
-                event,
-                generation: generation,
-                canBeSuperseded: false
-            )
-            return
-        }
-        let isTransient = (event.type == "textChanged" || event.type == "caretMoved")
-            && !opensAutocompleteImmediately(event)
-        if isTransient {
-            if event.type == "caretMoved", var pending = pendingOutlinerTransientEvent,
-               pending.type == "textChanged" {
-                pending.caretUTF16Offset = event.caretUTF16Offset
-                pendingOutlinerTransientEvent = pending
-            } else {
-                pendingOutlinerTransientEvent = event
-            }
-            outlinerTransientFlushTask?.cancel()
-            outlinerTransientFlushTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                guard !Task.isCancelled, let self else { return }
-                self.outlinerTransientFlushTask = nil
-                guard let pending = self.pendingOutlinerTransientEvent else { return }
-                self.pendingOutlinerTransientEvent = nil
-                self.enqueueOutlinerEvent(pending, generation: generation, canBeSuperseded: true)
-            }
-            return
-        }
-
-        outlinerTransientFlushTask?.cancel()
-        outlinerTransientFlushTask = nil
-        if let pending = pendingOutlinerTransientEvent {
-            pendingOutlinerTransientEvent = nil
-            if event.type == "toolbar" && event.action == "task" {
-                enqueueOutlinerEvent(event, generation: generation, canBeSuperseded: false)
-                enqueueOutlinerEvent(pending, generation: generation, canBeSuperseded: false)
-                return
-            }
-            enqueueOutlinerEvent(pending, generation: generation, canBeSuperseded: false)
-        }
-        enqueueOutlinerEvent(event, generation: generation, canBeSuperseded: false)
-    }
-
-    private func enqueueOutlinerEvent(
-        _ event: LogseqOutlinerEvent,
-        generation: Int,
-        canBeSuperseded: Bool
-    ) {
-        let previous = outlinerEventTask
-        outlinerEventTask = Task { [weak self] in
-            _ = await previous?.value
-            guard let self else { return }
-            if canBeSuperseded, self.outlinerProjectionGeneration != generation {
-                return
-            }
-            let projectionIsCurrent = self.outlinerProjectionGeneration == generation
-            var dispatchedEvent = event
-            if event.type == "returnPressed" || event.type == "backspacePressed" {
-                let currentEditing = self.snapshot.nodeRoutes.last?.outlinerState.editing
-                    ?? self.snapshot.outlinerState.editing
-                if let currentEditing, event.uuid != currentEditing.uuid {
-                    dispatchedEvent.uuid = currentEditing.uuid
-                    dispatchedEvent.title = currentEditing.title
-                    if event.type == "returnPressed" {
-                        dispatchedEvent.caretUTF16Offset = currentEditing.caretUTF16Offset
-                    }
-                }
-            }
-            await self.dispatchEncodedAndWait(
-                "outlinerEvent",
-                dispatchedEvent,
-                shouldApply: {
-                    !canBeSuperseded || projectionIsCurrent
-                }
-            )
-            if event.type == "textChanged" {
-                let autocomplete = self.snapshot.nodeRoutes.last?.outlinerState.autocomplete
-                    ?? self.snapshot.outlinerState.autocomplete
-                if autocomplete == nil {
-                    self.scheduleOutlinerAutosave()
-                } else {
-                    self.outlinerAutosaveTask?.cancel()
-                    self.outlinerAutosaveTask = nil
-                }
-            } else if event.type == "chooseAutocomplete" {
-                self.scheduleOutlinerAutosave()
-            }
-            if self.snapshot.hasPendingSemanticOperations {
-                self.syncPendingSoon(
-                    delayNanoseconds: LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
-                        eventType: event.type
-                    )
-                )
-            }
-        }
-    }
-
-    private func opensAutocompleteImmediately(_ event: LogseqOutlinerEvent) -> Bool {
-        guard event.type == "textChanged", let title = event.title,
-              let caret = event.caretUTF16Offset else { return false }
-        let value = title as NSString
-        let location = min(max(caret, 0), value.length)
-        let prefix = value.substring(to: location)
-        return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
-    }
-
-    private func scheduleOutlinerAutosave() {
-        outlinerAutosaveTask?.cancel()
-        outlinerAutosaveTask = Task { [weak self] in
-            try? await Task.sleep(
-                nanoseconds: LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
-                    eventType: "textChanged"
-                )
-            )
-            guard !Task.isCancelled, let self else { return }
-            self.outlinerAutosaveTask = nil
-            self.outlinerEvent(LogseqOutlinerEvent(type: "saveEditing"))
-        }
-    }
-
-    private func syncPendingSoon(delayNanoseconds: UInt64 = UInt64(150_000_000)) {
-        pendingSyncDebounceTask?.cancel()
-        pendingSyncDebounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled, let self else { return }
-            self.pendingSyncDebounceTask = nil
-            if self.snapshot.syncConnected == true {
-                self.syncPending()
-            }
-        }
     }
 
     @MainActor public func runPendingSyncLoop() async {
@@ -1712,7 +1519,11 @@ private struct DeletePagePayload: Encodable {
 
     private func encode(_ request: LogseqRPCRequest) -> String? {
         do {
-            let requestData = try JSONEncoder().encode(request)
+            let params = request.params
+            let projectedRequest = LogseqRPCRequest(method: request.method, params: LogseqRPCParams(
+                action: params.action, payload: params.payload, path: params.path, projection: "snapshot"
+            ))
+            let requestData = try JSONEncoder().encode(projectedRequest)
             guard let requestJSON = String(data: requestData, encoding: .utf8) else {
                 lastError = LogseqCoreError(code: "request_encoding", message: "Could not encode request")
                 logger.error("Core request encoding failed: request was not UTF-8")
@@ -1759,25 +1570,24 @@ private struct DeletePagePayload: Encodable {
             }
             let response = try JSONDecoder().decode(LogseqRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
-                let mergedResult = mergedSnapshot(result)
                 #if DEBUG
                 let applyMilliseconds = Date().timeIntervalSince(applyStartedAt) * 1_000
                 print(
                     "Logseq debug: core action applied \(actionName) "
-                        + "revision=\(mergedResult.revision) blocks=\(mergedResult.blocks.count) "
-                        + "journals=\(mergedResult.blocks.filter { $0.journalDay != nil }.count) "
-                        + "graphs=\(mergedResult.graphs?.count ?? 0) "
+                        + "revision=\(result.revision) blocks=\(result.blocks.count) "
+                        + "journals=\(result.blocks.filter { $0.journalDay != nil }.count) "
+                        + "graphs=\(result.graphs?.count ?? 0) "
                         + "patch=\(result.isOutlinerPatch) "
                         + "applyMs=\(String(format: "%.2f", applyMilliseconds))"
                 )
                 #endif
                 logger.info(
-                    "Core action applied: \(actionName), revision: \(mergedResult.revision), blocks: \(mergedResult.blocks.count), graph: \(mergedResult.graphName ?? "none")"
+                    "Core action applied: \(actionName), revision: \(result.revision), blocks: \(result.blocks.count), graph: \(result.graphName ?? "none")"
                 )
-                snapshot = mergedResult
+                snapshot = result
                 lastError = nil
                 if actionName == "openGraph" {
-                    activeGraphID = mergedResult.selectedGraphId
+                    activeGraphID = result.selectedGraphId
                     debugDatabaseRoute = "graph:\(activeGraphID ?? "unknown")"
                     syncError = nil
                 } else if actionName == "open" {
@@ -1836,208 +1646,6 @@ private struct DeletePagePayload: Encodable {
         default:
             return .normal
         }
-    }
-
-    private func mergedSnapshot(_ result: LogseqSnapshot) -> LogseqSnapshot {
-        if result.isPendingSyncPatch {
-            return LogseqSnapshot(
-                revision: result.revision,
-                blocks: snapshot.blocks,
-                selectedBlock: snapshot.selectedBlock,
-                lastRefreshAt: snapshot.lastRefreshAt,
-                graphName: snapshot.graphName,
-                selectedGraphId: snapshot.selectedGraphId,
-                graphs: snapshot.graphs,
-                favorites: snapshot.favorites,
-                recentPages: snapshot.recentPages,
-                selectedPage: snapshot.selectedPage,
-                selectedPageIsTag: snapshot.selectedPageIsTag,
-                selectedPageIsProperty: snapshot.selectedPageIsProperty,
-                appliedServerT: result.appliedServerT ?? snapshot.appliedServerT,
-                syncConnected: snapshot.syncConnected,
-                relatedBlocks: snapshot.relatedBlocks,
-                linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
-                searchQuery: snapshot.searchQuery,
-                searchResults: snapshot.searchResults,
-                flashcards: snapshot.flashcards,
-                nodeRoutes: snapshot.nodeRoutes,
-                taskStatuses: snapshot.taskStatuses,
-                isGraphEncrypted: snapshot.isGraphEncrypted,
-                isGraphUnlocked: snapshot.isGraphUnlocked,
-                pendingSyncRequest: result.pendingSyncRequest,
-                outlinerState: snapshot.outlinerState,
-                outlinerCommandRevision: snapshot.outlinerCommandRevision,
-                outlinerCommands: snapshot.outlinerCommands,
-                outlinerAutocompleteCandidates: snapshot.outlinerAutocompleteCandidates,
-                outlinerRows: snapshot.outlinerRows,
-                hasPendingSemanticOperations: result.hasPendingSemanticOperations,
-                hasOlderJournals: snapshot.hasOlderJournals
-            )
-        }
-        if result.isOutlinerPatch {
-            let deletedBlockIDs = Set(result.deletedBlockIds)
-            let replacementBlocks = Dictionary(
-                uniqueKeysWithValues: result.blocks.map { ($0.uuid, $0) }
-            )
-            var mergedBlockIDs = Set<String>()
-            var blocks: [LogseqBlock] = snapshot.blocks.compactMap { block in
-                guard !deletedBlockIDs.contains(block.uuid) else { return nil }
-                mergedBlockIDs.insert(block.uuid)
-                return replacementBlocks[block.uuid] ?? block
-            }
-            for block in result.blocks where !mergedBlockIDs.contains(block.uuid) {
-                blocks.append(block)
-                mergedBlockIDs.insert(block.uuid)
-            }
-
-            var outlinerRows = snapshot.outlinerRows
-            if !result.outlinerRowSplices.isEmpty {
-                for splice in result.outlinerRowSplices {
-                    let requestedStart: Int?
-                    if let afterBlockId = splice.afterBlockId,
-                       let anchor = outlinerRows.firstIndex(where: {
-                           $0.block.uuid == afterBlockId
-                       }) {
-                        requestedStart = anchor + 1
-                    } else if let beforeBlockId = splice.beforeBlockId,
-                              let anchor = outlinerRows.firstIndex(where: {
-                                  $0.block.uuid == beforeBlockId
-                              }) {
-                        requestedStart = anchor
-                    } else {
-                        requestedStart = splice.start
-                    }
-                    guard let requestedStart else { continue }
-                    let start = min(max(requestedStart, 0), outlinerRows.count)
-                    let deleteEnd = min(
-                        start + max(splice.deleteCount, 0),
-                        outlinerRows.count
-                    )
-                    let insertedBlockIDs = Set(splice.rows.map { $0.block.uuid })
-                    var nextRows: [LogseqOutlineRow] = []
-                    var index = 0
-                    while index < start {
-                        if !insertedBlockIDs.contains(outlinerRows[index].block.uuid) {
-                            nextRows.append(outlinerRows[index])
-                        }
-                        index += 1
-                    }
-                    for row in splice.rows {
-                        nextRows.append(row)
-                    }
-                    index = deleteEnd
-                    while index < outlinerRows.count {
-                        if !insertedBlockIDs.contains(outlinerRows[index].block.uuid) {
-                            nextRows.append(outlinerRows[index])
-                        }
-                        index += 1
-                    }
-                    outlinerRows = nextRows
-                }
-            } else if !result.outlinerRows.isEmpty {
-                let replacementRows = Dictionary(
-                    uniqueKeysWithValues: result.outlinerRows.map {
-                        ($0.block.uuid, $0)
-                    }
-                )
-                outlinerRows = outlinerRows.map { row in
-                    replacementRows[row.block.uuid] ?? row
-                }
-            }
-            outlinerRows = outlinerRows.compactMap { row in
-                guard !deletedBlockIDs.contains(row.block.uuid) else { return nil }
-                guard let block = replacementBlocks[row.block.uuid] else { return row }
-                return LogseqOutlineRow(
-                    block: block,
-                    depth: row.depth,
-                    hasChildren: row.hasChildren,
-                    isCollapsed: row.isCollapsed
-                )
-            }
-            var visibleRowIDs = Set<String>()
-            outlinerRows = outlinerRows.filter { row in
-                guard !visibleRowIDs.contains(row.block.uuid) else { return false }
-                visibleRowIDs.insert(row.block.uuid)
-                return true
-            }
-
-            let selectedBlock: LogseqBlock? = snapshot.selectedBlock.flatMap { selected in
-                guard !deletedBlockIDs.contains(selected.uuid) else { return nil }
-                return replacementBlocks[selected.uuid] ?? selected
-            }
-            return LogseqSnapshot(
-                revision: snapshot.revision,
-                blocks: blocks,
-                selectedBlock: selectedBlock,
-                lastRefreshAt: snapshot.lastRefreshAt,
-                graphName: snapshot.graphName,
-                selectedGraphId: snapshot.selectedGraphId,
-                graphs: snapshot.graphs,
-                favorites: snapshot.favorites,
-                recentPages: snapshot.recentPages,
-                selectedPage: snapshot.selectedPage,
-                selectedPageIsTag: snapshot.selectedPageIsTag,
-                selectedPageIsProperty: snapshot.selectedPageIsProperty,
-                appliedServerT: snapshot.appliedServerT,
-                syncConnected: snapshot.syncConnected,
-                relatedBlocks: snapshot.relatedBlocks,
-                linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
-                searchQuery: snapshot.searchQuery,
-                searchResults: snapshot.searchResults,
-                flashcards: snapshot.flashcards,
-                nodeRoutes: snapshot.nodeRoutes,
-                taskStatuses: snapshot.taskStatuses,
-                isGraphEncrypted: snapshot.isGraphEncrypted,
-                isGraphUnlocked: snapshot.isGraphUnlocked,
-                pendingSyncRequest: snapshot.pendingSyncRequest,
-                outlinerState: result.outlinerState,
-                outlinerCommandRevision: result.outlinerCommandRevision,
-                outlinerCommands: result.outlinerCommands,
-                outlinerAutocompleteCandidates: result.outlinerAutocompleteCandidates,
-                outlinerRows: outlinerRows,
-                hasPendingSemanticOperations: result.hasPendingSemanticOperations,
-                hasOlderJournals: snapshot.hasOlderJournals,
-                isOutlinerPatch: false
-            )
-        }
-        if let mutationServerT, let appliedServerT = result.appliedServerT,
-           appliedServerT > mutationServerT {
-            cursorAdvancedAfterMutation = true
-            self.mutationServerT = nil
-        }
-        return LogseqSnapshot(
-            revision: result.revision,
-            blocks: result.blocks,
-            selectedBlock: result.selectedBlock,
-            lastRefreshAt: result.lastRefreshAt,
-            graphName: result.graphName,
-            selectedGraphId: result.selectedGraphId,
-            graphs: result.graphs ?? snapshot.graphs,
-            favorites: result.favorites,
-            recentPages: result.recentPages,
-            selectedPage: result.selectedPage,
-            selectedPageIsTag: result.selectedPageIsTag,
-            selectedPageIsProperty: result.selectedPageIsProperty,
-            appliedServerT: result.appliedServerT,
-            syncConnected: result.syncConnected,
-            relatedBlocks: result.relatedBlocks,
-            linkedReferenceBlocks: result.linkedReferenceBlocks,
-            searchQuery: result.searchQuery,
-            searchResults: result.searchResults,
-            flashcards: result.flashcards,
-            nodeRoutes: result.nodeRoutes,
-            taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
-            isGraphEncrypted: result.isGraphEncrypted,
-            isGraphUnlocked: result.isGraphUnlocked,
-            pendingSyncRequest: result.pendingSyncRequest,
-            outlinerState: result.outlinerState,
-            outlinerCommandRevision: result.outlinerCommandRevision,
-            outlinerCommands: result.outlinerCommands,
-            outlinerAutocompleteCandidates: result.outlinerAutocompleteCandidates,
-            outlinerRows: result.outlinerRows,
-            hasPendingSemanticOperations: result.hasPendingSemanticOperations,
-            hasOlderJournals: result.hasOlderJournals
-        )
     }
 
 }

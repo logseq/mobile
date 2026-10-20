@@ -247,7 +247,7 @@ enum LGAssetImporter {
 
 struct LGPlatformPresentationHost: ViewModifier {
     @Bindable var coordinator: LGPlatformPresentationCoordinator
-    let store: LogseqStore
+    let confirmOutlinerDelete: @MainActor () -> Void
     let stageAsset: @MainActor (String) throws -> Void
     var openJournal: @MainActor (Int) async throws -> Void = { _ in }
     @State private var journalError: String?
@@ -276,7 +276,7 @@ struct LGPlatformPresentationHost: ViewModifier {
             #endif
             .alert(deletionTitle, isPresented: deletionBinding) {
                 Button("Delete", role: .destructive) {
-                    store.outlinerEvent(LogseqOutlinerEvent(type: "confirmDelete"))
+                    confirmOutlinerDelete()
                     coordinator.dismissDeletion()
                 }
                 Button("Cancel", role: .cancel) {

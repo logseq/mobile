@@ -129,6 +129,7 @@ let host_action (update : Host_update.host_update) =
     Model.ApplyAuthentication
       (authentication.state, authentication.error_message)
   | Open_quick_action kind -> Model.OpenQuickAction kind
+  | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
   | Open_node uuid -> Model.RequestAppNode uuid
   | Asset_preview_resolved (title, path) ->
@@ -319,6 +320,8 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"choose-outliner-autocomplete\",\"text\":"
     ^ Lui_wire.quoted value ^ "}"
+  | ConfirmOutlinerDeleteEffect id ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"confirm-outliner-delete\",\"text\":\"\"}"
   | SaveOutlinerEditingEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"save-outliner-editing\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"
