@@ -28,6 +28,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       [])
 
 let sidebar_graph_menu_item model_source graph_source send : t =
+ fun context parent ->
   let graph = sample graph_source in
   View_base.with_string_prop_signal InlineIconName
     (Signal.map2 View_base.sidebar_graph_icon_name model_source
@@ -35,13 +36,13 @@ let sidebar_graph_menu_item model_source graph_source send : t =
     (View_base.with_selected_signal
        (Signal.map2 View_base.sidebar_graph_selected_ model_source
           graph_source)
-       (menu_item ~size:`sm
+       (menu_item ?size:(if Lui_ui.host context = KotlinHost then Some `sm else None)
        ~text:(reactive View_base.graph_title graph_source)
        ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
        ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
        ~on_press:(fun _ ->
          ignore (send (Model.SelectSidebarGraph (sample graph_source).id)))
-       []))
+       [])) context parent
 
 let sidebar_graph_menu_items model_source send =
   [ keyed

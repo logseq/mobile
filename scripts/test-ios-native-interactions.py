@@ -8,7 +8,8 @@ root = Path(__file__).resolve().parents[1]
 runner = root / "apple/Tests/UI/run-simulator-runtime-check.py"
 with tempfile.TemporaryDirectory(prefix="logseq-native-interactions-") as temporary:
     directory = Path(temporary)
-    for filename, entry in [("outliner-caret-layout.swift", "OutlinerCaretLayoutCheck"),
+    for filename, entry in [("native-menu-projection.swift", "NativeMenuProjectionCheck"),
+                            ("outliner-caret-layout.swift", "OutlinerCaretLayoutCheck"),
                             ("outliner-return-handoff.swift", "ReturnHandoffCheck"),
                             ("outliner-autosave.swift", "Check")]:
         source = directory / filename
