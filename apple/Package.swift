@@ -12,8 +12,7 @@ let logseqRuntimeExports = [
     "_logseq_https_send", "_logseq_https_upload_file", "_logseq_crypto_call", "_logseq_metric_log", "_logseq_graph_import_progress"
 ]
 let logseqRuntimeExportFlags = ["-Xlinker", "-export_dynamic"] + logseqRuntimeExports.flatMap {
-    ["-Xlinker", "-u", "-Xlinker", $0,
-     "-Xlinker", "-exported_symbol", "-Xlinker", $0]
+    ["-Xlinker", "-u", "-Xlinker", $0]
 }
 let logseqLinkerSettings: [LinkerSetting] = logseqNativeLinkInputs.isEmpty ? [] : [
     .unsafeFlags(logseqNativeLinkInputs + logseqRuntimeExportFlags, .when(platforms: [.iOS])),
