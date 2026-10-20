@@ -1258,19 +1258,6 @@ private let testEmptySnapshotJSON = """
         }
     }
 
-    @Test func successfulHTTPWithRejectedTransactionReportsTheServerReason() {
-        let result = LogseqPendingSyncResult(
-            status: 200,
-            body: #"{"type":"tx/reject","reason":"db transact failed","error-detail":"DB write failed with invalid data"}"#,
-            error: nil
-        )
-
-        #expect(
-            LogseqPendingSyncResultPolicy.failureMessage(for: result)
-                == "Sync server rejected the change: db transact failed — DB write failed with invalid data"
-        )
-    }
-
     @Test @MainActor func rejectedTransactionStopsThePumpAndKeepsItsReason() async throws {
         let recorder = RequestRecorder()
         let request = LogseqPendingSyncRequest(
@@ -1285,7 +1272,9 @@ private let testEmptySnapshotJSON = """
         let store = LogseqStore(
             call: { call in
                 recorder.append(call)
-                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: request)
+                let completed = call.contains("completePendingSync")
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: completed ? nil : request,
+                    error: completed ? "Sync server rejected the change: db transact failed" : nil)
             },
             pendingTransport: { _ in
                 LogseqPendingSyncResult(
@@ -2592,7 +2581,8 @@ private actor SuspendedPendingTransport {
 private func pendingPumpSnapshot(
     query: String,
     syncStatus: String,
-    request: LogseqPendingSyncRequest?
+    request: LogseqPendingSyncRequest?,
+    error: String? = nil
 ) -> String {
     let requestJSON: String
     if let request,
@@ -2621,7 +2611,8 @@ private func pendingPumpSnapshot(
         "lastRefreshAt": 1776000000000,
         "graphName": "Test",
         "isSearching": \(!query.isEmpty),
-        "pendingSyncRequest": \(requestJSON)
+        "pendingSyncRequest": \(requestJSON),
+        "pendingSyncError": \(String(data: try! JSONEncoder().encode(error), encoding: .utf8)!)
       },
       "error": null
     }

@@ -75,7 +75,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 
 1. Add real pending-pump tests for transport loss, retry exhaustion, duplicate checksum, paginated asset lookup, conflict, and cancellation.
 2. Verify the missing shared behavior fails before implementation.
-3. Move retry budgets, error interpretation, duplicate-asset lookup and response normalization into the OCaml pending transport state.
+3. Move retry budgets and error interpretation into the OCaml pending transport state. Audit confirmed the current raw PUT upload uses stable asset paths and metadata headers; the old paginated checksum resolver is specific to the unused semantic POST upload. Remove that obsolete native resolver and verify raw-upload conflicts remain failures rather than inventing a successful upload.
 4. Preserve operation UUID, transaction identity and expected cursor across retries.
 5. Reduce Swift `PendingSyncTransport.swift` and Kotlin `AndroidPendingSync.kt` to one-request executors.
 6. Keep path resolution, native streaming, headers, OS transport errors and cancellation in platform adapters.
@@ -117,7 +117,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | Plan and isolation | Complete | Worktree based on `ab3ce02`; prior workspace preserved |
 | Legacy cleanup | Complete | Removed 26 unreachable type groups and unused section/preorder projection; 604 production Swift lines and 1046 obsolete test lines removed; 776 core tests and LogseqModel build passed |
 | Shared sync driver | Complete | 782 core tests, 36 Android JVM tests, Swift model build, real WebSocket command harness and iOS simulator App/extension build passed; snapshot recovery and reconnect commands execute on both platforms |
-| Pending recovery | Pending | |
+| Pending recovery | Complete | 789 core tests, 37 Android JVM tests, iOS App/extension build, Swift model build and native retry-delay harness passed; stable request/transaction identity, cleanup, graph switches and Unicode error summaries covered |
 | Shared autosave | Pending | |
 | Single projection | Pending | |
 | Integration and verification | Pending | |

@@ -23,6 +23,7 @@ struct LogseqSyncTransport: Decodable {
 struct LogseqSyncTransportEnvelope: Decodable {
     struct Result: Decodable {
         let syncTransport: LogseqSyncTransport?
+        let pendingSyncError: String?
     }
     let result: Result?
 }

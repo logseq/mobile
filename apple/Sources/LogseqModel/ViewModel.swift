@@ -1640,17 +1640,10 @@ private struct DeletePagePayload: Encodable {
             )
             var pending = snapshot.pendingSyncRequest
             while let request = pending, !Task.isCancelled {
+                if request.delayMs > 0 { try? await Task.sleep(for: .milliseconds(request.delayMs)) }
+                guard !Task.isCancelled else { break }
                 let result = await pendingTransport(request)
                 if Task.isCancelled { break }
-                let failureMessage = LogseqPendingSyncResultPolicy.failureMessage(for: result)
-                if let failureMessage {
-                    syncError = LogseqCoreError(
-                        code: "pending_sync_failed",
-                        message: failureMessage
-                    )
-                } else if snapshot.syncConnected == true {
-                    syncError = nil
-                }
                 let completion = LogseqPendingSyncCompletion(
                     id: request.id,
                     status: result.status,
@@ -1658,10 +1651,6 @@ private struct DeletePagePayload: Encodable {
                     error: result.error
                 )
                 await dispatchEncodedAndWait("completePendingSync", completion)
-                if failureMessage != nil {
-                    pendingSyncRequested = false
-                    break
-                }
                 pending = snapshot.pendingSyncRequest
             }
             if Task.isCancelled {
@@ -1763,6 +1752,14 @@ private struct DeletePagePayload: Encodable {
             let responseData = Data(responseJSON.utf8)
             if actionName == "beginSyncTransport" || actionName == "syncTransportEvent" {
                 syncTransport = try JSONDecoder().decode(LogseqSyncTransportEnvelope.self, from: responseData).result?.syncTransport
+            }
+            if actionName == "beginPendingSync" || actionName == "completePendingSync" {
+                let pendingError = try JSONDecoder().decode(LogseqSyncTransportEnvelope.self, from: responseData).result?.pendingSyncError
+                if let pendingError {
+                    syncError = LogseqCoreError(code: "pending_sync_failed", message: pendingError)
+                } else if syncError?.code == "pending_sync_failed" {
+                    syncError = nil
+                }
             }
             let response = try JSONDecoder().decode(LogseqRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {

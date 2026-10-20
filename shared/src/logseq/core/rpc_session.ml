@@ -293,6 +293,7 @@ let snapshot session context_blocks blocks =
            , Rpc.json_list
                (List.map Rpc.status_response_json
                   (Model.all_statuses s.model)) )
+         ; ("pendingSyncError", match s.pending_sync_error with Some message -> `String message | None -> `Null)
          ; ("pendingSyncRequest", pending_request_json session)
          ; ("outlinerState", Rpc.outliner_state_json current)
          ; ( "outlinerAutocompleteCandidates"
@@ -425,6 +426,7 @@ let pending_sync_patch session =
          , match projection_server_t session with
            | Some value -> `Int value
            | None -> `Null )
+       ; ("pendingSyncError", match (state session).pending_sync_error with Some message -> `String message | None -> `Null)
        ; ("pendingSyncRequest", pending_request_json session)
        ; ( "hasPendingSemanticOperations"
          , `Bool (has_pending_operations session) )
@@ -704,6 +706,13 @@ let configure session _input fields =
         token;
       }
     in
+    let changed = match (state session).config with
+      | Some previous -> previous.Api.graph_id <> config.graph_id || previous.base_url <> config.base_url
+      | None -> false in
+    if changed then begin
+      cancel_pending_sync session;
+      session.state := { !(session.state) with semantic_queue = [] }
+    end;
     session.Types.state :=
       {
         !(session.state) with
@@ -753,6 +762,11 @@ let select_graph session payload =
              graph_name = Some graph.name;
            }
          in
+         if (state session).config <> Some config then begin
+           cancel_pending_sync session;
+           session.state := { !(session.state) with semantic_queue = [];
+             sync_transport = Sync_driver.invalidate (state session).sync_transport; sync_connected = false }
+         end;
          clear_node_navigation session;
          session.Types.state :=
            {

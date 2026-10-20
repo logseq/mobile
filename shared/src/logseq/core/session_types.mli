@@ -24,6 +24,12 @@ type transport_operation =
   | Update_status of Cache_model.block
   | Create_journal of created_journal
 
+type pending_retry =
+  { request_id : int
+  ; attempt : int
+  ; delay_ms : int
+  }
+
 type pending_active =
   { id : int
   ; transport : pending_transport
@@ -129,6 +135,8 @@ type session_state =
   ; sync_transport : Sync_driver.t
   ; sync_connected : bool
   ; pending_sync : pending_sync option
+  ; pending_retry : pending_retry option
+  ; pending_sync_error : string option
   ; next_pending_request_id : int
   ; semantic_queue : semantic_pending list
   ; semantic_active : semantic_active option
