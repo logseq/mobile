@@ -2444,6 +2444,9 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
   check_eq ~msg:"sync details use main's native navigation Form sheet"
     (property_string renderer sheet Lui_protocol.StyleClass)
     "navigation-form";
+  check_eq ~msg:"sync details open in a compact native sheet like the journal calendar"
+    (property_string renderer sheet Lui_protocol.Detents)
+    "medium";
   check_eq ~msg:"sync details expose native Form rows"
     (node renderer form_node)
     (Some Lui_protocol.Column);

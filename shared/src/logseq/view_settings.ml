@@ -1255,7 +1255,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    sheet ~text:"Sync status" ~style_class:"navigation-form"
+    sheet ~text:"Sync status" ~style_class:"navigation-form" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
