@@ -7593,6 +7593,47 @@ let page_and_block_overflow_keeps_one_native_icon () =
   project (Some page_a) [];
   ignore (check_overflow ())
 
+let native_toolbar_navigation_replay () =
+  let batches = ref [] in
+  let stages = ref [] in
+  let backend = { (ios_backend ()) with Lui_protocol.apply_batch =
+    (fun batch -> batches := Lui_wire.encode_batch batch :: !batches; true) } in
+  let application = App.create backend in
+  let pages = List.mapi (fun index title ->
+    { Model.uuid = "toolbar-page-" ^ string_of_int index; title })
+    [ "DB release checklist"; "Logseq public roadmap"; "CLI TODOs for next round";
+      "Logseq Pro"; "invalid-data";
+      "A very long page title that must never hide either trailing control" ] in
+  let record name =
+    stages := `Assoc ["name", `String name;
+      "patches", `List (List.map (fun json -> `String json) (List.rev !batches))] :: !stages;
+    batches := []
+  in
+  let project page routes =
+    send application (Model.ApplyCoreSnapshot
+      { (empty_core_projection ()) with selected_graph_id = Some "toolbar-replay";
+        graph_name = Some "Toolbar replay"; sync_connected = true;
+        sidebar = { (empty_sidebar_projection ()) with selected_page = Some page;
+          favorites = pages };
+        node_routes = routes });
+    flush application;
+    check ~msg:"the active toolbar keeps the semantic sync action"
+      (descendant_with_identifier (Lui_app.runtime application)
+        (Lui_app.root_node application) "sync.connected" <> -1)
+  in
+  start application;
+  List.iteri (fun index page -> project page []; record ("page-" ^ string_of_int index)) pages;
+  let page = List.hd pages in
+  send application (Model.RequestAppNode "child");
+  project page [node_projection "child" page.uuid "Child block with a long title" [] []];
+  record "block";
+  send application (Model.BackAppNavigation 1);
+  project page [];
+  record "back";
+  match Sys.getenv_opt "LOGSEQ_TOOLBAR_REPLAY_OUTPUT" with
+  | None -> ()
+  | Some path -> Yojson.Basic.to_file path (`List (List.rev !stages))
+
 let outliner_structure_controls_use_native_navigation_and_core_effects () =
   let collapsed =
     Model.update (Model.initial ())
@@ -9053,6 +9094,7 @@ let cases =
     case "page-delete-dialog-exposes-stable-material-actions" page_delete_dialog_exposes_stable_material_actions;
     case "connection-menu-matches-active-page-actions" connection_menu_matches_active_page_actions;
     case "page-and-block-overflow-keeps-one-native-icon" page_and_block_overflow_keeps_one_native_icon;
+    case "native-toolbar-navigation-replay" native_toolbar_navigation_replay;
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;

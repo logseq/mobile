@@ -540,7 +540,7 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground)
                         .toolbar {
-                            destinationTrailingToolbar
+                            trailingToolbar
                         }
                 }
                 .toolbar {
@@ -557,29 +557,19 @@ private struct LGNavigationContent: View {
                                     ))
                             }
                             .sharedBackgroundVisibility(.hidden)
-                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                rootToolbarTitle(index: toolbarStartIndex + 1)
+                            ToolbarItem(placement: .principal) {
+                                rootToolbarTitle
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
                                 context.content(for: leadingID)
                             }
-                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                rootToolbarTitle(index: toolbarStartIndex + 1)
+                            ToolbarItem(placement: .principal) {
+                                rootToolbarTitle
                             }
                         }
-                        #if os(iOS)
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            childContent(at: toolbarStartIndex + 2)
-                            childContent(at: toolbarStartIndex + 3)
-                        }
-                        #else
-                        ToolbarItemGroup(placement: .primaryAction) {
-                            childContent(at: toolbarStartIndex + 2)
-                            childContent(at: toolbarStartIndex + 3)
-                        }
-                        #endif
+                        trailingToolbar
                     }
                 }
                 #if os(iOS)
@@ -656,18 +646,13 @@ private struct LGNavigationContent: View {
         return themePalette.background
     }
 
-    @ViewBuilder
-    private func rootToolbarTitle(index: Int) -> some View {
-        if navigationTitle.isEmpty, let title = visibleScrollTitle {
-            Text(title)
-                .font(.headline)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityIdentifier("title.main")
-        } else {
-            childContent(at: index)
-                .fixedSize(horizontal: true, vertical: false)
-        }
+    private var rootToolbarTitle: some View {
+        Text(navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+            .font(.headline)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("title.main")
     }
 
     private var navigationTitle: String {
@@ -684,19 +669,21 @@ private struct LGNavigationContent: View {
     }
 
     @ToolbarContentBuilder
-    private var destinationTrailingToolbar: some ToolbarContent {
+    private var trailingToolbar: some ToolbarContent {
         if let toolbarStartIndex {
-            #if os(iOS)
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                childContent(at: toolbarStartIndex + 2)
-                childContent(at: toolbarStartIndex + 3)
+            ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
+                // Keep these controls in one item so the system cannot replace
+                // one of them with its own overflow menu as the title changes.
+                HStack(spacing: 0) {
+                    childContent(at: toolbarStartIndex + 2)
+                        .frame(width: 44, height: 44)
+                    childContent(at: toolbarStartIndex + 3)
+                        .frame(width: 44, height: 44)
+                }
+                .fixedSize()
+                .menuStyle(.button)
+                .buttonStyle(.plain)
             }
-            #else
-            ToolbarItemGroup(placement: .primaryAction) {
-                childContent(at: toolbarStartIndex + 2)
-                childContent(at: toolbarStartIndex + 3)
-            }
-            #endif
         }
     }
 
@@ -733,6 +720,14 @@ private struct LGNavigationContent: View {
             result.append(childIDs[index + routeStartIndex])
         }
         return result
+    }
+
+    private var trailingToolbarPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarTrailing
+        #else
+        .primaryAction
+        #endif
     }
 
     private var rootLeadingToolbarPlacement: ToolbarItemPlacement {
