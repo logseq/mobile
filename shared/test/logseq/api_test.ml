@@ -229,10 +229,26 @@ let initial_snapshot_upload () =
   check_eq "application/transit+json" upload.content_type;
   check_eq "/tmp/initial.snapshot" upload.file_path
 
+let shared_graph_membership_survives_the_rpc_boundary () =
+  List.iter
+    (fun (role, expected) ->
+       let body = Yojson.Basic.to_string (`Assoc [ "graphs", `List [
+         `Assoc ([ "graph-id", `String "shared"; "graph-name", `String "personal";
+                   "graph-e2ee?", `Bool true; "graph-ready-for-use?", `Bool true ]
+                 @ (match role with None -> [] | Some role -> [ "role", `String role ])) ] ]) in
+       let graph = List.hd (Api.graphs_from_graphs_body body) in
+       let wire = Rpc_encode.graph_json graph in
+       check_eq expected (Util.member "role" wire);
+       check_eq (`Bool true) (Util.member "isEncrypted" wire);
+       check_eq (`Bool true) (Util.member "isReady" wire))
+    [ Some "member", `String "member"; Some "manager", `String "manager";
+      None, `Null; Some "", `Null ]
+
 let cases =
   [
     case "url encoding and secure metadata defaults"
       url_encoding_and_secure_metadata_defaults;
+    case "shared graph membership survives the RPC boundary" shared_graph_membership_survives_the_rpc_boundary;
     case "read endpoints" read_endpoints;
     case "capture and task bodies" capture_and_task_bodies;
     case "status and transaction requests" status_and_transaction_requests;

@@ -148,7 +148,7 @@ let flashcard_json (due_card : Cards.due_card) =
 
 let graph_json (graph : Api.api_graph) =
   Wire.json_object
-    [
+    ([
       ("id", `String graph.id)
     ; ("name", `String graph.name)
     ; ( "schemaVersion"
@@ -158,6 +158,7 @@ let graph_json (graph : Api.api_graph) =
     ; ("isEncrypted", `Bool graph.e2ee)
     ; ("isReady", `Bool graph.ready)
     ]
+    @ (match graph.role with None -> [] | Some role -> [ "role", `String role ]))
 
 let search_hit_json (hit : Search_index.indexed_search_hit) =
   Wire.json_object

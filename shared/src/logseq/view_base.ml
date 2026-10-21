@@ -1023,13 +1023,25 @@ let sidebar_graph_icon_name (current : Model.logseq_model) (graph : Model.graph)
   if graph.is_encrypted then "app:graph-locked"
   else graph_icon_name (Model.graph_local_ current graph.id) graph
 
+let graph_shared_ (graph : Model.graph) =
+  match graph.role with
+  | Some role -> role <> "" && role <> "manager"
+  | None -> false
+
 let local_graphs (current : Model.logseq_model) =
-  List.filter (fun (graph : Model.graph) -> Model.graph_local_ current graph.id)
+  List.filter (fun (graph : Model.graph) ->
+    not (graph_shared_ graph) && Model.graph_local_ current graph.id)
     (model_graphs current)
 
 let remote_graphs (current : Model.logseq_model) =
-  List.filter (fun (graph : Model.graph) -> not (Model.graph_local_ current graph.id))
+  List.filter (fun (graph : Model.graph) ->
+    not (graph_shared_ graph) && not (Model.graph_local_ current graph.id))
     (model_graphs current)
+
+let shared_graphs (current : Model.logseq_model) =
+  List.filter graph_shared_ (model_graphs current)
+
+let shared_graphs_present_ current = shared_graphs current <> []
 
 let local_graphs_empty_ (current : Model.logseq_model) =
   local_graphs current = []

@@ -30,6 +30,7 @@ type api_graph =
   { id : string
   ; name : string
   ; schema_version : string option
+  ; role : string option
   ; e2ee : bool
   ; ready : bool
   }

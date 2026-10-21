@@ -411,6 +411,7 @@ let graph id name encrypted ready =
     name;
     is_encrypted = encrypted;
     is_ready = ready;
+    role = None;
   }
 
 let journal_outline_row uuid page_id title journal_title journal_day depth =
@@ -3838,6 +3839,40 @@ let graph_picker_surfaces_open_graph_effect_failures () =
   check_eq ~msg:"the graph picker shows the actionable failure message"
     (View_base.graph_picker_error_message failed)
     "Snapshot download timed out"
+
+let shared_graphs_have_a_distinct_section_and_keep_downloaded_membership () =
+  let projection =
+    match Response_snapshot.decode_response
+      {|{"apiVersion":1,"ok":true,"result":{"graphs":[{"id":"own","name":"Owned","role":"manager","isEncrypted":false,"isReady":true},{"id":"shared","name":"personal","role":"member","isEncrypted":true,"isReady":true},{"id":"shared-plain","name":"Team","role":"member","isEncrypted":false,"isReady":true},{"id":"legacy","name":"Legacy","isEncrypted":false,"isReady":true}]}}|}
+    with Ok projection -> projection | Error error -> failwith error
+  in
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.ApplyCoreSnapshot projection);
+  send application (Model.ApplyLocalGraphIds [ "shared" ]);
+  send application Model.OpenSidebar;
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let sidebar = descendant_with_identifier renderer (Lui_app.root_node application) "sidebar.navigation" in
+  dispatch application (Lui_protocol.Press (descendant_with_identifier renderer sidebar "link.sidebar.graphs"));
+  flush application;
+  let screen = child_with_identifier renderer (main_root renderer application) "screen.graphs" in
+  let heading = child_with_identifier renderer screen "heading.graphs.shared" in
+  check_eq ~msg:"shared graphs have a native section header"
+    (Some Lui_protocol.Heading) (node renderer heading);
+  check_eq "Shared by others" (property_string renderer heading Lui_protocol.TextValue);
+  let shared = child_with_identifier renderer screen "graph.shared" in
+  check_eq ~msg:"downloaded shared encrypted graphs keep their lock"
+    "app:graph-locked" (property_string renderer shared Lui_protocol.InlineIconName);
+  let current = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection) in
+  let downloaded = Model.update current (Model.ApplyLocalGraphIds [ "shared" ]) in
+  check_eq ~msg:"shared graphs are not duplicated in the local section"
+    [] (List.map (fun (graph : Model.graph) -> graph.id) (View_base.local_graphs downloaded));
+  check_eq ~msg:"owned and legacy graphs remain in the remote section"
+    [ "own"; "legacy" ]
+    (List.map (fun (graph : Model.graph) -> graph.id) (View_base.remote_graphs downloaded));
+  let requested = Model.update downloaded (Model.RequestOpenGraph "shared") in
+  check ~msg:"shared graphs can be opened through the graph lifecycle" requested.graph_loading
 
 let graphs_render_the_existing_catalog_and_modal_contract () =
   let application = App.create (ios_backend ()) in
@@ -9688,7 +9723,7 @@ let library_does_not_offer_an_empty_outline_editor () =
     (not (View_base.node_can_add_first_block_ (page "Library")))
 
 let graph_picker_prioritizes_downloaded_and_recent_graphs () =
-  let graph id = { Model.id; name = id; is_encrypted = false; is_ready = true } in
+  let graph id = { Model.id; name = id; is_encrypted = false; is_ready = true; role = None } in
   let initial = { (Model.initial ()) with Model.graphs = List.map graph ["remote"; "old"; "recent"];
     local_graph_ids = ["old"; "recent"] } in
   let open_graph current graph_id =
@@ -9819,6 +9854,7 @@ let cases =
     case "sidebar-flashcards-link-selects-the-flashcard-destination" sidebar_flashcards_link_selects_the_flashcard_destination;
     case "graph-catalog-and-lifecycle-state-are-owned-by-lg" graph_catalog_and_lifecycle_state_are_owned_by_lg;
     case "graph-picker-surfaces-open-graph-effect-failures" graph_picker_surfaces_open_graph_effect_failures;
+    case "shared-graphs-have-a-distinct-section" shared_graphs_have_a_distinct_section_and_keep_downloaded_membership;
     case "graphs-render-the-existing-catalog-and-modal-contract" graphs_render_the_existing_catalog_and_modal_contract;
     case "kotlin-graphs-use-a-compact-material-action-group" kotlin_graphs_use_a_compact_material_action_group;
     case "kotlin-add-graph-sheet-uses-one-material-form-layout" kotlin_add_graph_sheet_uses_one_material_form_layout;

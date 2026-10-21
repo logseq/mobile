@@ -83,7 +83,8 @@ let graph input =
     Some
       { Model.id; name;
         is_encrypted = bool_member "isEncrypted" fields;
-        is_ready = bool_member "isReady" fields }
+        is_ready = bool_member "isReady" fields;
+        role = string_member "role" fields }
   | _ -> None
 
 let task_status input =

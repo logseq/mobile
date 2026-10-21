@@ -31,6 +31,7 @@ type api_graph =
   { id : string
   ; name : string
   ; schema_version : string option
+  ; role : string option
   ; e2ee : bool
   ; ready : bool
   }
@@ -353,6 +354,7 @@ let graph_of_json input =
            | Some name -> name
            | None -> id);
         schema_version = nonempty_string_member "schema-version" input;
+        role = nonempty_string_member "role" input;
         e2ee = bool_member true "graph-e2ee?" input;
         ready = bool_member false "graph-ready-for-use?" input;
       }

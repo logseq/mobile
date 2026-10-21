@@ -51,6 +51,7 @@ type graph =
   ; name : string
   ; is_encrypted : bool
   ; is_ready : bool
+  ; role : string option
   }
 
 type task_status =

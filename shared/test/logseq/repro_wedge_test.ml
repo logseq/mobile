@@ -6,8 +6,8 @@ let ios_profile () =
 
 let graphs =
   [
-    { Model.id = "g1"; name = "alpha"; is_encrypted = false; is_ready = true };
-    { Model.id = "g2"; name = "beta"; is_encrypted = true; is_ready = true };
+    { Model.id = "g1"; name = "alpha"; is_encrypted = false; is_ready = true; role = None };
+    { Model.id = "g2"; name = "beta"; is_encrypted = true; is_ready = true; role = None };
   ]
 
 let sign_in_resolve () =

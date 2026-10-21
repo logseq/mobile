@@ -5956,6 +5956,7 @@ let graph_json_keeps_null_schema_and_readiness_flags () =
       id = "graph";
       name = "Graph";
       schema_version = None;
+      role = None;
       e2ee = false;
       ready = true;
     }

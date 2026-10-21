@@ -11,7 +11,7 @@ let ios_profile () =
   Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost
 
 let graph_entry id name encrypted =
-  { Model.id; name; is_encrypted = encrypted; is_ready = true }
+  { Model.id; name; is_encrypted = encrypted; is_ready = true; role = None }
 
 let catalog_projection graphs =
   { (App_test.empty_core_projection ()) with Model.graphs }

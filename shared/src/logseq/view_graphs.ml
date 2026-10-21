@@ -567,6 +567,15 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
+        if_
+          ~test:(Signal.map View_base.shared_graphs_present_ model_source)
+          (box ~padding:16
+             [ heading ~level:5 ~value:"Shared by others" [] ]);
+        keyed
+          ~source:(Signal.map View_base.shared_graphs model_source)
+          ~key:View_base.graph_identifier ~cmp:compare
+          ~mount:(fun graph_source ->
+            graph_list_row context model_source graph_source false send);
       ]
   else
     list ~accessibility_identifier:"screen.graphs" ~gap:4
@@ -607,6 +616,16 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
              ~value:"Remote graphs" []);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
+          ~key:View_base.graph_identifier ~cmp:compare
+          ~mount:(fun graph_source ->
+            graph_list_row context model_source graph_source false send);
+        if_
+          ~test:(Signal.map View_base.shared_graphs_present_ model_source)
+          (heading ~level:5
+             ~accessibility_identifier:"heading.graphs.shared"
+             ~value:"Shared by others" []);
+        keyed
+          ~source:(Signal.map View_base.shared_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
