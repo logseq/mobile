@@ -4832,40 +4832,48 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
   check_eq ~msg:"the authoritative value applies after local typing settles"
     settled.outliner_editing (Some stale)
 
-let tag_autocomplete_remains_mounted_while_typing () =
+let reference_autocomplete_remains_mounted_while_typing () =
+  List.iter (fun (kind, before, after, caret) ->
   let application = App.create (ios_backend ()) in
   start application;
-  let editing = { Model.editing_uuid = "editing"; editing_title = "#Pr"; caret_utf16_offset = 3 } in
+  let editing = { Model.editing_uuid = "editing"; editing_title = before; caret_utf16_offset = caret } in
   let candidate index label value = { Model.candidate_index = index; candidate_label = label; candidate_value = value } in
   let candidates = [candidate 0 "Project" "project"; candidate 1 "Progress" "progress"] in
   let projection = { (empty_core_projection ()) with
     selected_graph_id = Some "test-graph";
     projection_outliner_editing = Some editing;
-    projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.TagAutocomplete; autocomplete_query = "Pr" };
+    projection_outliner_autocomplete = Some { Model.autocomplete_kind = kind; autocomplete_query = "Pr" };
     projection_outliner_autocomplete_candidates = candidates;
-    outliner_rows = [outline_row "editing" "#Pr"] } in
+    outliner_rows = [outline_row "editing" before] } in
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
   let renderer = Lui_app.runtime application in
   let find id = descendant_with_identifier renderer (native_bottom_chrome renderer application) id in
   let panel = find "toolbar.outliner.autocomplete" in
-  check ~msg:"tag candidates initially render" (panel <> -1);
+  check ~msg:"reference candidates initially render" (panel <> -1);
   let project = find "button.outliner.autocomplete.0" in
-  send application (Model.ChangeOutlinerText ("editing", "#Pro", 4));
+  send application (Model.ChangeOutlinerText ("editing", after, caret + 1));
   flush application;
   check_eq ~msg:"typing retains the mounted panel while the core computes candidates"
     (find "toolbar.outliner.autocomplete") panel;
-  check_eq ~msg:"the last tag results remain visible during the request"
+  check_eq ~msg:"the last results remain visible during the request"
     (App.model application).outliner_autocomplete_candidates candidates;
   send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_autocomplete = None;
     projection_outliner_autocomplete_candidates = [] });
   flush application;
-  check_eq ~msg:"a delayed response cannot blank the tag panel"
+  check_eq ~msg:"a delayed response cannot blank the reference panel"
     (find "toolbar.outliner.autocomplete") panel;
+  check_eq ~msg:"stale responses do not close an active reference query"
+    (App.model application).outliner_autocomplete projection.projection_outliner_autocomplete;
+  send application (Model.MoveOutlinerCaret ("editing", caret + 1));
+  flush application;
+  check_eq ~msg:"caret input also retains candidates while its request is pending"
+    (App.model application).outliner_autocomplete_candidates candidates;
   send application (Model.ResolveEffect (1, true, ""));
   send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
-    projection_outliner_editing = Some { editing with editing_title = "#Pro"; caret_utf16_offset = 4 };
-    projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.TagAutocomplete; autocomplete_query = "Pro" };
+    projection_outliner_editing = Some { editing with editing_title = after; caret_utf16_offset = caret + 1 };
+    projection_outliner_autocomplete = Some { Model.autocomplete_kind = kind; autocomplete_query = "Pro" };
     projection_outliner_autocomplete_candidates = [candidate 0 "Progress" "progress"; candidate 1 "Project" "project"] });
   flush application;
   check_eq ~msg:"candidate identity follows its UUID across reordered results"
@@ -4873,10 +4881,21 @@ let tag_autocomplete_remains_mounted_while_typing () =
   check_eq ~msg:"candidate count changes cannot resize the bottom panel"
     (property_int renderer panel Lui_protocol.HeightValue) 220;
   send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_editing = Some { editing with editing_title = after; caret_utf16_offset = caret + 1 };
+    projection_outliner_autocomplete_candidates = [] });
+  flush application;
+  check_eq ~msg:"empty results keep the reference panel mounted"
+    (find "toolbar.outliner.autocomplete") panel;
+  send application (Model.DequeueEffect 2);
+  send application (Model.ResolveEffect (2, true, ""));
+  send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
     projection_outliner_editing = None; projection_outliner_autocomplete = None;
     projection_outliner_autocomplete_candidates = [] });
   flush application;
   check_eq ~msg:"finishing autocomplete removes the panel" (find "toolbar.outliner.autocomplete") (-1)
+
+    ) [Model.TagAutocomplete, "#Pr", "#Pro", 3;
+       Model.NodeAutocomplete, "[[Pr]]", "[[Pro]]", 4]
 
 let favorite_blocks_open_at_the_root () =
   List.iter (fun backend ->
@@ -4901,7 +4920,7 @@ let favorite_blocks_open_at_the_root () =
     check_eq ~msg:"opening a favorite closes the drawer" (App.model application).sidebar_open false)
     [ios_backend (); kotlin_backend ()]
 
-let outliner_typing_removes_stale_autocomplete_candidates () =
+let outliner_typing_retains_reference_candidates () =
   let editing =
     {
       Model.editing_uuid = "block-a";
@@ -4934,8 +4953,8 @@ let outliner_typing_removes_stale_autocomplete_candidates () =
     Model.update current
       (Model.ChangeOutlinerText ("block-a", "Draft [[Project", 15))
   in
-  check_eq ~msg:"typing hides candidates produced for the previous query"
-    updated.outliner_autocomplete_candidates [];
+  check_eq ~msg:"typing keeps the reference list visible until refreshed candidates arrive"
+    updated.outliner_autocomplete_candidates [candidate];
   check_eq
     ~msg:
       "the authoritative core query still runs after stale candidates \
@@ -9173,8 +9192,8 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     (property_int renderer candidate_button Lui_protocol.HeightValue)
     44;
   check_eq ~msg:"autocomplete rows fill the available width"
-    (property_float renderer candidate_button Lui_protocol.GrowValue)
-    1.0;
+    (property_string renderer autocomplete_column Lui_protocol.CrossAlignment)
+    "stretch";
   check_eq ~msg:"autocomplete labels keep main's horizontal inset"
     (property_int renderer candidate_button Lui_protocol.PaddingHorizontal)
     10;
@@ -9335,9 +9354,15 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     (property_string renderer autocomplete_column
        Lui_protocol.CrossAlignment)
     "stretch";
+  check_eq ~msg:"short result lists align candidates with the bottom toolbar"
+    (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "end";
+  check_eq ~msg:"candidate buttons fill their bounded horizontal row"
+    (property_float renderer candidate_button Lui_protocol.GrowValue) 1.0;
   check_eq
     ~msg:"Kotlin does not flex rows along an unbounded scroll axis"
-    (property_float renderer candidate_button Lui_protocol.GrowValue)
+    (property_float renderer
+       (descendant_with_node_kind renderer autocomplete_column Lui_protocol.Row)
+       Lui_protocol.GrowValue)
     0.0
 
 let outliner_rows_preserve_depth_zoom_and_collapse_controls () =
@@ -10180,8 +10205,8 @@ let cases =
     case "ios-capture-and-search-match-main-native-metrics" ios_capture_and_search_match_main_native_metrics;
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
-    case "outliner-typing-removes-stale-autocomplete-candidates" outliner_typing_removes_stale_autocomplete_candidates;
-    case "tag-autocomplete-remains-mounted-while-typing" tag_autocomplete_remains_mounted_while_typing;
+    case "outliner-typing-retains-reference-candidates" outliner_typing_retains_reference_candidates;
+    case "reference-autocomplete-remains-mounted-while-typing" reference_autocomplete_remains_mounted_while_typing;
     case "favorite-blocks-open-at-the-root" favorite_blocks_open_at_the_root;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;

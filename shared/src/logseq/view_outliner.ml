@@ -682,6 +682,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     candidate_source send : t =
   let candidate = Signal.sample candidate_source in
+  row ~grow:0.0 ~cross:`stretch [
   View_base.with_label_signal
     (Signal.map View_base.outliner_autocomplete_label candidate_source)
     (View_base.with_string_prop_signal AccessibilityIdentifier
@@ -690,7 +691,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
        ~text_signal:
          (Signal.map View_base.outliner_autocomplete_label candidate_source)
        ~variant:`ghost
-       ~grow:(if Lui_ui.host context = KotlinHost then 0.0 else 1.0)
+       ~grow:1.0
        ~height:44 ~padding_horizontal:10
        ~background:"autocomplete-row-background" ~foreground:"foreground"
        ~corner_radius:8 ~text_alignment:`start
@@ -701,7 +702,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
            (send
               (Model.ChooseOutlinerAutocomplete
                  (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
-       []))
+       []))]
 
 let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
     send : t =
@@ -709,10 +710,9 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
     ~accessibility_identifier:"toolbar.outliner.autocomplete"
     ~style_class:"outliner-autocomplete"
     [
-      column ~gap:2 ~padding:8
-        ~cross:
-          (if Lui_ui.host context = KotlinHost then `stretch else `center)
-        ~grow:(if Lui_ui.host context = KotlinHost then 0.0 else 1.0)
+      column ~gap:2 ~padding:8 ~min_height:204 ~main:`end_
+        ~cross:`stretch
+        ~grow:0.0
         [
           keyed
             ~source:

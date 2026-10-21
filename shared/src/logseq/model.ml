@@ -1274,19 +1274,27 @@ let indexed_outliner_autocomplete_candidates candidates =
       { candidate with candidate_index = index })
     candidates
 
+let reference_autocomplete_candidates (current : logseq_model) =
+  match current.outliner_autocomplete with
+  | Some { autocomplete_kind = (TagAutocomplete | NodeAutocomplete); _ } ->
+    current.outliner_autocomplete_candidates
+  | _ -> []
+
+let stale_autocomplete_snapshot (current : logseq_model) projection =
+  match current.outliner_editing with
+  | Some editing when change_outliner_text_active_ current editing.editing_uuid ->
+    current.outliner_editing <> projection.projection_outliner_editing
+  | _ -> false
+
 let snapshot_autocomplete_candidates (current : logseq_model) projection =
-  let stale =
-    match current.outliner_editing with
-    | Some editing when change_outliner_text_active_ current editing.editing_uuid ->
-      current.outliner_editing <> projection.projection_outliner_editing
-    | _ -> false
-  in
-  if stale then
-    (match current.outliner_autocomplete with
-     | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
-     | _ -> [])
+  if stale_autocomplete_snapshot current projection then
+    reference_autocomplete_candidates current
   else indexed_outliner_autocomplete_candidates
     projection.projection_outliner_autocomplete_candidates
+
+let snapshot_autocomplete (current : logseq_model) projection =
+  if stale_autocomplete_snapshot current projection then current.outliner_autocomplete
+  else projection.projection_outliner_autocomplete
 
 let valid_authentication_state_ state =
   state = "restoring" || state = "signedOut" || state = "signingIn"
@@ -1898,9 +1906,7 @@ let rec update (current : logseq_model) action =
         (update_editing current uuid title caret) with
         sync_state = editing_sync_state current;
         outliner_autocomplete_candidates =
-          (match current.outliner_autocomplete with
-           | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
-           | _ -> []);
+          reference_autocomplete_candidates current;
       }
     in
     let id = updated.next_effect_id in
@@ -1930,9 +1936,7 @@ let rec update (current : logseq_model) action =
       (sub_list (List.length pending) (List.length updated.pending_effects) updated.pending_effects) in
     enqueue_effect { updated with pending_effects = pending;
       outliner_autocomplete_candidates =
-        (match current.outliner_autocomplete with
-         | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
-         | _ -> []) }
+        reference_autocomplete_candidates current }
       (if has_pending_text then ChangeOutlinerTextEffect (id, uuid, title, caret)
        else MoveOutlinerCaretEffect (id, uuid, caret))
   | ToggleOutlinerCollapsed uuid ->
@@ -2823,7 +2827,7 @@ and apply_core_snapshot (current : logseq_model)
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
-      outliner_autocomplete = projection.projection_outliner_autocomplete;
+      outliner_autocomplete = snapshot_autocomplete current projection;
       outliner_autocomplete_candidates =
         snapshot_autocomplete_candidates current projection;
       outliner_selected_block_ids =
@@ -2977,7 +2981,7 @@ and apply_core_snapshot (current : logseq_model)
           else retain_shell_contents current.navigation_root_rows projection.journal_outliner_rows);
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
-        outliner_autocomplete = projection.projection_outliner_autocomplete;
+        outliner_autocomplete = snapshot_autocomplete current projection;
         outliner_autocomplete_candidates =
           snapshot_autocomplete_candidates current projection;
         outliner_selected_block_ids =
