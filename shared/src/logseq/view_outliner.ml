@@ -167,13 +167,17 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
-            icon ~name_signal:(Signal.map (fun (row : Model.outline_row) ->
+            View_base.node_icon_view ~size:18 (Signal.map2 (fun current (row : Model.outline_row) ->
+              View_base.node_icon current row.row_uuid) model_source row_source);
+            if_ ~test:(Signal.map2 (fun current (row : Model.outline_row) ->
+              View_base.node_icon current row.row_uuid = "") model_source row_source)
+            (icon ~name_signal:(Signal.map (fun (row : Model.outline_row) ->
                 `app (if row.is_collapsed && row.has_children then "outliner-bullet-closed" else "outliner-bullet")) row_source)
               ~width:24 ~height:24 ~foreground:"border"
               ~accessibility_identifier:
                 ("outliner.bullet-glyph."
                  ^ View_base.outliner_row_uuid current_row)
-              [];
+              []);
           ];
         View_base.with_label_signal
           (Signal.map View_base.outliner_row_zoom_label row_source)
@@ -407,6 +411,8 @@ let native_outliner_row model_source retained_source row_source send : t =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "nodeIcon", (let icon = View_base.node_icon current row.row_uuid in
+        if icon = "" then `Null else Yojson.Basic.from_string icon);
       "markup", (try Yojson.Basic.from_string row.markup_json with _ -> `List []);
       "depth", `Int row.depth; "hasChildren", `Bool row.has_children;
       "collapsed", `Bool row.is_collapsed; "isAsset", `Bool row.is_asset;
@@ -593,6 +599,9 @@ let outliner_entry context model_source retained_row_source row_source
                         then 26 else 0)
                       model_source row_source)
                    (box []);
+                 row ~gap:8 ~cross:`center [
+                 View_base.node_icon_view ~size:28 (Signal.map2 (fun current row ->
+                   View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source);
                  heading ~level:3 ~style_class:"scroll-section-title"
                    ~value_signal:
                      (Signal.map2
@@ -600,7 +609,7 @@ let outliner_entry context model_source retained_row_source row_source
                              (r : Model.outline_row) ->
                           View_base.outliner_journal_title current r)
                         model_source row_source)
-                   [];
+                   []];
                  box ~height:12 [];
                ];
            ]);
@@ -966,8 +975,11 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
                [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
-                   [ heading ~level:3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
-                       ~accessibility_identifier:"title.node" [] ];
+                   [ row ~gap:8 ~cross:`center [
+                       View_base.node_icon_view ~size:28 (Signal.map (fun current ->
+                         View_base.node_icon current (View_base.active_node_uuid current)) model_source);
+                       heading ~level:3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
+                         ~accessibility_identifier:"title.node" [] ] ];
                  box ~height:12 [] ]);
           page_loading_view model_source;
           outliner_entries context model_source

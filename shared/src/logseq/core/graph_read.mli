@@ -149,3 +149,5 @@ val blocks :
   int ->
   Datascript.db ->
   Cache_model.block list
+
+val node_icon : Datascript.db -> string -> Yojson.Basic.t option

@@ -219,6 +219,7 @@ type core_projection =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; node_icons : string Lui_protocol.String_map.t
   ; pending_sync_error : string option
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
@@ -319,6 +320,7 @@ type logseq_model =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; node_icons : string Lui_protocol.String_map.t
   ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
@@ -643,6 +645,7 @@ let initial () =
     applied_server_t = None;
     has_pending_semantic_operations = false;
     has_pending_sync_request = false;
+    node_icons = Lui_protocol.String_map.empty;
     pending_sync_error = None;
     sync_details_open = false;
     destination = JournalsDestination;
@@ -1891,6 +1894,11 @@ let rec update (current : logseq_model) action =
     else current
   | ApplyCoreSnapshot projection ->
     let applied = apply_core_snapshot current projection in
+    let applied =
+      if applied == current then current
+      else { applied with node_icons = Lui_protocol.String_map.union (fun _ _ newer -> Some newer)
+        (if applied.selected_graph_id = current.selected_graph_id then current.node_icons else Lui_protocol.String_map.empty)
+        projection.node_icons } in
     (* Uploads need the existing subscription to receive acknowledgements. *)
     let updated =
       if not projection.is_pending_sync_patch && not projection.is_pending_sync_projection

@@ -7,26 +7,23 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
   let page = sample page_source in
   let navigate _ =
     ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in
-  if Lui_ui.host context = KotlinHost then
-    View_base.with_label_signal
-      (Signal.map View_base.sidebar_page_title page_source)
+  let icon_source = Signal.map2 (fun current (page : Model.sidebar_page) ->
+    View_base.node_icon current page.uuid) model_source page_source in
+  let item custom =
+    View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
       (list_item
-      ~text:(reactive View_base.sidebar_page_title page_source)
-      ~icon:(`app "document")
-      ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
-      ~accessibility_identifier:(View_base.sidebar_page_identifier page)
-      ~on_press:navigate
-      [])
-  else
-    View_base.with_label_signal
-      (Signal.map View_base.sidebar_page_title page_source)
-      (list_item
-      ~text:(reactive View_base.sidebar_page_title page_source)
-      ~role:`navigation ~icon:(`app "document")
-      ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
-      ~accessibility_identifier:(View_base.sidebar_page_identifier page)
-      ~on_press:navigate
-      [])
+        ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
+        ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
+        ?icon:(if custom then None else Some (`app "document"))
+        ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
+        ~accessibility_identifier:(View_base.sidebar_page_identifier page)
+        ~on_press:navigate
+        (if custom then [row ~gap:10 ~cross:`center [
+          View_base.node_icon_view ~size:20 icon_source;
+          text ~value:(reactive View_base.sidebar_page_title page_source) []]] else [])) in
+  column ~gap:0 [
+    if_ ~test:(Signal.map (fun icon -> icon <> "") icon_source) (item true);
+    if_ ~test:(Signal.map (fun icon -> icon = "") icon_source) (item false)]
 
 let sidebar_graph_menu_item model_source graph_source send : t =
  fun context parent ->

@@ -388,10 +388,26 @@ let outliner_command_json (command : Effects.outliner_platform_command) =
   in
   Wire.json_object [ ("type", `String kind); (key, value) ]
 
-let outliner_patch_result ?sync_error revision context state command_revision commands
+let with_node_icons resolve result =
+  let ids = Hashtbl.create 64 in
+  let add = function `String uuid when uuid <> "" -> Hashtbl.replace ids uuid () | _ -> () in
+  let rec collect = function
+    | `Assoc fields when List.assoc_opt "isShell" fields <> Some (`Bool true) ->
+      List.iter (fun (key, value) ->
+        if key = "uuid" || key = "nodeUuid" || key = "pageId" then add value;
+        collect value) fields
+    | `List values -> List.iter collect values
+    | _ -> () in
+  collect result;
+  match result with
+  | `Assoc fields -> `Assoc (("nodeIcons", `Assoc (Hashtbl.fold (fun uuid () icons ->
+      (uuid, Option.value ~default:`Null (resolve uuid)) :: icons) ids [])) :: fields)
+  | _ -> result
+
+let outliner_patch_result ?(node_icon = fun _ -> None) ?sync_error revision context state command_revision commands
     pending blocks deleted splices =
   Wire.success
-    (Wire.json_object
+    (with_node_icons node_icon (Wire.json_object
        [
          ("revision", `Int revision)
        ; ("blocks", Wire.json_list (List.map visible_block_json blocks))
@@ -408,4 +424,4 @@ let outliner_patch_result ?sync_error revision context state command_revision co
        ; ("hasPendingSemanticOperations", `Bool pending)
        ; ("pendingSyncError", match sync_error with Some message -> `String message | None -> `Null)
        ; ("isOutlinerPatch", `Bool true)
-       ])
+       ]))

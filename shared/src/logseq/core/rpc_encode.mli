@@ -39,7 +39,9 @@ val autocomplete_kind_json : Outliner_state.reducer_autocomplete_kind -> string
 val outliner_state_json : Outliner_state.outliner_state -> Yojson.Basic.t
 val outliner_command_json :
   Outliner_effects.outliner_platform_command -> Yojson.Basic.t
+val with_node_icons : (string -> Yojson.Basic.t option) -> Yojson.Basic.t -> Yojson.Basic.t
 val outliner_patch_result :
+  ?node_icon:(string -> Yojson.Basic.t option) ->
   ?sync_error:string ->
   int ->
   Outliner_state.outliner_context ->

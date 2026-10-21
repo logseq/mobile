@@ -1,3 +1,5 @@
+val node_icon : Model.logseq_model -> string -> string
+val node_icon_view : size:int -> string Signal.signal -> Lui_elements.t
 val string_wire_value : string -> Lui_protocol.wire_value
 val int_wire_value : int -> Lui_protocol.wire_value
 val bool_wire_value : bool -> Lui_protocol.wire_value

@@ -1,5 +1,17 @@
 open Lui_protocol
 
+let node_icon (current : Model.logseq_model) uuid =
+  Option.value ~default:"" (String_map.find_opt uuid current.node_icons)
+
+let node_icon_view ~size source : Lui_elements.t =
+  Lui_elements.if_ ~test:(Signal.map (fun value -> value <> "") source)
+    (fun context parent ->
+      let node = Lui_ui.extension context "node-icon" in
+      Lui_elements.attach context parent node;
+      Lui_ui.extension_property_signal context node "payload" (Signal.map (fun value -> StringValue value) source);
+      Lui_ui.extension_property context node "size" (IntValue size);
+      node)
+
 let string_wire_value value = StringValue value
 let int_wire_value value = IntValue value
 let bool_wire_value value = BoolValue value

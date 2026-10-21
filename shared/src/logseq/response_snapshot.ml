@@ -495,6 +495,8 @@ let core_projection fields =
       (match List.assoc_opt "pendingSyncRequest" fields with
        | None | Some `Null -> false
        | Some _ -> true);
+    node_icons = (object_member "nodeIcons" fields |> List.fold_left (fun icons (uuid, value) ->
+      Lui_protocol.String_map.add uuid (if value = `Null then "" else Yojson.Basic.to_string value) icons) Lui_protocol.String_map.empty);
     pending_sync_error = string_member "pendingSyncError" fields;
     is_pending_sync_patch = bool_member "isPendingSyncPatch" fields;
     is_pending_sync_projection = bool_member "isPendingSyncProjection" fields;

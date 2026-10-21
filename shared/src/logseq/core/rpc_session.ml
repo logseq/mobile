@@ -84,6 +84,11 @@ let parse_transport_completion = Pump.parse_transport_completion
 let complete_pending_sync = Pump.complete_pending_sync
 let cancel_pending_sync = Pump.cancel_pending_sync
 
+let node_icon session uuid =
+  Option.bind (host session).Types.graph_node_icon (fun resolve -> resolve uuid)
+
+let success session result = Rpc.success (Rpc.with_node_icons (node_icon session) result)
+
 let take count values =
   let rec loop count result = function
     | _ when count <= 0 -> List.rev result
@@ -220,7 +225,7 @@ let snapshot session context_blocks blocks =
   let linked_serialize = window_serializer session Rpc.block_json linked in
   let config = s.config in
   let response =
-    Rpc.success
+    success session
       (Rpc.json_object
          [
            ("revision", `Int s.model.revision)
@@ -323,6 +328,7 @@ let snapshot session context_blocks blocks =
 let outliner_patch_result session context blocks deleted splices =
   let s = state session in
   Rpc.outliner_patch_result s.model.revision context s.outliner_state
+    ~node_icon:(node_icon session)
     ?sync_error:(Pump.pending_sync_error session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)
@@ -400,7 +406,7 @@ let sidebar_snapshot session =
 
 let graph_catalog_snapshot session =
   let s = state session in
-  Rpc.success
+  success session
     (Rpc.json_object
        [
          ( "graphName"
@@ -424,7 +430,7 @@ let graph_catalog_snapshot session =
        ])
 
 let pending_sync_patch session =
-  Rpc.success
+  success session
     (Rpc.json_object
        [
          ("revision", `Int (state session).model.revision)
@@ -822,7 +828,7 @@ let hydrate_outliner_rows session payload =
       if Hashtbl.length found < Hashtbl.length wanted then collect (base_outliner_context session).Outliner.blocks;
       List.iter (fun route ->
         if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_context session route).Outliner.blocks) (state session).node_routes;
-      Rpc.success (Rpc.json_object ["isOutlinerContentPatch", `Bool true;
+      success session (Rpc.json_object ["isOutlinerContentPatch", `Bool true;
         "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
         "hydratedBlocks", Rpc.json_list (List.filter_map (fun id ->
           Option.map Rpc.visible_block_json (Hashtbl.find_opt found id)) ids)])
@@ -853,7 +859,7 @@ let cached_image_gallery session uuid =
       if block.Model.uuid = uuid then index := position;
       `String path) images in
     if !index < 0 then Rpc.failure "asset_unavailable" "The image is not cached"
-    else Rpc.success (Rpc.json_object ["paths", Rpc.json_list paths; "selectedIndex", `Int !index])
+    else success session (Rpc.json_object ["paths", Rpc.json_list paths; "selectedIndex", `Int !index])
   | _ -> Rpc.failure "asset_unavailable" "The image is not in the active page"
 
 let graph_asset session fields downloaded =
@@ -887,7 +893,7 @@ let graph_asset session fields downloaded =
     | _ -> Error "graph_changed"
   in
   match result with
-  | Ok value -> Rpc.success value
+  | Ok value -> success session value
   | Error "graph_changed" -> Rpc.failure "graph_changed" "The active graph changed during asset download"
   | Error message -> Rpc.failure "asset_download_failed" message
 
@@ -917,7 +923,7 @@ let ensure_journal session payload =
       | None, _, _ -> Error "Select a graph before creating a journal"
     in
     match result with
-    | Ok uuid -> Rpc.success (Rpc.json_object ["uuid", `String uuid])
+    | Ok uuid -> success session (Rpc.json_object ["uuid", `String uuid])
     | Error message -> Rpc.failure "journal_creation_failed" message
 
 let select_page session payload =
@@ -1441,7 +1447,7 @@ let rec dispatch session action payload =
     object_action (fun _ fields ->
       let result = if action = "snapshotDownloadPlan" then Snapshot_download.plan fields
         else Snapshot_download.resolve fields in
-      match result with Ok value -> Rpc.success value | Error message -> Rpc.failure "invalid_snapshot_download" message)
+      match result with Ok value -> success session value | Error message -> Rpc.failure "invalid_snapshot_download" message)
   | "executeEffect" ->
     (match Core_effect.request ~now:now_ms ~fresh_id:fresh_squuid payload with
      | Ok (action, payload) -> dispatch session action payload
@@ -1529,7 +1535,7 @@ let rec dispatch session action payload =
        So.load_page_references session uuid;
        let blocks = So.references_for_node session uuid in
        let serialize = window_serializer session Rpc.visible_block_json blocks in
-       Rpc.success (Rpc.json_object [
+       success session (Rpc.json_object [
          "isReferencePatch", `Bool true; "referenceUuid", `String uuid;
          "selectedGraphId", (match (state session).config with
            | Some config -> `String config.Api.graph_id | None -> `Null);
@@ -1665,7 +1671,7 @@ let rec dispatch session action payload =
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);
         search_result_count = offset + List.length found };
     if h.Types.outliner_projection_limit = None then snapshot_visible session
-    else Rpc.success (Rpc.json_object ["isSearchPatch", `Bool true;
+    else success session (Rpc.json_object ["isSearchPatch", `Bool true;
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
       "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
       "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])

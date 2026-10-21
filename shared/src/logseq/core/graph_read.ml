@@ -74,6 +74,33 @@ let entity_is_instance_of db eid class_ident =
       (ref_eids db eid "block/tags")
   | None -> false
 
+let node_icon db uuid =
+  let descriptor = function
+    | Ds.String id | Ds.Keyword id when String.trim id <> "" ->
+      Some (`Assoc ["type", `String "tabler-icon"; "id", `String id])
+    | Ds.Map fields ->
+      let lookup key = List.assoc_opt (Ds.Keyword key) fields in
+      let text = function Some (Ds.String value | Ds.Keyword value) -> Some value | _ -> None in
+      (match text (lookup "type"), text (lookup "id") with
+       | Some ("emoji" | "tabler-icon" as kind), Some id when String.trim id <> "" ->
+         Some (`Assoc (["type", `String kind; "id", `String id]
+           @ (match text (lookup "color") with Some color -> ["color", `String color] | None -> [])
+           @ (match lookup "skin" with Some (Ds.Int64 skin) when skin >= 1L && skin <= 6L -> ["skin", `Int (Int64.to_int skin)] | _ -> [])))
+       | _ -> None)
+    | _ -> None in
+  let own eid = Option.bind (value db eid "logseq.property/icon") descriptor in
+  let default id = Some (`Assoc ["type", `String "tabler-icon"; "id", `String id]) in
+  Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (fun eid ->
+    match own eid with
+    | Some _ as icon -> icon
+    | None ->
+      if entity_is_instance_of db eid "logseq.class/Tag" then default "hash"
+      else if entity_is_instance_of db eid "logseq.class/Property" then default "letter-p"
+      else if string_value (value db eid "logseq.property.asset/type") = Some "pdf" then default "book"
+      else match List.find_map own (List.sort compare (ref_eids db eid "block/tags")) with
+        | Some _ as icon -> icon
+        | None -> if value db eid "block/name" <> None then default "file" else None)
+
 let tag_display_type db tag_eid =
   List.find_map (fun (ident, display) ->
     match Ds.entid db "db/ident" (Ds.Keyword ident) with

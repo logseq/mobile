@@ -74,6 +74,10 @@ struct OutlinerTextRow: UIViewRepresentable {
             view.invalidateIntrinsicContentSize()
             view.setNeedsLayout()
         }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitDisplayScale.self]) { (view: OutlinerTextRowView, _: UITraitCollection) in
+            guard let icon = view.row?.nodeIcon else { return }
+            view.bullet.setImage(NodeIconExtension.image(icon, size: 18, traits: view.traitCollection), for: .normal)
+        }
         updateFonts()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -119,7 +123,8 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.accessibilityIdentifier = "button.outliner.zoom." + row.uuid + "." + row.title
         bullet.accessibilityLabel = "Open block"
         let bulletAsset = row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet"
-        bullet.setImage(UIImage(named: bulletAsset, in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
+        bullet.setImage(row.nodeIcon.flatMap { NodeIconExtension.image($0, size: 18, traits: traitCollection) }
+            ?? UIImage(named: bulletAsset, in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.isUserInteractionEnabled = !row.journalBullet
         bullet.accessibilityTraits = row.journalBullet ? .image : .button
         priority.isHidden = row.priority == nil

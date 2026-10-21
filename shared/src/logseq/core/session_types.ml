@@ -89,6 +89,7 @@ type host_options =
   ; graph_node_is_tag : (string -> bool) option
   ; graph_node_is_property : (string -> bool) option
   ; graph_page_blocks : (string -> Model.block list option) option
+  ; graph_node_icon : (string -> Yojson.Basic.t option) option
   ; graph_node_destination :
       (string -> (Model.entity_summary * bool) option) option
   ; graph_node_references : (string -> Model.block list option) option
@@ -189,6 +190,7 @@ let default_options =
     graph_node_is_tag = None;
     graph_node_is_property = None;
     graph_page_blocks = None;
+    graph_node_icon = None;
     graph_node_destination = None;
     graph_node_references = None;
     graph_tag_objects = None;

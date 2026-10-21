@@ -81,3 +81,5 @@ val apply_sync_event : mobile_graph -> string -> (unit, string) result
 
 val search_page : mobile_graph -> offset:int -> limit:int -> string ->
   Search_index.indexed_search_hit list * bool
+
+val node_icon : mobile_graph -> string -> Yojson.Basic.t option

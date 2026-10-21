@@ -15,6 +15,7 @@ enum LGExtensionRegistry {
         try LGLiquidGlassTweak.register(in: registry)
         try LGNavigationExtension.register(in: registry)
         try LGSearchPresentationExtension.register(in: registry)
+        try NodeIconExtension.register(in: registry)
         try LGOutlinerEditorExtension.register(in: registry)
         try LGRichBlockExtension.register(
             in: registry,

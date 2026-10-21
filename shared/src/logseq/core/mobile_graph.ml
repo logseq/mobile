@@ -83,6 +83,9 @@ let blocks_for_page (host : mobile_graph) uuid =
   | Some opened -> Some (Runtime.blocks_for_page opened.read_runtime uuid)
   | None -> None
 
+let node_icon (host : mobile_graph) uuid =
+  Option.bind !(host.current) (fun opened -> Graph_read.node_icon (Runtime.db opened.read_runtime) uuid)
+
 let node_destination (host : mobile_graph) uuid =
   match !(host.current) with
   | Some opened -> Runtime.node_destination opened.read_runtime uuid

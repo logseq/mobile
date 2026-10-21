@@ -82,6 +82,7 @@ type host_options =
   ; graph_node_is_tag : (string -> bool) option
   ; graph_node_is_property : (string -> bool) option
   ; graph_page_blocks : (string -> Cache_model.block list option) option
+  ; graph_node_icon : (string -> Yojson.Basic.t option) option
   ; graph_node_destination :
       (string -> (Cache_model.entity_summary * bool) option) option
   ; graph_node_references : (string -> Cache_model.block list option) option

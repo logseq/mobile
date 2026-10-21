@@ -89,6 +89,8 @@ private const val SEARCH_FINGERPRINT =
 fun logseqExtensionRegistry(
     resolveAssetPath: (String) -> String = { it },
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
+    registerNodeIcon()
+
     register(
         "outliner-editor",
         EDITOR_FINGERPRINT,

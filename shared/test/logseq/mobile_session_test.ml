@@ -505,8 +505,54 @@ let sync_errors_follow_their_operations_through_other_acceptances_and_lost_repli
     check ~msg:"a late HTTP failure cannot recreate an already confirmed operation's error" (not (has "Late failed HTTP reply" late_failure));
     ignore (Rpc_test.pending_completion session third (`Int 200) (`String body) `Null))
 
+let existing_graph_icons_reach_favorites_headers_and_hydrated_nodes () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module Ds = Datascript in
+    let module U = Yojson.Basic.Util in
+    cache "graph-a";
+    let path = List.assoc "activePath" (fields "graph-a") |> U.to_string in
+    let db = match Graph_store.restore_db path with Ok db -> db | Error message -> fail message in
+    let icon kind id color = Ds.Map [Ds.Keyword "type", Ds.Keyword kind;
+      Ds.Keyword "id", Ds.String id; Ds.Keyword "color", Ds.String color] in
+    let db = Ds.db_with [
+      Ds.Add (Ds.Entity_id 2, "logseq.property/icon", icon "tabler-icon" "Rocket" "#fb434c");
+      Ds.Add (Ds.Entity_id 4, "block/uuid", Ds.Uuid "icon-block");
+      Ds.Add (Ds.Entity_id 4, "block/title", Ds.String "Colored node");
+      Ds.Add (Ds.Entity_id 4, "block/page", Ds.Ref 2);
+      Ds.Add (Ds.Entity_id 4, "block/parent", Ds.Ref 2);
+      Ds.Add (Ds.Entity_id 4, "block/order", Ds.String "a0");
+      Ds.Add (Ds.Entity_id 4, "logseq.property/icon", icon "emoji" "wave" "#00b55b");
+      Ds.Add (Ds.Entity_id 4, "block/tags", Ds.Ref 5);
+      Ds.Add (Ds.Entity_id 5, "block/uuid", Ds.Uuid "icon-tag");
+      Ds.Add (Ds.Entity_id 5, "block/title", Ds.String "Colored tag");
+      Ds.Add (Ds.Entity_id 5, "logseq.property/icon", icon "tabler-icon" "HeartFilled" "#5e69d2")
+    ] db in
+    ignore (Ds.store db);
+    let ready = call "bootstrapGraph" (fields "graph-a") in
+    let expect result uuid id color =
+      let icons = result |> U.member "nodeIcons" in
+      check ~msg:"graph metadata includes existing node icons" (icons <> `Null);
+      let descriptor = U.member uuid icons in
+      check_eq ~msg:(uuid ^ " keeps its existing icon") (U.member "id" descriptor) (`String id);
+      check_eq ~msg:(uuid ^ " keeps its existing color") (U.member "color" descriptor) (`String color) in
+    expect ready "graph-a-page" "Rocket" "#fb434c";
+    let opened = call "openNode" ["uuid", `String "graph-a-page"] in
+    expect opened "graph-a-page" "Rocket" "#fb434c";
+    expect opened "icon-block" "wave" "#00b55b";
+    (* A fresh immutable read verifies the same precedence used on reopening. *)
+    let db = Ds.db_with [Ds.Retract (Ds.Entity_id 4, "logseq.property/icon", Some (icon "emoji" "wave" "#00b55b"))] db in
+    check_eq ~msg:"the fixture removes only the explicit node icon"
+      (Graph_read.value db 4 "logseq.property/icon") None;
+    ignore (Ds.store db);
+    ignore (Mobile_session.call host (open_request (Filename.concat (Filename.dirname path) "catalog.sqlite")));
+    ignore (call "configure" ["graphId", `String "graph-a"; "baseUrl", `String "https://example.com"; "token", `String ""]);
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    let inherited = call "openNode" ["uuid", `String "graph-a-page"] in
+    expect inherited "icon-block" "HeartFilled" "#5e69d2")
+
 let cases =
-  [ case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;
+  [ case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;
+    case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;
     case "server rejections survive restart and stay graph scoped" server_rejections_survive_restart_and_remain_scoped_to_the_graph;
     case "collapsed nodes survive navigation restart and graph switches" collapsed_nodes_survive_navigation_restart_and_graph_switches;
     case "first cached graph bootstrap loads favorites" first_cached_graph_bootstrap_loads_favorites;

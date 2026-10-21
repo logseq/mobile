@@ -99,6 +99,12 @@ let outliner_block_content_schema () =
         [ Lui_extension.event_field "uuid" StringScalar true ];
     ]
 
+let node_icon_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  Lui_extension.component "node-icon" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] false []
+    [property "payload" StringScalar true None; property "size" IntScalar true None] []
+
 let outliner_block_row_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -188,6 +194,7 @@ let adaptive_content_insets_schema () =
 
 let extension_registry () =
   let registry = Lui_extension.registry () in
+  Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry (outliner_block_row_schema ());
   Lui_extension.register_component registry

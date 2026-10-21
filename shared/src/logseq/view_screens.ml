@@ -277,11 +277,14 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                  box ~padding_horizontal:16
                    ~accessibility_identifier:"layout.selected-page.title"
                    [
+                     row ~gap:8 ~cross:`center [
+                     View_base.node_icon_view ~size:28 (Signal.map (fun (current : Model.logseq_model) ->
+                       match current.selected_page with Some page -> View_base.node_icon current page.uuid | None -> "") model_source);
                      heading ~level:3 ~style_class:"scroll-section-title"
                        ~value_signal:
                          (Signal.map View_base.selected_page_title
                             model_source)
-                       ~accessibility_identifier:"title.selected-page" [];
+                       ~accessibility_identifier:"title.selected-page" []];
                    ];
                  box ~height:12 [];
                ]);

@@ -72,6 +72,7 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun uuid -> Graph.node_is_property graph uuid);
     graph_page_blocks =
       Some (fun uuid -> Graph.blocks_for_page graph uuid);
+    graph_node_icon = Some (Graph.node_icon graph);
     graph_node_destination =
       Some (fun uuid -> Graph.node_destination graph uuid);
     graph_node_references =

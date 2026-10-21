@@ -339,6 +339,7 @@ let empty_core_projection () =
     applied_server_t = None;
     has_pending_semantic_operations = false;
     has_pending_sync_request = false;
+    node_icons = Lui_protocol.String_map.empty;
     pending_sync_error = None;
     is_pending_sync_patch = false;
     is_pending_sync_projection = false;
@@ -2477,6 +2478,35 @@ let kotlin_journal_calendar_uses_the_shared_native_presentation_effect () =
     (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)
        (App.model application).pending_effects)
 
+let existing_icons_render_and_clear_across_graphs () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let apply fields =
+      let response = Yojson.Basic.to_string (`Assoc ["ok", `Bool true; "result", `Assoc fields]) in
+      let projection = match Response_snapshot.decode_response response with Ok value -> value | Error message -> fail message in
+      send application (Model.ApplyCoreSnapshot projection); flush application in
+    let descriptor = `Assoc ["type", `String "tabler-icon"; "id", `String "Rocket"; "color", `String "#fb434c"] in
+    apply ["selectedGraphId", `String "icons"; "graphName", `String "Icons";
+      "favorites", `List [`Assoc ["uuid", `String "page"; "title", `String "Project"]];
+      "selectedPage", `Assoc ["uuid", `String "page"; "title", `String "Project"];
+      "nodeIcons", `Assoc ["page", descriptor; "block", descriptor];
+      "outlinerRows", `List [`Assoc ["depth", `Int 0; "block", `Assoc ["uuid", `String "block"; "title", `String "Node"; "pageId", `String "page"]]]];
+    let runtime = Lui_app.runtime application in
+    let icon_count () = Hashtbl.fold (fun _ name count -> if name = "node-icon" then count + 1 else count)
+      runtime.Lui_runtime.runtime_extension_nodes 0 in
+    check ~msg:"favorites and the page header render existing colored icons" (icon_count () >= 2);
+    apply ["selectedGraphId", `String "icons"; "isOutlinerContentPatch", `Bool true;
+      "nodeIcons", `Assoc ["page", `Null; "block", `Null]];
+    check_eq ~msg:"removing graph icons clears mounted headers and sidebar rows" (icon_count ()) 0;
+    let block = descendant_with_identifier runtime (Lui_app.root_node application) "outliner.block.block" in
+    if extension_node application "outliner-block-row" <> -1 then
+      check_eq ~msg:"removing a graph icon clears the retained native row payload"
+        (Yojson.Basic.Util.member "nodeIcon" (native_row_payload application block)) `Null;
+    apply ["selectedGraphId", `String "other"; "graphName", `String "Other";
+      "selectedPage", `Assoc ["uuid", `String "page"; "title", `String "Project"]];
+    check_eq ~msg:"a second graph cannot inherit cached node icons" (icon_count ()) 0)
+    [ios_backend; kotlin_backend]
+
 let sync_details_show_websocket_server_rejections () =
   let module R = Rpc_test in
   let session, _, _, _ = R.sync_driver_session () in
@@ -2940,7 +2970,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     descendant_with_identifier renderer sidebar_view "section.sidebar.recent"
   in
   let favorite_link =
-    child_with_identifier renderer favorites "link.sidebar.page.page-a"
+    descendant_with_identifier renderer favorites "link.sidebar.page.page-a"
   in
   check_eq ~msg:"sidebar keeps the main branch content inset"
     (property_int renderer sidebar_content Lui_protocol.PaddingValue)
@@ -7255,8 +7285,8 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check ~msg:"the second journal heading is visible" (second_heading <> -1);
   check_eq
     ~msg:"journal headings announce their title"
-    (property_string renderer heading_content Lui_protocol.TextValue)
-    "August 27th";
+    (descendant_count_with_property_string renderer heading_content Lui_protocol.TextValue "August 27th")
+    1;
   check ~msg:"the first day's row stays inside the virtualized collection"
     (descendant_with_identifier renderer outliner "outliner.block.day-a"
     <> -1);
@@ -7312,11 +7342,12 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"later journal titles retain balanced spacing below the divider"
     (property_int renderer (List.hd (children renderer second_surface)) Lui_protocol.HeightValue)
     26;
+  let heading_text = descendant_with_node_kind renderer heading_content Lui_protocol.Heading in
   check_eq ~msg:"journal titles retain semantic heading typography"
-    (if heading_content = -1 then None else node renderer heading_content)
+    (if heading_text = -1 then None else node renderer heading_text)
     (Some Lui_protocol.Heading);
   check_eq ~msg:"journal titles map main's title2 scale"
-    (property_int renderer heading_content Lui_protocol.HeadingLevel)
+    (property_int renderer heading_text Lui_protocol.HeadingLevel)
     3;
   check ~msg:"the loaded journal graph keeps main's readiness contract"
     (descendant_with_identifier renderer root "journals.graph-loaded"
@@ -10251,6 +10282,7 @@ let cases =
     case "persisted-graph-loading-hides-the-launch-picker" persisted_graph_loading_hides_the_launch_picker;
     case "kotlin-loading-and-errors-use-material-feedback-surfaces" kotlin_loading_and_errors_use_material_feedback_surfaces;
     case "graph-and-sync-actions-update-retained-status-in-place" graph_and_sync_actions_update_retained_status_in_place;
+    case "existing-icons-render-and-clear-across-graphs" existing_icons_render_and_clear_across_graphs;
     case "sync-details-show-websocket-server-rejections" sync_details_show_websocket_server_rejections;
     case "sync-details-show-every-server-rejection" sync_details_show_every_server_rejection;
     case "sync-details-render-projected-cursor-and-trigger-the-existing-pump" sync_details_render_projected_cursor_and_trigger_the_existing_pump;
