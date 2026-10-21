@@ -48,7 +48,7 @@ import UIKit
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
                 context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             }
-            let expectedAlpha = 0.65
+            let expectedAlpha = 0.2
             guard abs(Int(rgba[3]) - Int((expectedAlpha * 255).rounded())) <= 2 else {
                 throw failure("Both launch appearances must use the same subdued logo opacity: \(rgba)")
             }
@@ -77,6 +77,11 @@ import UIKit
             }
             let suffix = style == .dark ? "dark" : "light"
             try snapshot.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("launch-logo-\(suffix).png"))
+            let readinessDelay: Duration = style == .light ? .milliseconds(10) : .milliseconds(350)
+            try await Task.sleep(for: readinessDelay)
+            guard cover.backgroundColor?.cgColor.alpha == 1, logo.alpha == 1 else {
+                throw failure("The launch cover must wait for actual readiness rather than a fixed launch timer")
+            }
             transition.finish(reduceMotion: false)
             guard cover.backgroundColor?.cgColor.alpha == 0, logo.alpha == 0 else {
                 throw failure("Readiness must begin fading both the background and logo immediately")
@@ -93,7 +98,20 @@ import UIKit
                 throw failure("Content must emerge before the stationary logo finishes fading")
             }
             guard logo.transform == .identity else { throw failure("The launch logo must stay in place during the transition") }
-            try await Task.sleep(for: .milliseconds(280))
+            try await Task.sleep(for: .milliseconds(60))
+            let backgroundAlpha = cover.layer.presentation()?.backgroundColor?.alpha ?? cover.backgroundColor!.cgColor.alpha
+            guard backgroundAlpha < 0.005, let visibleLogo = logo.layer.presentation(), visibleLogo.opacity > 0 else {
+                throw failure("Ready content must be fully visible while the faint logo continues its independent fade")
+            }
+            try await Task.sleep(for: .milliseconds(160))
+            guard cover.superview != nil, let tail = logo.layer.presentation(), tail.opacity > 0.04 else {
+                throw failure("The logo must retain a gentle fade tail after content has appeared")
+            }
+            let visibleContent = UIGraphicsImageRenderer(bounds: window.bounds).image { context in
+                (window.layer.presentation() ?? window.layer).render(in: context.cgContext)
+            }
+            try visibleContent.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("launch-content-visible-\(suffix).png"))
+            try await Task.sleep(for: .milliseconds(220))
             guard cover.superview == nil else { throw failure("The cover must be removed when the short fade finishes") }
             transition.show(in: window)
             guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
