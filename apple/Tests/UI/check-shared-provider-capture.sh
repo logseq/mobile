@@ -11,7 +11,7 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -target arm64-apple-ios17.0-simulator \
   App/ShareExtension/ShareViewController.swift \
   App/ShareExtension/SharedProviderPolicy.swift \
-  Sources/Logseq/SharedCapture.swift Tests/UI/shared-provider-capture.swift \
+  Sources/Logseq/LGImageCompression.swift Sources/Logseq/SharedCapture.swift Tests/UI/shared-provider-capture.swift \
   -o "$app_dir/SharedProviderCaptureCheck"
 cat > "$app_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

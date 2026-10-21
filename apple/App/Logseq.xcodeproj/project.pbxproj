@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A40000000000000000000001 /* LGImageCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000002 /* LGImageCompression.swift */; };
         A30000000000000000000001 = {isa = PBXBuildFile; fileRef = A30000000000000000000003; };
         A30000000000000000000002 = {isa = PBXBuildFile; fileRef = A30000000000000000000003; };
 		A10000000000000000000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* ShareViewController.swift */; };
@@ -63,6 +64,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A40000000000000000000002 /* LGImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LGImageCompression.swift; path = ../Sources/Logseq/LGImageCompression.swift; sourceTree = SOURCE_ROOT; };
         A30000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/QuickActions.swift; sourceTree = SOURCE_ROOT; };
 		A10000000000000000000005 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@
 		A1000000000000000000000A /* ShareExtension */ = {
 			isa = PBXGroup;
 			children = (
+				A40000000000000000000002 /* LGImageCompression.swift */,
 				A10000000000000000000005 /* ShareViewController.swift */,
 				A10000000000000000000013 /* SharedProviderPolicy.swift */,
 				A10000000000000000000006 /* Info.plist */,
@@ -309,6 +312,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000000000000000000001 /* LGImageCompression.swift in Sources */,
 				A10000000000000000000001 /* ShareViewController.swift in Sources */,
 				A10000000000000000000012 /* SharedProviderPolicy.swift in Sources */,
 			);

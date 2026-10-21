@@ -24,6 +24,7 @@ def main():
         app.mkdir()
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", "-parse-as-library", "-target", "arm64-apple-ios17.0-simulator", "-sdk", sdk,
              str(ROOT / "apple/Sources/Logseq/SharedCapture.swift"),
+             str(ROOT / "apple/Sources/Logseq/LGImageCompression.swift"),
              str(ROOT / "apple/App/ShareExtension/SharedProviderPolicy.swift"),
              str(ROOT / "apple/App/ShareExtension/ShareViewController.swift"),
              str(ROOT / "apple/Tests/UI/shared-provider-capture.swift"), "-o", str(app / "ShareProviderCheck")])

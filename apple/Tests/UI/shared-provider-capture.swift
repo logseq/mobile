@@ -1,5 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
+import ImageIO
+import CryptoKit
 
 @main struct SharedProviderCaptureCheck {
     static func main() {
@@ -108,6 +110,53 @@ import UniformTypeIdentifiers
         }
         try FileManager.default.removeItem(at: SharedCaptureStorage.sharedDirectory
             .appendingPathComponent(screenshotAsset.stagedFileName))
+        let rotated = UIImage(cgImage: image.cgImage!, scale: 1, orientation: .right)
+        guard case .asset(let rotatedItem) = await load(NSItemProvider(object: rotated)),
+              let rotatedAsset = rotatedItem.captureAsset else { throw CheckError.failed("rotated UIImage did not load") }
+        let rotatedURL = SharedCaptureStorage.sharedDirectory.appendingPathComponent(rotatedAsset.stagedFileName)
+        defer { try? FileManager.default.removeItem(at: rotatedURL) }
+        let rotatedData = try Data(contentsOf: rotatedURL)
+        let source = CGImageSourceCreateWithData(rotatedData as CFData, nil)!
+        let orientation = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])?[kCGImagePropertyOrientation] as? Int
+        // UIImage's provider serializes orientation in its representation.
+        guard orientation == 6 else { throw CheckError.failed("UIImage orientation was lost: \(String(describing: orientation))") }
+        let largeImage = UIGraphicsImageRenderer(size: CGSize(width: 4032, height: 3024), format: {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1; return format
+        }()).image { context in
+            for x in stride(from: 0, to: 4032, by: 3) {
+                UIColor(hue: CGFloat(x % 101) / 101, saturation: 0.8, brightness: 0.8, alpha: 1).setFill()
+                context.fill(CGRect(x: x, y: 0, width: 3, height: 3024))
+            }
+        }
+        let largePhoto = largeImage.jpegData(compressionQuality: 1)!
+        for fileRepresentation in [false, true] {
+            let provider = NSItemProvider()
+            provider.suggestedName = "Large.jpg"
+            if fileRepresentation {
+                let url = root.appendingPathComponent("Large.jpg")
+                try largePhoto.write(to: url)
+                provider.registerFileRepresentation(forTypeIdentifier: UTType.jpeg.identifier,
+                    fileOptions: [], visibility: .all) { finish in finish(url, false, nil); return nil }
+            } else {
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.jpeg.identifier, visibility: .all) {
+                    finish in finish(largePhoto, nil); return nil
+                }
+            }
+            guard case .asset(let item) = await load(provider), let asset = item.captureAsset else {
+                throw CheckError.failed("large photo provider failed")
+            }
+            let staged = SharedCaptureStorage.sharedDirectory.appendingPathComponent(asset.stagedFileName)
+            let compressed = try Data(contentsOf: staged)
+            guard compressed.count < largePhoto.count * 9 / 10, asset.size == compressed.count,
+                  asset.checksum == SHA256.hash(data: compressed).map({ String(format: "%02x", $0) }).joined() else {
+                throw CheckError.failed("large photo size/checksum did not reflect compression")
+            }
+            let imported = try SharedCaptureAssetImporter.importAsset(
+                SharedCaptureAsset(title: asset.title, assetType: asset.assetType, size: asset.size,
+                    checksum: asset.checksum, stagedFileName: asset.stagedFileName),
+                sharedDirectory: SharedCaptureStorage.sharedDirectory, documentsDirectory: root)
+            guard imported.size == compressed.count else { throw CheckError.failed("compressed shared photo failed import") }
+        }
         let fileURL = root.appendingPathComponent("File URL.md")
         let markdown = Data("# File URL Markdown".utf8)
         try markdown.write(to: fileURL)

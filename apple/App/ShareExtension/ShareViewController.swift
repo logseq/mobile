@@ -250,24 +250,7 @@ private final class CaptureAccumulator: @unchecked Sendable {
     }
 
     nonisolated private static func stage(_ source: URL, type: UTType) throws -> SharedAsset {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: SharedCaptureConstants.appGroup
-        ) else { throw CocoaError(.fileNoSuchFile) }
-        let directory = container.appendingPathComponent("SharedCapture", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let title = source.lastPathComponent.isEmpty ? "Attachment" : source.lastPathComponent
-        let stagedName = "\(UUID().uuidString.lowercased())-\(title.replacingOccurrences(of: "/", with: "-"))"
-        let destination = directory.appendingPathComponent(stagedName, isDirectory: false)
-        try FileManager.default.copyItem(at: source, to: destination)
-        let data = try Data(contentsOf: destination)
-        let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return SharedAsset(
-            title: title,
-            assetType: type.preferredMIMEType ?? type.preferredFilenameExtension ?? type.identifier,
-            size: data.count,
-            checksum: checksum,
-            stagedFileName: stagedName
-        )
+        try stage(Data(contentsOf: source), suggestedName: source.lastPathComponent, type: type)
     }
 
     nonisolated private static func stage(
@@ -285,6 +268,10 @@ private final class CaptureAccumulator: @unchecked Sendable {
            let pathExtension = type.preferredFilenameExtension {
             title += ".\(pathExtension)"
         }
+        let prepared = LGImageCompression.prepare(data, title: title,
+            contentType: type.preferredMIMEType ?? type.identifier)
+        title = prepared.title
+        let data = prepared.data
         let safeTitle = title.replacingOccurrences(of: "/", with: "-")
         let stagedName = "\(UUID().uuidString.lowercased())-\(safeTitle)"
         let destination = directory.appendingPathComponent(stagedName, isDirectory: false)
@@ -292,7 +279,7 @@ private final class CaptureAccumulator: @unchecked Sendable {
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         return SharedAsset(
             title: title,
-            assetType: type.preferredMIMEType ?? type.preferredFilenameExtension ?? type.identifier,
+            assetType: prepared.contentType,
             size: data.count,
             checksum: checksum,
             stagedFileName: stagedName

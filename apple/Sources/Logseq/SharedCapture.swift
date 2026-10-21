@@ -256,15 +256,17 @@ public enum SharedCaptureAssetStager {
     ) throws -> SharedCaptureAsset {
         let manager = FileManager.default
         try manager.createDirectory(at: sharedDirectory, withIntermediateDirectories: true)
-        let title = sourceURL.lastPathComponent
+        let prepared = LGImageCompression.prepare(try Data(contentsOf: sourceURL),
+            title: sourceURL.lastPathComponent, contentType: contentType)
+        let title = prepared.title
         let safeTitle = title.replacingOccurrences(of: "/", with: "-")
         let safeName = "\(UUID().uuidString.lowercased())-\(safeTitle)"
         let destination = sharedDirectory.appendingPathComponent(safeName, isDirectory: false)
-        try manager.copyItem(at: sourceURL, to: destination)
-        let data = try Data(contentsOf: destination)
+        let data = prepared.data
+        try data.write(to: destination, options: .atomic)
         return SharedCaptureAsset(
             title: title,
-            assetType: contentType,
+            assetType: prepared.contentType,
             size: data.count,
             checksum: sha256(data),
             stagedFileName: safeName
