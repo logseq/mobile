@@ -186,8 +186,37 @@ let persisted_search_ranks_pages_resolves_references_and_refreshes_changes () =
     Search.refresh index (Ds.conn_db conn);
     check_eq None (find_result index "jazz" block_uuid))
 
+let sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred () =
+  with_index (fun index ->
+    let db = Ds.conn_db (seeded_conn ()) in
+    Search.refresh index db;
+    Search.search_upsert index.path (List.init 145 (fun i ->
+      let id = Printf.sprintf "paged-%03d" i in id, "Paged needle", id));
+    let first, more = Search.search_hits_page ~offset:0 ~limit:20 index db "Paged needle" in
+    check_eq (List.length first) 20;
+    check more;
+    let rec all offset acc =
+      let page, more = Search.search_hits_page ~offset ~limit:20 index db "Paged needle" in
+      check (List.length page <= 20);
+      let acc = List.rev_append page acc in
+      if more then all (offset + List.length page) acc else List.rev acc in
+    let hits = all 0 [] in
+    check_eq (List.length hits) 145;
+    let ids = List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) hits in
+    check_eq (List.length (List.sort_uniq String.compare ids)) 145;
+    check_eq (List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) first)
+      (List.filteri (fun i _ -> i < 20) ids);
+    List.iter (fun query ->
+      let page, _ = Search.search_hits_page ~offset:0 ~limit:20 index db query in
+      check ~msg:("paged search preserves matching for " ^ query) (page <> []))
+      ["movies"; "ovie"; "4k"; "电影"; "[[Movies]]"; "movies AND marathon"];
+    check_eq ([], false) (Search.search_hits_page ~offset:0 ~limit:20 index db "  ");
+    check_eq ([], false) (Search.search_hits_page ~offset:0 ~limit:0 index db "movies");
+    check_eq ([], false) (Search.search_hits_page ~offset:200 ~limit:20 index db "Paged needle"))
+
 let cases =
   [
+    case "sqlite pages are stable bounded and not capped at one hundred" sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred;
     case "match input preserves logseq boolean and phrase rules"
       match_input_preserves_logseq_boolean_and_phrase_rules;
     case "fuzzy scores and utf8 segmentation preserve search semantics"

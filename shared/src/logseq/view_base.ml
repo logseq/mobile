@@ -380,13 +380,16 @@ let search_result_identifier (hit : Model.search_hit) =
 let search_result_title (hit : Model.search_hit) = hit.hit_title
 let search_result_breadcrumb (hit : Model.search_hit) = hit.breadcrumb
 
+let loaded_search_results (current : Model.logseq_model) =
+  List.concat_map Fun.id (List.rev current.search_result_pages)
+
 let page_search_results (current : Model.logseq_model) =
   List.filter (fun (hit : Model.search_hit) -> hit.is_page)
-    current.search_results
+    (loaded_search_results current)
 
 let block_search_results (current : Model.logseq_model) =
   List.filter (fun (hit : Model.search_hit) -> not hit.is_page)
-    current.search_results
+    (loaded_search_results current)
 
 let page_search_results_present_ (current : Model.logseq_model) =
   page_search_results current <> []
@@ -395,17 +398,18 @@ let block_search_results_present_ (current : Model.logseq_model) =
   block_search_results current <> []
 
 let search_empty_state_present_ (current : Model.logseq_model) =
-  (not current.search_loading) && current.search_results = []
+  (not current.search_loading) && current.search_result_count = 0
 
 let search_results_present_ (current : Model.logseq_model) =
-  current.search_results <> []
+  current.search_result_count > 0
 
 let search_result_status (current : Model.logseq_model) =
   if current.search_loading then "Searching…"
   else if String_kit.is_blank current.search_query then ""
   else begin
-    let total = List.length current.search_results in
-    string_of_int total ^ (if total = 1 then " result" else " results")
+    let total = current.search_result_count in
+    string_of_int total ^ (if current.search_has_more then "+" else "")
+    ^ (if total = 1 then " result" else " results")
   end
 
 let search_result_context_present_ (hit : Model.search_hit) =

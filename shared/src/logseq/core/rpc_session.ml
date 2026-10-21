@@ -243,8 +243,9 @@ let snapshot session context_blocks blocks =
          ; ( "selectedPageIsProperty"
            , `Bool (selected_page_is_property session) )
          ; ("searchQuery", `String s.search_query)
+         ; ("searchHasMore", `Bool s.search_has_more)
          ; ( "searchResults"
-           , Rpc.json_list (List.map Rpc.search_hit_json s.search_results)
+           , Rpc.json_list (List.concat_map (List.map Rpc.search_hit_json) (List.rev s.search_result_pages))
            )
          ; ( "flashcards"
            , Rpc.json_list (List.map Rpc.flashcard_json s.flashcards) )
@@ -1618,21 +1619,37 @@ let rec dispatch session action payload =
   | "stopWebSocket" ->
     session.Types.state := { !(session.state) with sync_connected = false };
     snapshot_visible session
-  | "searchNodes" ->
-    let query = match payload with Some q -> q | None -> "" in
-    let found =
-      if String_kit.is_blank query then []
-      else
-        match h.Types.graph_search with
-        | Some search -> search query
-        | None -> []
-    in
-    session.Types.state :=
-      { !(session.state) with search_query = query; search_results = found };
+  | "searchNodes" | "searchNodesPage" ->
+    let query, offset = if action = "searchNodes" then Option.value ~default:"" payload, 0
+      else match payload with
+        | None -> "", -1
+        | Some payload -> (try
+          let json = Yojson.Basic.from_string payload in
+          let query = Yojson.Basic.Util.member "query" json |> Yojson.Basic.Util.to_string in
+          let offset = Yojson.Basic.Util.member "offset" json |> Yojson.Basic.Util.to_int in
+          query, offset with _ -> "", -1) in
+    let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
+    let found, has_more =
+      if not valid || String_kit.is_blank query then [], false
+      else match h.Types.graph_search_page with
+      | Some search -> search ~offset ~limit:20 query
+      | None ->
+        let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+        let rec slice skip remaining acc = function
+          | [] -> List.rev acc, false
+          | _ when remaining = 0 && skip = 0 -> List.rev acc, true
+          | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
+          | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
+        slice offset 20 [] all in
+    if valid then session.Types.state :=
+      { !(session.state) with search_query = query; search_has_more = has_more;
+        search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);
+        search_result_count = offset + List.length found };
     if h.Types.outliner_projection_limit = None then snapshot_visible session
     else Rpc.success (Rpc.json_object ["isSearchPatch", `Bool true;
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
-      "searchQuery", `String query; "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
+      "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
+      "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
   | "addAsset" ->

@@ -38,6 +38,8 @@ let request ~now ~fresh_id payload =
     | "load-page-references" -> raw "loadPageReferences"
     | "hydrate-outliner-rows" -> raw "hydrateOutlinerRows"
     | "search-nodes" -> raw "searchNodes"
+    | "load-search-page" -> let* query = text () in let* offset = integer fields "value" in
+      json "searchNodesPage" ["query", `String query; "offset", `Int offset]
     | "open-node" | "open-search-result" -> let* uuid = text () in
       json "openNode" ["uuid", `String uuid; "reveal", `Bool (kind = "open-search-result")]
     | "close-node" -> empty "closeNode"

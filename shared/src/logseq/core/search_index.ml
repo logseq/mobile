@@ -423,14 +423,8 @@ let search has_tags limit index query =
     in
     take (max 0 limit) [] results
 
-let search_hits limit index db query =
+let hydrate_hits db results =
   let entity_eid uuid = Ds.entid db "block/uuid" (Ds.Uuid uuid) in
-  let has_tags uuid =
-    match entity_eid uuid with
-    | Some eid ->
-      Seq.length (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:"block/tags" ()) > 0
-    | None -> false
-  in
   let plain uuid = Ok uuid in
   List.map
     (fun (result : search_result) ->
@@ -455,4 +449,49 @@ let search_hits limit index db query =
         page;
         breadcrumbs;
       })
-    (search has_tags limit index query)
+    results
+
+let search_hits limit index db query =
+  let has_tags uuid = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+    | Some eid -> not (Seq.is_empty (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:"block/tags" ()))
+    | None -> false in
+  hydrate_hits db (search has_tags limit index query)
+
+(* Ranking and slicing stay in SQLite. Only the requested page crosses into
+   OCaml and loads graph context; the lookahead row only detects continuation. *)
+let search_hits_page ~offset ~limit index db query =
+  let query = String.trim query in
+  if query = "" || limit <= 0 then ([], false)
+  else
+    let limit = min 100 limit in
+    let offset = max 0 offset in
+    let normalized = clean_str query in
+    let normalized = if String_kit.starts_with ~prefix:"#" normalized then
+      String.sub normalized 1 (String.length normalized - 1) else normalized in
+    let run with_fts = Sql.with_search_db index.path (fun connection ->
+      Sqlite3.create_fun1 connection "logseq_search_score" (function
+        | Sqlite3.Data.TEXT title -> Sqlite3.Data.FLOAT (fuzzy_score query title)
+        | _ -> Sqlite3.Data.FLOAT 0.0);
+      let exact = "SELECT id, page, title FROM blocks WHERE title = ? COLLATE NOCASE" in
+      let matched = "SELECT id, page, title FROM blocks_fts WHERE title MATCH ?" in
+      let short = "SELECT id, page, title FROM blocks_fts WHERE title LIKE ?" in
+      let fuzzy = "SELECT id, page, title FROM (SELECT id, page, title FROM blocks WHERE id = page AND lower(title) LIKE ? ESCAPE '\\' LIMIT 400) UNION SELECT id, page, title FROM (SELECT id, page, title FROM blocks WHERE id <> page AND lower(title) LIKE ? ESCAPE '\\' LIMIT 400)" in
+      let parts = [exact, [query]]
+        @ (if with_fts then [matched, [get_match_input query]] else [])
+        @ (if utf8_length query <= 2 then [short, ["%" ^ query ^ "%"]] else [])
+        @ (if normalized = "" then [] else [fuzzy, [fuzzy_like_pattern normalized; fuzzy_like_pattern normalized]]) in
+      let sql = "WITH candidates AS (" ^ String.concat " UNION " (List.map fst parts)
+        ^ ") SELECT id, page, title FROM candidates ORDER BY (id = page) DESC, logseq_search_score(title) DESC, id LIMIT ? OFFSET ?" in
+      let binds = List.concat_map (fun (_, binds) -> List.map (fun s -> Sqlite3.Data.TEXT s) binds) parts
+        @ [Sqlite3.Data.INT (Int64.of_int (limit + 1)); Sqlite3.Data.INT (Int64.of_int offset)] in
+      Sql.query connection sql binds (fun row ->
+        { uuid = Sqlite3.column_text row 0; page_uuid = Sqlite3.column_text row 1;
+          title = Sqlite3.column_text row 2; is_page = Sqlite3.column_text row 0 = Sqlite3.column_text row 1;
+          score = 0.0 })) in
+    let results = try run true with Failure _ -> run false in
+    let rec take n acc = function
+      | [] -> List.rev acc, false
+      | _ when n = 0 -> List.rev acc, true
+      | hit :: rest -> take (n - 1) (hit :: acc) rest in
+    let page, more = take limit [] results in
+    hydrate_hits db page, more

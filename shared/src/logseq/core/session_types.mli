@@ -88,6 +88,7 @@ type host_options =
   ; graph_normalize_titles :
       (string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Search_index.indexed_search_hit list) option
+  ; graph_search_page : (offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
   ; graph_due_flashcards : (int -> Flashcards.due_card list) option
   ; graph_review_flashcard :
       (string -> Flashcards.flashcard_rating -> int -> string -> (unit, string) result)
@@ -132,7 +133,9 @@ type session_state =
   ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Flashcards.due_card list
-  ; search_results : Search_index.indexed_search_hit list
+  ; search_has_more : bool
+  ; search_result_pages : Search_index.indexed_search_hit list list
+  ; search_result_count : int
   ; search_query : string
   ; sync_transport : Sync_driver.t
   ; sync_connected : bool

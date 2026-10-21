@@ -47,3 +47,7 @@ val search_hits :
 val query_rows :
   search_index -> string -> string list -> (string * string * string) list
 val fuzzy_like_pattern : string -> string
+
+val search_hits_page :
+  offset:int -> limit:int -> search_index -> Datascript.db -> string ->
+  indexed_search_hit list * bool

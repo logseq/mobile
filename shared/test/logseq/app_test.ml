@@ -343,6 +343,8 @@ let empty_core_projection () =
     is_pending_sync_projection = false;
     is_graph_catalog_patch = false;
     projection_search_query = "";
+    search_offset = 0;
+    search_has_more = false;
     search_results = [];
     node_routes = [];
     journal_outliner_rows = [];
@@ -6992,9 +6994,9 @@ let search_query_publishes_a_core_effect_and_rejects_stale_results () =
   check ~msg:"the query visibly remains in progress"
     queried.search_loading;
   check_eq ~msg:"a response for an older query is ignored"
-    stale.search_results [];
+    stale.search_result_pages [];
   check_eq ~msg:"the current query accepts its projected hits"
-    current.search_results [ hit ];
+    current.search_result_pages [[ hit ]];
   check ~msg:"the current result ends the loading state"
     (not current.search_loading)
 
@@ -7137,6 +7139,58 @@ let search_renders_main_empty_states_and_result_sections () =
   check ~msg:"block results remain addressable"
     (descendant_with_identifier renderer panel "search.result.block-a"
     <> -1)
+
+let search_virtualizes_loaded_results_and_paginates_on_scroll () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    send application (Model.SelectGraph "Work");
+    send application Model.OpenSearch;
+    send application (Model.ChangeSearchQuery "needle");
+    let hit i = { Model.hit_uuid = Printf.sprintf "hit-%03d" i;
+      hit_title = "Needle"; breadcrumb = ""; breadcrumbs = []; is_page = false } in
+    send application (Model.ApplySearchResults ("needle", List.init 500 hit));
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root () = main_root renderer application in
+    let results () = descendant_with_identifier renderer (root ()) "screen.search.results" in
+    check_eq ~msg:"search uses the native virtual list surface"
+      (node renderer (results ())) (Some Lui_protocol.VirtualList);
+    check ~msg:"offscreen result rows do not own protocol nodes"
+      (descendant_with_identifier renderer (root ()) "search.result.hit-400" = -1);
+    let window () = descendant_with_identifier renderer (results ()) "search.window" in
+    dispatch application (Lui_protocol.VisibleRange (window (), 400, 415));
+    flush application;
+    check ~msg:"scrolling materializes the requested result window"
+      (descendant_with_identifier renderer (root ()) "search.result.hit-400" <> -1);
+    check_eq ~msg:"rows outside the new window are released"
+      (descendant_with_identifier renderer (root ()) "search.result.hit-000") (-1);
+    let patch offset has_more rows =
+      match Response_snapshot.decode_response (Yojson.Basic.to_string (`Assoc ["ok", `Bool true;
+        "result", `Assoc ["isSearchPatch", `Bool true; "searchQuery", `String "needle";
+          "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
+          "searchResults", `List (List.map (fun i -> `Assoc ["uuid", `String (hit i).hit_uuid;
+            "title", `String "Needle"; "isPage", `Bool false]) rows)]])) with
+      | Ok projection -> Model.ApplyCoreSnapshot projection | Error e -> failwith e in
+    send application (patch 0 true (List.init 20 Fun.id));
+    flush application;
+    let before = List.length (App.model application).pending_effects in
+    dispatch application (Lui_protocol.VisibleRange (window (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (window (), 14, 19));
+    flush application;
+    check_eq ~msg:"repeated visible-range events enqueue only one next page"
+      (List.length (App.model application).pending_effects) (before + 1);
+    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
+    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
+    flush application;
+    check_eq ~msg:"duplicate pages cannot duplicate results"
+      (App.model application).search_result_count 25;
+    send application (Model.ChangeSearchQuery "new query");
+    send application (patch 25 false [25]);
+    flush application;
+    check_eq ~msg:"late pages cannot leak old hits into a new query"
+      (App.model application).search_result_pages []
+  ) [ios_backend; kotlin_backend]
 
 let native_search_clear_updates_lg_owned_query () =
   let application = App.create (ios_backend ()) in
@@ -7616,9 +7670,9 @@ let search_only_patches_preserve_the_open_outline () =
   let updated = Model.update current (Model.ApplyCoreSnapshot projection) in
   check_eq updated.outliner_rows current.outliner_rows;
   check_eq updated.selected_graph_id current.selected_graph_id;
-  check_eq updated.search_results [hit];
+  check_eq updated.search_result_pages [[hit]];
   let stale = Model.update updated (Model.ApplyCoreSnapshot {projection with Model.projection_search_query = "older"; search_results = []}) in
-  check_eq ~msg:"late search responses cannot replace the latest results" stale.search_results [hit]
+  check_eq ~msg:"late search responses cannot replace the latest results" stale.search_result_pages [[hit]]
 
 let selected_page_waits_for_blocks_before_showing_empty_state () =
   List.iter (fun cached ->
@@ -9603,6 +9657,7 @@ let cases =
     case "selected-pages-do-not-render-journal-home-headings" selected_pages_do_not_render_journal_home_headings;
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
+    case "search-virtualizes-loaded-results-and-paginates-on-scroll" search_virtualizes_loaded_results_and_paginates_on_scroll;
     case "search-results-render-as-keyed-native-rows" search_results_render_as_keyed_native_rows;
     case "search-renders-main-empty-states-and-result-sections" search_renders_main_empty_states_and_result_sections;
     case "native-search-clear-updates-lg-owned-query" native_search_clear_updates_lg_owned_query;

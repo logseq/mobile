@@ -219,6 +219,8 @@ type core_projection =
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
+  ; search_offset : int
+  ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
@@ -254,6 +256,7 @@ type logseq_effect =
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
+  | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
@@ -360,8 +363,11 @@ type logseq_model =
   ; runtime_log_records : runtime_log_record list
   ; search_open : bool
   ; search_query : string
-  ; search_results : search_hit list
+  ; search_result_pages : search_hit list list
+  ; search_result_count : int
   ; search_loading : bool
+  ; search_loading_more : bool
+  ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
   ; journal_outliner_rows : outline_row list
@@ -397,6 +403,7 @@ type logseq_action =
   | SyncFailed of string
   | OpenSearch
   | ChangeSearchQuery of string
+  | LoadMoreSearchResults
   | EnsureOutlinerRows of string list
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection

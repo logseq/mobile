@@ -56,7 +56,9 @@ let retained_row_editing_caret (retained : retained_row) =
 
 (* Only the native-visible window owns UI scopes and protocol nodes. The
    lightweight collection metadata keeps the entire outline scrollable. *)
-let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
+let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
+    ?(identifier = "outliner.window") ?(item_extent = 32)
+    ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
   if not (List.mem (Lui_ui.host context) [Lui_protocol.SwiftUIHost; Lui_protocol.KotlinHost]) then
     Lui_elements.keyed ~source ~key ~cmp ~mount context parent
@@ -64,6 +66,8 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = f
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
     let range = Signal.state context.ui_scheduler (0, 32) in
+    Option.iter (fun reset -> ignore (Signal.own context.ui_scope
+      (Signal.observe reset (fun _ -> Signal.set range (0, 32))))) reset_key;
     let target = match scroll_target with Some source -> source
       | None -> Signal.constant context.ui_scheduler None in
     let request = own (Signal.map2 (fun items target ->
@@ -89,7 +93,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = f
     let metadata_base = own (Signal.map2 (fun (items, start, _) (first_count, pinned_index) ->
       ["data-virtual-count", string_of_int (Array.length items);
        "data-virtual-start", string_of_int start;
-       "data-item-extent", "32";
+       "data-item-extent", string_of_int item_extent;
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
        "data-pinned-index", string_of_int pinned_index]) window layout) in
@@ -107,10 +111,11 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?(on_window = f
       Array.sub items start length |> Array.to_list) window) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));
     Lui_elements.if_ ~test:(own (Signal.map (fun items -> Array.length items > 0) items))
-    (Lui_elements.list ~accessibility_identifier:"outliner.window"
+    (Lui_elements.list ~accessibility_identifier:identifier
       ~data_attrs_signal:metadata ~track_visible_range:true
       ~on_visible_range:(function
         | Lui_protocol.VisibleRange (_, first, last) ->
+          on_visible_range first last;
           let items, start, length = Signal.sample window in
           let count = Array.length items in
           if count > 0 && first >= 0 && last >= first then begin

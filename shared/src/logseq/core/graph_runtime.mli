@@ -125,3 +125,6 @@ val journal_page_uuid : graph_runtime -> int -> string option
 val normalize_titles :
   graph_runtime -> string -> string list -> string list * (string * string) list
 val search : graph_runtime -> string -> Search_index.indexed_search_hit list
+
+val search_page : graph_runtime -> offset:int -> limit:int -> string ->
+  Search_index.indexed_search_hit list * bool

@@ -17,7 +17,9 @@ val retained_row_editing_caret : retained_row -> int
 val windowed_keyed :
   ?scroll_target:string option Signal.signal ->
   ?first_section:int Signal.signal ->
-  ?section_titles:(int * string) list Signal.signal -> ?on_window:('a list -> unit) -> ?is_pinned:('a -> bool) ->
+  ?section_titles:(int * string) list Signal.signal ->
+  ?reset_key:string Signal.signal -> ?identifier:string -> ?item_extent:int ->
+  ?on_visible_range:(int -> int -> unit) -> ?on_window:('a list -> unit) -> ?is_pinned:('a -> bool) ->
   source:'a list Signal.signal -> key:('a -> string) ->
   cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
 

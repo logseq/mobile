@@ -662,3 +662,11 @@ let search runtime query =
             query (Printexc.to_string error));
        [])
   | None -> []
+
+let search_page runtime ~offset ~limit query =
+  match runtime.search_index with
+  | None -> [], false
+  | Some index ->
+    if not (state runtime).search_index_is_fresh then refresh_search runtime;
+    try Index.search_hits_page ~offset ~limit index (db runtime) query
+    with error -> search_error "page" error; [], false

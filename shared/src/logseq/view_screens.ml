@@ -48,6 +48,34 @@ let search_section_heading title identifier : t =
       box ~padding_horizontal:20 ~padding_vertical:8 [title]
     else title) context parent
 
+type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
+
+let search_entries current =
+  let section label identifier hits = match hits with
+    | [] -> [] | _ -> Search_heading (label, identifier) :: List.map (fun hit -> Search_hit hit) hits in
+  section "Pages" "search.section.pages" (View_base.page_search_results current)
+  @ section "Blocks" "search.section.blocks" (View_base.block_search_results current)
+
+let search_entry_key = function
+  | Search_heading (_, identifier) -> identifier
+  | Search_hit hit -> View_base.search_result_identifier hit
+
+let search_result_window model_source send : t = fun context parent ->
+  let own source = Signal.own_signal context.Lui_ui.ui_scope source in
+  let entries = own (Signal.map search_entries model_source) in
+  View_rows.windowed_keyed ~identifier:"search.window" ~item_extent:72
+    ~reset_key:(own (Signal.map (fun (current : Model.logseq_model) -> current.search_query) model_source))
+    ~on_visible_range:(fun _ last ->
+      if last >= List.length (Signal.sample entries) - 6 then
+        ignore (send Model.LoadMoreSearchResults))
+    ~source:entries ~key:search_entry_key ~cmp:compare
+    ~mount:(fun entry_source -> match Signal.sample entry_source with
+      | Search_heading (title, identifier) -> search_section_heading title identifier
+      | Search_hit _ -> fun row_context parent ->
+        let hit = Signal.own_signal row_context.Lui_ui.ui_scope
+          (Signal.map (function Search_hit hit -> hit | _ -> assert false) entry_source) in
+        box ~padding_horizontal:20 [search_result_row hit send] row_context parent) context parent
+
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
     [
@@ -89,30 +117,11 @@ let search_screen model_source send : t =
            ]);
       if_
         ~test:(Signal.map View_base.search_results_present_ model_source)
-        (list ~grow:1.0
+        (virtual_list ~grow:1.0 ~gap:0
+           ~data_attrs_signal:(Signal.map (fun (current : Model.logseq_model) ->
+             ["data-scroll-identity", current.search_query]) model_source)
            ~accessibility_identifier:"screen.search.results"
-           [
-             if_
-               ~test:
-                 (Signal.map View_base.page_search_results_present_
-                    model_source)
-               (search_section_heading "Pages" "search.section.pages");
-             keyed
-               ~source:
-                 (Signal.map View_base.page_search_results model_source)
-               ~key:View_base.search_result_identifier ~cmp:compare
-               ~mount:(fun hit_source -> search_result_row hit_source send);
-             if_
-               ~test:
-                 (Signal.map View_base.block_search_results_present_
-                    model_source)
-               (search_section_heading "Blocks" "search.section.blocks");
-             keyed
-               ~source:
-                 (Signal.map View_base.block_search_results model_source)
-               ~key:View_base.search_result_identifier ~cmp:compare
-               ~mount:(fun hit_source -> search_result_row hit_source send);
-           ]);
+           [search_result_window model_source send]);
     ]
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send

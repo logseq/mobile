@@ -697,6 +697,33 @@ let search_projects_page_context_and_clears_blank_queries () =
        (response_result (dispatch_json session "searchNodes" ""))
     = [])
 
+let search_results_are_loaded_in_bounded_pages () =
+  let hits = List.init 145 (fun i ->
+    { Search.uuid = Printf.sprintf "hit-%03d" i; title = "Search";
+      is_page = true; page = None; breadcrumbs = [] }) in
+  let session = Session.create_session { Session.default_options with
+    outliner_projection_limit = Some 32;
+    graph_search = Some (fun _ -> hits) } in
+  let first = response_result (dispatch_json session "searchNodes" "search") in
+  check_eq ~msg:"the first response contains only one search page"
+    (List.length (json_items "searchResults" first)) 20;
+  check_eq (member "searchHasMore" first) (`Bool true);
+  let next offset query = response_result (dispatch_json session "searchNodesPage"
+    (Yojson.Basic.to_string (`Assoc ["query", `String query; "offset", `Int offset]))) in
+  let second = next 20 "search" in
+  check_eq (List.length (json_items "searchResults" second)) 20;
+  check_eq (member "searchOffset" second) (`Int 20);
+  check_eq (member "uuid" (List.hd (json_items "searchResults" second))) (`String "hit-020");
+  check_eq ~msg:"late pages for an old query are ignored"
+    (json_items "searchResults" (next 40 "older")) [];
+  List.iter (fun offset -> ignore (next offset "search")) [40; 60; 80; 100];
+  let last = next 120 "search" in
+  check_eq (List.length (json_items "searchResults" last)) 20;
+  let final = next 140 "search" in
+  check_eq (List.length (json_items "searchResults" final)) 5;
+  check_eq (member "searchHasMore" final) (`Bool false);
+  check_eq (json_items "searchResults" (response_result (dispatch_json session "searchNodes" ""))) []
+
 let node_navigation_resolves_projected_pages_and_blocks () =
   let page : Model.entity_summary =
     { uuid = "projected-page"; title = "Projected page" }
@@ -6335,6 +6362,7 @@ let forced_snapshot_import_rejects_a_changed_graph () =
 
 let cases =
   [
+    case "search results are loaded in bounded pages" search_results_are_loaded_in_bounded_pages;
     case "idle sync recovery resets after a healthy pull" shared_sync_driver_idle_recovery_resets_after_a_healthy_pull;
     case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;

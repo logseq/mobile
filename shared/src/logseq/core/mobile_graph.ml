@@ -264,3 +264,8 @@ let apply_sync_event (host : mobile_graph) body =
       opened.state.applied_server_t := journal.t;
       Runtime.rebase opened.read_runtime journal.t ids changed;
       Ok ()
+
+let search_page host ~offset ~limit query =
+  match !(host.current) with
+  | Some opened -> Runtime.search_page opened.read_runtime ~offset ~limit query
+  | None -> [], false

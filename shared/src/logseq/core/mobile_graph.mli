@@ -73,3 +73,6 @@ val open_paths :
 val open_graph : mobile_graph -> string -> (unit, string) result
 val import_snapshot : mobile_graph -> string -> (unit, string) result
 val apply_sync_event : mobile_graph -> string -> (unit, string) result
+
+val search_page : mobile_graph -> offset:int -> limit:int -> string ->
+  Search_index.indexed_search_hit list * bool

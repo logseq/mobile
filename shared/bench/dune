@@ -12,3 +12,8 @@
  (name page_window)
  (modules page_window)
  (libraries logseq_core unix yojson))
+
+(executable
+ (name search_pages)
+ (modules search_pages)
+ (libraries logseq_core unix yojson))

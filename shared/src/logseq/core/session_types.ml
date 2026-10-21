@@ -95,6 +95,7 @@ type host_options =
   ; graph_normalize_titles :
       (string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Search.indexed_search_hit list) option
+  ; graph_search_page : (offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
   ; graph_due_flashcards : (int -> Cards.due_card list) option
   ; graph_review_flashcard :
       (string -> Cards.flashcard_rating -> int -> string -> (unit, string) result)
@@ -139,7 +140,9 @@ type session_state =
   ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Cards.due_card list
-  ; search_results : Search.indexed_search_hit list
+  ; search_has_more : bool
+  ; search_result_pages : Search.indexed_search_hit list list
+  ; search_result_count : int
   ; search_query : string
   ; sync_transport : Sync_driver.t
   ; sync_connected : bool
@@ -184,6 +187,7 @@ let default_options =
     graph_tag_objects = None;
     graph_normalize_titles = None;
     graph_search = None;
+    graph_search_page = None;
     graph_due_flashcards = None;
     graph_review_flashcard = None;
     graph_set_page_favorite = None;
@@ -283,7 +287,9 @@ let create_session options =
           active_graph_id = None;
           accepted_server_t = None;
           flashcards = [];
-          search_results = [];
+          search_result_pages = [];
+          search_result_count = 0;
+          search_has_more = false;
           search_query = "";
           sync_transport = Sync_driver.empty;
           sync_connected = false;

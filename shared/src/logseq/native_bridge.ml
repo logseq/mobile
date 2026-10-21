@@ -275,6 +275,9 @@ let encode_effect (eff : Model.logseq_effect) =
   | HydrateOutlinerRowsEffect (id, ids) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"hydrate-outliner-rows\",\"text\":"
     ^ Lui_wire.quoted (Yojson.Basic.to_string (`List (List.map (fun id -> `String id) ids))) ^ "}"
+  | LoadSearchPageEffect (id, query, offset) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "load-search-page";
+      "text", `String query; "value", `Int offset])
   | SearchNodesEffect (id, query) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"search-nodes\",\"text\":" ^ Lui_wire.quoted query ^ "}"

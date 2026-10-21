@@ -222,6 +222,8 @@ type core_projection =
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
   ; projection_search_query : string
+  ; search_offset : int
+  ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
@@ -257,6 +259,7 @@ type logseq_effect =
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
+  | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
@@ -363,8 +366,11 @@ type logseq_model =
   ; runtime_log_records : runtime_log_record list
   ; search_open : bool
   ; search_query : string
-  ; search_results : search_hit list
+  ; search_result_pages : search_hit list list
+  ; search_result_count : int
   ; search_loading : bool
+  ; search_loading_more : bool
+  ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
   ; journal_outliner_rows : outline_row list
@@ -400,6 +406,7 @@ type logseq_action =
   | SyncFailed of string
   | OpenSearch
   | ChangeSearchQuery of string
+  | LoadMoreSearchResults
   | EnsureOutlinerRows of string list
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
@@ -679,8 +686,11 @@ let initial () =
     runtime_log_records = [];
     search_open = false;
     search_query = "";
-    search_results = [];
+    search_result_pages = [];
+    search_result_count = 0;
     search_loading = false;
+    search_loading_more = false;
+    search_has_more = false;
     node_routes = [];
     navigation_root_rows = [];
     journal_outliner_rows = [];
@@ -755,7 +765,7 @@ let effect_id eff =
   | SyncNowEffect id -> id
   | SyncPendingEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
-  | SearchNodesEffect (id, _) -> id
+  | SearchNodesEffect (id, _) | LoadSearchPageEffect (id, _, _) -> id
   | LoadPageReferencesEffect (id, _) -> id
   | HydrateOutlinerRowsEffect (id, _) -> id
   | TapOutlinerBlockEffect (id, _) -> id
@@ -1665,7 +1675,7 @@ let remove_search_effects effects =
   List.filter
     (fun eff ->
       match eff with
-      | SearchNodesEffect _ -> false
+      | SearchNodesEffect _ | LoadSearchPageEffect _ -> false
       | _ -> true)
     effects
 
@@ -1813,14 +1823,22 @@ let rec update (current : logseq_model) action =
       else (Hashtbl.add requested id (); true)) ids in
     if ids = [] then current
     else enqueue_effect current (HydrateOutlinerRowsEffect (current.next_effect_id, ids))
+  | LoadMoreSearchResults ->
+    if not current.search_has_more || current.search_loading || current.search_loading_more
+       || String_kit.is_blank current.search_query then current
+    else enqueue_effect { current with search_loading_more = true }
+      (LoadSearchPageEffect (current.next_effect_id, current.search_query, current.search_result_count))
   | ChangeSearchQuery query ->
     let pending = remove_search_effects current.pending_effects in
     if String_kit.is_blank query then
       {
         current with
         search_query = query;
-        search_results = [];
+        search_result_pages = [];
+        search_result_count = 0;
         search_loading = false;
+        search_loading_more = false;
+        search_has_more = false;
         pending_effects = pending;
       }
     else begin
@@ -1829,6 +1847,10 @@ let rec update (current : logseq_model) action =
         current with
         search_query = query;
         search_loading = true;
+        search_result_pages = [];
+        search_result_count = 0;
+        search_has_more = false;
+        search_loading_more = false;
         pending_effects = pending @ [ SearchNodesEffect (id, query) ];
         next_effect_id = id + 1;
         effect_error = None;
@@ -1836,7 +1858,7 @@ let rec update (current : logseq_model) action =
     end
   | ApplySearchResults (query, results) ->
     if query = current.search_query then
-      { current with search_results = results; search_loading = false }
+      { current with search_result_pages = [results]; search_result_count = List.length results; search_loading = false; search_loading_more = false; search_has_more = false }
     else current
   | ApplyCoreSnapshot projection ->
     let applied = apply_core_snapshot current projection in
@@ -1969,8 +1991,11 @@ let rec update (current : logseq_model) action =
         editing_ended with
         search_open = false;
         search_query = "";
-        search_results = [];
+        search_result_pages = [];
+        search_result_count = 0;
         search_loading = false;
+        search_loading_more = false;
+        search_has_more = false;
         pending_effects = remove_search_effects current.pending_effects;
         search_navigation_path = [];
       }
@@ -2068,6 +2093,12 @@ let rec update (current : logseq_model) action =
          if succeeded then resolve_successful_effect current eff message
          else resolve_failed_effect current eff message
        in
+       let resolved_current = match eff with
+         | SearchNodesEffect (_, query) when not succeeded && query = current.search_query ->
+           { resolved_current with search_loading = false }
+         | LoadSearchPageEffect (_, query, _) when not succeeded && query = current.search_query ->
+           { resolved_current with search_loading_more = false }
+         | _ -> resolved_current in
        let resolved = {
          resolved_current with
          in_flight_effects = remove_effect current.in_flight_effects id;
@@ -2696,7 +2727,12 @@ and apply_core_snapshot (current : logseq_model)
   else if projection.is_search_patch then
     if projection.selected_graph_id = current.selected_graph_id
        && projection.projection_search_query = current.search_query then
-      { current with search_results = projection.search_results; search_loading = false }
+      (if projection.search_offset <> 0 && projection.search_offset <> current.search_result_count then current
+       else { current with
+         search_result_pages = (if projection.search_offset = 0 then [projection.search_results]
+           else projection.search_results :: current.search_result_pages);
+         search_result_count = projection.search_offset + List.length projection.search_results;
+         search_loading = false; search_loading_more = false; search_has_more = projection.search_has_more })
     else current
   else if projection.is_outliner_content_patch then
     if projection.selected_graph_id <> current.selected_graph_id then current
@@ -2929,8 +2965,11 @@ and apply_core_snapshot (current : logseq_model)
       if projection.projection_search_query = current.search_query then
         {
           updated with
-          search_results = projection.search_results;
+          search_result_pages = [projection.search_results];
+          search_result_count = List.length projection.search_results;
+          search_has_more = projection.search_has_more;
           search_loading = false;
+          search_loading_more = false;
         }
       else updated
     in
