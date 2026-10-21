@@ -1911,16 +1911,11 @@ let rec update (current : logseq_model) action =
   | ConfirmOutlinerDelete ->
     enqueue_effect current (ConfirmOutlinerDeleteEffect current.next_effect_id)
   | PerformOutlinerToolbarAction action ->
+    (* The core commits the draft before publishing editor dismissal. Removing
+       it here lets a queued typing response remount and refocus the editor. *)
     let updated =
       if action = "task" then
         { current with sync_state = editing_sync_state current }
-      else if action = "hideKeyboard" then
-        {
-          current with
-          outliner_editing = None;
-          outliner_autocomplete = None;
-          outliner_autocomplete_candidates = [];
-        }
       else current
     in
     let id = updated.next_effect_id in

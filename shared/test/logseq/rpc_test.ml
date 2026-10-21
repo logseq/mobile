@@ -3215,6 +3215,50 @@ let collapse_finishes_editor_and_saves_title_exactly_once () =
   check (json_items "outlinerRowSplices" result <> []);
   check_eq (List.length !staged) 1
 
+let hide_keyboard_saves_before_publishing_editor_dismissal () =
+  List.iter (fun fail_save ->
+    let live = ref (synced_block "editing" "Original") in
+    let active_session = ref None in
+    let saves = ref 0 in
+    let session = configure_plain_session
+      (Session.create_session { Session.default_options with
+        load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
+        sync_cursor = Some (fun () -> Some 92);
+        graph_blocks = Some (fun () -> Some [!live]);
+        prepare_operation = Some prepare_operation;
+        stage_operation = Some (fun operation ->
+          incr saves;
+          let session = Option.get !active_session in
+          check_eq ~msg:"storage sees the live draft before any dismissal is published"
+            (Outliner.editing_title (Types.state session).outliner_state)
+            (Some "Latest saved text");
+          if fail_save then Error "Local save failed"
+          else match operation.Ops.intent with
+            | Ops.Save_title title -> live := { !live with title = title.title }; Ok ()
+            | _ -> Error "Expected a title save") }) in
+    active_session := Some session;
+    ignore (outliner_block_event session "tapBlock" "editing");
+    ignore (outliner_event session
+      "{\"type\":\"textChanged\",\"title\":\"Latest saved text\",\"caretUTF16Offset\":17}");
+    let response = dispatch_json session "outlinerEvent"
+      "{\"type\":\"toolbar\",\"action\":\"hideKeyboard\"}" in
+    check_eq ~msg:"finishing editing attempts one local save" !saves 1;
+    if fail_save then begin
+      check_eq (member "ok" response) (`Bool false);
+      check_eq ~msg:"a failed save retains the editor and latest draft"
+        (Outliner.editing_title (Types.state session).outliner_state)
+        (Some "Latest saved text")
+    end else begin
+      let result = response_result response in
+      check_eq ~msg:"the successful response dismisses the editor"
+        (member "editing" (member "outlinerState" result)) `Null;
+      check_eq ~msg:"the dismissed editor is replaced by its saved text"
+        (member "title" (List.hd (json_items "blocks" result)))
+        (`String "Latest saved text");
+      check_eq !live.title "Latest saved text"
+    end)
+    [false; true]
+
 let autocomplete_creates_page_without_saving_block_draft () =
   let staged = ref [] in
   let session =
@@ -6450,6 +6494,8 @@ let cases =
       graph_switching_keeps_optimistic_models_isolated;
     case "collapse finishes editor and saves title exactly once"
       collapse_finishes_editor_and_saves_title_exactly_once;
+    case "hide keyboard saves before publishing editor dismissal"
+      hide_keyboard_saves_before_publishing_editor_dismissal;
     case "autocomplete creates page without saving block draft"
       autocomplete_creates_page_without_saving_block_draft;
     case "saved title immediately renders new reference metadata"

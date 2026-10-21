@@ -4648,39 +4648,49 @@ let autocomplete_selection_waits_for_pending_text_to_settle () =
       .pending_effects
     [ Model.ChooseOutlinerAutocompleteEffect (2, "tag-project") ]
 
-let hide_keyboard_optimistically_finishes_outliner_editing () =
+let hide_keyboard_waits_for_saved_outliner_projection () =
   let editing =
-    {
-      Model.editing_uuid = "block-a";
-      editing_title = "Latest local text";
-      caret_utf16_offset = 17;
-    }
-  in
+    { Model.editing_uuid = "block-a"; editing_title = "Latest local text";
+      caret_utf16_offset = 17 } in
   let autocomplete =
-    {
-      Model.autocomplete_kind = Model.NodeAutocomplete;
-      autocomplete_query = "Latest";
-    }
-  in
-  let current =
-    {
-      (Model.initial ()) with
-      Model.outliner_editing = Some editing;
-      outliner_autocomplete = Some autocomplete;
-      outliner_autocomplete_candidates = [];
-    }
-  in
-  let updated =
-    Model.update current
-      (Model.PerformOutlinerToolbarAction "hideKeyboard")
-  in
-  check_eq ~msg:"hide keyboard removes the inline editor immediately"
-    updated.outliner_editing None;
-  check_eq ~msg:"hide keyboard removes autocomplete with the editor"
-    updated.outliner_autocomplete None;
-  check_eq ~msg:"core still owns committing the final editor value"
-    updated.pending_effects
-    [ Model.OutlinerToolbarEffect (1, "hideKeyboard") ]
+    { Model.autocomplete_kind = Model.NodeAutocomplete;
+      autocomplete_query = "Latest" } in
+  let change = Model.ChangeOutlinerTextEffect (1, "block-a", editing.editing_title, 17) in
+  List.iter (fun (pending, in_flight) ->
+    let current =
+      { (Model.initial ()) with
+        Model.outliner_editing = Some editing;
+        outliner_rows = [journal_outline_row "block-a" "journal" "Old stored text" "Today" 20261021 0];
+        outliner_autocomplete = Some autocomplete;
+        pending_effects = pending; in_flight_effects = in_flight;
+        next_effect_id = 2 } in
+    let updated = Model.update current (Model.PerformOutlinerToolbarAction "hideKeyboard") in
+    check_eq ~msg:"the editor stays mounted until the core saves its final text"
+      updated.outliner_editing (Some editing);
+    check_eq ~msg:"autocomplete stays with its editor until save completion"
+      updated.outliner_autocomplete (Some autocomplete);
+    check_eq ~msg:"finishing editing queues behind the latest text"
+      updated.pending_effects (pending @ [Model.OutlinerToolbarEffect (2, "hideKeyboard")]);
+    let delayed = Model.update updated
+      (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+         is_outliner_patch = true; projection_outliner_editing = Some editing;
+         projection_outliner_autocomplete = Some autocomplete }) in
+    check_eq ~msg:"an earlier typing response cannot close and reopen the editor"
+      delayed.outliner_editing (Some editing);
+    let active = { updated with pending_effects = [];
+      in_flight_effects = [Model.OutlinerToolbarEffect (2, "hideKeyboard")] } in
+    let failed = Model.update active (Model.ResolveEffect (2, false, "Local save failed")) in
+    check_eq ~msg:"a failed save keeps the draft and editor available"
+      failed.outliner_editing (Some editing);
+    let saved_row = journal_outline_row "block-a" "journal" editing.editing_title "Today" 20261021 0 in
+    let finished = Model.update active
+      (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+         is_outliner_patch = true; outliner_rows = [saved_row] }) in
+    check_eq ~msg:"the saved projection dismisses the editor once"
+      finished.outliner_editing None;
+    check_eq ~msg:"the rendered row contains the saved title when the editor closes"
+      (List.hd finished.outliner_rows).row_title editing.editing_title)
+    [([], []); ([change], []); ([], [change])]
 
 let outliner_return_handoff_retains_one_native_editor_node () =
   let application = App.create (ios_backend ()) in
@@ -9471,7 +9481,7 @@ let cases =
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-removes-stale-autocomplete-candidates" outliner_typing_removes_stale_autocomplete_candidates;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
-    case "hide-keyboard-optimistically-finishes-outliner-editing" hide_keyboard_optimistically_finishes_outliner_editing;
+    case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
