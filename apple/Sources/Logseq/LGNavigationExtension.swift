@@ -136,13 +136,23 @@ private struct LGNotificationSafeAreaReader: UIViewRepresentable {
 
 private struct LGSidebarNavigation: View {
     let context: LUIAppleExtensionViewContext
+    @AppStorage("logseq.appearance") private var appearance = "system"
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var background: Color {
+        LogseqThemePolicy.palette(mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+                                  systemIsDark: colorScheme == .dark).background
+    }
 
     var body: some View {
         let _ = context.revision
         NavigationStack {
             child(at: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(background.ignoresSafeArea())
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(background, for: .navigationBar)
                 #endif
                 .toolbar {
                     #if os(iOS)
