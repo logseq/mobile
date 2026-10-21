@@ -18,6 +18,9 @@ Android/app/src/main/jniLibs/
 android/app/src/main/jniLibs/
 tests/e2e/screenshots/
 
+# Raw Maestro debug output; retain curated screenshots and review reports.
+/docs/agent-guide/ui-review-*/evidence/*-artifacts/
+
 xcodebuild*.log
 
 default.profraw
