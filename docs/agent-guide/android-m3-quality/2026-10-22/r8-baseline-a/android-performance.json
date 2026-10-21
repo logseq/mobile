@@ -1,0 +1,73 @@
+{
+  "device": "emulator-5556",
+  "variant": "release",
+  "launches": [
+    {
+      "first_ui_rendered": 1902.0,
+      "authentication_published": 2353.0,
+      "journals_ui_ready": 2555.0,
+      "am_total_ms": 2184
+    },
+    {
+      "first_ui_rendered": 1399.0,
+      "journals_ui_ready": 1986.0,
+      "authentication_published": 2030.0,
+      "am_total_ms": 1610
+    },
+    {
+      "first_ui_rendered": 1808.0,
+      "authentication_published": 2132.0,
+      "journals_ui_ready": 2313.0,
+      "am_total_ms": 2243
+    },
+    {
+      "first_ui_rendered": 1797.0,
+      "authentication_published": 2157.0,
+      "journals_ui_ready": 2379.0,
+      "am_total_ms": 2057
+    },
+    {
+      "first_ui_rendered": 2386.0,
+      "journals_ui_ready": 2999.0,
+      "authentication_published": 3042.0,
+      "am_total_ms": 2795
+    }
+  ],
+  "idle_10s": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  },
+  "scroll_1": {
+    "frames": 203,
+    "janky_frames": 47,
+    "p50_ms": 24,
+    "p95_ms": 150,
+    "p99_ms": 200,
+    "slow_ui_thread": 41,
+    "jank_percent": 23.15
+  },
+  "scroll_2": {
+    "frames": 345,
+    "janky_frames": 15,
+    "p50_ms": 20,
+    "p95_ms": 34,
+    "p99_ms": 53,
+    "slow_ui_thread": 9,
+    "jank_percent": 4.35
+  },
+  "scroll_3": {
+    "frames": 248,
+    "janky_frames": 35,
+    "p50_ms": 21,
+    "p95_ms": 65,
+    "p99_ms": 400,
+    "slow_ui_thread": 27,
+    "jank_percent": 14.11
+  },
+  "valid_for_comparison": false,
+  "exclusion_reason": "Concurrent Xcode/asset build observed on the host during scrolling; retain raw evidence but do not compare optimization results against it."
+}

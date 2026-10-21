@@ -1,0 +1,14 @@
+{
+  "app-debug.apk": {
+    "sha256": "3be35578a2d9f991a8b3ca7a3a4407e32358e5e6eb98cebeac3af562297feeca",
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_jni.so": "e9362372c4a93494cc39494838faab180bcd764756fe6e1ecf2265b75175ed1a",
+      "lib/arm64-v8a/liblogseq_core.so": "36bb0c6d69fbcbb0ed4a90388db284a2c62e5020d9335d918e78982c86e5a0a8"
+    }
+  },
+  "app-debug-androidTest.apk": {
+    "sha256": "9962cd0f9c200849be54f382c20932012b6207299e482172306c2f682ac2b8e4",
+    "native_sha256": {}
+  }
+}

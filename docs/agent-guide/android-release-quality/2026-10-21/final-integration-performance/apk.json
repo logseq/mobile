@@ -1,0 +1,10 @@
+{
+  "apk_sha256": "4d657a380c2a80d6066beb81075c2b8c3433b12f98b6e521c447b9a1310a5290",
+  "native_sha256": {
+    "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+    "lib/arm64-v8a/liblogseq_core.so": "d296f89ec569e49b2c87454cbbb21c766a3d4751efba06f7cb923b5920b021b9",
+    "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+  },
+  "build_revision": "2ad7d02e",
+  "lui_revision": "1edf12691bcd78ee65b52355d5c2a35f4194524c"
+}

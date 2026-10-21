@@ -1,0 +1,23 @@
+{
+  "logseq-final-frozen-debug.apk": {
+    "sha256": "ae4a947412ec90b5da0a7eb2efa92bd8623e62d251620867a14af04819ff1867",
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_jni.so": "e9362372c4a93494cc39494838faab180bcd764756fe6e1ecf2265b75175ed1a",
+      "lib/arm64-v8a/liblogseq_core.so": "d296f89ec569e49b2c87454cbbb21c766a3d4751efba06f7cb923b5920b021b9"
+    }
+  },
+  "logseq-final-frozen-test.apk": {
+    "sha256": "50bce66c49e6bd038258f57857ff59e1e8bf5f1a2f4fc94464d558fd1ad05629",
+    "native_sha256": {}
+  },
+  "logseq-final-frozen-release-unsigned.apk": {
+    "sha256": "06a8e33fee9451da69b1e8c745d12680b0b53ce8ef8b77f70996cfcf716e03d6",
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "d296f89ec569e49b2c87454cbbb21c766a3d4751efba06f7cb923b5920b021b9",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    }
+  },
+  "build_revision": "2ad7d02e"
+}

@@ -29,19 +29,15 @@ let attachment_picker_items context send =
     ] in
   if Lui_ui.host context = KotlinHost then items else List.rev items
 
-let attachment_picker_menu send : t =
- fun context parent ->
-  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
-    ~style_class:"anchored-popover" ~gap:0
-    ~on_dismiss:(press send Model.CloseAttachmentPicker)
-    (attachment_picker_items context send) context parent
-
 let composer_attachment_button (context : Lui_ui.ui_context) send : t =
-  let native_menu = Lui_ui.host context <> KotlinHost in
-  button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
-    ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
-    ?on_press:(if native_menu then None else Some (press send Model.OpenAttachmentPicker))
-    (if native_menu then [context_menu (attachment_picker_items context send)] else [])
+  if Lui_ui.host context = KotlinHost then
+    menu_trigger ~icon:(`app "composer-add") ~label:"Add attachment"
+      ~accessibility_identifier:"button.attachment"
+      [dropdown_menu (attachment_picker_items context send)]
+  else
+    button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
+      ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
+      [context_menu (attachment_picker_items context send)]
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -123,19 +119,17 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
     match current.selected_task_status with
     | Some status -> View_base.task_status_foreground status
     | None -> "border" in
-  let native_menu = Lui_ui.host context <> KotlinHost in
-  button ~icon_signal:(Signal.map icon model_source)
-    ~variant:`ghost ~size:`icon ~width:32 ~height:44
-    ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
-    ~accessibility_identifier:"button.task-status"
-    ?on_press:(if native_menu then None else Some (press send Model.OpenTaskStatusPicker))
-    (if native_menu then [context_menu (task_status_picker_items model_source send)] else [])
-
-let task_status_picker_dialog model_source send : t =
-  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
-    ~style_class:"anchored-popover" ~gap:0
-    ~on_dismiss:(press send Model.CloseTaskStatusPicker)
-    (task_status_picker_items model_source send)
+  if Lui_ui.host context = KotlinHost then
+    menu_trigger ~icon:(reactive icon model_source)
+      ~foreground:(reactive foreground model_source) ~label:"Task status"
+      ~accessibility_identifier:"button.task-status"
+      [dropdown_menu (task_status_picker_items model_source send)]
+  else
+    button ~icon_signal:(Signal.map icon model_source)
+      ~variant:`ghost ~size:`icon ~width:32 ~height:44
+      ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
+      ~accessibility_identifier:"button.task-status"
+      [context_menu (task_status_picker_items model_source send)]
 
 let with_press handler (elem : t) : t =
  fun context parent ->
@@ -144,16 +138,11 @@ let with_press handler (elem : t) : t =
   register_press context node handler;
   node
 
-(* The expanded composer keeps the surface spec from the previous lui pin
-   (edf381b): upstream restyled it with a content-hugging `composer-surface`
-   column, which changed the capture UI. This is that older spec verbatim,
-   minus the parts Logseq does not use. *)
 let composer_send_button context ?send_icon send_disabled on_send : t =
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
-    button ~icon:android_icon ~variant:`ghost ~width:36 ~height:36
-      ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
+    button ~icon:android_icon ~variant:`primary ~label:"Send"
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
   else
@@ -206,7 +195,20 @@ let composer_surface ?key ?accessibility_identifier ?attachments
     | Some on_send ->
       [ composer_send_button context ?send_icon send_disabled_signal on_send ]
   in
-  let capsule =
+  let surface =
+    if Lui_ui.host context = KotlinHost then
+      column ?key ?accessibility_identifier ~grow:1.0 ~gap:8 ~padding:8
+        ~background:"surface-container-low"
+        (attachment_strip
+         @ [ field;
+             row ~gap:8 ~height:48 ~cross:`center
+               ~accessibility_identifier:"row.composer.controls"
+               (actions
+                @ [ spacer ~grow:1.0
+                      ~accessibility_identifier:"spacer.composer.controls" [] ]
+                @ send_button) ])
+    else
+    (* Keep the established Apple capsule and its unused-space focus targets. *)
     column ?key ?accessibility_identifier ~grow:1.0 ~min_height:58 ~main:`end_
       ~gap:0
       ~padding_horizontal:16
@@ -229,9 +231,18 @@ let composer_surface ?key ?accessibility_identifier ?attachments
               @ send_button);
          ])
   in
-  capsule context parent
+  surface context parent
 
 let collapsed_composer (context : Lui_ui.ui_context) send : t =
+  if Lui_ui.host context = KotlinHost then
+    row ~grow:1.0 ~gap:8 ~cross:`center
+      [ button ~icon:(`app "toolbar-camera") ~variant:`secondary ~label:"Camera"
+          ~accessibility_identifier:"button.composer.camera"
+          ~on_press:(press send (Model.ChooseAttachment "camera")) [];
+        button ~variant:`outline ~grow:1.0 ~text:"Capture" ~label:"Capture"
+          ~accessibility_identifier:"button.composer.expand"
+          ~on_press:(press send Model.ExpandComposer) [] ]
+  else
   row ~grow:1.0 ~height:58 ~gap:0 ~cross:`center
     ~background:"glass" ~corner_radius:999
     ~border_width:(if Lui_ui.host context = KotlinHost then 1 else 0)
@@ -271,29 +282,11 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              (Signal.map View_base.composer_assets_present_ model_source)
            ~actions:
              [
-               stack
-                    [
-                      composer_attachment_button context send;
-                      if_
-                        ~test:
-                          (Signal.map
-                             (fun current -> Lui_ui.host context = KotlinHost
-                               && View_base.model_attachment_picker_open_ current)
-                             model_source)
-                        (attachment_picker_menu send);
-                    ];
-               stack
-                 [
-                   composer_task_status_button context model_source send;
-                   if_
-                     ~test:
-                       (Signal.map (fun current -> Lui_ui.host context = KotlinHost
-                         && View_base.model_task_status_picker_open_ current)
-                          model_source)
-                     (task_status_picker_dialog model_source send);
-                 ];
+               stack [composer_attachment_button context send];
+               stack [composer_task_status_button context model_source send];
              ]
-           ~send_icon:(`app "arrow-up")
+           ~send_icon:(if Lui_ui.host context = KotlinHost then `send
+                       else `app "arrow-up")
            ~send_disabled_signal:
              (Signal.map View_base.composer_send_disabled_ model_source)
            ~on_input:(on_input send (fun text ->

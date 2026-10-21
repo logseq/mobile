@@ -9,7 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,6 +24,7 @@ import com.logseq.app.runtime.dispatchLuiEvent
 import com.logseq.app.runtime.logseqIconResolver
 import com.logseq.app.ui.LogseqTheme
 import com.logseq.app.ui.extensions.logseqExtensionRegistry
+import dev.lui.LuiPatchOp
 import dev.lui.LuiBackend
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,20 +46,18 @@ class AndroidOutlinerParityTest {
             extensions = logseqExtensionRegistry { it },
             icons = logseqIconResolver,
         )
-        val filter = LuiPatchFilter { patch ->
-            assertTrue(backend.lastError, backend.applyJson(patch))
-            val operations = JSONObject(patch).getJSONArray("ops")
-            for (index in 0 until operations.length()) {
-                val op = operations.getJSONObject(index)
-                if (op.optString("op") == "drop-node") liveRows.remove(op.getLong("id"))
-                if (op.optString("property") == "accessibility-identifier" &&
-                    op.optString("value").startsWith("outliner.block.")) {
-                    liveRows[op.getLong("id")] = op.getString("value")
+        val filter = LuiPatchFilter(backend)
+        fun applyPatch(patch: String) {
+            for (operation in filter.applyJson(patch).ops) {
+                if (operation is LuiPatchOp.DropNode) liveRows.remove(operation.id)
+                if (operation is LuiPatchOp.SetProp && operation.property == "accessibility-identifier" &&
+                    operation.value.stringValue?.startsWith("outliner.block.") == true) {
+                    liveRows[operation.id] = operation.value.stringValue!!
                 }
             }
-            liveRows.keys.removeAll { backend.node(it) == null }
+            liveRows.keys.removeAll { backend.nodeKind(it) == null }
         }
-        bridge = LogseqNativeBridge(onPatch = filter::applyJson)
+        bridge = LogseqNativeBridge(onPatch = ::applyPatch)
         val root = bridge.initialize(authenticationCode = 3)
         val rows = JSONArray()
         repeat(10_000) { index ->
@@ -69,7 +68,7 @@ class AndroidOutlinerParityTest {
                     .put("journalTitle", if (firstDay) "Oct 19th, 2026" else "Oct 18th, 2026")
                     .put("journalDay", if (firstDay) 20261019 else 20261018)))
         }
-        filter.applyJson(bridge.applySnapshot(JSONObject().put("ok", true).put("result", JSONObject()
+        applyPatch(bridge.applySnapshot(JSONObject().put("ok", true).put("result", JSONObject()
             .put("graphName", "Android UI test").put("selectedGraphId", "android-ui-test")
             .put("isGraphUnlocked", true).put("outlinerRows", rows)).toString()))
         ui.setContent {
@@ -100,7 +99,7 @@ class AndroidOutlinerParityTest {
             ui.onNodeWithContentDescription("Close search").performClick()
             ui.onNodeWithText("Block 9990").assertIsDisplayed()
             ui.onNodeWithTag("button.composer.expand").performClick()
-            ui.onNodeWithTag("field.composer").assertIsFocused().assertHeightIsEqualTo(36.dp)
+            ui.onNodeWithTag("field.composer").assertIsFocused().assertHeightIsAtLeast(56.dp)
         } finally {
             ui.runOnIdle { bridge.close() }
         }

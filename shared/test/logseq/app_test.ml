@@ -5304,7 +5304,7 @@ let composer_focus_targets_do_not_wrap_native_menu_controls () =
   check_eq ~msg:"refocusing preserves the draft"
     (App.model application).composer_draft "Keep my draft"
 
-let kotlin_composer_matches_ios_chrome () =
+let kotlin_composer_preserves_the_capture_contract () =
   let application = App.create (kotlin_backend ()) in
   start application;
   send application
@@ -5328,12 +5328,6 @@ let kotlin_composer_matches_ios_chrome () =
   check_eq ~msg:"the Android capture row fills its dock slot like iOS"
     (property_float renderer placement Lui_protocol.GrowValue)
     1.0;
-  check_eq ~msg:"collapsed Capture uses the iOS glass surface"
-    (property_string renderer collapsed Lui_protocol.BackgroundValue)
-    "glass";
-  check_eq ~msg:"collapsed Capture keeps the iOS pill shape"
-    (property_int renderer collapsed Lui_protocol.CornerRadius)
-    999;
   check_eq ~msg:"collapsed Capture fills the available dock width"
     (property_float renderer collapsed Lui_protocol.GrowValue)
     1.0;
@@ -5349,18 +5343,33 @@ let kotlin_composer_matches_ios_chrome () =
   let send_button =
     descendant_with_identifier renderer expanded "button.send"
   in
-  check_eq ~msg:"expanded Capture uses the iOS glass surface"
-    (property_string renderer expanded Lui_protocol.BackgroundValue)
-    "glass";
-  check_eq ~msg:"expanded Capture uses the iOS capsule shape"
-    (property_int renderer expanded Lui_protocol.CornerRadius)
-    24;
-  check_eq ~msg:"Send matches the 36-point iOS circle"
-    (property_int renderer send_button Lui_protocol.WidthValue)
-    36;
-  check_eq ~msg:"Send is a black iOS-style circle"
-    (property_string renderer send_button Lui_protocol.BackgroundValue)
-    "black"
+  check ~msg:"an empty Android draft disables Send"
+    (not (property_bool renderer send_button Lui_protocol.Enabled));
+  let field = descendant_with_identifier renderer expanded "field.composer" in
+  dispatch application (Lui_protocol.TextChanged (field, "  中文 📝\nCapture  "));
+  flush application;
+  send application Model.DismissComposer;
+  flush application;
+  check_eq ~msg:"outside dismissal retains the untrimmed Android draft"
+    (App.model application).composer_draft "  中文 📝\nCapture  ";
+  send application Model.ExpandComposer;
+  flush application;
+  let chrome = List.nth (children renderer navigation) 1 in
+  let field = descendant_with_identifier renderer chrome "field.composer" in
+  let send_button = descendant_with_identifier renderer chrome "button.send" in
+  check_eq ~msg:"reopening restores multiline Unicode text"
+    (property_string renderer field Lui_protocol.TextValue) "  中文 📝\nCapture  ";
+  check ~msg:"a restored draft enables Android Send"
+    (property_bool renderer send_button Lui_protocol.Enabled);
+  dispatch application (Lui_protocol.Press send_button);
+  flush application;
+  check_eq ~msg:"Android Send clears the model-owned draft"
+    (App.model application).composer_draft "";
+  check ~msg:"Android Send publishes the same trimmed capture as iOS"
+    (List.exists (function Model.SendCaptureEffect (_, "中文 📝\nCapture") -> true
+       | _ -> false) (App.model application).pending_effects);
+  check ~msg:"Android Send keeps capture expanded"
+    (App.model application).composer_expanded
 
 let kotlin_sidebar_uses_compact_material_drawer_metrics () =
   let application = App.create (kotlin_backend ()) in
@@ -9099,10 +9108,6 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   let selected_row =
     descendant_with_identifier renderer root "outliner.block.parent"
   in
-  let surface =
-    descendant_with_identifier renderer root
-      "surface.outliner.selection-toolbar"
-  in
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.selection"
   in
@@ -9115,21 +9120,6 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   check_eq ~msg:"Android uses compact Material action spacing"
     (property_int renderer toolbar Lui_protocol.Gap)
     4;
-  check_eq ~msg:"the contextual toolbar uses Material bottom-app-bar height"
-    (property_int renderer surface Lui_protocol.HeightValue)
-    56;
-  check_eq ~msg:"the contextual toolbar keeps balanced horizontal insets"
-    (property_int renderer surface Lui_protocol.PaddingHorizontal)
-    8;
-  check_eq ~msg:"the contextual toolbar centers 48dp actions"
-    (property_int renderer surface Lui_protocol.PaddingVertical)
-    4;
-  check_eq ~msg:"the contextual toolbar has a deliberate Material surface"
-    (property_int renderer surface Lui_protocol.CornerRadius)
-    20;
-  check_eq ~msg:"selection receives a stronger contextual surface"
-    (property_string renderer surface Lui_protocol.BackgroundValue)
-    "surface-container-high";
   check_eq ~msg:"all selection actions remain directly reachable"
     (List.length buttons) 7;
   List.iter
@@ -9151,10 +9141,11 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
          (property_string renderer button Lui_protocol.AccessibilityLabel
          <> "<missing>"))
     buttons;
-  check_eq ~msg:"delete stays neutral until the confirmation dialog"
-    (property_string renderer (List.nth buttons 3)
-       Lui_protocol.ForegroundValue)
-    "muted-foreground"
+  dispatch application (Lui_protocol.Press (List.nth buttons 0));
+  flush application;
+  check ~msg:"Android selection actions cross the typed core boundary"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "copy") -> true
+       | _ -> false) (App.model application).pending_effects)
 
 let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let application = App.create (kotlin_backend ()) in
@@ -9173,33 +9164,10 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = Lui_app.root_node application in
-  let editor_container =
-    descendant_with_identifier renderer root
-      "container.outliner.editor-chrome"
-  in
-  let surface =
-    descendant_with_identifier renderer root
-      "surface.outliner.editor-toolbar"
-  in
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.editor"
   in
   let buttons = children renderer toolbar in
-  check_eq ~msg:"the editor toolbar uses Material bottom-app-bar height"
-    (property_int renderer surface Lui_protocol.HeightValue)
-    56;
-  check_eq ~msg:"editor actions have balanced horizontal insets"
-    (property_int renderer surface Lui_protocol.PaddingHorizontal)
-    8;
-  check_eq ~msg:"editor actions are vertically centered"
-    (property_int renderer surface Lui_protocol.PaddingVertical)
-    4;
-  check_eq ~msg:"the editor chrome has one Material surface shape"
-    (property_int renderer editor_container Lui_protocol.CornerRadius)
-    20;
-  check_eq ~msg:"the editor and autocomplete share one Material surface"
-    (property_string renderer editor_container Lui_protocol.BackgroundValue)
-    "surface-container-low";
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
     (List.length buttons) 11;
   List.iter
@@ -9220,7 +9188,12 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
     "<missing>";
   check_eq ~msg:"page reference matches the iOS toolbar symbol"
     (property_string renderer page_reference Lui_protocol.TextValue)
-    "[[]]"
+    "[[]]";
+  dispatch application (Lui_protocol.Press (List.nth buttons 10));
+  flush application;
+  check ~msg:"Android Hide keyboard crosses the typed core boundary"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true
+       | _ -> false) (App.model application).pending_effects)
 
 let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   let application = App.create (ios_backend ()) in
@@ -9457,12 +9430,9 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
        overlaying it"
     (node renderer editor_container)
     (Some Lui_protocol.Column);
-  check_eq ~msg:"tag and page autocomplete share the editor surface"
-    (property_string renderer editor_container Lui_protocol.BackgroundValue)
-    "surface-container-low";
-  check_eq ~msg:"autocomplete and toolbar form one rounded container"
-    (property_int renderer editor_container Lui_protocol.CornerRadius)
-    20;
+  check ~msg:"the native editor toolbar remains below autocomplete"
+    (descendant_with_identifier renderer editor_container
+       "toolbar.outliner.editor" <> -1);
   check
     ~msg:"the autocomplete surface shares the visible vertical editor container"
     (child_with_identifier renderer editor_container
@@ -10339,7 +10309,7 @@ let cases =
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
     case "composer-focus-targets-do-not-wrap-native-menu-controls" composer_focus_targets_do_not_wrap_native_menu_controls;
     case "kotlin-journal-calendar-uses-native-presentation" kotlin_journal_calendar_uses_the_shared_native_presentation_effect;
-    case "kotlin-composer-matches-ios-chrome" kotlin_composer_matches_ios_chrome;
+    case "kotlin-composer-preserves-the-capture-contract" kotlin_composer_preserves_the_capture_contract;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
     case "collapsed-capture-camera-opens-directly" collapsed_capture_camera_opens_directly;

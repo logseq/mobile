@@ -1,0 +1,20 @@
+{
+  "apk_sha256": "7d7c652bf32132d5233906dadba93cf704a9b37b67e09f1f1bf694bf69f194cd",
+  "core_sha256": "a8f42c68cecc15048297e2eae35689a0e59033888199992d699c8897ca87e217",
+  "build_revision": "60a74052",
+  "variant": "release",
+  "material3": "1.5.0-beta01",
+  "compose_bom": "2026.09.00",
+  "status": "First validated batch; full expressive component migration remains in progress",
+  "signing": "Local test key, preserves current installation signature",
+  "physical_device_install": {
+    "device": "Redmi",
+    "mode": "adb install --no-incremental -r",
+    "result": "Success",
+    "data_cleared": false,
+    "launch_status": "ok",
+    "launch_state": "COLD",
+    "am_total_time_ms": 454,
+    "note": "One launch receipt, not a controlled performance benchmark"
+  }
+}

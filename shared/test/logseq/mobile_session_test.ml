@@ -604,8 +604,61 @@ let transcription_survives_navigation_and_deduplicates_outside_the_projection ()
     check_eq ~msg:"a missing parent cannot stage an orphan transcript" (List.length (Mobile_graph.pending_operations graph)) count)
 
 
+let editor_task_status_cycles_in_a_persisted_graph () =
+  with_host (fun host directory ->
+    let module Ds = Datascript in
+    let active = Filename.concat directory "tasks.sqlite" in
+    let checkpoint = Filename.concat directory "tasks.checkpoint" in
+    let page = "00000000-0000-4000-8000-000000000101" in
+    let block = "00000000-0000-4000-8000-000000000102" in
+    Graph_sqlite.prepare_staging active;
+    let db = Graph_bootstrap.install_canonical_entities
+      (Ds.parse_tx_data_string Graph_bootstrap_data.transaction_edn
+       |> List.map Graph_bootstrap.normalize_scalar_maps) (Graph_store.storage active) in
+    let db = Ds.db_with [
+      Ds.Add (Ds.Entity_id 10000, "block/uuid", Ds.Uuid page);
+      Ds.Add (Ds.Entity_id 10000, "block/title", Ds.String "Tasks");
+      Ds.Add (Ds.Entity_id 10000, "block/name", Ds.String "tasks");
+      Ds.Add (Ds.Entity_id 10001, "block/uuid", Ds.Uuid block);
+      Ds.Add (Ds.Entity_id 10001, "block/title", Ds.String "Unchanged title 中文 📝");
+      Ds.Add (Ds.Entity_id 10001, "block/page", Ds.Ref 10000);
+      Ds.Add (Ds.Entity_id 10001, "block/parent", Ds.Ref 10000);
+      Ds.Add (Ds.Entity_id 10001, "block/order", Ds.String "a0");
+    ] db in
+    ignore (Ds.store db);
+    (match Sync_checkpoint.save_checkpoint_atomic checkpoint (Sync_checkpoint.create "tasks" "1" 7) with
+     | Ok () -> () | Error message -> fail message);
+    let dispatch action fields =
+      let session = !(host.Mobile_session.session) in
+      let response = Rpc_session.dispatch session action (Some (Yojson.Basic.to_string (`Assoc fields))) in
+      let json = Yojson.Basic.from_string response in
+      check_eq ~msg:response (Yojson.Basic.Util.member "ok" json) (`Bool true)
+    in
+    dispatch "configure" ["graphId", `String "tasks"; "baseUrl", `String "https://example.com"; "token", `String ""];
+    let open_graph () = dispatch "openGraph" ["graphId", `String "tasks";
+      "activePath", `String active; "checkpointPath", `String checkpoint; "isEncrypted", `Bool false] in
+    open_graph ();
+    dispatch "openNode" ["uuid", `String page; "reveal", `Bool false];
+    let event fields = dispatch "outlinerEvent" fields in
+    let read () =
+      let graph = host.Mobile_session.database.Mobile_database.graph in
+      let opened = Option.get !(graph.Mobile_graph.current) in
+      Option.get (Graph_read.block (fun value -> Ok value)
+        (Graph_runtime.db opened.read_runtime) 10001) in
+    event ["type", `String "tapBlock"; "uuid", `String block];
+    List.iter (fun expected ->
+      event ["type", `String "toolbar"; "action", `String "task"];
+      let value = read () in
+      check_eq ~msg:"Task changes the persisted graph status" (Option.map (fun (status : Cache_model.status) -> status.title) value.status) expected;
+      check_eq value.title "Unchanged title 中文 📝")
+      [Some "Todo"; Some "Doing"; Some "Done"; None];
+    event ["type", `String "toolbar"; "action", `String "task"];
+    open_graph ();
+    check_eq ~msg:"Task status survives graph reopen" (Option.map (fun (status : Cache_model.status) -> status.title) (read ()).status) (Some "Todo"))
+
 let cases =
-  [ case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;
+  [ case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;
+    case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;
     case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;
     case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;
     case "server rejections survive restart and stay graph scoped" server_rejections_survive_restart_and_remain_scoped_to_the_graph;

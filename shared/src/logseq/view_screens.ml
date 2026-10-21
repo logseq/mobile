@@ -170,7 +170,6 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
         if_
           ~test:(Signal.map View_base.bottom_chrome_editor_ model_source)
           (column ~gap:0 ~cross:`stretch
-             ~background:"surface-container-low" ~corner_radius:20
              ~accessibility_identifier:"container.outliner.editor-chrome"
              [
                if_

@@ -1,0 +1,11 @@
+"name","cpu_ms"
+"com.logseq.app",2204.550000
+"RenderThread",1265.950000
+"DefaultDispatch",324.220000
+"HeapTaskDaemon",244.690000
+"Jit thread pool",105.740000
+"binder:9467_2",35.880000
+"binder:9467_4",31.920000
+"GPU completion",14.550000
+"binder:9467_5",13.710000
+"ReferenceQueueD",7.620000

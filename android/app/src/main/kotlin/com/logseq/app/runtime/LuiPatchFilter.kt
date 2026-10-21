@@ -1,7 +1,10 @@
 package com.logseq.app.runtime
 
-import org.json.JSONArray
-import org.json.JSONObject
+import dev.lui.LuiBackend
+import dev.lui.LuiNodeKind
+import dev.lui.LuiPatchBatch
+import dev.lui.LuiPatchOp
+import dev.lui.LuiWireValue
 
 // Kotlin port of the former Dart patch applier.
 //
@@ -15,71 +18,53 @@ import org.json.JSONObject
 //   - role unless "treeitem" on row/column/panel/card/box/list-item
 // `size: icon` on buttons additionally synthesizes text-alignment:center
 // so the glyph centers in the touch target.
-internal class LuiPatchFilter(
-    private val apply: (String) -> Unit,
-) {
-    private val nodeKinds = mutableMapOf<Long, String>()
-    private val ignoredProperties = mutableSetOf<String>()
+internal class LuiPatchFilter(private val backend: LuiBackend) {
+    private val ignoredProperties = mutableSetOf<Pair<Long, String>>()
 
-    fun applyJson(patch: String) {
-        val document = JSONObject(patch)
-        val operations = document.getJSONArray("ops")
-        val nextNodeKinds = HashMap(nodeKinds)
+    fun applyJson(patch: String): LuiPatchBatch {
+        val document = LuiPatchBatch.parse(patch)
+        val createdKinds = mutableMapOf<Long, LuiNodeKind>()
         val nextIgnored = HashSet(ignoredProperties)
-        val compatible = JSONArray()
+        val compatible = ArrayList<LuiPatchOp>(document.ops.size)
 
-        for (index in 0 until operations.length()) {
-            val operation = operations.getJSONObject(index)
-            val name = operation.getString("op")
-            val id = if (operation.has("id")) operation.getLong("id") else null
-            when {
-                name == "create-node" && id != null ->
-                    nextNodeKinds[id] = operation.getString("kind")
-                name == "drop-node" && id != null -> {
-                    nextNodeKinds.remove(id)
-                    nextIgnored.removeIf { it.startsWith("$id:") }
+        for (operation in document.ops) {
+            when (operation) {
+                is LuiPatchOp.CreateNode -> createdKinds[operation.id] = operation.kind
+                is LuiPatchOp.DropNode -> {
+                    createdKinds.remove(operation.id)
+                    nextIgnored.removeIf { it.first == operation.id }
                 }
-                name == "set-prop" && id != null -> {
-                    val property = operation.getString("property")
-                    val key = "$id:$property"
-                    if (isUnsupportedPresentationHint(
-                            kind = nextNodeKinds[id],
-                            property = property,
-                            value = operation.opt("value"),
-                        )
-                    ) {
+                is LuiPatchOp.SetProp -> {
+                    val kind = (createdKinds[operation.id] ?: backend.nodeKind(operation.id))?.wireName
+                    val key = operation.id to operation.property
+                    if (isUnsupportedPresentationHint(kind, operation.property, operation.value.scalarValue)) {
                         nextIgnored.add(key)
                         continue
                     }
                     nextIgnored.remove(key)
-                    if (property == "size" &&
-                        operation.opt("value") == "icon" &&
-                        nextNodeKinds[id] in setOf("button", "toggle-button")
-                    ) {
-                        compatible.put(operation)
-                        compatible.put(
-                            JSONObject()
-                                .put("op", "set-prop")
-                                .put("id", id)
-                                .put("property", "text-alignment")
-                                .put("value", "center")
-                        )
+                    if (operation.property == "size" && operation.value.stringValue == "icon" &&
+                        kind in setOf("button", "toggle-button")) {
+                        compatible.add(operation)
+                        compatible.add(LuiPatchOp.SetProp(operation.id, "text-alignment", LuiWireValue.Str("center")))
                         continue
                     }
                 }
-                name == "remove-prop" && id != null -> {
-                    val property = operation.getString("property")
-                    if (nextIgnored.remove("$id:$property")) continue
+                is LuiPatchOp.RemoveProp -> {
+                    if (nextIgnored.remove(operation.id to operation.property)) continue
                 }
+                else -> Unit
             }
-            compatible.put(operation)
+            compatible.add(operation)
         }
 
-        apply(document.put("ops", compatible).toString())
-        nodeKinds.clear()
-        nodeKinds.putAll(nextNodeKinds)
+        val batch = LuiPatchBatch(document.generation, compatible)
+        check(backend.applyBatch(batch)) { "Could not apply UI update: ${backend.lastError}" }
+        // detach-subtree can remove descendants without individual drop ops.
+        // Retain only live hints instead of copying historical node metadata.
+        nextIgnored.removeIf { backend.nodeKind(it.first) == null }
         ignoredProperties.clear()
         ignoredProperties.addAll(nextIgnored)
+        return batch
     }
 
     companion object {

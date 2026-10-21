@@ -346,15 +346,19 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       if_ ~test:has_status_source
         (column ~cross:`start
            [ outliner_status_control context model_source row_source send ]);
-      reactive (fun (row : Model.outline_row) ->
-        match row.row_priority with
-        | None -> box []
-        | Some priority ->
-          let ident = Option.value ~default:"" priority.ident in
-          let level = match List.rev (String.split_on_char '/' ident) with
-            | name :: _ when name <> "" -> name | _ -> String.lowercase_ascii priority.title in
-          icon ~name:(`app ("priority-" ^ level)) ~width:20 ~height:24
-            ~foreground:"muted-foreground" ~tooltip:priority.title []) row_source;
+      if_ ~test:(reactive (fun (row : Model.outline_row) -> row.row_priority <> None) row_source)
+        (icon ~name:(reactive (fun (row : Model.outline_row) ->
+           let level = match row.row_priority with
+             | None -> "none"
+             | Some priority ->
+               let ident = Option.value ~default:"" priority.ident in
+               match List.rev (String.split_on_char '/' ident) with
+               | name :: _ when name <> "" -> name
+               | _ -> String.lowercase_ascii priority.title in
+           `app ("priority-" ^ level)) row_source)
+           ~width:20 ~height:24 ~foreground:"muted-foreground"
+           ~tooltip:(reactive (fun (row : Model.outline_row) ->
+             match row.row_priority with Some priority -> priority.title | None -> "") row_source) []);
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
@@ -583,14 +587,10 @@ let outliner_entry context model_source retained_row_source row_source
              model_source row_source)
         (journal_heading model_source row_source send
            [
-             (* Journal section titles align with the bullet column, not
-                the block text column: iOS's List leading inset puts both
-                at the same x; on Android the outliner row padding already
-                insets rows ~8dp, so 9 more puts the title glyph edge at
-                the bullet's left edge. *)
+             (* Align the Android title edge with the center of its 24dp bullet slot. *)
              box
                ~padding_horizontal:
-                 (if Lui_ui.host context = KotlinHost then 9 else 8)
+                 (if Lui_ui.host context = KotlinHost then 12 else 8)
                [
                  View_base.with_int_prop_signal HeightValue
                    (Signal.map2
@@ -620,15 +620,14 @@ let outliner_entry context model_source retained_row_source row_source
 
 let toolbar_button icon label identifier action send : t =
   button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
-    ~foreground:"muted-foreground" ~label ~accessibility_identifier:identifier
+    ~label ~accessibility_identifier:identifier
     ~on_press:(fun _ ->
       ignore (send (Model.PerformOutlinerToolbarAction action)))
     []
 
 let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
-    box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
-      ~background:"surface-container-high" ~corner_radius:20
+    box
       ~accessibility_identifier:"surface.outliner.selection-toolbar"
       [
         toolbar ~orientation:`horizontal ~label:"Outliner selection"
@@ -741,7 +740,26 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = KotlinHost then
-    box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
+    let task_status (current : Model.logseq_model) =
+      match current.outliner_editing with
+      | Some editing ->
+        (match Model.row_index current.outliner_rows editing.editing_uuid with
+         | Some index -> (List.nth current.outliner_rows index).row_status
+         | None -> None)
+      | None -> None
+    in
+    let task_icon current =
+      match task_status current with
+      | Some status ->
+        View_base.icon_of_wire_name (View_base.task_status_icon_name status)
+      | None -> `app "toolbar-task"
+    in
+    let task_foreground current =
+      match task_status current with
+      | Some status -> View_base.task_status_foreground status
+      | None -> "foreground"
+    in
+    box
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
         toolbar ~orientation:`horizontal ~label:"Outliner editor"
@@ -750,9 +768,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           [
             View_base.with_label_signal
               (Signal.map View_base.outliner_editor_task_label model_source)
-              (button ~icon:(`app "toolbar-task") ~variant:`ghost
+              (button ~icon:(reactive task_icon model_source)
+                 ~foreground:(reactive task_foreground model_source)
+                 ~variant:`ghost
                  ~size:`icon ~width:48 ~height:48
-                 ~foreground:"muted-foreground"
                  ~accessibility_identifier:"button.outliner.editor.task"
                  ~on_press:(fun _ ->
                    ignore
@@ -776,7 +795,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
             toolbar_button (`app "toolbar-attachment") "Upload asset"
               "button.outliner.editor.attachment" "attachment" send;
             button ~variant:`ghost ~size:`icon ~width:48 ~height:48
-              ~foreground:"muted-foreground" ~label:"Page reference"
+              ~label:"Page reference"
               ~accessibility_identifier:
                 "button.outliner.editor.pageReference"
               ~on_press:(fun _ ->

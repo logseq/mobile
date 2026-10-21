@@ -75,9 +75,7 @@ internal class LogseqRuntime(
             ).asImageBitmap(),
         )
     }
-    private val patchFilter = LuiPatchFilter { patch ->
-        check(backend.applyJson(patch)) { "Could not apply UI update: ${backend.lastError}" }
-    }
+    private val patchFilter = LuiPatchFilter(backend)
     private val bridge = LogseqNativeBridge(onPatch = ::applyPatch)
 
     private var coreEffects: CoreEffectExecutor? = null

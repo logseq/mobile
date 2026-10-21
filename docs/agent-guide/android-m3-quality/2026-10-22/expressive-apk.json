@@ -1,0 +1,27 @@
+{
+  "apk_sha256": "044d6d66fb27f2b55525938460da19738a77dd975c7a12a2e557fef65350e4a1",
+  "core_sha256": "a8f42c68cecc15048297e2eae35689a0e59033888199992d699c8897ca87e217",
+  "build_revision": "60a74052",
+  "variant": "release",
+  "material3": "1.5.0-beta01",
+  "compose_bom": "2026.09.00",
+  "changes": "Expressive menus and single-selection items, native tabs, full-row checkbox/switch/radio interaction; includes the previous composer/defaults batch",
+  "validation": {
+    "instrumentation_passed": 19,
+    "jvm_passed": 57,
+    "release_build": "BUILD SUCCESSFUL",
+    "apk_signature": "verified",
+    "tested_debug_core_matches": true
+  },
+  "physical_device_install": {
+    "device": "Redmi",
+    "mode": "adb install --no-incremental -r",
+    "result": "Success",
+    "data_cleared": false,
+    "launch_status": "ok",
+    "launch_state": "COLD",
+    "am_total_time_ms": 450,
+    "note": "One launch receipt, not a controlled performance benchmark"
+  },
+  "status": "Full component migration and controlled performance validation remain in progress"
+}

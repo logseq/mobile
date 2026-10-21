@@ -1,0 +1,20 @@
+{
+  "before-1": {
+    "median_cpu_ms": 1747.428897,
+    "samples": 12,
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530",
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932"
+  },
+  "after": {
+    "median_cpu_ms": 541.859933,
+    "samples": 12,
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530",
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932"
+  },
+  "before-2": {
+    "median_cpu_ms": 1684.1864209999999,
+    "samples": 12,
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530",
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932"
+  }
+}

@@ -1,0 +1,19 @@
+"name","n","max_ms","total_ms"
+"Compose:recompose",740,3.740000,132.490000
+"Recomposer:recompose",133,3.190000,37.480000
+"AndroidOwner:measureAndLayout",394,2.390000,185.610000
+"Recomposer:animation",84,1.670000,45.670000
+"JIT compiling byte kotlinx.serialization.json.internal.AbstractJsonLexerKt.charToTokenClass(char) (kind=Optimized)",1,1.160000,1.160000
+"JIT compiling java.lang.Object kotlinx.coroutines.channels.BufferedChannel.receive$suspendImpl(kotlinx.coroutines.channels.BufferedChannel, kotlin.coroutines.Continuation) (kind=Baseline)",1,1.140000,1.140000
+"JIT compiling java.lang.Throwable kotlinx.coroutines.internal.DispatchedContinuation.tryReleaseClaimedContinuation$kotlinx_coroutines_core(kotlinx.coroutines.CancellableContinuation) (kind=Baseline)",1,1.040000,1.040000
+"JIT compiling void kotlinx.coroutines.internal.DispatchedContinuationKt.resumeCancellableWithInternal(kotlin.coroutines.Continuation, java.lang.Object) (kind=Baseline)",1,1.010000,1.010000
+"JIT compiling void kotlinx.coroutines.CancellableContinuationImpl.invokeOnCancellationImpl(java.lang.Object) (kind=Baseline)",1,0.970000,0.970000
+"JIT compiling long java.util.concurrent.atomic.AtomicLongFieldUpdater$CASUpdater.get(java.lang.Object) (kind=Baseline)",1,0.900000,0.900000
+"JIT compiling void androidx.compose.material3.ButtonKt$Button$2$1.invoke(androidx.compose.runtime.Composer, int) (kind=Baseline)",1,0.850000,0.850000
+"JIT compiling java.lang.Object androidx.collection.ScatterMap.get(java.lang.Object) (kind=Optimized)",1,0.820000,0.820000
+"JIT compiling kotlin.Unit androidx.compose.runtime.SingleSubscriptionSnapshotFlowManager.unregisterApplyObserver$lambda$0(androidx.compose.runtime.SingleSubscriptionSnapshotFlowManager, java.util.Set, androidx.compose.runtime.snapshots.Snapshot) (kind=Baseline)",1,0.810000,0.810000
+"JIT compiling java.lang.Object kotlinx.coroutines.channels.BufferedChannel$BufferedChannelIterator.hasNextOnNoWaiterSuspend(kotlinx.coroutines.channels.ChannelSegment, int, long, kotlin.coroutines.Continuation) (kind=Baseline)",1,0.790000,0.790000
+"JIT compiling int kotlinx.coroutines.channels.BufferedChannel.updateCellSend(kotlinx.coroutines.channels.ChannelSegment, int, java.lang.Object, long, java.lang.Object, boolean) (kind=Baseline)",1,0.770000,0.770000
+"JIT compiling java.lang.String kotlinx.serialization.json.internal.StringJsonLexer.consumeKeyString() (kind=Optimized)",1,0.730000,0.730000
+"JIT compiling boolean androidx.collection.MutableIntSet.remove(int) (kind=Baseline)",1,0.660000,0.660000
+"JIT compiling java.lang.Object kotlinx.coroutines.channels.BufferedChannel.trySend-JP2dKIU(java.lang.Object) (kind=Baseline)",1,0.620000,0.620000

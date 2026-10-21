@@ -14,9 +14,6 @@ val task_status_row :
   Model.logseq_model Signal.signal ->
   Model.task_status Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
-val task_status_picker_dialog :
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
 val composer_view :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

@@ -1,0 +1,21 @@
+"name","total_ms","max_ms","n"
+"animation",2108.200000,306.900000,126
+"Drawing  0.00  0.00 1080.00 2400.00",1674.200000,115.500000,119
+"AndroidOwner:measureAndLayout",1651.200000,264.100000,159
+"eglSwapBuffersWithDamageKHR",1164.200000,91.300000,119
+"traversal",868.000000,213.100000,123
+"input",862.100000,483.300000,109
+"VRI[MainActivity]",861.000000,483.300000,109
+"draw-VRI[MainActivity]",855.900000,212.800000,123
+"Compose:recompose",825.400000,184.200000,243
+"Choreographer#doFrame 31758",699.900000,699.900000,1
+"JIT compiling long androidx.compose.ui.platform.AndroidComposeView.screenToLocal-MK-Hz9U(long) (kind=Baseline) from /data/app/~~nynbFZa707TNPH0RK6cA_A==/com.logseq.app-lVlZr6qn-sYa7WWoCrnVRQ==/base.apk!classes2.dex",657.700000,657.700000,1
+"dispatchInputEvent MotionEvent ACTION_MOVE deviceId=-1 source=0x1002 historySize=1",556.600000,482.700000,49
+"Choreographer#doFrame 31432",514.300000,514.300000,1
+"Choreographer#doFrame - resynced to 31435 in 29.3ms",513.900000,513.900000,1
+"deliverInputEvent src=0x1002 eventTimeNano=231695891714 id=0xf575c23c",482.100000,482.100000,1
+"Record View#draw()",468.700000,144.000000,123
+"dequeueBuffer",440.100000,21.100000,119
+"waitForBufferRelease",432.900000,21.100000,51
+"queueBuffer",424.200000,77.600000,238
+"AndroidOwner:onTouch",405.700000,186.300000,106

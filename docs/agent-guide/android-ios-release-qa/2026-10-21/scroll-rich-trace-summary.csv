@@ -1,0 +1,26 @@
+"name","total_ms","max_ms","n"
+"animation",3506.700000,133.000000,450
+"Drawing  0.00  0.00 1080.00 2400.00",3455.000000,98.600000,169
+"AndroidOwner:measureAndLayout",1988.000000,119.700000,158
+"traversal",1665.600000,80.300000,173
+"draw-VRI[MainActivity]",1602.800000,80.100000,173
+"compose:lazy:prefetch:idle_frame",1413.000000,135.800000,33
+"drawLayer [WebView] 952.0 x 578.0",1363.000000,82.100000,136
+"eglSwapBuffersWithDamageKHR",1312.600000,38.400000,169
+"WebViewFunctor::drawGl",1117.600000,81.900000,136
+"Compose:recompose",1090.800000,49.800000,53
+"compose:lazy:prefetch:compose",1028.500000,85.900000,32
+"binder transaction",1009.800000,141.000000,280
+"Record View#draw()",830.700000,61.500000,173
+"postAndWait",750.100000,76.800000,173
+"compose:lazy:prefetch:execute:urgent",712.700000,104.800000,29
+"flush commands",606.500000,26.000000,169
+"Compiling baseline",580.600000,36.700000,179
+"AndroidOwner:draw",500.500000,46.300000,169
+"dequeueBuffer",447.700000,32.000000,169
+"AndroidOwner:onTouch",445.200000,40.500000,105
+"waitForBufferRelease",444.200000,32.000000,51
+"input",431.600000,41.000000,101
+"VRI[MainActivity]",430.200000,41.000000,101
+"Compose:recordChanges",369.000000,55.200000,32
+"queueBuffer",347.300000,7.300000,338

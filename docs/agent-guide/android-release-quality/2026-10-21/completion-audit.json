@@ -1,0 +1,40 @@
+{
+  "goal_scope": "Android renderer fixes, trace-driven patch optimization, emulator comparison and updated report/demo",
+  "lui_main": "e33a152120dff61a65217130d9479f0e974fde47",
+  "lui_previous_main": "03cc08063adec1c2c0d7a921beca192e6a63153e",
+  "lui_tested_pin": "1edf12691bcd78ee65b52355d5c2a35f4194524c",
+  "lui_main_and_tested_pin_have_identical_source_trees": true,
+  "lui_push": "Normal fast-forward push, remote refs/heads/main verified",
+  "jvm": {
+    "tests": 54,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "instrumentation": {
+    "tests": 17,
+    "log": "patch-pipeline/final-frozen-ui.log"
+  },
+  "final_build": "patch-pipeline/final-build-gate.log",
+  "final_release": "final-integration-performance/apk.json",
+  "final_performance": {
+    "janky_frames": 27,
+    "frames": 993,
+    "all_three_emulator_budgets_pass": true
+  },
+  "final_demo": {
+    "path": "android-final-demo.mp4",
+    "sha256": "0c7cd6c4f2d591235396595b5735d7379d8a5f5d51f2d3c7628f99d5a70e273e",
+    "duration_seconds": 24.829056,
+    "native_screenrecord": true
+  },
+  "ios_modified_by_this_task": false,
+  "rejected_experiments_shipped": false,
+  "remaining_formal_release_validation": [
+    "Redmi actual-device performance",
+    "Real authenticated editing/persistence/sync/attachments",
+    "Chinese IME",
+    "Production signing/distribution"
+  ],
+  "workspace_note": "Other concurrent work is preserved. Frozen APKs, not later workspace HEAD, identify the validated integration snapshot."
+}

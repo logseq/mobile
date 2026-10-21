@@ -397,8 +397,13 @@ seed_android_fixture() {
       | sed -n 's|.*<string name="logseq.selectedGraphId">\([^<]*\)</string>.*|\1|p' \
       | tr -d '\r' | head -1)
     if [[ $selected_graph_id =~ ^[A-Za-z0-9._-]+$ ]]; then
-      graph_database="files/graphs/$selected_graph_id/graph.sqlite"
-      checkpoint="files/graphs/$selected_graph_id/sync.checkpoint"
+      local graph_directory
+      graph_directory=$(python3 "$repo_root/scripts/android-selected-graph.py" \
+        --device "$device" --app "$app_id" --graph-id "$selected_graph_id" 2>/dev/null || true)
+      if [[ -n $graph_directory ]]; then
+        graph_database="$graph_directory/graph.sqlite"
+        checkpoint="$graph_directory/sync.checkpoint"
+      fi
     fi
     if [[ -n $graph_database ]] \
       && adb -s "$device" shell run-as "$app_id" test -f "$graph_database" \

@@ -1,0 +1,39 @@
+{
+  "apk_sha256": "4b753185f54a4c28dc6d492856ad8e6b8124892ac1ff4f5109e1fd60455cc564",
+  "core_sha256": "a8f42c68cecc15048297e2eae35689a0e59033888199992d699c8897ca87e217",
+  "build_revision": "1c34ed0e",
+  "variant": "release",
+  "material3": "1.5.0-beta01",
+  "changes": "Native modal drawer and popover; expressive button shapes and icon variants; native list selection; Material typography and surface token defaults",
+  "validation": {
+    "focused_instrumentation_passed": 35,
+    "retained_content_regressions_passed": 17,
+    "jvm_passed": 57,
+    "signature_verified": true,
+    "tested_debug_core_matches": true
+  },
+  "physical_device_install": {
+    "device": "Redmi",
+    "mode": "adb install --no-incremental -r",
+    "result": "Success",
+    "data_cleared": false,
+    "launch_status": "ok",
+    "launch_state": "COLD",
+    "am_total_time_ms": 497,
+    "note": "One launch receipt, not a performance benchmark"
+  },
+  "physical_appearance_capture": {
+    "driver": "Native accessibility actions; no system input injection or content edits",
+    "passed": true,
+    "seconds": 10.952,
+    "screens": ["main", "drawer", "attachments", "status"],
+    "screenshots": "Private local files under /tmp/logseq-redmi-m3-*.png"
+  },
+  "emulator_measurement": {
+    "janky_frames": 21,
+    "frames": 974,
+    "jank_percent": 2.16,
+    "note": "No meaningful improvement established; controlled optimization and tracing remain required"
+  },
+  "remaining": "Android Material composer, other component API/default migrations, controlled performance profiling and optimization, upstream publication and final validation"
+}

@@ -1,0 +1,56 @@
+{
+  "device": "emulator-5554",
+  "variant": "release (not debuggable; locally signed with Android debug key)",
+  "launches": [
+    {
+      "first_ui_rendered": 1759.0,
+      "authentication_published": 2010.0,
+      "journals_ui_ready": 2560.0,
+      "am_total_ms": 2033
+    },
+    {
+      "first_ui_rendered": 802.0,
+      "authentication_published": 1048.0,
+      "journals_ui_ready": 1303.0,
+      "am_total_ms": 980
+    },
+    {
+      "first_ui_rendered": 650.0,
+      "authentication_published": 793.0,
+      "journals_ui_ready": 982.0,
+      "am_total_ms": 850
+    }
+  ],
+  "idle_10s": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  },
+  "scroll_1": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  },
+  "scroll_2": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  },
+  "scroll_3": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  }
+}

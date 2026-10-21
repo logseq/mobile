@@ -2,6 +2,8 @@ package com.logseq.app.ui.extensions
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,6 +42,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lui.LuiExtensionContext
@@ -274,14 +277,14 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
                 // props claim the whole screen.
                 if (occupies) {
                     Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { context.child(childIds[0]) }
+                        Box(Modifier.weight(1f)) { NavigationContent(context, childIds[0], dismissesComposer) }
                         Box(Modifier.height(IntrinsicSize.Min)) {
                             context.child(childIds[1])
                         }
                     }
                 } else {
                     Box(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
+                        Column(Modifier.fillMaxSize()) { NavigationContent(context, childIds[0], dismissesComposer) }
                         Box(
                             Modifier
                                 .align(Alignment.BottomCenter)
@@ -294,6 +297,28 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             } else {
                 context.Children()
             }
+        }
+    }
+}
+
+@Composable
+private fun NavigationContent(context: LuiExtensionContext, contentId: Long, dismissesComposer: Boolean) {
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    Box(Modifier.fillMaxSize()) {
+        context.child(contentId)
+        if (dismissesComposer) {
+            Box(Modifier.fillMaxSize()
+                .testTag("surface.composer.dismiss")
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = "Dismiss composer",
+                ) {
+                    focus.clearFocus()
+                    keyboard?.hide()
+                    context.emit("dismiss-composer")
+                })
         }
     }
 }

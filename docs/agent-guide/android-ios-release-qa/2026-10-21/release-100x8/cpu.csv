@@ -1,0 +1,9 @@
+"name","cpu_ms"
+"com.logseq.app",3918.900000
+"RenderThread",1019.400000
+"Jit thread pool",635.600000
+"HeapTaskDaemon",242.700000
+"DefaultDispatch",63.100000
+"Profile Saver",44.700000
+"binder:4029_1",37.400000
+"binder:4029_4",21.200000

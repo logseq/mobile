@@ -75,7 +75,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
             if (!selectionRequested) return@LaunchedEffect
         }
-        if (selectionRequested || titleChanged || (caretChanged && value.text == modelTitle)) {
+        // Acknowledging our caret must preserve native selection and IME composition.
+        val externalCaret = caretChanged && modelCaret != value.selection.start
+        if (selectionRequested || titleChanged || (externalCaret && value.text == modelTitle)) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++

@@ -1,0 +1,13 @@
+"name","cpu_ms","longest_run_ms"
+"com.logseq.app",5764.800000,60.700000
+"RenderThread",1955.700000,24.400000
+"Chrome_InProcGp",1248.200000,20.700000
+"Chrome_IOThread",754.600000,8.700000
+"NetworkService",641.800000,9.300000
+"Jit thread pool",385.200000,8.100000
+"ThreadPoolForeg",248.100000,6.400000
+"HeapTaskDaemon",201.700000,16.600000
+"ThreadPoolForeg",110.100000,8.800000
+"DefaultDispatch",108.900000,9.700000
+"ThreadPoolSingl",103.000000,6.200000
+"VizWebView",90.600000,2.200000

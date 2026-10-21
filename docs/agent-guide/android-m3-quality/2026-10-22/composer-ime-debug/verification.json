@@ -1,0 +1,43 @@
+{
+  "device": "emulator-5556",
+  "android_api": 33,
+  "fixture_graph": "uiregression",
+  "apk_sha256": "bcb899eb578e7c69ace64cba4c8cc8942bed8de157fae9ffd1ac538b0d9f429e",
+  "native_core_sha256": "1a53e7abfcbb62a2079fa2bde395b6ed709dad06a2e8ea9dd4b0536741a0801b",
+  "real_ime_checks": [
+    {
+      "name": "attachmentMenuKeepsTheKeyboardAndBackClosesOnlyTheMenu",
+      "passed": true
+    },
+    {
+      "name": "openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen",
+      "passed": true
+    },
+    {
+      "name": "outsideMenuTapPreservesTheKeyboardAndDraft",
+      "passed": true
+    },
+    {
+      "name": "statusMenuKeepsTheRealKeyboardAndComposerPosition",
+      "passed": true
+    },
+    {
+      "name": "statusSelectionPreservesTheInputCaret",
+      "passed": true
+    }
+  ],
+  "native_regression": {
+    "cases": 72,
+    "passed": true,
+    "seconds": 205.323
+  },
+  "host_jvm_cases": 57,
+  "standalone_lui_cases": 29,
+  "screenshots": [
+    "/tmp/logseq-m3-composer-plus-ime.png",
+    "/tmp/logseq-m3-composer-status-ime.png"
+  ],
+  "scope": "Functional UI verification; not a latency or performance benchmark",
+  "lui_main_commit": "ab4c1e2d20d9b3ef9caa7451c5b5ecceb0e6d9a3",
+  "post_validation_change": "List-item indentation only; Android assemble and 57 host JVM cases pass after formatting."
+}

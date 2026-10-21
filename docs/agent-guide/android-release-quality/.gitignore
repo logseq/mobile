@@ -1,0 +1,10 @@
+# Keep compact results and reproduction sources; raw QA captures stay local.
+*
+!.gitignore
+!*/
+!*.md
+!*.json
+!*.py
+!*.sql
+!*.csv
+native-patches.json

@@ -1,0 +1,8 @@
+{
+  "kotlin_differences": [
+    "android/app/src/main/kotlin/com/logseq/app/runtime/LogseqRuntime.kt",
+    "android/app/src/main/kotlin/com/logseq/app/runtime/LuiPatchFilter.kt"
+  ],
+  "common_lui_checkout": "/Users/tiensonqin/Codes/projects/logseq-chat/duniverse/lui",
+  "native_libraries": "Baseline repacked from after APK to make core/JNI/path libraries byte-identical."
+}

@@ -15,6 +15,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,7 +51,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         "dark" -> true
         else -> systemDark
     }
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
         typography = LogseqTheme.typography,
     ) {

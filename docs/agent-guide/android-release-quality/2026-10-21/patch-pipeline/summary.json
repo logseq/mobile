@@ -1,0 +1,50 @@
+{
+  "release-before": {
+    "median_cpu_ms": 492.3770395,
+    "min_cpu_ms": 475.533127,
+    "max_cpu_ms": 653.129073,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  },
+  "release-after": {
+    "median_cpu_ms": 348.093477,
+    "min_cpu_ms": 212.643508,
+    "max_cpu_ms": 607.118167,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  },
+  "release-before-2": {
+    "median_cpu_ms": 1007.374617,
+    "min_cpu_ms": 683.17075,
+    "max_cpu_ms": 2703.456208,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  },
+  "before-1": {
+    "median_cpu_ms": 1747.428897,
+    "min_cpu_ms": 1483.173703,
+    "max_cpu_ms": 3914.178909,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  },
+  "after": {
+    "median_cpu_ms": 541.859933,
+    "min_cpu_ms": 458.793612,
+    "max_cpu_ms": 1466.927997,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  },
+  "before-2": {
+    "median_cpu_ms": 1684.1864209999999,
+    "min_cpu_ms": 1107.945039,
+    "max_cpu_ms": 9150.807405,
+    "samples": 12,
+    "core_sha256": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+    "stream_sha256": "849c3a1969d03a46b9697c2ce9f87a94e698273af5720bdfef1c7584b47b4530"
+  }
+}

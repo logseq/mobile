@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
@@ -39,10 +38,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.ui.draganddrop.DragAndDropEvent
@@ -60,7 +61,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -250,23 +253,38 @@ private fun ProjectedMarkup(
         )
         return
     }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for ((index, chunk) in markupChunks(nodes).withIndex()) {
-            if (chunk.size == 1 && isRichNode(chunk.first())) {
-                MarkupRichNode(chunk.first(), onOpenNode)
-            } else {
-                val annotated = markupAnnotatedString(chunk, completedDecoration)
-                MarkupInlineText(
-                    annotated = annotated,
-                    nodes = chunk,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("block.rich.inline.$index"),
-                    onOpenNode = onOpenNode,
-                    onTapFallback = onTapFallback,
-                )
+    val chunks = remember(nodes) { markupChunks(nodes) }
+    if (chunks.size == 1) {
+        MarkupChunk(chunks.single(), 0, completedDecoration, onOpenNode, onTapFallback)
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for ((index, chunk) in chunks.withIndex()) {
+                MarkupChunk(chunk, index, completedDecoration, onOpenNode, onTapFallback)
             }
         }
+    }
+}
+
+@Composable
+private fun MarkupChunk(
+    chunk: List<JSONObject>,
+    index: Int,
+    completedDecoration: TextDecoration?,
+    onOpenNode: (String) -> Unit,
+    onTapFallback: () -> Unit,
+) {
+    if (chunk.size == 1 && isRichNode(chunk.first())) {
+        MarkupRichNode(chunk.first(), completedDecoration, onOpenNode, onTapFallback)
+    } else {
+        val annotated = remember(chunk, completedDecoration) {
+            markupAnnotatedString(chunk, completedDecoration)
+        }
+        MarkupInlineText(
+            annotated = annotated,
+            modifier = Modifier.fillMaxWidth().testTag("block.rich.inline.$index"),
+            onOpenNode = onOpenNode,
+            onTapFallback = onTapFallback,
+        )
     }
 }
 
@@ -324,8 +342,10 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
                 "strikeThrough" -> SpanStyle(textDecoration = TextDecoration.LineThrough)
                 else -> SpanStyle()
             }
-            withStyle(style.copy(textDecoration = decoration ?: style.textDecoration)) {
-                append(node.optString("text"))
+            val combined = listOfNotNull(decoration, style.textDecoration)
+                .takeIf { it.isNotEmpty() }?.let(TextDecoration::combine)
+            withStyle(style.copy(textDecoration = combined)) {
+                appendChildren(node, combined)
             }
         }
         "code" -> withStyle(
@@ -377,69 +397,89 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
             pop()
         }
         "math" -> append(node.optString("text"))
-        else -> append(node.optString("text"))
+        else -> appendChildren(node, decoration)
+    }
+}
+
+private fun AnnotatedString.Builder.appendChildren(node: JSONObject, decoration: TextDecoration?) {
+    val children = node.optJSONArray("children")
+    if (children == null) {
+        append(node.optString("text"))
+    } else {
+        for (index in 0 until children.length()) {
+            children.optJSONObject(index)?.let { appendNode(it, decoration) }
+        }
     }
 }
 
 @Composable
 private fun MarkupInlineText(
     annotated: AnnotatedString,
-    nodes: List<JSONObject>,
     modifier: Modifier,
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
+    textStyle: TextStyle? = null,
 ) {
     val context = LocalContext.current
-    ClickableText(
-        text = annotated,
-        style = outlinerBodyStyle.copy(
+    val openNode by rememberUpdatedState(onOpenNode)
+    val edit by rememberUpdatedState(onTapFallback)
+    val linked = remember(annotated, context) {
+        val links = annotated.getStringAnnotations(0, annotated.length)
+        if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
+            for (link in links) {
+                addLink(LinkAnnotation.Clickable(link.tag, linkInteractionListener = {
+                    when (link.tag) {
+                        TAG_NODE -> openNode(link.item)
+                        TAG_URL, TAG_TIMESTAMP -> openExternalUrl(context, link.item)
+                        else -> edit()
+                    }
+                }), link.start, link.end)
+            }
+        }.toAnnotatedString()
+    }
+    // Native text links avoid ClickableText's layout-result state update on
+    // every newly composed row, and expose link/edit actions to accessibility.
+    Text(
+        text = linked,
+        style = textStyle ?: outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
-        modifier = modifier,
-        onClick = { offset ->
-            annotated.getStringAnnotations(TAG_NODE, offset, offset).firstOrNull()
-                ?.let { onOpenNode(it.item); return@ClickableText }
-            annotated.getStringAnnotations(TAG_URL, offset, offset).firstOrNull()
-                ?.let { openExternalUrl(context, it.item); return@ClickableText }
-            annotated.getStringAnnotations(TAG_TIMESTAMP, offset, offset).firstOrNull()
-                ?.let {
-                    if (it.item.isNotEmpty()) openExternalUrl(context, it.item)
-                }
-            // ClickableText consumes every tap; unannotated taps still
-            // mean "edit this block" (iOS taps the row text to edit).
-            onTapFallback()
-        },
+        modifier = modifier.clickable(onClick = onTapFallback),
     )
 }
 
 @Composable
 private fun MarkupRichNode(
     node: JSONObject,
+    completedDecoration: TextDecoration?,
     onOpenNode: (String) -> Unit,
+    onTapFallback: () -> Unit,
 ) {
     when (node.optString("type")) {
-        "quote" -> Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp),
-        ) {
+        "quote" -> {
+            val annotated = remember(node, completedDecoration) {
+                buildAnnotatedString { appendChildren(node, completedDecoration) }
+            }
+            val border = MaterialTheme.colorScheme.outlineVariant
             Box(
                 modifier = Modifier
-                    .width(3.dp)
-                    .height(20.dp)
-                    .background(
-                        MaterialTheme.colorScheme.outlineVariant,
-                        RoundedCornerShape(2.dp),
-                    )
-            )
-            Text(
-                node.optString("text"),
-                modifier = Modifier.padding(start = 10.dp),
-                style = outlinerBodyStyle.copy(
-                    fontStyle = FontStyle.Italic,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            )
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .drawBehind {
+                        drawLine(border, Offset.Zero, Offset(0f, size.height), strokeWidth = 3.dp.toPx())
+                    },
+            ) {
+                MarkupInlineText(
+                    annotated = annotated,
+                    modifier = Modifier.padding(start = 13.dp),
+                    onOpenNode = onOpenNode,
+                    onTapFallback = onTapFallback,
+                    textStyle = outlinerBodyStyle.copy(
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
         }
         "math" -> AndroidMath(node.optString("text"))
         "codeBlock" -> AndroidCodeBlock(
@@ -632,28 +672,6 @@ internal fun AndroidEmbeddedMedia(url: String, isVideo: Boolean, headers: Map<St
 }
 
 @Composable
-internal fun AndroidMath(expression: String) {
-    // No bundled TeX renderer — present the expression verbatim on a math
-    // surface (documented simplification vs the previous math renderer).
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .testTag("block.rich.math.rendered"),
-    ) {
-        Text(
-            expression,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontFamily = FontFamily.Monospace
-            ),
-        )
-    }
-}
-
-@Composable
 internal fun AndroidCloze(text: String) {
     var revealed by remember { mutableStateOf(false) }
     Surface(
@@ -667,27 +685,6 @@ internal fun AndroidCloze(text: String) {
             if (revealed) text else "Tap to reveal",
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             style = MaterialTheme.typography.bodySmall,
-        )
-    }
-}
-
-@Composable
-internal fun AndroidCodeBlock(code: String, language: String) {
-    // Monospace block; full syntax highlighting is deferred (the previous
-    // app used package:highlighter — noted as a follow-up).
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("block.rich.code"),
-    ) {
-        Text(
-            code,
-            modifier = Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = FontFamily.Monospace
-            ),
         )
     }
 }

@@ -1,0 +1,19 @@
+"name","n","max_ms","total_ms"
+"Recomposer:animation",110,165.290000,251.550000
+"AndroidOwner:measureAndLayout",424,19.340000,273.490000
+"JIT compiling boolean dev.lui.LuiKindRules.supports(dev.lui.LuiNodeKind, java.lang.String, dev.lui.LuiWireValue) (kind=Baseline)",1,11.440000,11.440000
+"Compose:recompose",791,6.390000,169.310000
+"JIT compiling void androidx.compose.material3.ButtonKt.Button(kotlin.jvm.functions.Function0, androidx.compose.ui.Modifier, boolean, androidx.compose.ui.graphics.Shape, androidx.compose.material3.ButtonColors, androidx.compose.material3.ButtonElevation, androidx.compose.foundation.BorderStroke, androidx.compose.foundation.layout.PaddingValues, androidx.compose.foundation.interaction.MutableInteractionSource, kotlin.jvm.functions.Function3, androidx.compose.runtime.Composer, int, int) (kind=Baseline)",1,4.180000,4.180000
+"JIT compiling void com.logseq.app.ui.extensions.OutlinerBlockContentKt.OutlinerBlockContent(dev.lui.LuiExtensionContext, kotlin.jvm.functions.Function1, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,3.120000,3.120000
+"JIT compiling void dev.lui.LuiNodeViewKt.LuiButton(dev.lui.LuiBackend, dev.lui.LuiNodeLike, long, androidx.compose.ui.Modifier, java.util.List, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,3.030000,3.030000
+"JIT compiling void dev.lui.LuiNodeViewKt.GrowChildColumn(androidx.compose.foundation.layout.ColumnScope, dev.lui.LuiBackend, long, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,2.860000,2.860000
+"Recomposer:recompose",150,2.170000,33.020000
+"JIT compiling void dev.lui.LuiVirtualListKt.LuiVirtualList(dev.lui.LuiBackend, dev.lui.LuiNodeLike, long, androidx.compose.ui.Modifier, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,2.030000,2.030000
+"JIT compiling void dev.lui.LuiNodeViewKt.LuiStackLike(dev.lui.LuiBackend, dev.lui.LuiNodeLike, androidx.compose.ui.Modifier, java.util.List, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,1.780000,1.780000
+"JIT compiling java.lang.Object androidx.collection.ScatterMap.get(java.lang.Object) (kind=Optimized)",1,1.460000,1.460000
+"JIT compiling java.lang.Object com.logseq.app.runtime.NativeEffectDrain.run(kotlin.coroutines.Continuation) (kind=Baseline)",1,1.310000,1.310000
+"JIT compiling void dev.lui.LuiNodeViewKt.GrowChildRow(androidx.compose.foundation.layout.RowScope, dev.lui.LuiBackend, long, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,1.210000,1.210000
+"JIT compiling void dev.lui.LuiRetainedTree.validateChildRelationship(java.util.Map, java.util.Map, long, long) (kind=Baseline)",1,1.200000,1.200000
+"JIT compiling void com.logseq.app.ui.extensions.OutlinerBlockContentKt.ProjectedMarkup(java.lang.String, java.lang.String, androidx.compose.ui.text.style.TextDecoration, kotlin.jvm.functions.Function1, kotlin.jvm.functions.Function0, androidx.compose.runtime.Composer, int) (kind=Baseline)",1,1.200000,1.200000
+"JIT compiling void com.logseq.app.runtime.LuiPatchFilter.applyJson(java.lang.String) (kind=Baseline)",1,1.200000,1.200000
+"JIT compiling void dev.lui.LuiRetainedTree.apply(dev.lui.LuiPatchBatch) (kind=Baseline)",1,1.030000,1.030000

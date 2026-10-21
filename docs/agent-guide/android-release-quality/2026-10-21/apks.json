@@ -1,0 +1,100 @@
+{
+  "before": {
+    "apk_sha256": "7f191995dc5274106763af1a3256c26e0eaa27aad6e42884e5abe1d09f317da2",
+    "bytes": 23040191,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "75b5b4426e92664f238c0412383f9d43cb4ced28d8a6e62445fde4c434a8eda5",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    }
+  },
+  "after-no-profile": {
+    "apk_sha256": "d3578c6116e5489dfab5c652fab4817b5624ce66d83e33fa073cb144897c5e65",
+    "bytes": 23585803,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "75b5b4426e92664f238c0412383f9d43cb4ced28d8a6e62445fde4c434a8eda5",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    }
+  },
+  "after-profile": {
+    "apk_sha256": "cb1f50c853e0a77937e666246c06fe6c2a1a977d87c69e66ebcd3c0b53874da1",
+    "bytes": 23589899,
+    "profile_bytes": 14005,
+    "profile_rules": 2740,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "75b5b4426e92664f238c0412383f9d43cb4ced28d8a6e62445fde4c434a8eda5",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    }
+  },
+  "api33-overlay-profile": {
+    "apk_sha256": "8e14660714e37aabfe50f556301e08a2720077a222377d2f57efb28cec3b7cd6",
+    "bytes": 23598091,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "75b5b4426e92664f238c0412383f9d43cb4ced28d8a6e62445fde4c434a8eda5",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "app_baseline_profile": true
+  },
+  "api33-final": {
+    "apk_sha256": "dce70138ab748c55c5d2dc94a583f29626e99a7ce1a4bc48093e4cd8349b7a52",
+    "bytes": 23593995,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "75b5b4426e92664f238c0412383f9d43cb4ced28d8a6e62445fde4c434a8eda5",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "app_baseline_profile": false
+  },
+  "integration-final": {
+    "apk_sha256": "598181f75e3d60e843a38700e9d52998b17540821d3cdd7b369f16819fe7e19f",
+    "bytes": 23602187,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "403d54681802b7ed41ebdeaf73c6e7b428528e1c655bbe3499b10387b3511ce8",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "root_revision": "a616c08f60101e95b55e8a8da36abfd8a53eeaa3",
+    "lui_revision": "d01cb95cb0de3bdd2710093ce9b0ed739cc00a18",
+    "app_baseline_profile": false
+  },
+  "simplified-integration": {
+    "apk_sha256": "41866ac69ea0437b203963d936c7cd98611ffee3986835d565137fc436ab65ef",
+    "bytes": 23593995,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "51332dec49f00dcf822f44cbc2536ad25723c45f03c9f8f1f8819c86ff539932",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "lui_revision": "cd7c7b44885e61a28510ca0454a409a82f59dfee",
+    "app_baseline_profile": false
+  },
+  "final-integration": {
+    "apk_sha256": "c18e81ae40cce880d5b268531118ea3e1153686967b4e5629dbd9e9c6a6d9319",
+    "bytes": 23593995,
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "36bb0c6d69fbcbb0ed4a90388db284a2c62e5020d9335d918e78982c86e5a0a8",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "app_base": "2ad7d02e3374fee66f6728bb7c2a57e140bb9a04",
+    "lui_revision": "1edf12691bcd78ee65b52355d5c2a35f4194524c",
+    "app_baseline_profile": false,
+    "status": "Historical intermediate package; superseded by final-frozen-release. Not the final measurement artifact."
+  },
+  "final-frozen-release": {
+    "apk_sha256": "4d657a380c2a80d6066beb81075c2b8c3433b12f98b6e521c447b9a1310a5290",
+    "native_sha256": {
+      "lib/arm64-v8a/libandroidx.graphics.path.so": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+      "lib/arm64-v8a/liblogseq_core.so": "d296f89ec569e49b2c87454cbbb21c766a3d4751efba06f7cb923b5920b021b9",
+      "lib/arm64-v8a/liblogseq_jni.so": "dc561c30a0898dfe8dfe4127528679729ee3a6beb69c5096bd7b41c5c59fd7c7"
+    },
+    "build_revision": "2ad7d02e",
+    "lui_revision": "1edf12691bcd78ee65b52355d5c2a35f4194524c",
+    "bytes": 23593995,
+    "app_baseline_profile": false,
+    "signing": "Local test key, not production"
+  }
+}

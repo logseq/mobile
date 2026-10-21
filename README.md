@@ -69,6 +69,16 @@ profile APK used by `scripts/test-android-e2e.sh` is `:app:assembleProfile`
 (`app/build/outputs/apk/profile/app-profile.apk`). JVM unit tests run with
 `./gradlew test`.
 
+Instrumented tests default to the Debug build. To test an optimized Release,
+build its matching test APK in the same invocation:
+
+```sh
+./gradlew :app:assembleRelease :app:assembleReleaseAndroidTest -PlogseqTestBuildType=release
+```
+
+Sign the application and test APK with the same certificate before installing
+them. The Release test build applies the application's R8 mapping to test code.
+
 The OCaml core shared library is built separately by
 `scripts/build-android-native.sh` (per ABI), which installs
 `liblogseq_core.so` into `android/app/src/main/jniLibs/<abi>`; the Gradle

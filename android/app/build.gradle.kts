@@ -52,7 +52,8 @@ val nativeCoreRequired =
 
 android {
     namespace = "com.logseq.app"
-    compileSdk = 36
+    testBuildType = providers.gradleProperty("logseqTestBuildType").getOrElse("debug")
+    compileSdk { version = release(37) { minorApiLevel = 0 } }
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
@@ -72,11 +73,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            optimization {
+                enable = true
+            }
         }
         // E2E variant: debuggable like the previous profile APK the Maestro
         // flows install via scripts/test-android-e2e.sh.
@@ -140,13 +139,12 @@ dependencies {
     // ../lui/platform/android/lui — see settings.gradle.kts.
     implementation(project(":lui"))
 
-    // Newest BOM compatible with compileSdk 36: BOM 2026.08+ maps compose to
-    // 1.12.x, whose minCompileSdk=37 (android-37 is not on the stable channel).
-    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    // Compose 1.12 and the current Material expressive components require SDK 37.0.
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.foundation:foundation-layout")
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.5.0-beta01")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.runtime:runtime")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -157,12 +155,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20260814")
+    implementation("ru.noties:jlatexmath-android:0.2.0")
+    implementation("dev.snipme:highlights:1.1.0")
 
     testImplementation("org.json:json:20260814")
     testImplementation("junit:junit:4.13.2")
 
     androidTestImplementation("org.json:json:20260814")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")

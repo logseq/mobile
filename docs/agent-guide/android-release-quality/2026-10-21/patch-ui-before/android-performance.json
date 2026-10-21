@@ -1,0 +1,59 @@
+{
+  "device": "emulator-5556",
+  "variant": "release",
+  "launches": [
+    {
+      "first_ui_rendered": 676.0,
+      "journals_ui_ready": 1413.0,
+      "authentication_published": 1483.0,
+      "am_total_ms": 1162
+    },
+    {
+      "first_ui_rendered": 680.0,
+      "journals_ui_ready": 1054.0,
+      "authentication_published": 1098.0,
+      "am_total_ms": 1043
+    },
+    {
+      "first_ui_rendered": 2599.0,
+      "journals_ui_ready": 3336.0,
+      "authentication_published": 3382.0,
+      "am_total_ms": 3877
+    }
+  ],
+  "idle_10s": {
+    "frames": 0,
+    "janky_frames": 0,
+    "p50_ms": 4950,
+    "p95_ms": 4950,
+    "p99_ms": 4950,
+    "slow_ui_thread": 0
+  },
+  "scroll_1": {
+    "frames": 326,
+    "janky_frames": 16,
+    "p50_ms": 18,
+    "p95_ms": 32,
+    "p99_ms": 48,
+    "slow_ui_thread": 8,
+    "jank_percent": 4.91
+  },
+  "scroll_2": {
+    "frames": 252,
+    "janky_frames": 23,
+    "p50_ms": 19,
+    "p95_ms": 38,
+    "p99_ms": 150,
+    "slow_ui_thread": 14,
+    "jank_percent": 9.13
+  },
+  "scroll_3": {
+    "frames": 165,
+    "janky_frames": 54,
+    "p50_ms": 22,
+    "p95_ms": 150,
+    "p99_ms": 300,
+    "slow_ui_thread": 38,
+    "jank_percent": 32.73
+  }
+}
