@@ -263,17 +263,13 @@ private struct LGSearchSession: View {
                 HStack(spacing: 12) {
                     LGNativeSearchField(query: queryBinding)
                         .frame(height: searchFieldHeight)
-                    Button(action: exitSearch) {
-                        Image("close", bundle: .module)
-                            .frame(width: 20, height: 20)
-                            .frame(width: searchFieldHeight, height: searchFieldHeight)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .modifier(LGLiquidGlassSurface(shape: .circle))
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Close search")
-                    .accessibilityIdentifier("button.search.close")
+                    Button(role: .close, action: exitSearch)
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.large)
+                        .font(.title2)
+                        .accessibilityLabel("Close search")
+                        .accessibilityIdentifier("button.search.close")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)

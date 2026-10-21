@@ -278,6 +278,8 @@ public struct LGRendererRoot: View {
     public var body: some View {
         if let rootID = renderer.rootID {
             LUISwiftUIRoot(backend: renderer.backend, rootID: rootID)
+                // Preserve the declared item order even when a menu opens upward.
+                .menuOrder(.fixed)
                 .modifier(LGImagePreviewModifier(store: renderer.imagePreviews))
         } else {
             EmptyView()

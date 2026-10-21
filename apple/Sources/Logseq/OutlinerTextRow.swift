@@ -53,6 +53,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.addTarget(self, action: #selector(open), for: .touchUpInside)
         status.imageView?.contentMode = .scaleAspectFit
         status.showsMenuAsPrimaryAction = true
+        status.preferredMenuElementOrder = .fixed
         status.accessibilityIdentifier = "button.block-task-status"
         disclosure.addTarget(self, action: #selector(collapse), for: .touchUpInside)
         failure.text = String(localized: "Sync failed")
