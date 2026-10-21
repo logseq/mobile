@@ -49,8 +49,13 @@ import UIKit
                 context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             }
             if style == .light {
-                guard rgba[3] > 240, rgba[0] < 5, rgba[1] < 5, rgba[2] < 5 else {
-                    throw failure("Light appearance must use the black Logseq logo: \(rgba)")
+                var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                UIColor(LogseqThemePolicy.light.secondaryText).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                guard rgba[3] > 240,
+                      abs(Int(rgba[0]) - Int((red * 255).rounded())) <= 2,
+                      abs(Int(rgba[1]) - Int((green * 255).rounded())) <= 2,
+                      abs(Int(rgba[2]) - Int((blue * 255).rounded())) <= 2 else {
+                    throw failure("Light appearance must use the softer theme gray logo: \(rgba)")
                 }
             } else {
                 guard rgba[3] > 240, Int(rgba[1]) > Int(rgba[0]) + 30, Int(rgba[2]) > Int(rgba[0]) + 30 else {
