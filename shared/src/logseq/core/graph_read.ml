@@ -405,7 +405,13 @@ let sidebar_pages decrypt_title db =
             (value db datom.e "block/link")
         with
         | Some page_eid ->
-          (match page_summary decrypt_title db page_eid with
+          let summary = match string_value (value db page_eid "block/name") with
+            | Some _ -> page_summary decrypt_title db page_eid
+            | None when page_is_hidden db page_eid -> None
+            | None ->
+              Option.bind (entity_summary decrypt_title db page_eid) (fun node ->
+                if S.trim node.Model.title = "" then None else Some node) in
+          (match summary with
            | Some page ->
              Some
                ( Option.value ~default:""

@@ -606,6 +606,32 @@ let sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_re
     (uuids (Read.blocks_for_page plain db "page-alpha"))
     [ "alpha-block" ]
 
+let favorites_include_blocks_and_respect_visibility () =
+  let conn = Ds.create_conn ~schema () in
+  let entries = [
+    page "favorites" "$$$favorites" "Favorites" [];
+    page "page" "project" "Project" [];
+    entity "saved-block" "Saved block" [field "block/page" (Ds.Ref_to (Ds.Temp_id "page"));
+      field "block/parent" (Ds.Ref_to (Ds.Temp_id "page"))];
+    entity "hidden-block" "Hidden block" [field "logseq.property/hide?" (Ds.Bool true)];
+    entity "deleted-block" "Deleted block" [field "logseq.property/deleted-at" (Ds.Instant 1L)];
+    page "internal" "$$$internal" "Internal" [];
+  ] in
+  let links = List.mapi (fun index uuid -> entity ("favorite-" ^ uuid) "" [
+    field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
+    field "block/link" (Ds.Ref_to (Ds.Temp_id uuid));
+    field "block/order" (Ds.String (string_of_int index))])
+    ["saved-block"; "page"; "hidden-block"; "deleted-block"; "internal"] in
+  transact conn (entries @ links);
+  let db = Ds.conn_db conn in
+  let favorites = (Read.sidebar_pages plain db).favorites in
+  check_eq ~msg:"favorites include ordinary blocks in their saved order"
+    (List.map (fun (node : Model.entity_summary) -> node.uuid, node.title) favorites)
+    ["saved-block", "Saved block"; "page", "Project"];
+  check_eq ~msg:"a favorite block resolves to its page and zoom target"
+    (Read.node_destination plain db "saved-block")
+    (Some ({ Model.uuid = "page"; title = "Project" }, true))
+
 let thousand_journal_graphs_only_materialize_the_requested_window () =
   let conn =
     new_conn
@@ -1119,6 +1145,7 @@ let cases =
     case
       "reference target renames refresh projections and public tags stay visible"
       reference_target_renames_refresh_projections_and_public_tags_stay_visible;
+    case "favorites include blocks and respect visibility" favorites_include_blocks_and_respect_visibility;
     case
       "sidebar favorites preserve order and exclude hidden built-in and favorite recents"
       sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_recents;

@@ -1,9 +1,15 @@
 open Lui_protocol
 open Lui_elements
 
-let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send : t
+let sidebar_page_row ?(favorite = false) (context : Lui_ui.ui_context) model_source
+    (page_source : Model.sidebar_page Signal.signal) send : t
   =
   let page = sample page_source in
+  let navigate _ =
+    if favorite then begin
+      ignore (send Model.CloseSidebar);
+      ignore (send (Model.RequestAppNode (sample page_source).uuid))
+    end else ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in
   if Lui_ui.host context = KotlinHost then
     View_base.with_label_signal
       (Signal.map View_base.sidebar_page_title page_source)
@@ -12,8 +18,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       ~icon:(`app "document")
       ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
-      ~on_press:(fun _ ->
-        ignore (send (Model.SelectSidebarPage (sample page_source).uuid)))
+      ~on_press:navigate
       [])
   else
     View_base.with_label_signal
@@ -23,8 +28,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       ~role:`navigation ~icon:(`app "document")
       ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
-      ~on_press:(fun _ ->
-        ignore (send (Model.SelectSidebarPage (sample page_source).uuid)))
+      ~on_press:navigate
       [])
 
 let sidebar_graph_menu_item model_source graph_source send : t =
@@ -202,7 +206,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                       (Signal.map View_base.sidebar_favorites model_source)
                     ~key:View_base.sidebar_page_identifier ~cmp:compare
                     ~mount:(fun page_source ->
-                       sidebar_page_row context model_source page_source
+                       sidebar_page_row ~favorite:true context model_source page_source
                          send);
                 ];
               column ~accessibility_identifier:"section.sidebar.recent"

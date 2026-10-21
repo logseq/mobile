@@ -1,4 +1,5 @@
 val sidebar_page_row :
+  ?favorite:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   Model.sidebar_page Signal.signal ->

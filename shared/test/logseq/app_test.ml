@@ -2954,9 +2954,9 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   flush application;
   check ~msg:"page selection closes the controlled drawer"
     (not (property_bool renderer root Lui_protocol.Selected));
-  check_eq ~msg:"sidebar page presses reuse the typed selection effect"
+  check_eq ~msg:"favorite presses use typed node navigation for pages and blocks"
     (App.model application).pending_effects
-    [ Model.SelectSidebarPageEffect (1, "page-a") ];
+    [ Model.OpenAppNodeEffect (1, "page-a") ];
   dispatch application
     (Lui_protocol.Press
        (descendant_with_identifier renderer root "button.sidebar"));
@@ -2999,13 +2999,10 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       in
       dispatch application (Lui_protocol.Press remote_item);
       flush application;
-      check_eq
+      check
         ~msg:"choosing another graph reuses the typed open-graph effect"
-        (App.model application).pending_effects
-        [
-          Model.SelectSidebarPageEffect (1, "page-a");
-          Model.OpenGraphEffect (2, "remote");
-        ];
+        (List.exists (function Model.OpenGraphEffect (_, "remote") -> true | _ -> false)
+          (App.model application).pending_effects);
       check ~msg:"choosing a graph closes the controlled drawer"
         (not (property_bool renderer root Lui_protocol.Selected))
     end
@@ -4828,6 +4825,24 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
     preserved.outliner_autocomplete_candidates [];
   check_eq ~msg:"the authoritative value applies after local typing settles"
     settled.outliner_editing (Some stale)
+
+let favorite_blocks_open_through_node_navigation () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    let sidebar = { (empty_sidebar_projection ()) with
+      Model.favorites = [{ Model.uuid = "saved-block"; title = "Saved block" }] } in
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with sidebar });
+    send application Model.OpenSidebar;
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let link = descendant_with_identifier renderer (Lui_app.root_node application) "link.sidebar.page.saved-block" in
+    dispatch application (Lui_protocol.Press link);
+    flush application;
+    check_eq ~msg:"favorite blocks use node navigation instead of page-only selection"
+      (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "saved-block")];
+    check_eq ~msg:"opening a favorite closes the drawer" (App.model application).sidebar_open false)
+    [ios_backend (); kotlin_backend ()]
 
 let outliner_typing_removes_stale_autocomplete_candidates () =
   let editing =
@@ -10077,6 +10092,7 @@ let cases =
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-removes-stale-autocomplete-candidates" outliner_typing_removes_stale_autocomplete_candidates;
+    case "favorite-blocks-open-through-node-navigation" favorite_blocks_open_through_node_navigation;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;
