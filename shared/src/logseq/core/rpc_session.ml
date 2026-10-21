@@ -391,6 +391,11 @@ let snapshot_visible session =
   trace_snapshot started "complete";
   result
 
+let sidebar_snapshot session =
+  session.Types.state :=
+    { !(session.Types.state) with Types.sidebar_deferred = false };
+  snapshot_visible session
+
 let graph_catalog_snapshot session =
   let s = state session in
   Rpc.success
@@ -1393,7 +1398,10 @@ let rec dispatch session action payload =
         let has_token = match Yojson.Basic.Util.member "hasAccessToken" input with
           | `Bool value -> value | _ -> String.trim config.Api.token <> "" in
         let sync_allowed = has_token && selected_graph_is_unlocked session && kind <> "locked" in
-        let snapshot = Json.from_string (snapshot_visible session) in
+        (* Interactive graph activation must finish the deferred sidebar load.
+           Cold launch still uses openGraph and loads its sidebar afterward. *)
+        let response = if kind = "ready" then sidebar_snapshot session else snapshot_visible session in
+        let snapshot = Json.from_string response in
         match snapshot with
         | `Assoc envelope ->
           let result = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
@@ -1530,10 +1538,7 @@ let rec dispatch session action payload =
      | Some load -> load ()
      | None -> ());
     snapshot_visible session
-  | "loadSidebar" ->
-    session.Types.state :=
-      { !(session.Types.state) with Types.sidebar_deferred = false };
-    snapshot_visible session
+  | "loadSidebar" -> sidebar_snapshot session
   | "loadFlashcards" ->
     let now =
       match payload with
@@ -1605,7 +1610,7 @@ let rec dispatch session action payload =
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
     else Rpc.import_snapshot payload h.Types.import_snapshot
       (fun payload -> switch_graph_model session payload)
-      (fun () -> snapshot_visible session)
+      (fun () -> sidebar_snapshot session)
   | "openGraph" ->
     Rpc.open_graph payload h.Types.open_graph
       (fun payload -> switch_graph_model session payload)

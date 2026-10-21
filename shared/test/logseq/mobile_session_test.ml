@@ -290,8 +290,96 @@ let assets_are_stored_inside_the_open_graph () =
       (Asset_files.resolve_path (Some (Filename.concat neighbor "sync.checkpoint")) "Assets/remote-photo.png")
       (Filename.concat neighbor "Assets/remote-photo.png"))
 
+let with_favorite_graphs f =
+  with_host (fun host dir ->
+    let catalog_path = Filename.concat dir "catalog.sqlite" in
+    let saved = Sqlite.open_session catalog_path in
+    Sqlite.store_string saved "logseq/graph-catalog/v1"
+      {|{"graphs":[{"graph-id":"graph-a","graph-name":"A","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"graph-b","graph-name":"B","graph-e2ee?":false,"graph-ready-for-use?":true}]}|};
+    Sqlite.close saved;
+    ignore (Mobile_session.call host (open_request catalog_path));
+    let call action fields =
+      let request = Yojson.Basic.to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch";
+        "params", `Assoc ["action", `String action; "payload", `String (Yojson.Basic.to_string (`Assoc fields))]]) in
+      let response = Mobile_session.call host request |> Yojson.Basic.from_string in
+      check_eq ~msg:(action ^ " succeeds") (Yojson.Basic.Util.member "ok" response) (`Bool true);
+      Yojson.Basic.Util.member "result" response in
+    ignore (call "configure" ["baseUrl", `String "https://example.com"; "token", `String ""; "graphId", `String "graph-a"]);
+    let fields id = ["graphId", `String id;
+      "activePath", `String (Filename.concat dir (id ^ ".sqlite"));
+      "checkpointPath", `String (Filename.concat dir (id ^ ".checkpoint"))] in
+    let database id storage =
+      let module Ds = Datascript in
+      Ds.db_with [
+        Ds.Add (Ds.Entity_id 1, "block/uuid", Ds.Uuid (id ^ "-favorites"));
+        Ds.Add (Ds.Entity_id 1, "block/name", Ds.String "$$$favorites");
+        Ds.Add (Ds.Entity_id 2, "block/uuid", Ds.Uuid (id ^ "-page"));
+        Ds.Add (Ds.Entity_id 2, "block/name", Ds.String id);
+        Ds.Add (Ds.Entity_id 2, "block/title", Ds.String ("Favorite " ^ id));
+        Ds.Add (Ds.Entity_id 3, "block/uuid", Ds.Uuid (id ^ "-link"));
+        Ds.Add (Ds.Entity_id 3, "block/page", Ds.Ref 1);
+        Ds.Add (Ds.Entity_id 3, "block/parent", Ds.Ref 1);
+        Ds.Add (Ds.Entity_id 3, "block/link", Ds.Ref 2);
+        Ds.Add (Ds.Entity_id 3, "block/order", Ds.String "a0")
+      ] (Ds.empty_db ~schema:Graph_bootstrap.native_schema ~storage ()) in
+    let cache id =
+      let path = Filename.concat dir (id ^ ".sqlite") in
+      Graph_sqlite.prepare_staging path;
+      ignore (Datascript.store (database id (Graph_store.storage path)));
+      match Sync_checkpoint.save_checkpoint_atomic (Filename.concat dir (id ^ ".checkpoint"))
+        (Sync_checkpoint.create id "1" 12) with Ok () -> () | Error message -> fail message in
+    let download id =
+      let rows = Mobile_graph_test.expect_ok (Graph_bootstrap.snapshot_rows
+        (database id (Datascript.memory_storage ()))) in
+      let path = Filename.concat dir (id ^ ".snapshot") in
+      let output = open_out_bin path in
+      Fun.protect ~finally:(fun () -> close_out output)
+        (fun () -> output_string output (Graph_bootstrap.frame_rows rows));
+      ["downloadPath", `String path; "metadataBody", `String (Yojson.Basic.to_string (`Assoc [
+        "ok", `Bool true; "url", `String "snapshot"; "t", `Int 12;
+        "schema-version", `String "1"; "row-count", `Int (List.length rows)]))] in
+    f host call fields cache download)
+
+let favorite_ids response =
+  let open Yojson.Basic.Util in
+  response |> member "favorites" |> to_list |> List.map (fun page -> page |> member "uuid" |> to_string)
+
+let first_cached_graph_bootstrap_loads_favorites () =
+  with_favorite_graphs (fun _ call fields cache _ ->
+    cache "graph-a";
+    let first = call "bootstrapGraph" (fields "graph-a") in
+    check_eq (Yojson.Basic.Util.member "kind" (Yojson.Basic.Util.member "graphBootstrap" first)) (`String "ready");
+    check_eq ~msg:"the first cached graph response contains favorites"
+      (favorite_ids first) ["graph-a-page"];
+    check_eq ~msg:"reusing the active graph retains favorites"
+      (favorite_ids (call "bootstrapGraph" (fields "graph-a"))) ["graph-a-page"])
+
+let first_download_import_loads_favorites () =
+  with_favorite_graphs (fun _ call fields _ download ->
+    let plan = call "bootstrapGraph" (fields "graph-a") in
+    check_eq (Yojson.Basic.Util.member "kind" (Yojson.Basic.Util.member "graphBootstrap" plan)) (`String "download");
+    check_eq ~msg:"a pending download has no stale favorites" (favorite_ids plan) [];
+    let imported = call "importSnapshot" (fields "graph-a" @ download "graph-a") in
+    check_eq ~msg:"the first imported graph response contains favorites"
+      (favorite_ids imported) ["graph-a-page"])
+
+let cold_launch_defers_sidebar_but_switching_graphs_loads_it () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    cache "graph-a"; cache "graph-b";
+    check_eq ~msg:"cold launch keeps sidebar reads off the critical path"
+      (favorite_ids (call "openGraph" (fields "graph-a"))) [];
+    let session = !(host.Mobile_session.session) in
+    ignore (Rpc_test.dispatch_json session "selectGraph" "graph-b");
+    check_eq ~msg:"switching away from a deferred launch loads the new graph favorites"
+      (favorite_ids (call "bootstrapGraph" (fields "graph-b"))) ["graph-b-page"];
+    ignore (Rpc_test.dispatch_json session "selectGraph" "graph-a");
+    check_eq ~msg:"switching back replaces favorites with the selected graph"
+      (favorite_ids (call "bootstrapGraph" (fields "graph-a"))) ["graph-a-page"])
+
 let cases =
-  [ case "assets are stored inside the open graph" assets_are_stored_inside_the_open_graph; case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
+  [ case "first cached graph bootstrap loads favorites" first_cached_graph_bootstrap_loads_favorites;
+    case "first download import loads favorites" first_download_import_loads_favorites;
+    case "cold launch defers sidebar but switching graphs loads it" cold_launch_defers_sidebar_but_switching_graphs_loads_it; case "assets are stored inside the open graph" assets_are_stored_inside_the_open_graph; case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
     case "synced encrypted assets decrypt to raw image bytes" synced_encrypted_assets_decrypt_to_raw_image_bytes;
     case "requests without a database path use the existing session"
       requests_without_a_database_path_use_the_existing_session;
