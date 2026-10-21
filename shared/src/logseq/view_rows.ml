@@ -66,8 +66,14 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
     let range = Signal.state context.ui_scheduler (0, 32) in
-    Option.iter (fun reset -> ignore (Signal.own context.ui_scope
-      (Signal.observe reset (fun _ -> Signal.set range (0, 32))))) reset_key;
+    Option.iter (fun reset ->
+      let previous_key = ref (Signal.sample reset) in
+      ignore (Signal.own context.ui_scope
+        (Signal.observe reset (fun key ->
+          if key <> !previous_key then begin
+            previous_key := key;
+            Signal.set range (0, 32)
+          end)))) reset_key;
     let target = match scroll_target with Some source -> source
       | None -> Signal.constant context.ui_scheduler None in
     let request = own (Signal.map2 (fun items target ->

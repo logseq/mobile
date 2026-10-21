@@ -1828,6 +1828,7 @@ let rec update (current : logseq_model) action =
        || String_kit.is_blank current.search_query then current
     else enqueue_effect { current with search_loading_more = true }
       (LoadSearchPageEffect (current.next_effect_id, current.search_query, current.search_result_count))
+  | ChangeSearchQuery query when query = current.search_query -> current
   | ChangeSearchQuery query ->
     let pending = remove_search_effects current.pending_effects in
     if String_kit.is_blank query then

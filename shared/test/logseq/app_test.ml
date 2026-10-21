@@ -7299,6 +7299,65 @@ let search_virtualizes_loaded_results_and_paginates_on_scroll () =
       (App.model application).search_result_pages []
   ) [ios_backend; kotlin_backend]
 
+let search_navigation_preserves_the_visible_result_window () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  send application Model.OpenSearch;
+  send application (Model.ChangeSearchQuery "needle");
+  let hit i = { Model.hit_uuid = Printf.sprintf "hit-%03d" i;
+    hit_title = "Needle"; breadcrumb = "Journal"; breadcrumbs = []; is_page = false } in
+  send application (Model.ApplySearchResults ("needle", List.init 500 hit));
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let find id = descendant_with_identifier renderer (main_root renderer application) id in
+  let window = find "search.window" in
+  let metadata () = property_string renderer window Lui_protocol.DataAttrs in
+  dispatch application (Lui_protocol.VisibleRange (window, 400, 415));
+  flush application;
+  let scrolled_metadata = metadata () in
+  let visible_hit = find "search.result.hit-400" in
+  check ~msg:"the scrolled search row is mounted" (visible_hit <> -1);
+  send application (Model.RequestSearchResult "hit-400");
+  flush application;
+  check_eq ~msg:"opening a result retains the visible search data window"
+    (metadata ()) scrolled_metadata;
+  check_eq ~msg:"opening a result retains the scrolled row's identity"
+    (find "search.result.hit-400") visible_hit;
+  send application (Model.BackSearchNavigation 1);
+  flush application;
+  check_eq ~msg:"returning to search restores the same data at the same offset"
+    (metadata ()) scrolled_metadata;
+  check_eq ~msg:"returning does not replace the previously visible result"
+    (find "search.result.hit-400") visible_hit;
+  let query_copy = Bytes.to_string (Bytes.of_string "needle") in
+  send application (Model.ChangeSearchQuery query_copy);
+  flush application;
+  check_eq ~msg:"native query reactivation does not clear retained results"
+    (App.model application).search_result_count 500;
+  check_eq ~msg:"equal query values do not reset the visible window"
+    (metadata ()) scrolled_metadata;
+  send application (Model.ChangeSearchQuery "new query");
+  send application (Model.ApplySearchResults ("new query", List.init 500 hit));
+  flush application;
+  check ~msg:"a genuinely new query starts at its first result"
+    (find "search.result.hit-000" <> -1);
+  check_eq ~msg:"a new query evicts the old distant window"
+    (find "search.result.hit-400") (-1)
+
+let duplicate_search_query_events_preserve_completed_results () =
+  let hit = { Model.hit_uuid = "found"; hit_title = "Found";
+    breadcrumb = ""; breadcrumbs = []; is_page = false } in
+  let queried = Model.update (Model.initial ()) (Model.ChangeSearchQuery "needle") in
+  let loaded = Model.update queried (Model.ApplySearchResults ("needle", [hit])) in
+  let reopened = Model.update loaded
+    (Model.ChangeSearchQuery (Bytes.to_string (Bytes.of_string "needle"))) in
+  check_eq ~msg:"reactivating native search retains completed results"
+    reopened.search_result_pages [[hit]];
+  check_eq ~msg:"equal native query callbacks do not enqueue duplicate searches"
+    reopened.pending_effects loaded.pending_effects;
+  check ~msg:"reactivating an unchanged query does not flash loading" (not reopened.search_loading)
+
 let native_search_clear_updates_lg_owned_query () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -9774,6 +9833,8 @@ let cases =
     case "search-virtualizes-loaded-results-and-paginates-on-scroll" search_virtualizes_loaded_results_and_paginates_on_scroll;
     case "search-results-render-as-keyed-native-rows" search_results_render_as_keyed_native_rows;
     case "search-renders-main-empty-states-and-result-sections" search_renders_main_empty_states_and_result_sections;
+    case "search-navigation-preserves-visible-result-window" search_navigation_preserves_the_visible_result_window;
+    case "duplicate-search-query-events-preserve-completed-results" duplicate_search_query_events_preserve_completed_results;
     case "native-search-clear-updates-lg-owned-query" native_search_clear_updates_lg_owned_query;
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
