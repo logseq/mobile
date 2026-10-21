@@ -93,6 +93,7 @@ fun logseqExtensionRegistry(
     onOpenImage: ((String, String) -> Unit)? = null,
     resolveAssetPath: (String) -> String = { it },
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
+    val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     registerNodeIcon()
 
     register(
@@ -173,7 +174,7 @@ fun logseqExtensionRegistry(
             ),
         ),
     ) {
-        OutlinerBlockContent(this, resolveAssetPath, onOpenImage)
+        OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage)
     }
     registerTweak(
         "native-adaptive-insets",

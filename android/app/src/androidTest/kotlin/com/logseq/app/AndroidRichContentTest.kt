@@ -36,11 +36,11 @@ class AndroidRichContentTest {
     @get:Rule val ui = createComposeRule()
     private val events = mutableListOf<LuiEvent>()
 
-    private fun render(markup: String, completed: Boolean = false): LuiBackend {
+    private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null): LuiBackend {
         val registry = logseqExtensionRegistry { it }
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray()
-            .put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
+            .put(JSONObject().put("op", "create-node").put("id", 1).put("kind", if (secondMarkup == null) "root" else "column"))
             .put(JSONObject().put("op", "create-extension").put("id", 2)
                 .put("identifier", "outliner-block-content")
                 .put("fingerprint", registry.registration("outliner-block-content")!!.fingerprint))
@@ -50,7 +50,17 @@ class AndroidRichContentTest {
             "is-completed" to completed, "is-asset" to false, "asset-type" to "",
             "local-path" to "", "youtube-target-url" to "",
         ).forEach { (key, value) -> ops.put(property(key, value)) }
-        assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString()))
+        if (secondMarkup != null) {
+            ops.put(JSONObject().put("op", "create-extension").put("id", 3)
+                .put("identifier", "outliner-block-content")
+                .put("fingerprint", registry.registration("outliner-block-content")!!.fingerprint))
+                .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 3).put("index", 1))
+            mapOf("block-id" to "timestamp-block", "title" to "Timestamp", "markup-json" to secondMarkup,
+                "is-completed" to false, "is-asset" to false, "asset-type" to "", "local-path" to "", "youtube-target-url" to "")
+                .forEach { (key, value) -> ops.put(property(key, value).put("id", 3)) }
+        }
+        val applied = backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString())
+        assertTrue(backend.lastError, applied)
         ui.setContent {
             MaterialTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(1) }
@@ -67,6 +77,42 @@ class AndroidRichContentTest {
         ui.onNodeWithText(text).assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
         return results.single()
+    }
+
+    @Test fun timestampsSeekTheExistingMatchingPlayerAcrossBlocks() {
+        render("""[{"type":"video","url":"https://youtu.be/abcdefghijk","embedURL":"http://127.0.0.1:18789/embed/abcdefghijk?playsinline=1"},
+            {"type":"video","url":"https://youtu.be/lmnopqrstuv","embedURL":"http://127.0.0.1:18789/embed/lmnopqrstuv?playsinline=1"}]""", secondMarkup = """[
+            {"type":"youtubeTimestamp","text":"1:23","seconds":83,"url":"https://youtu.be/abcdefghijk","embedURL":"http://127.0.0.1:18789/embed/abcdefghijk?start=83"}]""")
+        ui.onNodeWithText("◷ 1:23").assertIsDisplayed()
+        val before = nativeWebViews()
+        assertEquals("Timestamps must not create another player", 2, before.size)
+        ui.onNodeWithText("◷ 1:23").performClick()
+        ui.waitUntil(5_000) { nativeWebViews().any { view ->
+            var matches = false
+            ui.runOnIdle { matches = view.originalUrl?.contains("abcdefghijk?playsinline=1&start=83") == true }
+            matches
+        } }
+        val after = nativeWebViews()
+        assertEquals(before.toSet(), after.toSet())
+        ui.runOnIdle {
+            assertTrue(after.single { it.originalUrl.orEmpty().contains("lmnopqrstuv") }.originalUrl.orEmpty().endsWith("playsinline=1"))
+        }
+    }
+
+    @Test fun timestampWithoutAValidTargetStaysReadableWithoutAnotherPlayer() {
+        render("""[{"type":"youtubeTimestamp","text":"1:23","seconds":-1,"url":""}]""")
+        ui.onNodeWithText("◷ 1:23").assertIsDisplayed()
+        assertTrue(nativeWebViews().isEmpty())
+    }
+
+    private fun nativeWebViews(): List<android.webkit.WebView> {
+        val result = mutableListOf<android.webkit.WebView>()
+        fun collect(view: android.view.View) {
+            if (view is android.webkit.WebView) result.add(view)
+            if (view is android.view.ViewGroup) for (index in 0 until view.childCount) collect(view.getChildAt(index))
+        }
+        ui.runOnIdle { android.view.inspector.WindowInspector.getGlobalWindowViews().forEach(::collect) }
+        return result
     }
 
     @Test fun nestedEmphasisPreservesUnicodeTextAndBothStyles() {

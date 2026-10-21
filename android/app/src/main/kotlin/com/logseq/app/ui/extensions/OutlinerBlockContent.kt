@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -98,6 +99,7 @@ private val outlinerBodyStyle: androidx.compose.ui.text.TextStyle
 internal fun OutlinerBlockContent(
     context: LuiExtensionContext,
     resolveAssetPath: (String) -> String,
+    youtubeStarts: MutableMap<String, Int>,
     onOpenImage: ((String, String) -> Unit)? = null,
 ) {
     val uuid = context.string("block-id") ?: ""
@@ -208,6 +210,7 @@ internal fun OutlinerBlockContent(
                 )
             } else {
                 ProjectedMarkup(
+                    youtubeStarts = youtubeStarts,
                     encoded = context.string("markup-json") ?: "",
                     fallback = title,
                     completedDecoration = decoration,
@@ -241,6 +244,7 @@ internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Floa
 
 @Composable
 private fun ProjectedMarkup(
+    youtubeStarts: MutableMap<String, Int>,
     encoded: String,
     fallback: String,
     completedDecoration: TextDecoration?,
@@ -259,11 +263,11 @@ private fun ProjectedMarkup(
     }
     val chunks = remember(nodes) { markupChunks(nodes) }
     if (chunks.size == 1) {
-        MarkupChunk(chunks.single(), 0, completedDecoration, onOpenNode, onTapFallback)
+        MarkupChunk(chunks.single(), 0, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for ((index, chunk) in chunks.withIndex()) {
-                MarkupChunk(chunk, index, completedDecoration, onOpenNode, onTapFallback)
+                MarkupChunk(chunk, index, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
             }
         }
     }
@@ -276,9 +280,10 @@ private fun MarkupChunk(
     completedDecoration: TextDecoration?,
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
+    youtubeStarts: MutableMap<String, Int>,
 ) {
     if (chunk.size == 1 && isRichNode(chunk.first())) {
-        MarkupRichNode(chunk.first(), completedDecoration, onOpenNode, onTapFallback)
+        MarkupRichNode(chunk.first(), completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
     } else {
         val annotated = remember(chunk, completedDecoration) {
             markupAnnotatedString(chunk, completedDecoration)
@@ -458,6 +463,7 @@ private fun MarkupRichNode(
     completedDecoration: TextDecoration?,
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
+    youtubeStarts: MutableMap<String, Int>,
 ) {
     when (node.optString("type")) {
         "quote" -> {
@@ -490,10 +496,28 @@ private fun MarkupRichNode(
             code = node.optString("text"),
             language = node.optString("style"),
         )
-        "video" -> AndroidEmbeddedMedia(url = node.optString("embedURL").ifEmpty { node.optString("url") }, isVideo = true, headers = mediaHeaders(node))
+        "video" -> {
+            val original = node.optString("embedURL").ifEmpty { node.optString("url") }
+            val start = youtubeStarts[node.optString("url")]
+            val uri = androidEmbeddedMediaUri(original)
+            val url = if (start == null || uri == null) original else {
+                uri.buildUpon().clearQuery().apply {
+                    for (key in uri.queryParameterNames.filter { it != "start" }) {
+                        uri.getQueryParameters(key).forEach { appendQueryParameter(key, it) }
+                    }
+                    appendQueryParameter("start", start.toString())
+                }.build().toString()
+            }
+            AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
+        }
         "iframe" -> AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = false, headers = mediaHeaders(node))
         "youtubeTimestamp" -> {
-            AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = true, headers = mediaHeaders(node))
+            val target = node.optString("url")
+            val seconds = node.optInt("seconds", -1)
+            TextButton(onClick = { youtubeStarts[target] = seconds },
+                enabled = androidEmbeddedMediaUri(target) != null && seconds >= 0) {
+                Text("◷ " + node.optString("text"))
+            }
         }
         "cloze" -> AndroidCloze(node.optString("text"))
         else -> Text(node.optString("text"), style = outlinerBodyStyle)
