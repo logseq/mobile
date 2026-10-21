@@ -265,6 +265,10 @@ let main_root runtime application =
     parent_with_child_identifier runtime shell_root "screen.graph-picker"
   in
   let stack = List.nth (children runtime shell_root) 0 in
+  let stack =
+    if node runtime stack = Some Lui_protocol.Overlay then
+      List.hd (children runtime stack)
+    else stack in
   let stack_children = children runtime stack in
   let container =
     List.nth stack_children (List.length stack_children - 1)
@@ -9085,6 +9089,13 @@ let quick_capture_confirms_only_successful_local_saves () =
           check ~msg:"a successful quick capture shows confirmation" (toast () <> -1);
           check_eq ~msg:"confirmation identifies today's journal"
             (property_string renderer (toast ()) Lui_protocol.AccessibilityLabel) "Added to today";
+          let icon = descendant_with_identifier renderer (toast ()) "capture.confirmation.icon" in
+          check_eq ~msg:"success confirmation starts with a check icon"
+            (property_string renderer icon Lui_protocol.TextValue) "✅";
+          let overlay = descendant_with_identifier renderer (Lui_app.root_node application)
+            "capture.confirmation.overlay" in
+          check_eq ~msg:"success confirmation uses the top overlay"
+            (property_string renderer overlay Lui_protocol.AlignmentValue) "top";
           check_eq ~msg:"confirmation dismisses automatically"
             (property_int renderer (toast ()) Lui_protocol.DurationValue) 2500;
           dispatch application (Lui_protocol.Dismiss (toast ()));

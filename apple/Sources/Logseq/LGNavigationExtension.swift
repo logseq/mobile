@@ -32,6 +32,15 @@ enum LGNavigationExtension {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
             LUIAppleExtension(
+                identifier: "native-top-notification",
+                fingerprint: "lui-extension-v1|23:native-top-notification|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
+                acceptsStandardChildren: true
+            ) { context in
+                AnyView(LGTopNotification(context: context))
+            }
+        )
+        try registry.register(
+            LUIAppleExtension(
                 identifier: "native-sidebar",
                 fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
                 acceptsStandardChildren: true
@@ -74,6 +83,56 @@ enum LGNavigationExtension {
         )
     }
 }
+
+private struct LGTopNotification: View {
+    let context: LUIAppleExtensionViewContext
+    @State private var topInset: CGFloat?
+
+    var body: some View {
+        let _ = context.revision
+        Group {
+            if let child = context.childIDs.first { context.content(for: child) }
+        }
+        .padding(.top, topInset ?? 0)
+        .opacity(topInset == nil ? 0 : 1)
+        #if os(iOS)
+        .background(LGNotificationSafeAreaReader { topInset = $0 })
+        #else
+        .onAppear { topInset = 0 }
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct LGNotificationSafeAreaReader: UIViewRepresentable {
+    let update: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe(update: update) }
+    func updateUIView(_ view: Probe, context: Context) { view.measure() }
+
+    final class Probe: UIView {
+        let update: (CGFloat) -> Void
+        private var reported: CGFloat?
+        init(update: @escaping (CGFloat) -> Void) {
+            self.update = update
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func didMoveToWindow() { super.didMoveToWindow(); measure() }
+        override func layoutSubviews() { super.layoutSubviews(); measure() }
+        override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); measure() }
+        func measure() {
+            guard let window else { return }
+            // The drawer fills the window, so SwiftUI's inherited safe area is empty.
+            let inset = max(0, window.safeAreaInsets.top - convert(CGPoint.zero, to: window).y)
+            guard inset != reported else { return }
+            reported = inset
+            DispatchQueue.main.async { [update] in update(inset) }
+        }
+    }
+}
+#endif
 
 private struct LGSidebarNavigation: View {
     let context: LUIAppleExtensionViewContext

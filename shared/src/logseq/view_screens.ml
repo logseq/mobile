@@ -946,23 +946,31 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       ]
   in
   let stack_grow = Lui_ui.platform context = AndroidOS in
-  let content_children = content_children @ [
-    keyed
+  let confirmation = keyed
       ~source:(Signal.map (fun (current : Model.logseq_model) ->
         Option.to_list current.capture_confirmation) model_source)
       ~key:string_of_int ~cmp:compare
       ~mount:(fun id_source ->
-        toast ~duration:2500 ~label:"Added to today"
+        let notification = toast ~duration:2500 ~label:"Added to today" ~margin_top:8
           ~on_dismiss:(press send (Model.DismissCaptureConfirmation (Signal.sample id_source)))
-          [text ~value:"Added to today" ~accessibility_identifier:"capture.confirmation" []]);
-  ] in
-  if stack_grow then
+          [text ~value:"✅" ~accessibility_identifier:"capture.confirmation.icon" [];
+           text ~value:"Added to today" ~accessibility_identifier:"capture.confirmation" []] in
+        if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
+          box [(fun context parent ->
+            let node = Lui_ui.extension context "native-top-notification" in
+            attach context parent node;
+            ignore (notification context (Some node));
+            node)]
+        else notification) in
+  let content = if stack_grow then
     if Lui_ui.host context = KotlinHost then
       stack ~grow:1.0 content_children
     else
       stack ~grow:1.0 ~container_relative_frame:`vertical
         content_children
-  else stack content_children
+  else stack content_children in
+  overlay ~alignment:`top ~accessibility_identifier:"capture.confirmation.overlay"
+    [content; confirmation]
 
 let logseq_view (context : Lui_ui.ui_context) model_source send : t =
   let drawer_main = application_main_content context model_source send in

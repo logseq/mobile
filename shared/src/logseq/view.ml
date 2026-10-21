@@ -143,6 +143,11 @@ let native_sidebar_schema () =
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
     true [] [] []
 
+let native_top_notification_schema () =
+  let open Lui_protocol in
+  Lui_extension.component "native-top-notification" [profile IOS SwiftUIHost]
+    true [] [] []
+
 let native_search_presentation_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -178,6 +183,7 @@ let extension_registry () =
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (native_top_notification_schema ());
   Lui_extension.register_tweak registry
     (native_navigation_title_schema ());
   Lui_extension.register_component registry
