@@ -1355,10 +1355,13 @@ let page_share_asset_paths rows =
     [] rows
 
 let cancels_outliner_autosave = function
+  | OutlinerToolbarEffect (_, action) ->
+    (* Movement and media actions retain the draft without committing it. *)
+    List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
   | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
   | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
-  | DropOutlinerBlocksEffect _ | OutlinerToolbarEffect _
+  | DropOutlinerBlocksEffect _
   | ConfirmOutlinerDeleteEffect _
   | ChooseOutlinerAutocompleteEffect _ | CancelOutlinerEditingEffect _
   | SetOutlinerTaskStatusEffect _ | SelectSidebarPageEffect _
@@ -2139,8 +2142,17 @@ let rec update (current : logseq_model) action =
          last_core_response =
            (if succeeded then Some message else current.last_core_response);
        } in
+       let resolved = match succeeded, eff, resolved.sync_state, resolved.outliner_editing with
+         | true, SaveOutlinerEditingEffect (_, uuid), SyncingState, Some editing
+           when editing.editing_uuid = uuid
+             && not resolved.has_pending_semantic_operations
+             && not resolved.has_pending_sync_request
+             && not (change_outliner_text_active_ resolved uuid) ->
+           { resolved with sync_state = SyncedState }
+         | _ -> resolved in
        let edited_uuid = match eff with
          | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | BackspaceOutlinerEditorEffect (_, uuid, _, _) -> Some uuid
          | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | _ -> None in
        let saved = match succeeded, edited_uuid, resolved.outliner_editing with

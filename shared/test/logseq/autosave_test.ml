@@ -178,7 +178,167 @@ let full_pending_responses_do_not_restart_a_completed_pump () = with_editor (fun
   ignore (Native_bridge.apply_response failed);
   check_eq ~msg:"a permanent failure cannot bypass the retry budget through snapshot wakeups" (pending_kinds ()) [])
 
+let toolbar_actions_that_keep_editing_preserve_autosave () =
+  List.iter (fun action -> with_editor (fun session saved ->
+    type_text session "Draft";
+    let before = List.find (function Model.SaveOutlinerEditingEffect _ -> true | _ -> false)
+      (App.model (Native_bridge.app ())).Model.pending_effects in
+    send (Model.PerformOutlinerToolbarAction action);
+    check ~msg:(action ^ " retains the current save deadline")
+      (List.exists (fun pending -> Model.effect_id pending = Model.effect_id before)
+        (App.model (Native_bridge.app ())).Model.pending_effects);
+    let toolbar = take_ready () in
+    check_eq (kind toolbar) "outliner-toolbar";
+    apply_effect session toolbar ["type", `String "toolbar"; "action", `String action];
+    let rec next_save () =
+      let pending = take_ready () in
+      if kind pending = "sync-pending" then next_save () else pending in
+    let save = next_save () in
+    check_eq (kind save) "save-outliner-editing";
+    apply_effect session save ["type", `String "saveEditing"];
+    check_eq ~msg:(action ^ " cannot strand the draft") (!saved).Cache_model.title "Draft"))
+    ["indent"; "outdent"; "moveUp"; "moveDown"; "task"; "camera"; "audio"; "attachment"]
+
+let an_old_noop_save_cannot_mark_newer_typing_synced () = with_editor (fun session _ ->
+  ignore (Native_bridge.apply_response (Rpc_session.call session
+    {|{"apiVersion":1,"method":"dispatch","params":{"action":"startWebSocket"}}|}));
+  type_text session "Before";
+  let save = take_ready () in
+  check_eq (kind save) "save-outliner-editing";
+  send (Model.ChangeOutlinerText ("editing", "New draft", 9));
+  apply_effect session save ["type", `String "saveEditing"];
+  check_eq ~msg:"a save acknowledgement cannot hide newer native input"
+    (App.model (Native_bridge.app ())).Model.sync_state Model.SyncingState;
+  check ~msg:"new input remains dispatchable" (kind (take_ready ()) = "change-outliner-text"))
+
+let backspace_without_a_merge_target_still_saves_the_draft () = with_editor (fun session saved ->
+  type_text session "Draft";
+  send (Model.BackspaceOutlinerEditor ("editing", "Draft", 0));
+  let backspace = take_ready () in
+  check_eq (kind backspace) "backspace-outliner-editor";
+  apply_effect session backspace ["type", `String "backspacePressed"; "uuid", `String "editing";
+    "title", `String "Draft"; "selectionLength", `Int 0];
+  check ~msg:"a structural no-op cannot cancel the final save" (List.mem "save-outliner-editing" (pending_kinds ()));
+  let save = take_ready () in
+  check_eq (kind save) "save-outliner-editing";
+  apply_effect session save ["type", `String "saveEditing"];
+  check_eq (!saved).Cache_model.title "Draft")
+
+let deleting_text_replaces_the_save_with_the_latest_content () =
+  List.iter (fun title -> with_editor (fun session saved ->
+    type_text session "Text to delete 中文 😀";
+    type_text session title;
+    let save = take_ready () in
+    check_eq (kind save) "save-outliner-editing";
+    apply_effect session save ["type", `String "saveEditing"];
+    check_eq ~msg:"backspace and selected text deletion save the remaining content" (!saved).Cache_model.title title))
+    ["Text to delete 中文 "; "Text 中文 😀"; ""]
+
+let rapid_editing_and_reparenting_settles_after_the_last_save () =
+  let module G = Graph_runtime_test in
+  let module R = Graph_runtime in
+  let module Ds = Datascript in
+  let page = "00000000-0000-4000-8000-000000000001" in
+  let editing = "00000000-0000-4000-8000-000000000010" in
+  let previous = "00000000-0000-4000-8000-000000000011" in
+  G.with_runtime (fun path conn runtime ->
+    Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ()); G.cleanup_store path) (fun () ->
+      ignore (Ds.reset_conn conn (Ds.db_with [
+        G.add 1 "block/uuid" (Ds.Uuid page);
+        G.add 10 "block/uuid" (Ds.Uuid editing);
+        G.add 10 "block/order" (Ds.String "a1");
+        G.add 11 "block/uuid" (Ds.Uuid previous);
+        G.add 11 "block/title" (Ds.String "Previous");
+        G.add 11 "block/page" (Ds.Ref 1);
+        G.add 11 "block/parent" (Ds.Ref 1);
+        G.add 11 "block/order" (Ds.String "a0")
+      ] (Ds.conn_db conn)));
+      R.rebase runtime 42 [] [];
+      let apply_journal body =
+        let ( let* ) = Result.bind in
+        let* journal = Journal_sync.decode body in
+        let* ids, changed = Journal_sync.apply (fun value -> Ok value) conn (R.state runtime).server_t journal in
+        R.rebase runtime journal.t ids changed;
+        Ok () in
+      let session = Rpc_session.create_session { Rpc_session.default_options with
+        graph_blocks = Some (fun () -> Some (R.blocks_for_page runtime page));
+        graph_page_blocks = Some (fun uuid -> Some (R.blocks_for_page runtime uuid));
+        graph_sidebar_pages = Some (fun () -> Some (R.sidebar_pages runtime));
+        authoritative_graph_blocks = Some (fun () -> Some (Graph_read.blocks_for_page (fun value -> Ok value) (Ds.conn_db conn) page));
+        sync_cursor = Some (fun () -> Some (R.state runtime).server_t);
+        stage_operation = Some (R.stage runtime);
+        prepare_operation = Some (R.prepare_sync runtime);
+        pending_operations = Some (fun () -> R.pending_operations runtime);
+        apply_sync_event = Some apply_journal } in
+      let dispatch action payload = Rpc_session.call session (J.to_string (`Assoc [
+        "apiVersion", `Int 1; "method", `String "dispatch";
+        "params", `Assoc ["action", `String action; "payload", `String payload]])) in
+      ignore (dispatch "configure" {|{"baseUrl":"http://localhost","graphId":"plain-1","token":"access"}|});
+      ignore (dispatch "selectPage" page);
+      ignore (dispatch "startWebSocket" "");
+      ignore (Native_bridge.initialize 2 2 3);
+      ignore (Native_bridge.apply_response (call session ["type", `String "tapBlock"; "uuid", `String editing]));
+      let held_sync = ref None in
+      let perform action expected event =
+        send action;
+        let rec next () =
+          let pending = take_ready () in
+          match kind pending with
+          | "sync-pending" -> held_sync := Some (effect_id pending); next ()
+          | "save-outliner-editing" when expected <> "save-outliner-editing" ->
+            apply_effect session pending ["type", `String "saveEditing"]; next ()
+          | actual -> check_eq actual expected; apply_effect session pending event in
+        next () in
+      for index = 1 to 60 do
+        let title = Printf.sprintf "Draft %d" index in
+        perform (Model.ChangeOutlinerText (editing, title, String.length title)) "change-outliner-text"
+          ["type", `String "textChanged"; "title", `String title; "caretUTF16Offset", `Int (String.length title)];
+        let action = if index mod 2 = 1 then "indent" else "outdent" in
+        perform (Model.PerformOutlinerToolbarAction action) "outliner-toolbar"
+          ["type", `String "toolbar"; "action", `String action]
+      done;
+      let rec save () =
+        let pending = take_ready () in
+        if kind pending = "sync-pending" then (held_sync := Some (effect_id pending); save ())
+        else (check_eq (kind pending) "save-outliner-editing";
+          apply_effect session pending ["type", `String "saveEditing"]) in
+      save ();
+      let rec pump response count =
+        check ~msg:"the pending pump makes bounded progress" (count <= 122);
+        check_eq ~msg:response (member "ok" (J.from_string response)) (`Bool true);
+        ignore (Native_bridge.apply_response response);
+        match member "pendingSyncRequest" (member "result" (J.from_string response)) with
+        | `Null -> count
+        | request ->
+          let tx = member "bodyObject" request |> member "txs" |> U.to_list |> List.hd in
+          let before = (R.state runtime).server_t in
+          let body = J.to_string (`Assoc ["type", `String "tx/batch/ok";
+            "t-before", `Int before; "t", `Int (before + 1);
+            "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", member "tx-id" tx; "tx", member "tx" tx]]]) in
+          pump (dispatch "completePendingSync" (J.to_string (`Assoc ["id", member "id" request;
+            "status", `Int 200; "body", `String body; "error", `Null]))) (count + 1) in
+      let requests = pump (dispatch "beginPendingSync" "") 0 in
+      check ~msg:"rapid structural changes actually reached the server" (requests >= 60);
+      Option.iter (fun id -> ignore (Native_bridge.resolve_effect id true "")) !held_sync;
+      (* The last keystrokes may undo a draft after the network has caught up. *)
+      List.iter (fun title ->
+        perform (Model.ChangeOutlinerText (editing, title, String.length title)) "change-outliner-text"
+          ["type", `String "textChanged"; "title", `String title; "caretUTF16Offset", `Int (String.length title)])
+        ["Draft 60x"; "Draft 60"];
+      save ();
+      check_eq ~msg:"all semantic operations have been acknowledged" (R.pending_operations runtime) [];
+      check_eq ~msg:"a final no-op autosave settles the visible sync status"
+        (App.model (Native_bridge.app ())).Model.sync_state Model.SyncedState;
+      check_eq (G.title (Ds.conn_db conn) editing) "Draft 60";
+      check_eq (List.find (fun (block : Cache_model.block) -> block.uuid = editing)
+        (R.blocks_for_page runtime page)).parent_id (Some page)))
+
 let cases = [
+  case "backspace without a merge target still saves the draft" backspace_without_a_merge_target_still_saves_the_draft;
+  case "deleting text saves the latest content" deleting_text_replaces_the_save_with_the_latest_content;
+  case "an old no-op save cannot mark newer typing synced" an_old_noop_save_cannot_mark_newer_typing_synced;
+  case "toolbar actions that keep editing preserve autosave" toolbar_actions_that_keep_editing_preserve_autosave;
+  case "rapid editing and reparenting settles after the last save" rapid_editing_and_reparenting_settles_after_the_last_save;
   case "full pending responses never restart their own pump" full_pending_responses_do_not_restart_a_completed_pump;
   case "external pending work wakes sync once" externally_restored_pending_work_wakes_sync_once;
   case "platform deletion confirmation uses shared effects" platform_delete_confirmation_uses_shared_effects;
