@@ -719,6 +719,48 @@ let with_search_runtime db f =
         remove_if_exists (search_path ^ "-wal");
         raise e)
 
+let persisted_search_reopens_without_a_full_graph_refresh () =
+  with_search_runtime (base_db "Old") (fun search_path _conn current ->
+    let stored = Ds.store ~storage:(Store.storage current.path) (base_db "Old") in
+    let conn = Ds.conn_from_db stored in
+    let options = { Runtime.default_options with search_index_path = Some search_path } in
+    let current = Runtime.create current.path 42 conn options in
+    ignore (Runtime.search current "Old");
+    check (is_ok (Runtime.stage current (save_title "persist-search" "Old" "Pending")));
+    let reopen () = Runtime.create current.path 42
+      (match Store.restore_conn current.path with Ok conn -> conn | Error e -> failwith e) options in
+    let reopened = reopen () in
+    check ~msg:"a valid persisted index is immediately reusable after restart"
+      (Runtime.state reopened).search_index_is_fresh;
+    check ~msg:"pending edits remain searchable after restart"
+      (List.exists (fun hit -> hit.Search.uuid = "block") (Runtime.search reopened "Pending"));
+    ignore (Ds.transact_conn conn [add 10 "block/title" (Ds.String "Remote")]);
+    let changed = reopen () in
+    check ~msg:"a changed storage tail invalidates the persisted index"
+      (not (Runtime.state changed).search_index_is_fresh);
+    ignore (Runtime.search changed "Pending");
+    check (Runtime.state changed).search_index_is_fresh;
+    let clean = reopen () in
+    check (Runtime.state clean).search_index_is_fresh)
+
+let incomplete_search_index_is_not_reused_after_restart () =
+  with_search_runtime (base_db "Old") (fun search_path _conn current ->
+    let stored = Ds.store ~storage:(Store.storage current.path) (base_db "Old") in
+    let options = { Runtime.default_options with search_index_path = Some search_path } in
+    let current = Runtime.create current.path 42 (Ds.conn_from_db stored) options in
+    ignore (Runtime.search current "Old");
+    Graph_sqlite.with_search_db search_path (fun connection ->
+      ignore (Sqlite3.exec connection
+        "CREATE TRIGGER reject_search_update BEFORE INSERT ON blocks BEGIN SELECT RAISE(ABORT, 'interrupted index update'); END"));
+    check (is_ok (Runtime.stage current (save_title "failed-index" "Old" "Pending")));
+    let conn = match Store.restore_conn current.path with Ok conn -> conn | Error e -> failwith e in
+    let reopened = Runtime.create current.path 42 conn options in
+    check ~msg:"an interrupted index update cannot be marked reusable"
+      (not (Runtime.state reopened).search_index_is_fresh);
+    Graph_sqlite.with_search_db search_path (fun connection ->
+      ignore (Sqlite3.exec connection "DROP TRIGGER reject_search_update"));
+    check (List.exists (fun hit -> hit.Search.uuid = "block") (Runtime.search reopened "Pending")))
+
 let search_index_incrementally_follows_edits_and_splits () =
   with_search_runtime (base_db "Old") (fun _search_path _conn current ->
       ignore (Runtime.search current "Old");
@@ -1658,6 +1700,8 @@ let cases =
       split_confirmation_requires_evidence_of_submission;
     case "existing inserts remain confirmed after later title changes"
       existing_inserts_remain_confirmed_after_later_title_changes;
+    case "persisted search reopens without a full graph refresh" persisted_search_reopens_without_a_full_graph_refresh;
+    case "incomplete search index is not reused after restart" incomplete_search_index_is_not_reused_after_restart;
     case "search index incrementally follows edits and splits"
       search_index_incrementally_follows_edits_and_splits;
     case "unavailable search index preserves projection and recovers"

@@ -103,7 +103,10 @@ let refresh_search runtime =
   match runtime.search_index with
   | Some search_index ->
     (try
+       Graph_sqlite.set_search_version search_index.path None;
        Index.refresh search_index (db runtime);
+       Graph_sqlite.set_search_version search_index.path
+         (Graph_sqlite.search_source_version runtime.path);
        runtime.state :=
          { !(runtime.state) with search_index_is_fresh = true }
      with error ->
@@ -117,8 +120,11 @@ let refresh_search_affected runtime before intent =
     match runtime.search_index with
     | Some search_index ->
       (try
+         Graph_sqlite.set_search_version search_index.path None;
          Index.refresh_uuids search_index before (db runtime)
-           (Ops.affected_uuids before intent)
+           (Ops.affected_uuids before intent);
+         Graph_sqlite.set_search_version search_index.path
+           (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->
          runtime.state :=
            { !(runtime.state) with search_index_is_fresh = false })
@@ -137,7 +143,11 @@ let refresh_search_after_rebase runtime before operations changed_uuids =
               @ Ops.affected_uuids after operation.intent)
             operations
       in
-      (try Index.refresh_uuids search_index before after affected
+      (try
+         Graph_sqlite.set_search_version search_index.path None;
+         Index.refresh_uuids search_index before after affected;
+         Graph_sqlite.set_search_version search_index.path
+           (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->
          runtime.state :=
            { !(runtime.state) with search_index_is_fresh = false })
@@ -269,6 +279,14 @@ let create_base path server_t conn options =
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
   rebase runtime server_t [] [];
+  let fresh = match search_index with
+    | None -> false
+    | Some index ->
+      (try match Graph_sqlite.search_source_version path with
+       | Some version -> Graph_sqlite.search_version index.path = Some version
+       | None -> false
+       with error -> search_error "restore-version" error; false) in
+  runtime.state := { !(runtime.state) with search_index_is_fresh = fresh };
   runtime
 
 let fresh_uuid () =
@@ -344,6 +362,12 @@ let stage runtime (operation : Ops.pending_operation) =
           | Ops.Applied, Ops.Queued, Ops.Create_asset _, Ops.Create_asset _ -> true
           | _ -> false) ->
     Ops.save runtime.path { previous with state = operation.state };
+    (match runtime.search_index with
+     | Some index when (state runtime).search_index_is_fresh ->
+       (try Graph_sqlite.set_search_version index.path (Graph_sqlite.search_source_version runtime.path)
+        with error -> search_error "save-version" error;
+          runtime.state := { !(runtime.state) with search_index_is_fresh = false })
+     | _ -> ());
     Ok ()
   | _ ->
     let s = state runtime in

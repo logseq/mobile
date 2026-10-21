@@ -284,6 +284,7 @@ let ensure_search_schema connection =
   List.iter
     (execute connection)
     [
+      "CREATE TABLE IF NOT EXISTS search_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
       "CREATE TABLE IF NOT EXISTS blocks (id TEXT NOT NULL PRIMARY KEY, \
        title TEXT NOT NULL, page TEXT)";
       "CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(id, title, \
@@ -331,3 +332,33 @@ let search_query path sql binds =
         ( Db.column_text statement 0
         , Db.column_text statement 1
         , Db.column_text statement 2 )))
+
+(* Root and tail identify the persisted graph without reading index nodes.
+   Pending intents identify the optimistic projection layered on that graph. *)
+let search_source_version path =
+  with_app_db path (fun connection ->
+    let roots = query connection
+      "SELECT addr, content, addresses FROM kvs WHERE addr IN (0, 1) ORDER BY addr" []
+      (fun row -> (Db.column_int row 0, Db.column_text row 1, Db.column row 2)) in
+    if not (List.exists (fun (addr, _, _) -> addr = 0) roots) then None
+    else
+      let pending = query connection
+        "SELECT operation_id, base_t, state, intent FROM logseq_pending_ops ORDER BY sequence" []
+        (fun row -> (Db.column_text row 0, Db.column_int row 1,
+          Db.column_text row 2, Db.column_text row 3)) in
+      Some (Digest.to_hex (Digest.string
+        (Marshal.to_string ("search-index-v1", roots, pending) []))))
+
+let search_version path =
+  with_search_db path (fun connection ->
+    match query connection "SELECT value FROM search_metadata WHERE key = 'source'" []
+      (fun row -> Db.column_text row 0) with
+    | value :: _ -> Some value | [] -> None)
+
+let set_search_version path version =
+  with_search_db path (fun connection ->
+    match version with
+    | None -> command connection "DELETE FROM search_metadata WHERE key = 'source'" []
+    | Some value -> command connection
+        "INSERT INTO search_metadata(key, value) VALUES ('source', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+        [Db.Data.TEXT value])

@@ -32,3 +32,7 @@ val search_query : string -> string -> string list -> (string * string * string)
 val with_db : string -> (Sqlite3.db -> 'a) -> 'a
 val query :
   Sqlite3.db -> string -> Sqlite3.Data.t list -> (Sqlite3.stmt -> 'a) -> 'a list
+
+val search_source_version : string -> string option
+val search_version : string -> string option
+val set_search_version : string -> string option -> unit
