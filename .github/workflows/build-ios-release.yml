@@ -32,6 +32,9 @@ jobs:
         with:
           ref: ${{ github.event.inputs.git-ref }}
 
+      - name: System dependencies
+        run: brew install sdl2 sdl2_ttf
+
       - name: Restore opam root
         id: opam-root
         uses: actions/cache/restore@v4
