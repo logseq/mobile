@@ -1,6 +1,17 @@
 open Lui_protocol
 open Lui_elements
 
+let with_native_control_tint role (control : t) : t =
+ fun context parent ->
+   match Lui_ui.profile context with
+   | { profile_os = IOS; profile_host = SwiftUIHost } ->
+     let tweak = Lui_ui.platform_tweak context "native-control-tint" in
+     Lui_ui.extension_property context tweak "role" (StringValue role);
+     ignore (control context (Some tweak));
+     attach context parent tweak;
+     tweak
+   | _ -> control context parent
+
 let settings_language_choice_radio model_source
     (choice_source : Model.settings_language_choice Signal.signal) send :
     radio_el =
@@ -88,6 +99,7 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
           ~mount:(fun choice_source ->
             settings_language_choice_radio model_source choice_source send);
       ]
+    |> with_native_control_tint "picker"
 
 let settings_appearance_control (context : Lui_ui.ui_context) model_source
     send : t =
@@ -167,6 +179,7 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
             ignore (send (Model.ChangeAppearance "dark")))
           [];
       ]
+    |> with_native_control_tint "picker"
 
 let settings_community_link_row (context : Lui_ui.ui_context) model_source
     link_source send : t =
@@ -845,7 +858,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
 (* Native grouped-settings form: a `form`-styled content column whose
    children are `heading` section delimiters and row nodes — the Apple
    backend renders it as a grouped Form (white section cards, system
-   separators, green toggles). *)
+   separators, Logseq accent toggles). *)
 let settings_form_screen (context : Lui_ui.ui_context) model_source send
     : t =
   let version_row label value_signal identifier : t =
@@ -881,18 +894,18 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ];
       heading ~value:"Editor" ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.editor" [];
-      toggle
+      with_native_control_tint "switch" (toggle
         ~checked_signal:
           (Signal.map View_base.settings_spell_check model_source)
         ~accessibility_identifier:"switch.settings.spell-check"
         ~on_toggle:(settings_toggle_spell_check send)
-        ~text:"Spell check" [];
-      toggle
+        ~text:"Spell check" []);
+      with_native_control_tint "switch" (toggle
         ~checked_signal:
           (Signal.map View_base.settings_auto_correction model_source)
         ~accessibility_identifier:"switch.settings.auto-correction"
         ~on_toggle:(settings_toggle_auto_correction send)
-        ~text:"Auto-correction" [];
+        ~text:"Auto-correction" []);
       heading ~value:"Sync server" ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.sync-server" [];
       text_field

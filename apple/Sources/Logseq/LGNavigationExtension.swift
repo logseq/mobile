@@ -32,6 +32,19 @@ enum LGNavigationExtension {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.registerTweak(
             LUIAppleTweak(
+                identifier: "native-control-tint",
+                fingerprint: "lui-tweak-v1|19:native-control-tint|profiles:ios/swiftui|properties:4:role:string:required:none",
+                properties: [.init(name: "role", kind: .string, isRequired: true)]
+            ) { content, context in
+                if case .string("switch") = context.property("role") {
+                    return AnyView(content.toggleStyle(SwitchToggleStyle(tint: LogseqThemePolicy.accent))
+                        .tint(LogseqThemePolicy.accent))
+                }
+                return AnyView(content.tint(.primary))
+            }
+        )
+        try registry.registerTweak(
+            LUIAppleTweak(
                 identifier: "native-adaptive-insets",
                 fingerprint: "lui-tweak-v1|22:native-adaptive-insets|profiles:android/kotlin,ios/swiftui|properties:10:breakpoint:int:required:none,10:wide-inset:int:required:none",
                 properties: [

@@ -184,6 +184,12 @@ let liquid_glass_schema () =
   Lui_extension.tweak "liquid-glass" [ profile IOS SwiftUIHost ]
     [ Lui_extension.property "shape" StringScalar true None ]
 
+let native_control_tint_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  tweak "native-control-tint" [profile IOS SwiftUIHost]
+    [property "role" StringScalar true None]
+
 let adaptive_content_insets_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -208,5 +214,6 @@ let extension_registry () =
   Lui_extension.register_component registry
     (native_search_presentation_schema ());
   Lui_extension.register_tweak registry (liquid_glass_schema ());
+  Lui_extension.register_tweak registry (native_control_tint_schema ());
   Lui_extension.register_tweak registry (adaptive_content_insets_schema ());
   registry
