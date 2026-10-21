@@ -91,6 +91,7 @@ private const val SEARCH_FINGERPRINT =
 
 fun logseqExtensionRegistry(
     onOpenImage: ((String, String) -> Unit)? = null,
+    loadImage: (suspend (String, String) -> String)? = null,
     resolveAssetPath: (String) -> String = { it },
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
     val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
@@ -174,7 +175,7 @@ fun logseqExtensionRegistry(
             ),
         ),
     ) {
-        OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage)
+        OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
     }
     registerTweak(
         "native-adaptive-insets",

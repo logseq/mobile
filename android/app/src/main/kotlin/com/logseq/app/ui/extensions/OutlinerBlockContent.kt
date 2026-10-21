@@ -101,6 +101,7 @@ internal fun OutlinerBlockContent(
     resolveAssetPath: (String) -> String,
     youtubeStarts: MutableMap<String, Int>,
     onOpenImage: ((String, String) -> Unit)? = null,
+    loadImage: (suspend (String, String) -> String)? = null,
 ) {
     val uuid = context.string("block-id") ?: ""
     val title = context.string("title") ?: ""
@@ -201,11 +202,13 @@ internal fun OutlinerBlockContent(
         Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
             if (isAsset) {
                 ProjectedAsset(
+                    uuid = uuid,
+                    loadImage = loadImage,
                     title = title,
                     assetType = context.string("asset-type") ?: "",
                     localPath = resolveAssetPath(context.string("local-path") ?: ""),
                     onPreview = onOpenImage?.let { open ->
-                        { open(uuid, resolveAssetPath(context.string("local-path") ?: "")) }
+                        { path -> open(uuid, path) }
                     },
                 )
             } else {
@@ -527,27 +530,13 @@ private fun MarkupRichNode(
 // --- assets ---
 
 @Composable
-private fun ProjectedAsset(title: String, assetType: String, localPath: String, onPreview: (() -> Unit)?) {
+private fun ProjectedAsset(
+    uuid: String, title: String, assetType: String, localPath: String,
+    loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
+) {
     when {
-        isImageAsset(assetType, localPath) && localPath.isNotEmpty() -> {
-            val bitmap = remember(localPath) {
-                runCatching { BitmapFactory.decodeFile(localPath)?.asImageBitmap() }.getOrNull()
-            }
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .then(if (onPreview != null) Modifier.clickable(onClick = onPreview) else Modifier)
-                        .testTag("asset.preview.image"),
-                    contentScale = ContentScale.FillWidth,
-                )
-            } else {
-                AssetFallback(title)
-            }
-        }
+        isImageAsset(assetType, localPath) ->
+            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->
             AndroidAudioPlaybackRow(title = title, path = localPath)
         else -> AssetFallback(title)
@@ -723,5 +712,45 @@ private fun openExternalUrl(context: android.content.Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (_: ActivityNotFoundException) {
+    }
+}
+
+@Composable
+internal fun GraphImagePreview(
+    uuid: String, title: String, assetType: String, localPath: String,
+    loadImage: (suspend (String, String) -> String)?,
+    onPreview: ((String) -> Unit)?,
+) {
+    var retry by remember(uuid, localPath) { mutableIntStateOf(0) }
+    var loadedPath by remember(uuid, localPath) { mutableStateOf("") }
+    var bitmap by remember(uuid, localPath) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var failed by remember(uuid, localPath) { mutableStateOf(false) }
+    LaunchedEffect(uuid, assetType, localPath, retry) {
+        failed = false
+        try {
+            val path = if (localPath.isNotEmpty() && File(localPath).isFile) localPath
+                else requireNotNull(loadImage) { "Image unavailable" }(uuid, assetType)
+            val image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                requireNotNull(BitmapFactory.decodeFile(path)?.asImageBitmap()) { "Image unavailable" }
+            }
+            loadedPath = path
+            bitmap = image
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) { failed = true }
+    }
+    val image = bitmap
+    if (image != null) {
+        Image(bitmap = image, contentDescription = title,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .then(if (onPreview != null) Modifier.clickable { onPreview(loadedPath) } else Modifier)
+                .testTag("asset.preview.image"), contentScale = ContentScale.FillWidth)
+    } else if (failed) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, modifier = Modifier.weight(1f))
+            TextButton(onClick = { retry++ }) { Text("Retry") }
+        }
+    } else {
+        androidx.compose.material3.CircularProgressIndicator(Modifier.padding(12.dp))
     }
 }

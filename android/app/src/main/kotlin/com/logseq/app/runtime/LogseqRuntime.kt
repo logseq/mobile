@@ -67,6 +67,7 @@ internal class LogseqRuntime(
         extensions = com.logseq.app.ui.extensions.logseqExtensionRegistry(
             resolveAssetPath = platformServices::resolveAssetPath,
             onOpenImage = ::openImageGallery,
+            loadImage = { uuid, type -> graphAssetLoader.load(uuid, type) },
         ),
         icons = logseqIconResolver,
     )
@@ -85,6 +86,10 @@ internal class LogseqRuntime(
     }
     private val patchFilter = LuiPatchFilter(backend)
     private val bridge = LogseqNativeBridge(onPatch = ::applyPatch)
+
+    private val graphAssetLoader by lazy {
+        AndroidGraphAssetLoader(java.io.File(activity.cacheDir, "asset-downloads"), bridge::callCore)
+    }
 
     private var coreEffects: CoreEffectExecutor? = null
     private var effectDrain: NativeEffectDrain? = null

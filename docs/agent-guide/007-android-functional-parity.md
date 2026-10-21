@@ -109,3 +109,16 @@ Background work follows Android's network, power and scheduling restrictions; it
 Android controls added by this plan use Material 3 components; widgets, shortcuts, share sheets and tiles use their native Android system hosts.
 Background execution follows Android's network, power and scheduling limits. The minimum periodic interval is 15 minutes, and a locked encrypted graph requires unlocking before it can sync.
 No Apple layout or styling changes are included in these feature commits.
+
+
+## Additional parity pass
+
+Complete four further confirmed gaps in separate commits. Continue using the TDD and emulator workflow above.
+No Apple layout changes or paused performance work are included.
+
+- [x] Remote images: use prepareAssetDownload/cacheDownloadedAsset for authorization, graph ownership and decryption; download off the UI thread; show M3 loading and retry controls; open the downloaded file in the gallery.
+- [ ] Durable incoming shares: persist before delivery, retain stable capture identifiers and attachment bytes across restart, acknowledge only successful core operations.
+- [ ] Editor settings: apply saved autocorrection/spell-check preferences to the native input connection and verify text and selection survive updates.
+- [ ] Graph progress: show real download/decode/import/open stages and native import record counts in an M3 progress presentation; dismiss on success/failure and reject stale callbacks.
+
+Remote-image verification: three JVM cases pass for cached access, actual HTTP failure followed by retry with byte-exact caching, and graph-change rejection with temporary-file cleanup. The installed emulator suite passes 15 cases: remote retry/preview, rich content and gallery gestures/actions. Tests were observed failing before implementation.
