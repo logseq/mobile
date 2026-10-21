@@ -91,7 +91,8 @@ class AndroidAssetImporter(
         return result.await()
     }
 
-    suspend fun importShared(uri: Uri): Map<String, Any>? = importDocument(uri)
+    suspend fun importShared(uri: Uri, uuid: String = UUID.randomUUID().toString()): Map<String, Any>? =
+        importDocument(uri, uuid)
 
     private fun launchCamera() {
         val directory = File(activity.cacheDir, assetsDirectory).apply { mkdirs() }
@@ -119,11 +120,10 @@ class AndroidAssetImporter(
         activity.startActivityForResult(intent, documentsRequestCode)
     }
 
-    private suspend fun importDocument(uri: Uri): Map<String, Any>? =
+    private suspend fun importDocument(uri: Uri, uuid: String = UUID.randomUUID().toString()): Map<String, Any>? =
         withContext(Dispatchers.IO) {
             runCatching {
                 val title = displayName(uri)
-                val uuid = UUID.randomUUID().toString()
                 val directory = File(activity.cacheDir, assetsDirectory).apply { mkdirs() }
                 val destination = File(directory, "$uuid-$title")
                 activity.contentResolver.openInputStream(uri).use { input ->

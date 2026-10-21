@@ -117,8 +117,10 @@ Complete four further confirmed gaps in separate commits. Continue using the TDD
 No Apple layout changes or paused performance work are included.
 
 - [x] Remote images: use prepareAssetDownload/cacheDownloadedAsset for authorization, graph ownership and decryption; download off the UI thread; show M3 loading and retry controls; open the downloaded file in the gallery.
-- [ ] Durable incoming shares: persist before delivery, retain stable capture identifiers and attachment bytes across restart, acknowledge only successful core operations.
+- [x] Durable incoming shares: persist before delivery, retain stable capture identifiers and attachment bytes across restart, acknowledge only successful core operations.
 - [ ] Editor settings: apply saved autocorrection/spell-check preferences to the native input connection and verify text and selection survive updates.
 - [ ] Graph progress: show real download/decode/import/open stages and native import record counts in an M3 progress presentation; dismiss on success/failure and reject stale callbacks.
 
 Remote-image verification: three JVM cases pass for cached access, actual HTTP failure followed by retry with byte-exact caching, and graph-change rejection with temporary-file cleanup. The installed emulator suite passes 15 cases: remote retry/preview, rich content and gallery gestures/actions. Tests were observed failing before implementation.
+
+Durable-share verification: both restart/failure and cancellation/attachment-survival tests first timed out against the in-memory queue, then pass on JVM and the installed emulator. Four installed cases pass with existing MIME/file-import coverage. Shares and attachment bytes are atomically staged under filesDir, stable identifiers survive replay, delivery stays ordered, activity recreation retains the intent token, and only successful graph handling acknowledges the entry. Disk work runs on Dispatchers.IO; lifecycle cancellation retains the queue without reporting an import error.

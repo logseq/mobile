@@ -94,7 +94,9 @@ internal class LogseqRuntime(
     private var coreEffects: CoreEffectExecutor? = null
     private var effectDrain: NativeEffectDrain? = null
     private var graphCatalogAutoRefresh: GraphCatalogAutoRefresh? = null
-    private val appEntries = AndroidAppEntryCoordinator(scope, ::handleAppEntry, ::reportError)
+    private val appEntries = AndroidAppEntryCoordinator(
+        scope, ::handleAppEntry, ::reportError, java.io.File(activity.filesDir, "incoming-shares"),
+    )
     private val outlinerCommands = OutlinerPlatformCommandDispatcher(::handleOutlinerCommandBatch)
 
     var rootNodeId by mutableStateOf<Long?>(null)
@@ -206,9 +208,10 @@ internal class LogseqRuntime(
     fun onLifecycleResumed(resumed: Boolean) {
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
+        if (resumed && hasOpenGraph) appEntries.markReady()
     }
 
-    fun publishAppEntry(entry: Map<String, Any?>) = appEntries.publish(entry)
+    suspend fun publishAppEntry(entry: Map<String, Any?>) = appEntries.publish(entry)
 
     // --- LUI event dispatch ---
 
@@ -424,6 +427,7 @@ internal class LogseqRuntime(
             effect.kind in setOf("open-graph", "unlock-graph", "create-graph")
         ) {
             hasOpenGraph = true
+            appEntries.markReady()
             graphCatalogAutoRefresh?.stopPeriodic()
             requestSyncNow()
             // First post-open snapshots ship an empty sidebar; fill it
