@@ -629,7 +629,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
       ]
   else
     let apple_button icon label identifier action : t =
-      button ~icon ~variant:`ghost ~width:58 ~height:46
+      button ~icon ~variant:`ghost ~width:44 ~height:46
         ~icon_placement:`top ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->
@@ -638,8 +638,8 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
     in
     toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
-         ~style_class:"scroll-leading leading-inset-12"
-         ~toolbar_gap:6 ~placement:"bottom"
+         ~style_class:"scroll-leading"
+         ~toolbar_gap:2
       [
         apple_button (`app "toolbar-copy") "Copy"
           "button.outliner.selection.copy" "copy";
@@ -653,7 +653,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
           "button.outliner.selection.copyReference" "copyReference";
         apple_button (`app "toolbar-copy-url") "Copy URL"
           "button.outliner.selection.copyURL" "copyURL";
-        button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:70
+        button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:52
           ~height:46 ~icon_placement:`top ~label:"Unselect"
           ~accessibility_identifier:"button.outliner.selection.unselect"
           ~on_press:(fun _ ->

@@ -8338,6 +8338,10 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     descendant_with_identifier renderer wrapper
       "toolbar.outliner.selection"
   in
+  check_eq ~msg:"the selection bar stays inline without a system capsule"
+    (property renderer toolbar Lui_protocol.PlacementValue) None;
+  check_eq ~msg:"compact selection actions leave room for at least five controls"
+    (property_int renderer toolbar Lui_protocol.Gap) 2;
   let selection_buttons = children renderer toolbar in
   let copy_button = List.nth selection_buttons 0 in
   check ~msg:"the selected block is projected into retained row state"
@@ -8350,7 +8354,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
       "selection keeps its trailing action and main inset on narrow \
        screens"
     (property_string renderer toolbar Lui_protocol.StyleClass)
-    "scroll-leading leading-inset-12";
+    "scroll-leading";
   check_eq ~msg:"selection actions keep main's automation identifiers"
     (property_string renderer copy_button
        Lui_protocol.AccessibilityIdentifier)
@@ -8366,7 +8370,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
          caption;
        check_eq ~msg:"selection actions retain main's fixed widths"
          (property_int renderer button Lui_protocol.WidthValue)
-         (if index = 6 then 70 else 58))
+         (if index = 6 then 52 else 44))
     [
       (0, "app:toolbar-copy", "Copy");
       (1, "app:toolbar-outdent", "Outdent");
