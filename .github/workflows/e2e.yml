@@ -432,6 +432,12 @@ jobs:
         if: steps.duniverse.outputs.cache-hit != 'true'
         run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
