@@ -60,4 +60,68 @@ class AndroidEditorKeyboardTest {
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" } }
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
+    @Test fun savedWritingAssistanceFlagsReachTheNativeKeyboardAndUpdateWithoutLosingSelection() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("logseq", android.content.Context.MODE_PRIVATE)
+        val before = preferences.all
+        try {
+            preferences.edit().putBoolean("logseq.editor.autoCorrection", false)
+                .putBoolean("logseq.editor.spellCheck", true).commit()
+            val editor = render("Hello 中文")
+            editor.performTextInputSelection(TextRange(6, 8))
+            assertEquals(0, editorInfo().inputType and android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT)
+            assertEquals(0, editorInfo().inputType and android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+            ui.runOnIdle {
+                preferences.edit().putBoolean("logseq.editor.autoCorrection", true)
+                    .putBoolean("logseq.editor.spellCheck", false).commit()
+            }
+            ui.waitForIdle()
+            assertTrue(editorInfo().inputType and android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0)
+            editor.assertTextEquals("Hello 中文")
+            editor.performTextInput("world")
+            editor.assertTextEquals("Hello world")
+        } finally {
+            preferences.edit().apply {
+                listOf("logseq.editor.autoCorrection", "logseq.editor.spellCheck").forEach { key ->
+                    if (before.containsKey(key)) putBoolean(key, before[key] as Boolean) else remove(key)
+                }
+            }.commit()
+        }
+    }
+
+    @Test fun enabledWritingAssistancePreservesMultilineAndSentenceCapitalization() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("logseq", android.content.Context.MODE_PRIVATE)
+        val before = preferences.all
+        try {
+            preferences.edit().putBoolean("logseq.editor.autoCorrection", true)
+                .putBoolean("logseq.editor.spellCheck", true).commit()
+            render("Draft")
+            val type = editorInfo().inputType
+            assertTrue(type and android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT != 0)
+            assertTrue(type and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0)
+            assertTrue(type and android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0)
+            assertEquals(0, type and android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        } finally {
+            preferences.edit().apply {
+                listOf("logseq.editor.autoCorrection", "logseq.editor.spellCheck").forEach { key ->
+                    if (before.containsKey(key)) putBoolean(key, before[key] as Boolean) else remove(key)
+                }
+            }.commit()
+        }
+    }
+
+    private fun editorInfo(): android.view.inputmethod.EditorInfo {
+        var info: android.view.inputmethod.EditorInfo? = null
+        fun find(view: android.view.View) {
+            if (view.onCheckIsTextEditor()) {
+                val attributes = android.view.inputmethod.EditorInfo()
+                if (view.onCreateInputConnection(attributes) != null) info = attributes
+            }
+            if (view is android.view.ViewGroup) for (index in 0 until view.childCount) find(view.getChildAt(index))
+        }
+        ui.runOnIdle { android.view.inspector.WindowInspector.getGlobalWindowViews().forEach(::find) }
+        return requireNotNull(info) { "No native editor connection" }
+    }
+
 }

@@ -138,7 +138,7 @@ fun logseqExtensionRegistry(
             ),
         ),
     ) {
-        OutlinerEditor(this)
+        NativeWritingAssistance { OutlinerEditor(this) }
     }
     register(
         "outliner-block-content",
