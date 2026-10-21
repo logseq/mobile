@@ -81,7 +81,7 @@ private const val NAVIGATION_FINGERPRINT =
 private const val SEARCH_FINGERPRINT =
     "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
-        "properties:5:depth:int:required:none,5:query:string:required:none," +
+        "properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none," +
         "5:title:string:required:none,9:presented:bool:required:none|events:" +
         "13:query-changed[5:query:string:required],4:back[5:count:int:required]," +
         "7:dismiss[]"
@@ -211,6 +211,7 @@ fun logseqExtensionRegistry(
         SEARCH_FINGERPRINT,
         acceptsStandardChildren = true,
         properties = listOf(
+            LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("query", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),

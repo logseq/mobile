@@ -174,6 +174,7 @@ val connection_control_visible_ : Model.logseq_model -> bool
 val search_query_present_ : Model.logseq_model -> bool
 val bottom_chrome_presentation : Model.logseq_model -> string
 val bottom_chrome_selection_ : Model.logseq_model -> bool
+val search_editor_active_ : Model.logseq_model -> bool
 val bottom_chrome_editor_ : Model.logseq_model -> bool
 val bottom_chrome_expanded_composer_ : Model.logseq_model -> bool
 val bottom_chrome_capture_and_search_ : Model.logseq_model -> bool

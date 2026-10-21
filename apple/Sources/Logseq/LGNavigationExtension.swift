@@ -272,7 +272,7 @@ private struct LGNavigationDestination: View {
 @MainActor
 enum LGSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -281,6 +281,7 @@ enum LGSearchPresentationExtension {
                 fingerprint: fingerprint,
                 acceptsStandardChildren: true,
                 properties: [
+                    .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                     .init(name: "presented", kind: .bool, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "query", kind: .string, isRequired: true),
@@ -356,12 +357,12 @@ private struct LGSearchSession: View {
         LGNavigationContent(
             context: context,
             rootIndex: 1,
-            routeStartIndex: 2,
+            routeStartIndex: 3,
             depth: depth,
             synchronizationName: "search navigation",
             toolbarStartIndex: nil,
-            bottomChromeIndex: nil,
-            bottomOccupiesLayoutSpace: false,
+            bottomChromeIndex: 2,
+            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace,
             composerDismissalEnabled: false,
             rootTransform: searchRootTransform
         )
@@ -438,6 +439,11 @@ private struct LGSearchSession: View {
         )
     }
     #endif
+
+    private var bottomOccupiesLayoutSpace: Bool {
+        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else { return false }
+        return value
+    }
 
     private var depth: Int {
         guard case let .int(value) = context.property("depth") else { return 0 }

@@ -663,6 +663,8 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
    Lui_ui.extension_property_signal context node "query"
      (Signal.map View_base.string_wire_value query_source);
    Lui_ui.extension_property context node "title" (StringValue "Search");
+   Lui_ui.extension_property_signal context node "bottom-occupies-layout-space"
+     (Signal.map (fun current -> BoolValue (View_base.search_editor_active_ current)) model_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore (View_base.handle_native_search_event input_event send));
    if Lui_ui.host context = KotlinHost then
@@ -696,6 +698,11 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      ignore
        ((column ~grow:1.0 [ search_screen model_source send ]) context
           (Some node));
+     (* Keep the chrome anchor present while idle so native route indices stay stable. *)
+     ignore
+       ((column ~gap:0
+           [if_ ~test:(Signal.map View_base.search_editor_active_ model_source)
+              (main_bottom_chrome context model_source send)]) context (Some node));
      ignore
        ((native_node_stack context model_source
            ~source:(reactive View_base.search_node_routes model_source) send)

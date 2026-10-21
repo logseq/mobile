@@ -132,6 +132,7 @@ struct LGRendererTests {
           {"op":"create-node","id":1,"kind":"root"},
           {"op":"create-extension","id":2,"identifier":"native-search-presentation","fingerprint":"\(LGSearchPresentationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":2,"property":"presented","value":false},
+          {"op":"set-extension-prop","id":2,"property":"bottom-occupies-layout-space","value":false},
           {"op":"set-extension-prop","id":2,"property":"depth","value":0},
           {"op":"set-extension-prop","id":2,"property":"query","value":""},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Search"},

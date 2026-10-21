@@ -2072,7 +2072,7 @@ let native_search_presentation_extension_contract_is_pinned () =
     ~msg:"search must use a distinct native full-screen navigation contract"
     fingerprint
     (Some
-       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
 
 let liquid_glass_remains_an_ios_local_tweak () =
   let registry = View.extension_registry () in
@@ -6484,6 +6484,59 @@ let popped_native_path_restores_root_before_core_route_cleanup () =
   check ~msg:"the root header returns before delayed core route cleanup"
     (View_base.primary_sidebar_button_visible_ current)
 
+let search_routes_mount_their_own_editor_toolbar () =
+  List.iter (fun (route_id, is_page) ->
+    let application = App.create (ios_backend ()) in
+    let projection editing =
+      let state = if editing then
+        {|,"outlinerState":{"editing":{"uuid":"child","title":"Draft #pr","caretUTF16Offset":9},"autocomplete":{"kind":"tag","query":"pr"}},"outlinerAutocompleteCandidates":[{"label":"Project","value":"project"}]|}
+        else "" in
+      let routes = if editing then Printf.sprintf
+        {|,"nodeRoutes":[{"uuid":"%s","page":{"uuid":"page","title":"Page"},"outlinerRows":[{"depth":0,"block":{"uuid":"child","title":"Draft #pr","pageId":"page"}}]%s}]|}
+        route_id state else "" in
+      let json = Printf.sprintf
+        {|{"ok":true,"result":{"graphName":"Work","selectedGraphId":"work","searchQuery":"Draft","searchResults":[{"uuid":"%s","title":"Draft","isPage":%b}]%s}}|}
+        route_id is_page routes in
+      match Response_snapshot.decode_response json with Ok p -> p | Error e -> failwith e in
+    start application;
+    send application (Model.ApplyAuthentication ("signedIn", None));
+    send application (Model.ApplyCoreSnapshot (projection false));
+    send application Model.OpenSearch;
+    send application (Model.ChangeSearchQuery "Draft");
+    send application (Model.ApplyCoreSnapshot (projection false));
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let search = extension_node application "native-search-presentation" in
+    let result = descendant_with_identifier renderer search ("search.result." ^ route_id) in
+    check ~msg:"the result is rendered before opening it" (result <> -1);
+    dispatch application (Lui_protocol.Press result);
+    flush application;
+    send application (Model.ApplyCoreSnapshot (projection true));
+    flush application;
+    let chrome = List.nth (children renderer search) 2 in
+    let toolbar = descendant_with_identifier renderer chrome "toolbar.outliner.editor" in
+    check ~msg:"editing a search result mounts its toolbar inside the search presentation" (toolbar <> -1);
+    check_eq ~msg:"the search editor reserves space above its keyboard"
+      (extension_property application search "bottom-occupies-layout-space")
+      (Some (Lui_protocol.BoolValue true));
+    check ~msg:"search editing keeps autocomplete with the toolbar"
+      (descendant_with_identifier renderer chrome "toolbar.outliner.autocomplete" <> -1);
+    let hide = descendant_with_identifier renderer chrome "button.outliner.editor.hideKeyboard" in
+    dispatch application (Lui_protocol.Press hide);
+    flush application;
+    check ~msg:"the search toolbar uses the existing editor action pipeline"
+      (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true | _ -> false)
+        (App.model application).pending_effects);
+    send application (Model.BackSearchNavigation 1);
+    flush application;
+    check_eq ~msg:"returning to results removes the editor inset"
+      (extension_property application search "bottom-occupies-layout-space")
+      (Some (Lui_protocol.BoolValue false));
+    check_eq ~msg:"returning to results keeps the search query" (App.model application).search_query "Draft";
+    check_eq ~msg:"stale editing state cannot show a toolbar over results"
+      (descendant_with_identifier renderer (List.nth (children renderer search) 2) "toolbar.outliner.editor") (-1)
+  ) ["page", true; "block", false]
+
 let app_and_search_routes_are_retained_by_distinct_native_stacks () =
   let application = App.create (ios_backend ()) in
   let app_row =
@@ -6534,14 +6587,14 @@ let app_and_search_routes_are_retained_by_distinct_native_stacks () =
   check_eq ~msg:"the app stack retains chrome, its root, and app route"
     (List.length app_children) 7;
   check_eq
-    ~msg:"search retains the app surface, search root, and search route"
-    (List.length search_children) 3;
+    ~msg:"search retains the app surface, search root, editor chrome, and search route"
+    (List.length search_children) 4;
   check ~msg:"the app route remains behind the search presentation"
     (descendant_with_identifier renderer (List.nth app_children 6)
        "outliner.block.app-child"
     <> -1);
   check ~msg:"the search route is retained only by the search stack"
-    (descendant_with_identifier renderer (List.nth search_children 2)
+    (descendant_with_identifier renderer (List.nth search_children 3)
        "outliner.block.search-child"
     <> -1)
 
@@ -9848,6 +9901,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
     case "sidebar-navigation-respects-native-viewport" sidebar_navigation_respects_native_viewport_width;
     case "reading-content-uses-adaptive-insets" reading_content_uses_adaptive_insets_on_both_native_hosts;

@@ -157,6 +157,7 @@ let native_search_presentation_schema () =
     [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     true []
     [
+      Lui_extension.property "bottom-occupies-layout-space" BoolScalar true None;
       Lui_extension.property "presented" BoolScalar true None;
       Lui_extension.property "depth" IntScalar true None;
       Lui_extension.property "query" StringScalar true None;

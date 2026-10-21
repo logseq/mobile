@@ -657,6 +657,10 @@ let bottom_chrome_presentation (current : Model.logseq_model) =
 let bottom_chrome_selection_ (current : Model.logseq_model) =
   bottom_chrome_presentation current = "outliner-selection"
 
+let search_editor_active_ (current : Model.logseq_model) =
+  current.search_open && current.search_navigation_path <> []
+  && outliner_editor_active_ current
+
 let bottom_chrome_editor_ (current : Model.logseq_model) =
   bottom_chrome_presentation current = "outliner-editor"
 

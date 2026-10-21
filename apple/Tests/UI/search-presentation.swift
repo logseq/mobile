@@ -60,6 +60,7 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
         {"generation":1,"ops":[
           {"op":"create-extension","id":1,"identifier":"native-search-presentation","fingerprint":"\(LGSearchPresentationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":1,"property":"presented","value":false},
+          {"op":"set-extension-prop","id":1,"property":"bottom-occupies-layout-space","value":false},
           {"op":"set-extension-prop","id":1,"property":"depth","value":0},
           {"op":"set-extension-prop","id":1,"property":"query","value":""},
           {"op":"set-extension-prop","id":1,"property":"title","value":"Search"},
@@ -181,7 +182,9 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
                 let frame = field.convert(field.bounds, to: window)
                 let viewportBottom = min(window.bounds.maxY - window.safeAreaInsets.bottom, focus.keyboardTop ?? window.bounds.maxY)
                 let gap = viewportBottom - frame.maxY
-                if gap < -1 || gap > 32 || frame.width < window.bounds.width * 0.7 {
+                // UIKit transforms can round the allowed one-point edge to -1.0000000001.
+                // UIKit reserves its own cancel control and glass insets; the field must fit the viewport.
+                if gap < -1.01 || gap > 32 || frame.minX < -1 || frame.maxX > window.bounds.maxX + 1 {
                     record("FAIL: search field must stay above the keyboard at the bottom of the viewport; frame=\(frame) viewportBottom=\(viewportBottom)")
                     failures += 1
                 }
