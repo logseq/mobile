@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #include <jni.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef const char *(*lui_fn_iii)(int, int, int);
@@ -59,6 +60,50 @@ static jbyteArray cstr_to_jbytes(JNIEnv *env, const char *text) {
   if (!bytes) return NULL;
   (*env)->SetByteArrayRegion(env, bytes, 0, length, (const jbyte *)text);
   return bytes;
+}
+
+static JavaVM *progress_vm = NULL;
+static jclass progress_receiver = NULL;
+static jmethodID progress_method = NULL;
+
+static void graph_import_progress(const char *graph_id, const char *phase,
+                                  int64_t completed, int64_t total) {
+  JNIEnv *env = NULL;
+  int attached = 0;
+  if (!progress_vm || !progress_receiver || !progress_method) return;
+  if ((*progress_vm)->GetEnv(progress_vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    if ((*progress_vm)->AttachCurrentThread(progress_vm, &env, NULL) != JNI_OK) return;
+    attached = 1;
+  }
+  jbyteArray graph = cstr_to_jbytes(env, graph_id);
+  jbyteArray stage = cstr_to_jbytes(env, phase);
+  if (graph && stage) {
+    (*env)->CallStaticVoidMethod(env, progress_receiver, progress_method,
+                                graph, stage, (jlong)completed, (jlong)total);
+  }
+  if (graph) (*env)->DeleteLocalRef(env, graph);
+  if (stage) (*env)->DeleteLocalRef(env, stage);
+  if ((*env)->ExceptionCheck(env)) {
+    (*env)->ExceptionDescribe(env);
+    (*env)->ExceptionClear(env);
+  }
+  if (attached) (*progress_vm)->DetachCurrentThread(progress_vm);
+}
+
+JNIEXPORT jboolean JNICALL Java_com_logseq_app_NativeCore_installGraphImportProgressCallback(
+    JNIEnv *env, jclass clazz, jclass receiver) {
+  (void)clazz;
+  typedef void (*callback_fn)(const char *, const char *, int64_t, int64_t);
+  typedef void (*register_fn)(callback_fn);
+  register_fn install = (register_fn)core_symbol("logseq_set_graph_import_progress_callback");
+  if (!install) return JNI_FALSE;
+  jmethodID method = (*env)->GetStaticMethodID(env, receiver, "receive", "([B[BJJ)V");
+  if (!method || (*env)->GetJavaVM(env, &progress_vm) != JNI_OK) return JNI_FALSE;
+  progress_receiver = (*env)->NewGlobalRef(env, receiver);
+  if (!progress_receiver) return JNI_FALSE;
+  progress_method = method;
+  install(graph_import_progress);
+  return JNI_TRUE;
 }
 
 static jbyteArray call_none(JNIEnv *env, const char *symbol) {

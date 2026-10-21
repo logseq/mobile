@@ -14,7 +14,12 @@ internal object NativeCore {
         // The shim's dlopen only resolves C symbols and does not initialize JNI.
         System.loadLibrary("logseq_core")
         System.loadLibrary("logseq_jni")
+        check(installGraphImportProgressCallback(com.logseq.app.runtime.AndroidGraphImportProgress::class.java)) {
+            "The native core does not support graph import progress"
+        }
     }
+
+    private external fun installGraphImportProgressCallback(receiver: Class<*>): Boolean
 
     external fun luiInitialize(platform: Int, host: Int, authentication: Int): ByteArray?
     external fun luiRootNode(): Long

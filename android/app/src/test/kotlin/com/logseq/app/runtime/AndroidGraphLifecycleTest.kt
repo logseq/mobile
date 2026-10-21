@@ -16,8 +16,10 @@ class AndroidGraphLifecycleTest {
         override suspend fun downloadGraphSnapshot(
             baseUrl: String, graphId: String, accessToken: String, workingDirectory: String,
             callCore: suspend (String) -> String,
+        onProgress: (String, Long, Long?) -> Unit,
         ): AndroidDownloadedSnapshot {
             downloads++
+            onProgress("decoding", 0, null)
             assertEquals("access", accessToken)
             return AndroidDownloadedSnapshot("{}", "/tmp/download")
         }
@@ -29,13 +31,15 @@ class AndroidGraphLifecycleTest {
     fun `resync downloads a fresh snapshot without resetting an active editor`() = runBlocking {
         val storage = Storage()
         val requests = mutableListOf<JSONObject>()
+        val progress = mutableListOf<AndroidGraphProgress?>()
         val lifecycle = AndroidGraphLifecycle(
             callCore = { request ->
                 requests += JSONObject(request).getJSONObject("params")
                 """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[],"graphBootstrap":{"kind":"download","isEncrypted":false}}}"""
-            }, effects = storage, accessTokenProvider = { "access" },
+            }, effects = storage, accessTokenProvider = { "access" }, onProgress = { progress += it },
         )
         val result = lifecycle.openGraphForResync("plain-1")
+        assertEquals(listOf("downloading", "decoding", "importing", "opening", null), progress.map { it?.phase })
         assertTrue(result.succeeded)
         assertEquals(1, storage.downloads)
         assertTrue(requests.none { it.optString("action") in listOf("selectGraph", "openGraph") })
@@ -47,14 +51,17 @@ class AndroidGraphLifecycleTest {
     @Test
     fun `deferred snapshot import cleans its download and preserves the core failure`() = runBlocking {
         val storage = Storage()
+        val progress = mutableListOf<AndroidGraphProgress?>()
         val lifecycle = AndroidGraphLifecycle(
             callCore = { request ->
                 if (JSONObject(request).getJSONObject("params").optString("action") == "importSnapshot")
                     """{"ok":false,"error":{"code":"snapshot_deferred","message":"Still editing"}}"""
                 else """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[],"graphBootstrap":{"kind":"download","isEncrypted":false}}}"""
-            }, effects = storage, accessTokenProvider = { "access" },
+            }, effects = storage, accessTokenProvider = { "access" }, onProgress = { progress += it },
         )
         val result = lifecycle.openGraphForResync("plain-1")
+        assertTrue(progress.any { it?.phase == "importing" })
+        assertEquals(null, progress.last())
         assertEquals(false, result.succeeded)
         assertEquals("snapshot_deferred\nStill editing", result.message)
         assertEquals(listOf("/tmp/download"), storage.cleaned)

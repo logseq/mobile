@@ -9,6 +9,7 @@ internal interface AndroidGraphStorage {
     suspend fun downloadGraphSnapshot(
         baseUrl: String, graphId: String, accessToken: String, workingDirectory: String,
         callCore: suspend (String) -> String,
+        onProgress: (String, Long, Long?) -> Unit = { _, _, _ -> },
     ): AndroidDownloadedSnapshot
     fun persistSelectedGraphId(graphId: String)
     fun deleteTemporaryFile(path: String)
@@ -22,6 +23,7 @@ internal class AndroidGraphLifecycle(
     private val effects: AndroidGraphStorage,
     private val accessTokenProvider: suspend () -> String? = { "" },
     private val trace: (String) -> Unit = {},
+    private val onProgress: (AndroidGraphProgress?) -> Unit = {},
 ) {
     suspend fun execute(effect: NativeEffect): NativeEffectResolution = try {
         when (effect.kind) {
@@ -73,7 +75,10 @@ internal class AndroidGraphLifecycle(
     // stays off the launch path; this fills favorites/recent afterwards.
     suspend fun loadSidebar(): String = call("loadSidebar")
 
-    private suspend fun openGraph(graphId: String, forceSnapshot: Boolean = false): NativeEffectResolution {
+    private suspend fun openGraph(graphId: String, forceSnapshot: Boolean = false): NativeEffectResolution =
+        try { openGraphWithProgress(graphId, forceSnapshot) } finally { onProgress(null) }
+
+    private suspend fun openGraphWithProgress(graphId: String, forceSnapshot: Boolean): NativeEffectResolution {
         trace("open.start graphId=$graphId")
         val selected = if (forceSnapshot) {
             callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
@@ -97,6 +102,7 @@ internal class AndroidGraphLifecycle(
         if (plan.getString("kind") != "download") {
             opened = bootstrap
         } else {
+            onProgress(AndroidGraphProgress(graphId, graphName, "downloading"))
             val token = accessTokenProvider() ?: ""
             trace("snapshot.download.start graphId=$graphId baseUrl=${state.baseUrl}")
             val artifact = effects.downloadGraphSnapshot(
@@ -105,10 +111,14 @@ internal class AndroidGraphLifecycle(
                 accessToken = token,
                 workingDirectory = directory,
                 callCore = callCore,
+                onProgress = { phase, done, total ->
+                    onProgress(AndroidGraphProgress(graphId, graphName, phase, done, total))
+                },
             )
             trace("snapshot.download.complete graphId=$graphId path=${artifact.filePath}")
             try {
                 trace("snapshot.import.start graphId=$graphId")
+                onProgress(AndroidGraphProgress(graphId, graphName, "importing"))
                 opened = call(
                     "importSnapshot",
                     payload = JSONObject()
@@ -122,6 +132,8 @@ internal class AndroidGraphLifecycle(
                         .toString(),
                 )
                 trace("snapshot.import.complete graphId=$graphId")
+                if (decodedResponse(opened).optBoolean("ok"))
+                    onProgress(AndroidGraphProgress(graphId, graphName, "opening"))
             } finally {
                 effects.deleteTemporaryFile(artifact.filePath)
             }

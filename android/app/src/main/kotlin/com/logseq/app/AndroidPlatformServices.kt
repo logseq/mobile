@@ -201,6 +201,7 @@ class AndroidPlatformServices(private val context: Context) {
         accessToken: String,
         workingDirectory: String,
         callCore: suspend (String) -> String,
+        onProgress: (String, Long, Long?) -> Unit = { _, _, _ -> },
     ): Map<String, String> = withContext(Dispatchers.IO) {
         val snapshot = snapshotDownloader.download(
             baseUrl = baseUrl,
@@ -208,6 +209,7 @@ class AndroidPlatformServices(private val context: Context) {
             accessToken = accessToken,
             workingDirectory = workingDirectory,
             callCore = callCore,
+            onProgress = onProgress,
         )
         mapOf(
             "metadataBody" to snapshot.metadataBody,

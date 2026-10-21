@@ -103,6 +103,8 @@ internal class LogseqRuntime(
         private set
     var startupError by mutableStateOf<Throwable?>(null)
         private set
+    var graphProgress by mutableStateOf<AndroidGraphProgress?>(null)
+        private set
 
     @Volatile private var hasAuthenticatedSession = false
     @Volatile private var hasOpenGraph = false
@@ -131,6 +133,11 @@ internal class LogseqRuntime(
             try {
                 NativeCoreSession.gate.lock(this@LogseqRuntime)
                 ownsCore = true
+                AndroidGraphImportProgress.listener = { graphId, phase, completed, total ->
+                    val current = graphProgress
+                    if (current?.graphId == graphId && phase in setOf("importing", "opening"))
+                        graphProgress = current.copy(phase = phase, completed = completed, total = total)
+                }
                 val authenticationCode = platformEffects.initialAuthenticationCode()
                 val storage = platformEffects.loadStorageState()
                 appearance = storage.settings.appearance
@@ -141,6 +148,11 @@ internal class LogseqRuntime(
                     effects = platformEffects,
                     accessTokenProvider = platformEffects::restoreAccessToken,
                     trace = ::traceGraphLifecycle,
+                    onProgress = { progress ->
+                        val current = graphProgress
+                        graphProgress = if (progress != null && current?.graphId == progress.graphId &&
+                            current.phase == progress.phase && progress.total == null) current else progress
+                    },
                 )
                 graphLifecycle = lifecycle
                 val executor = CoreEffectExecutor(
@@ -721,7 +733,9 @@ internal class LogseqRuntime(
         runtimeJob.cancel()
         NativeCoreSession.cleanupScope.launch {
             runtimeJob.join()
+            graphProgress = null
             if (ownsCore) {
+                AndroidGraphImportProgress.listener = null
                 try { bridge.close() }
                 finally {
                     ownsCore = false

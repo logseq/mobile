@@ -100,6 +100,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
             DeleteConfirmationDialog()
             JournalCalendarDialog()
             ImageGalleryHost()
+            GraphProgressDialog(runtime.graphProgress)
         }
     }
 }

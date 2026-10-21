@@ -22,7 +22,9 @@ class AndroidGraphSnapshotDownloader {
         accessToken: String,
         workingDirectory: String,
         callCore: suspend (String) -> String,
+        onProgress: (String, Long, Long?) -> Unit = { _, _, _ -> },
     ): AndroidDownloadedGraphSnapshot {
+        onProgress("downloading", 0, null)
         val plan = shared(callCore, "snapshotDownloadPlan", JSONObject().put("baseUrl", baseUrl).put("graphId", graphId))
         val metadataUrl = URL(plan.getString("metadataURL"))
         val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
@@ -39,9 +41,10 @@ class AndroidGraphSnapshotDownloader {
         val download = File.createTempFile("logseq-graph-", ".download", directory)
         var decoded: File? = null
         try {
-            downloadFile(snapshotUrl, accessToken, download)
+            downloadFile(snapshotUrl, accessToken, download, onProgress)
             val hasGzipLayer = download.inputStream().use { it.read() == 0x1f && it.read() == 0x8b }
             val snapshot = if (hasGzipLayer) {
+                onProgress("decoding", 0, null)
                 File.createTempFile("logseq-graph-", ".snapshot", directory).also { output ->
                     decoded = output
                     GZIPInputStream(download.inputStream().buffered()).use { input ->
@@ -83,12 +86,31 @@ class AndroidGraphSnapshotDownloader {
         }
     }
 
-    private fun downloadFile(url: URL, accessToken: String, destination: File) {
+    private fun downloadFile(url: URL, accessToken: String, destination: File,
+        onProgress: (String, Long, Long?) -> Unit) {
         val connection = open(url, accessToken)
         try {
             requireSuccess(connection, "Snapshot download")
             connection.inputStream.buffered().use { input ->
-                destination.outputStream().buffered().use(input::copyTo)
+                destination.outputStream().buffered().use { output ->
+                    val total = connection.contentLengthLong.takeIf { it > 0 }
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var completed = 0L
+                    var lastReport = 0L
+                    onProgress("downloading", 0, total)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        completed += count
+                        val now = System.nanoTime()
+                        if (now - lastReport > 100_000_000L) {
+                            onProgress("downloading", completed, total)
+                            lastReport = now
+                        }
+                    }
+                    onProgress("downloading", completed, total)
+                }
             }
         } finally {
             connection.disconnect()
