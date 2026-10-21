@@ -35,6 +35,8 @@ let handle_native_navigation_event input_event send =
   match input_event with
   | ExtensionEvent (_node, _identifier, "back", values) ->
     send (Model.BackAppNavigation (extension_int values "count"))
+  | ExtensionEvent (_node, _identifier, "viewport-changed", values) ->
+    send (Model.ApplyViewportWidth (extension_int values "width"))
   | ExtensionEvent (_node, _identifier, "dismiss-composer", _values) ->
     send Model.DismissComposer
   | _ -> true
@@ -1523,7 +1525,7 @@ let with_reading_insets (elem : Lui_elements.t) : Lui_elements.t =
    | { profile_os = IOS; profile_host = SwiftUIHost }
    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
      let tweak = Lui_ui.platform_tweak context "native-adaptive-insets" in
-     Lui_ui.extension_property context tweak "breakpoint" (IntValue 600);
+     Lui_ui.extension_property context tweak "breakpoint" (IntValue Model.wide_content_breakpoint);
      Lui_ui.extension_property context tweak "wide-inset" (IntValue 16);
      ignore (elem context (Some tweak));
      Lui_elements.attach context parent tweak;

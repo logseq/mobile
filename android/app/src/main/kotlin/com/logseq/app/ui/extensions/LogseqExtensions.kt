@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -75,7 +76,7 @@ private const val NAVIGATION_FINGERPRINT =
         "properties:10:back-depth:int:required:none," +
         "26:composer-dismissal-enabled:bool:required:none," +
         "28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none," +
-        "5:title:string:required:none|events:16:dismiss-composer[],4:back[" +
+        "5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[" +
         "5:count:int:required]"
 private const val SEARCH_FINGERPRINT =
     "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin," +
@@ -194,6 +195,10 @@ fun logseqExtensionRegistry(
         events = listOf(
             LuiExtensionEventSchema("dismiss-composer"),
             LuiExtensionEventSchema(
+                "viewport-changed",
+                listOf(LuiExtensionProperty("width", LuiExtensionValueKind.INTEGER, required = true)),
+            ),
+            LuiExtensionEventSchema(
                 "back",
                 listOf(LuiExtensionProperty("count", LuiExtensionValueKind.INTEGER, required = true)),
             ),
@@ -249,38 +254,42 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
         }
     }
     var journalTitle by remember { mutableStateOf<String?>(null) }
-    CompositionLocalProvider(
-        dev.lui.LocalLuiSectionTitle provides journalTitle,
-        dev.lui.LocalLuiSectionTitleChanged provides { journalTitle = it },
-    ) {
-        val childIds = context.children
-        if (childIds.size == 2) {
-            // Second child is the bottom chrome. Hoist it out of the content
-            // column like iOS's safeAreaInset/overlay so the composer's
-            // internal `grow` props can't starve the journal; intrinsic
-            // sizing keeps it at natural height instead of letting those
-            // props claim the whole screen.
-            if (occupies) {
-                Column(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f)) { context.child(childIds[0]) }
-                    Box(Modifier.height(IntrinsicSize.Min)) {
-                        context.child(childIds[1])
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val width = maxWidth.value.toInt()
+        LaunchedEffect(width) { context.emit("viewport-changed", "width" to width) }
+        CompositionLocalProvider(
+            dev.lui.LocalLuiSectionTitle provides journalTitle,
+            dev.lui.LocalLuiSectionTitleChanged provides { journalTitle = it },
+        ) {
+            val childIds = context.children
+            if (childIds.size == 2) {
+                // Second child is the bottom chrome. Hoist it out of the content
+                // column like iOS's safeAreaInset/overlay so the composer's
+                // internal `grow` props can't starve the journal; intrinsic
+                // sizing keeps it at natural height instead of letting those
+                // props claim the whole screen.
+                if (occupies) {
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f)) { context.child(childIds[0]) }
+                        Box(Modifier.height(IntrinsicSize.Min)) {
+                            context.child(childIds[1])
+                        }
+                    }
+                } else {
+                    Box(Modifier.fillMaxSize()) {
+                        Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .height(IntrinsicSize.Min),
+                        ) {
+                            context.child(childIds[1])
+                        }
                     }
                 }
             } else {
-                Box(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .height(IntrinsicSize.Min),
-                    ) {
-                        context.child(childIds[1])
-                    }
-                }
+                context.Children()
             }
-        } else {
-            context.Children()
         }
     }
 }

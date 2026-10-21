@@ -321,6 +321,7 @@ type logseq_model =
   ; sync_details_open : bool
   ; destination : primary_destination
   ; sidebar_open : bool
+  ; viewport_width : int
   ; graph_menu_open : bool
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
@@ -456,6 +457,7 @@ type logseq_action =
   | BackSearchNavigation of int
   | AddRootBlock of string
   | LoadOlderJournals
+  | ApplyViewportWidth of int
   | OpenSidebar
   | CloseSidebar
   | OpenGraphMenu
@@ -641,6 +643,7 @@ let initial () =
     sync_details_open = false;
     destination = JournalsDestination;
     sidebar_open = false;
+    viewport_width = 0;
     graph_menu_open = false;
     favorites = [];
     recent_pages = [];
@@ -1802,6 +1805,11 @@ let retain_shell_contents previous rows =
           opens_as_page = row.opens_as_page; page_id = row.page_id;
           journal_title = row.journal_title; journal_day = row.journal_day }) rows
 
+let wide_content_breakpoint = 600
+
+let sidebar_after_navigation current =
+  current.sidebar_open && current.viewport_width >= wide_content_breakpoint
+
 let rec update (current : logseq_model) action =
   match action with
   | SaveUISession ->
@@ -2229,6 +2237,7 @@ let rec update (current : logseq_model) action =
       let id = current.next_effect_id in
       enqueue_effect current (LoadOlderJournalsEffect id)
     end
+  | ApplyViewportWidth width -> { current with viewport_width = max 0 width }
   | OpenSidebar -> { current with sidebar_open = true }
   | CloseSidebar ->
     { current with sidebar_open = false; graph_menu_open = false }
@@ -2241,7 +2250,7 @@ let rec update (current : logseq_model) action =
          let updated =
            {
              (cancel_outliner_editing (return_to_app_root current)) with
-             sidebar_open = false;
+             sidebar_open = sidebar_after_navigation current;
              graph_menu_open = false;
            }
          in
@@ -2266,7 +2275,7 @@ let rec update (current : logseq_model) action =
       preview_sidebar_page
         {
           (cancel_outliner_editing (return_to_app_root current)) with
-          sidebar_open = false;
+          sidebar_open = sidebar_after_navigation current;
           graph_menu_open = false;
           destination = JournalsDestination;
         }
@@ -2308,7 +2317,7 @@ let rec update (current : logseq_model) action =
     let updated =
       {
         (cancel_outliner_editing (return_to_app_root current)) with
-        sidebar_open = false;
+        sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
         destination = JournalsDestination;
       }
@@ -2319,7 +2328,7 @@ let rec update (current : logseq_model) action =
     let updated =
       {
         (cancel_outliner_editing (return_to_app_root current)) with
-        sidebar_open = false;
+        sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
         destination = FlashcardsDestination;
       }
@@ -2333,7 +2342,7 @@ let rec update (current : logseq_model) action =
   | ShowGraphs ->
     {
       (cancel_outliner_editing (return_to_app_root current)) with
-      sidebar_open = false;
+      sidebar_open = sidebar_after_navigation current;
       graph_menu_open = false;
       destination = GraphsDestination;
     }

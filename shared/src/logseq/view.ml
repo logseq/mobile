@@ -129,6 +129,8 @@ let native_navigation_stack_schema () =
       Lui_extension.event "back"
         [ Lui_extension.event_field "count" IntScalar true ];
       Lui_extension.event "dismiss-composer" [];
+      Lui_extension.event "viewport-changed"
+        [ Lui_extension.event_field "width" IntScalar true ];
     ]
 
 let native_navigation_title_schema () =

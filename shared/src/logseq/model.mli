@@ -318,6 +318,7 @@ type logseq_model =
   ; sync_details_open : bool
   ; destination : primary_destination
   ; sidebar_open : bool
+  ; viewport_width : int
   ; graph_menu_open : bool
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
@@ -453,6 +454,7 @@ type logseq_action =
   | BackSearchNavigation of int
   | AddRootBlock of string
   | LoadOlderJournals
+  | ApplyViewportWidth of int
   | OpenSidebar
   | CloseSidebar
   | OpenGraphMenu
@@ -649,3 +651,5 @@ val restore_session_routes :
 val restore_ui_session : logseq_model -> ui_session -> logseq_model
 
 val graph_creation_password_invalid_ : logseq_model -> bool
+
+val wide_content_breakpoint : int

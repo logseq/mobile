@@ -27,7 +27,7 @@ enum LGNavigationSurfacePolicy {
 @MainActor
 enum LGNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.registerTweak(
@@ -83,6 +83,9 @@ enum LGNavigationExtension {
                         .init(name: "count", kind: .int, isRequired: true),
                     ]),
                     .init(name: "dismiss-composer", fields: []),
+                    .init(name: "viewport-changed", fields: [
+                        .init(name: "width", kind: .int, isRequired: true),
+                    ]),
                 ]
             ) { context in
                 AnyView(LGNavigationStack(context: context))
@@ -217,6 +220,11 @@ private struct LGNavigationStack: View {
             composerDismissalEnabled: composerDismissalEnabled,
             rootTransform: nil
         )
+        .onGeometryChange(for: Int.self) { geometry in
+            Int(geometry.size.width.rounded(.down))
+        } action: { width in
+            try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
+        }
     }
 
     private var depth: Int {

@@ -2056,7 +2056,7 @@ let native_navigation_stack_extension_contract_is_pinned () =
     ~msg:"native navigation must share one pinned LG and Swift wire contract"
     fingerprint
     (Some
-       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]")
 
 let native_search_presentation_extension_contract_is_pinned () =
   let schema =
@@ -3839,6 +3839,43 @@ let graph_picker_surfaces_open_graph_effect_failures () =
   check_eq ~msg:"the graph picker shows the actionable failure message"
     (View_base.graph_picker_error_message failed)
     "Snapshot download timed out"
+
+let sidebar_navigation_respects_native_viewport_width () =
+  List.iter (fun backend ->
+    List.iter (fun width ->
+      let application = App.create backend in
+      start application;
+      send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        selected_graph_id = Some "local"; graphs = [graph "local" "Local" false true] });
+      send application (Model.ApplyAuthentication ("signedIn", None));
+      flush application;
+      let resize width =
+        dispatch application (Lui_protocol.ExtensionEvent
+          (extension_node application "native-navigation-stack", "native-navigation-stack",
+           "viewport-changed", Lui_protocol.String_map.singleton "width" (Lui_protocol.IntValue width)));
+        flush application in
+      resize width;
+      List.iter (fun action ->
+        send application Model.OpenSidebar;
+        send application action;
+        flush application;
+        check_eq ~msg:("sidebar retention follows available width: " ^ string_of_int width)
+          (App.model application).sidebar_open (width >= 600);
+        send application Model.CloseSidebar;
+        send application action;
+        flush application;
+        check_eq ~msg:"navigation cannot open a closed sidebar" (App.model application).sidebar_open false
+      ) [Model.SelectSidebarPage "page-a"; Model.ShowJournals; Model.ShowFlashcards;
+         Model.ShowGraphs; Model.SelectSidebarGraph "local"];
+      resize 820;
+      send application Model.OpenSidebar;
+      resize 393;
+      send application Model.ShowJournals;
+      flush application;
+      check_eq ~msg:"split-view resizing updates the next navigation decision"
+        (App.model application).sidebar_open false
+    ) [393; 599; 600; 820]
+  ) [ios_backend (); kotlin_backend ()]
 
 let reading_content_uses_adaptive_insets_on_both_native_hosts () =
   List.iter (fun backend ->
@@ -9794,6 +9831,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "sidebar-navigation-respects-native-viewport" sidebar_navigation_respects_native_viewport_width;
     case "reading-content-uses-adaptive-insets" reading_content_uses_adaptive_insets_on_both_native_hosts;
     case "sync-checkpoint-encoding-is-lg-owned" sync_checkpoint_encoding_is_lg_owned;
     case "flashcard-state-codec-is-lg-owned" flashcard_state_codec_is_lg_owned;
