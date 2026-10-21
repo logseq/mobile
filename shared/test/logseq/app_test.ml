@@ -8657,8 +8657,9 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     descendant_with_identifier renderer wrapper
       "toolbar.outliner.selection"
   in
-  check_eq ~msg:"the selection bar stays inline without a system capsule"
-    (property renderer toolbar Lui_protocol.PlacementValue) None;
+  check_eq ~msg:"selection uses the system bottom-toolbar capsules"
+    (property renderer toolbar Lui_protocol.PlacementValue)
+    (Some (Lui_protocol.StringValue "bottom"));
   check_eq ~msg:"compact selection actions leave room for at least five controls"
     (property_int renderer toolbar Lui_protocol.Gap) 2;
   let selection_buttons = children renderer toolbar in

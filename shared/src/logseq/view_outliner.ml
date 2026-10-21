@@ -639,7 +639,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
     toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
          ~style_class:"scroll-leading"
-         ~toolbar_gap:2
+         ~toolbar_gap:2 ~placement:"bottom"
       [
         apple_button (`app "toolbar-copy") "Copy"
           "button.outliner.selection.copy" "copy";
