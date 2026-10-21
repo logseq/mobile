@@ -133,13 +133,15 @@ fingerprinted_core_object="$native_link_dir/logseq_runtime.o"
 mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
 native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
+# Both build paths must publish the current core. A later archive can follow a
+# development build and must not reuse a manifest from an older core build.
+printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
 
 # Release path: xcodebuild archives the app via the Xcode project and links
 # the OCaml core through LOGSEQ_NATIVE_LINK_INPUTS. Emit just the inputs so
 # the fastlane lane can pass them on without running the dev-profile .app
 # assembly below.
 if [[ ${LOGSEQ_IOS_LINK_INPUTS_ONLY:-0} == 1 ]]; then
-  printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
   echo "wrote $core_build_dir/native-link-inputs.txt"
   exit 0
 fi
