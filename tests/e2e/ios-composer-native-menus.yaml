@@ -141,6 +141,6 @@ appId: com.logseq.logseq
 - takeScreenshot: native-search-close-button
 - tapOn:
     retryTapIfNoChange: false
-    text: Cancel
+    text: close
 - assertVisible:
     id: button.composer.expand
