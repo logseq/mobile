@@ -6569,6 +6569,47 @@ let short_journals_rearm_pagination_after_each_response () =
     check_eq ~msg:"pagination stops at the oldest journal" (sentinel ()) (-1)
   ) [ios_backend; kotlin_backend]
 
+let downloaded_graph_rearms_initially_exhausted_journals () =
+  List.iter (fun backend ->
+    List.iter (fun expanded_snapshot ->
+      let application = App.create (backend ()) in
+      let today = journal_outline_row "today" "today-page" "Today block" "Today" 20260829 0 in
+      let older = journal_outline_row "older" "older-page" "Older block" "Yesterday" 20260828 0 in
+      let initial = { (empty_core_projection ()) with
+        graph_name = Some "Lambda"; selected_graph_id = Some "lambda";
+        outliner_rows = [today]; has_older_journals = false } in
+      start application;
+      let project projection = send application (Model.ApplyCoreSnapshot projection); flush application in
+      project initial;
+      let renderer = Lui_app.runtime application in
+      let sentinel () = descendant_with_identifier renderer (main_root renderer application)
+        "outliner.load-older-sentinel" in
+      check_eq ~msg:"the pre-download journal has no history yet" (sentinel ()) (-1);
+      send application (Model.ApplyGraphLoading true);
+      project { initial with
+        outliner_rows = (if expanded_snapshot then [today; older] else [today]);
+        has_older_journals = not expanded_snapshot };
+      check_eq ~msg:"pagination waits for download to finish" (sentinel ()) (-1);
+      send application (Model.ApplyGraphLoading false);
+      flush application;
+      let marker = sentinel () in
+      check ~msg:"downloaded history rearms pagination for the same graph" (marker <> -1);
+      check_eq ~msg:"download preserves the current visible journal position"
+        (App.model application).journal_outliner_rows [today];
+      dispatch application (Lui_protocol.Appear marker);
+      flush application;
+      check_eq ~msg:"scrolling after download requests historical journals"
+        (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1];
+      send application (Model.DequeueEffect 1);
+      project { initial with outliner_rows = [today; older] };
+      send application (Model.ResolveEffect (1, true, ""));
+      flush application;
+      check_eq ~msg:"the next page restores both downloaded journal days"
+        (App.model application).journal_outliner_rows [today; older];
+      check_eq ~msg:"pagination stops after all downloaded journals are visible" (sentinel ()) (-1)
+    ) [false; true]
+  ) [ios_backend; kotlin_backend]
+
 let graph_switch_rearms_journal_pagination () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
@@ -9719,6 +9760,7 @@ let cases =
     case "older-journals-use-an-invisible-scroll-sentinel" older_journals_use_an_invisible_scroll_sentinel;
     case "encrypted-graph-creation-requests-and-confirms-account-password" encrypted_graph_creation_requests_and_confirms_account_password;
     case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
+    case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;

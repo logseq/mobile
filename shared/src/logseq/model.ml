@@ -2871,7 +2871,11 @@ and apply_core_snapshot (current : logseq_model)
     let journal_rows = if selected_graph_changed then journal_rows
       else retain_shell_contents current.journal_outliner_rows journal_rows in
     let has_older_journals =
-      if preserve_journal_window then current.has_older_journals
+      if preserve_journal_window then
+        (* Import and sync can add history after the visible window was
+           exhausted. Rows retained outside that window still need paging. *)
+        current.has_older_journals || projection.has_older_journals
+        || List.compare_lengths projection.outliner_rows projected_rows > 0
       else projection.has_older_journals
     in
     let card_changed =
