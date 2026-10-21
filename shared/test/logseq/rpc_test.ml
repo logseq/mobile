@@ -1471,6 +1471,54 @@ let tag_autocomplete_candidates_use_canonical_graph_identity () =
   check_eq (member "label" (List.hd candidates)) (`String "Project");
   check_eq (member "value" (List.hd candidates)) (`String "tag-uuid")
 
+let page_autocomplete_searches_beyond_sidebar_and_current_page () =
+  Search_index_test.with_index (fun index ->
+    let conn = Search_index_test.seeded_conn () in
+    let chinese_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec7" in
+    ignore (Ds.transact_conn conn [
+      Search_index_test.add 7 "block/uuid" (Ds.Uuid chinese_uuid);
+      Search_index_test.add 7 "block/name" (Ds.String "页面搜索");
+      Search_index_test.add 7 "block/title" (Ds.String "页面搜索")]);
+    let db = Ds.conn_db conn in
+    Search.refresh index db;
+    let searches = ref [] in
+    let staged = ref [] in
+    let session = configure_plain_session (Session.create_session {
+      Session.default_options with
+      graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+      graph_search = Some (fun query -> searches := query :: !searches;
+        Search.search_hits 100 index db query);
+      sync_cursor = Some (fun () -> Some 42);
+      stage_operation = Some (fun operation -> staged := operation :: !staged; Ok ());
+      prepare_operation = Some prepare_operation;
+    }) in
+    ignore (outliner_block_event session "tapBlock" "editing");
+    let query text =
+      let title = "Draft [[" ^ text ^ "]]" in
+      outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String title;
+        "caretUTF16Offset", `Int (Outliner.utf16_length title - 2)])) in
+    ignore (query "");
+    check_eq ~msg:"opening an empty reference keeps graph scans off the typing path" !searches [];
+    List.iter (fun (text, uuid, label) ->
+      let result = query text in
+      let candidates = json_items "outlinerAutocompleteCandidates" result in
+      check ~msg:("existing page outside sidebar is found for " ^ text)
+        (List.exists (fun candidate -> member "value" candidate = `String uuid) candidates);
+      let completed = outliner_event session (Json.to_string (`Assoc [
+        "type", `String "chooseAutocomplete"; "value", `String uuid])) in
+      check_eq ~msg:"completion inserts the page title, not its UUID"
+        (member "title" (member "editing" (member "outlinerState" completed)))
+        (`String ("Draft [[" ^ label ^ "]]"));
+      check_eq ~msg:"selecting an existing page never creates a duplicate" !staged [])
+      ["MOV", Search_index_test.page_uuid, "Movies";
+       "页面", chinese_uuid, "页面搜索"];
+    let missing = json_items "outlinerAutocompleteCandidates" (query "No such page") in
+    check_eq (member "label" (List.hd missing)) (`String "New page: No such page");
+    let hidden = json_items "outlinerAutocompleteCandidates" (query "Secret movies") in
+    check ~msg:"hidden pages are excluded from reference search"
+      (not (List.exists (fun candidate -> member "value" candidate = `String Search_index_test.hidden_uuid) hidden)))
+
 let websocket_errors_distinguish_snapshot_recovery_from_apply_failures () =
   List.iter
     (fun (message, code) ->
@@ -6443,6 +6491,8 @@ let cases =
       outliner_editing_and_autocomplete_remain_owned_by_core;
     case "tag autocomplete candidates use canonical graph identity"
       tag_autocomplete_candidates_use_canonical_graph_identity;
+    case "page autocomplete searches beyond sidebar and current page"
+      page_autocomplete_searches_beyond_sidebar_and_current_page;
     case "websocket errors distinguish snapshot recovery from apply failures"
       websocket_errors_distinguish_snapshot_recovery_from_apply_failures;
     case "pending sync rejects stale completions and preserves failed block"

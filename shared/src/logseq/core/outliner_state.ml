@@ -153,6 +153,7 @@ type outliner_context =
   ; tags : outliner_candidate list
   ; label_values : (string, Sset.t) Hashtbl.t
   ; dup_labels : Sset.t
+  ; search_nodes : string -> outliner_candidate list
   }
 
 type outliner_row =
@@ -208,7 +209,7 @@ let duplicated_of label_values =
 let duplicated_labels candidates =
   duplicated_of (candidate_label_values candidates)
 
-let context blocks pages tags =
+let context ?(search_nodes = fun _ -> []) blocks pages tags =
   let label_values = candidate_label_values (pages @ tags) in
   {
     blocks;
@@ -216,6 +217,7 @@ let context blocks pages tags =
     tags;
     label_values;
     dup_labels = duplicated_of label_values;
+    search_nodes;
   }
 
 let summary_candidates summaries =
@@ -333,20 +335,22 @@ let autocomplete_candidates (context : outliner_context) request =
   in
   let fuzzy = request.kind = Tag && normalized <> "" in
   let seen = Hashtbl.create 32 in
-  let matches =
+  let indexed = if request.kind = Node && query <> "" then context.search_nodes query else [] in
+  let matches = indexed @
     List.filter
       (fun (candidate : outliner_candidate) ->
         String_kit.trim candidate.label <> ""
         && (if fuzzy then
               Search.fuzzy_score normalized candidate.label > 0.0
-            else includes_normalized_query candidate.label normalized)
-        &&
+            else includes_normalized_query candidate.label normalized))
+      raw
+  in
+  let matches = List.filter (fun (candidate : outliner_candidate) ->
         if Hashtbl.mem seen candidate.value then false
         else begin
           Hashtbl.add seen candidate.value ();
           true
-        end)
-      raw
+        end) matches
   in
   let matches =
     take_n 12
@@ -1168,6 +1172,11 @@ let choose_completion context (state : outliner_state) value =
   match (state.editing, state.autocomplete) with
   | Some editing, Some request
     when autocomplete_for editing.title editing.caret = Some request ->
+    let context = if request.kind = Node && String_kit.trim request.query <> "" then
+        let pages = context.search_nodes (String_kit.trim request.query) @ context.pages in
+        let label_values = candidate_label_values (pages @ context.tags) in
+        { context with pages; label_values; dup_labels = duplicated_of label_values }
+      else context in
     if request.kind = Tag then
       match remove_tag_token editing with
       | Some editing ->

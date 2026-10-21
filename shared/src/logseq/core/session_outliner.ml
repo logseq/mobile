@@ -34,7 +34,15 @@ let outliner_context_with_blocks session sidebar blocks =
         (match load () with Some pages -> pages | None -> [])
     | None -> []
   in
-  Outliner.context blocks pages tags
+  let search_nodes query =
+    let hits = match (Types.host session).graph_search_page, (Types.host session).graph_search with
+      | Some search, _ -> fst (search ~offset:0 ~limit:12 query)
+      | None, Some search -> search query
+      | None, None -> [] in
+    List.map (fun (hit : Search_index.indexed_search_hit) ->
+      { Outliner.label = hit.title; value = hit.uuid }) hits
+  in
+  Outliner.context ~search_nodes blocks pages tags
 
 let base_outliner_context_live (session : Types.session) =
   let s = Types.state session in
