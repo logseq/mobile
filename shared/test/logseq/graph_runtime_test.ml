@@ -1651,8 +1651,97 @@ let upload_activation_preserves_the_staged_asset_transaction () =
     check (match (List.hd (Pending.list path)).intent with
       | Pending.Create_asset value -> value.transcript <> None | _ -> false))
 
+let new_pages_appear_in_the_builtin_page_collection () =
+  with_runtime (fun _path conn _ ->
+    ignore (Ds.reset_conn conn (Ds.db_with [
+      add 2 "db/ident" (Ds.Keyword "logseq.class/Page");
+      add 2 "block/uuid" (Ds.Uuid "page-class");
+      add 2 "block/title" (Ds.String "Page")
+    ] (Ds.conn_db conn)));
+    with_store (fun path ->
+      let current = Runtime.create_base path 42 conn Runtime.default_options in
+      let intent = Pending.Create_page { uuid = "new-page"; title = "New page"; created_at = 7 } in
+      check (is_ok (Runtime.stage current (operation "create-page" intent)));
+      check ~msg:"new pages belong to the canonical Page type used by server validation"
+        (List.exists (fun (block : Model.block) -> block.uuid = "new-page")
+          (Runtime.objects_for_tag current "page-class"));
+      cleanup_store path))
+
+let reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes () =
+  with_store (fun path -> Fun.protect ~finally:(fun () -> cleanup_store path) (fun () ->
+    let page_uuid = "00000000-0000-4000-8000-000000000001" in
+    let block_uuid = "00000000-0000-4000-8000-000000000010" in
+    let created_uuid = "00000000-0000-4000-8000-000000000020" in
+    let queued_uuid = "00000000-0000-4000-8000-000000000021" in
+    let denied_uuid = "00000000-0000-4000-8000-000000000022" in
+    let db = Ds.db_with [
+      add 1 "block/uuid" (Ds.Uuid page_uuid);
+      add 10 "block/uuid" (Ds.Uuid block_uuid);
+      add 2 "db/ident" (Ds.Keyword "logseq.class/Page");
+      add 2 "block/uuid" (Ds.Uuid "00000000-0000-4000-8000-000000000002");
+      add 3 "block/uuid" (Ds.Uuid "00000000-0000-4000-8000-000000000003")
+    ] (base_db "Old") in
+    let legacy id uuid state =
+      let intent = Pending.Create_page { uuid; title = "Reference target"; created_at = 7 } in
+      let op = { (operation id intent) with state } in
+      let projected, tx, reverse = Journal_sync.capture db [Ds.Entity {
+        db_id = Some (Ds.Temp_id uuid); attrs = [
+          "block/uuid", Ds.One_value (Ds.Uuid uuid);
+          "block/name", Ds.One_value (Ds.String "reference target");
+          "block/title", Ds.One_value (Ds.String "Reference target");
+          "block/created-at", Ds.One_value (Ds.Int64 7L);
+          "block/updated-at", Ds.One_value (Ds.Int64 7L)
+        ] }] in
+      Pending.save path op;
+      Graph_sqlite.store_pending_tx path id tx reverse;
+      projected in
+    let projected = legacy "rejected-page" created_uuid (Pending.Conflicted "db transact failed") in
+    let saved_title = "[[" ^ created_uuid ^ "]] typed after the reference" in
+    let dependent = operation "dependent-save" (Pending.Save_title {
+      uuid = block_uuid; expected_title = "Old"; title = saved_title }) in
+    let operations = match Projection.compile projected dependent.intent with
+      | Ok operations -> operations | Error message -> fail message in
+    let _, tx, reverse = Journal_sync.capture projected operations in
+    Pending.save path dependent;
+    Graph_sqlite.store_pending_tx path dependent.operation_id tx reverse;
+    ignore (legacy "queued-page" queued_uuid Pending.Queued);
+    ignore (legacy "unrelated-conflict" denied_uuid (Pending.Conflicted "permission denied"));
+    let untouched = Graph_sqlite.pending_tx path "unrelated-conflict" in
+    let conn = Ds.conn_from_db db in
+    let current = Runtime.create_base path 42 conn Runtime.default_options in
+    let pending = Runtime.pending_operations current in
+    check_eq ~msg:"the repaired page resumes before the operations that reference it"
+      (List.map (fun (op : Pending.pending_operation) -> op.operation_id) pending)
+      ["rejected-page"; "dependent-save"; "queued-page"];
+    check_eq ~msg:"repair preserves the user's latest local text" (title (Runtime.db current) block_uuid) saved_title;
+    let repaired = Graph_sqlite.pending_tx path "rejected-page" in
+    ignore (Runtime.create_base path 42 conn Runtime.default_options);
+    check_eq ~msg:"reopening an already repaired queue does not rewrite transactions"
+      (Graph_sqlite.pending_tx path "rejected-page") repaired;
+    List.iteri (fun index (op : Pending.pending_operation) ->
+      let _, tx = match Runtime.prepare_sync current op with
+        | Ok value -> value | Error message -> fail message in
+      let before = (Runtime.state current).server_t in
+      let journal = match Journal_sync.decode (Json.to_string (`Assoc [
+        "type", `String "tx/batch/ok"; "t-before", `Int before; "t", `Int (before + 1);
+        "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", `String op.operation_id; "tx", `String tx]]])) with
+        | Ok value -> value | Error message -> fail message in
+      check (is_ok (Runtime.stage current { op with state = Pending.Accepted (before + 1) }));
+      let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+        | Ok value -> value | Error message -> fail message in
+      Runtime.rebase current journal.t ids changed;
+      check_eq ~msg:"each acknowledgement advances the queue"
+        (List.length (Runtime.pending_operations current)) (2 - index)) pending;
+    check_eq ~msg:"the recovered edits reach the authoritative graph" (title (Ds.conn_db conn) block_uuid) saved_title;
+    check_eq ~msg:"other conflicts retain their original transaction" (Graph_sqlite.pending_tx path "unrelated-conflict") untouched;
+    check ~msg:"other conflicts are never silently retried"
+      (List.exists (fun (op : Pending.pending_operation) -> op.operation_id = "unrelated-conflict"
+        && op.state = Pending.Conflicted "permission denied") (Pending.list path))))
+
 let cases =
   [
+    case "new pages appear in the built-in Page collection" new_pages_appear_in_the_builtin_page_collection;
+    case "reopening repairs legacy pages and unblocks dependent changes" reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes;
     case "upload activation preserves the staged asset transaction"
       upload_activation_preserves_the_staged_asset_transaction;
     case "page windows follow pending edits and collapse changes" page_windows_follow_pending_edits_and_collapse_changes;

@@ -318,14 +318,17 @@ let property_tx uuid attr value =
   | Some value -> Ds.Add (lookup uuid, attr, datascript_value value)
   | None -> Ds.RetractAttr (lookup uuid, attr)
 
-let create_attrs uuid title created_at =
-  [ ("block/uuid", Ds.One_value (Ds.Uuid uuid))
+let create_attrs db uuid title created_at =
+  let attrs = [ ("block/uuid", Ds.One_value (Ds.Uuid uuid))
   ; ( "block/name"
     , Ds.One_value (Ds.String (String.lowercase_ascii title)) )
   ; ("block/title", Ds.One_value (Ds.String title))
   ; ("block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
   ; ("block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
-  ]
+  ] in
+  match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Page") with
+  | Some eid -> ("block/tags", Ds.Many_values [Ds.Ref eid]) :: attrs
+  | None -> attrs
 
 let rec compile db (intent : Ops.pending_intent) =
   match intent with
@@ -526,7 +529,7 @@ let rec compile db (intent : Ops.pending_intent) =
         [
           entity_tx
             (Ds.Temp_id ("pending/" ^ value.uuid))
-            (create_attrs value.uuid value.title value.created_at);
+            (create_attrs db value.uuid value.title value.created_at);
         ]
   | Ops.Create_tag value ->
     if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then Ok []

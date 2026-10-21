@@ -245,6 +245,47 @@ let rebase runtime server_t operation_ids changed_uuids =
   refresh_search_after_rebase runtime before operations changed_uuids;
   trace_stage "LOGSEQ_REBASE_METRIC" started "complete"
 
+let repair_legacy_page_creations runtime =
+  let database = Ds.conn_db runtime.conn in
+  if Ds.entid database "db/ident" (Ds.Keyword "logseq.class/Page") <> None then
+    List.iter (fun (operation : Ops.pending_operation) ->
+      match operation.intent, operation.state with
+      | Ops.Create_page page, (Ops.Queued | Ops.Retryable | Ops.Conflicted "db transact failed")
+        when Ds.entid database "block/uuid" (Ds.Uuid page.uuid) = None ->
+        (match Graph_sqlite.pending_tx runtime.path operation.operation_id with
+         | None -> ()
+         | Some (tx, reversed) ->
+           let module Wire = Dev_sync.Wire in
+           let items = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string tx) in
+           let entity = List.find_map (function
+             | Wire.Array (Wire.Keyword "db/add" :: entity :: Wire.Keyword "block/uuid" :: Wire.Uuid uuid :: _)
+               when uuid = page.uuid -> Some entity
+             | _ -> None) items in
+           (match entity with
+            | None -> ()
+            | Some entity ->
+              let has_type = List.exists (function
+                | Wire.Array (Wire.Keyword "db/add" :: target :: Wire.Keyword "block/tags" :: _)
+                  when target = entity -> true
+                | _ -> false) items in
+              if not has_type then begin
+                (* Old page creations failed server validation before any write.
+                   Repair their recorded datoms once, retaining every dependent edit. *)
+                let page_type = Wire.Array [Wire.Keyword "db/ident"; Wire.Keyword "logseq.class/Page"] in
+                let add = Wire.Array [Wire.Keyword "db/add"; entity; Wire.Keyword "block/tags"; page_type] in
+                let retract = Wire.Array [Wire.Keyword "db/retract";
+                  Wire.Array [Wire.Keyword "block/uuid"; Wire.Uuid page.uuid];
+                  Wire.Keyword "block/tags"; page_type] in
+                let reverse = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string reversed) in
+                Graph_sqlite.store_pending_tx runtime.path operation.operation_id
+                  (Dev_sync.Transit_codec.to_string (Wire.Array (List.rev_append (List.rev items) [add])))
+                  (Dev_sync.Transit_codec.to_string (Wire.Array (retract :: reverse)));
+                (match operation.state with
+                 | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
+                 | _ -> ())
+              end))
+      | _ -> ()) (Ops.list runtime.path)
+
 let create_base path server_t conn options =
   let started = Unix.gettimeofday () in
   let search_index =
@@ -282,6 +323,7 @@ let create_base path server_t conn options =
     }
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
+  repair_legacy_page_creations runtime;
   rebase runtime server_t [] [];
   let fresh = match search_index with
     | None -> false
