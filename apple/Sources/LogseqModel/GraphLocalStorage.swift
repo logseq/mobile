@@ -7,18 +7,20 @@ public enum LogseqGraphLocalStorage {
     }
 
     private static func folderName(_ graphName: String) -> String {
-        let unsafe = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/\\:"))
+        let unsafe = CharacterSet.controlCharacters.union(.whitespacesAndNewlines)
+            .union(CharacterSet(charactersIn: "/\\:"))
         var prefix = String.UnicodeScalarView()
         var byteCount = 0
         for scalar in graphName.unicodeScalars {
             let safe = unsafe.contains(scalar) ? Unicode.Scalar("_") : scalar
+            if safe == Unicode.Scalar("_"), prefix.last == safe { continue }
             let size = String(safe).utf8.count
             guard byteCount + size <= 120 else { break }
             prefix.append(safe)
             byteCount += size
         }
         let name = String(prefix).trimmingCharacters(in:
-            CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+            CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "._")))
         return name.isEmpty ? "Graph" : name
     }
 
@@ -29,7 +31,7 @@ public enum LogseqGraphLocalStorage {
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         if let existing = entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first(where: {
-            $0.lastPathComponent.hasSuffix(" - " + id)
+            ($0.lastPathComponent.hasSuffix("-" + id) || $0.lastPathComponent.hasSuffix(" - " + id))
                 && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         }) { return existing }
         // Older iOS builds percent-encoded hyphens in graph identifiers.
@@ -37,18 +39,19 @@ public enum LogseqGraphLocalStorage {
             let legacy = root.appendingPathComponent(legacyID, isDirectory: true)
             if FileManager.default.fileExists(atPath: legacy.path) { return legacy }
         }
-        return root.appendingPathComponent(folderName(graphName) + " - " + id, isDirectory: true)
+        return root.appendingPathComponent(folderName(graphName) + "-" + id, isDirectory: true)
     }
 
     /// Call before opening a graph so its database handles never outlive a directory move.
     public static func prepareDirectoryURL(databasePath: String, graphID: String, graphName: String) throws -> URL {
         let existing = directoryURL(databasePath: databasePath, graphID: graphID, graphName: graphName)
-        if existing.lastPathComponent.hasSuffix(" - " + encodedID(graphID)) {
+        if existing.lastPathComponent.hasSuffix("-" + encodedID(graphID)),
+           existing.lastPathComponent.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
             try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
             return existing
         }
         let destination = existing.deletingLastPathComponent().appendingPathComponent(
-            folderName(graphName) + " - " + encodedID(graphID), isDirectory: true)
+            folderName(graphName) + "-" + encodedID(graphID), isDirectory: true)
         try FileManager.default.moveItem(at: existing, to: destination)
         return destination
     }

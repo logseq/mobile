@@ -11,13 +11,13 @@ import Testing
             graphID: "graph id/一"
         )
 
-        #expect(directory.path == "/tmp/logseq/graphs/Graph - graph%20id%2F%E4%B8%80")
+        #expect(directory.path == "/tmp/logseq/graphs/Graph-graph%20id%2F%E4%B8%80")
     }
 
     @Test func namedGraphDirectoriesAreFoundByID() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let named = root.appendingPathComponent("graphs/我的 Notes - graph-1")
+        let named = root.appendingPathComponent("graphs/我的_Notes-graph-1")
         try FileManager.default.createDirectory(at: named, withIntermediateDirectories: true)
         try Data().write(to: named.appendingPathComponent("graph.sqlite"))
         try Data().write(to: named.appendingPathComponent("sync.checkpoint"))
@@ -39,7 +39,7 @@ import Testing
         try Data("pending".utf8).write(to: old.appendingPathComponent("projection.sqlite"))
         let directory = try LogseqGraphLocalStorage.prepareDirectoryURL(
             databasePath: database, graphID: "graph-1", graphName: "我的/Notes: Work")
-        #expect(directory.lastPathComponent == "我的_Notes_ Work - graph-1")
+        #expect(directory.lastPathComponent == "我的_Notes_Work-graph-1")
         #expect(try String(contentsOf: directory.appendingPathComponent("projection.sqlite"), encoding: .utf8) == "pending")
         #expect(!FileManager.default.fileExists(atPath: old.path))
         #expect(LogseqGraphLocalStorage.isDownloaded(databasePath: database, graphID: "graph-1"))
@@ -47,11 +47,29 @@ import Testing
             databasePath: database, graphID: "graph-1", graphName: "Renamed").resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path)
         let empty = try LogseqGraphLocalStorage.prepareDirectoryURL(
             databasePath: database, graphID: "other", graphName: " .. ")
-        #expect(empty.lastPathComponent == "Graph - other")
+        #expect(empty.lastPathComponent == "Graph-other")
         #expect(empty.deletingLastPathComponent().lastPathComponent == "graphs")
         let long = try LogseqGraphLocalStorage.prepareDirectoryURL(
             databasePath: database, graphID: "long", graphName: String(repeating: "😀我的", count: 100))
         #expect(long.lastPathComponent.utf8.count <= 255)
+    }
+
+    @Test func spacedDirectoriesMigrateWithTheirAssetsAndUnicodeNames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = root.appendingPathComponent("logseq.sqlite").path
+        let old = root.appendingPathComponent("graphs/我的 Notes 😀 - graph-1")
+        try FileManager.default.createDirectory(at: old.appendingPathComponent("Assets"), withIntermediateDirectories: true)
+        try Data("photo".utf8).write(to: old.appendingPathComponent("Assets/photo.png"))
+        try Data("database".utf8).write(to: old.appendingPathComponent("graph.sqlite"))
+        try Data("checkpoint".utf8).write(to: old.appendingPathComponent("sync.checkpoint"))
+        #expect(LogseqGraphLocalStorage.isDownloaded(databasePath: database, graphID: "graph-1"))
+        let directory = try LogseqGraphLocalStorage.prepareDirectoryURL(
+            databasePath: database, graphID: "graph-1", graphName: "我的\tNotes\u{00A0}😀")
+        #expect(directory.lastPathComponent == "我的_Notes_😀-graph-1")
+        #expect(try String(contentsOf: directory.appendingPathComponent("Assets/photo.png"), encoding: .utf8) == "photo")
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(LogseqGraphLocalStorage.isDownloaded(databasePath: database, graphID: "graph-1"))
     }
 
     @Test func downloadedGraphRequiresBothDatabaseAndCheckpoint() throws {

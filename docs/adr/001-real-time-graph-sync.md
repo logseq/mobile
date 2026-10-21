@@ -130,11 +130,12 @@ applied server `t`. The separate app metadata store persists the discovered grap
 catalog, last selected graph, pending local requests, and UI state. Those records
 are not graph attributes and are not a second graph cursor.
 
-Local graph files live under `graphs/<sanitized graph name> - <graph-id>/`.
-Each graph directory contains its graph database, UI projection, checkpoint,
+Local graph files live under `graphs/<sanitized graph name>-<graph-id>/`.
+Names retain Unicode characters and case; whitespace and path separators become
+underscores, so directory names contain no spaces. Each graph directory contains its graph database, UI projection, checkpoint,
 search index, and `Assets/` directory. Attachment metadata participates in graph
 sync; attachment bytes are uploaded separately and downloaded on demand into
-that graph's `Assets/`. Older ID-only graph directories are migrated before
+that graph's `Assets/`. Older ID-only and space-separated graph directories are migrated before
 opening their databases. Legacy shared asset paths remain readable and are
 copied into the owning graph when resolved.
 
