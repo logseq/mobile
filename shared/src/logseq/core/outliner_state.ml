@@ -383,7 +383,12 @@ let token_request kind marker prefix =
     let query =
       String.sub prefix (index + 1) (String.length prefix - index - 1)
     in
-    if not (String_kit.includes ~sub:"\n" query) then
+    let word_boundary =
+      index = 0
+      || (match prefix.[index - 1] with ' ' | '\t' | '\r' | '\n' -> true | _ -> false)
+      || (index >= 2 && String.sub prefix (index - 2) 2 = "]]")
+    in
+    if word_boundary && not (String_kit.includes ~sub:"\n" query) then
       Some { kind; query }
     else None
   | None -> None
@@ -414,7 +419,8 @@ let completion_prefix prefix =
   scan 0 0 0
 
 let autocomplete_for title caret =
-  let prefix = completion_prefix (prefix_at title caret) in
+  let prefix = completion_prefix
+    (Ref_text.completion_prefix title (byte_index_of_utf16 title caret)) in
   match last_substring prefix "[[" with
   | Some index ->
     if not (contains_from prefix (index + 2) "]]") then
@@ -1160,7 +1166,8 @@ let toolbar_reorder context (state : outliner_state) up_ =
 
 let choose_completion context (state : outliner_state) value =
   match (state.editing, state.autocomplete) with
-  | Some editing, Some request ->
+  | Some editing, Some request
+    when autocomplete_for editing.title editing.caret = Some request ->
     if request.kind = Tag then
       match remove_tag_token editing with
       | Some editing ->
@@ -1275,7 +1282,9 @@ let update context (state : outliner_state) message =
          {
            state with
            editing = Some { editing with caret };
-           autocomplete = autocomplete_for editing.title caret;
+           autocomplete = (match state.autocomplete with
+             | None -> None
+             | Some _ -> autocomplete_for editing.title caret);
          }
          []
      | None -> step state [])

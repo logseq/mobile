@@ -728,13 +728,56 @@ let autocomplete_candidates_combine_deduplicate_and_bound_results () =
        (fun (c : State.outliner_candidate) -> c.value = "project")
        (State.autocomplete_candidates ctx (request State.Tag "prj")))
 
+let markdown_literals_do_not_open_or_apply_completion () =
+  let literals =
+    [ "[PR #101](https://github.com/logseq/logseq_journal/pull/101)";
+      "[PR #101]([[Page]])"; "[literal [[Page]]](https://example.com/#tag)";
+      "https://example.com/#tag"; "`#tag [[Page]]`";
+      "~~~\n#tag [[Page]]\n~~~"; "{{embed [[Page]]}}" ] in
+  List.iter (fun literal ->
+    let title = "中文 😀 " ^ literal ^ " after" in
+    let ctx = context_for [block "a" title] in
+    let editing = fst (step ctx State.empty (State.Tap_block "a")) in
+    for caret = 0 to State.utf16_length title do
+      let moved = fst (step ctx editing (State.Caret_moved caret)) in
+      check_eq ~msg:("moving the caret must not activate completion: " ^ title)
+        (State.autocomplete moved) None;
+      let chosen, commands = step ctx moved (State.Choose_autocomplete "accidental") in
+      check_eq ~msg:"a stale popup cannot change literal text" commands [];
+      check_eq chosen.editing moved.editing
+    done;
+    let stale = { editing with State.autocomplete = Some (request State.Tag "101") } in
+    let unchanged, commands = step ctx stale (State.Choose_autocomplete "accidental") in
+    check_eq ~msg:"a delayed selection is revalidated against current syntax" commands [];
+    check_eq unchanged.editing editing.editing;
+    let changed = title ^ "!" in
+    let typed = start ctx "a" changed (State.utf16_length changed) in
+    check_eq ~msg:("literal markers do not consume following prose: " ^ title)
+      (State.autocomplete typed) None;
+    let tagged = title ^ " #real" in
+    check_eq (State.autocomplete (start ctx "a" tagged (State.utf16_length tagged)))
+      (Some (request State.Tag "real"))
+  ) literals;
+  let title = "同步可接收空事务。（[PR #101](https://github.com/logseq/logseq_journal/pull/101)）" in
+  let ctx = context_for [block "a" title] in
+  for caret = 0 to State.utf16_length title do
+    check_eq ~msg:"editing anywhere in the existing Markdown link offers no tag"
+      (State.autocomplete (start ctx "a" title caret)) None
+  done;
+  List.iter (fun (title, caret, expected) ->
+    check_eq (State.autocomplete (start context "a" title caret)) expected)
+    [ "[[Pro]]", 5, Some (request State.Node "Pro");
+      "[[]]", 2, Some (request State.Node "");
+      "#new", 4, Some (request State.Tag "new");
+      "[[Page]] #new", 13, Some (request State.Tag "new") ]
+
 let entering_code_does_not_offer_tag_completion () =
   List.iter (fun title ->
     let ctx = context_for [block "a" title] in
     let editing = fst (step ctx State.empty (State.Tap_block "a")) in
     let moved = fst (step ctx editing (State.Caret_moved (State.utf16_length title))) in
     check_eq ~msg:("literal code does not open completion: " ^ title) (State.autocomplete moved) None;
-    let changed = title ^ " #new" in
+    let changed = title ^ (if String_kit.starts_with ~prefix:"```\n" title then "\n #new" else " #new") in
     if not (List.mem title ["`#Asset"; "```\n#tag"]) then begin
       let typed = fst (step ctx moved (State.Text_changed (text changed (State.utf16_length changed)))) in
       check_eq ~msg:"typing a real tag after literal code still offers completion"
@@ -756,7 +799,7 @@ let autocomplete_token_parsing_preserves_current_line_rules () =
       ("#tag", Some (request State.Tag "tag"));
       ("text #tag", Some (request State.Tag "tag"));
       ("text\n#tag", Some (request State.Tag "tag"));
-      ("text#tag", Some (request State.Tag "tag"));
+      ("text#tag", None);
       ("#two words", Some (request State.Tag "two words"));
       ("before\nstatus::", Some (request State.Property "status"));
       ("[[Page]]", None);
@@ -1141,6 +1184,7 @@ let balanced_completion_and_collapse_preserve_unsaved_text () =
 
 let cases =
   [
+    case "markdown literals do not open or apply completion" markdown_literals_do_not_open_or_apply_completion;
     case "journal roots stay grouped newest first"
       journal_roots_stay_grouped_newest_first;
     case "editing and page completion are pure until a command is needed"

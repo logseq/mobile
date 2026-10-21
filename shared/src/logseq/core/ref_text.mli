@@ -5,6 +5,7 @@ val is_uuid : string -> bool
 val plain_tag_label : string -> bool
 val page_names : string -> string list
 val tag_names : string -> string list
+val completion_prefix : string -> int -> string
 val to_text :
   (string -> string option) -> (string -> string option) -> string -> string
 val to_ids :

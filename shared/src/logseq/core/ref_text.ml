@@ -145,6 +145,58 @@ let tag_names title =
   List.filter_map (fun reference ->
     if reference.kind = Tag then Some reference.name else None) (references title)
 
+(* Completion uses the whole source, including syntax to the right of the caret.
+   mldoc positions are byte offsets; callers convert native UTF-16 carets first.
+   Closed syntax also ends any earlier completion query. *)
+let completion_prefix title caret =
+  let caret = max 0 (min caret (String.length title)) in
+  let blocked = ref false and floor = ref 0 in
+  let protect start_pos end_pos =
+    if caret > start_pos && caret < end_pos then blocked := true;
+    if end_pos <= caret then floor := max !floor end_pos
+  in
+  let rec inlines source offset =
+    match Angstrom.parse_string ~consume:Angstrom.Consume.All
+      (Inline.parse config) source with
+    | Error _ -> ()
+    | Ok nodes -> List.iter (fun (node, position) ->
+        match position with
+        | None -> ()
+        | Some (pos : Mldoc.Pos.pos_meta) ->
+          let first = offset + pos.start_pos and last = offset + pos.end_pos in
+          match node with
+          | Inline.Nested_link _ -> if caret >= last then protect first last
+          | Inline.Link { url = Inline.Page_ref name; _ } ->
+            let raw = String.sub source pos.start_pos (pos.end_pos - pos.start_pos) in
+            if String_kit.starts_with ~prefix:"[[" raw then begin
+              if caret >= last then protect first last
+            end else begin
+              (* An alias label is literal; only its wiki destination is editable. *)
+              let destination = match String_kit.last_index_of ~sub:"](" raw with
+                | Some opening -> String_kit.index_of ~sub:("[[" ^ name ^ "]]")
+                    ~start:(opening + 2) raw
+                | None -> None in
+              match destination with
+              | Some start when caret > first + start && caret < last - 1 -> ()
+              | _ -> protect first last
+            end
+          | Inline.Link _ | Inline.Code _ | Inline.Verbatim _
+          | Inline.Latex_Fragment _ | Inline.Macro _ | Inline.Inline_Source_Block _
+          | Inline.Inline_Hiccup _ | Inline.Inline_Html _ -> protect first last
+          | Inline.Emphasis (style, _) ->
+            let delimiter = match style with `Italic -> 1 | _ -> 2 in
+            let length = pos.end_pos - pos.start_pos - (2 * delimiter) in
+            if length > 0 then inlines
+              (String.sub source (pos.start_pos + delimiter) length) (first + delimiter)
+          | _ -> ()) nodes
+  in
+  List.iter (fun (block, (pos : Mldoc.Pos.pos_meta)) ->
+    match block with
+    | Mldoc.Type.Src _ | Mldoc.Type.Example _ -> protect pos.start_pos pos.end_pos
+    | _ -> inlines (String.sub title pos.start_pos (pos.end_pos - pos.start_pos)) pos.start_pos)
+    (Mldoc.Parser.parse config title);
+  if !blocked then "" else String.sub title !floor (caret - !floor)
+
 let rewrite resolve title =
   let result = Buffer.create (String.length title) in
   let offset = ref 0 in
