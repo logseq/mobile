@@ -534,6 +534,25 @@ let outliner_row (context : Lui_ui.ui_context) model_source
                 retained_row_source row_source send search_open;
             ]))
 
+let journal_heading model_source row_source send children : t =
+ fun context parent ->
+  let node =
+    (View_base.with_label_signal
+       (Signal.map2 View_base.outliner_journal_accessibility_label
+          model_source row_source)
+       (box ~padding:0
+          ~accessibility_identifier_signal:
+            (Signal.map2 View_base.outliner_journal_button_identifier
+               model_source row_source)
+          children)) context parent
+  in
+  Lui_ui.bool_property context node PressEnabled true;
+  register_press context node (fun _ ->
+    ignore (send (Model.RequestAppNode
+      (View_base.outliner_journal_page_id
+         (Signal.sample model_source) (Signal.sample row_source)))));
+  node
+
 let outliner_entry context model_source retained_row_source row_source
     send : t =
   column ~padding_horizontal:8
@@ -553,20 +572,7 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (View_base.with_label_signal
-           (Signal.map2 View_base.outliner_journal_accessibility_label
-              model_source row_source)
-           (button ~variant:`ghost ~padding:0 ~foreground:"foreground"
-           ~on_press:(fun _ ->
-             ignore (send (Model.RequestAppNode
-               (View_base.outliner_journal_page_id
-                  (Signal.sample model_source) (Signal.sample row_source)))))
-           ~accessibility_identifier_signal:
-             (Signal.map2
-                (fun (current : Model.logseq_model)
-                     (r : Model.outline_row) ->
-                  View_base.outliner_journal_button_identifier current r)
-                model_source row_source)
+        (journal_heading model_source row_source send
            [
              (* Journal section titles align with the bullet column, not
                 the block text column: iOS's List leading inset puts both
@@ -594,7 +600,7 @@ let outliner_entry context model_source retained_row_source row_source
                    [];
                  box ~height:12 [];
                ];
-           ]));
+           ]);
       outliner_row context model_source retained_row_source row_source
         send;
     ]

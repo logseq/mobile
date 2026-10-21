@@ -7104,9 +7104,11 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     (property_string renderer second_entry
        Lui_protocol.ContainerRelativeFrameValue)
     "<missing>";
-  check_eq ~msg:"journal headings open their journal page"
+  check_eq ~msg:"journal headings render their native heading content"
     (node renderer first_heading)
-    (Some Lui_protocol.Button);
+    (Some Lui_protocol.Box);
+  check ~msg:"journal heading containers retain their navigation action"
+    (property_bool renderer first_heading Lui_protocol.PressEnabled);
   check_eq ~msg:"the interactive heading row does not add a native inset"
     (property_int renderer first_heading Lui_protocol.PaddingValue)
     0;

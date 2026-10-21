@@ -130,6 +130,14 @@ import SwiftUI
                 raise SystemExit("Simulator runtime check did not complete")
         finally:
             subprocess.run(["xcrun", "simctl", "terminate", SIMULATOR, bundle], capture_output=True)
+            artifacts = os.environ.get("LOGSEQ_RUNTIME_CHECK_ARTIFACTS")
+            if artifacts:
+                container = Path(subprocess.check_output(
+                    ["xcrun", "simctl", "get_app_container", SIMULATOR, bundle, "data"], text=True).strip())
+                destination = Path(artifacts)
+                destination.mkdir(parents=True, exist_ok=True)
+                for screenshot in (container / "Documents").glob("*.png"):
+                    shutil.copy2(screenshot, destination / screenshot.name)
             if not benchmark:
                 run(["xcrun", "simctl", "uninstall", SIMULATOR, bundle])
 
