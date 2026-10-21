@@ -9,6 +9,7 @@ import LogseqModel
 struct OutlinerTextRow: UIViewRepresentable {
     let row: OutlinerRowPayload
     @Environment(\.luiSemanticColors) private var semanticColors
+    @Environment(\.colorScheme) private var colorScheme
     let emit: (String, String?, [String: LUIExtensionValue]) -> Void
     let onOpenLink: (URL) -> Void
 
@@ -20,7 +21,8 @@ struct OutlinerTextRow: UIViewRepresentable {
 
     func makeUIView(context: Context) -> OutlinerTextRowView { OutlinerTextRowView() }
     func updateUIView(_ view: OutlinerTextRowView, context: Context) {
-        view.update(row, semanticColors: semanticColors, emit: emit, onOpenLink: onOpenLink)
+        view.update(row, semanticColors: semanticColors,
+            linkColor: LogseqThemePolicy.linkColor(isDark: colorScheme == .dark), emit: emit, onOpenLink: onOpenLink)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: OutlinerTextRowView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
@@ -38,6 +40,8 @@ struct OutlinerTextRow: UIViewRepresentable {
 }
 
 @MainActor final class OutlinerTextRowView: UIView {
+    // URL activation is handled here; UILabel's standard link attribute forces system blue.
+    private static let linkAttribute = NSAttributedString.Key("LogseqURL")
     private let guides = OutlinerIndentGuideView()
     private let title = OutlinerTitleLabel()
     private let bullet = UIButton(type: .custom)
@@ -82,14 +86,19 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ row: OutlinerRowPayload, semanticColors: [String: Color] = [:],
+    private var resolvedLinkColor: UIColor?
+
+    func update(_ row: OutlinerRowPayload, semanticColors: [String: Color] = [:], linkColor: Color? = nil,
                 emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void,
                 onOpenLink: ((URL) -> Void)? = nil) {
         self.emit = emit
         self.onOpenLink = onOpenLink
         self.semanticColors = semanticColors
         status.tintColor = UIColor(row.status?.color(in: semanticColors) ?? .primary)
-        guard self.row != row else { return }
+        let nextLinkColor = UIColor(semanticColors["link"] ?? linkColor
+            ?? LogseqThemePolicy.linkColor(isDark: traitCollection.userInterfaceStyle == .dark)).resolvedColor(with: traitCollection)
+        guard self.row != row || resolvedLinkColor != nextLinkColor else { return }
+        resolvedLinkColor = nextLinkColor
         self.row = row
         guides.update(row)
         let attributes: [NSAttributedString.Key: Any] = row.completed
@@ -103,8 +112,8 @@ struct OutlinerTextRow: UIViewRepresentable {
                 let label = node.children.isEmpty ? node.url ?? "" : node.children.map { $0.text ?? "" }.joined()
                 var linkAttributes = attributes
                 if let url = node.url.flatMap(URL.init(string:)) {
-                    linkAttributes[.link] = url
-                    if !row.completed { linkAttributes[.foregroundColor] = tintColor }
+                    linkAttributes[Self.linkAttribute] = url
+                    if !row.completed { linkAttributes[.foregroundColor] = nextLinkColor }
                     actions.append(UIAccessibilityCustomAction(name: label) { [weak self] _ in
                         self?.onOpenLink?(url)
                         return true
@@ -160,6 +169,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         for (index, tag) in row.tags.enumerated() {
             if index == tags.count { let button = UIButton(type: .system); tags.append(button); addSubview(button) }
             let button = tags[index]
+            button.tintColor = nextLinkColor
             button.setTitle("#" + tag.title, for: .normal)
             button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .caption1)
             button.accessibilityIdentifier = "button.block-tag." + tag.uuid
@@ -258,7 +268,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         if glyph < manager.numberOfGlyphs,
            manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).contains(location) {
             let character = manager.characterIndexForGlyph(at: glyph)
-            if let url = text.attribute(.link, at: character, effectiveRange: nil) as? URL {
+            if let url = text.attribute(Self.linkAttribute, at: character, effectiveRange: nil) as? URL {
                 onOpenLink?(url)
                 return
             }

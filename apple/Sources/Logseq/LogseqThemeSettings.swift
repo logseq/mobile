@@ -53,8 +53,14 @@ struct LogseqThemePalette {
 }
 
 enum LogseqThemePolicy {
+    // Master shui/colors.css primary and radix.css Logseq accent-11 tokens.
     static let accentHex = "#037DBA"
     static let accent = Color(red: 3.0 / 255.0, green: 125.0 / 255.0, blue: 186.0 / 255.0)
+    static func linkColor(isDark: Bool) -> Color {
+        isDark
+            ? Color(red: 155.0 / 255, green: 211.0 / 255, blue: 212.0 / 255)
+            : Color(red: 27.0 / 255, green: 104.0 / 255, blue: 152.0 / 255)
+    }
 
     static let light = LogseqThemePalette(
         backgroundHex: "#FCFCFC",

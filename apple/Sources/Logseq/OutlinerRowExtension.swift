@@ -113,6 +113,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
     @Environment(\.luiSemanticColors) private var semanticColors
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
     @ViewBuilder var body: some View {
@@ -134,6 +135,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     @ViewBuilder private var content: some View {
+        Group {
         #if os(iOS)
         if context.childIDs.isEmpty && OutlinerTextRow.supports(row) {
             OutlinerTextRow(row: row,
@@ -147,6 +149,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
         #else
         swiftUIContent
         #endif
+        }
+        .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
     }
 
     private var swiftUIContent: some View {

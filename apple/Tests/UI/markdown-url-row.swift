@@ -17,7 +17,7 @@ import UIKit
       "depth": 2, "hasChildren": false, "collapsed": false, "isAsset": false,
       "assetType": "", "localPath": "", "youtubeURL": "", "completed": false,
       "selected": false, "opensAsPage": false, "journalBullet": false, "syncFailed": false,
-      "statuses": [], "tags": [],
+      "statuses": [], "tags": [["uuid": "tag", "title": "Card"]],
     ]
     let backend = try LUIAppleBackend(
       appIcons: LGIconPolicy.icons, extensionRegistry: LGExtensionRegistry.makeRegistry())
@@ -62,6 +62,28 @@ import UIKit
     guard label.attributedText?.string == "文档 😀 after" else {
       throw failure("Unicode link labels and surrounding text must survive rendering")
     }
+    func matches(_ color: UIColor, _ expected: UIColor) -> Bool {
+      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+      var er: CGFloat = 0, eg: CGFloat = 0, eb: CGFloat = 0, ea: CGFloat = 0
+      color.resolvedColor(with: label.traitCollection).getRed(&r, green: &g, blue: &b, alpha: &a)
+      expected.getRed(&er, green: &eg, blue: &eb, alpha: &ea)
+      return abs(r - er) < 0.001 && abs(g - eg) < 0.001 && abs(b - eb) < 0.001
+    }
+    let expectedLink = UIColor(red: 27.0 / 255, green: 104.0 / 255, blue: 152.0 / 255, alpha: 1)
+    guard let color = label.attributedText?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor,
+      matches(color, expectedLink)
+    else { throw failure("Native URL rows must use master's Logseq tag color instead of system blue") }
+    guard let tag = views(row).compactMap({ $0 as? UIButton }).first(where: { $0.accessibilityIdentifier == "button.block-tag.tag" }),
+      matches(tag.tintColor, expectedLink)
+    else { throw failure("Native tags and URL labels must share the same master color") }
+    window.overrideUserInterfaceStyle = .dark
+    try await Task.sleep(for: .milliseconds(350))
+    let expectedDarkLink = UIColor(red: 155.0 / 255, green: 211.0 / 255, blue: 212.0 / 255, alpha: 1)
+    guard let darkColor = label.attributedText?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor,
+      matches(darkColor, expectedDarkLink)
+    else { throw failure("Unchanged URL rows must adopt master's dark tag color after switching appearance") }
+    window.overrideUserInterfaceStyle = .light
+    try await Task.sleep(for: .milliseconds(200))
     row.activateTitle(at: CGPoint(x: 8, y: label.font.lineHeight / 2))
     guard opened.last?.absoluteString == "https://example.com/docs?language=zh" else {
       throw failure("Tapping a Unicode URL label must open its destination")

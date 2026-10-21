@@ -10,6 +10,7 @@ let logseq_theme_tokens : (string * Lui_ui.theme_token_value) list =
     ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
     ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
     ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
+    ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
     (* Match master's Radix status palette in both appearances. *)

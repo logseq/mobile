@@ -150,7 +150,7 @@ let outliner_tag tag_source send : t =
     (Signal.map View_base.outliner_tag_title tag_source)
     (button
        ~text_signal:(reactive View_base.outliner_tag_title tag_source)
-       ~style_class:"caption" ~variant:`ghost ~foreground:"accent"
+       ~style_class:"caption" ~variant:`ghost ~foreground:"link"
        ~height:22 ~padding_vertical:0
        ~accessibility_identifier:(View_base.outliner_tag_identifier tag)
        ~on_press:(fun _ ->
