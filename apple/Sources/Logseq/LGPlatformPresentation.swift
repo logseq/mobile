@@ -185,10 +185,8 @@ enum LGAssetImporter {
         try await Task.detached(priority: .utility) {
             let accessed = sourceURL.startAccessingSecurityScopedResource()
             defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
-            let directory = FileManager.default.urls(
-                for: .documentDirectory,
-                in: .userDomainMask
-            )[0].appendingPathComponent("Assets", isDirectory: true)
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("logseq-asset-imports", isDirectory: true)
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
@@ -221,10 +219,8 @@ enum LGAssetImporter {
         title: String
     ) async throws -> LGImportedAsset {
         try await Task.detached(priority: .utility) {
-            let directory = FileManager.default.urls(
-                for: .documentDirectory,
-                in: .userDomainMask
-            )[0].appendingPathComponent("Assets", isDirectory: true)
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("logseq-asset-imports", isDirectory: true)
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true

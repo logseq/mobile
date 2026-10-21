@@ -817,10 +817,10 @@ let hydrate_outliner_rows session payload =
           Option.map Rpc.visible_block_json (Hashtbl.find_opt found id)) ids)])
   with Yojson.Json_error message -> Rpc.failure "invalid_params" message
 
-let asset_cache_path session graph_id uuid asset_type =
+let asset_cache_path session uuid asset_type =
   (host session).resolve_asset_path
-    (Filename.concat "Assets" (Filename.concat (Api.url_encode graph_id)
-      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type))))
+    (Filename.concat "Assets"
+      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type)))
 
 let cached_image_gallery session uuid =
   let blocks = (outliner_context session).Outliner.blocks in
@@ -832,7 +832,7 @@ let cached_image_gallery session uuid =
       if not block.is_asset || block.parent_id <> selected.parent_id
          || not (List.mem kind ["png"; "jpg"; "jpeg"; "gif"; "webp"; "heic"]) then None
       else
-        let cached = asset_cache_path session config.Api.graph_id block.uuid kind in
+        let cached = asset_cache_path session block.uuid kind in
         let local = Option.map (host session).resolve_asset_path block.local_path in
         let path = match local with Some path when Sys.file_exists path -> path | _ -> cached in
         if Sys.file_exists path then Some (block, path) else None) blocks
@@ -856,7 +856,7 @@ let graph_asset session fields downloaded =
     match (state session).config with
     | Some config when config.Api.graph_id = graph_id ->
       let kind = Api.normalize_asset_type asset_type in
-      let path = asset_cache_path session graph_id uuid kind in
+      let path = asset_cache_path session uuid kind in
       let response () = Rpc.json_object ["graphId", `String graph_id; "localPath", `String path] in
       if Sys.file_exists path then Ok (response ())
       else if not downloaded then
@@ -1674,7 +1674,7 @@ let rec dispatch session action payload =
         (host session).Types.stage_operation
       else None
     in
-    Rpc.add_asset payload s.model now_ms target prepare_view
+    Rpc.add_asset ~prepare_file:h.import_asset_file payload s.model now_ms target prepare_view
       (fun block -> asset_datoms_operation session block Ops.Applied)
       stage
   | "addChildBlock" ->

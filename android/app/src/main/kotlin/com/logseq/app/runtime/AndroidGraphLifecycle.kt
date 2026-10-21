@@ -1,6 +1,8 @@
 package com.logseq.app.runtime
 
 import org.json.JSONObject
+import com.logseq.app.AndroidGraphLocalStorage
+import java.io.File
 
 internal interface AndroidGraphStorage {
     fun loadStorageState(): AndroidStorageState
@@ -80,7 +82,11 @@ internal class AndroidGraphLifecycle(
         trace("select.complete graphId=$graphId")
 
         val state = effects.loadStorageState()
-        val directory = "${state.graphsDirectory}/$graphId"
+        val catalog = decodedResponse(selected).optJSONObject("result")?.optJSONArray("graphs")
+        val graphName = (0 until (catalog?.length() ?: 0)).asSequence()
+            .mapNotNull { catalog?.optJSONObject(it) }.firstOrNull { it.optString("id") == graphId }
+            ?.optString("name").orEmpty().ifBlank { "Graph" }
+        val directory = AndroidGraphLocalStorage.prepare(File(state.graphsDirectory), graphId, graphName).path
         val bootstrap = call("bootstrapGraph", JSONObject().put("graphId", graphId)
             .put("activePath", "$directory/graph.sqlite").put("checkpointPath", "$directory/sync.checkpoint")
             .put("forceSnapshot", forceSnapshot).toString())

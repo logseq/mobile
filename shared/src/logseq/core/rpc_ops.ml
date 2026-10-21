@@ -520,7 +520,7 @@ let asset_metadata fields =
     Ok (uuid, title, now, asset_type, asset_size, checksum, local_path, target)
   | _ -> Error ("invalid_params", "addAsset requires complete file metadata")
 
-let add_asset payload cache clock load_target prepare_view prepare_operation
+let add_asset ?(prepare_file = (fun _ path -> Ok path)) payload cache clock load_target prepare_view prepare_operation
     load_stage =
   match payload with
   | Some payload ->
@@ -550,6 +550,7 @@ let add_asset payload cache clock load_target prepare_view prepare_operation
          | Some now -> now
          | None -> clock ()
        in
+       let* local_path = Wire.graph_workflow_result "asset_import_failed" (prepare_file uuid local_path) in
        let asset_type = Api.normalize_asset_type asset_type in
        let completed = prepare_view () in
        (match target with

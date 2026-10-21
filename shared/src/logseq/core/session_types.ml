@@ -113,6 +113,7 @@ type host_options =
   ; provision_graph_key : (Api.api_config -> (unit, string) result) option
   ; graph_unlocked : (string -> bool) option
   ; encrypt_title : (string -> string -> (string, string) result) option
+  ; import_asset_file : string -> string -> (string, string) result
   ; resolve_asset_path : string -> string
   ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :
@@ -201,6 +202,7 @@ let default_options =
     provision_graph_key = None;
     graph_unlocked = None;
     encrypt_title = None;
+    import_asset_file = (fun _ path -> Ok path);
     resolve_asset_path = (fun path -> path);
     decrypt_asset = None;
     encrypt_asset_file = None;

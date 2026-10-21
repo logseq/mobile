@@ -580,12 +580,13 @@ public struct LogseqRootView : View {
                 LogseqAppDelegate.shared.reportLaunchStage("graph_configured")
             }
 
-            func openGraph(isEncrypted: Bool) -> String? {
+            func openGraph(isEncrypted: Bool, graphName: String) -> String? {
                 guard !graphID.isEmpty else { return nil }
-                let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+                guard let graphDirectory = try? LogseqGraphLocalStorage.prepareDirectoryURL(
                     databasePath: databasePath,
-                    graphID: graphID
-                )
+                    graphID: graphID,
+                    graphName: graphName
+                ) else { return nil }
                 let payloadObject: [String: Any] = [
                     "graphId": graphID,
                     "activePath": graphDirectory.appendingPathComponent("graph.sqlite").path,
@@ -627,7 +628,8 @@ public struct LogseqRootView : View {
             }
             let isEncrypted = catalog.result?.graphs?
                 .first(where: { $0.id == graphID })?.isEncrypted ?? false
-            let graphResponse = openGraph(isEncrypted: isEncrypted)
+            let graphResponse = openGraph(isEncrypted: isEncrypted, graphName: catalog.result?.graphs?
+                .first(where: { $0.id == graphID })?.name ?? "Graph")
             return LocalLaunchResult(
                 catalogResponse: catalogResponse,
                 graphResponse: graphResponse,
@@ -776,10 +778,14 @@ public struct LogseqRootView : View {
                     return true
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
+                    guard let graphID = self.store.snapshot.selectedGraphId, !graphID.isEmpty else { return false }
+                    let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+                        databasePath: self.databasePath, graphID: graphID
+                    )
                     guard let imported = try? SharedCaptureAssetImporter.importAsset(
                         asset,
                         sharedDirectory: SharedCaptureStorage.sharedDirectory,
-                        documentsDirectory: .documentsDirectory
+                        documentsDirectory: graphDirectory
                     ) else { return false }
                     return await self.store.captureSharedAsset(
                         id: item.id,

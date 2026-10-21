@@ -15,12 +15,12 @@ let expect_ok result =
   | Ok value -> value
   | Error message -> failwith message
 
-let relative_assets_resolve_against_the_documents_directory () =
+let relative_assets_resolve_against_the_graph_directory () =
   Test_util.check_eq
     (Asset_files.resolve_path
        (Some "/documents/graphs/id/sync.checkpoint")
        "assets/image.png")
-    "/documents/assets/image.png";
+    "/documents/graphs/id/assets/image.png";
   Test_util.check_eq
     (Asset_files.resolve_path None "assets/image.png")
     "assets/image.png";
@@ -101,8 +101,8 @@ let missing_source_does_not_invoke_encryption () =
     Test_util.check (Array.length (Sys.readdir dir) = 0))
 
 let cases =
-  [ Test_util.case "relative assets resolve against the documents directory"
-      relative_assets_resolve_against_the_documents_directory;
+  [ Test_util.case "relative assets resolve against the graph directory"
+      relative_assets_resolve_against_the_graph_directory;
     Test_util.case "asset file roundtrip preserves bytes"
       asset_file_roundtrip_preserves_bytes;
     Test_util.case "file errors retain operation context"

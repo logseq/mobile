@@ -667,9 +667,10 @@ private struct CreateSyncGraphPayload: Encodable {
             return false
         }
         do {
-            let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+            let graphDirectory = try LogseqGraphLocalStorage.prepareDirectoryURL(
                 databasePath: openedDatabasePath,
-                graphID: graphID
+                graphID: graphID,
+                graphName: snapshot.graphs?.first(where: { $0.id == graphID })?.name ?? "Graph"
             )
             try FileManager.default.createDirectory(at: graphDirectory, withIntermediateDirectories: true)
             let activeURL = graphDirectory.appendingPathComponent("graph.sqlite")

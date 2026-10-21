@@ -1,6 +1,8 @@
 package com.logseq.app.runtime
 
 import org.json.JSONObject
+import com.logseq.app.AndroidGraphLocalStorage
+import java.io.File
 
 // Kotlin port of the former core_bootstrap.dart: restore the core's
 // persisted state — open the catalog database, dispatch configure with
@@ -52,7 +54,12 @@ internal class CoreBootstrap(
             state.localGraphIds.contains(state.selectedGraphId) &&
             !graphIsEncrypted(catalog, state.selectedGraphId)
         ) {
-            val directory = "${state.graphsDirectory}/${state.selectedGraphId}"
+            val graphs = catalog.optJSONArray("graphs")
+            val name = (0 until (graphs?.length() ?: 0)).asSequence()
+                .mapNotNull { graphs?.optJSONObject(it) }.firstOrNull { it.optString("id") == state.selectedGraphId }
+                ?.optString("name").orEmpty().ifBlank { "Graph" }
+            val directory = AndroidGraphLocalStorage.prepare(
+                File(state.graphsDirectory), state.selectedGraphId, name).path
             graphResponse = call(
                 operation = "open local graph",
                 request = request(

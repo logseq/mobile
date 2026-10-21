@@ -33,11 +33,14 @@ let create crypto = { crypto; creator = ref None; current = ref None }
 let configure_identity host token = host.creator := Created_by.of_token token
 
 let resolve_asset_path (host : mobile_graph) source_path =
-  Assets.resolve_path
-    (match !(host.current) with
-     | Some opened -> Some opened.checkpoint_path
-     | None -> None)
-    source_path
+  match !(host.current) with
+  | Some opened -> Assets.resolve_legacy_path (Some opened.checkpoint_path) opened.graph_id source_path
+  | None -> source_path
+
+let import_asset_file (host : mobile_graph) uuid source_path =
+  match !(host.current) with
+  | Some opened -> Assets.import_file (Some opened.checkpoint_path) opened.graph_id uuid source_path
+  | None -> Error "Open a graph before importing an asset"
 
 let sync_cursor (host : mobile_graph) =
   match !(host.current) with

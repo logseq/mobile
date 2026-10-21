@@ -131,7 +131,7 @@ class AndroidAudioRecorder(private val activity: Activity) {
 
     @Suppress("DEPRECATION")
     private fun startRecorder() {
-        val directory = File(context.filesDir, "Assets").apply { mkdirs() }
+        val directory = File(context.cacheDir, "Assets").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.US).format(Date())
         val file = File(directory, "Audio-$stamp.m4a")
         val next = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

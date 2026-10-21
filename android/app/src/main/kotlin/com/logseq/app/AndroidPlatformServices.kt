@@ -34,15 +34,7 @@ class AndroidPlatformServices(private val activity: Activity) {
 
     fun loadStorageState(): Map<String, Any> {
         val graphsDirectory = File(activity.filesDir, "graphs").apply { mkdirs() }
-        val localGraphIds = graphsDirectory.listFiles()
-            .orEmpty()
-            .filter { directory ->
-                directory.isDirectory &&
-                    File(directory, "graph.sqlite").isFile &&
-                    File(directory, "sync.checkpoint").isFile
-            }
-            .map(File::getName)
-            .sorted()
+        val localGraphIds = AndroidGraphLocalStorage.localGraphIds(graphsDirectory)
         val packageInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
         val rawTabs = preferences.getString("logseq.mobile.sidebarTabs", "").orEmpty()
         val baseUrl = normalizedBaseUrl(preferences.getString("logseq.baseURL", null))
@@ -155,7 +147,7 @@ class AndroidPlatformServices(private val activity: Activity) {
         val asset = JSONObject(metadata)
         val path = asset.optString("localPath")
         if (path.isBlank()) return false
-        val file = resolveAppFile(activity.filesDir, path)
+        val file = File(resolveAssetPath(path))
         if (!file.isFile) return false
         val contentType = asset.optString("assetType", "application/octet-stream")
             .ifBlank { "application/octet-stream" }
@@ -168,7 +160,7 @@ class AndroidPlatformServices(private val activity: Activity) {
     fun presentPageShare(text: String, metadata: String): Boolean {
         val paths = JSONArray(metadata).toStringList()
         val files = paths
-            .map { path -> resolveAppFile(activity.filesDir, path) }
+            .map { path -> File(resolveAssetPath(path)) }
             .filter(File::isFile)
         val intent = if (files.size > 1) {
             Intent(Intent.ACTION_SEND_MULTIPLE).apply {
@@ -191,7 +183,7 @@ class AndroidPlatformServices(private val activity: Activity) {
 
     fun deleteLocalGraph(graphId: String): Boolean {
         if (graphId.isBlank() || graphId.contains('/') || graphId.contains("..")) return false
-        val directory = File(File(activity.filesDir, "graphs"), graphId)
+        val directory = AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId)
         if (!directory.exists()) return true
         return directory.deleteRecursively()
     }
@@ -199,7 +191,7 @@ class AndroidPlatformServices(private val activity: Activity) {
     fun exportGraphDatabase(): Boolean {
         val graphId = preferences.getString("logseq.selectedGraphId", "").orEmpty()
         if (graphId.isBlank()) return false
-        val database = File(File(File(activity.filesDir, "graphs"), graphId), "graph.sqlite")
+        val database = File(AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId), "graph.sqlite")
         if (!database.isFile) return false
         return presentPageShare("", JSONArray(listOf(database.path)).toString())
     }
@@ -234,7 +226,11 @@ class AndroidPlatformServices(private val activity: Activity) {
         if (path.isEmpty() || File(path).isAbsolute) {
             path
         } else {
-            resolveAppFile(activity.filesDir, path).path
+            val graphId = preferences.getString("logseq.selectedGraphId", "").orEmpty()
+            val directory = AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId)
+            val graphFile = File(directory, path)
+            if (graphId.isNotBlank() && graphFile.isFile) graphFile.path
+            else resolveAppFile(activity.filesDir, path).path
         }
 
     fun deleteTemporaryFile(path: String) {

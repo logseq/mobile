@@ -90,9 +90,7 @@ let asset_path_resolution_follows_the_current_graph () =
       expect_ok (Mobile.open_graph host (open_payload dir false));
       check_eq
         (Mobile.resolve_asset_path host relative)
-        (Filename.concat
-           (Filename.dirname (Filename.dirname dir))
-           relative);
+        (Filename.concat dir relative);
       check_eq (Mobile.resolve_asset_path host absolute) absolute;
       host.current := None;
       check_eq (Mobile.resolve_asset_path host relative) relative)

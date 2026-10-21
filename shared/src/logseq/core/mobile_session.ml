@@ -107,6 +107,7 @@ let host_options (database : Database.mobile_database) ring catalog =
         | Error _ -> false);
     encrypt_title =
       Some (fun graph_id title -> Keyring.encrypt_title ring graph_id title);
+    import_asset_file = (fun uuid source_path -> Graph.import_asset_file graph uuid source_path);
     resolve_asset_path =
       (fun source_path -> Graph.resolve_asset_path graph source_path);
     decrypt_asset = Some (fun graph_id bytes ->

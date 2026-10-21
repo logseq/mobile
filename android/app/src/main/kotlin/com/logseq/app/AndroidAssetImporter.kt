@@ -94,7 +94,7 @@ class AndroidAssetImporter(
     suspend fun importShared(uri: Uri): Map<String, Any>? = importDocument(uri)
 
     private fun launchCamera() {
-        val directory = File(activity.filesDir, assetsDirectory).apply { mkdirs() }
+        val directory = File(activity.cacheDir, assetsDirectory).apply { mkdirs() }
         val file = File(directory, "${UUID.randomUUID()}-Camera.jpg")
         pendingCameraFile = file
         val uri = FileProvider.getUriForFile(
@@ -124,7 +124,7 @@ class AndroidAssetImporter(
             runCatching {
                 val title = displayName(uri)
                 val uuid = UUID.randomUUID().toString()
-                val directory = File(activity.filesDir, assetsDirectory).apply { mkdirs() }
+                val directory = File(activity.cacheDir, assetsDirectory).apply { mkdirs() }
                 val destination = File(directory, "$uuid-$title")
                 val digest = MessageDigest.getInstance("SHA-256")
                 var size = 0L
@@ -195,7 +195,7 @@ class AndroidAssetImporter(
         "assetType" to contentType,
         "size" to size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         "checksum" to checksum,
-        "localPath" to "$assetsDirectory/${file.name}",
+        "localPath" to file.path,
     )
 
     private fun displayName(uri: Uri): String {

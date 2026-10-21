@@ -106,6 +106,7 @@ type host_options =
   ; provision_graph_key : (Api.api_config -> (unit, string) result) option
   ; graph_unlocked : (string -> bool) option
   ; encrypt_title : (string -> string -> (string, string) result) option
+  ; import_asset_file : string -> string -> (string, string) result
   ; resolve_asset_path : string -> string
   ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :

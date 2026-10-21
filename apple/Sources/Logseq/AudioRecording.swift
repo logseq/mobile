@@ -57,7 +57,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
             try session.setActive(true)
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("Assets", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let formatter = DateFormatter()

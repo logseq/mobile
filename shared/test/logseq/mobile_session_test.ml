@@ -214,8 +214,84 @@ let configured_identity_authors_new_nodes_and_survives_reopen () =
       page_uuid = "page"; parent_uuid = "page"; order = "a3"; created_at = 14 });
     check_eq ~msg:"invalid or removed identity never reuses a prior account" (author "anonymous") None)
 
+let assets_are_stored_inside_the_open_graph () =
+  with_host (fun host root ->
+    let directory = Filename.concat root "graphs" in
+    Unix.mkdir directory 0o700;
+    let directory = Filename.concat directory "My Notes - graph" in
+    Unix.mkdir directory 0o700;
+    let active = Filename.concat directory "graph.sqlite" in
+    let checkpoint = Filename.concat directory "sync.checkpoint" in
+    Graph_sqlite.prepare_staging active;
+    ignore (Datascript.store (Graph_bootstrap.install_canonical_entities
+      (Datascript.parse_tx_data_string Graph_bootstrap_data.transaction_edn
+       |> List.map Graph_bootstrap.normalize_scalar_maps) (Graph_store.storage active)));
+    (match Sync_checkpoint.save_checkpoint_atomic checkpoint (Sync_checkpoint.create "graph" "1" 7) with
+     | Ok () -> () | Error message -> fail message);
+    let call action fields = Mobile_session.call host (Yojson.Basic.to_string (`Assoc [
+      "apiVersion", `Int 1; "method", `String "dispatch";
+      "params", `Assoc ["action", `String action;
+        "payload", `String (Yojson.Basic.to_string (`Assoc fields))]])) |> Yojson.Basic.from_string in
+    let ok result = check_eq ~msg:"RPC succeeds" (Yojson.Basic.Util.member "ok" result) (`Bool true) in
+    ok (call "configure" ["graphId", `String "graph"; "baseUrl", `String "https://example.com"; "token", `String "test"]);
+    ok (call "openGraph" ["graphId", `String "graph"; "activePath", `String active;
+      "checkpointPath", `String checkpoint; "isEncrypted", `Bool false]);
+    let source = Filename.concat root "photo.png" in
+    ignore (Asset_files.write_file source "local-image");
+    ok (call "addAsset" ["uuid", `String "local-photo"; "title", `String "Photo";
+      "assetType", `String "png"; "assetSize", `Int 11; "assetChecksum", `String "checksum";
+      "localPath", `String source]);
+    check_eq ~msg:"imported files belong to the graph"
+      (Asset_files.read_file (Filename.concat directory "Assets/local-photo-photo.png")) (Ok "local-image");
+    let second_source_dir = Filename.concat root "second" in
+    Unix.mkdir second_source_dir 0o700;
+    let second_source = Filename.concat second_source_dir "photo.png" in
+    ignore (Asset_files.write_file second_source "second-image");
+    ok (call "addAsset" ["uuid", `String "second-photo"; "title", `String "Photo";
+      "assetType", `String "png"; "assetSize", `Int 12; "assetChecksum", `String "checksum2";
+      "localPath", `String second_source]);
+    check_eq (Asset_files.read_file (Filename.concat directory "Assets/second-photo-photo.png")) (Ok "second-image");
+    check_eq ~msg:"same filenames never overwrite an existing attachment"
+      (Asset_files.read_file (Filename.concat directory "Assets/local-photo-photo.png")) (Ok "local-image");
+    let missing = call "addAsset" ["uuid", `String "missing"; "title", `String "Missing";
+      "assetType", `String "png"; "assetSize", `Int 0; "assetChecksum", `String "checksum";
+      "localPath", `String (Filename.concat root "missing.png")] in
+    check_eq ~msg:"missing files are rejected before staging" (Yojson.Basic.Util.member "ok" missing) (`Bool false);
+    let prepare uuid = call "prepareAssetDownload" ["uuid", `String uuid; "assetType", `String "png"] in
+    let pending = prepare "remote-photo" in
+    ok pending;
+    check (Yojson.Basic.Util.member "request" (Yojson.Basic.Util.member "result" pending) <> `Null);
+    ok (call "cacheDownloadedAsset" ["uuid", `String "remote-photo"; "assetType", `String "png"; "path", `String source]);
+    let cached = prepare "remote-photo" in
+    ok cached;
+    check_eq ~msg:"remote cache belongs to the graph"
+      (cached |> Yojson.Basic.Util.member "result" |> Yojson.Basic.Util.member "localPath")
+      (`String (Filename.concat directory "Assets/remote-photo.png"));
+    check_eq (Asset_files.read_file (Filename.concat directory "Assets/remote-photo.png")) (Ok "local-image");
+    let legacy = Filename.concat root "Assets" in
+    Unix.mkdir legacy 0o700;
+    ignore (Asset_files.write_file (Filename.concat legacy "legacy.png") "old-image");
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    check_eq ~msg:"old upload references migrate to this graph"
+      (Mobile_graph.resolve_asset_path graph "Assets/legacy.png")
+      (Filename.concat directory "Assets/legacy.png");
+    check_eq (Asset_files.read_file (Filename.concat directory "Assets/legacy.png")) (Ok "old-image");
+    let legacy_graph = Filename.concat legacy "graph" in
+    Unix.mkdir legacy_graph 0o700;
+    ignore (Asset_files.write_file (Filename.concat legacy_graph "old-cache.png") "cached-image");
+    let cached = prepare "old-cache" in
+    ok cached;
+    check_eq (cached |> Yojson.Basic.Util.member "result" |> Yojson.Basic.Util.member "localPath")
+      (`String (Filename.concat directory "Assets/old-cache.png"));
+    check_eq (Asset_files.read_file (Filename.concat directory "Assets/old-cache.png")) (Ok "cached-image");
+    let neighbor = Filename.concat root "graphs/Other - other" in
+    Unix.mkdir neighbor 0o700;
+    check_eq ~msg:"another graph cannot read a cached attachment"
+      (Asset_files.resolve_path (Some (Filename.concat neighbor "sync.checkpoint")) "Assets/remote-photo.png")
+      (Filename.concat neighbor "Assets/remote-photo.png"))
+
 let cases =
-  [ case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
+  [ case "assets are stored inside the open graph" assets_are_stored_inside_the_open_graph; case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
     case "synced encrypted assets decrypt to raw image bytes" synced_encrypted_assets_decrypt_to_raw_image_bytes;
     case "requests without a database path use the existing session"
       requests_without_a_database_path_use_the_existing_session;

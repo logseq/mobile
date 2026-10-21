@@ -1,4 +1,5 @@
 import Foundation
+import LogseqModel
 
 enum LocalAssetPath {
     private static let assetsDirectoryName = "Assets"
@@ -21,6 +22,17 @@ enum LocalAssetPath {
         fileManager: FileManager = .default
     ) -> URL? {
         guard !path.isEmpty else { return nil }
+
+        let graphID = UserDefaults.standard.string(forKey: "logseq.selectedGraphId") ?? ""
+        if !graphID.isEmpty {
+            let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+                databasePath: documentsDirectory.appendingPathComponent("logseq.sqlite").path,
+                graphID: graphID
+            )
+            let graphAsset = graphDirectory.appendingPathComponent("Assets", isDirectory: true)
+                .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+            if fileManager.fileExists(atPath: graphAsset.path) { return graphAsset }
+        }
 
         let storedURL = path.hasPrefix("/")
             ? URL(fileURLWithPath: path)

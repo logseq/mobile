@@ -130,6 +130,14 @@ applied server `t`. The separate app metadata store persists the discovered grap
 catalog, last selected graph, pending local requests, and UI state. Those records
 are not graph attributes and are not a second graph cursor.
 
+Local graph files live under `graphs/<sanitized graph name> - <graph-id>/`.
+Each graph directory contains its graph database, UI projection, checkpoint,
+search index, and `Assets/` directory. Attachment metadata participates in graph
+sync; attachment bytes are uploaded separately and downloaded on demand into
+that graph's `Assets/`. Older ID-only graph directories are migrated before
+opening their databases. Legacy shared asset paths remain readable and are
+copied into the owning graph when resolved.
+
 Metadata records are encoded as versioned Transit. Compatibility with the earlier
 `Marshal` cache is intentionally out of scope: an old record is a cache miss and is
 rebuilt from the selected graph or server. This does not change the graph SQLite
