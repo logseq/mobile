@@ -422,13 +422,9 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
           ~foreground:"muted-foreground" [];
       ]
   else
-    column ~accessibility_identifier:"journals.loading"
-      [
-        text
-          ~value_signal:
-            (Signal.map View_base.graph_loading_message model_source)
-          [];
-      ]
+    column ~grow:1.0 ~main:`center ~cross:`center
+      ~accessibility_identifier:"journals.loading"
+      [ spinner ~accessibility_identifier:"spinner.graph-loading" [] ]
 
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
     =

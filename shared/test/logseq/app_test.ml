@@ -2331,10 +2331,17 @@ let persisted_graph_loading_hides_the_launch_picker () =
   flush application;
   let main = main_root renderer application in
   let loading = child_with_identifier renderer main "journals.loading" in
-  check_eq ~msg:"an unselected catalog has a graph-specific loading label"
-    (property_string renderer (List.nth (children renderer loading) 0)
-       Lui_protocol.TextValue)
-    "Loading graphs";
+  check_eq ~msg:"iOS graph loading shows a native activity indicator"
+    (node renderer (List.hd (children renderer loading)))
+    (Some Lui_protocol.Spinner);
+  check_eq ~msg:"loading fills the available content height"
+    (property_float renderer loading Lui_protocol.GrowValue) 1.0;
+  check_eq ~msg:"loading is vertically centered"
+    (property_string renderer loading Lui_protocol.MainAlignment) "center";
+  check_eq ~msg:"loading is horizontally centered"
+    (property_string renderer loading Lui_protocol.CrossAlignment) "center";
+  check_eq ~msg:"iOS loading has no text label"
+    (List.length (children renderer loading)) 1;
   check_eq ~msg:"the picker stays hidden until the catalog is ready"
     (child_with_identifier renderer main "screen.graph-picker")
     (-1);
