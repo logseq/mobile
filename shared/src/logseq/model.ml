@@ -1281,7 +1281,10 @@ let snapshot_autocomplete_candidates (current : logseq_model) projection =
       current.outliner_editing <> projection.projection_outliner_editing
     | _ -> false
   in
-  if stale then []
+  if stale then
+    (match current.outliner_autocomplete with
+     | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
+     | _ -> [])
   else indexed_outliner_autocomplete_candidates
     projection.projection_outliner_autocomplete_candidates
 
@@ -1894,7 +1897,10 @@ let rec update (current : logseq_model) action =
       {
         (update_editing current uuid title caret) with
         sync_state = editing_sync_state current;
-        outliner_autocomplete_candidates = [];
+        outliner_autocomplete_candidates =
+          (match current.outliner_autocomplete with
+           | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
+           | _ -> []);
       }
     in
     let id = updated.next_effect_id in
@@ -1923,7 +1929,10 @@ let rec update (current : logseq_model) action =
       (fun eff -> change_outliner_text_effect_for_ eff uuid)
       (sub_list (List.length pending) (List.length updated.pending_effects) updated.pending_effects) in
     enqueue_effect { updated with pending_effects = pending;
-      outliner_autocomplete_candidates = [] }
+      outliner_autocomplete_candidates =
+        (match current.outliner_autocomplete with
+         | Some { autocomplete_kind = TagAutocomplete; _ } -> current.outliner_autocomplete_candidates
+         | _ -> []) }
       (if has_pending_text then ChangeOutlinerTextEffect (id, uuid, title, caret)
        else MoveOutlinerCaretEffect (id, uuid, caret))
   | ToggleOutlinerCollapsed uuid ->

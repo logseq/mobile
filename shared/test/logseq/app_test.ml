@@ -4826,6 +4826,52 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
   check_eq ~msg:"the authoritative value applies after local typing settles"
     settled.outliner_editing (Some stale)
 
+let tag_autocomplete_remains_mounted_while_typing () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  let editing = { Model.editing_uuid = "editing"; editing_title = "#Pr"; caret_utf16_offset = 3 } in
+  let candidate index label value = { Model.candidate_index = index; candidate_label = label; candidate_value = value } in
+  let candidates = [candidate 0 "Project" "project"; candidate 1 "Progress" "progress"] in
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "test-graph";
+    projection_outliner_editing = Some editing;
+    projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.TagAutocomplete; autocomplete_query = "Pr" };
+    projection_outliner_autocomplete_candidates = candidates;
+    outliner_rows = [outline_row "editing" "#Pr"] } in
+  send application (Model.ApplyCoreSnapshot projection);
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let find id = descendant_with_identifier renderer (native_bottom_chrome renderer application) id in
+  let panel = find "toolbar.outliner.autocomplete" in
+  check ~msg:"tag candidates initially render" (panel <> -1);
+  let project = find "button.outliner.autocomplete.0" in
+  send application (Model.ChangeOutlinerText ("editing", "#Pro", 4));
+  flush application;
+  check_eq ~msg:"typing retains the mounted panel while the core computes candidates"
+    (find "toolbar.outliner.autocomplete") panel;
+  check_eq ~msg:"the last tag results remain visible during the request"
+    (App.model application).outliner_autocomplete_candidates candidates;
+  send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_autocomplete_candidates = [] });
+  flush application;
+  check_eq ~msg:"a delayed response cannot blank the tag panel"
+    (find "toolbar.outliner.autocomplete") panel;
+  send application (Model.ResolveEffect (1, true, ""));
+  send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_editing = Some { editing with editing_title = "#Pro"; caret_utf16_offset = 4 };
+    projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.TagAutocomplete; autocomplete_query = "Pro" };
+    projection_outliner_autocomplete_candidates = [candidate 0 "Progress" "progress"; candidate 1 "Project" "project"] });
+  flush application;
+  check_eq ~msg:"candidate identity follows its UUID across reordered results"
+    (find "button.outliner.autocomplete.1") project;
+  check_eq ~msg:"candidate count changes cannot resize the bottom panel"
+    (property_int renderer panel Lui_protocol.HeightValue) 220;
+  send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_editing = None; projection_outliner_autocomplete = None;
+    projection_outliner_autocomplete_candidates = [] });
+  flush application;
+  check_eq ~msg:"finishing autocomplete removes the panel" (find "toolbar.outliner.autocomplete") (-1)
+
 let favorite_blocks_open_through_node_navigation () =
   List.iter (fun backend ->
     let application = App.create backend in
@@ -4848,13 +4894,13 @@ let outliner_typing_removes_stale_autocomplete_candidates () =
   let editing =
     {
       Model.editing_uuid = "block-a";
-      editing_title = "Draft #";
+      editing_title = "Draft [[";
       caret_utf16_offset = 7;
     }
   in
   let autocomplete =
     {
-      Model.autocomplete_kind = Model.TagAutocomplete;
+      Model.autocomplete_kind = Model.NodeAutocomplete;
       autocomplete_query = "";
     }
   in
@@ -4875,7 +4921,7 @@ let outliner_typing_removes_stale_autocomplete_candidates () =
   in
   let updated =
     Model.update current
-      (Model.ChangeOutlinerText ("block-a", "Draft #Project", 14))
+      (Model.ChangeOutlinerText ("block-a", "Draft [[Project", 15))
   in
   check_eq ~msg:"typing hides candidates produced for the previous query"
     updated.outliner_autocomplete_candidates [];
@@ -4885,7 +4931,7 @@ let outliner_typing_removes_stale_autocomplete_candidates () =
        disappear"
     updated.pending_effects
     [
-      Model.ChangeOutlinerTextEffect (1, "block-a", "Draft #Project", 14);
+      Model.ChangeOutlinerTextEffect (1, "block-a", "Draft [[Project", 15);
     ]
 
 let autocomplete_selection_waits_for_pending_text_to_settle () =
@@ -10092,6 +10138,7 @@ let cases =
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-removes-stale-autocomplete-candidates" outliner_typing_removes_stale_autocomplete_candidates;
+    case "tag-autocomplete-remains-mounted-while-typing" tag_autocomplete_remains_mounted_while_typing;
     case "favorite-blocks-open-through-node-navigation" favorite_blocks_open_through_node_navigation;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;

@@ -492,6 +492,7 @@ let outliner_autocomplete_active_ (current : Model.logseq_model) =
   outliner_editor_active_ current
   &&
   (match current.outliner_autocomplete with
+   | Some { autocomplete_kind = Model.TagAutocomplete; _ } -> true
    | Some _ -> current.outliner_autocomplete_candidates <> []
    | None -> false)
 

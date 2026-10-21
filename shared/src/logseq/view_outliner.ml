@@ -684,6 +684,8 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
   let candidate = Signal.sample candidate_source in
   View_base.with_label_signal
     (Signal.map View_base.outliner_autocomplete_label candidate_source)
+    (View_base.with_string_prop_signal AccessibilityIdentifier
+      (Signal.map View_base.outliner_autocomplete_identifier candidate_source)
     (button
        ~text_signal:
          (Signal.map View_base.outliner_autocomplete_label candidate_source)
@@ -699,11 +701,11 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
            (send
               (Model.ChooseOutlinerAutocomplete
                  (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
-       [])
+       []))
 
 let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
     send : t =
-  scroll ~max_height:220
+  scroll ~height:220 ~max_height:220
     ~accessibility_identifier:"toolbar.outliner.autocomplete"
     ~style_class:"outliner-autocomplete"
     [
@@ -717,7 +719,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
               (Signal.map
                  View_base.model_outliner_autocomplete_candidates
                  model_source)
-            ~key:View_base.outliner_autocomplete_identifier
+            ~key:(fun (candidate : Model.outliner_autocomplete_candidate) -> candidate.candidate_value)
             ~cmp:compare
             ~mount:(fun candidate_source ->
               outliner_autocomplete_row context candidate_source send);
