@@ -34,7 +34,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 - [x] Incoming shares: register audio, video, PDF, Markdown and generic files, preserving text/images and multiple attachments.
   Touch AndroidManifest.xml and Android app-entry tests.
   Verify package-manager resolution and actual URI import, including text plus attachments and cancellation/error handling.
-- [ ] Quick recording: register the audio deep link and recording actions for launcher shortcuts, capture widget and a native Quick Settings tile.
+- [x] Quick recording: register the audio deep link and recording actions for launcher shortcuts, capture widget and a native Quick Settings tile.
   Touch AndroidManifest.xml, shortcuts.xml, AndroidWidgets.kt and the existing entry handler.
   Verify cold-entry routing, one recording request, existing capture/journal routes and OS shortcut/widget/tile declarations.
 - [ ] YouTube timestamps: retain playback start state per video within the rendered document, show timestamps as actions, and update the corresponding existing player.
@@ -82,3 +82,4 @@ Background work follows Android's network, power and scheduling restrictions; it
 - Gallery feature committed and pushed as 227b174.
 - Incoming shares: RED OS resolution for audio, then two instrumentation cases pass across eight MIME types and both send modes. Real FileProvider documents retain their original bytes; missing/empty sources are rejected. An actual implicit PDF share cold-launches MainActivity and imports the exact bytes into the dedicated QA graph.
 - M3 gallery follow-up: full-screen native dialog with edge-to-edge system insets, M3 surface/container tokens, TopAppBar and native Save/Share icon actions. All four gallery instrumentation tests pass after the styling change; actual app light-mode capture inspected at `/tmp/logseq-gallery-m3-light.png`.
+- Quick recording: three OS integration tests first fail for absent audio route, shortcut, tile and widget action, then pass. Actual emulator Quick Settings tile click cold-opens exactly one existing M3 recording sheet with Stop/Cancel; cancelled without adding a recording to the graph.

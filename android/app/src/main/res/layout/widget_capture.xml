@@ -9,11 +9,29 @@
     android:orientation="vertical"
     android:padding="18dp">
 
-    <ImageView
-        android:layout_width="28dp"
-        android:layout_height="28dp"
-        android:contentDescription="@string/widget_capture_title"
-        android:src="@drawable/ic_widget_capture" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:contentDescription="@string/widget_capture_title"
+            android:src="@drawable/ic_widget_capture" />
+        <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <ImageButton
+            android:id="@+id/widget_capture_audio"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/record_audio"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="12dp"
+            android:tint="@color/widget_on_surface"
+            android:src="@drawable/ic_record_audio" />
+    </LinearLayout>
 
     <Space
         android:layout_width="1dp"

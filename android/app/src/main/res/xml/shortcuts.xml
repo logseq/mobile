@@ -24,4 +24,16 @@
             android:targetClass="com.logseq.app.MainActivity"
             android:data="logseq://journal" />
     </shortcut>
+    <shortcut
+        android:shortcutId="audio"
+        android:enabled="true"
+        android:icon="@drawable/ic_record_audio"
+        android:shortcutShortLabel="@string/record_audio"
+        android:shortcutLongLabel="@string/record_audio">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.logseq.app"
+            android:targetClass="com.logseq.app.MainActivity"
+            android:data="logseq://audio" />
+    </shortcut>
 </shortcuts>

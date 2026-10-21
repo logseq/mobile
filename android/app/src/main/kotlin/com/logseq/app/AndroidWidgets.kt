@@ -67,6 +67,10 @@ class CaptureWidgetProvider : AppWidgetProvider() {
                     R.id.widget_capture_root,
                     entryPointIntent(context, "logseq://capture", captureRequestCode),
                 )
+                setOnClickPendingIntent(
+                    R.id.widget_capture_audio,
+                    entryPointIntent(context, "logseq://audio", 3),
+                )
             }
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }

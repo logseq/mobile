@@ -10,4 +10,5 @@
     <string name="widget_capture_subtitle">Add to today’s journal</string>
     <string name="widget_journal_description">Open today’s Logseq journal</string>
     <string name="widget_capture_description">Capture a block in today’s Logseq journal</string>
+    <string name="record_audio">Record audio</string>
 </resources>
