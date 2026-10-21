@@ -15,7 +15,7 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
 
       - name: Restore opam root
         id: opam-root
