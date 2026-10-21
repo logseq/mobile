@@ -18,12 +18,15 @@ val buildRevision = providers.exec {
     workingDir(repoRoot)
     commandLine("git", "rev-parse", "--short=8", "HEAD")
 }.standardOutput.asText.map(String::trim)
-val androidAbi = providers.gradleProperty("logseqAndroidAbi").orNull ?: "arm64-v8a"
-val nativeLibrary = File("src/main/jniLibs/$androidAbi/liblogseq_core.so")
+val androidAbi = providers.gradleProperty("logseqAndroidAbi")
+    .orElse(providers.environmentVariable("LOGSEQ_ANDROID_ABI"))
+    .getOrElse("arm64-v8a")
+val nativeLibrary = layout.projectDirectory.file("src/main/jniLibs/$androidAbi/liblogseq_core.so")
 
 val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
     group = "build"
     description = "Builds liblogseq_core.so for $androidAbi via scripts/build-android-native.sh"
+    inputs.property("androidAbi", androidAbi)
     inputs.files(
         "src/main/cpp/CMakeLists.txt",
         "src/main/cpp/logseq_jni.c",
@@ -60,6 +63,11 @@ android {
         versionName = appVersion
         buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The JNI shim and prebuilt OCaml core must use the same ABI. Shipping
+        // a shim for an unbuilt ABI lets installation succeed but startup fail.
+        ndk {
+            abiFilters += androidAbi
+        }
     }
 
     buildTypes {

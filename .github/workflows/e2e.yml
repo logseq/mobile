@@ -443,6 +443,9 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      - name: Verify Android native ABI configuration
+        run: python3 scripts/test-android-native-packaging.py
+
       - name: Restore Android OCaml toolchain
         id: android-toolchain
         uses: actions/cache/restore@v4
