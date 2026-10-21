@@ -11,6 +11,8 @@ unset LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE LOGSEQ_IOS_PROFILE
 
 failures=0
 
+python3 "$repo_root/scripts/test-ios-simulator-build-arguments.py"
+
 if ! grep -Fq 'scripts/build-mobile-ocaml.sh' \
   "$repo_root/scripts/build-mobile-ios-device.sh"; then
   echo "not ok - device build does not delegate OCaml compilation to Dune" >&2

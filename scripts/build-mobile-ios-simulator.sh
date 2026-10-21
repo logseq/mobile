@@ -94,22 +94,22 @@ mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
 native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
 
-swift_extra_args=()
+swift_build_args=(
+  --configuration "$configuration"
+  --disable-keychain
+  --package-path "$repo_root/apple"
+  --product LogseqShell
+  --triple "$triple"
+  --sdk "$sdk_path"
+)
 if [[ ${LOGSEQ_IOS_ENABLE_TESTING:-0} == 1 ]]; then
-  swift_extra_args+=(-Xswiftc -enable-testing)
+  swift_build_args+=(-Xswiftc -enable-testing)
 fi
 
 prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 LOGSEQ_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
-swift build \
-  --configuration "$configuration" \
-  --disable-keychain \
-  --package-path "$repo_root/apple" \
-  --product LogseqShell \
-  --triple "$triple" \
-  --sdk "$sdk_path" \
-  "${swift_extra_args[@]}"
+swift build "${swift_build_args[@]}"
 
 xcodebuild \
   -project "$repo_root/apple/App/Logseq.xcodeproj" \
