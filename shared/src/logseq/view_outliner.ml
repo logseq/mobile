@@ -1,13 +1,16 @@
 open Lui_protocol
 open Lui_elements
 
-let outliner_editor_view block_id_source title_source caret_source send : t
+let outliner_editor_view model_source block_id_source title_source caret_source send : t
     =
  fun context parent ->
    let node = Lui_ui.extension context "outliner-editor" in
    attach context parent node;
    Lui_ui.extension_property context node "input-policy"
      (View_base.string_wire_value Outliner_state.native_input_policy);
+   Lui_ui.extension_property_signal context node "selection-revision"
+     (Signal.map (fun (current : Model.logseq_model) ->
+       IntValue current.outliner_selection_revision) model_source);
    Lui_ui.extension_property_signal context node "block-id"
      (Signal.map View_base.string_wire_value block_id_source);
    Lui_ui.extension_property_signal context node "title"
@@ -352,7 +355,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
           if_ ~test:editing_source
-            (outliner_editor_view block_id_source editing_title_source
+            (outliner_editor_view model_source block_id_source editing_title_source
                editing_caret_source send);
           if_ ~test:not_editing_source
             (outliner_rich_block_view model_source title_source
@@ -428,7 +431,7 @@ let native_outliner_row model_source retained_source row_source send : t =
   Lui_ui.extension_property_signal context node "payload"
     (Signal.map2 (fun current retained -> StringValue (payload current retained)) model_source retained_source);
   ignore ((if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
-    (box ~padding:0 [outliner_editor_view (Signal.map View_base.outliner_row_uuid row_source)
+    (box ~padding:0 [outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
       (Signal.map View_rows.retained_row_editing_title retained_source)
       (Signal.map View_rows.retained_row_editing_caret retained_source) send])) context (Some node));
   Lui_ui.on_event context node (function

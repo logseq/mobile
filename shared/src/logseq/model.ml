@@ -379,6 +379,7 @@ type logseq_model =
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
   ; outliner_editing : outliner_editing option
+  ; outliner_selection_revision : int
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
   ; outliner_section_markers : journal_section_marker list
@@ -701,6 +702,7 @@ let initial () =
     outliner_rows = [];
     outliner_selected_block_ids = [];
     outliner_editing = None;
+    outliner_selection_revision = 0;
     outliner_autocomplete = None;
     outliner_autocomplete_candidates = [];
     outliner_section_markers = [];
@@ -2125,6 +2127,10 @@ let rec update (current : logseq_model) action =
        let resolved = {
          resolved_current with
          in_flight_effects = remove_effect current.in_flight_effects id;
+         outliner_selection_revision =
+           (match succeeded, eff with
+            | true, ChooseOutlinerAutocompleteEffect _ -> current.outliner_selection_revision + 1
+            | _ -> current.outliner_selection_revision);
          effect_error =
            (if succeeded || (match eff with
               | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message

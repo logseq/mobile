@@ -2035,7 +2035,7 @@ let authentication_screen_uses_the_product_name_on_every_host () =
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_editor_schema ()))
-    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
@@ -4963,6 +4963,34 @@ let outliner_typing_retains_reference_candidates () =
     [
       Model.ChangeOutlinerTextEffect (1, "block-a", "Draft [[Project", 15);
     ]
+
+let completion_requests_native_caret_selection () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  let editing = { Model.editing_uuid = "editing"; editing_title = "[[wow]]"; caret_utf16_offset = 5 } in
+  let projection = { (empty_core_projection ()) with selected_graph_id = Some "graph";
+    projection_outliner_editing = Some editing;
+    projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.NodeAutocomplete; autocomplete_query = "wow" };
+    projection_outliner_autocomplete_candidates = [{ Model.candidate_index = 0; candidate_label = "wow"; candidate_value = "page" }];
+    outliner_rows = [outline_row "editing" "[[wow]]"] } in
+  send application (Model.ApplyCoreSnapshot projection);
+  flush application;
+  send application (Model.ChooseOutlinerAutocomplete "page");
+  send application (Model.DequeueEffect 1);
+  send application (Model.ApplyCoreSnapshot { projection with is_outliner_patch = true;
+    projection_outliner_autocomplete = None; projection_outliner_autocomplete_candidates = [];
+    projection_outliner_editing = Some { editing with caret_utf16_offset = 7 } });
+  send application (Model.ResolveEffect (1, true, ""));
+  flush application;
+  let editor = extension_node application "outliner-editor" in
+  check_eq ~msg:"completion explicitly requests caret movement even when its text is unchanged"
+    (extension_property application editor "selection-revision") (Some (Lui_protocol.IntValue 1));
+  send application (Model.ChooseOutlinerAutocomplete "page");
+  send application (Model.DequeueEffect 3);
+  send application (Model.ResolveEffect (3, false, "Rejected"));
+  flush application;
+  check_eq ~msg:"failed completions do not request a caret move"
+    (extension_property application editor "selection-revision") (Some (Lui_protocol.IntValue 1))
 
 let autocomplete_selection_waits_for_pending_text_to_settle () =
   let editing =
@@ -10208,6 +10236,7 @@ let cases =
     case "outliner-typing-retains-reference-candidates" outliner_typing_retains_reference_candidates;
     case "reference-autocomplete-remains-mounted-while-typing" reference_autocomplete_remains_mounted_while_typing;
     case "favorite-blocks-open-at-the-root" favorite_blocks_open_at_the_root;
+    case "completion-requests-native-caret-selection" completion_requests_native_caret_selection;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;

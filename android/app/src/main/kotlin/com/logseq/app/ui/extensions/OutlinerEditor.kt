@@ -43,6 +43,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
     val modelTitle = context.string("title") ?: ""
     val modelCaret = context.int("caret-utf16-offset") ?: -1
+    val selectionRevision = context.int("selection-revision") ?: 0
     val inputPolicy = context.string("input-policy") ?: "{}"
 
     val focusRequester = remember { FocusRequester() }
@@ -56,12 +57,15 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var previousSelection by remember { mutableStateOf(value.selection) }
     var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
     var rememberedModelCaret by remember { mutableIntStateOf(modelCaret) }
+    var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var applyingModel by remember { mutableStateOf(false) }
     var debounceSeq by remember { mutableIntStateOf(0) }
     val publishedTitles = remember { mutableStateListOf<String>() }
 
     // Model → field sync (didUpdateWidget equivalent).
-    LaunchedEffect(modelTitle, modelCaret) {
+    LaunchedEffect(modelTitle, modelCaret, selectionRevision) {
+        val selectionRequested = selectionRevision != rememberedSelectionRevision
+        rememberedSelectionRevision = selectionRevision
         val titleChanged = modelTitle != rememberedModelTitle
         val caretChanged = modelCaret != rememberedModelCaret
         rememberedModelTitle = modelTitle
@@ -69,9 +73,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val acknowledged = publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
-            return@LaunchedEffect
+            if (!selectionRequested) return@LaunchedEffect
         }
-        if (titleChanged || (caretChanged && value.text == modelTitle)) {
+        if (selectionRequested || titleChanged || (caretChanged && value.text == modelTitle)) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++

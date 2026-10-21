@@ -1,4 +1,5 @@
 val outliner_editor_view :
+  Model.logseq_model Signal.signal ->
   string Signal.signal ->
   string Signal.signal ->
   int Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t

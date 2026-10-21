@@ -8,6 +8,7 @@ struct OutlinerInlineEditor: View {
     let blockID: String
     let desiredCaretUTF16Offset: Int?
     var inputPolicy: String = "{}"
+    var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
@@ -25,6 +26,7 @@ struct OutlinerInlineEditor: View {
             accessibilityIdentifier: "field.outliner.block.\(blockID)",
             desiredCaretUTF16Offset: desiredCaretUTF16Offset,
             inputPolicy: inputPolicy,
+            selectionRevision: selectionRevision,
             onTextChange: onTextChange,
             onReturn: onReturn,
             onBackspace: onBackspace,
@@ -135,6 +137,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let accessibilityIdentifier: String
     let desiredCaretUTF16Offset: Int?
     var inputPolicy: String = "{}"
+    var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
@@ -168,12 +171,13 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
         let isSameBlock = context.coordinator.activeBlockID == blockID
-        switch InlineEditorTextReconciliationPolicy.decision(
+        let decision = InlineEditorTextReconciliationPolicy.decision(
             modelText: text,
             localText: context.coordinator.localText,
             isSameBlock: isSameBlock,
             isAwaitingBlockHandoff: context.coordinator.isAwaitingBlockHandoff
-        ) {
+        )
+        switch decision {
         case .keepLocal:
             break
         case .acknowledgeLocal:
@@ -223,6 +227,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     textView.selectedRange = NSRange(location: caretUTF16Offset, length: 0)
                 }
             }
+        }
+        if decision != .keepLocal {
+            context.coordinator.applySelectionRequest(to: textView)
         }
         if !isSameBlock {
             #if DEBUG
@@ -293,10 +300,21 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var pendingHandoffTyping = ""
         var activeBlockID: String
         var isApplyingModel = false
+        var selectionRevision: Int
 
         init(parent: NativeOutlinerTextView) {
             self.parent = parent
             activeBlockID = parent.blockID
+            selectionRevision = parent.selectionRevision
+        }
+
+        func applySelectionRequest(to textView: UITextView) {
+            guard selectionRevision != parent.selectionRevision else { return }
+            selectionRevision = parent.selectionRevision
+            guard let caret = parent.desiredCaretUTF16Offset else { return }
+            isApplyingModel = true
+            defer { isApplyingModel = false }
+            textView.selectedRange = NSRange(location: min(max(0, caret), textView.text.utf16.count), length: 0)
         }
 
         func textViewDidChange(_ textView: UITextView) {

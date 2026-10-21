@@ -54,7 +54,7 @@ import dev.lui.LuiExtensionValueKind
 private const val EDITOR_FINGERPRINT =
     "lui-extension-v1|15:outliner-editor|profiles:android/kotlin," +
         "ios/swiftui|standard-children:0|children:|" +
-        "properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,5:title:string:" +
+        "properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none|events:11:text-change[" +
         "18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[" +
         "18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:" +
@@ -94,6 +94,7 @@ fun logseqExtensionRegistry(
         EDITOR_FINGERPRINT,
         properties = listOf(
             LuiExtensionProperty("caret-utf16-offset", LuiExtensionValueKind.INTEGER),
+            LuiExtensionProperty("selection-revision", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("input-policy", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING),
