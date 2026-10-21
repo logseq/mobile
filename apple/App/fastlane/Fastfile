@@ -3,6 +3,7 @@
 # You can find the documentation at https://docs.fastlane.tools
 
 require "shellwords"
+require "digest"
 
 default_platform(:ios)
 
@@ -37,6 +38,9 @@ platform :ios do
     # LOGSEQ_NATIVE_LINK_INPUTS env lookup; the workflow builds them first.
     link_inputs_file = File.expand_path("../../../../_build/ios-core/device/native-link-inputs.txt", __FILE__)
     ENV["LOGSEQ_NATIVE_LINK_INPUTS"] = File.read(link_inputs_file).strip
+    # Xcode caches SwiftPM's evaluated manifest, including environment-derived
+    # linker inputs. Keep that cache scoped to the native objects it links.
+    native_cache_key = Digest::SHA256.hexdigest(ENV.fetch("LOGSEQ_NATIVE_LINK_INPUTS"))
 
     # CURRENT_PROJECT_VERSION is overridden on the command line so every
     # upload lands a unique build number without editing the xcconfig.
@@ -45,6 +49,7 @@ platform :ios do
       destination: "generic/platform=iOS",
       scheme: "Logseq App",
       configuration: "Release",
+      derived_data_path: File.join(repo_root, "apple/.build/archives", native_cache_key),
       xcargs: "-allowProvisioningUpdates -skipPackagePluginValidation -skipMacroValidation CURRENT_PROJECT_VERSION=#{build_number} LOGSEQ_BUILD_REVISION=#{revision}"
     )
 
