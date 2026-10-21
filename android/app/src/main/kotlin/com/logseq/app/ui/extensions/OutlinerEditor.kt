@@ -19,6 +19,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
@@ -185,7 +186,15 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             .testTag("field.outliner.block.$blockId")
             .semantics { testTagsAsResourceId = true }
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown &&
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isShiftPressed) {
+                    val start = value.selection.min.coerceIn(0, value.text.length)
+                    val end = value.selection.max.coerceIn(start, value.text.length)
+                    val title = value.text.replaceRange(start, end, "\n")
+                    value = TextFieldValue(title, TextRange(start + 1))
+                    observedText = title
+                    debounceSeq++
+                    true
+                } else if (event.type == KeyEventType.KeyDown &&
                     event.key == Key.Backspace &&
                     value.selection.collapsed &&
                     value.selection.start == 0

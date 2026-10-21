@@ -40,7 +40,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 - [x] YouTube timestamps: retain playback start state per video within the rendered document, show timestamps as actions, and update the corresponding existing player.
   Touch OutlinerBlockContent.kt and rich-content tests.
   Verify visible timestamp actions, matching-player seeking, unrelated-player isolation and invalid data fallback.
-- [ ] Shift+Enter: preserve a newline inside the edited block while ordinary Enter keeps its split behavior.
+- [x] Shift+Enter: preserve a newline inside the edited block while ordinary Enter keeps its split behavior.
   Touch OutlinerEditor.kt and editor instrumentation tests.
   Verify insertion/replacement with Unicode selections, actual keyboard modifiers, regular Enter and composition handling.
 - [ ] Background sync: register persistent network-constrained system work and reuse the real authenticated core sync path without creating a second UI runtime.
@@ -84,3 +84,4 @@ Background work follows Android's network, power and scheduling restrictions; it
 - M3 gallery follow-up: full-screen native dialog with edge-to-edge system insets, M3 surface/container tokens, TopAppBar and native Save/Share icon actions. All four gallery instrumentation tests pass after the styling change; actual app light-mode capture inspected at `/tmp/logseq-gallery-m3-light.png`.
 - Quick recording: three OS integration tests first fail for absent audio route, shortcut, tile and widget action, then pass. Actual emulator Quick Settings tile click cold-opens exactly one existing M3 recording sheet with Stop/Cancel; cancelled without adding a recording to the graph.
 - YouTube timestamps: two new rich-content cases reproduce the old duplicate-player/unreadable timestamp behavior. Ten rich-content cases now pass, including a separate timestamp block seeking the existing matching native WebView, retaining both WebView instances and leaving the other video URL unchanged. Invalid timestamps remain readable and disabled.
+- Shift+Enter: two real modified-key tests first reproduce structural splits, then all three keyboard cases pass for append, reversed Unicode selection replacement and ordinary Enter/multiline paste. Combined rich-content, keyboard and native editor toolbar suite: 20 passed.
