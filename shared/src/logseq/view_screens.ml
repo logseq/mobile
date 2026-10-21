@@ -14,12 +14,6 @@ let search_result_row hit_source send : t =
        [
          column ~gap:4 ~padding_vertical:6 ~grow:1.0
            [
-             text
-               ~value_signal:(Signal.map View_base.search_result_title
-                                hit_source)
-               ~style_class:"search-match line-clamp-3"
-               ~accessibility_identifier:("search.result.title." ^ hit.hit_uuid)
-               [];
              if_
                ~test:
                  (Signal.map View_base.search_result_context_present_
@@ -33,6 +27,12 @@ let search_result_row hit_source send : t =
                   ~accessibility_identifier:
                     ("search.result.context." ^ hit.hit_uuid)
                   []);
+             text
+               ~value_signal:(Signal.map View_base.search_result_title
+                                hit_source)
+               ~style_class:"search-match line-clamp-3"
+               ~accessibility_identifier:("search.result.title." ^ hit.hit_uuid)
+               [];
            ];
        ]
    in
@@ -42,11 +42,9 @@ let search_result_row hit_source send : t =
    node
 
 let search_section_heading title identifier : t =
- fun context parent ->
-   let title = heading ~level:5 ~accessibility_identifier:identifier ~value:title [] in
-   (if Lui_ui.host context = KotlinHost then
-      box ~padding_horizontal:20 ~padding_vertical:8 [title]
-    else title) context parent
+  box ~padding_horizontal:20 ~padding_vertical:8
+    [ heading ~level:5 ~foreground:"muted-foreground"
+        ~accessibility_identifier:identifier ~value:title [] ]
 
 type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
 
