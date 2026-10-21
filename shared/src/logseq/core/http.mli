@@ -1,5 +1,5 @@
 (** Minimal HTTP/1.0 client over Unix sockets; HTTPS delegates to the host
-    platform via ctypes FFI. *)
+    platform through OCaml C primitives. *)
 
 type http_endpoint =
   { scheme : string

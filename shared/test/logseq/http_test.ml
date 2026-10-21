@@ -2,6 +2,26 @@ open Test_util
 
 module Http = Http
 
+let () =
+  Callback.register "platform_https_test_call" (fun (fields : string array) ->
+    Gc.full_major ();
+    "200\n" ^ Yojson.Basic.to_string
+      (`List (Array.to_list (Array.map (fun s -> `String s) fields))))
+
+let native_https_arguments_survive_collection () =
+  let url = "https://native-ffi.test/graph" in
+  let body = String.make 32768 'x' ^ "中文" in
+  let expected fields = Ok (Api.response 200 (Yojson.Basic.to_string
+    (`List (List.map (fun s -> `String s) fields)))) in
+  for index = 0 to 15 do
+    let token = "token-" ^ string_of_int index in
+    check_eq (expected ["POST"; url; body; token])
+      (Http.send {Api.method_ = "POST"; url; body = Some body; token});
+    check_eq (expected ["PUT"; url; "/tmp/图片.png"; "image/png"; token])
+      (Http.upload_file {Api.request = {Api.method_ = "PUT"; url; body = None; token};
+        file_path = "/tmp/图片.png"; content_type = "image/png"; headers = []})
+  done
+
 let close_quietly fd =
   try Unix.close fd with Unix.Unix_error _ -> ()
 
@@ -246,6 +266,7 @@ let binary_upload_over_real_socket () =
 
 let cases =
   [
+    case "native HTTPS arguments survive collection" native_https_arguments_survive_collection;
     case "keep alive does not wait for eof" keep_alive_does_not_wait_for_eof;
     case "chunked keep alive does not wait for eof"
       chunked_keep_alive_does_not_wait_for_eof;

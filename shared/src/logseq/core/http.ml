@@ -1,25 +1,17 @@
-open Ctypes
+external https_send_primitive : string -> string -> string -> string -> string
+  = "logseq_https_send"
 
-let https_send_raw =
-  let impl =
-    lazy
-      (Foreign.foreign "logseq_https_send"
-         (string @-> string @-> string @-> string @-> returning string))
-  in
-  fun method_ url body token ->
-    try Lazy.force impl method_ url body token
-    with error -> "ERROR\n" ^ Printexc.to_string error
+external https_upload_file_primitive :
+  string -> string -> string -> string -> string -> string
+  = "logseq_https_upload_file"
 
-let https_upload_file_raw =
-  let impl =
-    lazy
-      (Foreign.foreign "logseq_https_upload_file"
-         (string @-> string @-> string @-> string @-> string
-          @-> returning string))
-  in
-  fun method_ url path content_type token ->
-    try Lazy.force impl method_ url path content_type token
-    with error -> "ERROR\n" ^ Printexc.to_string error
+let https_send_raw method_ url body token =
+  try https_send_primitive method_ url body token
+  with error -> "ERROR\n" ^ Printexc.to_string error
+
+let https_upload_file_raw method_ url path content_type token =
+  try https_upload_file_primitive method_ url path content_type token
+  with error -> "ERROR\n" ^ Printexc.to_string error
 
 type http_endpoint =
   { scheme : string

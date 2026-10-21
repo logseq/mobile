@@ -12,15 +12,18 @@ let response = ref "{\"ok\":true,\"value\":\"00ff\"}"
 let request = ref (Json.from_string "{}")
 
 let transport_failure = ref false
+let collect_during_call = ref false
 
 let () =
   Callback.register "platform_crypto_test_call" (fun input ->
     if !transport_failure then failwith "native crypto unavailable";
     request := Json.from_string input;
+    if !collect_during_call then Gc.full_major ();
     !response)
 
 let reset_transport () =
   transport_failure := false;
+  collect_during_call := false;
   response := "{\"ok\":true,\"value\":\"00ff\"}"
 
 let field name = Util.member name !request
@@ -193,8 +196,21 @@ let malformed_responses_and_native_failure () =
       check_eq (Error "Failure(\"native crypto unavailable\")")
         (engine.random_bytes 2))
 
+let native_crypto_roots_survive_collection () =
+  reset_transport ();
+  collect_during_call := true;
+  Fun.protect ~finally:reset_transport (fun () ->
+    for index = 1 to 32 do
+      let input = Json.to_string (`Assoc ["operation", `String "decryptAES";
+        "ciphertext", `String (String.make (index * 1024) 'a')]) in
+      check_eq !response (call_raw input);
+      check_eq (Json.from_string input) !request;
+      Gc.minor ()
+    done)
+
 let cases =
   [
+    case "native crypto roots survive collection" native_crypto_roots_survive_collection;
     case "native keyring loads offline and keeps graph keys isolated"
       native_keyring_loads_offline_and_keeps_graph_keys_isolated;
     case "native keyring preserves cache misses and transport errors"

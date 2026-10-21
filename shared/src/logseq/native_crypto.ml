@@ -1,7 +1,1 @@
-let call_raw =
-  let impl =
-    lazy
-      (Foreign.foreign "logseq_crypto_call"
-         Ctypes.(string @-> returning string))
-  in
-  fun request -> Lazy.force impl request
+external call_raw : string -> string = "logseq_crypto_call"
