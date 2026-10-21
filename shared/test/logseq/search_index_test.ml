@@ -102,7 +102,27 @@ let match_input_preserves_logseq_boolean_and_phrase_rules () =
       ("block/title", "\"block/title\"*");
       ("left and ", "\"left AND \"*");
       ("say \"hello\"", "\"say \"\"hello\"\"\"*");
+      ("movies\tAND\t", "\"movies\tAND\t\"*");
+      ("movies\nOR\n", "\"movies\nOR\n\"*");
+      ("movies\rNOT\r", "\"movies\rNOT\r\"*");
+      ("movies AND\nmarathon", "movies AND\nmarathon");
+      ("movies OR\nmarathon NOT", "\"movies OR\nmarathon NOT\"*");
     ]
+
+let incomplete_queries_do_not_break_search_or_later_valid_queries () =
+  with_index (fun index ->
+    let db = Ds.conn_db (seeded_conn ()) in
+    Search.refresh index db;
+    List.iter
+      (fun query ->
+        ignore (results index query);
+        ignore (Search.search_hits_page ~offset:0 ~limit:20 index db query);
+        check ~msg:("Search must recover after " ^ query)
+          (find_result index "movies" page_uuid <> None))
+      [ "\""; "[["; "movies AND"; "movies\tAND"; "movies\nOR";
+        "AND movies"; "movies OR ("; "movies NOT -"; "movies : OR title";
+        "movies AND OR movies"; "movies AND (movies"; "movies\000";
+        "电影"; "🙂"; "https://example.com/a?b=c" ])
 
 let fuzzy_scores_and_utf8_segmentation_preserve_search_semantics () =
   check (Search.fuzzy_score "mov" "movies" > Search.fuzzy_score "mov" "my old vase");
@@ -216,6 +236,8 @@ let sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred () =
 
 let cases =
   [
+    case "incomplete queries do not break search or later valid queries"
+      incomplete_queries_do_not_break_search_or_later_valid_queries;
     case "sqlite pages are stable bounded and not capped at one hundred" sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred;
     case "match input preserves logseq boolean and phrase rules"
       match_input_preserves_logseq_boolean_and_phrase_rules;

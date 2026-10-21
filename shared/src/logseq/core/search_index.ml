@@ -91,10 +91,11 @@ let matches_regex pattern input =
     true
   with Not_found -> false
 
-let dangling_boolean_operator input =
-  matches_regex "\\(^\\| \\)\\(AND\\|OR\\|NOT\\) *$" input
+let whitespace_char value = List.mem value [ ' '; '\t'; '\n'; '\r'; '\011'; '\012' ]
 
-let whitespace_char value = List.mem value [ ' '; '\t'; '\n'; '\r' ]
+let dangling_boolean_operator input =
+  let input = String.map (fun ch -> if whitespace_char ch then ' ' else ch) input in
+  matches_regex "\\(^\\| \\)\\(AND\\|OR\\|NOT\\) *$" input
 
 let word_char value =
   let code = Char.code value in
