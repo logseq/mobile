@@ -50,7 +50,7 @@ let schema : (string * Ds.schema_attr) list =
     ("logseq.property.class/extends", many_ref);
     ("logseq.property/built-in?", one);
     ("logseq.property/hide?", one);
-    ("logseq.property/deleted-at", { one with Ds.value_type = Some Ds.InstantType });
+    ("logseq.property/deleted-at", number_attr);
     ("logseq.property.recycle/original-parent", ref_attr);
     ("logseq.property.recycle/original-page", ref_attr);
     ("logseq.property.recycle/original-order", string_attr);
@@ -264,7 +264,10 @@ let page_deletion_is_optimistic_durable_and_rejects_built_ins () =
           (base_db "Old")
       in
       let current = Runtime.create path 42 (Ds.conn_from_db db) Runtime.default_options in
-      check (is_ok (Runtime.delete_page current "page" "delete-page" 100));
+      check ~msg:"deleting a page uses the server's numeric datetime schema"
+        (is_ok (Runtime.delete_page current "page" "delete-page" 100));
+      check_eq ~msg:"the deleted page retains its exact millisecond timestamp"
+        (Graph_read.value (Runtime.db current) 1 "logseq.property/deleted-at") (Some (Ds.Int64 100L));
       check
         (not
            (List.exists
@@ -1738,8 +1741,63 @@ let reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes () =
       (List.exists (fun (op : Pending.pending_operation) -> op.operation_id = "unrelated-conflict"
         && op.state = Pending.Conflicted "permission denied") (Pending.list path))))
 
+let reopening_repairs_only_unconfirmed_legacy_page_deletion_timestamps () =
+  List.iter (fun (state, repair) ->
+    with_store (fun path -> Fun.protect ~finally:(fun () -> cleanup_store path) (fun () ->
+      let page_uuid = "00000000-0000-4000-8000-000000000001" in
+      let db = Ds.db_with [
+        add 1 "block/uuid" (Ds.Uuid page_uuid);
+        add 10 "block/uuid" (Ds.Uuid "00000000-0000-4000-8000-000000000010");
+        Ds.Retract (Ds.Entity_id 1, "block/journal-day", Some (Ds.Int64 20260816L));
+        add 20 "block/uuid" (Ds.Uuid "00000000-0000-4000-8000-000000000020");
+        add 20 "block/name" (Ds.String "recycle");
+        add 20 "block/title" (Ds.String "Recycle")
+      ] (base_db "Old") in
+      let loose_schema = List.map (fun (attr, value) ->
+        if attr = "logseq.property/deleted-at" then attr, one else attr, value) schema in
+      let legacy = Ds.db_with (Ds.Db.datoms db Ds.Eavt () |> List.of_seq
+        |> List.map (fun (d : Ds.datom) -> add d.e d.a d.v)) (Ds.empty_db ~schema:loose_schema ()) in
+      let now = 1792608926350 in
+      let intent = Pending.Delete_page { page_uuid; order = "a0"; deleted_at = now } in
+      let op = { (operation "legacy-delete" intent) with state } in
+      let _, tx, reverse = Journal_sync.capture legacy [
+        add 1 "block/parent" (Ds.Ref 20); add 1 "block/order" (Ds.String "a0");
+        add 1 "logseq.property/deleted-at" (Ds.Instant (Int64.of_int now))] in
+      Pending.save path op;
+      Graph_sqlite.store_pending_tx path op.operation_id tx reverse;
+      let before = Graph_sqlite.pending_tx path op.operation_id in
+      let conn = Ds.conn_from_db db in
+      let current = Runtime.create_base path 42 conn Runtime.default_options in
+      if repair then begin
+        check_eq ~msg:"legacy page deletions recover without changing the timestamp"
+          (Graph_read.value (Runtime.db current) 1 "logseq.property/deleted-at") (Some (Ds.Int64 (Int64.of_int now)));
+        check_eq ~msg:"a known validation failure can resume after repair"
+          (List.map (fun (operation : Pending.pending_operation) -> operation.operation_id) (Runtime.pending_operations current)) ["legacy-delete"];
+        let repaired = Graph_sqlite.pending_tx path op.operation_id in
+        check ~msg:"the invalid recorded transaction is repaired" (repaired <> before);
+        ignore (Runtime.create_base path 42 conn Runtime.default_options);
+        check_eq ~msg:"reopening does not rewrite an already corrected operation"
+          (Graph_sqlite.pending_tx path op.operation_id) repaired;
+        let pending = List.hd (Runtime.pending_operations current) in
+        let _, tx = match Runtime.prepare_sync current pending with Ok value -> value | Error message -> fail message in
+        let journal = match Journal_sync.decode (Json.to_string (`Assoc ["type", `String "tx/batch/ok";
+          "t-before", `Int 42; "t", `Int 43; "txs", `List [`Assoc ["t", `Int 43;
+            "tx-id", `String pending.operation_id; "tx", `String tx]]])) with
+          | Ok value -> value | Error message -> fail message in
+        let ids, changed = match Journal_sync.apply (fun text -> Ok text) conn 42 journal with
+          | Ok value -> value | Error message -> fail message in
+        Runtime.rebase current 43 ids changed;
+        check_eq ~msg:"confirmation clears the recovered deletion" (Pending.list path) []
+      end else
+        check_eq ~msg:"unrelated rejections and unconfirmed submissions retain their exact transaction"
+          (Graph_sqlite.pending_tx path op.operation_id) before)))
+    [Pending.Queued, true; Pending.Retryable, true; Pending.Conflicted "db transact failed", true;
+     Pending.Conflicted "permission denied", false; Pending.Submitted, false; Pending.Accepted 43, false]
+
+
 let cases =
   [
+    case "reopening repairs only unconfirmed legacy page deletion timestamps" reopening_repairs_only_unconfirmed_legacy_page_deletion_timestamps;
     case "new pages appear in the built-in Page collection" new_pages_appear_in_the_builtin_page_collection;
     case "reopening repairs legacy pages and unblocks dependent changes" reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes;
     case "upload activation preserves the staged asset transaction"

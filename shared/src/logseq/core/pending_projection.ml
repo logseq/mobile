@@ -749,7 +749,7 @@ let rec compile db (intent : Ops.pending_intent) =
                 ; ( "block/order"
                   , Ds.One_value (Ds.String value.order) )
                 ; ( "logseq.property/deleted-at"
-                  , Ds.One_value (Ds.Instant (Int64.of_int value.deleted_at)) )
+                  , Ds.One_value (Ds.Int64 (Int64.of_int value.deleted_at)) )
                 ; ( "logseq.property.recycle/original-page"
                   , Ds.One_value (Ds.Ref page_eid) )
                 ]

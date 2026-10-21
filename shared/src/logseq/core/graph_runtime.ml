@@ -286,6 +286,40 @@ let repair_legacy_page_creations runtime =
               end))
       | _ -> ()) (Ops.list runtime.path)
 
+let repair_legacy_page_deletions runtime =
+  let database = Ds.conn_db runtime.conn in
+  List.iter (fun (operation : Ops.pending_operation) ->
+    match operation.intent, operation.state with
+    | Ops.Delete_page page, (Ops.Queued | Ops.Retryable | Ops.Conflicted "db transact failed") ->
+      let undeleted = match Ds.entid database "block/uuid" (Ds.Uuid page.page_uuid) with
+        | Some eid -> Graph_read.value database eid "logseq.property/deleted-at" = None
+        | None -> false in
+      if undeleted then
+        (match Graph_sqlite.pending_tx runtime.path operation.operation_id with
+         | None -> ()
+         | Some (tx, reverse) ->
+           let module Wire = Dev_sync.Wire in
+           let changed = ref false in
+           let rewrite encoded =
+             let items = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string encoded) in
+             let items = List.map (function
+               | Wire.Array ((Wire.Keyword ("db/add" | "db/retract") as op) :: entity ::
+                   Wire.Keyword "logseq.property/deleted-at" :: Wire.Date_ms timestamp :: rest)
+                 when timestamp = Int64.of_int page.deleted_at ->
+                 changed := true;
+                 Wire.Array (op :: entity :: Wire.Keyword "logseq.property/deleted-at" :: Wire.Int64 timestamp :: rest)
+               | item -> item) items in
+             Dev_sync.Transit_codec.to_string (Wire.Array items) in
+           let repaired = rewrite tx in
+           let repaired_reverse = rewrite reverse in
+           if !changed then begin
+             Graph_sqlite.store_pending_tx runtime.path operation.operation_id repaired repaired_reverse;
+             (match operation.state with
+              | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
+              | _ -> ())
+           end)
+    | _ -> ()) (Ops.list runtime.path)
+
 let create_base path server_t conn options =
   let started = Unix.gettimeofday () in
   let search_index =
@@ -324,6 +358,7 @@ let create_base path server_t conn options =
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
   repair_legacy_page_creations runtime;
+  repair_legacy_page_deletions runtime;
   rebase runtime server_t [] [];
   let fresh = match search_index with
     | None -> false

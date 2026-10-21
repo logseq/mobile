@@ -41,8 +41,7 @@ let schema : (string * Ds.schema_attr) list =
     ("block/journal-day", number_attr);
     ("logseq.property/built-in?", one);
     ("logseq.property/hide?", one);
-    ( "logseq.property/deleted-at",
-      { one with Ds.value_type = Some Ds.InstantType } );
+    ("logseq.property/deleted-at", number_attr);
     ("logseq.property.recycle/original-parent", ref_attr);
     ("logseq.property.recycle/original-page", ref_attr);
     ("logseq.property.recycle/original-order", string_attr);
@@ -664,6 +663,7 @@ let recycling_pages_hides_descendants_and_preserves_original_location () =
       { Ops.page_uuid = "page"; order = "a0"; deleted_at = 100 }
   in
   let recycled = apply_intent db intent in
+  check_eq (value recycled "page" "logseq.property/deleted-at") (Some (Ds.Int64 100L));
   check (Projection.satisfied recycled intent);
   check
     (not
