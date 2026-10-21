@@ -156,7 +156,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .accessibilityIdentifier("button.block-task-status-option." + item.uuid)
                     }
                 } label: {
-                    statusIcon(status).frame(width: 22, height: 24)
+                    statusIcon(status).frame(width: OutlinerLayoutMetrics.statusIconSize, height: 24)
                 }
                 .tint(status.color(in: semanticColors))
                 .padding(.trailing, OutlinerLayoutMetrics.statusContentSpacing)
@@ -230,7 +230,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         let asset: String
         if case let .assetName(name) = LGIconPolicy.icons[key] { asset = name }
         else { asset = "task_todo" }
-        return IconImage(name: asset, size: 22)
+        return IconImage(name: asset, size: OutlinerLayoutMetrics.statusIconSize)
             .foregroundStyle(status.color(in: semanticColors))
             .shadow(color: .black.opacity(0.18), radius: 0.6, x: 0, y: 0.5)
     }

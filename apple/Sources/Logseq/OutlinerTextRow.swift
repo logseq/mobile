@@ -158,7 +158,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private func layout(width: CGFloat, apply: Bool) -> CGFloat {
         guard let row else { return 0 }
         let inset = CGFloat(max(0, row.depth)) * 22
-        let statusWidth: CGFloat = row.status == nil ? 0 : 22 + OutlinerLayoutMetrics.statusContentSpacing
+        let statusWidth: CGFloat = row.status == nil ? 0 : OutlinerLayoutMetrics.statusIconSize + OutlinerLayoutMetrics.statusContentSpacing
         let trailing: CGFloat = row.hasChildren ? 28 : 0
         let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
         let iconLeading: CGFloat = row.status != nil ? OutlinerLayoutMetrics.statusLeading : (row.priority != nil ? 20 : 26)
@@ -168,7 +168,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         var height = titleHeight + 4
         if apply {
             bullet.frame = CGRect(x: inset, y: 2, width: 24, height: 24)
-            status.frame = CGRect(x: inset + iconLeading, y: 2, width: 22, height: 24)
+            status.frame = CGRect(x: inset + iconLeading, y: 2, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
             priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
             disclosure.frame = CGRect(x: width - trailing, y: 2, width: 28, height: 24)

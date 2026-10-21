@@ -163,10 +163,15 @@ enum OutlinerLayoutMetrics {
     static let depthSpacerHeight: CGFloat = 0
     static let rowVerticalPadding: CGFloat = 5
     static let bulletContentSpacing: CGFloat = 2
-    // Balance the visible bullet-to-status and status-to-text gaps.
-    static let statusLeading: CGFloat = 22.5
-    static let statusContentSpacing: CGFloat = 7
     static let rootBulletCenterX = bulletHitSize / 2
+    static let statusIconSize: CGFloat = 22
+    static let statusVisibleSpacing: CGFloat = 5
+    // The bullet's visible radius is 3.5 in a 24-point canvas. Task icons
+    // occupy x=1...19 of a 20-unit viewBox. Subtract their transparent inset
+    // from both gaps so the visible edges have the same spacing.
+    private static let statusInkInset = statusIconSize / 20
+    static let statusLeading = rootBulletCenterX + 3.5 + statusVisibleSpacing - statusInkInset
+    static let statusContentSpacing = statusVisibleSpacing - statusInkInset
 
     static func bulletCenterX(depth: Int) -> CGFloat {
         rootBulletCenterX + CGFloat(depth) * indentation
