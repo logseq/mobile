@@ -9,26 +9,38 @@ let session () = Rpc_session.create_session Rpc_session.default_options
 let download_plan_uses_one_shared_protocol () =
   let plan = result (call (session ()) "snapshotDownloadPlan" [
     "baseUrl", `String "https://sync.example.com/api/"; "graphId", `String "graph id"]) in
-  check_eq (U.member "cursorURL" plan) (`String "https://sync.example.com/sync/graph%20id/pull?since=9007199254740991");
+  check_eq (U.member "cursorURL" plan) `Null;
   check_eq (U.member "metadataURL" plan) (`String "https://sync.example.com/sync/graph%20id/snapshot/download")
 
 let metadata_reconciles_cursor_schema_and_encoding () =
-  let response metadata pull schema = call (session ()) "resolveSnapshotDownload" [
-    "metadataBody", `String metadata; "pullBody", `String pull; "graphSchemaVersion", schema] in
-  let resolved = result (response {|{"ok":true,"url":"/download/file","schema-version":"  "}|}
-    {|{"type":"pull/ok","t":42}|} (`String "65.33")) in
+  let response metadata schema = call (session ()) "resolveSnapshotDownload" [
+    "metadataBody", `String metadata; "graphSchemaVersion", schema] in
+  List.iter (fun t ->
+    let resolved = result (response
+      (Printf.sprintf {|{"ok":true,"url":"/download/file","t":%d,"schema-version":"  "}|} t)
+      (`String "65.33")) in
+    let metadata = U.member "metadataBody" resolved |> U.to_string |> J.from_string in
+    check_eq (U.member "t" metadata) (`Int t);
+    check_eq (U.member "schema-version" metadata) (`String "65.33");
+    check_eq (U.member "downloadURL" resolved) (`String "/download/file");
+    check_eq (U.member "contentEncoding" resolved) (`String "identity")) [0; 42];
+  let resolved = result (response
+    {|{"ok":true,"url":"/file","t":42,"schema-version":"65.34","content-encoding":" GZIP "}|}
+    (`String "65.33")) in
   let metadata = U.member "metadataBody" resolved |> U.to_string |> J.from_string in
-  check_eq (U.member "t" metadata) (`Int 42);
-  check_eq (U.member "schema-version" metadata) (`String "65.33");
-  check_eq (U.member "downloadURL" resolved) (`String "/download/file");
-  List.iter (fun (metadata, pull) ->
-    check_eq (U.member "ok" (response metadata pull `Null)) (`Bool false)) [
-    {|{"ok":false,"url":"/file"}|}, {|{"type":"pull/ok","t":42}|};
-    {|{"ok":true,"url":"/file"}|}, {|{"type":"pull/ok","t":-1}|};
-    {|{"ok":true,"url":"/file"}|}, {|{"type":"pull/error","t":42}|};
-    {|{"ok":true,"url":"/file","content-encoding":"br"}|}, {|{"type":"pull/ok","t":42}|};
-    {|{"ok":true,"url":""}|}, {|{"type":"pull/ok","t":42}|};
-    "invalid JSON", {|{"type":"pull/ok","t":42}|}]
+  check_eq (U.member "schema-version" metadata) (`String "65.34");
+  check_eq (U.member "contentEncoding" resolved) (`String "gzip");
+  List.iter (fun metadata ->
+    check_eq (U.member "ok" (response metadata `Null)) (`Bool false)) [
+    {|{"ok":false,"url":"/file","t":42}|};
+    {|{"ok":true,"url":"/file"}|};
+    {|{"ok":true,"url":"/file","t":-1}|};
+    {|{"ok":true,"url":"/file","t":1.5}|};
+    {|{"ok":true,"url":"/file","t":"42"}|};
+    {|{"ok":true,"url":"/file","t":null}|};
+    {|{"ok":true,"url":"/file","t":42,"content-encoding":"br"}|};
+    {|{"ok":true,"url":"","t":42}|};
+    "invalid JSON"]
 
 let bootstrap_reports_download_or_offline_failure () =
   let session = Rpc_test.plain_session () in

@@ -19,34 +19,49 @@ let snapshot_urls_preserve_absolute_and_relative_addresses () =
     "relative";
   Test_util.check_eq (Live_sync.absolute_url "https://example/api" "") ""
 
-let pull_cursor_only_changes_on_recognized_success () =
-  let metadata =
-    { Sync_session.url = "/snapshot";
-      content_encoding = None;
-      baseline_t = 7;
-      schema_version = Some "1";
-      row_count = Some 12 }
-  in
-  Test_util.check_eq
-    (Live_sync.merge_pull_cursor metadata
-       "{\"type\":\"pull/ok\",\"t\":9}")
-    { metadata with baseline_t = 9 };
-  Test_util.check_eq
-    (Live_sync.merge_pull_cursor metadata
-       "{\"type\":\"pull/ok\",\"t\":9.8}")
-    { metadata with baseline_t = 9 };
-  List.iter
-    (fun body ->
-       Test_util.check_eq (Live_sync.merge_pull_cursor metadata body)
-         metadata)
-    [
-      "invalid";
-      "[]";
-      "null";
-      "{}";
-      "{\"type\":\"pull/error\",\"t\":9}";
-      "{\"type\":\"pull/ok\",\"t\":\"9\"}";
-    ]
+let snapshot_download_uses_metadata_position_without_pull () =
+  let server = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  Unix.bind server (Unix.ADDR_INET (Unix.inet_addr_loopback, 0));
+  Unix.listen server 2;
+  let port = match Unix.getsockname server with
+    | Unix.ADDR_INET (_, port) -> port
+    | _ -> failwith "expected inet socket" in
+  let requests = ref [] in
+  let worker = Thread.create (fun () ->
+    for _ = 1 to 2 do
+      let ready, _, _ = Unix.select [server] [] [] 2. in
+      if ready <> [] then begin
+        let client, _ = Unix.accept server in
+        let input = Unix.in_channel_of_descr client in
+        let line = String.trim (input_line input) in
+        requests := line :: !requests;
+        let rec headers () =
+          match input_line input with "\r" | "" -> () | _ -> headers () in
+        headers ();
+        let status, body = match String.split_on_char ' ' line with
+          | ["GET"; "/sync/graph/snapshot/download"; _] ->
+            200, {|{"ok":true,"url":"/sync/graph/snapshot/stream","t":42}|}
+          | ["GET"; "/sync/graph/snapshot/stream"; _] -> 200, "snapshot bytes"
+          | _ -> 404, "unexpected request" in
+        let response = Printf.sprintf
+          "HTTP/1.0 %d OK\r\nContent-Length: %d\r\n\r\n%s"
+          status (String.length body) body in
+        Http.write_all client (Bytes.of_string response);
+        close_in input
+      end
+    done) () in
+  Fun.protect ~finally:(fun () -> Thread.join worker; Unix.close server) (fun () ->
+    let metadata, path = Live_sync.download_snapshot
+      (Live_sync.config (Printf.sprintf "http://127.0.0.1:%d" port) "token" "graph") in
+    Fun.protect ~finally:(fun () -> Sys.remove path) (fun () ->
+      Test_util.check_eq metadata.Sync_session.baseline_t 42;
+      let channel = open_in_bin path in
+      let body = Fun.protect ~finally:(fun () -> close_in channel)
+        (fun () -> really_input_string channel (in_channel_length channel)) in
+      Test_util.check_eq body "snapshot bytes";
+      Test_util.check_eq (List.rev !requests)
+        ["GET /sync/graph/snapshot/download HTTP/1.0";
+         "GET /sync/graph/snapshot/stream HTTP/1.0"]))
 
 let http_results_preserve_accepted_statuses_and_step_context () =
   let created = Api.response 201 "created"
@@ -110,8 +125,8 @@ let asset_mismatch_quotes_values_without_changing_case () =
 let cases =
   [ Test_util.case "snapshot urls preserve absolute and relative addresses"
       snapshot_urls_preserve_absolute_and_relative_addresses;
-    Test_util.case "pull cursor only changes on recognized success"
-      pull_cursor_only_changes_on_recognized_success;
+    Test_util.case "snapshot download uses metadata position without pull"
+      snapshot_download_uses_metadata_position_without_pull;
     Test_util.case "http results preserve accepted statuses and step context"
       http_results_preserve_accepted_statuses_and_step_context;
     Test_util.case "json fields retain original decoding semantics"

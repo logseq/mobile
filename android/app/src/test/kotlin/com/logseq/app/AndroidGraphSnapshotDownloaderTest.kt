@@ -18,8 +18,7 @@ class AndroidGraphSnapshotDownloaderTest {
         server.createContext("/sync/graph") { exchange ->
             requested += exchange.requestURI.path
             val body = when (exchange.requestURI.path) {
-                "/sync/graph/pull" -> """{"type":"pull/ok","t":42,"txs":[]}""".toByteArray()
-                "/sync/graph/snapshot/download" -> """{"ok":true,"url":"/sync/graph/snapshot/stream"}""".toByteArray()
+                "/sync/graph/snapshot/download" -> """{"ok":true,"url":"/sync/graph/snapshot/stream","t":42}""".toByteArray()
                 else -> bytes
             }
             exchange.sendResponseHeaders(200, body.size.toLong())
@@ -34,7 +33,7 @@ class AndroidGraphSnapshotDownloaderTest {
                 callCore = { request ->
                     val action = JSONObject(request).getJSONObject("params").getString("action")
                     val fields = if (action == "snapshotDownloadPlan") {
-                        JSONObject().put("cursorURL", "$baseUrl/sync/graph/pull").put("metadataURL", "$baseUrl/sync/graph/snapshot/download")
+                        JSONObject().put("metadataURL", "$baseUrl/sync/graph/snapshot/download")
                     } else {
                         JSONObject().put("downloadURL", "/sync/graph/snapshot/stream")
                             .put("metadataBody", """{"ok":true,"url":"/sync/graph/snapshot/stream","t":42}""")
@@ -42,7 +41,8 @@ class AndroidGraphSnapshotDownloaderTest {
                     JSONObject().put("ok", true).put("result", fields).toString()
                 },
             )
-            assertEquals("/sync/graph/pull", requested.first())
+            assertEquals(listOf("/sync/graph/snapshot/download", "/sync/graph/snapshot/stream"), requested)
+            assertEquals(42, JSONObject(result.metadataBody).getInt("t"))
             assertEquals(bytes.toList(), java.io.File(result.filePath).readBytes().toList())
         } finally {
             server.stop(0)

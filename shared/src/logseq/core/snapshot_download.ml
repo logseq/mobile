@@ -13,20 +13,16 @@ let plan fields =
   let ( let* ) = Result.bind in
   let* config = config fields in
   let root = Api.api_root config ^ "/sync/" ^ Api.url_encode config.graph_id in
-  Ok (`Assoc ["cursorURL", `String (root ^ "/pull?since=9007199254740991");
-    "metadataURL", `String (root ^ "/snapshot/download")])
+  Ok (`Assoc ["metadataURL", `String (root ^ "/snapshot/download")])
 
 let resolve fields =
   let ( let* ) = Result.bind in
   try
     let* body = string fields "metadataBody" in
-    let* pull = string fields "pullBody" in
     let* metadata = match J.from_string body with
       | `Assoc fields -> Ok fields | _ -> Error "Snapshot metadata must be an object" in
-    let* pull = match J.from_string pull with
-      | `Assoc fields -> Ok fields | _ -> Error "Snapshot cursor must be an object" in
-    let* cursor = match field pull "type", field pull "t" with
-      | Some (`String "pull/ok"), Some (`Int t) when t >= 0 -> Ok t
+    let* () = match field metadata "t" with
+      | Some (`Int t) when t >= 0 -> Ok ()
       | _ -> Error "Snapshot cursor metadata is invalid" in
     let* () = if field metadata "ok" = Some (`Bool true) then Ok ()
       else Error "Snapshot metadata did not report success" in
@@ -41,8 +37,8 @@ let resolve fields =
     let schema = List.find_map (function Some (`String value) when String.trim value <> "" ->
       Some (`String (String.trim value)) | _ -> None)
       [field metadata "schema-version"; field fields "graphSchemaVersion"] in
-    let metadata = ("t", `Int cursor) :: ("schema-version", Option.value ~default:`Null schema)
-      :: List.remove_assoc "t" (List.remove_assoc "schema-version" metadata) in
+    let metadata = ("schema-version", Option.value ~default:`Null schema)
+      :: List.remove_assoc "schema-version" metadata in
     Ok (`Assoc ["metadataBody", `String (J.to_string (`Assoc metadata));
       "downloadURL", `String url; "contentEncoding", `String encoding])
   with Yojson.Json_error message -> Error message

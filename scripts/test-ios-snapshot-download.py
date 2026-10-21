@@ -37,15 +37,19 @@ class SnapshotServer(http.server.BaseHTTPRequestHandler):
         headers = {}
         if route == ["snapshot", "download"]:
             metadata = {"ok": True, "key": f"stream/{graph_id}.snapshot",
-                        "url": f"/sync/{graph_id}/snapshot/stream"}
+                        "url": f"/sync/{graph_id}/snapshot/stream",
+                        "t": -1 if graph_id == "invalid-cursor" else 48192}
+            if graph_id == "missing-cursor":
+                del metadata["t"]
             if graph_id == "metadata-schema":
                 metadata["schema-version"] = "65.33"
             if graph_id.endswith("gzip") and graph_id != "unadvertised-gzip":
                 metadata["content-encoding"] = "gzip"
             body = json.dumps(metadata).encode()
         elif route == ["pull"]:
-            cursor = -1 if graph_id == "invalid-cursor" else 48192
-            body = json.dumps({"type": "pull/ok", "t": cursor, "txs": []}).encode()
+            self.server.pull_requests.append(self.path)
+            self.send_error(404)
+            return
         elif route == ["snapshot", "stream"]:
             body = gzip.compress(SNAPSHOT) if graph_id.endswith("gzip") else SNAPSHOT
             if graph_id == "nested-gzip":
@@ -99,6 +103,7 @@ def main():
         server.core = subprocess.Popen([str(ROOT / "_build/default/shared/test/transport_host.exe"), "snapshot-protocol"],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         server.core_lock = threading.Lock()
+        server.pull_requests = []
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -109,6 +114,8 @@ def main():
             server.server_close()
             server.core.stdin.close()
             server.core.wait(timeout=10)
+        if server.pull_requests:
+            raise SystemExit(f"Unexpected pull requests: {server.pull_requests}")
         raise SystemExit(result.returncode)
 
 

@@ -89,7 +89,7 @@ public enum LogseqGraphWebSocketFailurePolicy {
 
 
 public enum LogseqGraphSyncHTTP {
-    private struct Plan: Decodable { let cursorURL: String; let metadataURL: String }
+    private struct Plan: Decodable { let metadataURL: String }
     private struct Download: Decodable { let metadataBody: String; let downloadURL: String; let contentEncoding: String }
     private struct Response<T: Decodable>: Decodable { let ok: Bool; let result: T?; let error: LogseqCoreError? }
 
@@ -121,16 +121,13 @@ public enum LogseqGraphSyncHTTP {
     ) async throws -> LogseqGraphSnapshotArtifact {
         await progress("preparing")
         let plan = try await shared("snapshotDownloadPlan", ["baseUrl": baseURL, "graphId": graphID], callCore: callCore, as: Plan.self)
-        guard let cursorURL = URL(string: plan.cursorURL), let metadataURL = URL(string: plan.metadataURL) else {
+        guard let metadataURL = URL(string: plan.metadataURL) else {
             throw URLError(.badURL)
         }
-        let (cursorData, cursorResponse) = try await URLSession.shared.data(for: request(cursorURL, accessToken: accessToken))
-        try requireSuccess(cursorResponse)
         let (metadataData, metadataResponse) = try await URLSession.shared.data(for: request(metadataURL, accessToken: accessToken))
         try requireSuccess(metadataResponse)
         let resolved = try await shared("resolveSnapshotDownload", [
             "metadataBody": String(decoding: metadataData, as: UTF8.self),
-            "pullBody": String(decoding: cursorData, as: UTF8.self),
             "graphSchemaVersion": graphSchemaVersion ?? ""
         ], callCore: callCore, as: Download.self)
         guard let downloadURL = URL(string: resolved.downloadURL, relativeTo: metadataURL) else { throw URLError(.badURL) }

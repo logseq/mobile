@@ -94,36 +94,12 @@ let absolute_url base_url url =
     Api.api_root (config base_url "" "") ^ url
   else url
 
-let merge_pull_cursor metadata body =
-  try
-    let input = Json.from_string body in
-    if json_string "type" input = Some "pull/ok" then
-      match json_int "t" input with
-      | Some t ->
-        { metadata with Sync_session.baseline_t = t }
-      | None -> metadata
-    else metadata
-  with _ -> metadata
-
 let download_snapshot cfg =
   let path = "/sync/" ^ Api.url_encode cfg.Api.graph_id in
-  let pull = expect "snapshot watermark" [ 200 ]
-      (Api.request cfg "GET" (path ^ "/pull?since=9007199254740991") None) in
   let response = expect "snapshot metadata" [ 200 ]
       (Api.request cfg "GET" (path ^ "/snapshot/download") None) in
-  let cursor =
-    match json_int "t" (json_object pull.Api.body) with
-    | Some t when t >= 0 -> t
-    | _ -> fail "snapshot watermark" "missing non-negative cursor"
-  in
-  let fields = match Json.from_string response.Api.body with
-    | `Assoc fields -> fields
-    | _ -> fail "snapshot metadata" "expected object"
-  in
   let metadata = require_ok "decode snapshot metadata"
-      (Sync_session.decode_snapshot_metadata
-         (Json.to_string (`Assoc (("t", `Int cursor) :: List.remove_assoc "t" fields)))) in
-  let metadata = merge_pull_cursor metadata pull.Api.body in
+      (Sync_session.decode_snapshot_metadata response.Api.body) in
   let request =
     {
       Api.method_ = "GET";

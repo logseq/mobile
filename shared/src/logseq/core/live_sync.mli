@@ -18,8 +18,6 @@ val remove_file : string -> unit
 val remove_tree : string -> unit
 val with_temp_dir : string -> (string -> 'a) -> 'a
 val absolute_url : string -> string -> string
-val merge_pull_cursor :
-  Sync_session.snapshot_metadata -> string -> Sync_session.snapshot_metadata
 val download_snapshot :
   Api.api_config -> Sync_session.snapshot_metadata * string
 val import_downloaded :

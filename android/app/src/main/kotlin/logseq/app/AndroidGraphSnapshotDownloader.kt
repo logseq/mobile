@@ -25,10 +25,9 @@ class AndroidGraphSnapshotDownloader {
     ): AndroidDownloadedGraphSnapshot {
         val plan = shared(callCore, "snapshotDownloadPlan", JSONObject().put("baseUrl", baseUrl).put("graphId", graphId))
         val metadataUrl = URL(plan.getString("metadataURL"))
-        val cursorBody = readText(URL(plan.getString("cursorURL")), accessToken, "Snapshot cursor")
         val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
         val resolved = shared(callCore, "resolveSnapshotDownload", JSONObject()
-            .put("metadataBody", metadataBody).put("pullBody", cursorBody))
+            .put("metadataBody", metadataBody))
         val snapshotUrl = URL(metadataUrl, resolved.getString("downloadURL"))
 
         val directory = File(workingDirectory)

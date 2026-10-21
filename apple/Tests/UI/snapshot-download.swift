@@ -5,6 +5,7 @@ private final class ImportRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var importedSchema: String?
     private var importedBytes: Data?
+    private var importedT: Int?
 
     func record(_ request: String) throws {
         let json = try JSONSerialization.jsonObject(with: Data(request.utf8)) as! [String: Any]
@@ -17,12 +18,13 @@ private final class ImportRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         importedSchema = metadata["schema-version"] as? String
         importedBytes = bytes
+        importedT = metadata["t"] as? Int
     }
 
     func matches(schema: String?, bytes: Data) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return importedSchema == schema && importedBytes == bytes
+        return importedSchema == schema && importedBytes == bytes && importedT == 48192
     }
 }
 
@@ -55,6 +57,7 @@ private func executeSharedProtocol(_ request: String, baseURL: String) -> String
             ("missing-schema", nil, ""),
             ("blank-schema", "  ", ""),
             ("invalid-cursor", "65.33", nil),
+            ("missing-cursor", "65.33", nil),
             ("missing-row-count", "65.33", "65.33"),
             ("transport-gzip", "65.33", "65.33"),
             ("file-gzip", "65.33", "65.33"),
