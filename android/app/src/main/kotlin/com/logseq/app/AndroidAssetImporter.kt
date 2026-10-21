@@ -126,31 +126,19 @@ class AndroidAssetImporter(
                 val uuid = UUID.randomUUID().toString()
                 val directory = File(activity.cacheDir, assetsDirectory).apply { mkdirs() }
                 val destination = File(directory, "$uuid-$title")
-                val digest = MessageDigest.getInstance("SHA-256")
-                var size = 0L
                 activity.contentResolver.openInputStream(uri).use { input ->
                     requireNotNull(input) { "Could not open selected asset" }
                     destination.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            output.write(buffer, 0, count)
-                            digest.update(buffer, 0, count)
-                            size += count
-                        }
+                        input.copyTo(output)
                     }
                 }
-                require(size > 0) { "Selected asset is empty" }
-                importedAsset(
+                importedFile(
                     uuid = uuid,
                     file = destination,
                     title = title,
                     contentType = runCatching {
                         activity.contentResolver.getType(uri)
                     }.getOrNull() ?: mimeTypeFor(destination),
-                    size = size,
-                    checksum = digest.digest().toHex(),
                 )
             }.onFailure { error ->
                 logError("Document import failed", error)
@@ -161,10 +149,13 @@ class AndroidAssetImporter(
         file: File,
         title: String,
         contentType: String,
+        uuid: String = UUID.randomUUID().toString(),
     ): Map<String, Any> {
         require(file.isFile && file.length() > 0) { "Imported asset is empty" }
+        val prepared = AndroidImageCompression.prepare(file, title, contentType)
+        val stored = prepared.file
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
+        stored.inputStream().use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
                 val count = input.read(buffer)
@@ -172,14 +163,16 @@ class AndroidAssetImporter(
                 digest.update(buffer, 0, count)
             }
         }
-        return importedAsset(
-            uuid = UUID.randomUUID().toString(),
-            file = file,
-            title = title,
-            contentType = contentType,
-            size = file.length(),
+        val result = importedAsset(
+            uuid = uuid,
+            file = stored,
+            title = prepared.title,
+            contentType = prepared.contentType,
+            size = stored.length(),
             checksum = digest.digest().toHex(),
         )
+        if (stored != file) file.delete()
+        return result
     }
 
     private fun importedAsset(
