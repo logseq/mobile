@@ -78,7 +78,7 @@ val toolbar_button :
   Lui_elements.icon ->
   string -> string -> string -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_selection_toolbar :
-  Lui_ui.ui_context -> (Model.logseq_action -> 'a) -> Lui_elements.t
+  Lui_ui.ui_context -> Model.logseq_model Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_autocomplete_row :
   Lui_ui.ui_context ->
   Model.outliner_autocomplete_candidate Signal.signal ->

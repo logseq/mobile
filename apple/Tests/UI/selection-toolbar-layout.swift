@@ -46,6 +46,7 @@ import SwiftUI
                 $0.bounds.height >= 44 && $0.bounds.height <= 60 && rect($0).minY > window.bounds.height - 120
             }) else { throw failure("Missing native selection scroll viewport") }
             let viewport = rect(scroll)
+            let minimumWidth: CGFloat = width >= 600 ? 58 : (width >= 390 ? 50 : 46)
             guard let cells = descendants(scroll).first(where: {
                 $0.subviews.count == 6 && $0.subviews.allSatisfy {
                     $0.bounds.width >= 44 && $0.bounds.height >= 44
@@ -55,7 +56,7 @@ import SwiftUI
                 _ = try model("button.outliner.selection." + name)
                 let frame = rect(cells[index])
                 guard frame.minX >= viewport.minX - 0.5, frame.maxX <= viewport.maxX + 0.5,
-                    frame.width >= 44, frame.height >= 44 else {
+                    frame.width >= minimumWidth, frame.height >= 44 else {
                     throw failure("Five full-size actions must fit in the capsule at width \(width): \(name), \(frame), viewport \(viewport)")
                 }
                 print("SELECTION width=\(width) action=\(name) frame=\(frame)")

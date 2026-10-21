@@ -156,7 +156,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
-        View_outliner.outliner_selection_toolbar context send;
+        View_outliner.outliner_selection_toolbar context model_source send;
         box ~height:21 [];
       ]
   in
@@ -795,7 +795,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
              if_
                ~test:(Signal.map View_base.bottom_chrome_selection_
                         model_source)
-               (View_outliner.outliner_selection_toolbar context send);
+               (View_outliner.outliner_selection_toolbar context model_source send);
            ])
           context (Some node));
      ignore

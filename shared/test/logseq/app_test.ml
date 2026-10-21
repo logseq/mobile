@@ -8638,6 +8638,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   let application = App.create (ios_backend ()) in
   let row = outline_row "parent" "Parent" in
   start application;
+  send application (Model.ApplyViewportWidth 393);
   send application
     (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
        None None [] [ "parent" ] [ row ] false []);
@@ -8690,7 +8691,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
          caption;
        check_eq ~msg:"selection actions retain main's fixed widths"
          (property_int renderer button Lui_protocol.WidthValue)
-         (if index = 6 then 52 else 44))
+         (if index = 6 then 52 else 50))
     [
       (0, "app:toolbar-copy", "Copy");
       (1, "app:toolbar-outdent", "Outdent");

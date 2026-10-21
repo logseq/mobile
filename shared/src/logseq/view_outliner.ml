@@ -600,7 +600,7 @@ let toolbar_button icon label identifier action send : t =
       ignore (send (Model.PerformOutlinerToolbarAction action)))
     []
 
-let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
+let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
       ~background:"surface-container-high" ~corner_radius:20
@@ -629,12 +629,16 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
       ]
   else
     let apple_button icon label identifier action : t =
-      button ~icon ~variant:`ghost ~width:44 ~height:46
+      View_base.with_int_prop_signal WidthValue
+        (Signal.map (fun (current : Model.logseq_model) ->
+          if current.viewport_width >= Model.wide_content_breakpoint then 58
+          else if current.viewport_width >= 390 then 50 else 46) model_source)
+        (button ~icon ~variant:`ghost ~height:46
         ~icon_placement:`top ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->
           ignore (send (Model.PerformOutlinerToolbarAction action)))
-        ~text:label []
+        ~text:label [])
     in
     toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
