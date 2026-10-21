@@ -1517,6 +1517,19 @@ let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
      tweak
    | _ -> elem context parent
 
+let with_reading_insets (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   match Lui_ui.profile context with
+   | { profile_os = IOS; profile_host = SwiftUIHost }
+   | { profile_os = AndroidOS; profile_host = KotlinHost } ->
+     let tweak = Lui_ui.platform_tweak context "native-adaptive-insets" in
+     Lui_ui.extension_property context tweak "breakpoint" (IntValue 600);
+     Lui_ui.extension_property context tweak "wide-inset" (IntValue 16);
+     ignore (elem context (Some tweak));
+     Lui_elements.attach context parent tweak;
+     tweak
+   | _ -> elem context parent
+
 let icon_of_wire_name (name : string) : Lui_elements.icon =
   if String_kit.starts_with ~prefix:"app:" name then
     `app (String.sub name 4 (String.length name - 4))

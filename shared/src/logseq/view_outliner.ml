@@ -925,7 +925,8 @@ let outliner_entries context model_source ~source send : t =
     mount_context parent
 
 let node_screen (context : Lui_ui.ui_context) model_source send : t =
-  column ~accessibility_identifier:"screen.node"
+  View_base.with_reading_insets
+    (column ~accessibility_identifier:"screen.node"
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
@@ -949,4 +950,4 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
             (box ~padding_horizontal:8 [ add_first_block_button model_source send ]);
           box ~height:120 [];
         ]);
-    ]
+    ])

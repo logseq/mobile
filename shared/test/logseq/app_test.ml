@@ -3840,6 +3840,21 @@ let graph_picker_surfaces_open_graph_effect_failures () =
     (View_base.graph_picker_error_message failed)
     "Snapshot download timed out"
 
+let reading_content_uses_adaptive_insets_on_both_native_hosts () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with selected_graph_id = Some "local" });
+    send application (Model.ApplyAuthentication ("signedIn", None));
+    flush application;
+    let tweak = extension_node application "native-adaptive-insets" in
+    check ~msg:"reading content delegates available-width layout to its native host" (tweak <> -1);
+    check_eq ~msg:"both hosts share the 600-point wide-content boundary"
+      (Some (Lui_protocol.IntValue 600)) (extension_property application tweak "breakpoint");
+    check_eq ~msg:"wide reading content adds equal 16-point side insets"
+      (Some (Lui_protocol.IntValue 16)) (extension_property application tweak "wide-inset"))
+    [ ios_backend (); kotlin_backend () ]
+
 let shared_graphs_have_a_distinct_section_and_keep_downloaded_membership () =
   let projection =
     match Response_snapshot.decode_response
@@ -9779,6 +9794,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "reading-content-uses-adaptive-insets" reading_content_uses_adaptive_insets_on_both_native_hosts;
     case "sync-checkpoint-encoding-is-lg-owned" sync_checkpoint_encoding_is_lg_owned;
     case "flashcard-state-codec-is-lg-owned" flashcard_state_codec_is_lg_owned;
     case "edn-codec-is-lg-owned" edn_codec_is_lg_owned;

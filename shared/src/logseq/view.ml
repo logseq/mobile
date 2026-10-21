@@ -174,6 +174,14 @@ let liquid_glass_schema () =
   Lui_extension.tweak "liquid-glass" [ profile IOS SwiftUIHost ]
     [ Lui_extension.property "shape" StringScalar true None ]
 
+let adaptive_content_insets_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  Lui_extension.tweak "native-adaptive-insets"
+    [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
+    [ property "breakpoint" IntScalar true None;
+      property "wide-inset" IntScalar true None ]
+
 let extension_registry () =
   let registry = Lui_extension.registry () in
   Lui_extension.register_component registry (outliner_editor_schema ());
@@ -189,4 +197,5 @@ let extension_registry () =
   Lui_extension.register_component registry
     (native_search_presentation_schema ());
   Lui_extension.register_tweak registry (liquid_glass_schema ());
+  Lui_extension.register_tweak registry (adaptive_content_insets_schema ());
   registry

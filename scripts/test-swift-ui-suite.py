@@ -18,7 +18,9 @@ def main():
         core / "logseq_https_darwin.o", core / "logseq_crypto_darwin.o",
         toolchain / (triple + "-5.5.0/lib/ocaml/libthreadsnat.a")])) + ":-L" + str(toolchain / ("libffi-" + triple + "/lib"))
     environment["LOGSEQ_SIMULATOR_ENTITLEMENTS"] = str(core / "simulator-entitlements.plist")
-    subprocess.run(["swift", "build", "--package-path", str(ROOT / "apple"), "--disable-sandbox",
+    configuration = environment.get("LOGSEQ_IOS_CONFIGURATION", "debug")
+    subprocess.run(["swift", "build", "--configuration", configuration,
+                    "--package-path", str(ROOT / "apple"), "--disable-sandbox",
                     "--triple", triple, "--sdk", sdk, "--target", "LogseqTests", "-Xswiftc", "-enable-testing"],
                    env=environment, check=True)
     environment["LOGSEQ_SWIFT_UI_TEST_SUITE"] = "1"

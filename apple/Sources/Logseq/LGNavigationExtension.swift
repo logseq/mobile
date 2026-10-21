@@ -30,6 +30,24 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try registry.registerTweak(
+            LUIAppleTweak(
+                identifier: "native-adaptive-insets",
+                fingerprint: "lui-tweak-v1|22:native-adaptive-insets|profiles:android/kotlin,ios/swiftui|properties:10:breakpoint:int:required:none,10:wide-inset:int:required:none",
+                properties: [
+                    .init(name: "breakpoint", kind: .int, isRequired: true),
+                    .init(name: "wide-inset", kind: .int, isRequired: true),
+                ]
+            ) { content, context in
+                let breakpoint: CGFloat
+                let wideInset: CGFloat
+                if case let .int(value) = context.property("breakpoint") { breakpoint = CGFloat(value) }
+                else { breakpoint = .infinity }
+                if case let .int(value) = context.property("wide-inset") { wideInset = CGFloat(value) }
+                else { wideInset = 0 }
+                return AnyView(LGAdaptiveContentInsets(content: content, breakpoint: breakpoint, wideInset: wideInset))
+            }
+        )
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-top-notification",

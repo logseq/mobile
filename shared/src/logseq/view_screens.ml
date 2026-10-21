@@ -252,7 +252,8 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
 
 let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
     send : t =
-  box ~grow:1.0 ~accessibility_identifier:"layout.outliner.horizontal-inset"
+  View_base.with_reading_insets
+    (box ~grow:1.0 ~accessibility_identifier:"layout.outliner.horizontal-inset"
     [
       (* Each graph owns a fresh native scroll view and virtual window. *)
       keyed
@@ -313,7 +314,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                [ View_outliner.add_first_block_button model_source send ]);
           box ~height:120 [];
           ]));
-    ]
+    ])
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =

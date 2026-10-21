@@ -167,6 +167,19 @@ fun logseqExtensionRegistry(
     ) {
         OutlinerBlockContent(this, resolveAssetPath)
     }
+    registerTweak(
+        "native-adaptive-insets",
+        "lui-tweak-v1|22:native-adaptive-insets|profiles:android/kotlin,ios/swiftui|properties:10:breakpoint:int:required:none,10:wide-inset:int:required:none",
+        properties = listOf(
+            LuiExtensionProperty("breakpoint", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("wide-inset", LuiExtensionValueKind.INTEGER, required = true),
+        ),
+        builder = {
+            AdaptiveContentInsets(int("breakpoint") ?: Int.MAX_VALUE, int("wide-inset") ?: 0) {
+                Children()
+            }
+        },
+    )
     register(
         "native-navigation-stack",
         NAVIGATION_FINGERPRINT,
