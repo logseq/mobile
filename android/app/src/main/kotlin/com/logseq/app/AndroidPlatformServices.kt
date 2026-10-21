@@ -1,6 +1,5 @@
 package com.logseq.app
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -28,18 +27,18 @@ internal fun resolveAppFile(filesDirectory: File, path: String): File {
     return resolveAndroidFile(filesDirectory, path)
 }
 
-class AndroidPlatformServices(private val activity: Activity) {
-    private val preferences = activity.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+class AndroidPlatformServices(private val context: Context) {
+    private val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
     private val snapshotDownloader = AndroidGraphSnapshotDownloader()
 
     fun loadStorageState(): Map<String, Any> {
-        val graphsDirectory = File(activity.filesDir, "graphs").apply { mkdirs() }
+        val graphsDirectory = File(context.filesDir, "graphs").apply { mkdirs() }
         val localGraphIds = AndroidGraphLocalStorage.localGraphIds(graphsDirectory)
-        val packageInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val rawTabs = preferences.getString("logseq.mobile.sidebarTabs", "").orEmpty()
         val baseUrl = normalizedBaseUrl(preferences.getString("logseq.baseURL", null))
         return mapOf(
-            "databasePath" to File(activity.filesDir, "logseq.sqlite").path,
+            "databasePath" to File(context.filesDir, "logseq.sqlite").path,
             "graphsDirectory" to graphsDirectory.path,
             "baseUrl" to baseUrl,
             "selectedGraphId" to preferences.getString("logseq.selectedGraphId", "").orEmpty(),
@@ -97,7 +96,7 @@ class AndroidPlatformServices(private val activity: Activity) {
     }
 
     fun copyText(text: String) {
-        val clipboard = activity.getSystemService(ClipboardManager::class.java)
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("Logseq", text))
     }
 
@@ -183,7 +182,7 @@ class AndroidPlatformServices(private val activity: Activity) {
 
     fun deleteLocalGraph(graphId: String): Boolean {
         if (graphId.isBlank() || graphId.contains('/') || graphId.contains("..")) return false
-        val directory = AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId)
+        val directory = AndroidGraphLocalStorage.directory(File(context.filesDir, "graphs"), graphId)
         if (!directory.exists()) return true
         return directory.deleteRecursively()
     }
@@ -191,7 +190,7 @@ class AndroidPlatformServices(private val activity: Activity) {
     fun exportGraphDatabase(): Boolean {
         val graphId = preferences.getString("logseq.selectedGraphId", "").orEmpty()
         if (graphId.isBlank()) return false
-        val database = File(AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId), "graph.sqlite")
+        val database = File(AndroidGraphLocalStorage.directory(File(context.filesDir, "graphs"), graphId), "graph.sqlite")
         if (!database.isFile) return false
         return presentPageShare("", JSONArray(listOf(database.path)).toString())
     }
@@ -227,14 +226,14 @@ class AndroidPlatformServices(private val activity: Activity) {
             path
         } else {
             val graphId = preferences.getString("logseq.selectedGraphId", "").orEmpty()
-            val directory = AndroidGraphLocalStorage.directory(File(activity.filesDir, "graphs"), graphId)
+            val directory = AndroidGraphLocalStorage.directory(File(context.filesDir, "graphs"), graphId)
             val graphFile = File(directory, path)
             if (graphId.isNotBlank() && graphFile.isFile) graphFile.path
-            else resolveAppFile(activity.filesDir, path).path
+            else resolveAppFile(context.filesDir, path).path
         }
 
     fun deleteTemporaryFile(path: String) {
-        val graphsDirectory = File(activity.filesDir, "graphs").canonicalFile
+        val graphsDirectory = File(context.filesDir, "graphs").canonicalFile
         val file = File(path).canonicalFile
         val isGraphTemporaryFile = file.path.startsWith(graphsDirectory.path + File.separator) &&
             file.name.startsWith("logseq-graph-") &&
@@ -243,13 +242,13 @@ class AndroidPlatformServices(private val activity: Activity) {
     }
 
     private fun contentUri(file: File): Uri = FileProvider.getUriForFile(
-        activity,
-        "${activity.packageName}.fileprovider",
+        context,
+        "${context.packageName}.fileprovider",
         file,
     )
 
     private fun start(intent: Intent): Boolean = runCatching {
-        activity.startActivity(intent)
+        context.startActivity(intent)
         true
     }.getOrDefault(false)
 

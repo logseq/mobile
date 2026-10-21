@@ -6,8 +6,8 @@ import java.io.File
 
 // Kotlin port of the former core_bootstrap.dart: restore the core's
 // persisted state — open the catalog database, dispatch configure with
-// baseUrl/graphId/token, then open the selected local graph when it is
-// not encrypted.
+// baseUrl/graphId/token, then open the selected local graph when its
+// encryption key is available.
 internal data class CoreStartupState(
     val databasePath: String,
     val graphsDirectory: String,
@@ -33,7 +33,7 @@ internal class CoreBootstrap(
             request = request(method = "open", path = state.databasePath),
         )
         val catalog = successfulResult(catalogResponse, operation = "open catalog")
-        successfulResult(
+        val configured = successfulResult(
             call(
                 operation = "configure graph",
                 request = request(
@@ -50,9 +50,10 @@ internal class CoreBootstrap(
         )
 
         var graphResponse: String? = null
+        val encrypted = graphIsEncrypted(catalog, state.selectedGraphId)
         if (state.selectedGraphId.isNotEmpty() &&
             state.localGraphIds.contains(state.selectedGraphId) &&
-            !graphIsEncrypted(catalog, state.selectedGraphId)
+            (!encrypted || configured.optBoolean("isGraphUnlocked"))
         ) {
             val graphs = catalog.optJSONArray("graphs")
             val name = (0 until (graphs?.length() ?: 0)).asSequence()
@@ -69,7 +70,7 @@ internal class CoreBootstrap(
                         .put("graphId", state.selectedGraphId)
                         .put("activePath", "$directory/graph.sqlite")
                         .put("checkpointPath", "$directory/sync.checkpoint")
-                        .put("isEncrypted", false)
+                        .put("isEncrypted", encrypted)
                         .toString(),
                 ),
             )

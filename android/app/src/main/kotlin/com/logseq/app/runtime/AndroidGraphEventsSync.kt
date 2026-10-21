@@ -21,10 +21,12 @@ internal class AndroidGraphEventsSync(
     private val applyResponse: suspend (String) -> Unit,
     private val onChangesApplied: suspend () -> Unit,
     private val isCancelled: () -> Boolean,
+    private val stopAfterFirstPull: Boolean = false,
 ) {
     data class Connection(val graphId: String, val baseUrl: String, val accessToken: String)
 
     sealed class SessionOutcome {
+        object Completed : SessionOutcome()
         object SnapshotRequired : SessionOutcome()
         data class Retry(val delayMilliseconds: Long, val message: String?) : SessionOutcome()
         object Stopped : SessionOutcome()
@@ -47,6 +49,7 @@ internal class AndroidGraphEventsSync(
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
         var socket: WebSocket? = null
+        var receivedFrame = false
         try {
             var transport = dispatch("beginSyncTransport", "{}")
             generation = transport.getInt("generation")
@@ -74,13 +77,22 @@ internal class AndroidGraphEventsSync(
                             command.getLong("delayMs"), transport.optString("error").takeIf { it.isNotEmpty() && it != "null" }
                         )
                         "snapshot" -> return SessionOutcome.SnapshotRequired
-                        "sync-pending" -> onChangesApplied()
+                        "sync-pending" -> {
+                            onChangesApplied()
+                            if (stopAfterFirstPull && receivedFrame) {
+                                event("cancelled")
+                                return SessionOutcome.Completed
+                            }
+                        }
                         else -> error("Unsupported sync transport command")
                     }
                 }
                 if (socket == null) return SessionOutcome.Stopped
                 transport = when (val frame = frames.receive()) {
-                    is Frame.Text -> event("frame", body = frame.value)
+                    is Frame.Text -> {
+                        receivedFrame = true
+                        event("frame", body = frame.value)
+                    }
                     is Frame.Failure -> event("failed", message = frame.message)
                     Frame.Closed -> event("closed")
                 }

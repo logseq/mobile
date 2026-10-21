@@ -27,7 +27,7 @@ import org.json.JSONObject
 
 internal class CognitoAuthProvider(
     context: Context,
-    private val activity: Activity
+    private val activity: Activity? = null
 ) {
     private val applicationContext = context.applicationContext
     private val configuration = CognitoConfiguration.load(applicationContext)
@@ -57,12 +57,13 @@ internal class CognitoAuthProvider(
             saveTokens(refreshed)
             refreshed.idToken
         } catch (error: Throwable) {
-            clearTokens()
+            if (error is TokenRequestException && error.code in setOf("invalid_grant", "invalid_token")) clearTokens()
             throw error
         }
     }
 
     suspend fun signIn(): String {
+        val activity = requireNotNull(activity) { "Sign-in requires an activity" }
         val state = randomURLSafeString(24)
         val verifier = randomURLSafeString(64)
         val challenge = base64URL(
@@ -200,7 +201,7 @@ internal class CognitoAuthProvider(
             if (!succeeded) {
                 val reason = runCatching { JSONObject(body).optString("error") }
                     .getOrNull().orEmpty().ifBlank { "HTTP ${connection.responseCode}" }
-                throw IllegalStateException("Cognito token request failed: $reason")
+                throw TokenRequestException(reason)
             }
             if (body.isBlank()) JSONObject() else JSONObject(body)
         } finally {
@@ -288,6 +289,9 @@ internal class CognitoAuthProvider(
     }
 
     private fun endpoint(path: String) = "https://${configuration.oauthDomain}$path"
+
+    private class TokenRequestException(val code: String) :
+        IllegalStateException("Cognito token request failed: $code")
 
     private data class StoredTokens(
         val idToken: String?,

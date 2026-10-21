@@ -17,6 +17,8 @@ import com.logseq.app.CognitoAuthProvider
 import com.logseq.app.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -34,10 +36,14 @@ import org.json.JSONObject
 // outliner platform commands. Compose state fields drive LogseqApp.
 internal class LogseqRuntime(
     private val activity: Activity,
-    private val scope: CoroutineScope,
+    parentScope: CoroutineScope,
     private val patchDispatcher: kotlinx.coroutines.CoroutineDispatcher =
         Dispatchers.Default.limitedParallelism(1),
 ) {
+    private val runtimeJob = SupervisorJob(parentScope.coroutineContext[kotlinx.coroutines.Job])
+    private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
+    private var ownsCore = false
+
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext, activity)
     val assetImporter = AndroidAssetImporter(activity, scope)
@@ -116,6 +122,8 @@ internal class LogseqRuntime(
     fun start() {
         scope.launch {
             try {
+                NativeCoreSession.gate.lock(this@LogseqRuntime)
+                ownsCore = true
                 val authenticationCode = platformEffects.initialAuthenticationCode()
                 val storage = platformEffects.loadStorageState()
                 appearance = storage.settings.appearance
@@ -166,14 +174,29 @@ internal class LogseqRuntime(
                     applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
                 }
                 rootNodeId = rootNode
+                NativeCoreSession.syncActive = ::syncInBackground
                 scope.launch { drain.drain(scope) }
                 restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 startupError = error
                 reportError(error)
             }
         }
     }
+
+    private suspend fun syncInBackground(): BackgroundSyncResult = scope.async {
+        activeBootstrap?.join()
+        if (!hasAuthenticatedSession || !hasOpenGraph) BackgroundSyncResult.Skipped
+        else {
+            requestSyncNow()
+            pendingSyncJob?.join()
+            val snapshot = JSONObject(bridge.callCore("""{"apiVersion":1,"method":"snapshot","params":{}}"""))
+            if (snapshot.optBoolean("ok") && snapshot.optJSONObject("result")?.isNull("pendingSyncError") == true)
+                BackgroundSyncResult.Success else BackgroundSyncResult.Retry
+        }
+    }.await()
 
     fun onLifecycleResumed(resumed: Boolean) {
         appIsForeground = resumed
@@ -280,7 +303,8 @@ internal class LogseqRuntime(
                         logRuntime("warn", "core", "graph events retry in ${outcome.delayMilliseconds}ms: ${outcome.message}")
                         kotlinx.coroutines.delay(outcome.delayMilliseconds)
                     }
-                    AndroidGraphEventsSync.SessionOutcome.Stopped -> break
+                    AndroidGraphEventsSync.SessionOutcome.Stopped,
+                    AndroidGraphEventsSync.SessionOutcome.Completed -> break
                 }
             }
         }
@@ -684,7 +708,18 @@ internal class LogseqRuntime(
         graphCatalogAutoRefresh?.dispose()
         effectDrain?.dispose()
         bridge.onCoreIdle = null
-        bridge.close()
+        if (ownsCore) NativeCoreSession.syncActive = null
+        runtimeJob.cancel()
+        NativeCoreSession.cleanupScope.launch {
+            runtimeJob.join()
+            if (ownsCore) {
+                try { bridge.close() }
+                finally {
+                    ownsCore = false
+                    NativeCoreSession.gate.unlock(this@LogseqRuntime)
+                }
+            }
+        }
     }
 
     val effectiveAppearance: String get() = appearance

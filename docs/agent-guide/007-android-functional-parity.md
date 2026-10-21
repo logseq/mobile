@@ -43,7 +43,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 - [x] Shift+Enter: preserve a newline inside the edited block while ordinary Enter keeps its split behavior.
   Touch OutlinerEditor.kt and editor instrumentation tests.
   Verify insertion/replacement with Unicode selections, actual keyboard modifiers, regular Enter and composition handling.
-- [ ] Background sync: register persistent network-constrained system work and reuse the real authenticated core sync path without creating a second UI runtime.
+- [x] Background sync: register persistent network-constrained system work and reuse the real authenticated core sync path without creating a second UI runtime.
   Touch the application/scheduler/worker and existing authentication/core serialization boundaries.
   Verify unique scheduling, no-session/no-graph behavior, actual native sync against a local endpoint, retry/cancellation and coexistence with the foreground runtime.
 
@@ -85,3 +85,27 @@ Background work follows Android's network, power and scheduling restrictions; it
 - Quick recording: three OS integration tests first fail for absent audio route, shortcut, tile and widget action, then pass. Actual emulator Quick Settings tile click cold-opens exactly one existing M3 recording sheet with Stop/Cancel; cancelled without adding a recording to the graph.
 - YouTube timestamps: two new rich-content cases reproduce the old duplicate-player/unreadable timestamp behavior. Ten rich-content cases now pass, including a separate timestamp block seeking the existing matching native WebView, retaining both WebView instances and leaving the other video URL unchanged. Invalid timestamps remain readable and disabled.
 - Shift+Enter: two real modified-key tests first reproduce structural splits, then all three keyboard cases pass for append, reversed Unicode selection replacement and ordinary Enter/multiline paste. Combined rich-content, keyboard and native editor toolbar suite: 20 passed.
+- Background sync: six installed instrumentation cases pass with real encrypted token storage, real native core calls, a real local WebSocket server and a prepared plaintext QA graph. The received server cursor advances from 0 to 1 in the graph checkpoint. Network rejection retries, cancellation releases the core, absent sessions skip, and a held foreground lease blocks cold session replacement.
+- Background auth regression: a real refused refresh connection first reproduced credential loss. Transient failures and cancellation now retain refresh credentials; explicit invalid-grant/token responses still clear rejected credentials.
+- Cached encrypted graph bootstrap: a boundary regression first fails for an unlocked cached graph, then passes; locked graphs continue to await unlock. This is separate from the plaintext native network integration test.
+- System integration: a forced JobScheduler execution binds the real JobService while MainActivity is editing. The composer draft remains unchanged. An OS timeout stops the job, returns it to waiting, and the temporary QA draft suffix is removed.
+- Final combined installed suite: 35 passed in 63.766 seconds. JVM suite: 58 passed, zero failures/errors/skips. Shared core: 900 passed after the gallery path correction.
+- Reproducible background flow: `scripts/test-android-background-sync.sh emulator-5556` clones only the dedicated QA graph into temporary storage, removes pending operations/errors in that clone, seeds a current journal and runs the six native integration cases. The flow itself passed. It rejects physical device serials and leaves the source graph database unchanged.
+
+## Delivered commits
+
+| Feature | Commit |
+| --- | --- |
+| Existing Android work checkpoint | 88feb9f |
+| iOS confirmation capped at 1.5 seconds | 474d9d6 |
+| Image gallery and imported sibling cache paths | 227b174 |
+| Incoming audio/video/document shares | f289c63 |
+| Unified M3 gallery presentation | 9964f15 |
+| Recording shortcut, widget action and Quick Settings tile | dd44309 |
+| Existing-player YouTube timestamp actions | d6776fc |
+| Shift+Enter newline within a block | f531f4f |
+| Persistent native system background sync | This final feature commit |
+
+Android controls added by this plan use Material 3 components; widgets, shortcuts, share sheets and tiles use their native Android system hosts.
+Background execution follows Android's network, power and scheduling limits. The minimum periodic interval is 15 minutes, and a locked encrypted graph requires unlocking before it can sync.
+No Apple layout or styling changes are included in these feature commits.
