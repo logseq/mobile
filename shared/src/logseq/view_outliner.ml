@@ -553,7 +553,11 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (box ~padding:0
+        (button ~variant:`ghost ~padding:0 ~foreground:"foreground"
+           ~on_press:(fun _ ->
+             ignore (send (Model.RequestAppNode
+               (View_base.outliner_journal_page_id
+                  (Signal.sample model_source) (Signal.sample row_source)))))
            ~accessibility_identifier_signal:
              (Signal.map2
                 (fun (current : Model.logseq_model)

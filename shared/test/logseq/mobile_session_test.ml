@@ -376,8 +376,58 @@ let cold_launch_defers_sidebar_but_switching_graphs_loads_it () =
     check_eq ~msg:"switching back replaces favorites with the selected graph"
       (favorite_ids (call "bootstrapGraph" (fields "graph-a"))) ["graph-a-page"])
 
+let collapsed_nodes_survive_navigation_restart_and_graph_switches () =
+  with_host (fun host dir ->
+    let path = Filename.concat dir "catalog.sqlite" in
+    let parent = Rpc_test.synced_block "parent" "Parent" in
+    let child = { parent with Cache_model.uuid = "child"; title = "Child";
+      parent_id = Some "parent" } in
+    let reopen () =
+      ignore (Mobile_session.call host (open_request path));
+      let catalog = Option.get !(host.Mobile_session.database.Mobile_database.catalog) in
+      let options = Mobile_session.host_options host.database host.keyring (Some catalog) in
+      Rpc_session.create_session { options with
+        graph_blocks = Some (fun () -> Some [parent; child]);
+        graph_page_blocks = Some (fun _ -> Some [parent; child]);
+        graph_node_destination = Some (fun uuid ->
+          Some ({ Cache_model.uuid = uuid; title = "Page" }, false)) }
+    in
+    let configure session graph =
+      Rpc_test.dispatch_json session "configure"
+        (Yojson.Basic.to_string (`Assoc ["baseUrl", `String "https://example.com";
+          "graphId", `String graph; "token", `String "test"]))
+      |> Rpc_test.response_result in
+    let collapsed result =
+      Rpc_test.member "collapsedBlockIds" (Rpc_test.member "outlinerState" result) in
+    let expect result uuids =
+      check_eq ~msg:"the graph remembers the user's collapsed nodes" (collapsed result)
+        (`List (List.map (fun uuid -> `String uuid) uuids));
+      let row_ids = Rpc_test.json_items "outlinerRows" result
+        |> List.map (fun row -> Rpc_test.member "uuid" (Rpc_test.member "block" row)) in
+      check_eq ~msg:"restored folding controls the visible journal rows" row_ids
+        (if uuids = [] then [`String "parent"; `String "child"] else [`String "parent"]) in
+    let session = reopen () in
+    expect (configure session "graph-a") [];
+    ignore (Rpc_test.outliner_block_event session "toggleCollapsed" "parent");
+    let opened = Rpc_test.response_result (Rpc_test.dispatch_json session "openNode" {|{"uuid":"page"}|}) in
+    expect opened ["parent"];
+    check_eq ~msg:"opening the journal page keeps folded children hidden"
+      (Rpc_test.node_row_ids opened) ["parent"];
+    ignore (Rpc_test.outliner_block_event session "toggleCollapsed" "parent");
+    expect (Rpc_test.response_result (Rpc_test.dispatch_json session "closeNode" "")) [];
+    ignore (Rpc_test.outliner_block_event session "toggleCollapsed" "parent");
+    expect (Rpc_test.response_result (Rpc_test.dispatch_json session "clearSelectedPage" "")) ["parent"];
+    let session = reopen () in
+    expect (configure session "graph-a") ["parent"];
+    expect (configure session "graph-b") [];
+    expect (configure session "graph-a") ["parent"];
+    ignore (Rpc_test.outliner_block_event session "toggleCollapsed" "parent");
+    let session = reopen () in
+    expect (configure session "graph-a") [])
+
 let cases =
-  [ case "first cached graph bootstrap loads favorites" first_cached_graph_bootstrap_loads_favorites;
+  [ case "collapsed nodes survive navigation restart and graph switches" collapsed_nodes_survive_navigation_restart_and_graph_switches;
+    case "first cached graph bootstrap loads favorites" first_cached_graph_bootstrap_loads_favorites;
     case "first download import loads favorites" first_download_import_loads_favorites;
     case "cold launch defers sidebar but switching graphs loads it" cold_launch_defers_sidebar_but_switching_graphs_loads_it; case "assets are stored inside the open graph" assets_are_stored_inside_the_open_graph; case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
     case "synced encrypted assets decrypt to raw image bytes" synced_encrypted_assets_decrypt_to_raw_image_bytes;

@@ -566,6 +566,9 @@ let dispatch_outliner_event session payload =
                outliner_revision =
                  (state session).outliner_revision + 1;
              };
+           (match message with
+            | Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
+            | _ -> ());
            if (state session).node_routes <> [] then
              snapshot_visible session
            else
@@ -737,6 +740,7 @@ let configure session _input fields =
                && previous.base_url = config.base_url -> (state session).sync_transport
            | _ -> Sync_driver.invalidate (state session).sync_transport);
       };
+    So.restore_collapsed_nodes session;
     if
       List.exists
         (fun (graph : Api.api_graph) -> graph.id = uuid && graph.e2ee)

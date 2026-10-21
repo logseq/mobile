@@ -90,6 +90,8 @@ val snapshot_linked_reference_blocks :
   Session_types.session -> Cache_model.block list
 
 val has_pending_operations : Session_types.session -> bool
+val restore_collapsed_nodes : Session_types.session -> unit
+val persist_collapsed_nodes : Session_types.session -> unit
 val reset_outliner : Session_types.session -> unit
 val clear_node_navigation : Session_types.session -> unit
 val persist_active_node_state : Session_types.session -> unit

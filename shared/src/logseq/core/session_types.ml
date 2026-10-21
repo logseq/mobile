@@ -127,6 +127,8 @@ type host_options =
       (Ops.pending_operation -> (string * string, string) result) option
   ; pending_operations : (unit -> Ops.pending_operation list) option
   ; load_graph_catalog : (unit -> string option) option
+  ; load_collapsed_nodes : (string -> string list) option
+  ; save_collapsed_nodes : (string -> string list -> unit) option
   ; save_graph_catalog : (string -> unit) option
   }
 
@@ -164,6 +166,7 @@ type session_state =
 type session =
   { host : host_options
   ; state : session_state ref
+  ; collapsed_nodes : (string, Outliner_state.Sset.t) Hashtbl.t
   ; reference_cache : (string, Model.block list) Hashtbl.t
   ; reference_generation : (string option * int option * int) option ref
   }
@@ -216,6 +219,8 @@ let default_options =
     pending_operations = None;
     load_graph_catalog = None;
     save_graph_catalog = None;
+    load_collapsed_nodes = None;
+    save_collapsed_nodes = None;
   }
 
 let state session = !(session.state)
@@ -274,6 +279,7 @@ let create_session options =
   in
   {
     host = options;
+    collapsed_nodes = Hashtbl.create 4;
     reference_cache = Hashtbl.create 8;
     reference_generation = ref None;
     state =

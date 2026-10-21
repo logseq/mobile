@@ -37,6 +37,17 @@ let host_options (database : Database.mobile_database) ring catalog =
          Some
            (fun () -> Sqlite.restore_string catalog graph_catalog_address)
        | None -> None);
+    load_collapsed_nodes = Option.map (fun catalog graph_id ->
+      match Sqlite.restore_string catalog ("logseq/collapsed-nodes/v1/" ^ graph_id) with
+      | None -> []
+      | Some body ->
+        (try match Yojson.Basic.from_string body with
+         | `List values -> List.filter_map (function `String uuid -> Some uuid | _ -> None) values
+         | _ -> []
+         with Yojson.Json_error _ -> [])) catalog;
+    save_collapsed_nodes = Option.map (fun catalog graph_id uuids ->
+      Sqlite.store_string catalog ("logseq/collapsed-nodes/v1/" ^ graph_id)
+        (Yojson.Basic.to_string (`List (List.map (fun uuid -> `String uuid) uuids)))) catalog;
     save_graph_catalog =
       (match catalog with
        | Some catalog ->

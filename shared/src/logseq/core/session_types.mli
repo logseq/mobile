@@ -120,6 +120,8 @@ type host_options =
       (Pending_ops.pending_operation -> (string * string, string) result) option
   ; pending_operations : (unit -> Pending_ops.pending_operation list) option
   ; load_graph_catalog : (unit -> string option) option
+  ; load_collapsed_nodes : (string -> string list) option
+  ; save_collapsed_nodes : (string -> string list -> unit) option
   ; save_graph_catalog : (string -> unit) option
   }
 
@@ -157,6 +159,7 @@ type session_state =
 type session =
   { host : host_options
   ; state : session_state ref
+  ; collapsed_nodes : (string, Outliner_state.Sset.t) Hashtbl.t
   ; reference_cache : (string, Cache_model.block list) Hashtbl.t
   ; reference_generation : (string option * int option * int) option ref
   }

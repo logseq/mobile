@@ -322,11 +322,48 @@ let has_pending_operations (session : Types.session) =
   || s.pending_sync <> None
   || Model.pending_blocks s.model <> []
 
+let collapsed_graph_key (session : Types.session) =
+  match (Types.state session).config with
+  | Some config -> config.Api.graph_id
+  | None -> ""
+
+let saved_collapsed_nodes (session : Types.session) =
+  let key = collapsed_graph_key session in
+  match Hashtbl.find_opt session.collapsed_nodes key with
+  | Some collapsed -> collapsed
+  | None ->
+    let collapsed =
+      match (Types.host session).load_collapsed_nodes with
+      | Some load -> Outliner.Sset.of_list (load key)
+      | None -> Outliner.Sset.empty
+    in
+    Hashtbl.replace session.collapsed_nodes key collapsed;
+    collapsed
+
+(* Collapse choices belong to the graph, including retained navigation views. *)
+let restore_collapsed_nodes (session : Types.session) =
+  let collapsed = saved_collapsed_nodes session in
+  let restore (state : Outliner.outliner_state) = { state with collapsed } in
+  let current = Types.state session in
+  session.state := { current with
+    outliner_state = restore current.outliner_state;
+    node_base_state = Option.map restore current.node_base_state;
+    node_routes = List.map (fun (route : Types.node_route) ->
+      { route with state = restore route.state }) current.node_routes }
+
+let persist_collapsed_nodes (session : Types.session) =
+  let key = collapsed_graph_key session in
+  let collapsed = (Types.state session).outliner_state.collapsed in
+  Hashtbl.replace session.collapsed_nodes key collapsed;
+  Option.iter (fun save -> save key (Outliner.Sset.elements collapsed))
+    (Types.host session).save_collapsed_nodes;
+  restore_collapsed_nodes session
+
 let reset_outliner (session : Types.session) =
   session.state :=
     {
       !(session.state) with
-      outliner_state = Outliner.empty;
+      outliner_state = { Outliner.empty with collapsed = saved_collapsed_nodes session };
       outliner_optimistic_blocks = None;
       outliner_commands = [];
       outliner_revision = (Types.state session).outliner_revision + 1;
@@ -359,13 +396,14 @@ let persist_active_node_state (session : Types.session) =
       }
 
 let initial_node_state session (route : Types.node_route) =
+  let initial = { Outliner.empty with collapsed = saved_collapsed_nodes session } in
   if route.zoom_to_block then
     fst
       (Outliner.update
          (node_route_context session route)
-         Outliner.empty
+         initial
          (Outliner.Zoom_in route.uuid))
-  else Outliner.empty
+  else initial
 
 let push_node_route (session : Types.session) (route : Types.node_route) =
   persist_active_node_state session;

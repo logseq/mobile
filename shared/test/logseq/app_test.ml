@@ -6980,6 +6980,25 @@ let journal_section_markers_recompute_after_row_splices () =
   check ~msg:"outliner patches preserve journal pagination state"
     updated.has_older_journals
 
+let journal_date_headings_open_their_page_on_both_hosts () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    send application (Model.ApplyCoreSnapshot {
+      (empty_core_projection ()) with
+      selected_graph_id = Some "test-graph";
+      outliner_rows = [journal_outline_row "day" "journal-page" "Entry" "October 21st" 20261021 0] });
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let heading = descendant_with_identifier renderer (main_root renderer application)
+      "button.journal.journal-page" in
+    check ~msg:"the journal date is visible" (heading <> -1);
+    dispatch application (Lui_protocol.Press heading);
+    flush application;
+    check_eq ~msg:"the date opens its journal page on each native host"
+      (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "journal-page")])
+    [ios_backend (); kotlin_backend ()]
+
 let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   let application = App.create (ios_backend ()) in
   let day_a =
@@ -7053,7 +7072,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check ~msg:"the first journal heading is visible" (first_heading <> -1);
   check ~msg:"the second journal heading is visible" (second_heading <> -1);
   check_eq
-    ~msg:"journal headings announce their title without an open action"
+    ~msg:"journal headings announce their title"
     (property_string renderer heading_content Lui_protocol.TextValue)
     "August 27th";
   check ~msg:"the first day's row stays inside the virtualized collection"
@@ -7082,9 +7101,9 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     (property_string renderer second_entry
        Lui_protocol.ContainerRelativeFrameValue)
     "<missing>";
-  check_eq ~msg:"journal headings are noninteractive content"
+  check_eq ~msg:"journal headings open their journal page"
     (node renderer first_heading)
-    (Some Lui_protocol.Box);
+    (Some Lui_protocol.Button);
   check_eq ~msg:"the interactive heading row does not add a native inset"
     (property_int renderer first_heading Lui_protocol.PaddingValue)
     0;
@@ -7124,8 +7143,11 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"the first journal block keeps its navigation action"
     (Yojson.Basic.Util.member "journalBullet" (native_row_payload application first_block))
     (`Bool false);
-  check_eq ~msg:"journal heading and bullet taps do not open a page"
-    (App.model application).pending_effects []
+  dispatch application (Lui_protocol.Press second_heading);
+  flush application;
+  check_eq ~msg:"a journal date heading navigates to that journal page"
+    (App.model application).pending_effects
+    [ Model.OpenAppNodeEffect (1, "page-b") ]
 
 let journal_rows_stay_flat_while_retaining_the_first_viewport () =
   let application = App.create (ios_backend ()) in
@@ -10059,6 +10081,7 @@ let cases =
     case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
+    case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
     case "journal-section-markers-recompute-after-row-splices" journal_section_markers_recompute_after_row_splices;
     case "journal-home-keeps-first-day-viewport-and-later-block-items-flat" journal_home_keeps_first_day_viewport_and_later_block_items_flat;
