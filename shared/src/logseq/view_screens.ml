@@ -276,7 +276,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                  box ~padding_horizontal:16
                    ~accessibility_identifier:"layout.selected-page.title"
                    [
-                     heading ~level:3
+                     heading ~level:3 ~style_class:"scroll-section-title"
                        ~value_signal:
                          (Signal.map View_base.selected_page_title
                             model_source)
@@ -624,9 +624,10 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
     native_node_destination
       ~source:
         (reactive
-           (fun (route : Model.node_projection) ->
-             StringValue route.node_title)
-           route_source)
+           (fun current -> StringValue
+             (if View_base.node_title_visible_ current then ""
+              else View_base.active_node_title current))
+           route_model_source)
       (View_outliner.node_screen context route_model_source send)
 
 let native_node_stack context model_source ~source:routes_source send =
@@ -720,7 +721,10 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    in
    let title_source =
      Signal.map
-       (fun current -> View_base.main_title (main_header_model context current))
+       (fun current ->
+         let current = main_header_model context current in
+         if View_base.selected_page_content_title_visible_ current then ""
+         else View_base.main_title current)
        model_source
    in
    Lui_ui.extension_property_signal context node "depth"

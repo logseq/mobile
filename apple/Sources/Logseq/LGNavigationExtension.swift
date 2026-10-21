@@ -215,11 +215,13 @@ private struct LGNavigationStack: View {
 private struct LGNavigationDestination: View {
     let context: LUIAppleExtensionViewContext
     let content: AnyView
+    @State private var visibleScrollTitle: String?
 
     var body: some View {
         let _ = context.revision
         content
-            .navigationTitle(title)
+            .navigationTitle(title.isEmpty ? visibleScrollTitle ?? "" : title)
+            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { visibleScrollTitle = $0 }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -473,7 +475,7 @@ private struct LGNavigationContent: View {
                 usesSystemGroupedBackground = usesSystemBackground
             }
             .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
-                if let title { visibleScrollTitle = title }
+                visibleScrollTitle = title
             }
     }
 

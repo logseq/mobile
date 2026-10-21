@@ -928,7 +928,8 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
   column ~accessibility_identifier:"screen.node"
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
-      virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.outliner"
+      View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
+      (virtual_list ~grow:1.0 ~gap:0 ~style_class:"scroll-section-titles" ~accessibility_identifier:"list.outliner"
         ~data_attrs_signal:(Signal.map (fun current ->
           ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
         [
@@ -938,7 +939,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
                [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
-                   [ heading ~level:3 ~value:(reactive View_base.active_node_title model_source)
+                   [ heading ~level:3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
                        ~accessibility_identifier:"title.node" [] ];
                  box ~height:12 [] ]);
           page_loading_view model_source;
@@ -947,5 +948,5 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           if_ ~test:(reactive View_base.node_can_add_first_block_ model_source)
             (box ~padding_horizontal:8 [ add_first_block_button model_source send ]);
           box ~height:120 [];
-        ];
+        ]);
     ]

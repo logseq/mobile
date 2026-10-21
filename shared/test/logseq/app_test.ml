@@ -7140,6 +7140,26 @@ let search_renders_main_empty_states_and_result_sections () =
     (descendant_with_identifier renderer panel "search.result.block-a"
     <> -1)
 
+let native_page_title_waits_for_the_content_heading_to_scroll () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  send application (Model.RequestAppNode "page-a");
+  let route = { (node_projection "page-a" "page-a" "Project" [] []) with
+    Model.node_outliner_rows = [outline_row "child" "Child"] } in
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with graph_name = Some "Work"; node_routes = [route] });
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let navigation = extension_node application "native-navigation-stack" in
+  let destination = List.nth (children renderer navigation) 6 in
+  check_eq ~msg:"a page with a content heading starts without a fixed toolbar title"
+    (extension_property application destination "title") (Some (Lui_protocol.StringValue ""));
+  let list = descendant_with_identifier renderer destination "list.outliner" in
+  check_eq ~msg:"page scrolling reports headings to the native title tracker"
+    (property_string renderer list Lui_protocol.StyleClass) "scroll-section-titles";
+  let heading = descendant_with_identifier renderer list "title.node" in
+  check_eq (property_string renderer heading Lui_protocol.StyleClass) "scroll-section-title"
+
 let search_virtualizes_loaded_results_and_paginates_on_scroll () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
@@ -9661,6 +9681,7 @@ let cases =
     case "selected-pages-do-not-render-journal-home-headings" selected_pages_do_not_render_journal_home_headings;
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
+    case "native-page-title-waits-for-the-content-heading-to-scroll" native_page_title_waits_for_the_content_heading_to_scroll;
     case "search-virtualizes-loaded-results-and-paginates-on-scroll" search_virtualizes_loaded_results_and_paginates_on_scroll;
     case "search-results-render-as-keyed-native-rows" search_results_render_as_keyed_native_rows;
     case "search-renders-main-empty-states-and-result-sections" search_renders_main_empty_states_and_result_sections;
