@@ -1562,6 +1562,49 @@ let page_autocomplete_searches_beyond_sidebar_and_current_page () =
     check ~msg:"hidden pages are excluded from reference search"
       (not (List.exists (fun candidate -> member "value" candidate = `String Search_index_test.hidden_uuid) hidden)))
 
+let block_reference_completion_saves_the_selected_uuid () =
+  Search_index_test.with_index (fun index ->
+    let conn = Search_index_test.seeded_conn () in
+    let choices = [
+      70, "018f7850-0000-7da0-8b3f-6dbb64aa4ed1", "Distinct block";
+      71, "018f7850-0000-7da0-8b3f-6dbb64aa4ed2", "Same title";
+      72, "018f7850-0000-7da0-8b3f-6dbb64aa4ed3", "Same title"] in
+    List.iter (fun (eid, uuid, title) ->
+      ignore (Ds.transact_conn conn [
+        Search_index_test.add eid "block/uuid" (Ds.Uuid uuid);
+        Search_index_test.add eid "block/title" (Ds.String title);
+        Search_index_test.add eid "block/page" (Ds.Ref 1);
+        Search_index_test.add eid "block/parent" (Ds.Ref 1)])) choices;
+    let db = Ds.conn_db conn in
+    Search.refresh index db;
+    List.iter (fun (_, uuid, title) ->
+      let staged = ref [] in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search = Some (fun query -> Search.search_hits 100 index db query);
+        graph_node_destination = Some (Graph.node_destination (fun value -> Ok value) db);
+        graph_normalize_titles = Some (Graph.normalize_titles_creating_tags db (fun () -> "unexpected-tag"));
+        sync_cursor = Some (fun () -> Some 42);
+        stage_operation = Some (fun operation -> staged := operation :: !staged; Ok ());
+        prepare_operation = Some prepare_operation }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      let draft = "Draft [[" ^ title ^ "]]" in
+      ignore (outliner_event session (Json.to_string (`Assoc ["type", `String "textChanged";
+        "title", `String draft; "caretUTF16Offset", `Int (Outliner.utf16_length draft - 2)])));
+      let completed = outliner_event session (Json.to_string (`Assoc ["type", `String "chooseAutocomplete";
+        "value", `String uuid])) in
+      let expected = "Draft [[" ^ uuid ^ "]]" in
+      let editing = member "editing" (member "outlinerState" completed) in
+      check_eq ~msg:"block references use UUID syntax even outside the current page projection"
+        (member "title" editing) (`String expected);
+      check_eq ~msg:"confirming a block reference places its caret after the closing brackets"
+        (member "caretUTF16Offset" editing) (`Int (Outliner.utf16_length expected));
+      ignore (outliner_event session {|{"type":"saveEditing"}|});
+      check_eq ~msg:"the saved operation preserves exactly the chosen block, including duplicate titles"
+        (List.filter_map (fun operation -> match operation.Ops.intent with
+          | Ops.Save_title change -> Some change.title | _ -> None) !staged) [expected]) choices)
+
 let websocket_errors_distinguish_snapshot_recovery_from_apply_failures () =
   List.iter
     (fun (message, code) ->
@@ -6535,6 +6578,7 @@ let cases =
       outliner_editing_and_autocomplete_remain_owned_by_core;
     case "tag autocomplete candidates use canonical graph identity"
       tag_autocomplete_candidates_use_canonical_graph_identity;
+    case "block reference completion saves the selected UUID" block_reference_completion_saves_the_selected_uuid;
     case "page autocomplete searches beyond sidebar and current page"
       page_autocomplete_searches_beyond_sidebar_and_current_page;
     case "websocket errors distinguish snapshot recovery from apply failures"

@@ -151,6 +151,7 @@ type outliner_context =
   ; label_values : (string, Sset.t) Hashtbl.t
   ; dup_labels : Sset.t
   ; search_nodes : string -> outliner_candidate list
+  ; is_block_reference : string -> bool
   }
 
 type outliner_row =
@@ -171,6 +172,7 @@ val find_block : outliner_context -> string -> Cache_model.block option
 val duplicated_labels : outliner_candidate list -> Sset.t
 val context :
   ?search_nodes:(string -> outliner_candidate list) ->
+  ?is_block_reference:(string -> bool) ->
   Cache_model.block list ->
   outliner_candidate list ->
   outliner_candidate list ->

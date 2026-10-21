@@ -42,7 +42,14 @@ let outliner_context_with_blocks session sidebar blocks =
     List.map (fun (hit : Search_index.indexed_search_hit) ->
       { Outliner.label = hit.title; value = hit.uuid }) hits
   in
-  Outliner.context ~search_nodes blocks pages tags
+  let is_block_reference uuid =
+    match (Types.host session).graph_node_destination with
+    | Some resolve ->
+      (match resolve uuid with
+       | Some (_, zoom) -> zoom
+       | None -> List.exists (fun (block : Model.block) -> block.uuid = uuid) blocks)
+    | None -> List.exists (fun (block : Model.block) -> block.uuid = uuid) blocks in
+  Outliner.context ~search_nodes ~is_block_reference blocks pages tags
 
 let sidebar_node_destination (session : Types.session) (node : Model.entity_summary) =
   match (Types.host session).graph_node_destination with

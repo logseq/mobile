@@ -154,6 +154,7 @@ type outliner_context =
   ; label_values : (string, Sset.t) Hashtbl.t
   ; dup_labels : Sset.t
   ; search_nodes : string -> outliner_candidate list
+  ; is_block_reference : string -> bool
   }
 
 type outliner_row =
@@ -209,7 +210,11 @@ let duplicated_of label_values =
 let duplicated_labels candidates =
   duplicated_of (candidate_label_values candidates)
 
-let context ?(search_nodes = fun _ -> []) blocks pages tags =
+let context ?(search_nodes = fun _ -> []) ?is_block_reference blocks pages tags =
+  let is_block_reference = match is_block_reference with
+    | Some resolve -> resolve
+    | None -> fun uuid -> List.exists (fun (block : Model.block) ->
+        block.uuid = uuid && block.page_id <> uuid) blocks in
   let label_values = candidate_label_values (pages @ tags) in
   {
     blocks;
@@ -218,6 +223,7 @@ let context ?(search_nodes = fun _ -> []) blocks pages tags =
     label_values;
     dup_labels = duplicated_of label_values;
     search_nodes;
+    is_block_reference;
   }
 
 let summary_candidates summaries =
@@ -494,9 +500,8 @@ let complete (context : outliner_context) (editing : editor_draft) kind value =
     match kind with
     | Node ->
       let text =
-        match
-          candidate_label context (context.pages @ context.tags) value
-        with
+        if context.is_block_reference value then value
+        else match candidate_label context (context.pages @ context.tags) value with
         | Some label -> label
         | None -> value
       in
