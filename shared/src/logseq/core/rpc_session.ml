@@ -684,6 +684,7 @@ let configure session _input fields =
   in
   match (field "baseUrl", field "token") with
   | Some base_url, Some token ->
+    Option.iter (fun configure -> configure token) session.Types.host.configure_identity;
     let uuid =
       match field "graphId" with Some id -> id | None -> ""
     in

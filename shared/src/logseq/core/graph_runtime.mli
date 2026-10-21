@@ -4,6 +4,7 @@
 type runtime_options =
   { encrypt_title : string -> (string, string) result
   ; search_index_path : string option
+  ; current_creator : unit -> Created_by.identity option
   ; auto_create_today : bool
   }
 
@@ -34,6 +35,7 @@ type graph_runtime =
   { path : string
   ; conn : Datascript.conn
   ; encrypt_title : string -> (string, string) result
+  ; current_creator : unit -> Created_by.identity option
   ; search_index : Search_index.search_index option
   ; state : runtime_state ref
   }

@@ -29,7 +29,8 @@ let host_options (database : Database.mobile_database) ring catalog =
   let graph = database.graph in
   {
     Rpc.default_options with
-    Types.outliner_projection_limit = Some 32;
+    Types.configure_identity = Some (Graph.configure_identity graph);
+    outliner_projection_limit = Some 32;
     Types.load_graph_catalog =
       (match catalog with
        | Some catalog ->

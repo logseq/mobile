@@ -83,8 +83,18 @@ let map_protected transform items =
   in
   loop [] items
 
-let capture db tx =
+let capture ?creator db tx =
   let report = Ds.with_tx (Dev.Sync_replay.display_db_from_server db) tx in
+  let report = match creator with
+    | None -> report
+    | Some identity ->
+      match Created_by.additions identity report with
+      | [] -> report
+      | additions ->
+        let authored = Ds.with_tx report.db_after additions in
+        { report with db_after = authored.db_after;
+          tx_data = List.rev_append (List.rev report.tx_data) authored.tx_data }
+  in
   let forward = Dev.Sync_apply.normalize_tx_data report.db_after report.db_before report.tx_data in
   let reversed = Dev.Sync_apply.reverse_tx_data report.db_before report.db_after report.tx_data in
   report.db_after, Dev.Transit_codec.to_string (Wire.Array forward),

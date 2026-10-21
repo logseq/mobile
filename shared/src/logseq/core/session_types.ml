@@ -74,7 +74,8 @@ type node_route =
   }
 
 type host_options =
-  { storage : Datascript.storage option
+  { configure_identity : (string -> unit) option
+  ; storage : Datascript.storage option
   ; outliner_projection_limit : int option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
@@ -167,7 +168,7 @@ type session =
   }
 
 let default_options =
-  {
+  { configure_identity = None;
     storage = None;
     outliner_projection_limit = None;
     open_graph = None;

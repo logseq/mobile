@@ -136,8 +136,87 @@ let synced_encrypted_assets_decrypt_to_raw_image_bytes () =
     let path = result |> member "result" |> member "localPath" |> to_string in
     check_eq (Asset_files.read_file path) (Ok bytes))
 
+let configured_identity_authors_new_nodes_and_survives_reopen () =
+  with_host (fun host directory ->
+    let module Ds = Datascript in
+    let module Graph = Mobile_graph in
+    let module Ops = Pending_ops in
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    let active = Filename.concat directory "graph.sqlite" in
+    let checkpoint = Filename.concat directory "checkpoint" in
+    Graph_sqlite.prepare_staging active;
+    ignore (Ds.store (Graph_bootstrap.install_canonical_entities
+      (Ds.parse_tx_data_string Graph_bootstrap_data.transaction_edn
+       |> List.map Graph_bootstrap.normalize_scalar_maps) (Graph_store.storage active)));
+    (match Sync_checkpoint.save_checkpoint_atomic checkpoint (Sync_checkpoint.create "graph" "1" 7) with
+     | Ok () -> () | Error message -> fail message);
+    let configure token =
+      let payload = Yojson.Basic.to_string (`Assoc ["graphId", `String "graph";
+        "baseUrl", `String "https://example.com"; "token", `String token]) in
+      let request = Yojson.Basic.to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch";
+        "params", `Assoc ["action", `String "configure"; "payload", `String payload]]) in
+      let response = Mobile_session.call host request |> Yojson.Basic.from_string in
+      check_eq ~msg:"configure succeeds" (Yojson.Basic.Util.member "ok" response) (`Bool true)
+    in
+    let open_graph () =
+      match Graph.open_graph graph (Yojson.Basic.to_string (`Assoc ["graphId", `String "graph";
+        "activePath", `String active; "checkpointPath", `String checkpoint; "isEncrypted", `Bool false])) with
+      | Ok () -> () | Error message -> fail message
+    in
+    let database () = match !(graph.current) with
+      | Some opened -> Graph_runtime.db opened.read_runtime
+      | None -> fail "graph is not open" in
+    let author uuid =
+      let db = database () in
+      match Ds.entity db (Ds.Lookup_ref ("block/uuid", Ds.Uuid uuid)) with
+      | None -> None
+      | Some entity ->
+        match Ds.Entity.entity_attr_raw entity "logseq.property/created-by-ref" with
+        | Some (Ds.One_value (Ds.Ref id)) ->
+          Option.bind (Ds.entity db (Ds.Entity_id id)) (fun actor ->
+            match Ds.Entity.entity_attr_raw actor "block/uuid" with
+            | Some (Ds.One_value (Ds.Uuid uuid)) -> Some uuid | _ -> None)
+        | _ -> None in
+    let stage id intent =
+      match Graph.stage graph { Ops.operation_id = id; base_t = 7; state = Ops.Queued; intent } with
+      | Ok _ -> () | Error message -> fail message in
+    let alice = "00000000-0000-4000-8000-000000000001" in
+    let bob = "00000000-0000-4000-8000-000000000002" in
+    configure "header.eyJzdWIiOiAiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwgImNvZ25pdG86dXNlcm5hbWUiOiAiQWxpY2UiLCAiZW1haWwiOiAiYWxpY2VAZXhhbXBsZS5jb20ifQ.signature";
+    open_graph ();
+    let journals = Graph_runtime.blocks (Option.get !(graph.current)).read_runtime in
+    List.iter (fun (block : Cache_model.block) ->
+      check_eq ~msg:"automatic journal nodes retain the signed-in creator" (author block.uuid) (Some alice)) journals;
+    stage "page-create" (Ops.Create_page { uuid = "page"; title = "Project"; created_at = 10 });
+    check_eq ~msg:"new pages carry a creator entity reference" (author "page") (Some alice);
+    stage "block-create" (Ops.Insert_block { uuid = "first"; title = "First";
+      page_uuid = "page"; parent_uuid = "page"; order = "a0"; created_at = 11 });
+    stage "blank-create" (Ops.Insert_block { uuid = "blank"; title = "";
+      page_uuid = "page"; parent_uuid = "page"; order = "a1"; created_at = 12 });
+    check_eq (author "first") (Some alice);
+    configure "header.eyJzdWIiOiAiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwgImNvZ25pdG86dXNlcm5hbWUiOiAiQm9iIiwgImVtYWlsIjogImJvYkBleGFtcGxlLmNvbSJ9.signature";
+    stage "ordinary-edit" (Ops.Save_title { uuid = "first"; expected_title = "First"; title = "Edited" });
+    check_eq ~msg:"editing another user's nonempty block preserves its creator" (author "first") (Some alice);
+    stage "fill-blank" (Ops.Save_title { uuid = "blank"; expected_title = ""; title = "Bob's text" });
+    check_eq ~msg:"first text entry assigns the current creator, matching Logseq" (author "blank") (Some bob);
+    stage "second-create" (Ops.Insert_block { uuid = "second"; title = "Second";
+      page_uuid = "page"; parent_uuid = "page"; order = "a2"; created_at = 13 });
+    check_eq (author "second") (Some bob);
+    open_graph ();
+    check_eq ~msg:"offline pending replay preserves the original account" (author "first") (Some alice);
+    check_eq (author "second") (Some bob);
+    let db = database () in
+    let actor = Option.get (Ds.entity db (Ds.Lookup_ref ("block/uuid", Ds.Uuid alice))) in
+    check_eq (Ds.Entity.entity_attr_raw actor "logseq.property.user/email")
+      (Some (Ds.One_value (Ds.String "alice@example.com")));
+    configure "malformed-token";
+    stage "without-identity" (Ops.Insert_block { uuid = "anonymous"; title = "Anonymous";
+      page_uuid = "page"; parent_uuid = "page"; order = "a3"; created_at = 14 });
+    check_eq ~msg:"invalid or removed identity never reuses a prior account" (author "anonymous") None)
+
 let cases =
-  [ case "synced encrypted assets decrypt to raw image bytes" synced_encrypted_assets_decrypt_to_raw_image_bytes;
+  [ case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;
+    case "synced encrypted assets decrypt to raw image bytes" synced_encrypted_assets_decrypt_to_raw_image_bytes;
     case "requests without a database path use the existing session"
       requests_without_a_database_path_use_the_existing_session;
     case "opening a catalog replaces the session and returns its snapshot"

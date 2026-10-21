@@ -11,6 +11,7 @@ module Ds = Datascript
 type runtime_options =
   { encrypt_title : string -> (string, string) result
   ; search_index_path : string option
+  ; current_creator : unit -> Created_by.identity option
   ; auto_create_today : bool
   }
 
@@ -41,6 +42,7 @@ type graph_runtime =
   { path : string
   ; conn : Ds.conn
   ; encrypt_title : string -> (string, string) result
+  ; current_creator : unit -> Created_by.identity option
   ; search_index : Index.search_index option
   ; state : runtime_state ref
   }
@@ -55,6 +57,7 @@ let default_options =
     encrypt_title = (fun value -> Ok value);
     search_index_path = None;
     auto_create_today = false;
+    current_creator = (fun () -> None);
   }
 
 let state runtime = !(runtime.state)
@@ -173,7 +176,7 @@ let stored_transaction runtime database (operation : Ops.pending_operation) =
       else Ok ()
     in
     let* operations = Projection.compile database operation.intent in
-    let _, tx, reversed = Journal_sync.capture database operations in
+    let _, tx, reversed = Journal_sync.capture ?creator:(runtime.current_creator ()) database operations in
     Graph_sqlite.store_pending_tx runtime.path operation.operation_id tx reversed;
     Ok tx
 
@@ -258,6 +261,7 @@ let create_base path server_t conn options =
       path;
       conn;
       encrypt_title = options.encrypt_title;
+      current_creator = options.current_creator;
       search_index;
       state =
         ref
@@ -381,7 +385,7 @@ let stage runtime (operation : Ops.pending_operation) =
       let ( let* ) = Result.bind in
       let* normalized = Ops.normalize_operation before operation in
       let* operations = Projection.compile before normalized.intent in
-      let projected, tx, reversed = Journal_sync.capture before operations in
+      let projected, tx, reversed = Journal_sync.capture ?creator:(runtime.current_creator ()) before operations in
       Graph_sqlite.store_resolved_pending runtime.path normalized.operation_id normalized.base_t
         (Ops.state_string normalized.state)
         (Yojson.Basic.to_string (Ops.intent_json normalized.intent)) tx reversed;

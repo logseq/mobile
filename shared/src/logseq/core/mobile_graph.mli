@@ -19,10 +19,12 @@ type mobile_graph_runtime =
 
 type mobile_graph =
   { crypto : graph_crypto
+  ; creator : Created_by.identity option ref
   ; current : mobile_graph_runtime option ref
   }
 
 val create : graph_crypto -> mobile_graph
+val configure_identity : mobile_graph -> string -> unit
 val resolve_asset_path : mobile_graph -> string -> string
 val sync_cursor : mobile_graph -> int option
 val blocks : mobile_graph -> Cache_model.block list option

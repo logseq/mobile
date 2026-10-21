@@ -24,10 +24,13 @@ type mobile_graph_runtime =
 
 type mobile_graph =
   { crypto : graph_crypto
+  ; creator : Created_by.identity option ref
   ; current : mobile_graph_runtime option ref
   }
 
-let create crypto = { crypto; current = ref None }
+let create crypto = { crypto; creator = ref None; current = ref None }
+
+let configure_identity host token = host.creator := Created_by.of_token token
 
 let resolve_asset_path (host : mobile_graph) source_path =
   Assets.resolve_path
@@ -194,6 +197,7 @@ let open_paths (host : mobile_graph) graph_id active_path checkpoint_path
              (Filename.dirname active_path)
              "search/db.sqlite");
       auto_create_today = true;
+      current_creator = (fun () -> !(host.creator));
     }
   in
   let options =
