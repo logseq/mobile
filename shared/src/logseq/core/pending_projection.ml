@@ -115,24 +115,8 @@ let semantic_value_equal db left right =
     semantic_value_equal_value db value expected
   | _ -> false
 
-let delimited_names title opener =
-  let rec loop offset names =
-    match String_kit.index_of ~sub:opener ~start:offset title with
-    | None -> names
-    | Some opening ->
-      let start = opening + String.length opener in
-      (match String_kit.index_of ~sub:"]]" ~start title with
-       | None -> names
-       | Some finish ->
-         let name =
-           String_kit.trim (String.sub title start (finish - start))
-         in
-         loop (finish + 2) (if name = "" then names else names @ [ name ]))
-  in
-  loop 0 []
-
-let page_names title = delimited_names title "[["
-let inline_tag_names title = delimited_names title "#[["
+let page_names = Ref_text.page_names
+let inline_tag_names = Ref_text.tag_names
 
 let eid_for_node db value =
   match Ds.entid db "block/uuid" (Ds.Uuid value) with

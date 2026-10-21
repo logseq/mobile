@@ -117,24 +117,7 @@ let rec node_to_yojson node =
 
 let to_yojson nodes = fst (Media.resolve_markup (`List (List.map node_to_yojson nodes)))
 
-let config =
-  {
-    Mldoc.Conf.toc = false;
-    parse_outline_only = false;
-    heading_number = false;
-    keep_line_break = true;
-    format = Mldoc.Conf.Markdown;
-    heading_to_list = false;
-    exporting_keep_properties = false;
-    inline_type_with_pos = true;
-    inline_skip_macro = false;
-    export_md_indent_style = Mldoc.Conf.Dashes;
-    export_md_remove_options = [];
-    hiccup_in_block = true;
-    enable_drawers = true;
-    parse_marker = true;
-    parse_priority = true;
-  }
+let config = Ref_text.config
 
 let strip_wrapped left right value =
   if
@@ -361,7 +344,11 @@ and convert_node source references tags node position =
      | _ ->
        [
          Markup_link
-           ( Inline.string_of_url link.url
+           ( (match link.url with
+              | Inline.Complex { protocol; link = value }
+                when S.includes ~sub:(protocol ^ "://") link.full_text ->
+                protocol ^ "://" ^ value
+              | url -> Inline.string_of_url url)
            , convert_nodes source references tags
                (List.map (fun child -> (child, None)) link.label) );
        ])

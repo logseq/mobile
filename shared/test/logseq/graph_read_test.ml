@@ -726,6 +726,16 @@ let title_normalization_resolves_unique_names_and_shares_new_tags_across_titles
   check_eq unchanged [ "plain #[[project-tag-uuid]]" ];
   check_eq none_created []
 
+let title_normalization_does_not_create_tags_from_markdown_literals () =
+  let source = "[PR #90](https://github.com/logseq/logseq_journal/pull/90)" in
+  let fresh () = "fresh-tag" in
+  let titles, created =
+    Read.normalize_titles_creating_tags (Ds.empty_db ()) fresh "note"
+      [ source; "`#code` #real"; "~~~md\n#fenced\n~~~" ]
+  in
+  check_eq titles [ source; "`#code` #[[fresh-tag]]"; "~~~md\n#fenced\n~~~" ];
+  check_eq created [ ("fresh-tag", "real") ]
+
 let recent_page eid title attributes =
   entity_input (Ds.Entity_id eid)
     (field "block/uuid" (Ds.Uuid (Printf.sprintf "recent-%d" eid))
@@ -1120,6 +1130,8 @@ let cases =
     case
       "title normalization resolves unique names and shares new tags across titles"
       title_normalization_resolves_unique_names_and_shares_new_tags_across_titles;
+    case "title normalization does not create tags from Markdown literals"
+      title_normalization_does_not_create_tags_from_markdown_literals;
     case
       "recent window fills past hidden and blank pages without decrypting older pages"
       recent_window_fills_past_hidden_and_blank_pages_without_decrypting_older_pages;

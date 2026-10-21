@@ -1,8 +1,3 @@
-type text_step =
-  { step_index : int
-  ; step_result : string
-  }
-
 let char_at value index = String.sub value index 1
 
 let hex_character value =
@@ -27,7 +22,8 @@ let is_uuid value =
 
 let tag_terminator value =
   match value.[0] with
-  | ' ' | '\t' | '\n' | ',' | '.' | '(' | ')' | '[' | ']' | '#' -> true
+  | ' ' | '\t' | '\r' | '\n' | ',' | '.' | '(' | ')' | '[' | ']' | '#'
+  | ';' | '!' | '?' | '\'' | '"' | ':' -> true
   | _ -> false
 
 let plain_tag_label label =
@@ -40,131 +36,143 @@ let plain_tag_label label =
   in
   loop 0
 
-let close_index title start =
-  let length = String.length title in
-  let rec loop index =
-    if index + 1 >= length then None
-    else if char_at title index = "]" && char_at title (index + 1) = "]" then
-      Some index
-    else loop (index + 1)
+let config =
+  {
+    Mldoc.Conf.toc = false;
+    parse_outline_only = false;
+    heading_number = false;
+    keep_line_break = true;
+    format = Mldoc.Conf.Markdown;
+    heading_to_list = false;
+    exporting_keep_properties = false;
+    inline_type_with_pos = true;
+    inline_skip_macro = false;
+    export_md_indent_style = Mldoc.Conf.Dashes;
+    export_md_remove_options = [];
+    hiccup_in_block = true;
+    enable_drawers = false;
+    parse_marker = false;
+    parse_priority = false;
+  }
+
+module Inline = Mldoc.Inline
+
+type reference_kind = Page | Tag
+
+type reference =
+  { kind : reference_kind
+  ; name : string
+  ; start_pos : int
+  ; end_pos : int
+  }
+
+let unbracket value =
+  let length = String.length value in
+  if length >= 4 && String_kit.starts_with ~prefix:"[[" value
+     && String_kit.ends_with ~suffix:"]]" value then
+    String.sub value 2 (length - 4)
+  else value
+
+let references title =
+  let add kind name start_pos end_pos acc =
+    let name = String.trim (unbracket name) in
+    if name = "" then acc else { kind; name; start_pos; end_pos } :: acc
   in
-  loop start
+  let rec inlines source offset allow_tags acc =
+    match Angstrom.parse_string ~consume:Angstrom.Consume.All
+      (Inline.parse config) source with
+    | Error _ -> acc
+    | Ok nodes ->
+      List.fold_left (fun acc (node, position) ->
+        match position with
+        | None -> acc
+        | Some (pos : Mldoc.Pos.pos_meta) ->
+          let start_pos = offset + pos.start_pos in
+          let end_pos = offset + pos.end_pos in
+          match node with
+          | Inline.Tag _ when allow_tags ->
+            let name = Inline.hash_tag_value_string node in
+            if String_kit.starts_with ~prefix:"[[" name
+               && not (String_kit.ends_with ~suffix:"]]" name) then acc
+            else add Tag name start_pos end_pos acc
+          | Inline.Nested_link link ->
+            add Page link.content start_pos end_pos acc
+          | Inline.Link { url = Inline.Page_ref name; _ } ->
+            let raw = String.sub source pos.start_pos (pos.end_pos - pos.start_pos) in
+            let target = "[[" ^ name ^ "]]" in
+            (* For aliases, replace the destination while preserving the label. *)
+            let target_start =
+              if String_kit.starts_with ~prefix:"[[" raw then Some 0
+              else
+                match String_kit.last_index_of ~sub:"](" raw with
+                | Some opening -> String_kit.index_of ~sub:target ~start:(opening + 2) raw
+                | None -> None
+            in
+            (match target_start with
+             | Some start -> add Page name (start_pos + start)
+                 (start_pos + start + String.length target) acc
+             | None -> acc)
+          | Inline.Emphasis (style, _) ->
+            (* Emphasis children have no positions. Reparse the inner source for
+               page refs; mldoc treats hashtags inside emphasis as plain text. *)
+            let delimiter = match style with `Italic -> 1 | _ -> 2 in
+            let length = pos.end_pos - pos.start_pos - (2 * delimiter) in
+            if length <= 0 then acc
+            else inlines (String.sub source (pos.start_pos + delimiter) length)
+              (start_pos + delimiter) false acc
+          | _ -> acc)
+        acc nodes
+  in
+  (* Block spans exclude fenced code, including tilde fences, before inline
+     parsing. All offsets are UTF-8 byte offsets into the unchanged source. *)
+  let blocks =
+    if String.contains title '[' || String.contains title '#' then
+      Mldoc.Parser.parse config title
+    else []
+  in
+  List.fold_left (fun acc (block, (pos : Mldoc.Pos.pos_meta)) ->
+    match block with
+    | Mldoc.Type.Src _ | Mldoc.Type.Example _ -> acc
+    | _ ->
+      inlines (String.sub title pos.start_pos (pos.end_pos - pos.start_pos))
+        pos.start_pos true acc)
+    [] blocks
+  |> List.rev
 
-let slice_through_close title index close =
-  String.sub title index (close + 2 - index)
+let page_names title = List.map (fun reference -> reference.name) (references title)
 
-let text_step index result = { step_index = index; step_result = result }
+let tag_names title =
+  List.filter_map (fun reference ->
+    if reference.kind = Tag then Some reference.name else None) (references title)
 
-let to_text_step tag_title ref_title title length index result =
-  if
-    index + 2 < length
-    && char_at title index = "#"
-    && char_at title (index + 1) = "["
-    && char_at title (index + 2) = "["
-  then
-    match close_index title (index + 3) with
-    | Some close ->
-      let inner = String.sub title (index + 3) (close - (index + 3)) in
-      (match tag_title inner with
-       | Some label ->
-         text_step (close + 2)
-           (result
-           ^
-           if plain_tag_label label then "#" ^ label
-           else "#[[" ^ label ^ "]]")
-       | None ->
-         text_step (close + 2)
-           (result ^ slice_through_close title index close))
-    | None ->
-      text_step (index + 1) (result ^ char_at title index)
-  else if
-    index + 1 < length
-    && char_at title index = "["
-    && char_at title (index + 1) = "["
-  then
-    match close_index title (index + 2) with
-    | Some close ->
-      let inner = String.sub title (index + 2) (close - (index + 2)) in
-      (match ref_title inner with
-       | Some label -> text_step (close + 2) (result ^ "[[" ^ label ^ "]]")
-       | None ->
-         text_step (close + 2)
-           (result ^ slice_through_close title index close))
-    | None -> text_step (index + 1) (result ^ char_at title index)
-  else text_step (index + 1) (result ^ char_at title index)
+let rewrite resolve title =
+  let result = Buffer.create (String.length title) in
+  let offset = ref 0 in
+  List.iter (fun reference ->
+    match resolve reference with
+    | None -> ()
+    | Some replacement ->
+      Buffer.add_substring result title !offset (reference.start_pos - !offset);
+      Buffer.add_string result replacement;
+      offset := reference.end_pos)
+    (references title);
+  Buffer.add_substring result title !offset (String.length title - !offset);
+  Buffer.contents result
 
 let to_text tag_title ref_title title =
-  let length = String.length title in
-  let rec loop index result =
-    if index >= length then result
-    else
-      let step = to_text_step tag_title ref_title title length index result in
-      loop step.step_index step.step_result
-  in
-  loop 0 ""
-
-let hashtag_start title index =
-  index = 0
-  ||
-  let previous = char_at title (index - 1) in
-  previous = " " || previous = "\t" || previous = "\n" || previous = "("
-
-let hashtag_end title start =
-  let length = String.length title in
-  let rec loop index =
-    if index < length && not (tag_terminator (char_at title index)) then
-      loop (index + 1)
-    else index
-  in
-  loop start
-
-let to_ids_step resolve_ref resolve_tag title length index result =
-  if
-    index + 2 < length
-    && char_at title index = "#"
-    && char_at title (index + 1) = "["
-    && char_at title (index + 2) = "["
-  then
-    match close_index title (index + 3) with
-    | Some close ->
-      let inner = String.sub title (index + 3) (close - (index + 3)) in
-      (match if is_uuid inner then None else resolve_tag inner with
-       | Some uuid -> text_step (close + 2) (result ^ "#[[" ^ uuid ^ "]]")
-       | None ->
-         text_step (close + 2)
-           (result ^ slice_through_close title index close))
-    | None -> text_step (index + 1) (result ^ char_at title index)
-  else if
-    index + 1 < length
-    && char_at title index = "["
-    && char_at title (index + 1) = "["
-  then
-    match close_index title (index + 2) with
-    | Some close ->
-      let inner = String.sub title (index + 2) (close - (index + 2)) in
-      (match if is_uuid inner then None else resolve_ref inner with
-       | Some uuid -> text_step (close + 2) (result ^ "[[" ^ uuid ^ "]]")
-       | None ->
-         text_step (close + 2)
-           (result ^ slice_through_close title index close))
-    | None -> text_step (index + 1) (result ^ char_at title index)
-  else if char_at title index = "#" && hashtag_start title index then begin
-    let word_end = hashtag_end title (index + 1) in
-    let word = String.sub title (index + 1) (word_end - (index + 1)) in
-    match if word = "" then None else resolve_tag word with
-    | Some uuid -> text_step word_end (result ^ "#[[" ^ uuid ^ "]]")
-    | None -> text_step (index + 1) (result ^ char_at title index)
-  end
-  else text_step (index + 1) (result ^ char_at title index)
+  rewrite (fun reference ->
+    match reference.kind with
+    | Page -> Option.map (fun label -> "[[" ^ label ^ "]]") (ref_title reference.name)
+    | Tag ->
+      (* Plain hashtags already contain editor text. *)
+      if title.[reference.start_pos + 1] <> '[' then None
+      else Option.map (fun label ->
+        if plain_tag_label label then "#" ^ label else "#[[" ^ label ^ "]]")
+        (tag_title reference.name)) title
 
 let to_ids resolve_ref resolve_tag title =
-  let length = String.length title in
-  let rec loop index result =
-    if index >= length then result
-    else
-      let step =
-        to_ids_step resolve_ref resolve_tag title length index result
-      in
-      loop step.step_index step.step_result
-  in
-  loop 0 ""
+  rewrite (fun reference ->
+    if is_uuid reference.name then None
+    else match reference.kind with
+    | Page -> Option.map (fun uuid -> "[[" ^ uuid ^ "]]") (resolve_ref reference.name)
+    | Tag -> Option.map (fun uuid -> "#[[" ^ uuid ^ "]]") (resolve_tag reference.name)) title

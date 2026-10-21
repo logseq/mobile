@@ -608,6 +608,76 @@ let ref_text_converts_between_editor_and_storage_forms () =
     (Ref_text.to_ids resolve_ref resolve_tag "todo\t#project")
     ("todo\t#[[" ^ tag_uuid ^ "]]")
 
+let ref_text_respects_markdown_context () =
+  let uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8" in
+  let ignored =
+    [
+      "[PR #90](https://github.com/logseq/logseq_journal/pull/90)";
+      "[#project [[Roadmap]]](https://example.com/#anchor)";
+      "![#project [[Roadmap]]](https://example.com/image.png)";
+      "[label](https://example.com/[[Roadmap]]#project \"#title\")";
+      "https://example.com/#project";
+      "`#project [[Roadmap]]`";
+      "`` #project ` [[Roadmap]] ``";
+      "```md\n#project [[Roadmap]]\n```";
+      "before\n~~~md\n#project [[Roadmap]]\n~~~\nafter";
+      "\\#project \\[[Roadmap]]";
+      "{{unknown #project [[Roadmap]]}}";
+      "$#project [[Roadmap]]$";
+    ]
+  in
+  List.iter
+    (fun source ->
+      let called = ref [] in
+      let resolve name = called := name :: !called; Some uuid in
+      check_eq ~msg:source (Ref_text.to_ids resolve resolve source) source;
+      check_eq ~msg:"literal Markdown must not resolve or create entities" !called [];
+      let stored =
+        Str.global_replace (Str.regexp_string "Roadmap") uuid source
+      in
+      check_eq ~msg:"editor display must preserve literal UUID examples"
+        (Ref_text.to_text (fun _ -> Some "Project") (fun _ -> Some "Roadmap") stored)
+        stored)
+    ignored;
+  let resolve _ = Some uuid in
+  List.iter
+    (fun (source, expected) ->
+      check_eq ~msg:source (Ref_text.to_ids resolve resolve source) expected)
+    [
+      ("😀 #project, [[Roadmap]]!", "😀 #[[" ^ uuid ^ "]], [[" ^ uuid ^ "]]!");
+      ("#project! #project? #project; #project:",
+       String.concat " " (List.map (fun suffix -> "#[[" ^ uuid ^ "]]" ^ suffix)
+         ["!"; "?"; ";"; ":"]));
+      ("**[[Roadmap]]**", "**[[" ^ uuid ^ "]]**");
+      ("[alias]([[Roadmap]])", "[alias]([[" ^ uuid ^ "]])");
+      ("[[nested [[Roadmap]]]]", "[[" ^ uuid ^ "]]");
+      ("#[[favorite book]]", "#[[" ^ uuid ^ "]]");
+      ("`#fake [[fake]]` #project [[Roadmap]]",
+       "`#fake [[fake]]` #[[" ^ uuid ^ "]] [[" ^ uuid ^ "]]");
+      ("```md\n#fake [[fake]]\n```\n#project [[Roadmap]]",
+       "```md\n#fake [[fake]]\n```\n#[[" ^ uuid ^ "]] [[" ^ uuid ^ "]]");
+    ];
+  let many = String.concat " " (List.init 2000 (fun _ -> "[[Roadmap]]")) in
+  check_eq ~msg:"large titles rewrite each reference once"
+    (Ref_text.to_ids resolve resolve many)
+    (String.concat " " (List.init 2000 (fun _ -> "[[" ^ uuid ^ "]]")))
+
+let ref_text_tag_labels_round_trip_punctuation () =
+  let uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8" in
+  List.iter (fun label ->
+    check_eq ~msg:"punctuation in tag titles requires brackets"
+      (Ref_text.plain_tag_label label) false;
+    let editor = Ref_text.to_text (fun _ -> Some label) (fun _ -> None)
+      ("#[[" ^ uuid ^ "]]") in
+    check_eq editor ("#[[" ^ label ^ "]]");
+    check_eq (Ref_text.to_ids (fun _ -> None)
+      (fun name -> if name = label then Some uuid else None) editor)
+      ("#[[" ^ uuid ^ "]]"))
+    [ "Project!"; "Project?"; "Project;"; "Project:"; "Project's"; "Project\"" ];
+  check_eq ~msg:"unfinished bracketed tags stay editable without creating entities"
+    (Ref_text.to_ids (fun _ -> Some uuid) (fun _ -> Some uuid)
+      "#[[]] #[[unfinished") "#[[]] #[[unfinished"
+
 let fractional_order_generates_logseq_compatible_keys () =
   check_eq ~msg:"LG fractional ordering should generate midpoint keys"
     (Fractional_order.between (Some "a0") (Some "a1"))
@@ -9679,6 +9749,8 @@ let cases =
     case "edn-codec-is-lg-owned" edn_codec_is_lg_owned;
     case "datascript-value-ref-conversion-is-lg-owned" datascript_value_ref_conversion_is_lg_owned;
     case "ref-text-converts-between-editor-and-storage-forms" ref_text_converts_between_editor_and_storage_forms;
+    case "ref-text-respects-markdown-context" ref_text_respects_markdown_context;
+    case "ref-text-tag-labels-round-trip-punctuation" ref_text_tag_labels_round_trip_punctuation;
     case "fractional-order-generates-logseq-compatible-keys" fractional_order_generates_logseq_compatible_keys;
     case "empty-outliner-rows-use-the-main-untitled-accessibility-title" empty_outliner_rows_use_the_main_untitled_accessibility_title;
     case "synced-header-control-uses-the-main-accessibility-label" synced_header_control_uses_the_main_accessibility_label;

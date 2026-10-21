@@ -155,6 +155,33 @@ let title_replay_updates_references_without_mutating_authoritative_db () =
   check (Projection.has_ref db 10 "block/refs" 3);
   check_eq snapshot.statuses [ ("title", Ops.Applied) ]
 
+let title_replay_uses_markdown_references () =
+  let db = base_db () in
+  List.iter
+    (fun source ->
+      let projected = apply_intent db (save_title "block" "Old" source) in
+      check_eq (title projected "block") source;
+      check (not (Projection.has_ref projected 10 "block/refs" 2));
+      check (not (Projection.has_ref projected 10 "block/tags" 2));
+      check (Projection.has_ref projected 10 "block/tags" 5))
+    [
+      "[#project [[Project]]](https://example.com/#[[project]])";
+      "`#[[project]] [[Project]]`";
+      "```md\n#[[project]] [[Project]]\n```";
+      "before\n~~~md\n#[[project]] [[Project]]\n~~~\nafter";
+      "\\#project \\[[Project]]";
+    ];
+  let projected = apply_intent db
+    (save_title "block" "Old" "`[[old-ref]]` #[[project]] **[[Page]]**") in
+  check (Projection.has_ref projected 10 "block/refs" 2);
+  check (Projection.has_ref projected 10 "block/refs" 1);
+  check (Projection.has_ref projected 10 "block/tags" 2);
+  check (not (Projection.has_ref projected 10 "block/refs" 3));
+  let tagged = apply_intent db (save_title "block" "Old" "#[[project]]") in
+  let quoted = apply_intent tagged
+    (save_title "block" "#[[project]]" "`#[[project]]`") in
+  check (not (Projection.has_ref quoted 10 "block/tags" 2))
+
 let inline_tag_replacement_preserves_independent_tags () =
   let db = base_db () in
   let tagged = apply_intent db (save_title "block" "Old" "New #[[project]]") in
@@ -1248,6 +1275,7 @@ let cases =
       title_replay_updates_references_without_mutating_authoritative_db;
     case "inline tag replacement preserves independent tags"
       inline_tag_replacement_preserves_independent_tags;
+    case "title replay uses Markdown references" title_replay_uses_markdown_references;
     case "replay is ordered and rebase conflicts preserve remote data"
       replay_is_ordered_and_rebase_conflicts_preserve_remote_data;
     case "properties replay with compare and set and retraction"

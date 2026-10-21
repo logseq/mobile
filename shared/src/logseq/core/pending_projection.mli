@@ -25,7 +25,6 @@ val semantic_value_equal :
   Datascript.value option ->
   Pending_ops.semantic_value option ->
   bool
-val delimited_names : string -> string -> string list
 val page_names : string -> string list
 val inline_tag_names : string -> string list
 val eid_for_node : Datascript.db -> string -> int option

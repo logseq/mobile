@@ -52,6 +52,33 @@ let reference_resolution_and_raw_source () =
     [ Markup_node_ref ("target-id", "Canonical Title") ]
     (parse [ summary "target-id" "Canonical Title" ] [] "[[canonical title]]")
 
+let external_links_keep_hashtags_and_references_as_label_text () =
+  let url = "https://github.com/logseq/logseq_journal/pull/90" in
+  let source = "[PR #90](" ^ url ^ ")" in
+  let references = [ summary "roadmap" "Roadmap" ] in
+  let tags = [ summary "tag-90" "90"; summary "project" "project" ] in
+  check_eq [ Markup_link (url, [ Markup_text "PR #90" ]) ]
+    (parse references tags source);
+  check_eq
+    [ Markup_link (url, [ Markup_text "#project [[Roadmap]]" ]) ]
+    (parse references tags ("[#project [[Roadmap]]](" ^ url ^ ")"));
+  let normalized = Ref_text.to_ids (fun _ -> Some "roadmap")
+    (fun _ -> Some "tag-90") source in
+  check_eq [ Markup_link (url, [ Markup_text "PR #90" ]) ]
+    (parse references tags normalized)
+
+let external_link_protocols_preserve_source_separators () =
+  List.iter (fun (source, url, label) ->
+    check_eq ~msg:source [ Markup_link (url, [ Markup_text label ]) ]
+      (parse_bare source))
+    [
+      ("https://example.com/#90", "https://example.com/#90", "https://example.com/#90");
+      ("<https://example.com/#90>", "https://example.com/#90", "https://example.com/#90");
+      ("[HTTP](http://example.com)", "http://example.com", "HTTP");
+      ("<mailto:person@example.com>", "mailto:person@example.com", "mailto:person@example.com");
+      ("[Email](mailto:person@example.com)", "mailto:person@example.com", "Email");
+    ]
+
 let stable_native_json_contract () =
   check_eq
     (Yojson.Basic.from_string
@@ -165,6 +192,10 @@ let cases =
   [
     case "rich node semantics" rich_node_semantics;
     case "reference resolution and raw source" reference_resolution_and_raw_source;
+    case "external links keep hashtags and references as label text"
+      external_links_keep_hashtags_and_references_as_label_text;
+    case "external link protocols preserve source separators"
+      external_link_protocols_preserve_source_separators;
     case "stable native json contract" stable_native_json_contract;
     case "inline math cloze and text coalescing" inline_math_cloze_and_text_coalescing;
     case "timestamp validation" timestamp_validation;
