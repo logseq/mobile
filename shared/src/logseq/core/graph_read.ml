@@ -99,7 +99,7 @@ let node_icon db uuid =
       else if string_value (value db eid "logseq.property.asset/type") = Some "pdf" then default "book"
       else match List.find_map own (List.sort compare (ref_eids db eid "block/tags")) with
         | Some _ as icon -> icon
-        | None -> if value db eid "block/name" <> None then default "file" else None)
+        | None -> None)
 
 let tag_display_type db tag_eid =
   List.find_map (fun (ident, display) ->

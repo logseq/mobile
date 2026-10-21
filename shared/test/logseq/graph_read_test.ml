@@ -1118,8 +1118,29 @@ let cyclic_block_references_have_finite_rendered_projections () =
   in
   List.iter check_cycle [[List.hd ids]; [List.nth ids 0; List.nth ids 1]; ids]
 
+let pages_only_display_icons_stored_in_the_graph () =
+  let conn = new_conn ["block/journal-day"] ["logseq.property/icon", one] in
+  ignore (Ds.transact_conn conn [
+    Ds.Add (Ds.Entity_id 1, "block/uuid", Ds.Uuid "plain-page");
+    Ds.Add (Ds.Entity_id 1, "block/name", Ds.String "plain page");
+    Ds.Add (Ds.Entity_id 2, "block/uuid", Ds.Uuid "journal");
+    Ds.Add (Ds.Entity_id 2, "block/name", Ds.String "oct 22nd, 2026");
+    Ds.Add (Ds.Entity_id 2, "block/journal-day", Ds.Int64 20261022L);
+    Ds.Add (Ds.Entity_id 3, "block/uuid", Ds.Uuid "custom-file");
+    Ds.Add (Ds.Entity_id 3, "block/name", Ds.String "custom file");
+    Ds.Add (Ds.Entity_id 3, "logseq.property/icon", Ds.Map [
+      Ds.Keyword "type", Ds.Keyword "tabler-icon"; Ds.Keyword "id", Ds.String "File";
+      Ds.Keyword "color", Ds.String "#5e69d2"])
+  ]);
+  let db = Ds.db conn in
+  check_eq ~msg:"ordinary page headings have no generated document icon" (Read.node_icon db "plain-page") None;
+  check_eq ~msg:"journal headings have no generated document icon" (Read.node_icon db "journal") None;
+  check_eq ~msg:"an explicitly configured document icon retains its color"
+    (Option.map (Yojson.Basic.Util.member "color") (Read.node_icon db "custom-file")) (Some (`String "#5e69d2"))
+
 let cases =
-  [ case "builtin Library is hidden without hiding ordinary pages" builtin_library_is_hidden_without_hiding_ordinary_pages;
+  [ case "pages only display icons stored in the graph" pages_only_display_icons_stored_in_the_graph;
+    case "builtin Library is hidden without hiding ordinary pages" builtin_library_is_hidden_without_hiding_ordinary_pages;
     case "cyclic block references have finite rendered projections" cyclic_block_references_have_finite_rendered_projections;
     case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;
     case "property value subtrees are not outline content" property_value_subtrees_are_not_outline_content;
