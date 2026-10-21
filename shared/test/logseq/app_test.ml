@@ -7619,6 +7619,50 @@ let native_search_clear_updates_lg_owned_query () =
   check_eq ~msg:"the platform clear affordance updates LG state"
     (App.model application).search_query ""
 
+let saving_nested_block_preserves_native_row_indentation () =
+  let module R = Rpc_test in
+  let root = R.synced_block "parent" "Parent" in
+  let nested = { (R.synced_block "nested" "Before") with parent_id = Some "parent" } in
+  let blocks = ref [root; nested] in
+  let session = R.configure_plain_session (Rpc_session.create_session {
+    Rpc_session.default_options with
+    graph_blocks = Some (fun () -> Some !blocks);
+    sync_cursor = Some (fun () -> Some 42);
+    prepare_operation = Some R.prepare_operation;
+    stage_operation = Some (fun operation ->
+      (match operation.Pending_ops.intent with
+       | Pending_ops.Save_title fields ->
+         blocks := List.map (fun (block : Cache_model.block) ->
+           if block.uuid = fields.uuid then { block with title = fields.title } else block) !blocks
+       | _ -> ()); Ok ());
+  }) in
+  let application = App.create (ios_backend ()) in
+  start application;
+  let apply result =
+    let encoded = Yojson.Basic.to_string (`Assoc ["ok", `Bool true; "result", result]) in
+    let projection = match Response_snapshot.decode_response encoded with
+      | Ok projection -> projection | Error message -> failwith message in
+    send application (Model.ApplyCoreSnapshot projection);
+    flush application in
+  apply (R.response_result (Yojson.Basic.from_string (Rpc_session.snapshot_visible session)));
+  let rendered_payload () =
+    let renderer = Lui_app.runtime application in
+    let row = descendant_with_identifier renderer (Lui_app.root_node application) "outliner.block.nested" in
+    native_row_payload application row in
+  let assert_depth message =
+    check_eq ~msg:message (Yojson.Basic.Util.member "depth" (rendered_payload ())) (`Int 1) in
+  assert_depth "the initial child is indented";
+  apply (R.outliner_block_event session "tapBlock" "nested");
+  apply (R.outliner_event session {|{"type":"textChanged","title":"After","caretUTF16Offset":5}|});
+  apply (R.outliner_event session {|{"type":"saveEditing"}|});
+  assert_depth "autosave updates content without resetting the native row to depth zero";
+  check_eq (Yojson.Basic.Util.member "title" (rendered_payload ())) (`String "After");
+  apply (R.outliner_block_event session "tapBlock" "nested");
+  assert_depth "resuming editing retains the saved hierarchy";
+  apply (R.outliner_event session {|{"type":"toolbar","action":"outdent"}|});
+  check_eq ~msg:"structural edits still update indentation"
+    (Yojson.Basic.Util.member "depth" (rendered_payload ())) (`Int 0)
+
 let core_snapshot_renders_keyed_outliner_rows () =
   let application = App.create (ios_backend ()) in
   let row =
@@ -10102,6 +10146,7 @@ let cases =
     case "duplicate-search-query-events-preserve-completed-results" duplicate_search_query_events_preserve_completed_results;
     case "native-search-clear-updates-lg-owned-query" native_search_clear_updates_lg_owned_query;
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
+    case "saving-nested-block-preserves-native-row-indentation" saving_nested_block_preserves_native_row_indentation;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
     case "kotlin-large-pages-mount-only-the-requested-window" kotlin_large_pages_mount_only_the_requested_window;

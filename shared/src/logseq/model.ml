@@ -2787,12 +2787,14 @@ and apply_core_snapshot (current : logseq_model)
     }
   else if projection.is_outliner_patch then begin
     let projected_rows =
-      if projection.outliner_row_splices = [] then
+      let rows = if projection.outliner_row_splices = [] then
         merge_row_replacements current.outliner_rows
           projection.outliner_rows
       else
         apply_row_splices current.outliner_rows
           projection.outliner_row_splices
+      in
+      hydrate_rows projection.hydrated_rows rows
     in
     let journal_rows =
       if

@@ -274,12 +274,11 @@ let row_splice_bounds_and_content () =
   check_eq "journal-a" row.page_id;
   check_eq (Some 20260827) row.journal_day
 
-let bounded_block_replacements_become_outliner_rows () =
-  let rows =
-    (decoded
-       "{\"apiVersion\":1,\"ok\":true,\"result\":{\"blocks\":[{\"uuid\":\"outline-a\",\"title\":\"Nested note\",\"pageId\":\"journal-a\",\"syncStatus\":\"pending\",\"status\":{\"uuid\":\"todo\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\"}}],\"outlinerRows\":[],\"outlinerRowSplices\":[],\"outlinerState\":{\"editing\":null},\"isOutlinerPatch\":true,\"syncConnected\":false}}")
-      .outliner_rows
-  in
+let bounded_block_replacements_hydrate_content_only () =
+  let projection = decoded
+    "{\"apiVersion\":1,\"ok\":true,\"result\":{\"blocks\":[{\"uuid\":\"outline-a\",\"title\":\"Nested note\",\"pageId\":\"journal-a\",\"syncStatus\":\"pending\",\"status\":{\"uuid\":\"todo\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\"}}],\"outlinerRows\":[],\"outlinerRowSplices\":[],\"outlinerState\":{\"editing\":null},\"isOutlinerPatch\":true,\"syncConnected\":false}}" in
+  check_eq ~msg:"content patches cannot replace hierarchy metadata" projection.outliner_rows [];
+  let rows = projection.hydrated_rows in
   let row = List.nth rows 0 in
   check_eq 1 (List.length rows);
   check_eq "outline-a" row.row_uuid;
@@ -307,6 +306,6 @@ let cases =
     case "graph catalog flags" graph_catalog_flags;
     case "task status icons" task_status_icons;
     case "row splice bounds and content" row_splice_bounds_and_content;
-    case "bounded block replacements become outliner rows"
-      bounded_block_replacements_become_outliner_rows;
+    case "bounded block replacements hydrate content only"
+      bounded_block_replacements_hydrate_content_only;
   ]

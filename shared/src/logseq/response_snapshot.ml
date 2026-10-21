@@ -419,11 +419,7 @@ let sidebar_projection fields =
 
 let core_projection fields =
   let is_patch = bool_member "isOutlinerPatch" fields in
-  let rows = outliner_rows_member "outlinerRows" fields in
-  let base_rows =
-    if is_patch && rows = [] then related_rows_member "blocks" fields
-    else rows
-  in
+  let base_rows = outliner_rows_member "outlinerRows" fields in
   let routes =
     List.filter_map node_route (list_member "nodeRoutes" fields)
   in
@@ -487,7 +483,9 @@ let core_projection fields =
         (string_member "referenceUuid" fields) else None);
     pending_reference_uuid = string_member "pendingReferenceUuid" fields;
     is_outliner_content_patch = bool_member "isOutlinerContentPatch" fields;
-    hydrated_rows = related_rows_member "hydratedBlocks" fields;
+    hydrated_rows =
+      (if is_patch then related_rows_member "blocks" fields else [])
+      @ related_rows_member "hydratedBlocks" fields;
     is_search_patch = bool_member "isSearchPatch" fields;
     sync_connected = bool_member "syncConnected" fields;
     applied_server_t = int_member "appliedServerT" fields;
