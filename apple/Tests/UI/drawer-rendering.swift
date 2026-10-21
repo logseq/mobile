@@ -11,6 +11,7 @@ import LUIAppleBackend
 @MainActor final class RenderCounter {
     var bodies = 0
     var displayedRevision = 0
+    var sidebarBuilds = 0
 }
 
 private struct ContentRow: View {
@@ -43,6 +44,8 @@ private struct ContentRow: View {
     }
 
     func run() async throws {
+        let initiallyOpen = ProcessInfo.processInfo.environment["LOGSEQ_DRAWER_INITIALLY_OPEN"] == "1"
+        let regularWidth = ProcessInfo.processInfo.environment["LOGSEQ_DRAWER_REGULAR_WIDTH"] == "1"
         let counter = RenderCounter()
         let registry = LUIAppleExtensionRegistry()
         try registry.register(LUIAppleExtension(identifier: "long-content", fingerprint: "long-content-v1", properties: [.init(name: "revision", kind: .int)]) { context in
@@ -55,13 +58,15 @@ private struct ContentRow: View {
             })
         })
         try registry.register(LUIAppleExtension(identifier: "sidebar-content", fingerprint: "sidebar-content-v1") { _ in
-            AnyView(ScrollView { Text("Sidebar").frame(height: 3_000) })
+            counter.sidebarBuilds += 1
+            return AnyView(ScrollView { Text("Sidebar").frame(height: 3_000) })
         })
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         try backend.apply(json: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
           {"op":"create-node","id":2,"kind":"drawer"},
+          {"op":"set-prop","id":2,"property":"selected","value":\(initiallyOpen)},
           {"op":"create-extension","id":3,"identifier":"long-content","fingerprint":"long-content-v1"},
           {"op":"create-extension","id":4,"identifier":"sidebar-content","fingerprint":"sidebar-content-v1"},
           {"op":"insert-child","parent":1,"child":2,"index":0},
@@ -71,10 +76,26 @@ private struct ContentRow: View {
         """)
         let window = UIWindow(frame: UIScreen.main.bounds)
         self.window = window
-        window.rootViewController = UIHostingController(rootView: LUISwiftUIRoot(backend: backend, rootID: 1))
+        window.rootViewController = UIHostingController(rootView: LUISwiftUIRoot(backend: backend, rootID: 1)
+            .environment(\.horizontalSizeClass, regularWidth ? .regular : .compact))
         window.makeKeyAndVisible()
         try await Task.sleep(for: .milliseconds(600))
         guard counter.bodies == 300 else { finish("FAIL: expected 300 mounted rows, got \(counter.bodies)"); return }
+        if initiallyOpen || regularWidth {
+            guard counter.sidebarBuilds > 0 else { finish("FAIL: an initially visible sidebar must render immediately"); return }
+            finish("PASS: initially open and regular-width sidebars render immediately")
+            return
+        }
+        guard counter.sidebarBuilds == 0 else {
+            finish("FAIL: the unopened sidebar rendered on the launch critical path"); return
+        }
+        for (index, selected) in [true, false].enumerated() {
+            try backend.apply(json: """
+            {"generation":\(index + 2),"ops":[{"op":"set-prop","id":2,"property":"selected","value":\(selected)}]}
+            """)
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        guard counter.sidebarBuilds > 0 else { finish("FAIL: the sidebar did not render when opened"); return }
         func scrollViews(_ view: UIView) -> [UIScrollView] {
             (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
         }
@@ -88,7 +109,7 @@ private struct ContentRow: View {
         let mountedBodies = counter.bodies
         for (index, selected) in [true, false, true, false].enumerated() {
             try backend.apply(json: """
-            {"generation":\(index + 2),"ops":[{"op":"set-prop","id":2,"property":"selected","value":\(selected)}]}
+            {"generation":\(index + 4),"ops":[{"op":"set-prop","id":2,"property":"selected","value":\(selected)}]}
             """)
             try await Task.sleep(for: .milliseconds(80))
             let panes = scrollViews(window).filter { $0.contentSize.height > $0.bounds.height }
@@ -109,12 +130,12 @@ private struct ContentRow: View {
             finish("FAIL: drawer transitions changed scroll identity, offset, or availability: \(scrolls.map(\.contentOffset)) expected \(offsets)"); return
         }
         try backend.apply(json: """
-        {"generation":6,"ops":[{"op":"set-extension-prop","id":3,"property":"revision","value":1}]}
+        {"generation":8,"ops":[{"op":"set-extension-prop","id":3,"property":"revision","value":1}]}
         """)
         try await Task.sleep(for: .milliseconds(300))
         guard counter.displayedRevision == 1, counter.bodies > mountedBodies else {
             finish("FAIL: content updates stopped rendering after drawer transitions"); return
         }
-        finish("PASS: four drawer transitions preserved all 300 content rows without reevaluation; content updates still render")
+        finish("PASS: the unopened sidebar stays off the launch path; six drawer transitions preserve pane identity, offsets, and all 300 content rows")
     }
 }

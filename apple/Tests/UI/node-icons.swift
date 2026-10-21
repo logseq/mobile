@@ -59,13 +59,23 @@ import CoreText
             throw failure("Existing emoji and colored Tabler icons must render in both native text and rich block rows")
         }
         func screenshot(_ name: String) throws {
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { context in window.layer.render(in: context.cgContext) }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(name))
         }
         try screenshot("page-node-icons.png")
         let drawer = backend.rootIDs.flatMap(ids).first { backend.model(id: $0)?.kind == .drawer }!
-        try backend.performToggle(node: drawer, checked: true)
+        await runtime.drainEffectsForTesting()
+        guard let sidebarButton = backend.rootIDs.flatMap(ids).first(where: {
+            backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue == "button.sidebar"
+        }) else { throw failure("Missing sidebar button") }
+        try backend.performPress(node: sidebarButton)
+        await runtime.drainEffectsForTesting()
         try await Task.sleep(for: .milliseconds(500))
+        guard backend.model(id: drawer)?.isSelected == true,
+              views(window).contains(where: { $0 is UIScrollView && $0.bounds.width < window.bounds.width - 20 }) else {
+            throw failure("The sidebar must be visibly open before checking favorites and recents")
+        }
         try screenshot("favorite-recent-icons.png")
         try backend.performToggle(node: drawer, checked: false)
         try runtime.applyCoreResponse(response(icons: false))
