@@ -304,6 +304,10 @@ let page_is_hidden db eid =
   in
   loop [] eid
 
+let library_entity db eid =
+  value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
+  && string_value (value db eid "block/title") = Some "Library"
+
 let page_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
   let title = protected_string decrypt_title (value db eid "block/title") in
@@ -312,6 +316,7 @@ let page_summary decrypt_title db eid =
   | Some uuid, Some title, Some name ->
     if
       S.trim title <> ""
+      && not (library_entity db eid)
       && not (S.starts_with ~prefix:"$$$" name)
       && not (page_is_hidden db eid)
     then Some { Model.uuid; title }

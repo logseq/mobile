@@ -1031,8 +1031,61 @@ let priority_survives_graph_projection_and_cache () =
   check_eq ~msg:"clearing priority removes its cached icon"
     (Yojson.Basic.Util.member "priority" (Rpc.block_json (Option.get (Model.read_block cache "task")))) `Null
 
+let builtin_library_is_hidden_without_hiding_ordinary_pages () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/link"; "block/order";
+    "block/updated-at"; "logseq.property/built-in?"] [] in
+  transact conn [
+    page "library" "library" "Library" [field "logseq.property/built-in?" (Ds.Bool true)];
+    page "ordinary" "ordinary library" "Library" [];
+    page "child" "project" "Project" [field "block/parent" (Ds.Ref_to (Ds.Temp_id "library"))];
+    page "favorites" "$$$favorites" "Favorites" [];
+    entity "library-favorite" "" [field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
+      field "block/link" (Ds.Ref_to (Ds.Temp_id "library")); field "block/order" (Ds.String "a0")];
+    entity "ordinary-favorite" "" [field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
+      field "block/link" (Ds.Ref_to (Ds.Temp_id "ordinary")); field "block/order" (Ds.String "a1")]
+  ];
+  let db = Ds.conn_db conn in
+  let sidebar = Read.sidebar_pages plain db in
+  check_eq ~msg:"Library never appears in Favorites" (summary_uuids sidebar.favorites) ["ordinary"];
+  check ~msg:"Library never appears in Recent" (not (List.mem "library" (summary_uuids sidebar.recent_pages)));
+  check ~msg:"ordinary pages under Library stay visible" (List.mem "child" (summary_uuids sidebar.recent_pages));
+  check_eq ~msg:"Library cannot be opened for mobile operations" (Read.node_destination plain db "library") None;
+  check ~msg:"ordinary same-title pages remain navigable" (Read.node_destination plain db "ordinary" <> None);
+  let path = Filename.temp_file "logseq-library-search" ".sqlite" in
+  Fun.protect ~finally:(fun () -> Sys.remove path) (fun () ->
+    let index = Search_index.create path in
+    Search_index.refresh index db;
+    let hits, _ = Search_index.search_hits_page ~offset:0 ~limit:20 index db "Library" in
+    check_eq ~msg:"SQLite search excludes built-in Library but keeps ordinary matches"
+      (List.map (fun (hit : Search_index.indexed_search_hit) -> hit.uuid) hits) ["ordinary"])
+
+let cyclic_block_references_have_finite_rendered_projections () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/order"; "block/refs"] [] in
+  let ids = ["10000000-0000-4000-8000-000000000001";
+    "10000000-0000-4000-8000-000000000002"; "10000000-0000-4000-8000-000000000003"] in
+  let check_cycle cycle =
+    let nodes = List.mapi (fun index id ->
+      let next = List.nth cycle ((index + 1) mod List.length cycle) in
+      entity id ("[[" ^ next ^ "]]") [
+        field "block/page" (Ds.Ref_to (Ds.Temp_id "page"));
+        field "block/parent" (Ds.Ref_to (Ds.Temp_id "page"));
+        field "block/order" (Ds.String ("a" ^ string_of_int index)); refs "block/refs" [next]]) cycle in
+    transact conn (page "page" "notes" "Notes" [] :: nodes);
+    let db = Ds.conn_db conn in
+    let blocks = Read.blocks_for_page plain db "page" in
+    List.iter (fun (block : Model.block) ->
+      let response = Rpc_encode.block_json block |> Yojson.Basic.to_string in
+      check ~msg:"cyclic refs serialize as finite clickable labels" (String.length response < 10000);
+      check ~msg:"each ref retains its target UUID" (String_kit.includes ~sub:"nodeReference" response);
+      let related = Read.references_for_node plain db block.uuid in
+      check ~msg:"backlinks stay finite" (List.length related <= List.length cycle)) blocks
+  in
+  List.iter check_cycle [[List.hd ids]; [List.nth ids 0; List.nth ids 1]; ids]
+
 let cases =
-  [ case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;
+  [ case "builtin Library is hidden without hiding ordinary pages" builtin_library_is_hidden_without_hiding_ordinary_pages;
+    case "cyclic block references have finite rendered projections" cyclic_block_references_have_finite_rendered_projections;
+    case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;
     case "property value subtrees are not outline content" property_value_subtrees_are_not_outline_content;
     case "parent windows skip collapsed and hidden subtrees" parent_window_skips_collapsed_and_hidden_subtrees;
     case "parent windows hydrate 32 rows and continue without gaps" parent_window_hydrates_only_32_rows_and_continues_without_gaps;
