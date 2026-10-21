@@ -162,6 +162,7 @@ static const char *lui_exception(const char *name, value result) {
   char *message = caml_format_exception(Extract_exception(result));
   LOGSEQ_LOG("OCaml exception in %s: %s",
                   name, message == NULL ? "(unprintable)" : message);
+  caml_stat_free(message);
   return missing_lui_callback();
 }
 
@@ -537,6 +538,7 @@ int64_t logseq_lui_root_node(void) {
       char *message = caml_format_exception(Extract_exception(result));
       LOGSEQ_LOG("OCaml exception in logseq_lui_root_node: %s",
                       message == NULL ? "(unprintable)" : message);
+      caml_stat_free(message);
     } else {
       node = Long_val(result);
     }

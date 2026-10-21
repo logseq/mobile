@@ -76,7 +76,12 @@ final class LogseqCoreExecutor: @unchecked Sendable {
             #endif
             while true {
                 let job = state.next()
-                job.complete(job.callCore(job.requestJSON))
+                #if canImport(ObjectiveC)
+                let response = autoreleasepool { job.callCore(job.requestJSON) }
+                #else
+                let response = job.callCore(job.requestJSON)
+                #endif
+                job.complete(response)
             }
         }
         thread.name = "LogseqCore"
