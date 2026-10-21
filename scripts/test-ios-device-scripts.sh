@@ -13,6 +13,7 @@ failures=0
 
 python3 "$repo_root/scripts/test-ios-simulator-build-arguments.py"
 python3 "$repo_root/scripts/test-ios-native-link-manifest.py"
+python3 "$repo_root/scripts/test-ios-launch-screen.py"
 
 if ! grep -Fq 'scripts/build-mobile-ocaml.sh' \
   "$repo_root/scripts/build-mobile-ios-device.sh"; then

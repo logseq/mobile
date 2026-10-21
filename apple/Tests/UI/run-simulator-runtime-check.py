@@ -101,6 +101,9 @@ import SwiftUI
         }))
         for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)
+        assets = ROOT / "apple/.build/Logseq.app/Assets.car"
+        if assets.exists():
+            shutil.copy2(assets, app / assets.name)
         run(["codesign", "--force", "--sign", "-", str(app)])
         subprocess.run(["xcrun", "simctl", "terminate", SIMULATOR, bundle], capture_output=True)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])

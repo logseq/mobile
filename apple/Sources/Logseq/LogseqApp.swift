@@ -67,6 +67,13 @@ public struct LogseqRootView : View {
         LGRendererRoot(renderer: runtime.lgRuntime.renderer)
             .onAppear {
                 LogseqAppDelegate.shared.reportLaunchStage("root_appeared")
+                if let window = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
+                    .first(where: { $0.isKeyWindow }) {
+                    LogseqLaunchTiming.measure("launch_transition_install") {
+                        LogseqLaunchTransition.shared.show(in: window)
+                    }
+                }
                 DispatchQueue.main.async {
                     LogseqAppDelegate.shared.onFirstUIRendered()
                 }
@@ -998,6 +1005,9 @@ public final class LogseqAppDelegate : Sendable {
     }
 
     @MainActor public func onFirstUIRendered() {
+        LogseqLaunchTiming.measure("launch_transition_begin_fade") {
+            LogseqLaunchTransition.shared.finish()
+        }
         reportLaunchMetric("first_ui_rendered")
         LogseqLaunchTiming.finish()
     }

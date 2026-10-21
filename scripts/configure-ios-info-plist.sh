@@ -60,10 +60,6 @@ reset_key "UIDeviceFamily"
 "$plistbuddy" -c "Add :UIDeviceFamily:0 integer 1" "$info_plist"
 "$plistbuddy" -c "Add :UIDeviceFamily:1 integer 2" "$info_plist"
 
-reset_key "UILaunchScreen"
-"$plistbuddy" -c "Add :UILaunchScreen dict" "$info_plist"
-"$plistbuddy" -c "Add :UILaunchScreen:UILaunchScreen dict" "$info_plist"
-
 reset_key "UIApplicationSceneManifest"
 "$plistbuddy" -c "Add :UIApplicationSceneManifest dict" "$info_plist"
 "$plistbuddy" -c "Add :UIApplicationSceneManifest:UIApplicationSupportsMultipleScenes bool true" "$info_plist"
