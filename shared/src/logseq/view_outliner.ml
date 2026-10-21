@@ -553,7 +553,10 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (button ~variant:`ghost ~padding:0 ~foreground:"foreground"
+        (View_base.with_label_signal
+           (Signal.map2 View_base.outliner_journal_accessibility_label
+              model_source row_source)
+           (button ~variant:`ghost ~padding:0 ~foreground:"foreground"
            ~on_press:(fun _ ->
              ignore (send (Model.RequestAppNode
                (View_base.outliner_journal_page_id
@@ -591,7 +594,7 @@ let outliner_entry context model_source retained_row_source row_source
                    [];
                  box ~height:12 [];
                ];
-           ]);
+           ]));
       outliner_row context model_source retained_row_source row_source
         send;
     ]

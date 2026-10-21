@@ -6993,6 +6993,9 @@ let journal_date_headings_open_their_page_on_both_hosts () =
     let heading = descendant_with_identifier renderer (main_root renderer application)
       "button.journal.journal-page" in
     check ~msg:"the journal date is visible" (heading <> -1);
+    check_eq ~msg:"journal date buttons satisfy the native accessible-name contract"
+      (property_string renderer heading Lui_protocol.AccessibilityLabel)
+      "Open October 21st";
     dispatch application (Lui_protocol.Press heading);
     flush application;
     check_eq ~msg:"the date opens its journal page on each native host"
