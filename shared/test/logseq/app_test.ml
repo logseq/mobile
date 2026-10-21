@@ -7976,6 +7976,36 @@ let check_flat_lazy_rows renderer collection rows =
   check ~msg:"the native collection retains the complete scrollable row count"
     (int_of_string (List.assoc "data-virtual-count" attributes) >= List.length rows)
 
+let scrolling_prefetches_content_before_mounting_the_next_window () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  let rows = List.init 100 (fun index ->
+    { (outline_row ("prefetch-" ^ string_of_int index) (if index < 32 then "Loaded" else "")) with
+      Model.row_loaded = index < 32 }) in
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; outliner_rows = rows });
+  flush application;
+  let requests = List.filter_map (function Model.HydrateOutlinerRowsEffect (_, ids) -> Some ids | _ -> None)
+    (App.model application).pending_effects in
+  check ~msg:"adjacent content loads before its rows enter the visible window"
+    (List.exists (List.mem "prefetch-40") requests);
+  check ~msg:"prefetch respects the core's 32-row request limit"
+    (List.for_all (fun ids -> List.length ids <= 32) requests);
+  let renderer = Lui_app.runtime application in
+  let root = main_root renderer application in
+  check_eq ~msg:"prefetch does not mount offscreen native rows"
+    (descendant_with_identifier renderer root "outliner.block.prefetch-40") (-1);
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; is_outliner_content_patch = true;
+    hydrated_rows = List.init 16 (fun index -> outline_row ("prefetch-" ^ string_of_int (index + 32)) "Prefetched content") });
+  flush application;
+  let window = descendant_with_identifier renderer root "outliner.window" in
+  dispatch application (Lui_protocol.VisibleRange (window, 25, 45));
+  flush application;
+  let row = descendant_with_identifier renderer root "outliner.block.prefetch-40" in
+  check ~msg:"scrolling mounts already loaded destination content" (row <> -1);
+  check_eq (Yojson.Basic.Util.member "title" (native_row_payload application row)) (`String "Prefetched content")
+
 let large_node_pages_virtualize_each_nested_block () =
   let application = App.create (ios_backend ()) in
   let rows = thousand_nested_rows () in
@@ -8102,10 +8132,12 @@ let distant_outline_contents_are_loaded_without_replacing_the_page () =
     let window = descendant_with_identifier renderer (root ()) "outliner.window" in
     dispatch application (Lui_protocol.VisibleRange (window, 9_980, 9_999));
     flush application;
-    let requested = List.concat_map (function
-      | Model.HydrateOutlinerRowsEffect (_, ids) -> ids | _ -> []) (App.model application).pending_effects in
-    check ~msg:"scrolling requests only the missing content window"
-      (List.length requested > 0 && List.length requested <= 32);
+    let requests = List.filter_map (function
+      | Model.HydrateOutlinerRowsEffect (_, ids) -> Some ids | _ -> None) (App.model application).pending_effects in
+    let requested = List.concat requests in
+    check ~msg:"scrolling bounds visible and adjacent content to small requests"
+      (List.length requested > 0 && List.length requested <= 80
+       && List.for_all (fun ids -> List.length ids <= 32) requests);
     check ~msg:"the final nested block is included in the content request" (List.mem "content-9999" requested);
     let content = List.map (fun id -> { (outline_row id "Hydrated block") with Model.row_loaded = true }) requested in
     send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
@@ -10212,6 +10244,7 @@ let cases =
     case "saving-nested-block-preserves-native-row-indentation" saving_nested_block_preserves_native_row_indentation;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
+    case "scrolling-prefetches-content-before-mounting-the-next-window" scrolling_prefetches_content_before_mounting_the_next_window;
     case "kotlin-large-pages-mount-only-the-requested-window" kotlin_large_pages_mount_only_the_requested_window;
     case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;

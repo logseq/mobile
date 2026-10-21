@@ -914,17 +914,21 @@ let outliner_entries context model_source ~source send : t =
         List.map (fun (marker : Model.journal_section_marker) ->
           marker.start_index, marker.section_title) current.outliner_section_markers
       else []) model_source) in
-  let requested = ref [] in
-  let on_window entries =
-    let ids = List.filter_map View_rows.unloaded_entry_id entries in
-    if ids <> !requested then begin
-      requested := ids;
-      if ids <> [] then ignore (send (Model.EnsureOutlinerRows ids))
-    end in
+  let ensure_content () =
+    let requested = ref [] in
+    fun entries ->
+      let ids = List.filter_map View_rows.unloaded_entry_id entries in
+      if ids <> !requested then begin
+        requested := ids;
+        if ids <> [] then ignore (send (Model.EnsureOutlinerRows ids))
+      end in
+  let on_window = ensure_content () in
+  let on_prefetch = ensure_content () in
   let scroll_target = Signal.own_signal mount_context.ui_scope
     (Signal.map (fun current -> match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
-  View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window ~is_pinned:View_rows.page_entry_editor_ ~source:entries
+  View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window
+    ~on_prefetch ~is_pinned:View_rows.page_entry_editor_ ~source:entries
     ~key:View_rows.page_entry_identifier ~cmp:compare
     ~mount:(fun entry_source ->
       let render () = match Signal.sample entry_source with

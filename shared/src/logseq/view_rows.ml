@@ -58,7 +58,8 @@ let retained_row_editing_caret (retained : retained_row) =
    lightweight collection metadata keeps the entire outline scrollable. *)
 let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     ?(identifier = "outliner.window") ?(item_extent = 32)
-    ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
+    ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
+    ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
   if not (List.mem (Lui_ui.host context) [Lui_protocol.SwiftUIHost; Lui_protocol.KotlinHost]) then
     Lui_elements.keyed ~source ~key ~cmp ~mount context parent
@@ -116,6 +117,13 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     let visible = own (Signal.map (fun (items, start, length) ->
       Array.sub items start length |> Array.to_list) window) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));
+    let adjacent = own (Signal.map (fun (items, start, length) ->
+      let before = max 0 (start - 16) in
+      let after = start + length in
+      let preceding = Array.sub items before (start - before) |> Array.to_list in
+      let following = Array.sub items after (min 16 (Array.length items - after)) |> Array.to_list in
+      preceding @ following) window) in
+    ignore (Signal.own context.ui_scope (Signal.observe adjacent on_prefetch));
     Lui_elements.if_ ~test:(own (Signal.map (fun items -> Array.length items > 0) items))
     (Lui_elements.list ~accessibility_identifier:identifier
       ~data_attrs_signal:metadata ~track_visible_range:true
