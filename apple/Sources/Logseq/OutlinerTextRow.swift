@@ -2,6 +2,7 @@
 import SwiftUI
 import UIKit
 import LUIAppleBackend
+import LogseqModel
 
 /// The common text row has one native layout pass. Rich media and the editor
 /// remain SwiftUI children of OutlinerRow.
@@ -9,10 +10,17 @@ struct OutlinerTextRow: UIViewRepresentable {
     let row: OutlinerRowPayload
     @Environment(\.luiSemanticColors) private var semanticColors
     let emit: (String, String?, [String: LUIExtensionValue]) -> Void
+    let onOpenLink: (URL) -> Void
+
+    static func supports(_ row: OutlinerRowPayload) -> Bool {
+        !row.isAsset && row.markup.allSatisfy { node in
+            node.type == .text || (node.type == .link && node.children.allSatisfy { $0.type == .text })
+        }
+    }
 
     func makeUIView(context: Context) -> OutlinerTextRowView { OutlinerTextRowView() }
     func updateUIView(_ view: OutlinerTextRowView, context: Context) {
-        view.update(row, semanticColors: semanticColors, emit: emit)
+        view.update(row, semanticColors: semanticColors, emit: emit, onOpenLink: onOpenLink)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: OutlinerTextRowView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
@@ -41,13 +49,14 @@ struct OutlinerTextRow: UIViewRepresentable {
     private var row: OutlinerRowPayload?
     private var semanticColors: [String: Color] = [:]
     private var emit: ((String, String?, [String: LUIExtensionValue]) -> Void)?
+    private var onOpenLink: ((URL) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         title.activate = { [weak self] in self?.edit() }
         title.numberOfLines = 0
         title.isUserInteractionEnabled = true
-        title.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(edit)))
+        title.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapTitle(_:))))
         bullet.setImage(UIImage(named: "outliner_bullet", in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.tintColor = UIColor.secondaryLabel.withAlphaComponent(0.4)
         bullet.addTarget(self, action: #selector(open), for: .touchUpInside)
@@ -69,18 +78,41 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func update(_ row: OutlinerRowPayload, semanticColors: [String: Color] = [:], emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void) {
+    func update(_ row: OutlinerRowPayload, semanticColors: [String: Color] = [:],
+                emit: @escaping (String, String?, [String: LUIExtensionValue]) -> Void,
+                onOpenLink: ((URL) -> Void)? = nil) {
         self.emit = emit
+        self.onOpenLink = onOpenLink
         self.semanticColors = semanticColors
         status.tintColor = UIColor(row.status?.color(in: semanticColors) ?? .primary)
         guard self.row != row else { return }
         self.row = row
         guides.update(row)
-        let value = row.markup.isEmpty ? row.title : row.markup.map { $0.text ?? "" }.joined()
         let attributes: [NSAttributedString.Key: Any] = row.completed
             ? [.strikethroughStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: UIColor.secondaryLabel]
             : [.foregroundColor: UIColor.label]
-        title.attributedText = NSAttributedString(string: value, attributes: attributes)
+        let value = NSMutableAttributedString(string: "")
+        var actions: [UIAccessibilityCustomAction] = []
+        if row.markup.isEmpty { value.append(NSAttributedString(string: row.title, attributes: attributes)) }
+        for node in row.markup {
+            if node.type == .link {
+                let label = node.children.isEmpty ? node.url ?? "" : node.children.map { $0.text ?? "" }.joined()
+                var linkAttributes = attributes
+                if let url = node.url.flatMap(URL.init(string:)) {
+                    linkAttributes[.link] = url
+                    if !row.completed { linkAttributes[.foregroundColor] = tintColor }
+                    actions.append(UIAccessibilityCustomAction(name: label) { [weak self] _ in
+                        self?.onOpenLink?(url)
+                        return true
+                    })
+                }
+                value.append(NSAttributedString(string: label, attributes: linkAttributes))
+            } else {
+                value.append(NSAttributedString(string: node.text ?? "", attributes: attributes))
+            }
+        }
+        title.attributedText = value
+        title.accessibilityCustomActions = actions
         title.accessibilityIdentifier = "outliner.block-action." + row.uuid
         title.accessibilityLabel = "Edit block " + row.title
         title.accessibilityTraits = .button
@@ -195,6 +227,38 @@ struct OutlinerTextRow: UIViewRepresentable {
         super.layoutSubviews()
         guides.frame = bounds
         _ = layout(width: bounds.width, apply: true)
+    }
+    @objc private func tapTitle(_ gesture: UITapGestureRecognizer) {
+        activateTitle(at: gesture.location(in: title))
+    }
+
+    func activateTitle(at point: CGPoint) {
+        guard title.accessibilityCustomActions?.isEmpty == false,
+              let attributed = title.attributedText, attributed.length > 0 else { edit(); return }
+        let text = NSMutableAttributedString(attributedString: attributed)
+        text.addAttribute(.font, value: title.font ?? .preferredFont(forTextStyle: .body),
+                          range: NSRange(location: 0, length: text.length))
+        let storage = NSTextStorage(attributedString: text)
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: title.bounds.size)
+        container.lineFragmentPadding = 0
+        container.maximumNumberOfLines = title.numberOfLines
+        container.lineBreakMode = title.lineBreakMode
+        storage.addLayoutManager(manager)
+        manager.addTextContainer(container)
+        manager.ensureLayout(for: container)
+        let rect = manager.usedRect(for: container)
+        let location = CGPoint(x: point.x, y: point.y - max(0, (title.bounds.height - rect.height) / 2))
+        let glyph = manager.glyphIndex(for: location, in: container)
+        if glyph < manager.numberOfGlyphs,
+           manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).contains(location) {
+            let character = manager.characterIndexForGlyph(at: glyph)
+            if let url = text.attribute(.link, at: character, effectiveRange: nil) as? URL {
+                onOpenLink?(url)
+                return
+            }
+        }
+        edit()
     }
     @objc private func edit() { emit?(row?.opensAsPage == true ? "open-node" : "edit", nil, [:]) }
     @objc private func open() { emit?("open-node", nil, [:]) }

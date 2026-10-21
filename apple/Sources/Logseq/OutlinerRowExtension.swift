@@ -63,6 +63,27 @@ struct OutlinerRowPayload: Decodable, Equatable {
 }
 
 @MainActor enum OutlinerRowExtension {
+    private final class CachedPayload {
+        let row: OutlinerRowPayload
+        init(_ row: OutlinerRowPayload) { self.row = row }
+    }
+
+    private static let payloads: NSCache<NSString, CachedPayload> = {
+        let cache = NSCache<NSString, CachedPayload>()
+        cache.countLimit = 512
+        cache.totalCostLimit = 8 * 1024 * 1024
+        return cache
+    }()
+
+    private static func payload(_ encoded: String) -> OutlinerRowPayload? {
+        let key = encoded as NSString
+        if let cached = payloads.object(forKey: key) { return cached.row }
+        guard let data = encoded.data(using: .utf8),
+              let row = try? JSONDecoder().decode(OutlinerRowPayload.self, from: data) else { return nil }
+        payloads.setObject(CachedPayload(row), forKey: key, cost: data.count)
+        return row
+    }
+
     static let identifier = "outliner-block-row"
     static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
@@ -77,7 +98,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                  .init(name: "set-status", fields: [uuid, .init(name: "count", kind: .int, isRequired: true)])]
         ) { context in
             guard case let .string(encoded) = context.property("payload"),
-                  let row = try? JSONDecoder().decode(OutlinerRowPayload.self, from: Data(encoded.utf8)) else {
+                  let row = payload(encoded) else {
                 return AnyView(EmptyView())
             }
             return AnyView(OutlinerRow(context: context, row: row, playback: playback))
@@ -91,6 +112,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
     @Environment(\.luiSemanticColors) private var semanticColors
+    @Environment(\.openURL) private var openURL
 
     @ViewBuilder var body: some View {
         #if os(iOS)
@@ -112,8 +134,14 @@ struct OutlinerRowPayload: Decodable, Equatable {
 
     @ViewBuilder private var content: some View {
         #if os(iOS)
-        if context.childIDs.isEmpty && !row.isAsset && row.markup.allSatisfy({ $0.type == .text }) {
-            OutlinerTextRow(row: row, emit: { name, uuid, values in emit(name, uuid: uuid, extra: values) })
+        if context.childIDs.isEmpty && OutlinerTextRow.supports(row) {
+            OutlinerTextRow(row: row,
+                emit: { name, uuid, values in emit(name, uuid: uuid, extra: values) },
+                onOpenLink: { url in
+                    guard context.isUserInteractionEnabled else { return }
+                    if let link = OutlinerMarkupLink(url: url), case let .node(uuid) = link { emit("open-node", uuid: uuid) }
+                    else { openURL(url) }
+                })
         } else { swiftUIContent }
         #else
         swiftUIContent
