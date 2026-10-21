@@ -321,6 +321,7 @@ public final class LGRuntime {
             let value = Self.extensionInt(values, name: "caret-utf16-offset")
                 ?? Self.extensionInt(values, name: "selection-length")
                 ?? Self.extensionInt(values, name: "count")
+                ?? Self.extensionInt(values, name: "width")
                 ?? Self.extensionPlacement(values)
                 ?? 0
             operation = .extensionEvent(event.nodeID, identifier, name, text, value)

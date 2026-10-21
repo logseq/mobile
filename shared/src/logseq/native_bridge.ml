@@ -535,6 +535,7 @@ let extension_event node identifier name text value =
       [ "title", StringValue text; "selection-length", IntValue value ]
     | _, "caret-change" -> [ "caret-utf16-offset", IntValue value ]
     | _, "query-changed" -> [ "query", StringValue text ]
+    | "native-navigation-stack", "viewport-changed" -> [ "width", IntValue value ]
     | _, "back" -> [ "count", IntValue value ]
     | _ -> []
   in

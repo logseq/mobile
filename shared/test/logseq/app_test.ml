@@ -9232,6 +9232,21 @@ let native_bridge_preserves_native_search_query_values () =
     (App.model application).search_query "project alpha";
   ignore (Native_bridge.dispose ())
 
+let native_bridge_preserves_viewport_width () =
+  ignore (Native_bridge.initialize 2 2 0);
+  let application = Native_bridge.app () in
+  send application (Model.SelectGraph "Work");
+  flush application;
+  let navigation = extension_node application "native-navigation-stack" in
+  ignore (Native_bridge.extension_event navigation "native-navigation-stack"
+    "viewport-changed" "" 820);
+  check_eq ~msg:"the native ABI preserves tablet width" (App.model application).viewport_width 820;
+  send application Model.OpenSidebar;
+  send application Model.ShowJournals;
+  flush application;
+  check ~msg:"native viewport events preserve the tablet sidebar" (App.model application).sidebar_open;
+  ignore (Native_bridge.dispose ())
+
 let native_bridge_preserves_native_navigation_back_counts () =
   ignore (Native_bridge.initialize 2 2 0);
   let application = Native_bridge.app () in
@@ -9831,6 +9846,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
     case "sidebar-navigation-respects-native-viewport" sidebar_navigation_respects_native_viewport_width;
     case "reading-content-uses-adaptive-insets" reading_content_uses_adaptive_insets_on_both_native_hosts;
     case "sync-checkpoint-encoding-is-lg-owned" sync_checkpoint_encoding_is_lg_owned;

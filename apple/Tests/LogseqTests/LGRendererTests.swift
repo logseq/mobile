@@ -234,6 +234,15 @@ struct LGRendererTests {
         runtime.renderer.receiveForTesting(
             LGRendererEvent(
                 kind: .extension,
+                nodeID: 21,
+                extensionIdentifier: "native-navigation-stack",
+                extensionName: "viewport-changed",
+                extensionValues: ["width": LUIExtensionValue.int(820)]
+            )
+        )
+        runtime.renderer.receiveForTesting(
+            LGRendererEvent(
+                kind: .extension,
                 nodeID: 18,
                 extensionIdentifier: "outliner-block-content",
                 extensionName: "open-node",
@@ -284,6 +293,13 @@ struct LGRendererTests {
                 name: "query-changed",
                 text: "project alpha",
                 value: 0
+            ),
+            LGExtensionEventProbe(
+                node: 21,
+                identifier: "native-navigation-stack",
+                name: "viewport-changed",
+                text: "",
+                value: 820
             ),
             LGExtensionEventProbe(
                 node: 18,
