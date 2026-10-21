@@ -9796,7 +9796,7 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
     completed.composer_assets []
 
 let quick_capture_confirms_only_successful_local_saves () =
-  List.iter (fun backend ->
+  List.iter (fun (backend, confirmation_duration) ->
     List.iter (fun kind ->
       List.iter (fun succeeded ->
         let application = App.create (backend ()) in
@@ -9840,7 +9840,7 @@ let quick_capture_confirms_only_successful_local_saves () =
           check_eq ~msg:"success confirmation uses the top overlay"
             (property_string renderer overlay Lui_protocol.AlignmentValue) "top";
           check_eq ~msg:"confirmation dismisses automatically"
-            (property_int renderer (toast ()) Lui_protocol.DurationValue) 2500;
+            (property_int renderer (toast ()) Lui_protocol.DurationValue) confirmation_duration;
           dispatch application (Lui_protocol.Dismiss (toast ()));
           flush application;
           check_eq ~msg:"dismissal removes the confirmation" (toast ()) (-1)
@@ -9851,7 +9851,7 @@ let quick_capture_confirms_only_successful_local_saves () =
         end)
         [false; true])
       ["text"; "task"; "asset"])
-    [ios_backend; kotlin_backend]
+    [ios_backend, 1500; kotlin_backend, 2500]
 
 let quick_capture_restarts_confirmation_for_each_save () =
   let application = App.create (ios_backend ()) in

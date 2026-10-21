@@ -970,7 +970,8 @@ let application_main_content (context : Lui_ui.ui_context) model_source
         Option.to_list current.capture_confirmation) model_source)
       ~key:string_of_int ~cmp:compare
       ~mount:(fun id_source ->
-        let notification = toast ~duration:2500 ~label:"Added to today" ~margin_top:8
+        let duration = if Lui_ui.platform context = IOS then 1500 else 2500 in
+        let notification = toast ~duration ~label:"Added to today" ~margin_top:8
           ~on_dismiss:(press send (Model.DismissCaptureConfirmation (Signal.sample id_source)))
           [text ~value:"✅" ~accessibility_identifier:"capture.confirmation.icon" [];
            text ~value:"Added to today" ~accessibility_identifier:"capture.confirmation" []] in
