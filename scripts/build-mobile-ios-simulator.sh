@@ -149,6 +149,10 @@ for extension in LogseqShareExtension LogseqWidgets; do
   extension_product="$extension_build_dir/$extension.appex"
   [[ -d $extension_product ]] || die "missing simulator extension: $extension_product"
   cp -R "$extension_product" "$plugins_dir/"
+  for key in CFBundleShortVersionString CFBundleVersion; do
+    value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$app_dir/Info.plist")
+    /usr/libexec/PlistBuddy -c "Set :$key $value" "$plugins_dir/$extension.appex/Info.plist"
+  done
 done
 codesign --force --sign - --entitlements "$repo_root/apple/App/ShareExtension/ShareExtension.entitlements" \
   --timestamp=none --generate-entitlement-der "$plugins_dir/LogseqShareExtension.appex"
