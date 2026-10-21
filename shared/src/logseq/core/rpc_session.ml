@@ -294,7 +294,7 @@ let snapshot session context_blocks blocks =
            , Rpc.json_list
                (List.map Rpc.status_response_json
                   (Model.all_statuses s.model)) )
-         ; ("pendingSyncError", match s.pending_sync_error with Some message -> `String message | None -> `Null)
+         ; ("pendingSyncError", match Pump.pending_sync_error session with Some message -> `String message | None -> `Null)
          ; ("pendingSyncRequest", pending_request_json session)
          ; ("outlinerState", Rpc.outliner_state_json current)
          ; ( "outlinerAutocompleteCandidates"
@@ -323,6 +323,7 @@ let snapshot session context_blocks blocks =
 let outliner_patch_result session context blocks deleted splices =
   let s = state session in
   Rpc.outliner_patch_result s.model.revision context s.outliner_state
+    ?sync_error:(Pump.pending_sync_error session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)
     blocks deleted splices
@@ -433,7 +434,7 @@ let pending_sync_patch session =
          , match projection_server_t session with
            | Some value -> `Int value
            | None -> `Null )
-       ; ("pendingSyncError", match (state session).pending_sync_error with Some message -> `String message | None -> `Null)
+       ; ("pendingSyncError", match Pump.pending_sync_error session with Some message -> `String message | None -> `Null)
        ; ("pendingSyncRequest", pending_request_json session)
        ; ( "hasPendingSemanticOperations"
          , `Bool (has_pending_operations session) )

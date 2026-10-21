@@ -103,6 +103,8 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun operation -> Graph.prepare_sync graph operation);
     pending_operations =
       Some (fun () -> Graph.pending_operations graph);
+    load_sync_error = Some (fun () -> Graph.sync_error graph);
+    record_sync_failure = Some (Graph.record_sync_failure graph);
     load_cached_graph_key =
       Some (fun config -> discard_value (Keyring.load_cached ring config));
     unlock_graph =

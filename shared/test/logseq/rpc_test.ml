@@ -1212,7 +1212,7 @@ let shared_pending_retry_preserves_upload_and_bounds_attempts () =
     [`Null, `String "offline", 1000; `Int 429, `Null, 2000; `Int 503, `Null, 4000];
   let exhausted = pending_completion session request (`Int 503) (`String "unavailable") `Null in
   check_eq (member "pendingSyncRequest" exhausted) `Null;
-  check_eq (member "pendingSyncError" exhausted) (`String "Sync server returned HTTP 503");
+  check_eq (member "pendingSyncError" exhausted) (`String "Sync server returned HTTP 503: unavailable");
   check_eq !cleaned ["/tmp/encrypted-retry-asset"];
   check_eq (List.length !staged) 1
 
@@ -1254,11 +1254,11 @@ let shared_pending_error_summary_preserves_unicode () =
   let session, _, _ = retry_asset_session () in
   let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
-  let detail = String.make 239 'x' ^ "中over" in
+  let detail = String.make 4095 'x' ^ "中over" in
   let body = Json.to_string (`Assoc ["type", `String "tx/reject"; "reason", `String "invalid"; "error-detail", `String detail]) in
   let rejected = pending_completion session transaction (`Int 200) (`String body) `Null in
   check_eq (member "pendingSyncError" rejected)
-    (`String ("Sync server rejected the change: invalid — " ^ String.make 239 'x' ^ "中"))
+    (`String ("Sync server rejected the change: invalid — " ^ String.make 4095 'x' ^ "中"))
 
 let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in

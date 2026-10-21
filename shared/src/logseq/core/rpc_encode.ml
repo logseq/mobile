@@ -388,7 +388,7 @@ let outliner_command_json (command : Effects.outliner_platform_command) =
   in
   Wire.json_object [ ("type", `String kind); (key, value) ]
 
-let outliner_patch_result revision context state command_revision commands
+let outliner_patch_result ?sync_error revision context state command_revision commands
     pending blocks deleted splices =
   Wire.success
     (Wire.json_object
@@ -406,5 +406,6 @@ let outliner_patch_result revision context state command_revision commands
        ; ( "outlinerCommands"
          , Wire.json_list (List.map outliner_command_json commands) )
        ; ("hasPendingSemanticOperations", `Bool pending)
+       ; ("pendingSyncError", match sync_error with Some message -> `String message | None -> `Null)
        ; ("isOutlinerPatch", `Bool true)
        ])

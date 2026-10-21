@@ -40,6 +40,7 @@ let empty =
 let generation state = state.generation
 let graph_id state = state.graph_id
 let connected state = state.phase = Open
+let error state = state.error
 let without_commands state = { state with commands = [] }
 let invalidate state =
   { empty with generation = state.generation + 1; phase = Stopped }

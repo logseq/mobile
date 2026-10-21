@@ -216,6 +216,7 @@ type core_projection =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; pending_sync_error : string option
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
@@ -315,6 +316,7 @@ type logseq_model =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
   ; sidebar_open : bool

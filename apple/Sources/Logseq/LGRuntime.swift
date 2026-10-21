@@ -48,6 +48,7 @@ private struct LGCoreResponseEnvelope: Decodable, Sendable {
         let outlinerCommands: [LogseqOutlinerCommand]?
         let hasPendingSemanticOperations: Bool?
         let pendingSyncRequest: PendingSyncRequest?
+        let pendingSyncError: String?
     }
 
     struct PendingSyncRequest: Decodable, Sendable {}
@@ -56,6 +57,7 @@ private struct LGCoreResponseEnvelope: Decodable, Sendable {
 private struct LGCoreSyncProjection: Equatable {
     let hasPendingSemanticOperations: Bool
     let hasPendingSyncRequest: Bool
+    let error: String?
 }
 
 
@@ -240,6 +242,9 @@ public final class LGRuntime {
             lastCoreSyncProjection = syncProjection(result)
             authoritativeCoreResponseInvalidated = true
         } else if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true {
+            if result.isOutlinerPatch == true {
+                lastCoreSyncProjection = syncProjection(result)
+            }
             authoritativeCoreResponseInvalidated = true
         } else {
             lastAuthoritativeCoreResponse = response
@@ -266,7 +271,8 @@ public final class LGRuntime {
     ) -> LGCoreSyncProjection {
         LGCoreSyncProjection(
             hasPendingSemanticOperations: result.hasPendingSemanticOperations == true,
-            hasPendingSyncRequest: result.pendingSyncRequest != nil
+            hasPendingSyncRequest: result.pendingSyncRequest != nil,
+            error: result.pendingSyncError
         )
     }
 
@@ -338,7 +344,8 @@ public final class LGRuntime {
     private func enqueueNative(
         _ operation: LGNativeOperation,
         effectDispatch: Bool = false,
-        coreResponse: String? = nil
+        coreResponse: String? = nil,
+        deduplicateCoreResponse: Bool = true
     ) -> Task<String, Never> {
         let previous = nativeTail
         let epoch = patchApplyEpoch
@@ -349,7 +356,7 @@ public final class LGRuntime {
             if let coreResponse {
                 envelope = await Self.decodeCoreResponseAsync(coreResponse)
                 guard epoch == self.patchApplyEpoch else { return "" }
-                guard self.shouldApplyCoreResponse(coreResponse, envelope: envelope) else {
+                guard !deduplicateCoreResponse || self.shouldApplyCoreResponse(coreResponse, envelope: envelope) else {
                     self.deliverPlatformCommands(envelope)
                     return ""
                 }
@@ -475,7 +482,8 @@ public final class LGRuntime {
             }
             if resolution.succeeded,
                case .coreResponse = resolution.output {
-                _ = await enqueueNative(.snapshot(resolution.message)).value
+                _ = await enqueueNative(.snapshot(resolution.message), coreResponse: resolution.message,
+                    deduplicateCoreResponse: false).value
             }
             _ = await enqueueNative(.resolveEffect(effect.id, resolution.succeeded, resolution.message)).value
             if resolution.succeeded {

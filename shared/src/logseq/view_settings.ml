@@ -1255,7 +1255,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    sheet ~text:"Sync status" ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
+    View_base.with_string_prop_signal Lui_protocol.Detents
+      (Signal.map (fun current -> if View_base.sync_error_present_ current then "medium,large" else "medium") model_source)
+    (sheet ~text:"Sync status" ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
@@ -1320,4 +1322,4 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
             ~on_press:(press send Model.CloseSyncDetails)
             ~text:"Done" [];
         ];
-    ]
+    ])

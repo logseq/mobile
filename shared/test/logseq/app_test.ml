@@ -339,6 +339,7 @@ let empty_core_projection () =
     applied_server_t = None;
     has_pending_semantic_operations = false;
     has_pending_sync_request = false;
+    pending_sync_error = None;
     is_pending_sync_patch = false;
     is_pending_sync_projection = false;
     is_graph_catalog_patch = false;
@@ -2475,6 +2476,65 @@ let kotlin_journal_calendar_uses_the_shared_native_presentation_effect () =
   check ~msg:"Android calendar uses the shared presentation effect"
     (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)
        (App.model application).pending_effects)
+
+let sync_details_show_websocket_server_rejections () =
+  let module R = Rpc_test in
+  let session, _, _, _ = R.sync_driver_session () in
+  let generation = R.sync_generation (R.begin_sync_transport session) in
+  ignore (R.sync_event session generation "opened" []);
+  let rejected = R.sync_event session generation "frame"
+    ["body", `String {|{"type":"error","code":"permission_denied","message":"Graph access denied"}|}] in
+  let response = Yojson.Basic.to_string (`Assoc ["ok", `Bool true; "result", rejected]) in
+  let projection = match Response_snapshot.decode_response response with
+    | Ok value -> value | Error message -> fail message in
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.ApplyCoreSnapshot projection);
+  send application Model.OpenSyncDetails;
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let error = descendant_with_identifier renderer (Lui_app.root_node application) "sync.error" in
+  check ~msg:"WebSocket server refusals also belong in Sync status" (error <> -1);
+  check ~msg:"the server's message survives transport disconnection"
+    (contains "Graph access denied" (property_string renderer error Lui_protocol.TextValue))
+
+let sync_details_show_every_server_rejection () =
+  let module R = Rpc_test in
+  List.iter (fun (semantic, status, body, expected) ->
+    let session, _, _ = R.retry_asset_session () in
+    let application = App.create (ios_backend ()) in
+    start application;
+    let apply result =
+      let response = Yojson.Basic.to_string (`Assoc ["ok", `Bool true; "result", result]) in
+      let projection = match Response_snapshot.decode_response response with
+        | Ok value -> value | Error message -> fail message in
+      send application (Model.ApplyCoreSnapshot projection); flush application in
+    apply (R.response_result (R.dispatch_json session "startWebSocket" ""));
+    let request = R.required_pending (R.response_result (R.dispatch_json session "beginPendingSync" "")) in
+    let request = if semantic then
+      R.required_pending (R.pending_completion session request (`Int 200) (`String "{}") `Null)
+      else request in
+    apply (R.pending_completion session request (`Int status) (`String body) `Null);
+    send application Model.OpenSyncDetails;
+    flush application;
+    let assert_error () =
+      let renderer = Lui_app.runtime application in
+      let error = descendant_with_identifier renderer (Lui_app.root_node application) "sync.error" in
+      check ~msg:("server rejection is visible: " ^ expected) (error <> -1);
+      check ~msg:"the error explains the server's actual rejection"
+        (contains expected (property_string renderer error Lui_protocol.TextValue));
+      check_eq ~msg:"a server rejection cannot look like an indefinitely active sync"
+        (View_base.sync_label (App.model application)) "Sync failed" in
+    assert_error ();
+    apply (R.response_result (Yojson.Basic.from_string (Rpc_session.snapshot_visible session)));
+    assert_error ())
+    [false, 401, {|{"error":"authentication expired"}|}, "authentication expired";
+     false, 400, {|{"code":"bad_request","errors":["Unsupported operation"]}|}, "Unsupported operation";
+     false, 403, "upload permission denied", "upload permission denied";
+     false, 429, {|{"error":"rate limited"}|}, "rate limited";
+     false, 503, {|{"message":"service unavailable"}|}, "service unavailable";
+     true, 200, {|{"type":"tx/reject","reason":"stale","t":42}|}, "stale";
+     true, 200, {|{"type":"tx/reject","reason":"db transact failed","error-detail":"DB write failed with invalid data: missing Page type 中文 😀"}|}, "missing Page type 中文 😀"]
 
 let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
   let application = App.create (ios_backend ()) in
@@ -10191,6 +10251,8 @@ let cases =
     case "persisted-graph-loading-hides-the-launch-picker" persisted_graph_loading_hides_the_launch_picker;
     case "kotlin-loading-and-errors-use-material-feedback-surfaces" kotlin_loading_and_errors_use_material_feedback_surfaces;
     case "graph-and-sync-actions-update-retained-status-in-place" graph_and_sync_actions_update_retained_status_in_place;
+    case "sync-details-show-websocket-server-rejections" sync_details_show_websocket_server_rejections;
+    case "sync-details-show-every-server-rejection" sync_details_show_every_server_rejection;
     case "sync-details-render-projected-cursor-and-trigger-the-existing-pump" sync_details_render_projected_cursor_and_trigger_the_existing_pump;
     case "sync-details-show-the-last-sync-failure" sync_details_show_the_last_sync_failure;
     case "automatic pending sync never requests a socket restart" automatic_pending_sync_never_requests_a_socket_restart;

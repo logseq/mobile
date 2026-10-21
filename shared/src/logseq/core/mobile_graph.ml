@@ -163,6 +163,31 @@ let pending_operations (host : mobile_graph) =
   | Some opened -> Runtime.pending_operations opened.read_runtime
   | None -> []
 
+let record_sync_failure (host : mobile_graph) ~semantic operation_id message =
+  match !(host.current) with
+  | Some opened ->
+    let path = opened.read_runtime.path in
+    let message = if semantic && Graph_sqlite.pending_tx path operation_id = None then None else message in
+    Graph_sqlite.record_sync_failure path operation_id message
+  | None -> ()
+
+let sync_error (host : mobile_graph) =
+  match !(host.current) with
+  | None -> None
+  | Some opened ->
+    let path = opened.read_runtime.path in
+    let recorded = Graph_sqlite.sync_failures path in
+    let recorded_ids = Hashtbl.create (List.length recorded) in
+    List.iter (fun (id, _) -> Hashtbl.replace recorded_ids id ()) recorded;
+    let conflicts = List.filter_map (fun (operation : Pending_ops.pending_operation) ->
+      match operation.state with
+      | Pending_ops.Conflicted reason when not (Hashtbl.mem recorded_ids operation.operation_id) ->
+        Some (Pending_ops.outliner_op operation.intent ^ " (" ^ operation.operation_id ^ "): " ^ reason)
+      | _ -> None) (Pending_ops.list path) in
+    match List.map snd recorded @ conflicts with
+    | [] -> None
+    | messages -> Some (String.concat "\n\n" messages)
+
 let report_open started stage =
   Metric_log.line
     ("LOGSEQ_GRAPH_OPEN_METRIC stage=" ^ stage

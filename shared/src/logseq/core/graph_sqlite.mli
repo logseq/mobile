@@ -17,6 +17,8 @@ val copy_app_tables : string -> string -> unit
 val store_pending : string -> string -> int -> string -> string -> unit
 val list_pending : string -> (string * int * string * string) list
 val set_pending_state : string -> string -> string -> unit
+val record_sync_failure : string -> string -> string option -> unit
+val sync_failures : string -> (string * string) list
 val remove_pending : string -> string -> unit
 val store_pending_tx : string -> string -> string -> string -> unit
 val store_resolved_pending : string -> string -> int -> string -> string -> string -> string -> unit

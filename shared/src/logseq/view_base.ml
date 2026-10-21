@@ -128,6 +128,7 @@ let graph_label (current : Model.logseq_model) =
   | None -> "No graph selected"
 
 let sync_label (current : Model.logseq_model) =
+  if current.pending_sync_error <> None then "Sync failed" else
   match current.sync_state with
   | OfflineState -> "Offline"
   | FailedState _ -> "Sync failed"
@@ -142,6 +143,7 @@ let sync_label (current : Model.logseq_model) =
        | _ -> "Syncing")
 
 let sync_indicator_label (current : Model.logseq_model) =
+  if current.pending_sync_error <> None then "Sync failed" else
   match current.sync_state with
   | OfflineState -> "Not connected"
   | FailedState _ -> "Sync failed"
@@ -157,6 +159,7 @@ let sync_indicator_label (current : Model.logseq_model) =
        | _ -> "Not connected")
 
 let sync_accessibility_identifier (current : Model.logseq_model) =
+  if current.pending_sync_error <> None then "sync.failed" else
   match current.sync_state with
   | FailedState _ -> "sync.failed"
   | OfflineState -> "sync.disconnected"
@@ -166,7 +169,8 @@ let sync_indicator_foreground (current : Model.logseq_model) =
   match current.sync_state with
   | SyncedState
     when not current.has_pending_semantic_operations
-         && not current.has_pending_sync_request -> "success-foreground"
+         && not current.has_pending_sync_request
+         && current.pending_sync_error = None -> "success-foreground"
   | _ -> "warning-foreground"
 
 let sync_connection_label (current : Model.logseq_model) =
@@ -175,6 +179,7 @@ let sync_connection_label (current : Model.logseq_model) =
   | _ -> "Connected"
 
 let sync_pending_label (current : Model.logseq_model) =
+  if current.pending_sync_error <> None then "Not saved" else
   if
     current.has_pending_semantic_operations
     || current.has_pending_sync_request
@@ -1310,11 +1315,13 @@ let runtime_log_source_label (current : Model.logseq_model) =
   if current.runtime_log_source = "ui" then "Core log" else "UI log"
 
 let sync_error_present_ (current : Model.logseq_model) =
+  if current.pending_sync_error <> None then true else
   match current.sync_state with
   | FailedState _ -> true
   | _ -> false
 
 let sync_error_message (current : Model.logseq_model) =
+  match current.pending_sync_error with Some message -> message | None ->
   match current.sync_state with
   | FailedState reason -> reason
   | _ -> ""

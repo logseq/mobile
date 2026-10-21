@@ -114,3 +114,4 @@ val complete_transport_response :
 val complete_pending_sync :
   Session_types.session -> string -> (unit, string) result
 val cancel_pending_sync : Session_types.session -> unit
+val pending_sync_error : Session_types.session -> string option

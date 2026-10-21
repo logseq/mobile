@@ -14,6 +14,7 @@ val empty : t
 val generation : t -> int
 val graph_id : t -> string
 val connected : t -> bool
+val error : t -> string option
 val without_commands : t -> t
 val invalidate : t -> t
 val begin_connection :

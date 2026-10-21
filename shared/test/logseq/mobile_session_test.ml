@@ -425,8 +425,90 @@ let collapsed_nodes_survive_navigation_restart_and_graph_switches () =
     let session = reopen () in
     expect (configure session "graph-a") [])
 
+let server_rejections_survive_restart_and_remain_scoped_to_the_graph () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module J = Yojson.Basic in
+    let module U = Yojson.Basic.Util in
+    cache "graph-a"; cache "graph-b";
+    ignore (call "configure" ["baseUrl", `String "https://example.com"; "token", `String "access"; "graphId", `String "graph-a"]);
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    let operation = { Pending_ops.operation_id = "rejected-create"; base_t = 12; state = Pending_ops.Queued;
+      intent = Pending_ops.Create_page { uuid = "00000000-0000-4000-8000-000000000020";
+        title = "Created page"; created_at = 7 } } in
+    (match Mobile_graph.stage graph operation with Ok () -> () | Error message -> fail message);
+    let dispatch action payload = Rpc_test.dispatch_json !(host.Mobile_session.session) action payload |> Rpc_test.response_result in
+    let request () = Rpc_test.required_pending (dispatch "beginPendingSync" "") in
+    let first = request () in
+    let failed = Rpc_test.pending_completion !(host.Mobile_session.session) first (`Int 403)
+      (`String {|{"error":"permission denied 中文 😀"}|}) `Null in
+    check ~msg:"the original rejection is returned" (U.member "pendingSyncError" failed <> `Null);
+    let directory = Filename.dirname (List.assoc "activePath" (fields "graph-a") |> U.to_string) in
+    let reopen id =
+      ignore (Mobile_session.call host (open_request (Filename.concat directory "catalog.sqlite")));
+      ignore (call "configure" ["baseUrl", `String "https://example.com"; "token", `String "access"; "graphId", `String id]);
+      call "bootstrapGraph" (fields id) in
+    let restored = reopen "graph-a" in
+    check ~msg:"reopening cannot erase a pending server rejection"
+      (match U.member "pendingSyncError" restored with `String message -> String.length message > 0 | _ -> false);
+    check_eq ~msg:"another graph never inherits the previous graph's error"
+      (U.member "pendingSyncError" (reopen "graph-b")) `Null;
+    let restored = reopen "graph-a" in
+    check ~msg:"returning to the failed graph restores its rejection" (U.member "pendingSyncError" restored <> `Null);
+    let retry = request () in
+    let tx = U.member "bodyObject" retry |> U.member "txs" |> U.to_list |> List.hd in
+    let body = J.to_string (`Assoc ["type", `String "tx/batch/ok"; "t-before", `Int 12; "t", `Int 13;
+      "txs", `List [`Assoc ["t", `Int 13; "tx-id", U.member "tx-id" tx; "tx", U.member "tx" tx]]]) in
+    let accepted = Rpc_test.pending_completion !(host.Mobile_session.session) retry (`Int 200) (`String body) `Null in
+    check_eq ~msg:"acceptance resolves that operation's persisted error" (U.member "pendingSyncError" accepted) `Null;
+    check_eq ~msg:"resolved rejections stay resolved after restart" (U.member "pendingSyncError" (reopen "graph-a")) `Null)
+
+let sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module J = Yojson.Basic in
+    let module U = Yojson.Basic.Util in
+    cache "graph-a";
+    ignore (call "configure" ["baseUrl", `String "https://example.com"; "token", `String "access"; "graphId", `String "graph-a"]);
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    let session = !(host.Mobile_session.session) in
+    let request () = Rpc_test.required_pending (Rpc_test.response_result (Rpc_test.dispatch_json session "beginPendingSync" "")) in
+    let stage id uuid =
+      let operation = { Pending_ops.operation_id = id; base_t = Option.get (Mobile_graph.sync_cursor graph);
+        state = Pending_ops.Queued; intent = Pending_ops.Create_page { uuid; title = id; created_at = 7 } } in
+      match Mobile_graph.stage graph operation with Ok () -> () | Error message -> fail message in
+    let acknowledgement request =
+      let tx = U.member "bodyObject" request |> U.member "txs" |> U.to_list |> List.hd in
+      let before = Option.get (Mobile_graph.sync_cursor graph) in
+      J.to_string (`Assoc ["type", `String "tx/batch/ok"; "graphId", `String "graph-a";
+        "t-before", `Int before; "t", `Int (before + 1);
+        "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", U.member "tx-id" tx; "tx", U.member "tx" tx]]]) in
+    let has text result = match U.member "pendingSyncError" result with
+      | `String message -> (try ignore (Str.search_forward (Str.regexp_string text) message 0); true with Not_found -> false)
+      | _ -> false in
+    stage "rejected-first" "00000000-0000-4000-8000-000000000030";
+    ignore (Rpc_test.pending_completion session (request ()) (`Int 200)
+      (`String {|{"type":"tx/reject","reason":"validation failed","error-detail":"First operation remains rejected"}|}) `Null);
+    stage "accepted-second" "00000000-0000-4000-8000-000000000031";
+    let second = request () in
+    let accepted = Rpc_test.pending_completion session second (`Int 200) (`String (acknowledgement second)) `Null in
+    check ~msg:"an unrelated success never hides an unresolved rejection" (has "First operation remains rejected" accepted);
+    stage "lost-reply" "00000000-0000-4000-8000-000000000032";
+    let third = request () in
+    let body = acknowledgement third in
+    let failed = Rpc_test.pending_completion session third (`Int 503) (`String "Temporary gateway failure") `Null in
+    check ~msg:"an interrupted request reports its own failure" (has "Temporary gateway failure" failed);
+    let echoed = Rpc_test.dispatch_json session "applySyncEvent" body |> Rpc_test.response_result in
+    check ~msg:"a confirmed server echo resolves the lost reply's error" (not (has "Temporary gateway failure" echoed));
+    check ~msg:"server confirmation preserves other unresolved failures" (has "First operation remains rejected" echoed);
+    let late_failure = Rpc_test.pending_completion session third (`Int 503) (`String "Late failed HTTP reply") `Null in
+    check ~msg:"a late HTTP failure cannot recreate an already confirmed operation's error" (not (has "Late failed HTTP reply" late_failure));
+    ignore (Rpc_test.pending_completion session third (`Int 200) (`String body) `Null))
+
 let cases =
-  [ case "collapsed nodes survive navigation restart and graph switches" collapsed_nodes_survive_navigation_restart_and_graph_switches;
+  [ case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;
+    case "server rejections survive restart and stay graph scoped" server_rejections_survive_restart_and_remain_scoped_to_the_graph;
+    case "collapsed nodes survive navigation restart and graph switches" collapsed_nodes_survive_navigation_restart_and_graph_switches;
     case "first cached graph bootstrap loads favorites" first_cached_graph_bootstrap_loads_favorites;
     case "first download import loads favorites" first_download_import_loads_favorites;
     case "cold launch defers sidebar but switching graphs loads it" cold_launch_defers_sidebar_but_switching_graphs_loads_it; case "assets are stored inside the open graph" assets_are_stored_inside_the_open_graph; case "configured identity authors new nodes and survives reopen" configured_identity_authors_new_nodes_and_survives_reopen;

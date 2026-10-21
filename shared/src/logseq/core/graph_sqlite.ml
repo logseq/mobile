@@ -248,6 +248,22 @@ let set_pending_state path operation_id state =
       "UPDATE logseq_pending_ops SET state = ? WHERE operation_id = ?"
       [ Db.Data.TEXT state; Db.Data.TEXT operation_id ])
 
+let record_sync_failure path operation_id message =
+  with_app_db path (fun connection ->
+    let key = "pending-sync-error/" ^ operation_id in
+    match message with
+    | Some message -> command connection
+      "INSERT INTO logseq_sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      [Db.Data.TEXT key; Db.Data.TEXT message]
+    | None -> command connection "DELETE FROM logseq_sync_state WHERE key = ?" [Db.Data.TEXT key])
+
+let sync_failures path =
+  with_app_db path (fun connection ->
+    query connection "SELECT key, value FROM logseq_sync_state WHERE key GLOB 'pending-sync-error/*' ORDER BY rowid DESC" []
+      (fun statement ->
+        let key = Db.column_text statement 0 in
+        String.sub key 19 (String.length key - 19), Db.column_text statement 1))
+
 let remove_pending path operation_id =
   with_app_db path (fun connection ->
     transaction connection (fun () ->
@@ -255,7 +271,9 @@ let remove_pending path operation_id =
       [ Db.Data.TEXT operation_id ];
     command connection
       "DELETE FROM logseq_pending_ops WHERE operation_id = ?"
-      [ Db.Data.TEXT operation_id ]))
+      [ Db.Data.TEXT operation_id ];
+    command connection "DELETE FROM logseq_sync_state WHERE key = ?"
+      [Db.Data.TEXT ("pending-sync-error/" ^ operation_id)]))
 
 let write_pending_tx connection operation_id tx reversed_tx =
     command connection

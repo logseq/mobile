@@ -119,6 +119,8 @@ type host_options =
   ; prepare_operation :
       (Pending_ops.pending_operation -> (string * string, string) result) option
   ; pending_operations : (unit -> Pending_ops.pending_operation list) option
+  ; load_sync_error : (unit -> string option) option
+  ; record_sync_failure : (semantic:bool -> string -> string option -> unit) option
   ; load_graph_catalog : (unit -> string option) option
   ; load_collapsed_nodes : (string -> string list) option
   ; save_collapsed_nodes : (string -> string list -> unit) option

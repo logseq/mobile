@@ -219,6 +219,7 @@ type core_projection =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; pending_sync_error : string option
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
@@ -318,6 +319,7 @@ type logseq_model =
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
+  ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
   ; sidebar_open : bool
@@ -641,6 +643,7 @@ let initial () =
     applied_server_t = None;
     has_pending_semantic_operations = false;
     has_pending_sync_request = false;
+    pending_sync_error = None;
     sync_details_open = false;
     destination = JournalsDestination;
     sidebar_open = false;
@@ -2815,6 +2818,7 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_semantic_operations =
         projection.has_pending_semantic_operations;
       has_pending_sync_request = projection.has_pending_sync_request;
+      pending_sync_error = projection.pending_sync_error;
     }
   else if projection.is_outliner_patch then begin
     let projected_rows =
@@ -2842,6 +2846,7 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_semantic_operations =
         projection.has_pending_semantic_operations;
       has_pending_sync_request = projection.has_pending_sync_request;
+      pending_sync_error = projection.pending_sync_error;
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
@@ -2965,6 +2970,7 @@ and apply_core_snapshot (current : logseq_model)
         has_pending_semantic_operations =
           projection.has_pending_semantic_operations;
         has_pending_sync_request = projection.has_pending_sync_request;
+      pending_sync_error = projection.pending_sync_error;
         favorites = sidebar.favorites;
         recent_pages = sidebar.recent_pages;
         selected_page = sidebar.selected_page;

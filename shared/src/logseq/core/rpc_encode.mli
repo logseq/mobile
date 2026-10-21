@@ -40,6 +40,7 @@ val outliner_state_json : Outliner_state.outliner_state -> Yojson.Basic.t
 val outliner_command_json :
   Outliner_effects.outliner_platform_command -> Yojson.Basic.t
 val outliner_patch_result :
+  ?sync_error:string ->
   int ->
   Outliner_state.outliner_context ->
   Outliner_state.outliner_state ->

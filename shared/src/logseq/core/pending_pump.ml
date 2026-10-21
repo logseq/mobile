@@ -6,6 +6,14 @@ module Rpc = Rpc
 module Model = Cache_model
 module Ops = Pending_ops
 
+let pending_sync_error session =
+  let pending = match (Types.host session).load_sync_error with
+  | Some load -> load ()
+  | None -> (Types.state session).pending_sync_error in
+  match pending, Sync_driver.error (Types.state session).sync_transport with
+  | None, error | error, None -> error
+  | Some pending, Some transport -> Some (pending ^ "\n\n" ^ transport)
+
 let pending_request_json (session : Types.session) =
   let s = Types.state session in
   let request = match s.semantic_active with
@@ -618,28 +626,31 @@ let completion_failure input =
     let text key = match body with
       | `Assoc _ -> (match Json_util.member key body with `String text when text <> "" -> Some text | _ -> None)
       | _ -> None in
+    let bounded value = String.sub value 0 (Outliner_state.byte_index_of_utf16 value 4096) in
+    let detail = match text "error-detail" with
+      | Some _ as detail -> detail
+      | None -> (match text "error" with Some _ as detail -> detail | None -> text "message") in
+    let detail = match detail with
+      | Some detail -> Some (bounded detail)
+      | None -> (match Json_util.member "body" input with
+          | `String body when body <> "" && not (String.starts_with ~prefix:"{" (String.trim body)) -> Some (bounded body)
+          | _ -> None) in
     match Json_util.member "status" input with
     | `Int status when status < 200 || status >= 300 ->
-      let reason = match text "error" with Some _ as reason -> reason | None -> text "reason" in
+      let reason = match detail with Some _ as reason -> reason | None -> text "reason" in
+      let reason = match reason, Json_util.member "body" input with
+        | None, `String body when String.trim body <> "" -> Some (bounded body)
+        | _ -> reason in
       Some ("Sync server returned HTTP " ^ string_of_int status
         ^ Option.fold ~none:"" ~some:(fun reason -> ": " ^ reason) reason)
     | _ when text "type" = Some "tx/reject" ->
-      let detail = Option.map (fun value ->
-        let contains pattern =
-          let size = String.length pattern in
-          let rec loop index = index + size <= String.length value &&
-            (String.sub value index size = pattern || loop (index + 1)) in
-          loop 0 in
-        if contains "DB write failed with invalid data" then
-          "DB write failed with invalid data" ^ (if contains "should be a datetime" then ": should be a datetime" else "")
-        else String.sub value 0 (Outliner_state.byte_index_of_utf16 value 240)) (text "error-detail") in
       Some ("Sync server rejected the change: " ^ Option.value ~default:"transaction rejected" (text "reason")
         ^ Option.fold ~none:"" ~some:(fun value -> " — " ^ value) detail)
     | _ -> None
 
 let complete_pending_sync (session : Types.session) payload =
   let input = Json.from_string payload in
-  let complete expected handle =
+  let complete ~semantic expected failure_id label handle =
     let ( let* ) = Result.bind in
     let* _ = validate_completion_id input expected in
     let transient = completion_error input <> None ||
@@ -649,7 +660,7 @@ let complete_pending_sync (session : Types.session) payload =
     let attempt = match (Types.state session).pending_retry with
       | Some retry when retry.request_id = expected -> retry.attempt
       | _ -> 0 in
-    if transient && attempt < 3 then begin
+    let result = if transient && attempt < 3 then begin
       session.state := { !(session.state) with
         pending_retry = Some { Types.request_id = expected; attempt = attempt + 1;
           delay_ms = 1000 lsl attempt };
@@ -661,6 +672,11 @@ let complete_pending_sync (session : Types.session) payload =
         pending_sync_error = completion_failure input };
       Ok ()
     end in
+    let failure = match result with Ok () -> completion_failure input | Error message -> Some message in
+    session.state := { !(session.state) with pending_sync_error = failure };
+    Option.iter (fun record -> record ~semantic failure_id (Option.map (fun message -> label ^ ": " ^ message) failure))
+      (Types.host session).record_sync_failure;
+    result in
   let id =
     match input with
     | `Assoc _ ->
@@ -682,14 +698,36 @@ let complete_pending_sync (session : Types.session) payload =
   match (Types.state session).semantic_active with
   | Some active ->
     if stale active.id then Ok ()
-    else complete active.id (fun () -> complete_semantic_response session active input)
+    else
+      let operation = active.pending.operation in
+      let fields = Ops.intent_json operation.intent in
+      let target = List.find_map (fun key -> match Json_util.member key fields with
+        | `String uuid -> Some uuid | _ -> None) ["uuid"; "pageUuid"; "blockUuid"] in
+      let target = match target with Some _ -> target | None ->
+        (match Json_util.member "moves" fields, Json_util.member "uuids" fields with
+         | `List (move :: _), _ -> (match Json_util.member "uuid" move with `String uuid -> Some uuid | _ -> None)
+         | _, `List (`String uuid :: _) -> Some uuid
+         | _ -> None) in
+      let label = String.map (function '-' -> ' ' | value -> value) (Ops.outliner_op operation.intent)
+        ^ " (" ^ Option.value ~default:operation.operation_id target ^ ")" in
+      complete ~semantic:true active.id operation.operation_id label (fun () -> complete_semantic_response session active input)
   | None ->
     (match (Types.state session).pending_sync with
      | Some pump ->
        (match !(pump.active) with
         | Some active ->
           if stale active.id then Ok ()
-          else complete active.id (fun () -> complete_transport_response session pump active input)
+          else
+            let block = Types.transport_operation_block active.operation in
+            let label = match active.operation with
+              | Types.Upload_asset _ -> "Upload asset"
+              | Types.Move_created_asset _ -> "Attach asset"
+              | Types.Update_title _ -> "Save block"
+              | Types.Update_status _ -> "Update task status"
+              | Types.Create_journal _ -> "Create journal"
+              | Types.Create_block _ -> "Create block" in
+            complete ~semantic:false active.id block.uuid (label ^ " (" ^ block.uuid ^ ")")
+              (fun () -> complete_transport_response session pump active input)
         | None ->
           if finished then Ok ()
           else Error "pending sync has no active request")

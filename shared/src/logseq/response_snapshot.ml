@@ -495,6 +495,7 @@ let core_projection fields =
       (match List.assoc_opt "pendingSyncRequest" fields with
        | None | Some `Null -> false
        | Some _ -> true);
+    pending_sync_error = string_member "pendingSyncError" fields;
     is_pending_sync_patch = bool_member "isPendingSyncPatch" fields;
     is_pending_sync_projection = bool_member "isPendingSyncProjection" fields;
     is_graph_catalog_patch = bool_member "isGraphCatalogPatch" fields }

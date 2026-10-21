@@ -126,6 +126,8 @@ type host_options =
   ; prepare_operation :
       (Ops.pending_operation -> (string * string, string) result) option
   ; pending_operations : (unit -> Ops.pending_operation list) option
+  ; load_sync_error : (unit -> string option) option
+  ; record_sync_failure : (semantic:bool -> string -> string option -> unit) option
   ; load_graph_catalog : (unit -> string option) option
   ; load_collapsed_nodes : (string -> string list) option
   ; save_collapsed_nodes : (string -> string list -> unit) option
@@ -217,6 +219,8 @@ let default_options =
     stage_operation = None;
     prepare_operation = None;
     pending_operations = None;
+    load_sync_error = None;
+    record_sync_failure = None;
     load_graph_catalog = None;
     save_graph_catalog = None;
     load_collapsed_nodes = None;
