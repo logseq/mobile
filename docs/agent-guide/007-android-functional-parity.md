@@ -31,7 +31,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 - [x] Image gallery: add paging, pinch/pan, current-image save/share and Back dismissal in Android's existing presentation host.
   Touch Android runtime/extension registration, a dedicated gallery composable and image storage helpers.
   Verify the selected initial image, real swipe/pinch, current-page action paths, missing images and actual MediaStore writes.
-- [ ] Incoming shares: register audio, video, PDF, Markdown and generic files, preserving text/images and multiple attachments.
+- [x] Incoming shares: register audio, video, PDF, Markdown and generic files, preserving text/images and multiple attachments.
   Touch AndroidManifest.xml and Android app-entry tests.
   Verify package-manager resolution and actual URI import, including text plus attachments and cancellation/error handling.
 - [ ] Quick recording: register the audio deep link and recording actions for launcher shortcuts, capture widget and a native Quick Settings tile.
@@ -79,3 +79,5 @@ Background work follows Android's network, power and scheduling restrictions; it
 - Gallery: four new instrumentation cases cover swipe, real pinch with pixel changes, unavailable images and byte-exact MediaStore save. Eight rich-content regression cases also pass.
 - Gallery entry regression: actual imported siblings exposed missing cache-model paths in the gallery RPC. A real persisted-graph test reproduces the failure; 900 core tests pass after resolving local paths from the existing cache model.
 - Gallery installed-app entry check: actual external shares open a four-image gallery, a real swipe advances from 1 / 4 to 2 / 4, and Android Back dismisses it. Screenshot: `/tmp/logseq-gallery-entry.png`. The rebuilt native library includes the core regression fix.
+- Gallery feature committed and pushed as 227b174.
+- Incoming shares: RED OS resolution for audio, then two instrumentation cases pass across eight MIME types and both send modes. Real FileProvider documents retain their original bytes; missing/empty sources are rejected. An actual implicit PDF share cold-launches MainActivity and imports the exact bytes into the dedicated QA graph.
