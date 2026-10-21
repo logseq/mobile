@@ -646,7 +646,7 @@ let add_child_block payload cache clock load_sync_state load_context enqueue
         | Some config, Some base_t ->
           let* operation =
             Wire.graph_workflow_result "invalid_params"
-              (child_operation base_t (load_context ()) uuid title parent_id
+              (child_operation base_t (load_context parent_id) uuid title parent_id
                  now fresh_id)
           in
           let* () =

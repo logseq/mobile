@@ -550,8 +550,63 @@ let existing_graph_icons_reach_favorites_headers_and_hydrated_nodes () =
     let inherited = call "openNode" ["uuid", `String "graph-a-page"] in
     expect inherited "icon-block" "HeartFilled" "#5e69d2")
 
+let transcription_survives_navigation_and_deduplicates_outside_the_projection () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module Ds = Datascript in
+    let module U = Yojson.Basic.Util in
+    cache "graph-a";
+    let path = List.assoc "activePath" (fields "graph-a") |> U.to_string in
+    let db = match Graph_store.restore_db path with Ok db -> db | Error message -> fail message in
+    let db = Ds.db_with [
+      Ds.Add (Ds.Entity_id 4, "block/uuid", Ds.Uuid "recording");
+      Ds.Add (Ds.Entity_id 4, "block/title", Ds.String "recording.m4a");
+      Ds.Add (Ds.Entity_id 4, "block/page", Ds.Ref 2);
+      Ds.Add (Ds.Entity_id 4, "block/parent", Ds.Ref 2);
+      Ds.Add (Ds.Entity_id 4, "block/order", Ds.String "a0");
+      Ds.Add (Ds.Entity_id 4, "logseq.property.asset/type", Ds.String "m4a");
+      Ds.Add (Ds.Entity_id 5, "block/uuid", Ds.Uuid "previous-transcript");
+      Ds.Add (Ds.Entity_id 5, "block/title", Ds.String "Previous transcript");
+      Ds.Add (Ds.Entity_id 5, "block/page", Ds.Ref 2);
+      Ds.Add (Ds.Entity_id 5, "block/parent", Ds.Ref 4);
+      Ds.Add (Ds.Entity_id 5, "block/order", Ds.String "a0");
+      Ds.Add (Ds.Entity_id 6, "block/uuid", Ds.Uuid "other-page");
+      Ds.Add (Ds.Entity_id 6, "block/title", Ds.String "Another page");
+      Ds.Add (Ds.Entity_id 6, "block/name", Ds.String "another page")
+    ] db in
+    ignore (Ds.store db);
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    let session = !(host.Mobile_session.session) in
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    let children () = Option.get (Mobile_graph.blocks_for_page graph "graph-a-page")
+      |> List.filter (fun (block : Cache_model.block) -> block.parent_id = Some "recording") in
+    let complete parent text = Rpc_test.dispatch_json session "completeAssetTranscription"
+      (Yojson.Basic.to_string (`Assoc ["parentId", `String parent; "text", `String text])) in
+    List.iteri (fun index navigate ->
+      navigate ();
+      check ~msg:"the recording is outside the active projection"
+        (not (List.exists (fun (block : Cache_model.block) -> block.uuid = "recording")
+          (Rpc_session.outliner_context session).Outliner_state.blocks));
+      let text = "Transcription " ^ string_of_int index ^ " 中文 😀" in
+      let response = complete "recording" ("  " ^ text ^ "  ") in
+      check_eq ~msg:"a transcription can complete after leaving its page" (U.member "ok" response) (`Bool true);
+      check_eq ~msg:"the new transcript keeps its original parent and page"
+        (List.filter (fun (block : Cache_model.block) -> block.title = text && block.page_id = "graph-a-page") (children ()) |> List.length) 1;
+      let count = List.length (children ()) in
+      ignore (complete "recording" text);
+      check_eq ~msg:"a repeated offscreen callback never creates a second transcript" (List.length (children ())) count;
+      check ~msg:"new transcripts follow the existing children"
+        (List.for_all (fun (block : Cache_model.block) -> block.uuid = "previous-transcript" || Option.get block.order > "a0") (children ())))
+      [(fun () -> ()); (fun () -> ignore (Rpc_test.dispatch_json session "selectPage" "other-page"))];
+    check_eq ~msg:"completing transcription never changes navigation"
+      (Option.map (fun (page : Cache_model.entity_summary) -> page.uuid) (Rpc_session.state session).selected_sidebar_page) (Some "other-page");
+    let count = List.length (Mobile_graph.pending_operations graph) in
+    check_eq ~msg:"a missing parent remains an explicit error" (U.member "ok" (complete "missing-recording" "Missing")) (`Bool false);
+    check_eq ~msg:"a missing parent cannot stage an orphan transcript" (List.length (Mobile_graph.pending_operations graph)) count)
+
+
 let cases =
-  [ case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;
+  [ case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;
+    case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;
     case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;
     case "server rejections survive restart and stay graph scoped" server_rejections_survive_restart_and_remain_scoped_to_the_graph;
     case "collapsed nodes survive navigation restart and graph switches" collapsed_nodes_survive_navigation_restart_and_graph_switches;

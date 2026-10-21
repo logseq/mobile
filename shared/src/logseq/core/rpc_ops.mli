@@ -131,7 +131,7 @@ val add_child_block :
   Cache_model.model ->
   (unit -> int) ->
   (unit -> Api.api_config option * int option) ->
-  (unit -> Outliner_state.outliner_context) ->
+  (string -> Outliner_state.outliner_context) ->
   (Api.api_config -> Pending_ops.pending_operation -> (unit, string) result) ->
   (unit -> string) ->
   (unit -> string) ->

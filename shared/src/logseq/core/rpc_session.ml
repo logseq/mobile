@@ -1366,6 +1366,15 @@ let sync_transport_event session _input fields =
         ~editing:(sync_transport_editing session) ~apply_frame event previous in
       publish_sync_transport session transport
 
+let child_context session parent_id =
+  let current = outliner_context session in
+  match (host session).Types.graph_node_destination with
+  | Some resolve ->
+    (match resolve parent_id with
+     | Some (page, _) -> Option.value ~default:current (page_outliner_context session page.Model.uuid)
+     | None -> current)
+  | None -> current
+
 let rec dispatch session action payload =
   let s = state session in
   let h = host session in
@@ -1379,7 +1388,7 @@ let rec dispatch session action payload =
     match Rpc.required_string fields "parentId", Rpc.required_string fields "text" with
     | Ok parent_id, Ok text ->
       let text = String.trim text in
-      let blocks = (base_outliner_context session).Outliner.blocks in
+      let blocks = (child_context session parent_id).Outliner.blocks in
       if text = "" || List.exists (fun (block : Model.block) -> block.parent_id = Some parent_id && block.title = text) blocks
       then snapshot_visible session
       else dispatch session "addChildBlock" (Some (Json.to_string (`Assoc [
@@ -1705,7 +1714,7 @@ let rec dispatch session action payload =
     Rpc.add_child_block payload s.model now_ms
       (fun () ->
         ((state session).config, projection_server_t session))
-      (fun () -> outliner_context session)
+      (child_context session)
       (fun _config operation -> enqueue_semantic session operation)
       fresh_squuid (fun () -> snapshot_visible session)
   | "beginPendingSync" ->
