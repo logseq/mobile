@@ -12,9 +12,14 @@ import Vision
     if effect.kind == "open-node" { opened = effect.text }
     if effect.kind == "select-sidebar-page" {
       selected = effect.text
-      return LGEffectResolution(succeeded: true, message:
-        #"{"ok":true,"result":{"graphName":"Lambda","selectedGraphId":"lambda","favoriteBlockIds":["saved-block"],"favorites":[{"uuid":"saved-block","title":"Saved block"},{"uuid":"page","title":"Project page"}],"selectedPage":{"uuid":"page","title":"Project page"},"outlinerRows":[{"depth":0,"block":{"uuid":"saved-block","title":"Saved block","pageId":"page"}}],"outlinerState":{"selectedBlockIds":[]}}}"#,
-        output: .coreResponse)
+      let block = effect.text == "saved-block"
+      let selection = block ? "saved-block" : "page"
+      let title = block ? "Saved block" : "Project page"
+      let response =
+        #"{"ok":true,"result":{"graphName":"Lambda","selectedGraphId":"lambda","favorites":[{"uuid":"saved-block","title":"Saved block"},{"uuid":"page","title":"Project page"}],"selectedPage":{"uuid":"page","title":"Project page"},"outlinerRows":[{"depth":0,"block":{"uuid":"saved-block","title":"Saved block","pageId":"page"}}],"outlinerState":{"selectedBlockIds":[]}}}"#
+      return LGEffectResolution(succeeded: true,
+        message: response.replacingOccurrences(of: #""selectedPage":{"uuid":"page","title":"Project page"}"#,
+          with: "\"selectedPage\":{\"uuid\":\"\(selection)\",\"title\":\"\(title)\"}"), output: .coreResponse)
     }
     return LGEffectResolution(succeeded: true, message: "", output: .discard)
   }
@@ -24,7 +29,7 @@ import Vision
     let effects = FavoriteEffects()
     let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
     try runtime.applyCoreResponse(
-      #"{"ok":true,"result":{"graphName":"Lambda","selectedGraphId":"lambda","favoriteBlockIds":["saved-block"],"favorites":[{"uuid":"saved-block","title":"Saved block"},{"uuid":"page","title":"Project page"}],"outlinerRows":[],"outlinerState":{"selectedBlockIds":[]}}}"#
+      #"{"ok":true,"result":{"graphName":"Lambda","selectedGraphId":"lambda","favorites":[{"uuid":"saved-block","title":"Saved block"},{"uuid":"page","title":"Project page"}],"outlinerRows":[],"outlinerState":{"selectedBlockIds":[]}}}"#
     )
     try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
     try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
@@ -95,11 +100,24 @@ import Vision
     try backend.performPress(node: link)
     try await Task.sleep(for: .milliseconds(350))
     await runtime.drainEffectsForTesting()
-    guard effects.opened == "saved-block" else {
+    guard effects.selected == "saved-block", effects.opened == nil,
+      backend.model(id: drawer)?.isEnabled == true,
+      navigation.allSatisfy({ $0.viewControllers.count == 1 }) else {
       throw NSError(
         domain: "FavoriteBlock", code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "Favorite must open its block UUID"])
+        userInfo: [NSLocalizedDescriptionKey: "Favorite blocks must replace the root without a back button or disabling sidebar swipe"])
     }
-    print("PASS: favorite pages stay at the root without a back button; the sidebar reopens and favorite blocks still push their node route")
+    try await Task.sleep(for: .milliseconds(400))
+    let blockImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+    }
+    try blockImage.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("favorite-block-root.png"))
+    try backend.performToggle(node: drawer, checked: true)
+    try await Task.sleep(for: .milliseconds(700))
+    guard backend.model(id: drawer)?.isSelected == true else {
+      throw NSError(domain: "FavoriteBlock", code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Sidebar must reopen from the favorite block root"])
+    }
+    print("PASS: favorite blocks and pages both replace the root, have no Back button and allow reopening the sidebar")
   }
 }

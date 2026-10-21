@@ -1,16 +1,12 @@
 open Lui_protocol
 open Lui_elements
 
-let sidebar_page_row ?(favorite = false) (context : Lui_ui.ui_context) model_source
+let sidebar_page_row (context : Lui_ui.ui_context) model_source
     (page_source : Model.sidebar_page Signal.signal) send : t
   =
   let page = sample page_source in
   let navigate _ =
-    if favorite && List.mem (sample page_source).uuid
-        (sample model_source).Model.favorite_block_ids then begin
-      ignore (send Model.CloseSidebar);
-      ignore (send (Model.RequestAppNode (sample page_source).uuid))
-    end else ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in
+    ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in
   if Lui_ui.host context = KotlinHost then
     View_base.with_label_signal
       (Signal.map View_base.sidebar_page_title page_source)
@@ -207,7 +203,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                       (Signal.map View_base.sidebar_favorites model_source)
                     ~key:View_base.sidebar_page_identifier ~cmp:compare
                     ~mount:(fun page_source ->
-                       sidebar_page_row ~favorite:true context model_source page_source
+                       sidebar_page_row context model_source page_source
                          send);
                 ];
               column ~accessibility_identifier:"section.sidebar.recent"

@@ -272,14 +272,6 @@ let snapshot session context_blocks blocks =
          ; ( "favorites"
            , Rpc.json_list
                (List.map Rpc.summary_json sidebar.Graph_read.favorites) )
-         ; ( "favoriteBlockIds"
-           , Rpc.json_list (List.filter_map (fun (favorite : Model.entity_summary) ->
-               let destination = match h.Types.graph_node_destination with
-                 | Some resolve -> resolve favorite.uuid
-                 | None -> So.projected_node_destination session favorite.uuid in
-               match destination with
-               | Some (_, true) -> Some (`String favorite.uuid)
-               | _ -> None) sidebar.Graph_read.favorites) )
          ; ( "recentPages"
            , Rpc.json_list
                (List.map Rpc.summary_json sidebar.Graph_read.recent_pages)
@@ -357,7 +349,8 @@ let snapshot_visible session =
   let h = host session in
   let context_blocks =
     match (s.selected_sidebar_page, h.Types.graph_page_blocks) with
-    | Some page, Some load ->
+    | Some node, Some load ->
+      let page, _ = So.sidebar_node_destination session node in
       (match load page.Model.uuid with
        | Some blocks -> blocks
        | None -> [])
@@ -952,6 +945,13 @@ let select_page session payload =
                 So.references_for_node session page.Model.uuid);
          };
        reset_outliner session;
+       let _, zoom = So.sidebar_node_destination session page in
+       if zoom then begin
+         let outliner_state, _ = Outliner.update
+           (So.base_outliner_context_live session) (state session).outliner_state
+           (Outliner.Zoom_in page.uuid) in
+         session.state := { !(session.state) with outliner_state }
+       end;
        snapshot_visible session
      | None ->
        Rpc.failure "unknown_page" "The selected page is not available")

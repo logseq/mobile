@@ -300,7 +300,6 @@ let native_bottom_chrome runtime application =
 let empty_sidebar_projection () =
   {
     Model.favorites = [];
-    favorite_block_ids = [];
     recent_pages = [];
     selected_page = None;
     selected_page_is_tag = false;
@@ -2737,7 +2736,6 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       (apply_core_snapshot None
          {
            Model.favorites = [ favorite ];
-           favorite_block_ids = [];
            recent_pages = [ recent ];
            selected_page = None;
            selected_page_is_tag = false;
@@ -2755,7 +2753,6 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
   let selected_sidebar =
     {
       Model.favorites = [ favorite ];
-      favorite_block_ids = [];
       recent_pages = [ recent ];
       selected_page = Some favorite;
       selected_page_is_tag = false;
@@ -2808,7 +2805,6 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let sidebar =
     {
       Model.favorites = [ favorite ];
-      favorite_block_ids = [];
       recent_pages = [];
       selected_page = None;
       selected_page_is_tag = false;
@@ -3023,7 +3019,6 @@ let sidebar_drag_reserves_app_navigation () =
   let sidebar =
     {
       Model.favorites = [];
-      favorite_block_ids = [];
       recent_pages = [];
       selected_page = None;
       selected_page_is_tag = false;
@@ -3065,7 +3060,6 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
   let sidebar =
     {
       Model.favorites = [ page ];
-      favorite_block_ids = [];
       recent_pages = [ page ];
       selected_page = Some page;
       selected_page_is_tag = false;
@@ -4884,12 +4878,12 @@ let tag_autocomplete_remains_mounted_while_typing () =
   flush application;
   check_eq ~msg:"finishing autocomplete removes the panel" (find "toolbar.outliner.autocomplete") (-1)
 
-let favorite_blocks_open_through_node_navigation () =
+let favorite_blocks_open_at_the_root () =
   List.iter (fun backend ->
     let application = App.create backend in
     start application;
     let projection = match Response_snapshot.decode_response
-      {|{"ok":true,"result":{"selectedGraphId":"graph","favorites":[{"uuid":"saved-block","title":"Saved block"}],"favoriteBlockIds":["saved-block"]}}|} with
+      {|{"ok":true,"result":{"selectedGraphId":"graph","favorites":[{"uuid":"saved-block","title":"Saved block"}]}}|} with
       | Ok projection -> projection | Error error -> failwith error in
     send application (Model.ApplyCoreSnapshot projection);
     send application Model.OpenSidebar;
@@ -4898,8 +4892,12 @@ let favorite_blocks_open_through_node_navigation () =
     let link = descendant_with_identifier renderer (Lui_app.root_node application) "link.sidebar.page.saved-block" in
     dispatch application (Lui_protocol.Press link);
     flush application;
-    check_eq ~msg:"favorite blocks use node navigation instead of page-only selection"
-      (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "saved-block")];
+    check_eq ~msg:"favorite blocks select the root just like favorite pages"
+      (App.model application).pending_effects [Model.SelectSidebarPageEffect (1, "saved-block")];
+    check_eq ~msg:"favorite blocks do not push a navigation route"
+      (App.model application).app_navigation_path [];
+    check ~msg:"favorite blocks leave the sidebar swipe enabled"
+      (not (View_base.sidebar_drag_disabled_ (App.model application)));
     check_eq ~msg:"opening a favorite closes the drawer" (App.model application).sidebar_open false)
     [ios_backend (); kotlin_backend ()]
 
@@ -9508,7 +9506,6 @@ let journal_list_remains_retained_across_sidebar_destinations () =
     {
       (empty_sidebar_projection ()) with
       Model.favorites = [ first_page ];
-      favorite_block_ids = [];
       recent_pages = [ second_page ];
     }
   in
@@ -10185,7 +10182,7 @@ let cases =
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-removes-stale-autocomplete-candidates" outliner_typing_removes_stale_autocomplete_candidates;
     case "tag-autocomplete-remains-mounted-while-typing" tag_autocomplete_remains_mounted_while_typing;
-    case "favorite-blocks-open-through-node-navigation" favorite_blocks_open_through_node_navigation;
+    case "favorite-blocks-open-at-the-root" favorite_blocks_open_at_the_root;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;

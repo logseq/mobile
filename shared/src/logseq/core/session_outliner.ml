@@ -44,12 +44,18 @@ let outliner_context_with_blocks session sidebar blocks =
   in
   Outliner.context ~search_nodes blocks pages tags
 
+let sidebar_node_destination (session : Types.session) (node : Model.entity_summary) =
+  match (Types.host session).graph_node_destination with
+  | Some resolve -> Option.value ~default:(node, false) (resolve node.uuid)
+  | None -> node, false
+
 let base_outliner_context_live (session : Types.session) =
   let s = Types.state session in
   let h = Types.host session in
   let blocks =
     match (s.selected_sidebar_page, h.graph_page_blocks, h.graph_blocks) with
-    | Some page, Some load, _ ->
+    | Some node, Some load, _ ->
+      let page, _ = sidebar_node_destination session node in
       (match load page.Model.uuid with
        | Some blocks -> blocks
        | None -> [])
@@ -68,7 +74,8 @@ let page_overlay (session : Types.session) page_id blocks =
 let scope_selected_page (session : Types.session)
     (context : Outliner.outliner_context) =
   match (Types.state session).selected_sidebar_page with
-  | Some page ->
+  | Some node ->
+    let page, _ = sidebar_node_destination session node in
     {
       context with
       Outliner.blocks = page_overlay session page.uuid context.blocks;
@@ -196,7 +203,8 @@ let projected_node_destination (session : Types.session) uuid =
   in
   let selected_blocks =
     match (s.selected_sidebar_page, h.graph_page_blocks) with
-    | Some page, Some load ->
+    | Some node, Some load ->
+      let page, _ = sidebar_node_destination session node in
       (match load page.Model.uuid with Some blocks -> blocks | None -> [])
     | _ -> []
   in

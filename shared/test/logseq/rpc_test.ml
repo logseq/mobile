@@ -546,13 +546,17 @@ let sidebar_tag_selection_projects_objects_and_linked_references () =
     (member "uuid" (List.hd (json_items "linkedReferenceBlocks" result)))
     (`String "reference-1")
 
-let favorites_snapshot_identifies_block_routes () =
+let favorite_blocks_select_the_root_subtree () =
   let conn = Ds.create_conn ~schema:Graph_read_test.schema () in
   let open Graph_read_test in
   transact conn [
     page "favorites" "$$$favorites" "Favorites" [];
     page "project" "project" "Project" [];
     entity "saved" "Saved block" [field "block/page" (Ds.Ref_to (Ds.Temp_id "project"));
+      field "block/parent" (Ds.Ref_to (Ds.Temp_id "project"))];
+    entity "child" "Child block" [field "block/page" (Ds.Ref_to (Ds.Temp_id "project"));
+      field "block/parent" (Ds.Ref_to (Ds.Temp_id "saved"))];
+    entity "sibling" "Sibling outside favorite" [field "block/page" (Ds.Ref_to (Ds.Temp_id "project"));
       field "block/parent" (Ds.Ref_to (Ds.Temp_id "project"))];
     entity "favorite-page" "" [field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
       field "block/link" (Ds.Ref_to (Ds.Temp_id "project"))];
@@ -564,11 +568,26 @@ let favorites_snapshot_identifies_block_routes () =
     graph_node_destination = Some (Graph.node_destination plain db);
     graph_page_blocks = Some (fun uuid -> Some (Graph.blocks_for_page plain db uuid)) } in
   let result = response_result (dispatch_json session "selectPage" "project") in
-  check_eq ~msg:"only favorite blocks need a pushed node route"
-    (member "favoriteBlockIds" result) (`List [`String "saved"]);
   check_eq ~msg:"favorite pages stay at the root"
     (member "uuid" (member "selectedPage" result)) (`String "project");
-  check_eq (json_items "nodeRoutes" result) []
+  check_eq (json_items "nodeRoutes" result) [];
+  ignore (dispatch_json session "openNode" {|{"uuid":"child"}|});
+  let selected = response_result (dispatch_json session "selectPage" "saved") in
+  check_eq ~msg:"a favorite block replaces the root selection"
+    (member "uuid" (member "selectedPage" selected)) (`String "saved");
+  check_eq ~msg:"selecting a favorite clears the previous navigation stack"
+    (json_items "nodeRoutes" selected) [];
+  let rows = json_items "outlinerRows" selected in
+  check_eq ~msg:"the root contains the favorite block and its children, not siblings"
+    (List.map (fun row -> member "uuid" (member "block" row), member "depth" row) rows)
+    [(`String "saved", `Int 0); (`String "child", `Int 1)];
+  let editing = outliner_block_event session "tapBlock" "child" in
+  check_eq ~msg:"editing a child still uses the favorite's owning page context"
+    (member "uuid" (member "editing" (member "outlinerState" editing))) (`String "child");
+  let page = response_result (dispatch_json session "selectPage" "project") in
+  check_eq ~msg:"switching back to a page clears the favorite block zoom"
+    (List.length (json_items "outlinerRows" page)) 3;
+  check_eq (json_items "nodeRoutes" page) []
 
 let sidebar_page_selection_projects_references_without_node_routes () =
   let page : Model.entity_summary = { uuid = "page-1"; title = "Page one" } in
@@ -6481,7 +6500,7 @@ let cases =
     case "mobile page references are deferred" mobile_page_references_are_deferred;
     case "sidebar tag selection projects objects and linked references"
       sidebar_tag_selection_projects_objects_and_linked_references;
-    case "favorites snapshot identifies block routes" favorites_snapshot_identifies_block_routes;
+    case "favorite blocks select the root subtree" favorite_blocks_select_the_root_subtree;
     case "sidebar page selection projects references without node routes"
       sidebar_page_selection_projects_references_without_node_routes;
     case "search projects page context and clears blank queries"

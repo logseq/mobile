@@ -138,7 +138,6 @@ type outline_row =
 
 type sidebar_projection =
   { favorites : sidebar_page list
-  ; favorite_block_ids : string list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
@@ -322,7 +321,6 @@ type logseq_model =
   ; viewport_width : int
   ; graph_menu_open : bool
   ; favorites : sidebar_page list
-  ; favorite_block_ids : string list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool

@@ -8,6 +8,10 @@ val outliner_context_with_blocks :
   Cache_model.block list ->
   Outliner_state.outliner_context
 
+val sidebar_node_destination :
+  Session_types.session ->
+  Cache_model.entity_summary -> Cache_model.entity_summary * bool
+
 val base_outliner_context_live :
   Session_types.session -> Outliner_state.outliner_context
 
