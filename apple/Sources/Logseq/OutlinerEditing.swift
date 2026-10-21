@@ -163,6 +163,9 @@ enum OutlinerLayoutMetrics {
     static let depthSpacerHeight: CGFloat = 0
     static let rowVerticalPadding: CGFloat = 5
     static let bulletContentSpacing: CGFloat = 2
+    // Balance the visible bullet-to-status and status-to-text gaps.
+    static let statusLeading: CGFloat = 22.5
+    static let statusContentSpacing: CGFloat = 7
     static let rootBulletCenterX = bulletHitSize / 2
 
     static func bulletCenterX(depth: Int) -> CGFloat {

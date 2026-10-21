@@ -138,7 +138,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
             }
-            .padding(.trailing, row.status != nil || row.priority != nil ? -4 : 2)
+            .padding(.trailing, row.status != nil
+                ? OutlinerLayoutMetrics.statusLeading - OutlinerLayoutMetrics.bulletHitSize
+                : (row.priority != nil ? -4 : OutlinerLayoutMetrics.bulletContentSpacing))
             if let status = row.status {
                 Menu {
                     ForEach(Array(row.statuses.enumerated()), id: \.element.id) { index, item in
@@ -157,7 +159,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     statusIcon(status).frame(width: 22, height: 24)
                 }
                 .tint(status.color(in: semanticColors))
-                .padding(.trailing, 7)
+                .padding(.trailing, OutlinerLayoutMetrics.statusContentSpacing)
                 .accessibilityLabel(status.title)
                 .accessibilityIdentifier("button.block-task-status")
             }

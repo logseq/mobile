@@ -158,10 +158,10 @@ struct OutlinerTextRow: UIViewRepresentable {
     private func layout(width: CGFloat, apply: Bool) -> CGFloat {
         guard let row else { return 0 }
         let inset = CGFloat(max(0, row.depth)) * 22
-        let statusWidth: CGFloat = row.status == nil ? 0 : 29
+        let statusWidth: CGFloat = row.status == nil ? 0 : 22 + OutlinerLayoutMetrics.statusContentSpacing
         let trailing: CGFloat = row.hasChildren ? 28 : 0
         let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
-        let iconLeading: CGFloat = row.status != nil || row.priority != nil ? 20 : 26
+        let iconLeading: CGFloat = row.status != nil ? OutlinerLayoutMetrics.statusLeading : (row.priority != nil ? 20 : 26)
         let leading = inset + iconLeading + statusWidth + priorityWidth
         let bodyWidth = max(1, width - leading - trailing)
         let titleHeight = max(24, ceil(title.sizeThatFits(CGSize(width: bodyWidth, height: .greatestFiniteMagnitude)).height))
