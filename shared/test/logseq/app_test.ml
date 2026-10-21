@@ -7247,7 +7247,7 @@ let native_page_title_waits_for_the_content_heading_to_scroll () =
   let heading = descendant_with_identifier renderer list "title.node" in
   check_eq (property_string renderer heading Lui_protocol.StyleClass) "scroll-section-title"
 
-let search_virtualizes_loaded_results_and_paginates_on_scroll () =
+let search_uses_a_regular_list_and_paginates_on_scroll () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
     start application;
@@ -7261,17 +7261,13 @@ let search_virtualizes_loaded_results_and_paginates_on_scroll () =
     let renderer = Lui_app.runtime application in
     let root () = main_root renderer application in
     let results () = descendant_with_identifier renderer (root ()) "screen.search.results" in
-    check_eq ~msg:"search uses the native virtual list surface"
-      (node renderer (results ())) (Some Lui_protocol.VirtualList);
-    check ~msg:"offscreen result rows do not own protocol nodes"
-      (descendant_with_identifier renderer (root ()) "search.result.hit-400" = -1);
-    let window () = descendant_with_identifier renderer (results ()) "search.window" in
-    dispatch application (Lui_protocol.VisibleRange (window (), 400, 415));
-    flush application;
-    check ~msg:"scrolling materializes the requested result window"
+    let list_id = results () in
+    check_eq ~msg:"search uses the regular native list surface"
+      (node renderer list_id) (Some Lui_protocol.ListContainer);
+    check_eq ~msg:"search has no custom virtual data window"
+      (descendant_with_identifier renderer (root ()) "search.window") (-1);
+    check ~msg:"all fetched results retain ordinary keyed rows"
       (descendant_with_identifier renderer (root ()) "search.result.hit-400" <> -1);
-    check_eq ~msg:"rows outside the new window are released"
-      (descendant_with_identifier renderer (root ()) "search.result.hit-000") (-1);
     let patch offset has_more rows =
       match Response_snapshot.decode_response (Yojson.Basic.to_string (`Assoc ["ok", `Bool true;
         "result", `Assoc ["isSearchPatch", `Bool true; "searchQuery", `String "needle";
@@ -7281,9 +7277,10 @@ let search_virtualizes_loaded_results_and_paginates_on_scroll () =
       | Ok projection -> Model.ApplyCoreSnapshot projection | Error e -> failwith e in
     send application (patch 0 true (List.init 20 Fun.id));
     flush application;
+    check_eq ~msg:"paging updates keep the same native scroll surface" (results ()) list_id;
     let before = List.length (App.model application).pending_effects in
-    dispatch application (Lui_protocol.VisibleRange (window (), 14, 19));
-    dispatch application (Lui_protocol.VisibleRange (window (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
     flush application;
     check_eq ~msg:"repeated visible-range events enqueue only one next page"
       (List.length (App.model application).pending_effects) (before + 1);
@@ -7299,7 +7296,7 @@ let search_virtualizes_loaded_results_and_paginates_on_scroll () =
       (App.model application).search_result_pages []
   ) [ios_backend; kotlin_backend]
 
-let search_navigation_preserves_the_visible_result_window () =
+let search_navigation_preserves_the_result_list () =
   let application = App.create (ios_backend ()) in
   start application;
   send application (Model.SelectGraph "Work");
@@ -7311,23 +7308,21 @@ let search_navigation_preserves_the_visible_result_window () =
   flush application;
   let renderer = Lui_app.runtime application in
   let find id = descendant_with_identifier renderer (main_root renderer application) id in
-  let window = find "search.window" in
-  let metadata () = property_string renderer window Lui_protocol.DataAttrs in
-  dispatch application (Lui_protocol.VisibleRange (window, 400, 415));
-  flush application;
-  let scrolled_metadata = metadata () in
+  let list_id = find "screen.search.results" in
+  check_eq ~msg:"search uses the native list that owns the scroll position"
+    (node renderer list_id) (Some Lui_protocol.ListContainer);
   let visible_hit = find "search.result.hit-400" in
   check ~msg:"the scrolled search row is mounted" (visible_hit <> -1);
   send application (Model.RequestSearchResult "hit-400");
   flush application;
-  check_eq ~msg:"opening a result retains the visible search data window"
-    (metadata ()) scrolled_metadata;
+  check_eq ~msg:"opening a result retains the native search scroll surface"
+    (find "screen.search.results") list_id;
   check_eq ~msg:"opening a result retains the scrolled row's identity"
     (find "search.result.hit-400") visible_hit;
   send application (Model.BackSearchNavigation 1);
   flush application;
-  check_eq ~msg:"returning to search restores the same data at the same offset"
-    (metadata ()) scrolled_metadata;
+  check_eq ~msg:"returning to search restores the same native scroll surface"
+    (find "screen.search.results") list_id;
   check_eq ~msg:"returning does not replace the previously visible result"
     (find "search.result.hit-400") visible_hit;
   let query_copy = Bytes.to_string (Bytes.of_string "needle") in
@@ -7335,15 +7330,16 @@ let search_navigation_preserves_the_visible_result_window () =
   flush application;
   check_eq ~msg:"native query reactivation does not clear retained results"
     (App.model application).search_result_count 500;
-  check_eq ~msg:"equal query values do not reset the visible window"
-    (metadata ()) scrolled_metadata;
+  check_eq ~msg:"equal query values do not replace the native list"
+    (find "screen.search.results") list_id;
   send application (Model.ChangeSearchQuery "new query");
+  flush application;
   send application (Model.ApplySearchResults ("new query", List.init 500 hit));
   flush application;
   check ~msg:"a genuinely new query starts at its first result"
     (find "search.result.hit-000" <> -1);
-  check_eq ~msg:"a new query evicts the old distant window"
-    (find "search.result.hit-400") (-1)
+  check ~msg:"a new query receives a fresh native scroll surface"
+    (find "screen.search.results" <> list_id)
 
 let duplicate_search_query_events_preserve_completed_results () =
   let hit = { Model.hit_uuid = "found"; hit_title = "Found";
@@ -9830,10 +9826,10 @@ let cases =
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
     case "native-page-title-waits-for-the-content-heading-to-scroll" native_page_title_waits_for_the_content_heading_to_scroll;
-    case "search-virtualizes-loaded-results-and-paginates-on-scroll" search_virtualizes_loaded_results_and_paginates_on_scroll;
+    case "search-uses-regular-list-and-paginates-on-scroll" search_uses_a_regular_list_and_paginates_on_scroll;
     case "search-results-render-as-keyed-native-rows" search_results_render_as_keyed_native_rows;
     case "search-renders-main-empty-states-and-result-sections" search_renders_main_empty_states_and_result_sections;
-    case "search-navigation-preserves-visible-result-window" search_navigation_preserves_the_visible_result_window;
+    case "search-navigation-preserves-result-list" search_navigation_preserves_the_result_list;
     case "duplicate-search-query-events-preserve-completed-results" duplicate_search_query_events_preserve_completed_results;
     case "native-search-clear-updates-lg-owned-query" native_search_clear_updates_lg_owned_query;
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;

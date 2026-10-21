@@ -382,7 +382,7 @@ private struct LGSearchSession: View {
     private func nativeBottomSearch(_ content: AnyView) -> some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .scrollDismissesKeyboard(.immediately)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(searchTitle)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(
