@@ -168,6 +168,12 @@ let composer_surface ?key ?accessibility_identifier ?attachments
     ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
     : t =
  fun context parent ->
+  (* A tap gesture around the whole capsule competes with its native menus.
+     Only unused space should request focus; controls own their own touches. *)
+  let focus_target element =
+    match on_press with
+    | None -> element
+    | Some handler -> with_press handler element in
   let attachment_strip =
     match attachments with
     | None -> []
@@ -205,26 +211,23 @@ let composer_surface ?key ?accessibility_identifier ?attachments
       ~padding_vertical:8
       ~background:"glass"
       ~corner_radius:24
-      ([ box ~height:6 ~accessibility_identifier:"spacer.composer.top" [] ]
+      ([ focus_target (box ~height:6 ~accessibility_identifier:"spacer.composer.top" []) ]
        @ attachment_strip
        @ [
            field;
-           box ~height:8
-             ~accessibility_identifier:"spacer.composer.field-controls" [];
+           focus_target (box ~height:8
+             ~accessibility_identifier:"spacer.composer.field-controls" []);
            row ~gap:8 ~height:44 ~cross:`center
              ~accessibility_identifier:"row.composer.controls"
              (actions
               @ [
-                  spacer ~grow:1.0
-                    ~accessibility_identifier:"spacer.composer.controls" [];
+                  focus_target (box ~grow:1.0 ~height:44
+                    ~accessibility_identifier:"spacer.composer.controls" []);
                 ]
               @ send_button);
          ])
   in
-  (match on_press with
-   | None -> capsule
-   | Some handler -> with_press handler capsule)
-    context parent
+  capsule context parent
 
 let collapsed_composer (context : Lui_ui.ui_context) send : t =
   row ~grow:1.0 ~height:58 ~gap:0 ~cross:`center

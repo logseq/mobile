@@ -4793,6 +4793,39 @@ let composer_renders_autofocus_and_native_outside_dismissal () =
   check ~msg:"the native outside tap collapses the composer"
     (not (App.model application).composer_expanded)
 
+let composer_focus_targets_do_not_wrap_native_menu_controls () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  send application Model.ExpandComposer;
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let root = Lui_app.root_node application in
+  let composer = descendant_with_identifier renderer root "surface.composer.root" in
+  let rec ancestors target current =
+    if current = target then Some []
+    else
+      List.find_map (fun child ->
+        Option.map (fun path -> current :: path) (ancestors target child))
+        (children renderer current) in
+  List.iter (fun identifier ->
+    let control = descendant_with_identifier renderer composer identifier in
+    let path = Option.get (ancestors control composer) in
+    check ~msg:(identifier ^ " must not inherit a competing composer tap gesture")
+      (List.for_all (fun ancestor ->
+        not (property_bool renderer ancestor Lui_protocol.PressEnabled)) path))
+    ["button.attachment"; "button.task-status"; "button.send"; "field.composer"];
+  send application (Model.ChangeComposerDraft "Keep my draft");
+  flush application;
+  let before = (App.model application).composer_autofocus in
+  let focus = descendant_with_identifier renderer composer "spacer.composer.controls" in
+  dispatch application (Lui_protocol.Press focus);
+  flush application;
+  check ~msg:"tapping unused composer space still refocuses its text field"
+    ((App.model application).composer_autofocus <> before);
+  check_eq ~msg:"refocusing preserves the draft"
+    (App.model application).composer_draft "Keep my draft"
+
 let kotlin_composer_matches_ios_chrome () =
   let application = App.create (kotlin_backend ()) in
   start application;
@@ -9451,6 +9484,7 @@ let cases =
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
+    case "composer-focus-targets-do-not-wrap-native-menu-controls" composer_focus_targets_do_not_wrap_native_menu_controls;
     case "kotlin-journal-calendar-uses-native-presentation" kotlin_journal_calendar_uses_the_shared_native_presentation_effect;
     case "kotlin-composer-matches-ios-chrome" kotlin_composer_matches_ios_chrome;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
