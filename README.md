@@ -120,6 +120,29 @@ opam exec --switch=5.5.0 -- dune build @shared/native/runtest
 ./scripts/test-android-e2e-runner.sh
 ```
 
+For randomized multi-client sync checks, use Node.js 24 or newer. Build the current CLI bundle and
+`db-worker-node` in a separate Logseq master checkout, and build `db-sync-node`
+from its `deps/db-sync` directory. The CLI and worker must have matching revisions.
+Then build this repository's `shared/native/logseq_sync_client.exe` target and run:
+
+```sh
+node scripts/local-sync-fixture.cjs /absolute/path/to/logseq-master
+# In another terminal, use the fixture path printed above:
+node scripts/run-local-sync-stress.cjs /absolute/path/to/fixture.json 20261027 320 /absolute/path/to/logseq-master
+```
+
+The fixture runs the real local sync server with a disposable database, JWT issuer,
+and isolated CLI configuration. The driver uses the real mobile session and CLI,
+generates all mobile semantic operation types plus capture, transcription, and
+flashcard reviews, and checks actual attachment uploads. Runs of at least 177
+iterations also exercise offline edits, process crashes, server restart, and lost
+HTTP acknowledgements. Successful runs require empty pending queues and identical
+UUID-normalized synced datoms in the mobile database, CLI database, and a fresh
+server snapshot. The CLI comparison excludes its derived `block/refs` and local
+`block/tx-id`, matching the server checksum exclusions; the mobile/server comparison
+includes every datom. Each run retains its seed, operation trace, summary, and confirmed UI
+snapshot under the temporary fixture directory. Stop the fixture with Ctrl-C.
+
 Authentication uses Cognito Hosted UI authorization-code flow with PKCE. Apple
 uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
 in the platform secure store, so neither client depends on Amplify or the AWS

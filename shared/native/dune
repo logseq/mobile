@@ -89,12 +89,19 @@
  (flags (:standard -w -27-32-37-39-69))
  (libraries logseq_core yojson unix))
 
+(executable
+ (name logseq_sync_client)
+ (modules logseq_sync_client)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries logseq_core yojson unix))
+
 (alias
  (name runtest)
  (deps
   (alias ../test/runtest)
   logseq_e2e_seed.exe
-  logseq_live_sync.exe))
+  logseq_live_sync.exe
+  logseq_sync_client.exe))
 
 (executable
  (name logseq_asset_e2e)
