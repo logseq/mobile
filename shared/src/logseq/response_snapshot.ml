@@ -405,6 +405,7 @@ let node_route input =
 
 let sidebar_projection fields =
   { Model.favorites = sidebar_pages_member "favorites" fields;
+    favorite_block_ids = string_list_member "favoriteBlockIds" fields;
     recent_pages = sidebar_pages_member "recentPages" fields;
     selected_page =
       (match List.assoc_opt "selectedPage" fields with

@@ -546,6 +546,30 @@ let sidebar_tag_selection_projects_objects_and_linked_references () =
     (member "uuid" (List.hd (json_items "linkedReferenceBlocks" result)))
     (`String "reference-1")
 
+let favorites_snapshot_identifies_block_routes () =
+  let conn = Ds.create_conn ~schema:Graph_read_test.schema () in
+  let open Graph_read_test in
+  transact conn [
+    page "favorites" "$$$favorites" "Favorites" [];
+    page "project" "project" "Project" [];
+    entity "saved" "Saved block" [field "block/page" (Ds.Ref_to (Ds.Temp_id "project"));
+      field "block/parent" (Ds.Ref_to (Ds.Temp_id "project"))];
+    entity "favorite-page" "" [field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
+      field "block/link" (Ds.Ref_to (Ds.Temp_id "project"))];
+    entity "favorite-block" "" [field "block/page" (Ds.Ref_to (Ds.Temp_id "favorites"));
+      field "block/link" (Ds.Ref_to (Ds.Temp_id "saved"))]];
+  let db = Ds.conn_db conn in
+  let session = Session.create_session { Session.default_options with
+    graph_sidebar_pages = Some (fun () -> Some (Graph.sidebar_pages plain db));
+    graph_node_destination = Some (Graph.node_destination plain db);
+    graph_page_blocks = Some (fun uuid -> Some (Graph.blocks_for_page plain db uuid)) } in
+  let result = response_result (dispatch_json session "selectPage" "project") in
+  check_eq ~msg:"only favorite blocks need a pushed node route"
+    (member "favoriteBlockIds" result) (`List [`String "saved"]);
+  check_eq ~msg:"favorite pages stay at the root"
+    (member "uuid" (member "selectedPage" result)) (`String "project");
+  check_eq (json_items "nodeRoutes" result) []
+
 let sidebar_page_selection_projects_references_without_node_routes () =
   let page : Model.entity_summary = { uuid = "page-1"; title = "Page one" } in
   let reference =
@@ -6457,6 +6481,7 @@ let cases =
     case "mobile page references are deferred" mobile_page_references_are_deferred;
     case "sidebar tag selection projects objects and linked references"
       sidebar_tag_selection_projects_objects_and_linked_references;
+    case "favorites snapshot identifies block routes" favorites_snapshot_identifies_block_routes;
     case "sidebar page selection projects references without node routes"
       sidebar_page_selection_projects_references_without_node_routes;
     case "search projects page context and clears blank queries"

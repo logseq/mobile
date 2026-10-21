@@ -272,6 +272,14 @@ let snapshot session context_blocks blocks =
          ; ( "favorites"
            , Rpc.json_list
                (List.map Rpc.summary_json sidebar.Graph_read.favorites) )
+         ; ( "favoriteBlockIds"
+           , Rpc.json_list (List.filter_map (fun (favorite : Model.entity_summary) ->
+               let destination = match h.Types.graph_node_destination with
+                 | Some resolve -> resolve favorite.uuid
+                 | None -> So.projected_node_destination session favorite.uuid in
+               match destination with
+               | Some (_, true) -> Some (`String favorite.uuid)
+               | _ -> None) sidebar.Graph_read.favorites) )
          ; ( "recentPages"
            , Rpc.json_list
                (List.map Rpc.summary_json sidebar.Graph_read.recent_pages)

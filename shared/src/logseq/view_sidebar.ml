@@ -6,7 +6,8 @@ let sidebar_page_row ?(favorite = false) (context : Lui_ui.ui_context) model_sou
   =
   let page = sample page_source in
   let navigate _ =
-    if favorite then begin
+    if favorite && List.mem (sample page_source).uuid
+        (sample model_source).Model.favorite_block_ids then begin
       ignore (send Model.CloseSidebar);
       ignore (send (Model.RequestAppNode (sample page_source).uuid))
     end else ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in

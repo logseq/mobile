@@ -300,6 +300,7 @@ let native_bottom_chrome runtime application =
 let empty_sidebar_projection () =
   {
     Model.favorites = [];
+    favorite_block_ids = [];
     recent_pages = [];
     selected_page = None;
     selected_page_is_tag = false;
@@ -2736,6 +2737,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       (apply_core_snapshot None
          {
            Model.favorites = [ favorite ];
+           favorite_block_ids = [];
            recent_pages = [ recent ];
            selected_page = None;
            selected_page_is_tag = false;
@@ -2753,6 +2755,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
   let selected_sidebar =
     {
       Model.favorites = [ favorite ];
+      favorite_block_ids = [];
       recent_pages = [ recent ];
       selected_page = Some favorite;
       selected_page_is_tag = false;
@@ -2805,6 +2808,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let sidebar =
     {
       Model.favorites = [ favorite ];
+      favorite_block_ids = [];
       recent_pages = [];
       selected_page = None;
       selected_page_is_tag = false;
@@ -2954,9 +2958,15 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   flush application;
   check ~msg:"page selection closes the controlled drawer"
     (not (property_bool renderer root Lui_protocol.Selected));
-  check_eq ~msg:"favorite presses use typed node navigation for pages and blocks"
+  check_eq ~msg:"favorite pages select the root page without pushing a route"
     (App.model application).pending_effects
-    [ Model.OpenAppNodeEffect (1, "page-a") ];
+    [ Model.SelectSidebarPageEffect (1, "page-a") ];
+  check_eq ~msg:"favorite pages keep the root navigation path"
+    (App.model application).app_navigation_path [];
+  check ~msg:"favorite pages keep horizontal sidebar gestures enabled"
+    (property_bool renderer root Lui_protocol.Enabled);
+  check_eq ~msg:"the selected favorite page is previewed at the root"
+    (App.model application).selected_page (Some favorite);
   dispatch application
     (Lui_protocol.Press
        (descendant_with_identifier renderer root "button.sidebar"));
@@ -3013,6 +3023,7 @@ let sidebar_drag_reserves_app_navigation () =
   let sidebar =
     {
       Model.favorites = [];
+      favorite_block_ids = [];
       recent_pages = [];
       selected_page = None;
       selected_page_is_tag = false;
@@ -3054,6 +3065,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
   let sidebar =
     {
       Model.favorites = [ page ];
+      favorite_block_ids = [];
       recent_pages = [ page ];
       selected_page = Some page;
       selected_page_is_tag = false;
@@ -4876,9 +4888,10 @@ let favorite_blocks_open_through_node_navigation () =
   List.iter (fun backend ->
     let application = App.create backend in
     start application;
-    let sidebar = { (empty_sidebar_projection ()) with
-      Model.favorites = [{ Model.uuid = "saved-block"; title = "Saved block" }] } in
-    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with sidebar });
+    let projection = match Response_snapshot.decode_response
+      {|{"ok":true,"result":{"selectedGraphId":"graph","favorites":[{"uuid":"saved-block","title":"Saved block"}],"favoriteBlockIds":["saved-block"]}}|} with
+      | Ok projection -> projection | Error error -> failwith error in
+    send application (Model.ApplyCoreSnapshot projection);
     send application Model.OpenSidebar;
     flush application;
     let renderer = Lui_app.runtime application in
@@ -9495,6 +9508,7 @@ let journal_list_remains_retained_across_sidebar_destinations () =
     {
       (empty_sidebar_projection ()) with
       Model.favorites = [ first_page ];
+      favorite_block_ids = [];
       recent_pages = [ second_page ];
     }
   in

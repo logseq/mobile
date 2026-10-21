@@ -141,6 +141,7 @@ type outline_row =
 
 type sidebar_projection =
   { favorites : sidebar_page list
+  ; favorite_block_ids : string list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
@@ -324,6 +325,7 @@ type logseq_model =
   ; viewport_width : int
   ; graph_menu_open : bool
   ; favorites : sidebar_page list
+  ; favorite_block_ids : string list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
@@ -646,6 +648,7 @@ let initial () =
     viewport_width = 0;
     graph_menu_open = false;
     favorites = [];
+    favorite_block_ids = [];
     recent_pages = [];
     selected_page = None;
     selected_page_is_tag = false;
@@ -2944,6 +2947,7 @@ and apply_core_snapshot (current : logseq_model)
           projection.has_pending_semantic_operations;
         has_pending_sync_request = projection.has_pending_sync_request;
         favorites = sidebar.favorites;
+        favorite_block_ids = sidebar.favorite_block_ids;
         recent_pages = sidebar.recent_pages;
         selected_page = sidebar.selected_page;
         selected_page_ready = true;
