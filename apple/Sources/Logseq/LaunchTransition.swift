@@ -31,9 +31,12 @@ import UIKit
         if reduceMotion {
             cover.removeFromSuperview()
         } else {
-            UIView.animate(withDuration: 0.12, delay: 0,
-                options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]) {
-                cover.alpha = 0
+            let options: UIView.AnimationOptions = [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]
+            UIView.animate(withDuration: 0.18, delay: 0, options: options) {
+                cover.backgroundColor = .clear
+            }
+            UIView.animate(withDuration: 0.28, delay: 0, options: options) {
+                for logo in cover.subviews { logo.alpha = 0 }
             } completion: { _ in
                 cover.removeFromSuperview()
             }

@@ -48,18 +48,18 @@ import UIKit
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
                 context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             }
-            if style == .light {
-                var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-                UIColor(LogseqThemePolicy.light.secondaryText).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-                guard rgba[3] > 240,
-                      abs(Int(rgba[0]) - Int((red * 255).rounded())) <= 2,
-                      abs(Int(rgba[1]) - Int((green * 255).rounded())) <= 2,
-                      abs(Int(rgba[2]) - Int((blue * 255).rounded())) <= 2 else {
-                    throw failure("Light appearance must use the softer theme gray logo: \(rgba)")
-                }
-            } else {
-                guard rgba[3] > 240, Int(rgba[1]) > Int(rgba[0]) + 30, Int(rgba[2]) > Int(rgba[0]) + 30 else {
-                    throw failure("Dark appearance must retain the cyan Logseq logo: \(rgba)")
+            let expectedAlpha = 0.65
+            guard abs(Int(rgba[3]) - Int((expectedAlpha * 255).rounded())) <= 2 else {
+                throw failure("Both launch appearances must use the same subdued logo opacity: \(rgba)")
+            }
+            let tint = style == .light
+                ? UIColor(LogseqThemePolicy.light.secondaryText)
+                : UIColor(red: 133.0 / 255, green: 200.0 / 255, blue: 200.0 / 255, alpha: 1)
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            tint.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            for (actual, expected) in zip(rgba.prefix(3), [red, green, blue]) {
+                guard abs(Int(actual) - Int((expected * expectedAlpha * 255).rounded())) <= 2 else {
+                    throw failure("The translucent logo must retain its theme tint: \(rgba)")
                 }
             }
             let expected = UIColor(LogseqThemePolicy.palette(mode: .system, systemIsDark: style == .dark).background)
@@ -78,13 +78,22 @@ import UIKit
             let suffix = style == .dark ? "dark" : "light"
             try snapshot.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("launch-logo-\(suffix).png"))
             transition.finish(reduceMotion: false)
-            guard cover.alpha == 0 else { throw failure("Readiness must start the fade immediately, without a minimum display time") }
+            guard cover.backgroundColor?.cgColor.alpha == 0, logo.alpha == 0 else {
+                throw failure("Readiness must begin fading both the background and logo immediately")
+            }
             let point = button.convert(CGPoint(x: 100, y: 20), to: window)
             guard window.hitTest(point, with: nil) === button else { throw failure("Content must remain interactive during the fade") }
             button.sendActions(for: .touchUpInside)
             guard presses > 0 else { throw failure("The fade must not gate editing") }
             transition.finish(reduceMotion: false)
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(for: .milliseconds(80))
+            guard let backdrop = cover.layer.presentation()?.backgroundColor,
+                  let mark = logo.layer.presentation(), backdrop.alpha < CGFloat(mark.opacity),
+                  mark.opacity > 0 else {
+                throw failure("Content must emerge before the stationary logo finishes fading")
+            }
+            guard logo.transform == .identity else { throw failure("The launch logo must stay in place during the transition") }
+            try await Task.sleep(for: .milliseconds(280))
             guard cover.superview == nil else { throw failure("The cover must be removed when the short fade finishes") }
             transition.show(in: window)
             guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
