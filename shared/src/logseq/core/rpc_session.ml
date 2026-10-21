@@ -850,7 +850,11 @@ let cached_image_gallery session uuid =
          || not (List.mem kind ["png"; "jpg"; "jpeg"; "gif"; "webp"; "heic"]) then None
       else
         let cached = asset_cache_path session block.uuid kind in
-        let local = Option.map (host session).resolve_asset_path block.local_path in
+        let local_path = match block.local_path with
+          | Some _ as path -> path
+          | None -> Option.bind (Model.read_block (state session).model block.uuid)
+              (fun (local : Model.block) -> local.local_path) in
+        let local = Option.map (host session).resolve_asset_path local_path in
         let path = match local with Some path when Sys.file_exists path -> path | _ -> cached in
         if Sys.file_exists path then Some (block, path) else None) blocks
       |> List.sort (fun (a, _) (b, _) -> compare (a.Model.order, a.uuid) (b.Model.order, b.uuid)) in

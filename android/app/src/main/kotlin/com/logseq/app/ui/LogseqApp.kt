@@ -99,6 +99,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
             AudioRecordingDialog()
             DeleteConfirmationDialog()
             JournalCalendarDialog()
+            ImageGalleryHost()
         }
     }
 }

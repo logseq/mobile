@@ -90,6 +90,7 @@ private const val SEARCH_FINGERPRINT =
         "7:dismiss[]"
 
 fun logseqExtensionRegistry(
+    onOpenImage: ((String, String) -> Unit)? = null,
     resolveAssetPath: (String) -> String = { it },
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
     registerNodeIcon()
@@ -172,7 +173,7 @@ fun logseqExtensionRegistry(
             ),
         ),
     ) {
-        OutlinerBlockContent(this, resolveAssetPath)
+        OutlinerBlockContent(this, resolveAssetPath, onOpenImage)
     }
     registerTweak(
         "native-adaptive-insets",

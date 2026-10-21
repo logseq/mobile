@@ -238,21 +238,34 @@ let assets_are_stored_inside_the_open_graph () =
       "checkpointPath", `String checkpoint; "isEncrypted", `Bool false]);
     let source = Filename.concat root "photo.png" in
     ignore (Asset_files.write_file source "local-image");
-    ok (call "addAsset" ["uuid", `String "local-photo"; "title", `String "Photo";
+    ok (call "addAsset" ["uuid", `String "00000000-0000-4000-8000-000000000201"; "title", `String "Photo";
       "assetType", `String "png"; "assetSize", `Int 11; "assetChecksum", `String "checksum";
       "localPath", `String source]);
     check_eq ~msg:"imported files belong to the graph"
-      (Asset_files.read_file (Filename.concat directory "Assets/local-photo-photo.png")) (Ok "local-image");
+      (Asset_files.read_file (Filename.concat directory "Assets/00000000-0000-4000-8000-000000000201-photo.png")) (Ok "local-image");
     let second_source_dir = Filename.concat root "second" in
     Unix.mkdir second_source_dir 0o700;
     let second_source = Filename.concat second_source_dir "photo.png" in
     ignore (Asset_files.write_file second_source "second-image");
-    ok (call "addAsset" ["uuid", `String "second-photo"; "title", `String "Photo";
+    ok (call "addAsset" ["uuid", `String "00000000-0000-4000-8000-000000000202"; "title", `String "Photo";
       "assetType", `String "png"; "assetSize", `Int 12; "assetChecksum", `String "checksum2";
       "localPath", `String second_source]);
-    check_eq (Asset_files.read_file (Filename.concat directory "Assets/second-photo-photo.png")) (Ok "second-image");
+    check_eq (Asset_files.read_file (Filename.concat directory "Assets/00000000-0000-4000-8000-000000000202-photo.png")) (Ok "second-image");
     check_eq ~msg:"same filenames never overwrite an existing attachment"
-      (Asset_files.read_file (Filename.concat directory "Assets/local-photo-photo.png")) (Ok "local-image");
+      (Asset_files.read_file (Filename.concat directory "Assets/00000000-0000-4000-8000-000000000201-photo.png")) (Ok "local-image");
+    List.iter (fun (uuid, expected_index) ->
+      let gallery = Rpc_session.dispatch !(host.Mobile_session.session) "cachedImageGallery" (Some uuid)
+        |> Yojson.Basic.from_string in
+      check_eq ~msg:(Yojson.Basic.to_string gallery)
+        (Yojson.Basic.Util.member "ok" gallery) (`Bool true);
+      let result = Yojson.Basic.Util.member "result" gallery in
+      check_eq ~msg:"gallery includes both locally imported siblings"
+        (result |> Yojson.Basic.Util.member "paths")
+        (`List [ `String (Filename.concat directory "Assets/00000000-0000-4000-8000-000000000201-photo.png");
+                 `String (Filename.concat directory "Assets/00000000-0000-4000-8000-000000000202-photo.png") ]);
+      check_eq ~msg:"gallery opens the selected sibling"
+        (result |> Yojson.Basic.Util.member "selectedIndex") (`Int expected_index))
+      ["00000000-0000-4000-8000-000000000201", 0; "00000000-0000-4000-8000-000000000202", 1];
     let missing = call "addAsset" ["uuid", `String "missing"; "title", `String "Missing";
       "assetType", `String "png"; "assetSize", `Int 0; "assetChecksum", `String "checksum";
       "localPath", `String (Filename.concat root "missing.png")] in

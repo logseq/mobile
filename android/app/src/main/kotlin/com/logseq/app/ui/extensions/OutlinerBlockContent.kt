@@ -98,6 +98,7 @@ private val outlinerBodyStyle: androidx.compose.ui.text.TextStyle
 internal fun OutlinerBlockContent(
     context: LuiExtensionContext,
     resolveAssetPath: (String) -> String,
+    onOpenImage: ((String, String) -> Unit)? = null,
 ) {
     val uuid = context.string("block-id") ?: ""
     val title = context.string("title") ?: ""
@@ -201,6 +202,9 @@ internal fun OutlinerBlockContent(
                     title = title,
                     assetType = context.string("asset-type") ?: "",
                     localPath = resolveAssetPath(context.string("local-path") ?: ""),
+                    onPreview = onOpenImage?.let { open ->
+                        { open(uuid, resolveAssetPath(context.string("local-path") ?: "")) }
+                    },
                 )
             } else {
                 ProjectedMarkup(
@@ -499,7 +503,7 @@ private fun MarkupRichNode(
 // --- assets ---
 
 @Composable
-private fun ProjectedAsset(title: String, assetType: String, localPath: String) {
+private fun ProjectedAsset(title: String, assetType: String, localPath: String, onPreview: (() -> Unit)?) {
     when {
         isImageAsset(assetType, localPath) && localPath.isNotEmpty() -> {
             val bitmap = remember(localPath) {
@@ -512,6 +516,7 @@ private fun ProjectedAsset(title: String, assetType: String, localPath: String) 
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
+                        .then(if (onPreview != null) Modifier.clickable(onClick = onPreview) else Modifier)
                         .testTag("asset.preview.image"),
                     contentScale = ContentScale.FillWidth,
                 )

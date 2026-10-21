@@ -19,10 +19,21 @@ internal data class DeleteConfirmationRequest(
     val result: CompletableDeferred<Boolean>,
 )
 
+internal data class ImageGalleryRequest(val paths: List<String>, val selectedIndex: Int)
+
 // Modal requests surfaced by LogseqRuntime effects/commands and rendered by
 // the app composable — the Compose analogue of the previous app's
 // dialog/bottom-sheet helpers.
 internal object LogseqDialogs {
+    var imageGallery by mutableStateOf<ImageGalleryRequest?>(null)
+        private set
+
+    fun openImageGallery(paths: List<String>, selectedIndex: Int) {
+        imageGallery = ImageGalleryRequest(paths, selectedIndex)
+    }
+
+    fun closeImageGallery() { imageGallery = null }
+
     var journalCalendar by mutableStateOf<CompletableDeferred<Int?>?>(null)
         private set
     var recordingRequest by mutableStateOf<AudioRecordingRequest?>(null)

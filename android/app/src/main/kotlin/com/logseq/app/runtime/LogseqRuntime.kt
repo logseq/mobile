@@ -14,6 +14,7 @@ import com.logseq.app.AndroidAudioRecorder
 import com.logseq.app.AndroidAudioTranscriber
 import com.logseq.app.AndroidPlatformServices
 import com.logseq.app.CognitoAuthProvider
+import com.logseq.app.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +60,7 @@ internal class LogseqRuntime(
         onEvent = ::dispatch,
         extensions = com.logseq.app.ui.extensions.logseqExtensionRegistry(
             resolveAssetPath = platformServices::resolveAssetPath,
+            onOpenImage = ::openImageGallery,
         ),
         icons = logseqIconResolver,
     )
@@ -314,6 +316,31 @@ internal class LogseqRuntime(
     }
 
     // --- Effects ---
+
+    private fun openImageGallery(uuid: String, fallback: String) {
+        scope.launch {
+            var paths = listOf(fallback)
+            var selectedIndex = 0
+            try {
+                val response = JSONObject(bridge.callCore(JSONObject().put("apiVersion", 1)
+                    .put("method", "dispatch").put("params", JSONObject()
+                        .put("action", "cachedImageGallery").put("payload", uuid)).toString()))
+                if (response.optBoolean("ok")) {
+                    val gallery = response.getJSONObject("result")
+                    val values = gallery.getJSONArray("paths")
+                    if (values.length() > 0) {
+                        paths = List(values.length()) { values.getString(it) }
+                        selectedIndex = gallery.optInt("selectedIndex")
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                logRuntime("warn", "ui", "Could not load neighboring images: ${failure.message}")
+            }
+            LogseqDialogs.openImageGallery(paths, selectedIndex)
+        }
+    }
 
     private suspend fun executeEffect(effect: NativeEffect): NativeEffectResolution {
         if (effect.kind == "present-attachment") {
