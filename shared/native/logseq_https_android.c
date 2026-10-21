@@ -47,8 +47,18 @@ static value call_transport(jmethodID method_id, const char **arguments, int cou
       CAMLreturn(caml_copy_string("ERROR\nCould not attach Android HTTP thread"));
     attached = 1;
   }
-  for (index = 0; index < count; index++)
+  for (index = 0; index < count; index++) {
     java_arguments[index] = (*env)->NewStringUTF(env, arguments[index]);
+    if (java_arguments[index] == NULL || (*env)->ExceptionCheck(env)) {
+      (*env)->ExceptionClear(env);
+      for (int created = 0; created <= index; created++) {
+        if (java_arguments[created] != NULL)
+          (*env)->DeleteLocalRef(env, java_arguments[created]);
+      }
+      if (attached) (*java_vm)->DetachCurrentThread(java_vm);
+      CAMLreturn(caml_copy_string("ERROR\nAndroid HTTP argument allocation failed"));
+    }
+  }
   if (count == 4)
     java_result = (jstring)(*env)->CallStaticObjectMethod(env, transport_class, method_id,
       java_arguments[0], java_arguments[1], java_arguments[2], java_arguments[3]);
@@ -63,8 +73,13 @@ static value call_transport(jmethodID method_id, const char **arguments, int cou
     result = caml_copy_string("ERROR\nAndroid HTTP transport returned no response");
   } else {
     response = (*env)->GetStringUTFChars(env, java_result, NULL);
-    result = caml_copy_string(response);
-    (*env)->ReleaseStringUTFChars(env, java_result, response);
+    if (response == NULL) {
+      (*env)->ExceptionClear(env);
+      result = caml_copy_string("ERROR\nAndroid HTTP response allocation failed");
+    } else {
+      result = caml_copy_string(response);
+      (*env)->ReleaseStringUTFChars(env, java_result, response);
+    }
     (*env)->DeleteLocalRef(env, java_result);
   }
   if (attached) (*java_vm)->DetachCurrentThread(java_vm);

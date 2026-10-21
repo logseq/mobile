@@ -52,6 +52,12 @@ static char *call_android_crypto(const char *request) {
     attached = 1;
   }
   java_request = (*env)->NewStringUTF(env, request);
+  if (java_request == NULL || (*env)->ExceptionCheck(env)) {
+    (*env)->ExceptionClear(env);
+    if (java_request != NULL) (*env)->DeleteLocalRef(env, java_request);
+    if (attached) (*java_vm)->DetachCurrentThread(java_vm);
+    return error_response("Android crypto argument allocation failed");
+  }
   java_response = (jstring)(*env)->CallStaticObjectMethod(
     env,
     crypto_class,
@@ -66,9 +72,13 @@ static char *call_android_crypto(const char *request) {
     response = error_response("Android crypto returned no response");
   } else {
     response_chars = (*env)->GetStringUTFChars(env, java_response, NULL);
-    response = response_chars == NULL ? NULL : strdup(response_chars);
-    if (response_chars != NULL)
+    if (response_chars == NULL) {
+      (*env)->ExceptionClear(env);
+      response = error_response("Android crypto response allocation failed");
+    } else {
+      response = strdup(response_chars);
       (*env)->ReleaseStringUTFChars(env, java_response, response_chars);
+    }
     (*env)->DeleteLocalRef(env, java_response);
   }
   if (attached) (*java_vm)->DetachCurrentThread(java_vm);
