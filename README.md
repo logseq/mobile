@@ -46,6 +46,10 @@ directly.
 `LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE=1`, with a profile and signing identity
 from the same Apple team as the installed app.
 
+Device builds use the optimized Release configuration by default. Set
+`LOGSEQ_IOS_BUILD_CONFIGURATION=debug` when you need an unoptimized build for
+debugging; use Release builds when comparing startup and scrolling performance.
+
 Device builds embed both the widget and share extensions. Matching development
 profiles are selected automatically; set `LOGSEQ_IOS_WIDGET_PROFILE` or
 `LOGSEQ_IOS_SHARE_PROFILE` to select a profile explicitly.

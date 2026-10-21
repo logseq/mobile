@@ -7,7 +7,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # Keep developer signing defaults out of checks that intentionally omit them.
 export LOGSEQ_IOS_CONFIG=/tmp/logseq-device-script-check-no-config
 export LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq.script-check
-unset LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE LOGSEQ_IOS_PROFILE
+unset LOGSEQ_IOS_ALLOW_PRODUCTION_REPLACE LOGSEQ_IOS_PROFILE LOGSEQ_IOS_BUILD_CONFIGURATION
 
 failures=0
 
@@ -202,8 +202,8 @@ check_succeeds() {
 }
 
 check_succeeds \
-  "device build accepts production bundle settings without building" \
-  "configuration=debug" \
+  "device build defaults to optimized release configuration" \
+  "configuration=release swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/release" \
   env LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq \
     LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
