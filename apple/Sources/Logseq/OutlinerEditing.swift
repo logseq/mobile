@@ -165,7 +165,7 @@ enum OutlinerLayoutMetrics {
     static let bulletContentSpacing: CGFloat = 2
     static let rootBulletCenterX = bulletHitSize / 2
     static let statusIconSize: CGFloat = 22
-    static let statusVisibleSpacing: CGFloat = 5
+    static let statusVisibleSpacing: CGFloat = 7
     // The bullet's visible radius is 3.5 in a 24-point canvas. Task icons
     // occupy x=1...19 of a 20-unit viewBox. Subtract their transparent inset
     // from both gaps so the visible edges have the same spacing.

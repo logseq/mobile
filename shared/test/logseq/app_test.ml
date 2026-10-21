@@ -2712,9 +2712,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let sidebar_view =
     descendant_with_identifier renderer root "sidebar.navigation"
   in
-  let sidebar_children = children renderer sidebar_view in
-  let top_safe_area =
-    if sidebar_children = [] then -1 else List.nth sidebar_children 0
+  let sidebar_content =
+    descendant_with_identifier renderer sidebar_view "sidebar.content"
   in
   let dismiss =
     child_with_identifier renderer sidebar_view "button.sidebar.dismiss"
@@ -2723,13 +2722,13 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     descendant_with_identifier renderer sidebar_view "button.graph-switch"
   in
   let journals =
-    child_with_identifier renderer sidebar_view "link.sidebar.journals"
+    descendant_with_identifier renderer sidebar_view "link.sidebar.journals"
   in
   let flashcards =
-    child_with_identifier renderer sidebar_view "link.sidebar.flashcards"
+    descendant_with_identifier renderer sidebar_view "link.sidebar.flashcards"
   in
   let graphs =
-    child_with_identifier renderer sidebar_view "link.sidebar.graphs"
+    descendant_with_identifier renderer sidebar_view "link.sidebar.graphs"
   in
   let favorites =
     descendant_with_identifier renderer sidebar_view "section.sidebar.favorites"
@@ -2749,7 +2748,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     child_with_identifier renderer favorites "link.sidebar.page.page-a"
   in
   check_eq ~msg:"sidebar keeps the main branch content inset"
-    (property_int renderer sidebar_view Lui_protocol.PaddingValue)
+    (property_int renderer sidebar_content Lui_protocol.PaddingValue)
     12;
   let pages_scroll =
     descendant_with_identifier renderer sidebar_view "scroll.sidebar.pages"
@@ -2763,23 +2762,16 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (descendant_with_identifier renderer pages_scroll
        "section.sidebar.favorites")
     favorites;
-  check_eq
-    ~msg:
-      "the full-height drawer reserves sidebar status-bar space in LG"
-    (if top_safe_area = -1 then None else node renderer top_safe_area)
-    (Some Lui_protocol.Box);
-  check_eq
-    ~msg:"the sidebar spacer plus the following 4-point gap matches main"
-    (property_int renderer top_safe_area Lui_protocol.HeightValue)
-    48;
-  check_eq
-    ~msg:
-      "the graph switch follows the explicit full-screen safe-area spacer"
-    (descendant_with_identifier renderer (List.nth sidebar_children 1)
-       "button.graph-switch")
+  let native_sidebar = extension_node application "native-sidebar" in
+  check ~msg:"the system navigation bar owns sidebar header placement"
+    (native_sidebar <> -1);
+  check_eq ~msg:"graph switching belongs to the native toolbar"
+    (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     graph_switch;
+  check_eq ~msg:"the sidebar content starts directly with navigation rows"
+    (List.hd (children renderer sidebar_content)) journals;
   check_eq ~msg:"sidebar keeps the main branch row spacing"
-    (property_int renderer sidebar_view Lui_protocol.Gap)
+    (property_int renderer sidebar_content Lui_protocol.Gap)
     4;
   check_eq
     ~msg:"the main surface owns dismissal instead of rendering a close row"
@@ -3600,7 +3592,7 @@ let sidebar_flashcards_link_selects_the_flashcard_destination () =
     descendant_with_identifier renderer root "sidebar.navigation"
   in
   let link =
-    child_with_identifier renderer sidebar "link.sidebar.flashcards"
+    descendant_with_identifier renderer sidebar "link.sidebar.flashcards"
   in
   dispatch application (Lui_protocol.Press link);
   flush application;
@@ -3742,7 +3734,7 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
     descendant_with_identifier renderer root "sidebar.navigation"
   in
   let link =
-    child_with_identifier renderer sidebar "link.sidebar.graphs"
+    descendant_with_identifier renderer sidebar "link.sidebar.graphs"
   in
   dispatch application (Lui_protocol.Press link);
   flush application;

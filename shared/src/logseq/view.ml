@@ -138,6 +138,11 @@ let native_navigation_title_schema () =
     [ profile IOS SwiftUIHost ]
     [ Lui_extension.property "title" StringScalar true None ]
 
+let native_sidebar_schema () =
+  let open Lui_protocol in
+  Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
+    true [] [] []
+
 let native_search_presentation_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -172,6 +177,7 @@ let extension_registry () =
     (outliner_block_content_schema ());
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
+  Lui_extension.register_component registry (native_sidebar_schema ());
   Lui_extension.register_tweak registry
     (native_navigation_title_schema ());
   Lui_extension.register_component registry

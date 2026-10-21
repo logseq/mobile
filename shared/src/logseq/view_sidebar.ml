@@ -93,7 +93,7 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          [ sidebar_graph_switch_content model_source ])
   else
     View_base.with_label "Switch graph"
-      (button ~variant:`ghost ~grow:1.0 ~min_height:44
+      (button ~variant:`ghost ~min_height:44
       ~text_signal:(Signal.map View_base.graph_label model_source)
       ~text_alignment:`start ~style_class:"semibold" ~foreground:"foreground"
       ~icon:(`app "chevron-down") ~icon_placement:`trailing
@@ -150,12 +150,14 @@ let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
       ~text:"Graphs" [])
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
-  column ~accessibility_identifier:"sidebar.navigation" ~grow:1.0 ~gap:4
-    ~padding:12
-    [
-      box
-        ~height:(if Lui_ui.host context = KotlinHost then 8 else 48)
-        [];
+  let native_toolbar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+  let settings =
+    button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+      ~width:44 ~height:44 ~label:"Settings"
+      ~accessibility_identifier:"button.sidebar.settings"
+      ~on_press:(press send Model.OpenSettings) [] in
+  let header =
+    [box ~height:(if Lui_ui.host context = KotlinHost then 8 else 48) [];
       row ~cross:`center ~gap:4
         [
           stack ~grow:1.0
@@ -170,12 +172,13 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                    ~on_dismiss:(press send Model.DismissGraphMenu)
                    (sidebar_graph_menu_items model_source send));
             ];
-          button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
-            ~width:44 ~height:44 ~label:"Settings"
-            ~accessibility_identifier:"button.sidebar.settings"
-            ~on_press:(press send Model.OpenSettings) [];
+          settings;
         ];
-      box ~height:12 [];
+      box ~height:12 []] in
+  let content =
+    column ~accessibility_identifier:(if native_toolbar then "sidebar.content" else "sidebar.navigation")
+      ~grow:1.0 ~gap:4 ~padding:12
+      ((if native_toolbar then [] else header) @ [
       sidebar_journals_row context model_source send;
       if_
         ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
@@ -220,4 +223,13 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                 ];
             ];
         ];
-    ]
+    ]) in
+  if native_toolbar then
+    box ~accessibility_identifier:"sidebar.navigation" ~grow:1.0
+      [(fun context parent ->
+          let node = Lui_ui.extension context "native-sidebar" in
+          attach context parent node;
+          List.iter (fun child -> ignore (child context (Some node)))
+            [content; sidebar_graph_switch context model_source send; settings];
+          node)]
+  else content

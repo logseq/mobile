@@ -4,6 +4,22 @@ appId: com.logseq.logseq
     id: button.composer.expand
 - tapOn:
     retryTapIfNoChange: false
+    id: button.sidebar
+- assertVisible:
+    id: button.graph-switch
+- takeScreenshot: native-sidebar-toolbar-alignment
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.graph-switch
+- assertVisible:
+    id: menu.graph.other
+- tapOn:
+    retryTapIfNoChange: false
+    id: menu.graph.other
+- assertVisible:
+    id: button.composer.expand
+- tapOn:
+    retryTapIfNoChange: false
     id: button.composer.expand
     point: 20%,50%
 - tapOn:

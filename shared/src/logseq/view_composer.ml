@@ -38,7 +38,7 @@ let attachment_picker_menu send : t =
 
 let composer_attachment_button (context : Lui_ui.ui_context) send : t =
   let native_menu = Lui_ui.host context <> KotlinHost in
-  button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
+  button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
     ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
     ?on_press:(if native_menu then None else Some (press send Model.OpenAttachmentPicker))
     (if native_menu then [context_menu (attachment_picker_items context send)] else [])
@@ -125,7 +125,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
     | None -> "border" in
   let native_menu = Lui_ui.host context <> KotlinHost in
   button ~icon_signal:(Signal.map icon model_source)
-    ~variant:`ghost ~size:`icon ~width:32 ~height:32
+    ~variant:`ghost ~size:`icon ~width:32 ~height:44
     ~foreground_signal:(Signal.map foreground model_source) ~label:"Task status"
     ~accessibility_identifier:"button.task-status"
     ?on_press:(if native_menu then None else Some (press send Model.OpenTaskStatusPicker))

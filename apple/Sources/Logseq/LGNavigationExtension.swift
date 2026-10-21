@@ -32,6 +32,15 @@ enum LGNavigationExtension {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
             LUIAppleExtension(
+                identifier: "native-sidebar",
+                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
+                acceptsStandardChildren: true
+            ) { context in
+                AnyView(LGSidebarNavigation(context: context))
+            }
+        )
+        try registry.register(
+            LUIAppleExtension(
                 identifier: identifier,
                 fingerprint: fingerprint,
                 acceptsStandardChildren: true,
@@ -63,6 +72,44 @@ enum LGNavigationExtension {
                 AnyView(LGNavigationDestination(context: context, content: content))
             }
         )
+    }
+}
+
+private struct LGSidebarNavigation: View {
+    let context: LUIAppleExtensionViewContext
+
+    var body: some View {
+        let _ = context.revision
+        NavigationStack {
+            child(at: 0)
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    #if os(iOS)
+                    if #available(iOS 26.0, *) {
+                        ToolbarItem(placement: .topBarLeading) {
+                            child(at: 1).fixedSize(horizontal: true, vertical: false)
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                            .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .topBarLeading) { child(at: 1) }
+                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                    }
+                    #else
+                    ToolbarItem(placement: .navigation) { child(at: 1) }
+                    ToolbarItem(placement: .primaryAction) { child(at: 2) }
+                    #endif
+                }
+        }
+    }
+
+    private func child(at index: Int) -> AnyView {
+        let children = context.childIDs
+        guard children.indices.contains(index) else { return AnyView(EmptyView()) }
+        return context.content(for: children[index])
     }
 }
 
@@ -712,7 +759,7 @@ private struct LGBottomChromeSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
+            content.glassEffect(.regular, in: .rect(cornerRadius: 28))
         } else {
             content.background(
                 .ultraThinMaterial,

@@ -54,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-menus-") as temporary:
             assert any(line.startswith("EVENT press button.task-status.option.") and status in line
                        for line in events), (status, events)
         assert "EVENT press button.task-status.clear" in events, events
-        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging and every task status")
+        assert events.count("EVENT press menu.graph.other") == 1, events
+        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging, every task status and native sidebar graph switching")
     finally:
         container = subprocess.run(["xcrun", "simctl", "get_app_container", SIMULATOR, BUNDLE, "data"],
                                    capture_output=True, text=True)
