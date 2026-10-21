@@ -413,15 +413,7 @@ let built_in_class db eid =
   | Some (Ds.Keyword ident) -> S.starts_with ~prefix:"logseq.class/" ident
   | _ -> false
 
-let trace_sidebar started stage =
-  if Sys.getenv_opt "LOGSEQ_TRACE_STARTUP" = Some "1" then
-    prerr_endline
-      ("LOGSEQ_SIDEBAR_METRIC stage=" ^ stage
-       ^ Printf.sprintf " elapsed_ms=%.3f"
-           ((Unix.gettimeofday () -. started) *. 1000.0))
-
 let sidebar_pages decrypt_title db =
-  let started = Unix.gettimeofday () in
   let favorites =
     match favorite_page_eid db with
     | Some eid ->
@@ -450,7 +442,6 @@ let sidebar_pages decrypt_title db =
       |> List.map snd
     | None -> []
   in
-  trace_sidebar started "favorites";
   let favorite_uuids =
     List.fold_left (fun set (page : Model.entity_summary) -> page.uuid :: set) [] favorites
   in
@@ -507,7 +498,6 @@ let sidebar_pages decrypt_title db =
             , eid ))
       named
   in
-  trace_sidebar started "candidates";
   let ranked =
     List.sort
       (fun (left_updated, left_day, left_eid) (right_updated, right_day, right_eid) ->
@@ -518,7 +508,6 @@ let sidebar_pages decrypt_title db =
         else compare right_eid left_eid)
       candidates
   in
-  trace_sidebar started "ranked";
 
   (* Resolve and decrypt only enough ranked pages to fill the window:
      stay lazy like the original seq pipeline. *)
@@ -552,9 +541,7 @@ let sidebar_pages decrypt_title db =
       | Seq.Nil -> Seq.Nil
       | Seq.Cons (x, rest) -> Seq.Cons (x, take (n - 1) rest)
   in
-  let result = List.of_seq (take 15 recent_seq) in
-  trace_sidebar started "resolved";
-  { favorites; recent_pages = result }
+  { favorites; recent_pages = List.of_seq (take 15 recent_seq) }
 
 let page_block decrypt_title db eid =
   match page_summary decrypt_title db eid with

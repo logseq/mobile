@@ -522,7 +522,6 @@ private struct CreateSyncGraphPayload: Encodable {
         actionName: String,
         databasePath: String
     ) {
-        let startedAt = Date()
         openedDatabasePath = databasePath
         apply(responseJSON: responseJSON, actionName: actionName)
         if actionName == "openGraph", let graphID = snapshot.selectedGraphId {
@@ -537,12 +536,6 @@ private struct CreateSyncGraphPayload: Encodable {
                 await self?.dispatchRawAndWait("loadSidebar")
             }
         }
-        let elapsedMilliseconds = Date().timeIntervalSince(startedAt) * 1_000
-        print(
-            "LOGSEQ_LAUNCH_APPLY_METRIC action=\(actionName) "
-                + "bytes=\(responseJSON.utf8.count) "
-                + "elapsed_ms=\(String(format: "%.3f", elapsedMilliseconds))"
-        )
     }
 
     public func resetToCatalog(applyResponse: Bool = true) async {

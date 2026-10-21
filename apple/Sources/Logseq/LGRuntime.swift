@@ -142,13 +142,11 @@ public final class LGRuntime {
         lastAuthoritativeCoreResponse = nil
         lastCoreSyncProjection = nil
         authoritativeCoreResponseInvalidated = false
-        let initialPatch = LogseqLaunchTiming.measure("core_ui_initialize") {
-            native.initialize(
-                platformCode: platformCode,
-                hostCode: hostCode,
-                authenticationCode: authenticationCode
-            )
-        }
+        let initialPatch = native.initialize(
+            platformCode: platformCode,
+            hostCode: hostCode,
+            authenticationCode: authenticationCode
+        )
         guard !initialPatch.isEmpty else {
             throw LGRuntimeError.emptyInitializationPatch
         }
@@ -525,8 +523,8 @@ public final class LGRuntime {
 
     private func apply(_ patch: String) throws {
         guard !patch.isEmpty else { return }
-        let decoded = try LogseqLaunchTiming.measure("lui_patch_decode") { try LUIAppleBackend.decode(patch) }
-        try LogseqLaunchTiming.measure("lui_patch_commit") { try renderer.apply(decoded: decoded) }
+        let decoded = try LUIAppleBackend.decode(patch)
+        try renderer.apply(decoded: decoded)
         #if DEBUG
         Task.detached { Self.dumpPatchIfRequested(patch, generation: decoded.generation) }
         #endif

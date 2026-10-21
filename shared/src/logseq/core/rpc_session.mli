@@ -189,7 +189,6 @@ val node_routes_json :
   (Cache_model.block -> Yojson.Basic.t) ->
   (Cache_model.block -> Yojson.Basic.t) ->
   Yojson.Basic.t
-val trace_snapshot : float -> string -> unit
 val snapshot :
   Session_types.session ->
   Cache_model.block list ->

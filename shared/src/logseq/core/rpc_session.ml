@@ -176,19 +176,10 @@ let node_routes_json session serialize serialize_plain =
            ])
        (state session).node_routes)
 
-let trace_snapshot started stage =
-  if Sys.getenv_opt "LOGSEQ_TRACE_STARTUP" = Some "1" then
-    prerr_endline
-      ("LOGSEQ_SNAPSHOT_METRIC stage=" ^ stage
-       ^ Printf.sprintf " elapsed_ms=%.3f"
-           ((Unix.gettimeofday () -. started) *. 1000.0))
-
 let snapshot session context_blocks blocks =
-  let started = Unix.gettimeofday () in
   let s = state session in
   let h = host session in
   let sidebar = sidebar_pages session in
-  trace_snapshot started "sidebar";
   let current =
     match s.node_base_state with
     | Some base -> base
@@ -197,7 +188,6 @@ let snapshot session context_blocks blocks =
   let context =
     base_outliner_context_with_blocks session (Some sidebar) context_blocks
   in
-  trace_snapshot started "context";
   let serialized = Hashtbl.create 256 in
   let serialize (block : Model.block) =
     match Hashtbl.find_opt serialized block.uuid with
@@ -351,7 +341,6 @@ let structural_outliner_patch anchored session before_context before_state
   outliner_patch_result session after_context blocks deleted splices
 
 let snapshot_visible session =
-  let started = Unix.gettimeofday () in
   let s = state session in
   let h = host session in
   let context_blocks =
@@ -394,10 +383,7 @@ let snapshot_visible session =
     then context_blocks
     else Model.visible_from s.model context_blocks
   in
-  trace_snapshot started "blocks";
-  let result = snapshot session context_blocks blocks in
-  trace_snapshot started "complete";
-  result
+  snapshot session context_blocks blocks
 
 let sidebar_snapshot session =
   session.Types.state :=

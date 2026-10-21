@@ -1962,7 +1962,7 @@ let authentication_screen_renders_from_lg_state () =
     (descendant_with_identifier renderer root "screen.graph-picker")
     (-1);
   check_eq ~msg:"authentication replaces loaded journal content"
-    (descendant_with_identifier renderer root "journals.graph-loaded")
+    (descendant_with_identifier renderer root "pane.journals")
     (-1);
   check_eq ~msg:"authentication replaces the journal loading surface"
     (descendant_with_identifier renderer root "journals.loading")
@@ -5651,7 +5651,7 @@ let native_bridge_renders_restored_authentication_in_the_first_patch () =
   check ~msg:"signed-out initialization renders authentication immediately"
     (contains "screen.authentication" patch);
   check ~msg:"signed-out initialization never constructs the journals tree"
-    (not (contains "journals.graph-loaded" patch));
+    (not (contains "pane.journals" patch));
   check ~msg:"signed-out initialization excludes main navigation controls"
     (not (contains "button.search" patch))
 
@@ -7358,8 +7358,8 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"journal titles map main's title2 scale"
     (property_int renderer heading_text Lui_protocol.HeadingLevel)
     3;
-  check ~msg:"the loaded journal graph keeps main's readiness contract"
-    (descendant_with_identifier renderer root "journals.graph-loaded"
+  check ~msg:"the loaded journal graph renders the journal pane"
+    (descendant_with_identifier renderer root "pane.journals"
     <> -1);
   check_eq ~msg:"later journal sections render main's native divider"
     (descendant_count_with_identifier renderer root "journal.divider")

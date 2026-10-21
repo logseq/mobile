@@ -448,9 +448,6 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
       if_
         ~test:(Signal.map View_base.graph_loading_visible_ model_source)
         (graph_loading_feedback context model_source);
-      if_
-        ~test:(Signal.map View_base.journal_root_visible_ model_source)
-        (text ~accessibility_identifier:"journals.graph-loaded" ~value:"" []);
     ]
 
 let main_header_model context current =

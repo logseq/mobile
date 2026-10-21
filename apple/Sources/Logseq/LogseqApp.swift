@@ -66,16 +66,13 @@ public struct LogseqRootView : View {
     private var appContent: some View {
         LGRendererRoot(renderer: runtime.lgRuntime.renderer)
             .onAppear {
-                LogseqAppDelegate.shared.reportLaunchStage("root_appeared")
                 if let window = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
                     .first(where: { $0.isKeyWindow }) {
-                    LogseqLaunchTiming.measure("launch_transition_install") {
-                        LogseqLaunchTransition.shared.show(in: window)
-                    }
+                    LogseqLaunchTransition.shared.show(in: window)
                 }
                 DispatchQueue.main.async {
-                    LogseqAppDelegate.shared.onFirstUIRendered()
+                    LogseqLaunchTransition.shared.finish()
                 }
             }
             .task {
@@ -426,7 +423,6 @@ public struct LogseqRootView : View {
         startLGRenderer()
         await waitForAuthenticationRestore()
         publishAuthenticationState()
-        LogseqAppDelegate.shared.reportLaunchStage("authentication_published")
         await waitForLocalLaunchLoad()
         if let session = UserDefaults.standard.string(forKey: "logseq.uiSession") {
             do {
@@ -445,9 +441,7 @@ public struct LogseqRootView : View {
         guard authenticationRestoreTask == nil else { return }
         authenticationRestoreTask = Task { [weak self] in
             guard let self else { return }
-            LogseqAppDelegate.shared.reportLaunchStage("authentication_restore_started")
             await authentication.restore()
-            LogseqAppDelegate.shared.reportLaunchStage("authentication_restore_returned")
         }
     }
 
@@ -569,7 +563,6 @@ public struct LogseqRootView : View {
         let databasePath = databasePath
         let baseURL = LogseqSettingsPolicy.storedBaseURL()
         localLaunchResult = {
-            LogseqAppDelegate.shared.reportLaunchStage("local_load_started")
             func configureGraph() {
                 let payloadObject: [String: Any] = [
                     "baseUrl": baseURL,
@@ -584,7 +577,6 @@ public struct LogseqRootView : View {
                         params: LogseqRPCParams(action: "configure", payload: payload)
                     )
                 )
-                LogseqAppDelegate.shared.reportLaunchStage("graph_configured")
             }
 
             func openGraph(isEncrypted: Bool, graphName: String) -> String? {
@@ -602,14 +594,12 @@ public struct LogseqRootView : View {
                 ]
                 guard let payloadData = try? JSONSerialization.data(withJSONObject: payloadObject),
                       let payload = String(data: payloadData, encoding: .utf8) else { return nil }
-                LogseqAppDelegate.shared.reportLaunchStage("open_graph_started")
                 let response = LogseqStore.callForLaunch(
                     LogseqRPCRequest(
                         method: "dispatch",
                         params: LogseqRPCParams(action: "openGraph", payload: payload)
                     )
                 )
-                LogseqAppDelegate.shared.reportLaunchStage("open_graph_returned")
                 return response
             }
 
@@ -619,7 +609,6 @@ public struct LogseqRootView : View {
                     params: LogseqRPCParams(action: nil, path: databasePath)
                 )
             )
-            LogseqAppDelegate.shared.reportLaunchStage("catalog_opened")
             configureGraph()
             guard !graphID.isEmpty,
                   let catalogData = catalogResponse.data(using: .utf8),
@@ -654,7 +643,6 @@ public struct LogseqRootView : View {
     private func applyLocalLaunchResultWhenReady() {
         guard let result = localLaunchResult,
               !didApplyLocalLaunchResult else { return }
-        LogseqAppDelegate.shared.reportLaunchStage("local_result_received")
         didApplyLocalLaunchResult = true
         applyLocalGraphIDsToLG(from: result.catalogResponse)
         if let isEncrypted = result.isEncrypted {
@@ -666,15 +654,12 @@ public struct LogseqRootView : View {
                 actionName: "openGraph",
                 databasePath: databasePath
             )
-            LogseqAppDelegate.shared.reportLaunchStage("store_opened")
-            LogseqAppDelegate.shared.reportLaunchStage("graph_loaded")
         } else {
             store.applyLaunchResponse(
                 result.catalogResponse,
                 actionName: "open",
                 databasePath: databasePath
             )
-            LogseqAppDelegate.shared.reportLaunchStage("store_opened")
         }
         if lgRuntime.isStarted, result.graphResponse != nil {
             do {
@@ -684,9 +669,6 @@ public struct LogseqRootView : View {
                     "Could not finish LG graph loading: " + String(describing: error)
                 )
             }
-        }
-        if result.graphResponse != nil {
-            LogseqAppDelegate.shared.onJournalsUIReady()
         }
         drainSharedCapturesIfReady()
     }
@@ -986,51 +968,16 @@ public final class LogseqAppDelegate : Sendable {
     private init() {
     }
 
-    private nonisolated(unsafe) var launchStartedAt: TimeInterval?
-
     @MainActor public func onInit() {
-        let now = Date().timeIntervalSince1970
-        launchStartedAt = now
-        print(String(format: "LOGSEQ_LAUNCH_METRIC start=%.6f", now))
-        let runtime = LogseqLaunchTiming.measure("runtime_initialization") { LogseqLogseqRuntime.shared }
-        LogseqLaunchTiming.measure("local_graph_load") { runtime.startLocalLaunchLoad() }
+        let runtime = LogseqLogseqRuntime.shared
+        runtime.startLocalLaunchLoad()
         runtime.startAuthenticationRestore()
-        LogseqLaunchTiming.measure("renderer_start") { runtime.startLGRenderer() }
+        runtime.startLGRenderer()
         logger.debug("onInit")
     }
 
     public func onLaunch() {
-        reportLaunchMetric("did_finish_launching")
         logger.debug("onLaunch")
-    }
-
-    @MainActor public func onFirstUIRendered() {
-        LogseqLaunchTiming.measure("launch_transition_begin_fade") {
-            LogseqLaunchTransition.shared.finish()
-        }
-        reportLaunchMetric("first_ui_rendered")
-        LogseqLaunchTiming.finish()
-    }
-
-    public func onJournalsUIReady() {
-        reportLaunchMetric("journals_ui_ready")
-    }
-
-    public func launchElapsedMilliseconds() -> Double? {
-        guard let launchStartedAt else { return nil }
-        return (Date().timeIntervalSince1970 - launchStartedAt) * 1_000.0
-    }
-
-    public func reportLaunchStage(_ name: String) {
-        reportLaunchMetric(name)
-    }
-
-    private func reportLaunchMetric(_ name: String) {
-        guard let elapsedMilliseconds = launchElapsedMilliseconds() else { return }
-        print(String(format: "LOGSEQ_LAUNCH_METRIC %@_ms=%.3f", name, elapsedMilliseconds))
-        if let processElapsed = LogseqLaunchTiming.elapsedMilliseconds() {
-            print(String(format: "LOGSEQ_PROCESS_LAUNCH_METRIC %@_ms=%.3f", name, processElapsed))
-        }
     }
 
     @MainActor public func onResume() {
