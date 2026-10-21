@@ -8,7 +8,8 @@ appId: com.logseq.logseq
 - tapOn:
     id: "button.search"
 - assertVisible: "Search pages and blocks"
-- tapOn: "close"
+- tapOn:
+    id: "button.search.close"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

@@ -260,24 +260,23 @@ private struct LGSearchSession: View {
             .navigationTitle(searchTitle)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                LGNativeSearchField(query: queryBinding)
-                    .frame(height: searchFieldHeight)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                HStack(spacing: 12) {
+                    LGNativeSearchField(query: queryBinding)
+                        .frame(height: searchFieldHeight)
                     Button(action: exitSearch) {
                         Image("close", bundle: .module)
                             .frame(width: 20, height: 20)
-                            .frame(width: 44, height: 44)
-                            .accessibilityIdentifier("button.search.close")
+                            .frame(width: searchFieldHeight, height: searchFieldHeight)
                     }
                     .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .modifier(LGLiquidGlassSurface(shape: .circle))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Close search")
                     .accessibilityIdentifier("button.search.close")
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
     }
 
