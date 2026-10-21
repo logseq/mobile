@@ -137,8 +137,12 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             try present(true)
             while input() == nil && ProcessInfo.processInfo.systemUptime - start < 2 { await step() }
             let elapsed = ProcessInfo.processInfo.systemUptime - start
+            // The system toolbar activates search through its own opening transition.
+            // Once ready, typing must never recreate or resign the input responder.
+            let readyBegins = focus.begins
+            let readyEnds = focus.ends
             record("Search cycle \(cycle + 1): input ready after \(Int(elapsed * 1000)) ms")
-            if input() == nil || elapsed > (cycle == 0 ? 0.8 : 0.45) {
+            if input() == nil || elapsed > (cycle == 0 ? 1.5 : 0.8) {
                 record("FAIL: search should accept typing while its presentation animates")
                 failures += 1
             }
@@ -165,6 +169,15 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             for _ in 0..<120 { await step() }
             if let field = input() {
                 window.layoutIfNeeded()
+                func hasActiveSystemSearch(_ controller: UIViewController) -> Bool {
+                    if controller.navigationItem.searchController?.isActive == true { return true }
+                    if controller.children.contains(where: hasActiveSystemSearch) { return true }
+                    return controller.presentedViewController.map(hasActiveSystemSearch) ?? false
+                }
+                if window.rootViewController.map(hasActiveSystemSearch) != true {
+                    record("FAIL: search must use the system search bar and its native cancel control")
+                    failures += 1
+                }
                 let frame = field.convert(field.bounds, to: window)
                 let viewportBottom = min(window.bounds.maxY - window.safeAreaInsets.bottom, focus.keyboardTop ?? window.bounds.maxY)
                 let gap = viewportBottom - frame.maxY
@@ -173,8 +186,8 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
                     failures += 1
                 }
             }
-            if focus.begins != 1 || focus.ends != 0 {
-                record("FAIL: search must retain one responder while opening and typing; begins=\(focus.begins) ends=\(focus.ends)")
+            if focus.begins != readyBegins || focus.ends != readyEnds {
+                record("FAIL: search must retain its responder while typing; begins=\(focus.begins) ends=\(focus.ends)")
                 failures += 1
             }
             try present(false)
