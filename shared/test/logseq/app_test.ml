@@ -2467,9 +2467,60 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
     "Waiting to save";
   dispatch application (Lui_protocol.Press sync_now);
   flush application;
-  check_eq ~msg:"Sync now reuses the existing platform sync pump"
-    (App.model application).pending_effects
-    [ Model.SyncNowEffect 1 ]
+  check_eq ~msg:"manual reconnect is distinct from the automatic pending sync pump"
+    (List.map (fun eff ->
+       Yojson.Basic.Util.member "kind" (Yojson.Basic.from_string (Native_bridge.encode_effect eff)))
+       (App.model application).pending_effects)
+    [ `String "sync-pending"; `String "sync-now" ]
+
+let automatic_pending_sync_never_requests_a_socket_restart () =
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "work"; graph_name = Some "Work";
+    sync_connected = true; has_pending_semantic_operations = true } in
+  let kind eff = Yojson.Basic.Util.member "kind"
+      (Yojson.Basic.from_string (Native_bridge.encode_effect eff)) in
+  let application = App.create (ios_backend ()) in
+  start application;
+  let publish projection = send application (Model.ApplyCoreSnapshot projection); flush application in
+  publish projection;
+  for _ = 1 to 12 do
+    let model = App.model application in
+    check_eq ~msg:"a pending projection requests uploads without restarting the subscription"
+      (List.map kind model.pending_effects) [`String "sync-pending"];
+    let eff = List.hd model.pending_effects in
+    let id = Model.effect_id eff in
+    send application (Model.DequeueEffect id); flush application;
+    publish projection;
+    check_eq ~msg:"in-flight pump requests coalesce across socket projections"
+      (App.model application).pending_effects [];
+    send application (Model.ResolveEffect (id, true, "")); flush application;
+    check_eq ~msg:"completing the pump must not schedule itself"
+      (App.model application).pending_effects [];
+    publish projection
+  done;
+  let offline = { projection with sync_connected = false } in
+  publish offline;
+  check_eq ~msg:"offline pending work cannot bypass reconnect backoff"
+    (List.map kind (App.model application).pending_effects) [`String "sync-pending"];
+  let empty = App.create (ios_backend ()) in
+  start empty;
+  send empty (Model.ApplyCoreSnapshot (empty_core_projection ()));
+  flush empty;
+  check_eq ~msg:"idle graphs do not start an upload pump" (App.model empty).pending_effects []
+
+let effect_completion_requests_uploads_without_restarting_the_socket () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application Model.SaveUISession;
+  send application (Model.DequeueEffect 1);
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    is_pending_sync_projection = true; has_pending_semantic_operations = true });
+  send application (Model.ResolveEffect (1, true, ""));
+  flush application;
+  check_eq ~msg:"successful effects resume only the pending upload pump"
+    (List.map (fun eff -> Yojson.Basic.Util.member "kind"
+       (Yojson.Basic.from_string (Native_bridge.encode_effect eff)))
+       (App.model application).pending_effects) [`String "sync-pending"]
 
 let sync_details_show_the_last_sync_failure () =
   let application = App.create (ios_backend ()) in
@@ -9443,6 +9494,8 @@ let cases =
     case "graph-and-sync-actions-update-retained-status-in-place" graph_and_sync_actions_update_retained_status_in_place;
     case "sync-details-render-projected-cursor-and-trigger-the-existing-pump" sync_details_render_projected_cursor_and_trigger_the_existing_pump;
     case "sync-details-show-the-last-sync-failure" sync_details_show_the_last_sync_failure;
+    case "automatic pending sync never requests a socket restart" automatic_pending_sync_never_requests_a_socket_restart;
+    case "effect completion uploads without restarting the socket" effect_completion_requests_uploads_without_restarting_the_socket;
     case "pending-sync-patches-preserve-the-current-screen-and-cursor" pending_sync_patches_preserve_the_current_screen_and_cursor;
     case "graph-catalog-patches-preserve-the-active-editor-state" graph_catalog_patches_preserve_the_active_editor_state;
     case "sidebar-state-and-page-selection-are-owned-by-lg" sidebar_state_and_page_selection_are_owned_by_lg;

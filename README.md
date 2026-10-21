@@ -107,7 +107,9 @@ Add `--hit-testing` to check independent composer focus targets and the first
 single-tap File selection above the active keyboard.
 Check WebSocket peer closures, transport cancellation, and owner-task cancellation
 with `python3 scripts/test-ios-sync-recovery.py`; add `--simulator` to run the
-same real-socket checks with the iOS Foundation runtime.
+same real-socket checks with the iOS Foundation runtime. The simulator run also
+checks that automatic pending uploads preserve the foreground subscription while
+an explicit Sync now can restart it.
 
 ```sh
 swift build --package-path apple --disable-sandbox --triple arm64-apple-ios17.0-simulator \

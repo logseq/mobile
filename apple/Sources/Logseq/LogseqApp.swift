@@ -289,6 +289,7 @@ public struct LogseqRootView : View {
             presentPageShare: { payload in
                 return presentationCoordinator.presentPageShare(payload)
             },
+            syncPending: { store.syncPending() },
             syncNow: {
                 store.syncPending()
                 Task { await syncCoordinator.kickForeground() }

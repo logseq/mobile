@@ -251,6 +251,7 @@ type logseq_effect =
   | SetPageFavoriteEffect of int * string * bool
   | DeletePageEffect of int * string
   | SyncNowEffect of int
+  | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
   | LoadPageReferencesEffect of int * string

@@ -70,7 +70,7 @@ let idle_save_commits_once_then_wakes_sync () = with_editor (fun session saved -
   apply_effect session save ["type", `String "saveEditing"];
   check_eq (!saved).Cache_model.title "After";
   let sync = take_ready () in
-  check_eq ~msg:"shared save policy wakes pending sync" (kind sync) "sync-now";
+  check_eq ~msg:"shared save policy wakes pending sync" (kind sync) "sync-pending";
   ignore (Native_bridge.resolve_effect (effect_id sync) true "");
   check_eq (Native_bridge.take_effect ()) "")
 
@@ -145,15 +145,15 @@ let platform_delete_confirmation_uses_shared_effects () = with_editor (fun sessi
   check_eq (kind dispatch) "confirm-outliner-delete";
   apply_effect session dispatch ["type", `String "confirmDelete"];
   check ~msg:"platform confirmations use the core mutation sync policy"
-    (List.mem "sync-now" (pending_kinds ())))
+    (List.mem "sync-pending" (pending_kinds ())))
 
 let externally_restored_pending_work_wakes_sync_once () = with_editor (fun session _ ->
   ignore (call session ["type", `String "textChanged"; "title", `String "Restored"; "caretUTF16Offset", `Int 8]);
   let response = call session ["type", `String "saveEditing"] in
   ignore (Native_bridge.apply_response response);
-  check_eq ~msg:"external core responses share the mutation wake policy" (pending_kinds ()) ["sync-now"];
+  check_eq ~msg:"external core responses share the mutation wake policy" (pending_kinds ()) ["sync-pending"];
   ignore (Native_bridge.apply_response response);
-  check_eq (pending_kinds ()) ["sync-now"];
+  check_eq (pending_kinds ()) ["sync-pending"];
   let sync = take_ready () in
   ignore (Native_bridge.apply_response response);
   check_eq ~msg:"an active sync pump owns its remaining operations" (pending_kinds ()) [];
@@ -163,7 +163,7 @@ let full_pending_responses_do_not_restart_a_completed_pump () = with_editor (fun
   ignore (call session ["type", `String "textChanged"; "title", `String "Draft"; "caretUTF16Offset", `Int 5]);
   ignore (Native_bridge.apply_response (call session ["type", `String "saveEditing"]));
   let sync = take_ready () in
-  check_eq (kind sync) "sync-now";
+  check_eq (kind sync) "sync-pending";
   ignore (Native_bridge.resolve_effect (effect_id sync) true "");
   let dispatch action payload = Rpc_session.call session (J.to_string (`Assoc [
     "apiVersion", `Int 1; "method", `String "dispatch";

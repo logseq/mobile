@@ -75,6 +75,10 @@ def main():
             else:
                 subprocess.run(["python3", str(ROOT / "scripts/test-swift-model-check.py"),
                                 source, url, mode], check=True)
+        if options.simulator and not options.mode:
+            subprocess.run(["python3", str(ROOT / "apple/Tests/UI/run-simulator-runtime-check.py"),
+                            str(ROOT / "apple/Tests/UI/sync-subscription-stability.swift"),
+                            "SyncSubscriptionStabilityCheck"], check=True)
     finally:
         server.shutdown(); server.server_close()
 

@@ -167,7 +167,7 @@ let host_responses host model =
           :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
           :: resolved
       | Model.SignOutEffect id -> Model.DequeueEffect id :: resolved
-      | Model.SyncNowEffect id ->
+      | Model.SyncNowEffect id | Model.SyncPendingEffect id ->
         Model.DequeueEffect id
         :: current_graph_projection host model ~extra:(fun projection ->
                { projection with Model.sync_connected = true })

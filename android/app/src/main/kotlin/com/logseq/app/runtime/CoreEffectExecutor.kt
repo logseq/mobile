@@ -66,6 +66,7 @@ internal class CoreEffectExecutor(
             "present-asset",
             "present-page-share",
             "sync-now",
+            "sync-pending",
             "delete-local-graph",
             "save-settings",
             "export-graph-database",

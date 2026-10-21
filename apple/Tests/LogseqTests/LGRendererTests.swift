@@ -730,6 +730,53 @@ struct LGRendererTests {
         #expect(resolution.output == .discard)
     }
 
+    @Test("automatic sync reaches the pending pump through the platform boundary")
+    func automaticSyncUsesPlatformBoundary() async {
+        var platformKinds: [String] = []
+        var coreRequests = 0
+        let executor = LGCoreEffectExecutor(
+            callCore: { _ in
+                coreRequests += 1
+                return #"{"apiVersion":1,"ok":false,"error":{"code":"unexpected","message":"Unexpected RPC"}}"#
+            },
+            platformEffect: { effect in
+                platformKinds.append(effect.kind)
+                return LGEffectResolution(succeeded: true, message: "", output: .discard)
+            }
+        )
+        for kind in ["sync-pending", "sync-now"] {
+            let resolution = await executor.execute(LGEffect(id: 1, kind: kind, text: ""))
+            #expect(resolution.succeeded)
+            #expect(resolution.output == .discard)
+        }
+        #expect(platformKinds == ["sync-pending", "sync-now"])
+        #expect(coreRequests == 0)
+    }
+
+    @Test("automatic upload requests never invoke manual reconnect")
+    func pendingSyncDoesNotInvokeManualReconnect() async {
+        var uploads = 0
+        var reconnects = 0
+        let handler = LGPlatformEffectHandler(
+            saveSettings: { _ in }, runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in }, signOut: {},
+            syncPending: { uploads += 1 }, syncNow: { reconnects += 1 }
+        )
+        for _ in 0..<10 {
+            let result = await handler.execute(LGEffect(id: 1, kind: "sync-pending", text: ""))
+            #expect(result.succeeded && result.output == .discard)
+        }
+        #expect(uploads == 10 && reconnects == 0)
+        _ = await handler.execute(LGEffect(id: 2, kind: "sync-now", text: ""))
+        #expect(uploads == 10 && reconnects == 1)
+        let unavailable = LGPlatformEffectHandler(
+            saveSettings: { _ in }, runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in }, signOut: {}, syncNow: { reconnects += 1 }
+        )
+        let result = await unavailable.execute(LGEffect(id: 3, kind: "sync-pending", text: ""))
+        #expect(!result.succeeded && reconnects == 1)
+    }
+
     @Test("composer draft effects persist through the platform boundary")
     func composerDraftEffectsUsePlatformPersistence() async {
         var persistedDrafts: [String] = []
@@ -987,11 +1034,11 @@ struct LGRendererTests {
             "{\"id\":19,\"kind\":\"change-outliner-text\",\"text\":\"Updated\"}",
             "{\"waitMs\":1}",
             "{\"id\":20,\"kind\":\"save-outliner-editing\",\"text\":\"editing\"}",
-            "{\"id\":21,\"kind\":\"sync-now\",\"text\":\"\"}",
+            "{\"id\":21,\"kind\":\"sync-pending\",\"text\":\"\"}",
         ]
         let executor = LGEffectExecutorProbe()
         executor.resolve = { effect in
-            if effect.kind == "sync-now" {
+            if effect.kind == "sync-pending" {
                 return LGEffectResolution(
                     succeeded: true,
                     message: "",
@@ -1017,7 +1064,7 @@ struct LGRendererTests {
         #expect(executor.effects.map(\.kind) == [
             "change-outliner-text",
             "save-outliner-editing",
-            "sync-now",
+            "sync-pending",
         ])
     }
 
@@ -1026,11 +1073,11 @@ struct LGRendererTests {
         let native = LGNativeRuntimeProbe()
         native.effects = [
             "{\"id\":20,\"kind\":\"outliner-toolbar\",\"text\":\"task\"}",
-            "{\"id\":21,\"kind\":\"sync-now\",\"text\":\"\"}",
+            "{\"id\":21,\"kind\":\"sync-pending\",\"text\":\"\"}",
         ]
         let executor = LGEffectExecutorProbe()
         executor.resolve = { effect in
-            if effect.kind == "sync-now" {
+            if effect.kind == "sync-pending" {
                 return LGEffectResolution(
                     succeeded: true,
                     message: "",
@@ -1048,7 +1095,7 @@ struct LGRendererTests {
 
         #expect(executor.effects.map(\.kind) == [
             "outliner-toolbar",
-            "sync-now",
+            "sync-pending",
         ])
     }
 

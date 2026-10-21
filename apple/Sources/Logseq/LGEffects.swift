@@ -115,6 +115,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)?
     private let presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)?
     private let syncNow: (@MainActor () -> Void)?
+    private let syncPending: (@MainActor () -> Void)?
 
     public init(
         saveSettings: @escaping @MainActor (LGSettingsPayload) async throws -> Void,
@@ -130,6 +131,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
         presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)? = nil,
         presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)? = nil,
+        syncPending: (@MainActor () -> Void)? = nil,
         syncNow: (@MainActor () -> Void)? = nil
     ) {
         self.saveSettings = saveSettings
@@ -146,6 +148,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         self.presentAsset = presentAsset
         self.presentPageShare = presentPageShare
         self.syncNow = syncNow
+        self.syncPending = syncPending
     }
 
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
@@ -351,15 +354,15 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                     message: succeeded ? "" : "Page sharing is unavailable",
                     output: .discard
                 )
-            case "sync-now":
-                guard let syncNow else {
+            case "sync-now", "sync-pending":
+                guard let requestSync = effect.kind == "sync-now" ? syncNow : syncPending else {
                     return LGEffectResolution(
                         succeeded: false,
                         message: "Sync is unavailable",
                         output: .discard
                     )
                 }
-                syncNow()
+                requestSync()
                 return LGEffectResolution(
                     succeeded: true,
                     message: "",
@@ -428,7 +431,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         switch effect.kind {
         case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
-             "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now":
+             "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
             guard let platformEffect else {
                 return LGEffectResolution(succeeded: false, message: "Platform settings handling is unavailable")
             }

@@ -261,6 +261,8 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted uuid ^ "}"
   | SyncNowEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sync-now\",\"text\":\"\"}"
+  | SyncPendingEffect id ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sync-pending\",\"text\":\"\"}"
   | SetOutlinerTaskStatusEffect (id, block_id, status) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"set-outliner-task-status\",\"text\":"

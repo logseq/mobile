@@ -254,6 +254,7 @@ type logseq_effect =
   | SetPageFavoriteEffect of int * string * bool
   | DeletePageEffect of int * string
   | SyncNowEffect of int
+  | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SearchNodesEffect of int * string
   | LoadPageReferencesEffect of int * string
@@ -752,6 +753,7 @@ let effect_id eff =
   | SetPageFavoriteEffect (id, _, _) -> id
   | DeletePageEffect (id, _) -> id
   | SyncNowEffect id -> id
+  | SyncPendingEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
   | SearchNodesEffect (id, _) -> id
   | LoadPageReferencesEffect (id, _) -> id
@@ -1838,12 +1840,13 @@ let rec update (current : logseq_model) action =
     else current
   | ApplyCoreSnapshot projection ->
     let applied = apply_core_snapshot current projection in
+    (* Uploads need the existing subscription to receive acknowledgements. *)
     let updated =
       if not projection.is_pending_sync_patch && not projection.is_pending_sync_projection
         && (applied.has_pending_semantic_operations || applied.has_pending_sync_request)
-        && not (List.exists (function SyncNowEffect _ -> true | _ -> false)
+        && not (List.exists (function SyncNowEffect _ | SyncPendingEffect _ -> true | _ -> false)
           (applied.pending_effects @ applied.in_flight_effects))
-      then enqueue_effect applied (SyncNowEffect applied.next_effect_id)
+      then enqueue_effect applied (SyncPendingEffect applied.next_effect_id)
       else applied in
     (match projection.pending_reference_uuid with
      | Some uuid when not (List.exists (function
@@ -2088,10 +2091,10 @@ let rec update (current : logseq_model) action =
            enqueue_effect ready (SaveOutlinerEditingEffect (ready.next_effect_id, uuid))
          | _ -> resolved in
        let needs_sync = succeeded && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
-         && (match eff with SyncNowEffect _ -> false | _ -> true)
-         && not (List.exists (function SyncNowEffect _ -> true | _ -> false)
+         && (match eff with SyncNowEffect _ | SyncPendingEffect _ -> false | _ -> true)
+         && not (List.exists (function SyncNowEffect _ | SyncPendingEffect _ -> true | _ -> false)
               (saved.pending_effects @ saved.in_flight_effects)) in
-       if needs_sync then enqueue_effect saved (SyncNowEffect saved.next_effect_id) else saved
+       if needs_sync then enqueue_effect saved (SyncPendingEffect saved.next_effect_id) else saved
      | None -> current)
   | OpenAttachmentPicker ->
     { current with attachment_picker_open = true }

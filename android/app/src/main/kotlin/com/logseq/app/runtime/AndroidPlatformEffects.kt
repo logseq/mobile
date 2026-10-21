@@ -200,7 +200,7 @@ internal class AndroidPlatformEffects(
                     metadata = effect.metadata ?: "[]",
                 ),
             )
-            "sync-now" -> NativeEffectResolution.Discard(succeeded = syncNow())
+            "sync-now", "sync-pending" -> NativeEffectResolution.Discard(succeeded = syncNow())
             "delete-local-graph" -> NativeEffectResolution.Discard(
                 succeeded = platform.deleteLocalGraph(effect.text),
             )
