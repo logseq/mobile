@@ -24,6 +24,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,23 +71,32 @@ internal fun ImageGallery(
     LaunchedEffect(pager.currentPage) { zoomed = false }
     val current = paths.getOrNull(pager.currentPage)
     val available = current != null && File(current).isFile
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Scaffold(
             modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
                 TopAppBar(
                     title = { Text(if (paths.isEmpty()) "0 / 0" else "${pager.currentPage + 1} / ${paths.size}") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                     navigationIcon = {
                         IconButton(onClick = onDismiss, modifier = Modifier.testTag("image.preview.close")) {
                             Icon(Icons.Default.Close, contentDescription = "Close image preview")
                         }
                     },
                     actions = {
-                        TextButton(onClick = { current?.let(onSave) }, enabled = available,
-                            modifier = Modifier.testTag("image.preview.save")) { Text("Save") }
-                        TextButton(onClick = { current?.let(onShare) }, enabled = available,
-                            modifier = Modifier.testTag("image.preview.share")) { Text("Share") }
+                        IconButton(onClick = { current?.let(onSave) }, enabled = available,
+                            modifier = Modifier.testTag("image.preview.save")) {
+                            Icon(Icons.Default.Download, contentDescription = "Save image")
+                        }
+                        IconButton(onClick = { current?.let(onShare) }, enabled = available,
+                            modifier = Modifier.testTag("image.preview.share")) {
+                            Icon(Icons.Default.Share, contentDescription = "Share image")
+                        }
                     },
                 )
             },
