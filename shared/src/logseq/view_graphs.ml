@@ -66,6 +66,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
        graph_source)
     (list_item
        ~min_height:(if Lui_ui.host context = KotlinHost then 56 else 44)
+       ~style_class:"context-menu-only"
        ~accessibility_identifier:(View_base.graph_identifier graph)
        ~disabled_signal:
          (if local then
@@ -86,6 +87,11 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
                ~value_signal:
                  (Signal.map View_base.graph_title graph_source)
                [];
+             if_ ~test:(reactive View_base.graph_delete_active_ model_source graph_source)
+               (row ~gap:8 ~cross:`center
+                 [ spinner ~accessibility_identifier:"graph-delete.loading" [];
+                   text ~value:"Deleting graph…" ~style_class:"caption"
+                     ~foreground:"muted-foreground" [] ]);
              if_
                ~test:
                  (Signal.map View_base.graph_not_ready_ graph_source)
@@ -139,6 +145,12 @@ let graph_encryption_setup_fields model_source send =
         ~on_input:(on_input send (fun value -> Model.ChangeNewGraphPasswordConfirmation value)) [];
     ])
 
+let graph_creation_progress model_source : t =
+  if_ ~test:(reactive Model.graph_create_active_ model_source)
+    (row ~gap:8 ~cross:`center
+      [ spinner ~accessibility_identifier:"graph-create.loading" [];
+        text ~value:"Creating graph…" ~foreground:"muted-foreground" [] ])
+
 let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_int_prop_signal HeightValue
@@ -165,6 +177,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                          Model.ChangeNewGraphName text))
                   [];
                 graph_encryption_setup_fields model_source send;
+                graph_creation_progress model_source;
                 switch_
                   ~checked_signal:
                     (Signal.map View_base.model_new_graph_encrypted_
@@ -204,6 +217,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   [
                     button ~variant:`ghost
                       ~accessibility_identifier:"button.graph-add.cancel"
+                      ~disabled:(reactive Model.graph_create_active_ model_source)
                       ~on_press:(press send Model.DismissCreateGraph)
                       ~text:"Cancel" [];
                     button ~variant:`primary
@@ -274,6 +288,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                       model_source)
                  ~style_class:"footnote" ~foreground:"destructive"
                  ~accessibility_identifier:"text.graph-create.error" []);
+            graph_creation_progress model_source;
           ];
         toolbar ~orientation:`horizontal ~label:"Graph creation actions"
           ~style_class:"navigation-actions"
@@ -281,6 +296,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
           [
             button ~style_class:"cancellation-action"
               ~accessibility_identifier:"button.graph-add.cancel"
+              ~disabled:(reactive Model.graph_create_active_ model_source)
               ~on_press:(press send Model.DismissCreateGraph)
               ~text:"Cancel" [];
             button ~style_class:"confirmation-action"

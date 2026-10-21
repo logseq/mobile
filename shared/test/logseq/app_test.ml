@@ -3863,6 +3863,9 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
     (Some true);
   check ~msg:"remote graphs remain addressable" (remote_row <> -1);
   check ~msg:"local graphs expose deletion" (delete <> -1);
+  check_eq ~msg:"graph deletion is available only through the long-press menu"
+    (property_string renderer local_row Lui_protocol.StyleClass)
+    "context-menu-only";
   check_eq ~msg:"the visible native Menu owns main's deletion identifier"
     (node renderer delete)
     (Some Lui_protocol.ContextMenu);
@@ -4043,6 +4046,49 @@ let kotlin_add_graph_sheet_shows_creation_errors_inline () =
   check_eq ~msg:"the Add graph sheet explains why creation failed"
     (property_string renderer error Lui_protocol.TextValue)
     "Initial snapshot upload failed"
+
+let graph_lifecycle_operations_show_loading () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let local = graph "local" "Local graph" false true in
+    start application;
+    send application (Model.ApplyCoreSnapshot
+      { (empty_core_projection ()) with graphs = [local]; selected_graph_id = None });
+    send application (Model.ApplyLocalGraphIds ["local"]);
+    send application Model.ShowGraphs;
+    send application Model.OpenCreateGraph;
+    send application (Model.ChangeNewGraphName "New graph");
+    send application Model.SubmitCreateGraph;
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let find id = descendant_with_identifier renderer (Lui_app.root_node application) id in
+    check ~msg:"queued graph creation immediately shows progress" (find "graph-create.loading" <> -1);
+    send application (Model.DequeueEffect 1);
+    flush application;
+    check ~msg:"running graph creation retains progress" (find "graph-create.loading" <> -1);
+    check_eq ~msg:"creation cannot be cancelled while storage is changing"
+      (descendant_enabled renderer (Lui_app.root_node application) "button.graph-add.cancel") (Some false);
+    send application (Model.ResolveEffect (1, false, "Creation failed"));
+    flush application;
+    check_eq ~msg:"failed creation clears progress" (find "graph-create.loading") (-1);
+    send application Model.DismissCreateGraph;
+    send application (Model.RequestDeleteGraph "local");
+    send application Model.ConfirmDeleteGraph;
+    flush application;
+    check ~msg:"queued graph deletion immediately shows progress" (find "graph-delete.loading" <> -1);
+    send application (Model.DequeueEffect 2);
+    flush application;
+    check ~msg:"running graph deletion retains progress" (find "graph-delete.loading" <> -1);
+    send application (Model.ResolveEffect (2, false, "Deletion failed"));
+    flush application;
+    check_eq ~msg:"failed deletion clears progress" (find "graph-delete.loading") (-1);
+    send application (Model.RequestDeleteGraph "local");
+    send application Model.ConfirmDeleteGraph;
+    send application (Model.DequeueEffect 3);
+    send application (Model.ResolveEffect (3, true, ""));
+    flush application;
+    check_eq ~msg:"successful deletion clears progress" (find "graph-delete.loading") (-1)
+  ) [ios_backend; kotlin_backend]
 
 let graph_lifecycle_effects_disable_duplicate_actions () =
   let application = App.create (ios_backend ()) in
@@ -9609,6 +9655,7 @@ let cases =
     case "kotlin-graphs-use-a-compact-material-action-group" kotlin_graphs_use_a_compact_material_action_group;
     case "kotlin-add-graph-sheet-uses-one-material-form-layout" kotlin_add_graph_sheet_uses_one_material_form_layout;
     case "kotlin-add-graph-sheet-shows-creation-errors-inline" kotlin_add_graph_sheet_shows_creation_errors_inline;
+    case "graph-lifecycle-operations-show-loading" graph_lifecycle_operations_show_loading;
     case "graph-lifecycle-effects-disable-duplicate-actions" graph_lifecycle_effects_disable_duplicate_actions;
     case "empty-graph-picker-replaces-refresh-with-progress-while-loading" empty_graph_picker_replaces_refresh_with_progress_while_loading;
     case "graph-deletion-confirmation-names-the-local-graph" graph_deletion_confirmation_names_the_local_graph;

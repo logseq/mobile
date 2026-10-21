@@ -1218,7 +1218,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
               [
                 row ~grow:1.0 ~cross:`center ~main:`space_between
                   [
-                    text ~value:"Server cursor" [];
+                    text ~value:"Remote tx" [];
                     text
                       ~value_signal:
                         (Signal.map View_base.sync_cursor_label
@@ -1285,7 +1285,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
             [
               row ~grow:1.0 ~cross:`center ~main:`space_between
                 [
-                  text ~value:"Server cursor" [];
+                  text ~value:"Remote tx" [];
                   text
                     ~value_signal:
                       (Signal.map View_base.sync_cursor_label model_source)
