@@ -1,0 +1,20 @@
+appId: com.logseq.logseq
+---
+- assertVisible:
+    id: button.composer.expand
+- tapOn:
+    id: button.composer.expand
+    point: 20%,50%
+    retryTapIfNoChange: false
+- tapOn:
+    id: spacer.composer.controls
+    retryTapIfNoChange: false
+- tapOn:
+    id: button.attachment
+    retryTapIfNoChange: false
+- assertVisible: File
+- tapOn:
+    text: File
+    retryTapIfNoChange: false
+- assertVisible: Cancel
+- takeScreenshot: composer-first-file-selection

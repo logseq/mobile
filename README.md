@@ -99,6 +99,12 @@ Run the model suite without that bridge using `python3 scripts/test-swift-model-
 It builds `LogseqModelTests` and launches Swift Testing directly.
 Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
 after building the simulator core. This also invokes Swift Testing directly.
+Run `LOGSEQ_IOS_CONFIGURATION=release python3 scripts/test-ios-native-menus.py`
+after a Release simulator build to exercise native composer menus with Maestro.
+It checks every attachment presenter, recording import, repeated cancellation,
+all task statuses, and the search close button without a server or credentials.
+Add `--hit-testing` to check independent composer focus targets and the first
+single-tap File selection above the active keyboard.
 Check WebSocket peer closures, transport cancellation, and owner-task cancellation
 with `python3 scripts/test-ios-sync-recovery.py`; add `--simulator` to run the
 same real-socket checks with the iOS Foundation runtime.

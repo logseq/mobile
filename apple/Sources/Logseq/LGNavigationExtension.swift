@@ -722,6 +722,8 @@ private struct LGBottomChromeSurface: ViewModifier {
     }
 }
 
+// Keep the chrome boundary without an ancestor recognizer that can consume
+// touches intended for native menus or the composer's independent focus buttons.
 private struct LGBottomChromeHitTarget: ViewModifier {
     let isRounded: Bool
 
@@ -730,11 +732,9 @@ private struct LGBottomChromeHitTarget: ViewModifier {
         if isRounded {
             content
                 .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .onTapGesture {}
         } else {
             content
                 .contentShape(Rectangle())
-                .onTapGesture {}
         }
     }
 }

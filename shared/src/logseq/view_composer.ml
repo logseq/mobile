@@ -170,10 +170,12 @@ let composer_surface ?key ?accessibility_identifier ?attachments
  fun context parent ->
   (* A tap gesture around the whole capsule competes with its native menus.
      Only unused space should request focus; controls own their own touches. *)
-  let focus_target element =
+  let focus_target ~height ~accessibility_identifier =
     match on_press with
-    | None -> element
-    | Some handler -> with_press handler element in
+    | None -> box ~height ~accessibility_identifier []
+    | Some handler ->
+      button ~variant:`ghost ~grow:1.0 ~height ~padding_horizontal:0
+        ~label:"Focus capture" ~accessibility_identifier ~on_press:handler [] in
   let attachment_strip =
     match attachments with
     | None -> []
@@ -211,18 +213,18 @@ let composer_surface ?key ?accessibility_identifier ?attachments
       ~padding_vertical:8
       ~background:"glass"
       ~corner_radius:24
-      ([ focus_target (box ~height:6 ~accessibility_identifier:"spacer.composer.top" []) ]
+      ([ focus_target ~height:6 ~accessibility_identifier:"spacer.composer.top" ]
        @ attachment_strip
        @ [
            field;
-           focus_target (box ~height:8
-             ~accessibility_identifier:"spacer.composer.field-controls" []);
+           focus_target ~height:8
+             ~accessibility_identifier:"spacer.composer.field-controls";
            row ~gap:8 ~height:44 ~cross:`center
              ~accessibility_identifier:"row.composer.controls"
              (actions
               @ [
-                  focus_target (box ~grow:1.0 ~height:44
-                    ~accessibility_identifier:"spacer.composer.controls" []);
+                  focus_target ~height:44
+                    ~accessibility_identifier:"spacer.composer.controls";
                 ]
               @ send_button);
          ])

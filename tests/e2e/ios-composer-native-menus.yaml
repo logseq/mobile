@@ -1,0 +1,146 @@
+appId: com.logseq.logseq
+---
+- assertVisible:
+    id: button.composer.expand
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.composer.expand
+    point: 20%,50%
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.attachment
+- takeScreenshot: composer-native-attachment-order
+- tapOn:
+    text: Photo
+    retryTapIfNoChange: false
+- assertVisible: All Photos
+- tapOn:
+    text: Back to Capture
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.attachment
+- tapOn:
+    text: Audio recording
+    retryTapIfNoChange: false
+- assertVisible: Stop recording
+- tapOn:
+    retryTapIfNoChange: false
+    id: toggle.audio.transcription
+    point: 92%,50%
+- assertVisible:
+    id: toggle.audio.transcription
+    checked: false
+- tapOn:
+    text: Stop recording
+    retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible: "Audio-.*\\.m4a"
+    timeout: 10000
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.attachment
+- tapOn:
+    text: Camera
+    retryTapIfNoChange: false
+- assertVisible: Take photo
+- tapOn:
+    text: Back to Capture
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.attachment
+- tapOn:
+    text: File
+    retryTapIfNoChange: false
+- assertVisible: Cancel
+- waitForAnimationToEnd
+- tapOn:
+    text: Cancel
+    retryTapIfNoChange: false
+- repeat:
+    times: 2
+    commands:
+      - tapOn:
+          retryTapIfNoChange: false
+          id: button.attachment
+      - tapOn:
+          text: Photo
+          retryTapIfNoChange: false
+      - assertVisible: All Photos
+      - tapOn:
+          text: Back to Capture
+          retryTapIfNoChange: false
+      - tapOn:
+          retryTapIfNoChange: false
+          id: button.attachment
+      - tapOn:
+          text: Audio recording
+          retryTapIfNoChange: false
+      - assertVisible: Stop recording
+      - tapOn:
+          text: Cancel
+          retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- takeScreenshot: composer-native-status-order
+- tapOn:
+    text: Backlog
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- assertVisible: Clear task status
+- tapOn:
+    text: Todo
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- tapOn:
+    text: Doing
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- tapOn:
+    text: In Review
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- tapOn:
+    text: Done
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- tapOn:
+    text: Canceled
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.task-status
+- tapOn:
+    text: Clear task status
+    retryTapIfNoChange: false
+- tapOn:
+    retryTapIfNoChange: false
+    id: spacer.composer.controls
+- tapOn:
+    retryTapIfNoChange: false
+    id: surface.composer.dismiss
+    point: 50%,15%
+- assertVisible:
+    id: button.composer.expand
+- tapOn:
+    retryTapIfNoChange: false
+    id: button.search
+- assertVisible: Search pages and blocks
+- takeScreenshot: native-search-close-button
+- tapOn:
+    retryTapIfNoChange: false
+    text: Cancel
+- assertVisible:
+    id: button.composer.expand

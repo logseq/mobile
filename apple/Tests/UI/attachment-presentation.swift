@@ -7,18 +7,19 @@ import LogseqModel
 @main struct CheckAttachmentPresentation {
     @MainActor static func main() async throws {
         let coordinator = LGPlatformPresentationCoordinator()
-        let store = LogseqStore(call: { _ in fatalError("Presentation checks must not dispatch core requests") })
         var staged: [String] = []
-        let host = LGPlatformPresentationHost(coordinator: coordinator, store: store, stageAsset: { staged.append($0) })
+        let host = LGPlatformPresentationHost(coordinator: coordinator, confirmOutlinerDelete: {}, stageAsset: { staged.append($0) })
         var errors: [String] = []
-        for (old, next) in [("files", "camera"), ("camera", "files"), ("files", "files"), ("camera", "camera")] {
-            coordinator.completeAttachment()
-            coordinator.presentAttachment(old, targetBlockID: "old")
-            let binding = old == "camera" ? host.mediaPanelBinding : host.presentationBinding(for: .files)
-            coordinator.presentAttachment(next, targetBlockID: "next")
-            binding.wrappedValue = false
-            if coordinator.attachmentService?.rawValue != next || coordinator.attachmentTargetBlockID != "next" {
-                errors.append("A stale \(old) dismissal cancelled the newer \(next) request")
+        for old in LGAttachmentService.allCases {
+            for next in LGAttachmentService.allCases {
+                coordinator.completeAttachment()
+                coordinator.presentAttachment(old.rawValue, targetBlockID: "old")
+                let binding = old == .camera || old == .photos ? host.mediaPanelBinding : host.presentationBinding(for: old)
+                coordinator.presentAttachment(next.rawValue, targetBlockID: "next")
+                binding.wrappedValue = false
+                if coordinator.attachmentService != next || coordinator.attachmentTargetBlockID != "next" {
+                    errors.append("A stale \(old) dismissal cancelled the newer \(next) request")
+                }
             }
         }
         coordinator.completeAttachment()
@@ -63,7 +64,7 @@ import LogseqModel
         field.text = "Capture"
         controller.view.addSubview(field)
         field.becomeFirstResponder()
-        for service in ["files", "camera", "files"] {
+        for service in ["files", "photos", "audio", "camera", "photos", "audio", "files"] {
             coordinator.presentAttachment(service)
             for _ in 0..<80 {
                 if let presented = controller.presentedViewController,
@@ -85,6 +86,6 @@ import LogseqModel
             }
             precondition(controller.presentedViewController == nil, "A dismissed picker must allow the next picker to open")
         }
-        print("PASS: keyboard-active File/Camera/File presentation and stale picker callbacks")
+        print("PASS: keyboard-active File/Photo/Audio/Camera presentation and stale picker callbacks")
     }
 }
