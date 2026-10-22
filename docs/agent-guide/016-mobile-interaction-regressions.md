@@ -234,3 +234,7 @@ Archive metadata and the original binary's build-version command confirm SDK 26.
 The combined focus, deletion and sidebar changes pass the full core gate: `/tmp/logseq-focus-builtin-core-final.log`, 1045 tests in 66.323s. This includes matching iOS/Android node-icon extension fingerprints, protected delete capability/menu checks and unchanged ordinary-page deletion.
 
 The final rebuilt iOS simulator passes all six native checks: visible editor ownership, search-result/link caret taps, protected page menu/rename failure-retry, sidebar node icons, editor/image position retention and nested/search/Recent selection actions. Logs use `/tmp/logseq-focus-final-<test-name>.log`. The sidebar screenshot was inspected: custom monochrome glyphs match the native document/control secondary gray while content titles retain their normal color.
+
+The final Android app/test APKs rebuild successfully, and the actual protected-page overflow menu plus command/reference/tag completion and paste/failure recovery pass all five instrumentation cases: `/tmp/logseq-focus-builtin-android-final-checks.log`, 34.118s.
+
+At 05:29, iPhone build `1792704538` (2.0.2, `LogseqRevision=63b10d4d`) was installed over the existing app and launched successfully; process `24324` was verified alive. The regular app was not uninstalled and graph data was not reset. This includes the search-destination caret fix, built-in Delete omission, subdued sidebar glyphs and semantic search surface. Evidence: `/tmp/logseq-focus-builtin-device-{build.log,install.json,launch.json,processes.json}`.
