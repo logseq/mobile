@@ -472,6 +472,15 @@ private struct LGSearchSession: View {
 }
 
 @MainActor
+private struct LGNativeNavigationPop {
+    let original: [Int]
+    let target: [Int]
+
+    func awaitsAcknowledgement(_ desired: [Int]) -> Bool {
+        desired.count >= target.count && original.starts(with: desired) && desired != target
+    }
+}
+
 private struct LGNavigationContent: View {
     let context: LUIAppleExtensionViewContext
     let rootIndex: Int
@@ -480,7 +489,7 @@ private struct LGNavigationContent: View {
     let toolbarStartIndex: Int?
     let bottomChromeIndex: Int?
     let rootTransform: ((AnyView) -> AnyView)?
-    @State private var path: [Int] = []
+    @State private var nativePop: LGNativeNavigationPop?
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
     #endif
@@ -504,6 +513,14 @@ private struct LGNavigationContent: View {
     private var composerDismissalEnabled: Bool {
         guard case let .bool(value) = context.property("composer-dismissal-enabled") else { return false }
         return value
+    }
+
+    // A mirrored @State path changes navigation twice in the same render frame.
+    // Read core routes directly, retaining only native pops awaiting core acknowledgement.
+    private var path: [Int] {
+        let desired = desiredPath
+        if let nativePop, nativePop.awaitsAcknowledgement(desired) { return nativePop.target }
+        return desired
     }
 
     @ViewBuilder
@@ -612,13 +629,13 @@ private struct LGNavigationContent: View {
         #endif
         .onAppear {
             LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")
-            path = desiredPath
         }
+        .animation(.default, value: desiredPath)
         .onChange(of: desiredPath) {
             let newPath = desiredPath
             LGInteractionDiagnostics.event("navigation.change", "node=\(context.nodeID) path=\(path) desired=\(newPath) revision=\(context.revision)")
-            if path != newPath {
-                withAnimation { path = newPath }
+            if let nativePop, !nativePop.awaitsAcknowledgement(newPath) {
+                self.nativePop = nil
             }
         }
     }
@@ -770,8 +787,8 @@ private struct LGNavigationContent: View {
             set: { newPath in
                 LGInteractionDiagnostics.event("navigation.binding", "node=\(context.nodeID) path=\(path) new=\(newPath) desired=\(desiredPath)")
                 let removedCount = max(0, path.count - newPath.count)
-                path = newPath
                 if removedCount > 0 {
+                    nativePop = LGNativeNavigationPop(original: nativePop?.original ?? desiredPath, target: newPath)
                     #if os(iOS)
                     // Keep the outgoing route alive until UIKit finishes its pop.
                     transitions.afterPop { emitBack(count: removedCount) }
