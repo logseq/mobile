@@ -214,6 +214,7 @@ type core_projection =
   ; is_graph_unlocked : bool
   ; sidebar : sidebar_projection
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; flashcards : flashcard list
   ; sync_connected : bool
   ; applied_server_t : int option
@@ -262,6 +263,7 @@ type logseq_effect =
   | SyncNowEffect of int
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
+  | SetOutlinerTaskPriorityEffect of int * string * task_status option
   | SearchNodesEffect of int * string
   | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
@@ -338,6 +340,7 @@ type logseq_model =
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; selected_task_status : task_status option
   ; flashcards : flashcard list
   ; flashcard_cloze_revealed : bool
@@ -508,6 +511,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
   | DismissSettings

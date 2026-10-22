@@ -197,11 +197,40 @@ import Vision
         try await wait("Native dismissal must finish before presenting settings") {
             window.rootViewController?.presentedViewController == nil
         }
+        window.overrideUserInterfaceStyle = .dark
+        try await Task.sleep(for: .milliseconds(150))
+        func verifySettingsSheet(_ name: String) async throws {
+            _ = try await capture(name)
+            guard let presented = window.rootViewController?.presentedViewController else {
+                throw failure("Settings must use a native sheet")
+            }
+            let frame = presented.view.convert(presented.view.bounds, to: window)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let pixel = CGPoint(x: 8, y: frame.minY + 100)
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.translateBy(x: -pixel.x, y: pixel.y - window.bounds.height + 1)
+            context.draw(image.cgImage!, in: window.bounds)
+            guard abs(Int(rgba[0]) - 0) <= 3, abs(Int(rgba[1]) - 45) <= 3, abs(Int(rgba[2]) - 56) <= 3 else {
+                throw failure("Dark settings background must match the graph palette; sampled RGBA: \(rgba), frame: \(frame)")
+            }
+            guard fields(in: presented.view).allSatisfy({ $0.borderStyle == .none }) else {
+                throw failure("Grouped settings inputs must use the native row background")
+            }
+            guard presented.sheetPresentationController?.detents.count == 2,
+                  frame.height < window.bounds.height * 0.8 else {
+                throw failure("Settings must open as an expandable calendar-like sheet: \(frame)")
+            }
+        }
         try backend.performPress(node: find("view.filter.table")!)
         try await wait("Native filter settings must present") { find("view.filter.list.table") != nil }
         try backend.performPress(node: find("view.filter.add.table")!)
+        try await verifySettingsSheet("query-filter-dark.png")
         let settingsText = try await capture("query-view-settings.png")
-        guard settingsText.contains("Filters") && settingsText.contains("Add filter") else {
+        guard settingsText.contains("Filters") && settingsText.contains("Filter 1") else {
             throw failure("Filter and sort controls must render visibly: \(settingsText)")
         }
         try backend.performPress(node: find("view.settings.cancel.table")!)
@@ -209,6 +238,7 @@ import Vision
         try backend.performPress(node: find("view.sort.table")!)
         try await wait("Native sort settings must present") { find("view.sort.list.table") != nil }
         try backend.performPress(node: find("view.sort.add.table")!)
+        try await verifySettingsSheet("query-sort-dark.png")
         let sortText = try await capture("query-sort-settings.png")
         guard sortText.contains("Sort") && sortText.contains("Ascending") else {
             throw failure("Sort controls must visibly render: \(sortText)")
@@ -221,6 +251,28 @@ import Vision
         guard galleryText.contains("Project result 1") else { throw failure("Gallery content must be visible: \(galleryText)") }
         try backend.performPress(node: find("view.search.toggle.query-owner")!)
         try await wait("Search expands from its toolbar icon") { find("view.search.query-owner") != nil }
+        func fields(in view: UIView) -> [UITextField] {
+            ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap { fields(in: $0) }
+        }
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            window.overrideUserInterfaceStyle = style
+            _ = try await capture(style == .dark ? "query-search-dark.png" : "query-search-light.png")
+            guard let field = fields(in: window.rootViewController!.view).first(where: { $0.placeholder == "Search results" }) else {
+                throw failure("Search must display a native input")
+            }
+            let frame = field.convert(field.bounds, to: window)
+            guard frame.minX >= 0, frame.maxX <= window.bounds.maxX - 4 else {
+                throw failure("Search must fit its indented collection without expanding the screen: \(frame)")
+            }
+            guard field.borderStyle == .none else {
+                throw failure("An inline search uses one native search surface, without a separate rounded black input")
+            }
+        }
+        try backend.performPress(node: find("view.type.option.gallery.table")!)
+        try await wait("The type icon must save the active view's type") {
+            effects.viewEdits.contains { ($0["viewUuid"] as? String) == "gallery"
+                && ($0["config"] as? [String: Any])?["type"] as? String == "table" }
+        }
         try backend.performTextChange(node: find("view.search.query-owner")!, text: "result 1")
         try await wait("Search must filter gallery cards") { find("view.card.gallery.result-1") == nil }
         try backend.performPress(node: find("view.tab.broken")!)

@@ -48,6 +48,13 @@ description: Build and launch the Logseq iOS app in an iOS simulator on macOS ar
   `dune-workspace.mobile`; set `LOGSEQ_OPAM_SWITCH=5.5.0` when running outside
   `opam exec`.
 
+## Sheet interaction checks
+
+- Follow the existing journal calendar sheet for compact utility presentations. Result-view filter and sort sheets should open partially, with expansion available for longer lists (`medium,large` in the LUI wire format), and retain native navigation actions and swipe dismissal.
+- The custom Logseq palette must reach the complete modal surface, including navigation, list background, and grouped rows. LUI sheets render outside the scoped node tree; propagate the ancestor-resolved semantic colors into their content. Avoid unconditional system grouped backgrounds when a theme supplies a background.
+- Use a simulator runtime check to inspect the actual presented frame and screenshot colors in both appearances. For dark Logseq settings, the surrounding sheet background should match the graph background token (`#002D38`), with themed elevated rows. Also exercise Cancel, Done, and scrolling without changing filter/sort semantics.
+- Use `apple/Tests/UI/run-simulator-runtime-check.py` for native checks; do not run `swift test` in this repository.
+
 ## Maestro e2e (test-ios-e2e-suite.sh)
 - Install Maestro: `curl -fsSL https://get.maestro.mobile.dev | bash` → `~/.maestro/bin`.
 - The e2e flows hit the app's sync server at `http://127.0.0.1:8787`. That server is

@@ -292,6 +292,31 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
             ~accessibility_identifier:"button.block-task-status"
             [ status_menu ]))
 
+let outliner_priority_control model_source row_source send : t =
+  let row = Signal.sample row_source in
+  let choose uuid = ignore (send (Model.SetOutlinerTaskPriority (row.Model.row_uuid, uuid))) in
+  stack ~width:20 ~height:24 [
+  View_base.with_string_prop_signal InlineIconName
+    (Signal.map (fun (row : Model.outline_row) ->
+       Option.fold ~none:"app:priority-low" ~some:View_base.task_priority_icon_name row.row_priority) row_source)
+    (View_base.with_label_signal
+       (Signal.map (fun (row : Model.outline_row) -> Option.fold ~none:"Priority" ~some:(fun (p : Model.task_status) -> p.title) row.row_priority) row_source)
+       (menu_trigger ~foreground:"muted-foreground"
+          ~accessibility_identifier:"button.block-task-priority"
+          [dropdown_menu [
+            keyed ~source:(Signal.map (fun (m : Model.logseq_model) -> m.task_priorities) model_source)
+              ~key:View_base.task_status_identifier ~cmp:compare ~mount:(fun choice_source ->
+                let choice = Signal.sample choice_source in
+                menu_item ~text_signal:(reactive (fun (p : Model.task_status) -> p.title) choice_source)
+                  ~icon_signal:(Signal.map (fun p -> View_base.icon_of_wire_name (View_base.task_priority_icon_name p)) choice_source)
+                  ~selected_signal:(Signal.map2 (fun (row : Model.outline_row) (p : Model.task_status) ->
+                    Option.fold ~none:false ~some:(fun (selected : Model.task_status) -> selected.uuid = p.uuid) row.row_priority) row_source choice_source)
+                  ~accessibility_identifier:("button.block-task-priority-option." ^ choice.uuid)
+                  ~on_press:(fun _ -> choose (Signal.sample choice_source).uuid) []);
+            menu_item ~text:"Clear priority"
+              ~accessibility_identifier:"button.block-task-priority-clear" ~on_press:(fun _ -> choose "") []
+          ]]))]
+
 let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
@@ -347,18 +372,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
         (column ~cross:`start
            [ outliner_status_control context model_source row_source send ]);
       if_ ~test:(reactive (fun (row : Model.outline_row) -> row.row_priority <> None) row_source)
-        (icon ~name:(reactive (fun (row : Model.outline_row) ->
-           let level = match row.row_priority with
-             | None -> "none"
-             | Some priority ->
-               let ident = Option.value ~default:"" priority.ident in
-               match List.rev (String.split_on_char '/' ident) with
-               | name :: _ when name <> "" -> name
-               | _ -> String.lowercase_ascii priority.title in
-           `app ("priority-" ^ level)) row_source)
-           ~width:20 ~height:24 ~foreground:"muted-foreground"
-           ~tooltip:(reactive (fun (row : Model.outline_row) ->
-             match row.row_priority with Some priority -> priority.title | None -> "") row_source) []);
+        (outliner_priority_control model_source row_source send);
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
@@ -428,13 +442,12 @@ let native_outliner_row model_source retained_source row_source send : t =
       "opensAsPage", `Bool row.opens_as_page;
       "journalBullet", `Bool false;
       "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
-      "priority", (match row.row_priority with
-        | None -> `Null
-        | Some priority ->
-          let ident = Option.value ~default:"" priority.ident in
-          let level = match String.split_on_char '.' ident |> List.rev with value :: _ -> value | [] -> "none" in
-          `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
-            "icon", `String ("app:priority-" ^ level)]);
+      "priority", (match row.row_priority with None -> `Null | Some priority ->
+        `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
+          "icon", `String (View_base.task_priority_icon_name priority)]);
+      "priorities", `List (List.map (fun (priority : Model.task_status) ->
+        `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
+          "icon", `String (View_base.task_priority_icon_name priority)]) current.task_priorities);
       "status", (match row.row_status with Some value -> status value | None -> `Null);
       "statuses", `List (List.map status current.task_statuses);
       "tags", `List (List.map summary row.tags)]) in
@@ -447,6 +460,10 @@ let native_outliner_row model_source retained_source row_source send : t =
   Lui_ui.on_event context node (function
     | ExtensionEvent (_, _, "collapse", _) -> ignore (send (Model.ToggleOutlinerCollapsed (Signal.sample row_source).row_uuid))
     | ExtensionEvent (_, _, "long-press", _) -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))
+    | ExtensionEvent (_, _, "set-priority", values) ->
+      (match String_map.find_opt "priority" values with
+       | Some (StringValue priority) -> ignore (send (Model.SetOutlinerTaskPriority ((Signal.sample row_source).row_uuid, priority)))
+       | _ -> ())
     | ExtensionEvent (_, _, "set-status", values) ->
       let index = match String_map.find_opt "count" values with Some (IntValue value) -> value | _ -> -1 in
       (match (if index < 0 then None else List.nth_opt (Signal.sample model_source).Model.task_statuses index) with

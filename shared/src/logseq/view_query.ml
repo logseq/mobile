@@ -297,7 +297,8 @@ let settings_sheet mode owner feature view_source model_source send close : t =
   let save = button ~text:"Done" ~variant:`ghost ~style_class:"confirmation-action"
     ~disabled_signal:(waiting model_source initial.id)
     ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save [] in
-  (sheet ~text:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"large"
+  (sheet ~text:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+    ~accessibility_identifier:("view.settings.sheet." ^ initial.id)
     ~on_dismiss:(fun _ -> close ()) [
       list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view." ^ mode ^ ".list." ^ initial.id)
         (action_error_section model_source initial.id ::
@@ -428,11 +429,27 @@ let collection ~render_block model_source raw_source send : t =
   let owner = jtext (jfield "ownerUuid" initial) and feature = jtext (jfield "featureType" initial) in
   let views = own (Signal.map saved_views raw_source) in
   let active = Signal.state context.ui_scheduler "" and search = Signal.state context.ui_scheduler "" in
-  let expanded = Signal.state context.ui_scheduler true in
+  let is_query_expansion raw = try member "expanded" (Json.from_string raw) <> None with _ -> false in
+  let source_expanded raw = try match member "expanded" (Json.from_string raw) with Some (`Bool value) -> value | _ -> true with _ -> true in
+  let expanded = Signal.state context.ui_scheduler (source_expanded (Signal.sample raw_source)) in
+  ignore (Signal.own context.ui_scope (Signal.observe raw_source (fun raw ->
+    if is_query_expansion raw then Signal.set expanded (source_expanded raw))));
   let search_open = Signal.state context.ui_scheduler false in
   let chosen = own (Signal.map2 (fun views id ->
     match List.find_opt (fun view -> view.id = id) views with Some view -> [view]
     | None -> list_take 1 views) views (Signal.value active)) in
+  let results_toggle () =
+    button ~variant:`ghost ~text_alignment:`start ~grow:1.0
+      ~accessibility_identifier:("query.toggle." ^ owner)
+      ~disabled_signal:(waiting model_source owner)
+      ~text_signal:(own (Signal.map2 (fun views expanded ->
+        if not expanded then "▸ Results" else
+        "▾ " ^ string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results") views (Signal.value expanded)))
+      ~on_press:(fun _ ->
+        let next = not (Signal.sample (Signal.value expanded)) in
+        if is_query_expansion (Signal.sample raw_source) then
+          ignore (send (Model.SubmitResultView (owner, payload owner feature "" "setExpanded" ["expanded", `Bool next])))
+        else Signal.set expanded next) [] in
   let mount view_source : t =
    fun context parent ->
     let own value = Signal.own_signal context.ui_scope value in
@@ -481,12 +498,13 @@ let collection ~render_block model_source raw_source send : t =
     let error = own (Signal.map (fun view -> jtext (jfield "error" view.data)) view_source) in
     (column ~gap:8 ~cross:`stretch [
       row ~gap:0 ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [
-        tabs ~grow:1.0 ~style_class:"scrollable" ~accessibility_identifier:("view.tabs." ^ owner) [
+        (if feature = "query-result" then results_toggle () else
+          tabs ~grow:1.0 ~style_class:"scrollable" ~accessibility_identifier:("view.tabs." ^ owner) [
           keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
             let tab = Signal.sample source in
             button ~text_signal:(own (Signal.map (fun tab -> tab.name) source))
               ~selected:(tab.id = view.id) ~accessibility_identifier:("view.tab." ^ tab.id)
-              ~on_press:(fun _ -> Signal.set active tab.id) [])];
+              ~on_press:(fun _ -> Signal.set active tab.id) [])]);
         button ~icon:(`app "view-filter") ~label:"Filters" ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.filter." ^ view.id) ~on_press:(fun _ -> Signal.set settings "filter") [];
         button ~icon:(`app "view-sort") ~label:"Sort" ~variant:`ghost ~width:40 ~height:44
@@ -497,10 +515,27 @@ let collection ~render_block model_source raw_source send : t =
             let was_open = Signal.sample (Signal.value search_open) in
             if was_open then Signal.set search "";
             Signal.set search_open (not was_open)) [];
+        menu ~icon_signal:(own (Signal.map (fun view -> `app ("view-" ^ view.typ)) view_source))
+          ~label:"View type" ~accessibility_identifier:("view.type." ^ view.id)
+          ~disabled_signal:(waiting model_source view.id)
+          ((if feature = "query-result" then [
+            submenu ~text:"Saved views" [
+              keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
+                let saved = Signal.sample source in
+                menu_item ~text_signal:(own (Signal.map (fun view -> view.name) source))
+                  ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
+                  ~on_press:(fun _ -> Signal.set active saved.id) [])]
+          ] else []) @ List.map (fun (typ, title) -> menu_item ~text:title ~icon:(`app ("view-" ^ typ))
+            ~selected_signal:(own (Signal.map (fun view -> view.typ = typ) view_source))
+            ~accessibility_identifier:("view.type.option." ^ view.id ^ "." ^ typ)
+            ~on_press:(fun _ ->
+              if (Signal.sample view_source).typ <> typ then ignore (send (Model.SubmitResultView
+                (view.id, payload owner feature view.id "save" ["config", `Assoc ["type", `String typ; "name", `String (Signal.sample view_source).name]])))) [])
+            ["list", "List"; "table", "Table"; "gallery", "Gallery"]);
       ];
       if_ ~test:(Signal.value search_open)
-        (search_field ~container_relative_frame:`horizontal ~text_signal:(Signal.value search) ~placeholder:"Search results" ~label:"Search results"
-          ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) []);
+        (row ~cross:`center [search_field ~grow:1.0 ~text_signal:(Signal.value search) ~placeholder:"Search results" ~label:"Search results"
+          ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) []]);
       action_error model_source view.id;
       if_ ~test:(own (Signal.map ((<>) "") error))
         (text ~value_signal:error ~foreground:"destructive" ~accessibility_identifier:("view.error." ^ view.id) []);
@@ -528,16 +563,17 @@ let collection ~render_block model_source raw_source send : t =
           value_sheet owner feature view model_source send item property (fun () -> Signal.set editing None)) (Signal.value editing));
     ]) context parent in
   (column ~gap:8 ~cross:`stretch ~accessibility_identifier:("query.block." ^ owner) [
-    if_ ~test:(own (Signal.map (fun raw -> (decode raw).error <> None) raw_source))
+    if_ ~test:(own (Signal.map2 (fun raw expanded -> expanded && (decode raw).error <> None) raw_source (Signal.value expanded)))
       (text ~value_signal:(own (Signal.map (fun raw -> Option.value ~default:"" (decode raw).error) raw_source))
         ~foreground:"destructive" ~accessibility_identifier:("query.error." ^ owner) []);
-    button ~variant:`ghost ~text_alignment:`start ~accessibility_identifier:("query.toggle." ^ owner)
-      ~text_signal:(own (Signal.map2 (fun views expanded ->
-        (if expanded then "▾ " else "▸ ") ^ string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results") views (Signal.value expanded)))
-      ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) [];
+    (if feature = "query-result" then
+      if_ ~test:(own (Signal.map not (Signal.value expanded)))
+        (row ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [results_toggle ()])
+     else box []);
     action_error model_source owner;
     if_ ~test:(Signal.value expanded) (column ~gap:8 [
       keyed ~source:chosen ~key:(fun view -> view.id) ~cmp:String.compare ~mount;
+      box ~height:24 ~accessibility_identifier:("view.results-gap." ^ owner) [];
     ])]) context parent
 
 let view ~render_block model_source row_source send : t =
@@ -546,4 +582,4 @@ let view ~render_block model_source row_source send : t =
     if has_views then if_ ~test:(Signal.map (fun (row : Model.outline_row) -> not row.is_collapsed) row_source)
         (collection ~render_block model_source raw_source send)
     else legacy_view ~render_block model_source row_source send)
-    (Signal.map (fun raw -> saved_views raw <> []) raw_source)
+    (Signal.map (fun raw -> saved_views raw <> [] || (try member "expanded" (Json.from_string raw) <> None with _ -> false)) raw_source)

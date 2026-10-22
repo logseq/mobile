@@ -122,6 +122,7 @@ let expected_ids expected actual = check_eq ~msg:(Json.to_string actual) (ids ac
 
 let saved_views_and_isolated_failures () =
   let session, _ = make_session (fixture ()) in
+  Q.open_results session;
   let views = read session in
   check_eq (List.map (member "uuid") (items "views" views))
     (List.map (fun s -> `String s) [list_view; table_view; gallery_view; broken_view]);
@@ -211,10 +212,75 @@ let with_runtime f = Graph_runtime_test.with_store (fun path ->
       graph_blocks = Some (fun () -> Some (Graph_runtime.blocks_for_page runtime Q.page));
       graph_page_blocks = Some (fun uuid -> Some (Graph_runtime.blocks_for_page runtime uuid))} in
     ignore (Rpc_test.configure_plain_session session);
+    Q.open_results session;
     f session runtime conn))
 let action session fields = Rpc_test.dispatch_json session "resultView" (Json.to_string (`Assoc fields))
 let base_action action_name view = ["ownerUuid", `String owner; "featureType", `String "query-result";
   "viewUuid", `String view; "action", `String action_name]
+
+let priority_choices_and_edits_use_the_real_graph () = with_runtime (fun session runtime conn ->
+  let custom = "20000000-0000-4000-8000-000000000099" in
+  let tx = entity 99 custom "Critical" @ [
+    put custom "block/closed-value-property" (Ds.Ref_to (Ds.Ident "logseq.property/priority"));
+    put custom "block/order" (Ds.String "a0");
+    put alpha "logseq.property/priority" (Ds.Ref_to (ref_uuid custom))] in
+  ignore (Ds.transact_conn conn tx);
+  Graph_runtime.rebase runtime 42 [] [custom; alpha];
+  let snapshot = Session.snapshot_visible session |> Json.from_string |> member "result" in
+  let choices = items "taskPriorities" snapshot in
+  check ~msg:"priority menus must use the graph's ordered closed values" (choices <> []);
+  check_eq (member "uuid" (List.hd choices)) (`String custom);
+  check_eq (member "title" (List.hd choices)) (`String "Critical");
+  List.iter (fun backend ->
+    Q.with_ui backend (Json.to_string (`Assoc ["ok", `Bool true; "result", snapshot])) (fun app ->
+      let renderer = Lui_app.runtime app in
+      let root = Lui_app.root_node app in
+      let rendered = App_test.descendant_with_identifier renderer root ("outliner.block." ^ alpha) in
+      let native = App_test.native_row app rendered in
+      if native <> -1 then begin
+        let payload = App_test.native_row_payload app rendered in
+        check_eq (member "uuid" (List.hd (items "priorities" payload))) (`String custom);
+        App_test.dispatch app (Lui_protocol.ExtensionEvent (native, "outliner-block-row", "set-priority",
+          Lui_protocol.String_map.singleton "priority" (Lui_protocol.StringValue custom)))
+      end else begin
+        let find id = App_test.descendant_with_identifier renderer rendered id in
+        check ~msg:"Android priority glyph must have a menu button" (find "button.block-task-priority" <> -1);
+        let option = find ("button.block-task-priority-option." ^ custom) in
+        check ~msg:"Android priority menu must include custom choices" (option <> -1);
+        App_test.dispatch app (Lui_protocol.Press option)
+      end;
+      App_test.flush app;
+      let chosen_effect = List.find_opt (fun eff ->
+        member "kind" (Json.from_string (Native_bridge.encode_effect eff)) = `String "set-outliner-task-priority")
+        ((App.model app).pending_effects @ (App.model app).in_flight_effects) in
+      check ~msg:"choosing a priority crosses the typed core effect boundary" (chosen_effect <> None)))
+    [App_test.ios_backend; App_test.kotlin_backend];
+  let execute metadata = Core_effect_test.execute session "set-outliner-task-priority"
+    ["text", `String alpha; "metadata", `String metadata] in
+  let verify expected =
+    let db = Graph_runtime.db runtime in
+    let block = List.find (fun (b : Cache_model.block) -> b.uuid = alpha) (Graph_read.blocks_for_page (fun x -> Ok x) db Q.page) in
+    check_eq (Option.map (fun (priority : Cache_model.status) -> priority.uuid) block.priority) expected;
+    let result = find_view list_view (read session) in
+    let row = List.find (fun row -> member "uuid" (member "block" row) = `String alpha) (items "rows" result) in
+    check_eq (member "uuid" (member "priority" (member "block" row)))
+      (Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) expected) in
+  Core_effect_test.success (execute {|{"ident":"logseq.property/priority.high"}|});
+  let high = Graph_read.uuid_for_eid (Graph_runtime.db runtime)
+    (Option.get (Ds.entid (Graph_runtime.db runtime) "db/ident" (Ds.Keyword "logseq.property/priority.high"))) in
+  verify high;
+  Core_effect_test.success (execute (Json.to_string (`Assoc ["uuid", `String custom])));
+  verify (Some custom);
+  let count = List.length (Graph_runtime.pending_operations runtime) in
+  check_eq (member "ok" (execute {|{"uuid":7}|})) (`Bool false);
+  check_eq (List.length (Graph_runtime.pending_operations runtime)) count;
+  Core_effect_test.success (execute "null");
+  verify None;
+  let restored = Graph_runtime.create runtime.path 42 conn {Graph_runtime.default_options with auto_create_today = false} in
+  let restored_block = List.find (fun (b : Cache_model.block) -> b.uuid = alpha) (Graph_runtime.blocks_for_page restored Q.page) in
+  check_eq restored_block.priority None;
+  List.iter (fun operation -> check_ok ~msg:"priority edits compile into canonical sync transactions"
+    (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime))
 
 let saved_configuration_projects_and_survives_restart () = with_runtime (fun session runtime _ ->
   let config = `Assoc ["type", `String "gallery"; "name", `String "Important";
@@ -337,6 +403,12 @@ let native_view_settings_and_local_errors () =
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
       click ("view.filter." ^ table_view);
+      let check_sheet () =
+        let sheet = find ("view.settings.sheet." ^ table_view) in
+        check ~msg:"settings expose a native sheet" (sheet <> -1);
+        check_eq ~msg:"settings open at calendar-like height and expand for longer lists"
+          (App_test.property_string runtime sheet Lui_protocol.Detents) "medium,large" in
+      check_sheet ();
       check_eq (find ("view.settings.name." ^ table_view)) (-1);
       check_eq ~msg:"filters use a native grouped list"
         (App_test.node runtime (find ("view.filter.list." ^ table_view))) (Some Lui_protocol.ListContainer);
@@ -351,6 +423,7 @@ let native_view_settings_and_local_errors () =
       check (find ("view.action.error." ^ table_view) <> -1);
       click ("view.settings.cancel." ^ table_view);
       click ("view.sort." ^ table_view);
+      check_sheet ();
       check_eq ~msg:"sorting uses a native grouped list"
         (App_test.node runtime (find ("view.sort.list." ^ table_view))) (Some Lui_protocol.ListContainer);
       check_eq ~msg:"sort settings do not expose filter controls"
@@ -391,7 +464,9 @@ let native_cells_refresh_and_object_collections_mount () =
         App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app;
         let runtime = Lui_app.runtime app in
         check ~msg:"tag and property objects mount native result views"
-          (App_test.descendant_with_identifier runtime (Lui_app.root_node app) ("view.search.toggle." ^ owner) <> -1)))
+          (App_test.descendant_with_identifier runtime (Lui_app.root_node app) ("view.search.toggle." ^ owner) <> -1);
+      check ~msg:"tag and property collections expose the same type icon"
+        (App_test.descendant_with_identifier runtime (Lui_app.root_node app) ("view.type." ^ owner ^ ":default") <> -1)))
       [Q.project; score_property]) [App_test.ios_backend; App_test.kotlin_backend]
 
 let tuple_table_and_query_errors () =
@@ -400,6 +475,7 @@ let tuple_table_and_query_errors () =
       "{:query [:find ?t ?s :where [?b :user.property/score ?s] [?b :block/title ?t]]}")] (fixture ()) in
     let session, current = make_session db in
     ignore (Rpc_test.configure_plain_session session);
+    Q.open_results session;
     let view = find_view table_view (read session) in
     check_eq ~msg:"tuple tables expose one column for each query value" (List.length (items "columns" view)) 2;
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
@@ -526,17 +602,21 @@ let native_toolbar_alignment_and_search_expansion () =
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
-      check_eq ~msg:"saved views use the host's native tabs"
-        (App_test.node host (find ("view.tabs." ^ owner))) (Some Lui_protocol.Tabs);
+      check_eq ~msg:"query results use a single results and actions header"
+        (find ("view.tabs." ^ owner)) (-1);
       check_eq ~msg:"mobile collections do not offer New view" (find ("view.add." ^ owner)) (-1);
       let toolbar = find ("view.toolbar." ^ owner) in
       check ~msg:"the entire view toolbar shares one row" (toolbar <> -1);
       check_eq (App_test.children host toolbar |> List.map (fun id ->
         App_test.property_string host id Lui_protocol.AccessibilityIdentifier))
-        ["view.tabs." ^ owner; "view.filter." ^ list_view; "view.sort." ^ list_view; "view.search.toggle." ^ owner];
+        ["query.toggle." ^ owner; "view.filter." ^ list_view; "view.sort." ^ list_view; "view.search.toggle." ^ owner; "view.type." ^ list_view];
       check_eq ~msg:"search expands only when requested" (find ("view.search." ^ owner)) (-1);
       click ("view.search.toggle." ^ owner);
       check (find ("view.search." ^ owner) <> -1);
+      check_eq ~msg:"search fits its collection instead of claiming the screen width"
+        (App_test.property_string host (find ("view.search." ^ owner)) Lui_protocol.ContainerRelativeFrameValue) "<missing>";
+      check_eq ~msg:"expanded results are separated from the next block"
+        (App_test.property_int host (find ("view.results-gap." ^ owner)) Lui_protocol.HeightValue) 24;
       click ("view.search.toggle." ^ owner);
       check_eq (find ("view.search." ^ owner)) (-1);
       let inset = find ("query.inset." ^ owner) in
@@ -726,7 +806,55 @@ let master_conformance () =
   check_eq ~msg:(string_of_int (List.length failures) ^ " master conformance failures:\n" ^
     String.concat "\n" (List.filteri (fun index _ -> index < 20) failures)) failures []
 
+let type_icons_switch_saved_views_and_default_all () =
+  List.iter (fun backend -> with_runtime (fun session runtime conn ->
+    let run view_id expected_name typ =
+      Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+        let renderer = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier renderer (Lui_app.root_node app) id in
+        let tab = find ("view.tab." ^ view_id) in
+        check ~msg:"the left tabs retain saved view names" (tab <> -1);
+        check_eq (App_test.property_string renderer tab Lui_protocol.TextValue) expected_name;
+        App_test.dispatch app (Lui_protocol.Press tab); App_test.flush app;
+        let trigger = find ("view.type." ^ view_id) in
+        check ~msg:"view type has its own icon menu" (trigger <> -1);
+        let option = find ("view.type.option." ^ view_id ^ "." ^ typ) in
+        check ~msg:"the type menu exposes list table and gallery" (option <> -1);
+        App_test.dispatch app (Lui_protocol.Press option); App_test.flush app;
+        let eff = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
+        let payload = Json.from_string (Native_bridge.encode_effect eff) |> member "text" |> text |> Json.from_string in
+        check_eq (member "action" payload) (`String "save");
+        check_eq (member "type" (member "config" payload)) (`String typ);
+        let result = Core_effect_test.execute session "result-view" ["text", `String (Json.to_string payload)] in
+        Core_effect_test.success result;
+        let projection = match Response_snapshot.decode_response (Json.to_string result) with Ok x -> x | Error e -> fail e in
+        App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app;
+        let rendered = find (if typ = "table" then "view.table.scroll." ^ view_id else "view.gallery." ^ view_id) in
+        check ~msg:"changing a view type replaces its renderer" (rendered <> -1)) in
+    run list_view "Everything" "table";
+    let changed = find_view list_view (read session) in
+    check_eq (member "name" changed) (`String "Everything");
+    check_eq (List.length (items "views" (read session))) 4;
+    let db = Ds.db_with (List.map (fun uuid -> Ds.RetractEntity (ref_uuid uuid))
+      [list_view; table_view; gallery_view; broken_view]) (fixture ()) in
+    let session, _ = make_session db in
+    ignore (Rpc_test.configure_plain_session session);
+    Q.open_results session;
+    let defaults = read session |> items "views" in
+    check_eq (List.length defaults) 1;
+    let all = List.hd defaults in
+    check_eq (member "name" all) (`String "All");
+    check_eq (member "type" all) (`String "list");
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let renderer = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier renderer (Lui_app.root_node app) id in
+      check ~msg:"an unsaved collection exposes the All tab" (find ("view.tab." ^ owner ^ ":default") <> -1);
+      check ~msg:"an unsaved collection also exposes a type icon" (find ("view.type." ^ owner ^ ":default") <> -1))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "type icons switch saved views and unsaved collections start with All list" type_icons_switch_saved_views_and_default_all;
+  case "priority menus use graph choices and edits persist typed references" priority_choices_and_edits_use_the_real_graph;
   case "master filtering sorting and search match all three view scopes" master_conformance;
   case "saved query views isolate invalid configuration" saved_views_and_isolated_failures;
   case "master filters resolve typed values and combine search" typed_filters_and_search;

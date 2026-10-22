@@ -56,6 +56,10 @@ let make_session ?(limit = None) db =
   session, set_db
 
 let dispatch session action payload = Rpc_test.response_result (Rpc_test.dispatch_json session action payload)
+let open_results session =
+  ignore (Rpc_test.dispatch_json session "resultView" (Json.to_string (`Assoc [
+    "ownerUuid", `String owner; "featureType", `String "query-result";
+    "action", `String "setExpanded"; "expanded", `Bool true])))
 let query session = member "query" (dispatch session "queryBlock" owner)
 let query_source source = let session, _ = make_session (fixture source) in query session
 let row_ids query = List.filter_map (fun row -> match member "uuid" (member "block" row) with
@@ -124,6 +128,7 @@ let filters_recursive_and_hidden_results () =
 let live_updates_and_hydration () =
   let db = fixture "#Project" in
   let session, set_db = make_session ~limit:(Some 1) db in
+  open_results session;
   let snapshot () = Rpc_test.response_result (Json.from_string (Session.snapshot_visible session)) in
   let owner_block response = List.find (fun b -> member "uuid" b = `String owner) (items "blocks" response) in
   check_eq (row_ids (member "query" (owner_block (snapshot ())))) [alpha];
@@ -247,6 +252,7 @@ let query_results_do_not_recurse () =
   let db = Ds.db_with [put beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Query"));
     put beta "logseq.property/query" (Ds.Ref_to (ref_uuid definition))] db in
   let session, _ = make_session db in
+  open_results session;
   let response = Rpc_test.response_result (Json.from_string (Session.snapshot_visible session)) in
   let block = List.find (fun b -> member "uuid" b = `String owner) (items "blocks" response) in
   let results = items "rows" (member "query" block) in
@@ -317,7 +323,9 @@ let cross_page_session () =
     graph_db = Some (fun () -> Some db);
     graph_blocks = Some (fun () -> Some (Graph_read.blocks_for_page (fun s -> Ok s) db page));
     graph_page_blocks = Some (fun uuid -> Some (Graph_read.blocks_for_page (fun s -> Ok s) db uuid))} in
-  Rpc_test.configure_plain_session session
+  let session = Rpc_test.configure_plain_session session in
+  open_results session;
+  session
 
 let cross_page_result_actions () =
   let session = cross_page_session () in
@@ -376,6 +384,7 @@ let result_selection_toolbar () =
 let interactive_patches_refresh_query_results () =
   let db = fixture "\"Beta\"" in
   let session, set_db = make_session db in
+  open_results session;
   let before = match Response_snapshot.decode_response (Session.snapshot_visible session) with
     | Ok value -> Model.update (Model.initial ()) (Model.ApplyCoreSnapshot value)
     | Error message -> fail message in
@@ -402,7 +411,49 @@ let current_query_children_remain_visible () =
   set_db (Ds.db_with [put definition "block/title" (Ds.String "{:query (page Workspace) :remove-block-children? false}")] db);
   check_eq (row_ids (query session)) [alpha; beta]
 
+let collapsed_queries_do_not_evaluate_until_opened () =
+  let session, set_db = make_session (fixture "{:query [:find ?x :where (unsupported ?x)]}") in
+  ignore (Rpc_test.configure_plain_session session);
+  let current () =
+    let response = Session.snapshot_visible session |> Json.from_string |> Rpc_test.response_result in
+    let block = List.find (fun b -> member "uuid" b = `String owner) (items "blocks" response) in
+    member "query" block in
+  let folded = current () in
+  check_eq ~msg:"query results start collapsed" (member "expanded" folded) (`Bool false);
+  check_eq ~msg:"collapsed queries do not evaluate invalid query definitions" (member "error" folded) `Null;
+  check_eq (items "rows" folded) [];
+  let expand value = Rpc_test.dispatch_json session "resultView" (Json.to_string (`Assoc [
+    "ownerUuid", `String owner; "featureType", `String "query-result";
+    "action", `String "setExpanded"; "expanded", `Bool value])) in
+  let opened = expand true in
+  check_eq (member "ok" opened) (`Bool true);
+  check ~msg:"query errors are evaluated only on explicit expansion" (match member "error" (current ()) with `String _ -> true | _ -> false);
+  ignore (expand false);
+  set_db (fixture "#Project");
+  check_eq (member "expanded" (current ())) (`Bool false);
+  check_eq (items "rows" (current ())) [];
+  ignore (expand true);
+  check_eq ~msg:"reopening evaluates the current graph rather than stale results" (row_ids (current ())) [alpha];
+  List.iter (fun backend ->
+    ignore (expand false);
+    with_ui backend (Session.snapshot_visible session) (fun app ->
+      let runtime = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+      let block = find ("outliner.block." ^ owner) in
+      check ~msg:"folding results preserves the ordinary query block" (block <> -1);
+      let native = App_test.descendant_with_extension runtime app block "outliner-block-row" in
+      let content = if native <> -1 then native else
+        App_test.descendant_with_extension runtime app block "outliner-block-content" in
+      check ~msg:"the query owner keeps the normal block renderer" (content <> -1);
+      check_eq (find ("query.result." ^ owner ^ ".0")) (-1);
+      App_test.dispatch app (Lui_protocol.Press (find ("query.toggle." ^ owner))); App_test.flush app;
+      check ~msg:"expanding requests results through the core boundary"
+        (List.exists (function Model.ResultViewEffect (_, id, payload) -> id = owner &&
+          member "action" (Json.from_string payload) = `String "setExpanded" | _ -> false)
+          (App.model app).pending_effects))) [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "queries stay unevaluated until expanded and refresh when reopened" collapsed_queries_do_not_evaluate_until_opened;
   case "result lists render breadcrumbs and independently folded children" result_list_breadcrumbs_and_local_children;
   case "cross-page results retain editing and select bar actions" cross_page_result_actions;
   case "result long press displays the functional shared selection toolbar" result_selection_toolbar;

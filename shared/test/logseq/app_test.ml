@@ -336,6 +336,7 @@ let empty_core_projection () =
     is_graph_unlocked = false;
     sidebar = empty_sidebar_projection ();
     task_statuses = [];
+    task_priorities = [];
     flashcards = [];
     sync_connected = false;
     applied_server_t = None;
@@ -8942,7 +8943,7 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
-    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;

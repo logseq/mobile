@@ -217,6 +217,7 @@ type core_projection =
   ; is_graph_unlocked : bool
   ; sidebar : sidebar_projection
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; flashcards : flashcard list
   ; sync_connected : bool
   ; applied_server_t : int option
@@ -265,6 +266,7 @@ type logseq_effect =
   | SyncNowEffect of int
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
+  | SetOutlinerTaskPriorityEffect of int * string * task_status option
   | SearchNodesEffect of int * string
   | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
@@ -341,6 +343,7 @@ type logseq_model =
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; selected_task_status : task_status option
   ; flashcards : flashcard list
   ; flashcard_cloze_revealed : bool
@@ -511,6 +514,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
   | DismissSettings
@@ -669,6 +673,7 @@ let initial () =
     related_rows = [];
     linked_reference_rows = [];
     task_statuses = built_in_task_statuses ();
+    task_priorities = [];
     selected_task_status = None;
     flashcards = [];
     flashcard_cloze_revealed = false;
@@ -787,6 +792,7 @@ let effect_id eff =
   | SyncNowEffect id -> id
   | SyncPendingEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
+  | SetOutlinerTaskPriorityEffect (id, _, _) -> id
   | SearchNodesEffect (id, _) | LoadSearchPageEffect (id, _, _) -> id
   | LoadPageReferencesEffect (id, _) -> id
   | HydrateOutlinerRowsEffect (id, _) -> id
@@ -1383,7 +1389,7 @@ let cancels_outliner_autosave = function
   | DropOutlinerBlocksEffect _
   | ConfirmOutlinerDeleteEffect _
   | ChooseOutlinerAutocompleteEffect _ | CancelOutlinerEditingEffect _
-  | SetOutlinerTaskStatusEffect _ | SelectSidebarPageEffect _
+  | SetOutlinerTaskStatusEffect _ | SetOutlinerTaskPriorityEffect _ | SelectSidebarPageEffect _
   | ClearSelectedPageEffect _ | OpenAppNodeEffect _ | CloseAppNodeEffect _
   | OpenSearchNodeEffect _ | CloseSearchNodeEffect _ | OpenSearchResultEffect _
   | OpenGraphEffect _ | DeleteLocalGraphEffect _ | SignOutEffect _ -> true
@@ -2550,6 +2556,13 @@ let rec update (current : logseq_model) action =
        enqueue_effect updated
          (SetOutlinerTaskStatusEffect (id, block_id, status))
      | None -> current)
+  | SetOutlinerTaskPriority (block_id, priority_id) ->
+    let priority = task_status_by_id current.task_priorities priority_id in
+    if priority_id <> "" && priority = None then current
+    else
+      let updated = { current with sync_state = editing_sync_state current } in
+      enqueue_effect updated
+        (SetOutlinerTaskPriorityEffect (updated.next_effect_id, block_id, priority))
   | ToggleActivePageFavorite ->
     (match active_page current with
      | Some page ->
@@ -3011,6 +3024,7 @@ and apply_core_snapshot (current : logseq_model)
         linked_reference_rows = (if root_reference_pending && sidebar.selected_page_is_tag then current.linked_reference_rows
           else if selected_graph_changed then sidebar.linked_reference_rows else retain_shell_contents current.linked_reference_rows sidebar.linked_reference_rows);
         task_statuses = available_task_statuses projection.task_statuses;
+        task_priorities = projection.task_priorities;
         flashcards = projection.flashcards;
         flashcard_cloze_revealed =
           (if card_changed then false else current.flashcard_cloze_revealed);

@@ -146,6 +146,19 @@ let object_views_for session owner is_tag is_property =
         "views", `List [`Assoc ["uuid", `String (owner ^ ":default"); "name", `String "All";
           "type", `String "list"; "rows", `List []; "columns", `List []; "error", `String message]]]
 
+let query_expansion_key session uuid =
+  Option.fold ~none:"" ~some:(fun (config : Api.api_config) -> config.graph_id) (state session).config
+  ^ "/" ^ uuid
+
+let query_projection session db uuid =
+  if not (Query_block.is_query db uuid) then None
+  else if Outliner.Sset.mem (query_expansion_key session uuid) (state session).expanded_queries then
+    Option.map (function `Assoc fields -> `Assoc (("expanded", `Bool true) :: fields) | value -> value)
+      (query_for session db uuid)
+  else Some (`Assoc ["kind", `String "deferred"; "ownerUuid", `String uuid;
+    "featureType", `String "query-result"; "expanded", `Bool false;
+    "rows", `List []; "views", `List []; "error", `Null])
+
 let with_queries session result =
   match query_db session with
   | None -> result
@@ -153,7 +166,7 @@ let with_queries session result =
     let cache = Hashtbl.create 8 in
     let query uuid = match Hashtbl.find_opt cache uuid with
       | Some value -> value
-      | None -> let value = query_for session db uuid in
+      | None -> let value = query_projection session db uuid in
         Hashtbl.replace cache uuid value; value in
     let rec decorate = function
       | `List values -> `List (List.map decorate values)
@@ -373,6 +386,11 @@ let snapshot session context_blocks blocks =
              | None -> `Null )
          ; ("syncConnected", `Bool s.sync_connected)
          ; ("syncTransport", Sync_driver.to_yojson s.sync_transport)
+         ; ( "taskPriorities"
+           , Rpc.json_list (List.map Rpc.status_response_json
+               (match query_db session with
+                | Some db -> Graph_read.property_choices (fun text -> Ok text) db "logseq.property/priority"
+                | None -> [])))
          ; ( "taskStatuses"
            , Rpc.json_list
                (List.map Rpc.status_response_json
@@ -588,6 +606,7 @@ let outliner_action_context session context message =
     | Outliner.Tap_block uuid | Long_press_block uuid | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
     | Drop_blocks value -> value.target_uuid :: targets
     | Set_task_status value -> value.status_uuid :: targets
+    | Set_task_priority value -> value.priority_uuid :: targets
     | _ -> targets in
   let missing = List.filter (fun uuid -> Outliner.find_block context uuid = None) targets in
   match missing, query_db session with
@@ -1675,13 +1694,27 @@ let rec dispatch session action payload =
         with error -> Rpc.failure "invalid_view" (Printexc.to_string error))
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "resultView" ->
-    (match payload, query_db session, editing_cursor session with
-     | Some payload, Some db, Ok cursor ->
-       (try match Result_view.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid (Json.from_string payload) with
-        | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
-        | Error message -> Rpc.failure "invalid_view" message
+    (match payload, query_db session with
+     | Some payload, Some db ->
+       (try
+         let input = Json.from_string payload in
+         let get name = match input with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields) | _ -> `Null in
+         if get "action" = `String "setExpanded" then (
+           match get "ownerUuid", get "featureType", get "expanded" with
+           | `String uuid, `String "query-result", `Bool expanded when Query_block.is_query db uuid ->
+             let key = query_expansion_key session uuid in
+             let current = state session in
+             session.Types.state := {current with expanded_queries =
+               (if expanded then Outliner.Sset.add else Outliner.Sset.remove) key current.expanded_queries};
+             snapshot_visible session
+           | _ -> Rpc.failure "invalid_query" "A query block and expansion state are required")
+         else match editing_cursor session with
+           | Error (code, message) -> Rpc.failure code message
+           | Ok cursor ->
+             (match Result_view.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input with
+              | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
+              | Error message -> Rpc.failure "invalid_view" message)
         with error -> Rpc.failure "invalid_view" (Printexc.to_string error))
-     | _, _, Error (code, message) -> Rpc.failure code message
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "cachedImageGallery" ->
     (match payload with Some uuid -> cached_image_gallery session uuid

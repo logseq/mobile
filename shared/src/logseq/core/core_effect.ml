@@ -64,6 +64,15 @@ let request ~now ~fresh_id payload =
       let* uuid = text () in let* status = metadata () in
       let field name = match status with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields) | _ -> `Null in
       event "setTaskStatus" ["uuid", `String uuid; "statusIdent", field "ident"; "statusUuid", field "uuid"]
+    | "set-outliner-task-priority" ->
+      let* uuid = text () in let* encoded = string fields "metadata" in
+      let priority = J.from_string encoded in
+      (match priority with
+       | `Null -> event "setTaskPriority" ["uuid", `String uuid; "priority", `Null]
+       | `Assoc fields -> event "setTaskPriority" ["uuid", `String uuid;
+           "priorityIdent", Option.value ~default:`Null (List.assoc_opt "ident" fields);
+           "priorityUuid", Option.value ~default:`Null (List.assoc_opt "uuid" fields)]
+       | _ -> Error "Priority must be a reference or null")
     | "outliner-toolbar" -> text_event "toolbar" "action"
     | "choose-outliner-autocomplete" -> text_event "chooseAutocomplete" "value"
     | "save-outliner-editing" -> event "saveEditing" []

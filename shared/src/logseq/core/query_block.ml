@@ -154,6 +154,12 @@ let execute ?current_page db owner definition source =
       | None -> List.map (fun row -> Wire.Array (List.map wire_cell row)) rows in
     {kind; source; rows = normalize_rows db wire_rows; error = None}
 
+let is_query db uuid =
+  match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+  | None -> false
+  | Some eid -> Graph.ref_eids db eid "logseq.property/query" <> []
+      || Graph.entity_is_instance_of db eid "logseq.class/Query"
+
 let render ?current_page db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
   | None -> None

@@ -368,12 +368,13 @@ let rec project_outliner_intent (blocks : Model.block list)
       (fun block -> not (List.mem block.Model.uuid value.uuids))
       blocks
   | Ops.Set_property value ->
-    if value.attr = "logseq.property/status" then
+    if value.attr = "logseq.property/status" || value.attr = "logseq.property/priority" then
       let status = projected_status value.value in
       List.map
         (fun (block : Model.block) ->
           if block.uuid = value.uuid then
-            { block with status; sync_status = "pending" }
+            (if value.attr = "logseq.property/status" then { block with status; sync_status = "pending" }
+             else { block with priority = status; sync_status = "pending" })
           else block)
         blocks
     else blocks
@@ -389,6 +390,7 @@ let merge_live_block_metadata (optimistic : Model.block)
     references = live.references;
     breadcrumbs = live.breadcrumbs;
     status = live.status;
+    priority = live.priority;
     display_type = live.display_type;
     is_asset = live.is_asset;
     asset_type = live.asset_type;

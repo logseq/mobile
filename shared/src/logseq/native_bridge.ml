@@ -271,6 +271,9 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted block_id ^ ",\"metadata\":"
     ^ Lui_wire.quoted (encode_task_status status)
     ^ "}"
+  | SetOutlinerTaskPriorityEffect (id, block_id, priority) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "set-outliner-task-priority";
+      "text", `String block_id; "metadata", `String (Option.fold ~none:"null" ~some:encode_task_status priority)])
   | LoadPageReferencesEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"load-page-references\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"
@@ -510,6 +513,7 @@ let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
     match identifier, name with
+    | "outliner-block-row", "set-priority" -> ["priority", StringValue text]
     | "outliner-block-row", "set-status" -> ["uuid", StringValue text; "count", IntValue value]
     | "outliner-block-row", "drop" -> ["uuid", StringValue text; "placement", StringValue
         (match value with 0 -> "before" | 1 -> "inside" | _ -> "after")]

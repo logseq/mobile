@@ -164,3 +164,33 @@ Final Android instrumentation passes both complete flows, including actual bulle
 Android bullet alignment uses its 24dp slot center (12dp), while the Apple native row also includes its 8pt outer inset (20pt total); both retain 22-unit nested indentation.
 The final Android screenshot artifacts are in `/tmp/logseq-result-views-final-android-artifacts/`.
 Four new LUI light/dark snapshots for scrollable tabs and search width verify successfully.
+
+## Results toolbar and lazy query revision
+
+The latest interaction replaces the query tab row with one results toolbar: disclosure/count on the left and filter, sort, search, and view-type icons on the right.
+Only results and actions share this row; the query owner retains its ordinary block renderer, bullet, content, tags, editing, and selection behavior.
+Tag and property collections retain saved view tabs on the left of the same action row.
+Saved query views remain accessible through the type menu's Saved views submenu.
+List, Table, and Gallery are type menu choices, not synthetic saved tabs.
+Collections without saved views show All and default to List; changing the type persists master-compatible view settings.
+
+Queries start collapsed without executing their simple or advanced definitions.
+Opening results evaluates the current graph; closing stops query evaluation during later snapshots.
+Expanded results include a 24-unit trailing gap before the next block.
+Search fits the collection width, and the Apple native field uses one inline background for the icon, input, and clear control.
+The app pins LUI `c1a098f2f7893b7714c3a60118413b1c6d24cd50`.
+
+Task priority icons now open a native tap menu on both hosts, using the graph's actual closed values and stable UUIDs.
+Selection, cancellation, clearing, row reuse, custom values, persistence, and sync preparation have regression coverage.
+
+The complete core gate passes 951 tests, including the separately submitted graph-link regression.
+The query suite passes 21 tests, including normal owner rendering while results are folded; the result-view suite passes 24 tests.
+Android instrumentation passes five interaction flows and the URL parser unit tests pass.
+Actual iOS runtime checks pass query rendering/search in light and dark themes, the priority popup and effect pipeline, and URL encoding/decoding.
+Current screenshots are in `/tmp/logseq-feedback-ios-artifacts/` and `/tmp/logseq-feedback-priority-artifacts/`.
+
+Filter and sort sheets now open at medium height and expand to large, following the calendar utility-sheet interaction.
+The native backend resolves theme ancestry through extension parents, reapplies the palette to modal content, and uses the themed background for navigation lists.
+The iOS regression reproduced a full-height dark sheet with system gray pixels, and checks the presented height and actual background color after the fix.
+The shared settings tests verify both native hosts expose the same expandable sheet contract.
+These presentation and theme checks are recorded in the project iOS simulator skill and the reusable iOS development skill.

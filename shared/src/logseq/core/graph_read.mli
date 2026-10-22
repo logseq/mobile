@@ -151,3 +151,5 @@ val blocks :
   Cache_model.block list
 
 val node_icon : Datascript.db -> string -> Yojson.Basic.t option
+
+val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list

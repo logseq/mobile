@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -32,6 +33,7 @@ import com.logseq.app.ui.LogseqTheme
 import com.logseq.app.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -51,7 +53,7 @@ class AndroidQueryResultViewsTest {
         if (::bridge.isInitialized) ui.runOnIdle { bridge.close() }
     }
 
-    private fun mount() {
+    private fun mount(transform: (JSONObject) -> Unit = {}) {
         backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
         filter = LuiPatchFilter(backend)
@@ -59,7 +61,9 @@ class AndroidQueryResultViewsTest {
         val root = bridge.initialize(authenticationCode = 3)
         val snapshot = InstrumentationRegistry.getInstrumentation().context.assets
             .open("query-result-views.json").bufferedReader().use { it.readText() }
-        filter.applyJson(bridge.applySnapshot(snapshot))
+        val response = JSONObject(snapshot)
+        transform(response.getJSONObject("result"))
+        filter.applyJson(bridge.applySnapshot(response.toString()))
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let { filter.applyJson(it) }
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
@@ -85,22 +89,90 @@ class AndroidQueryResultViewsTest {
             layouts.isNotEmpty() && layouts.none { it.isLineEllipsized(0) })
     }
 
+    private var selectedView = "list"
+
     private fun selectView(name: String) {
-        val tabs = ui.onNodeWithTag("view.tabs.query-owner")
-        val target = ui.onNodeWithTag("view.tab.$name")
-        repeat(4) {
-            val viewport = tabs.getUnclippedBoundsInRoot()
-            val bounds = target.getUnclippedBoundsInRoot()
-            val center = (bounds.left.value + bounds.right.value) / 2
-            if (center > viewport.left.value && center < viewport.right.value) {
-                target.performClick()
-                return
+        ui.onNodeWithTag("view.type.$selectedView").performClick()
+        ui.onNodeWithText("Saved views").performClick()
+        ui.onNodeWithTag("view.tab.$name").performClick()
+        selectedView = name
+    }
+
+    @Test fun priorityGlyphOpensNativePopupAndSendsSelectedReference() {
+        mount { result ->
+            val choice = JSONObject().put("uuid", "critical").put("title", "Critical")
+                .put("iconType", "tabler-icon").put("iconId", "priorityLvlHigh")
+            result.put("taskPriorities", JSONArray().put(choice))
+            fun visit(value: Any?) {
+                when (value) {
+                    is JSONObject -> {
+                        if (value.optString("uuid") == "result-0") value.put("priority", choice)
+                        value.keys().asSequence().toList().forEach { visit(value.opt(it)) }
+                    }
+                    is JSONArray -> (0 until value.length()).forEach { visit(value.opt(it)) }
+                }
             }
-            tabs.performTouchInput {
-                if (center < viewport.left.value) swipeRight() else swipeLeft()
+            visit(result.getJSONArray("outlinerRows"))
+        }
+        ui.onNodeWithTag("button.block-task-priority").performClick()
+        ui.onNodeWithText("Critical").assertIsDisplayed()
+        ui.onNodeWithTag("button.block-task-priority-option.critical").assertIsSelected()
+        capture("priority-popup")
+        ui.onNodeWithTag("button.block-task-priority-option.critical").performClick()
+        ui.runOnIdle {
+            var found = false
+            repeat(32) {
+                val encoded = bridge.takeEffect()
+                if (encoded.isNotEmpty()) {
+                    val effect = JSONObject(encoded).optJSONObject("effect")
+                    if (effect?.optString("kind") == "set-outliner-task-priority") {
+                        assertEquals("result-0", effect.getString("text"))
+                        assertEquals("critical", JSONObject(effect.getString("metadata")).getString("uuid"))
+                        found = true
+                    }
+                }
+            }
+            check(found) { "Selecting a priority must dispatch its stable reference" }
+            assertNull(backend.lastError)
+        }
+    }
+
+    private fun takeViewActions(): List<JSONObject> {
+        val actions = mutableListOf<JSONObject>()
+        ui.runOnIdle {
+            repeat(32) {
+                val encoded = bridge.takeEffect()
+                if (encoded.isNotEmpty()) {
+                    val effect = JSONObject(encoded).optJSONObject("effect")
+                    if (effect?.optString("kind") == "result-view") actions.add(JSONObject(effect.getString("text")))
+                }
             }
         }
-        error("The saved view tab must be reachable by swiping")
+        return actions
+    }
+
+    @Test fun typeIconOpensChoicesForTheSelectedSavedView() {
+        mount()
+        ui.onNodeWithTag("view.type.list").performClick()
+        ui.onNodeWithTag("view.type.option.list.list").assertIsDisplayed()
+        ui.onNodeWithTag("view.type.option.list.table").assertIsDisplayed()
+        ui.onNodeWithTag("view.type.option.list.gallery").performClick()
+        val action = takeViewActions().single()
+        assertEquals("list", action.getString("viewUuid"))
+        assertEquals("gallery", action.getJSONObject("config").getString("type"))
+    }
+
+    @Test fun foldedQueryResultsLoadOnlyWhenTapped() {
+        mount { result ->
+            val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
+            query.put("expanded", false).put("views", JSONArray()).put("rows", JSONArray())
+        }
+        ui.onNodeWithText("Project result 1").assertDoesNotExist()
+        assertTrue("Mounting folded queries must not request results", takeViewActions().isEmpty())
+        ui.onNodeWithTag("query.toggle.query-owner").performClick()
+        val action = takeViewActions().single()
+        assertEquals("setExpanded", action.getString("action"))
+        assertTrue(action.getBoolean("expanded"))
     }
 
     @Test fun savedListsGallerySearchAndErrorsRenderInCompose() {
@@ -133,7 +205,7 @@ class AndroidQueryResultViewsTest {
         assertEquals("The collection starts at the owning bullet center",
             (bullet.left.value + bullet.right.value) / 2, toolbar.left.value, 0.5f)
         selectView("table")
-        assertFullTabLabel("Table")
+        ui.onNodeWithTag("view.type.table").assertIsDisplayed()
         ui.onNodeWithTag("view.table.scroll.table").assertIsDisplayed()
         capture("table")
         ui.onNodeWithTag("view.cell.table.result-0.user.property/Score")
@@ -162,6 +234,9 @@ class AndroidQueryResultViewsTest {
         ui.onNodeWithTag("view.edit.value.table").assertDoesNotExist()
         ui.onNodeWithTag("view.filter.table").performClick()
         ui.onNodeWithTag("view.filter.list.table").assertIsDisplayed()
+        val settingsTop = ui.onNodeWithText("Filters").fetchSemanticsNode().boundsInWindow.top
+        val screenHeight = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.heightPixels
+        assertTrue("Utility sheets should open partially and remain expandable", settingsTop > screenHeight * 0.25f)
         ui.onNodeWithTag("view.filter.add.table").performClick()
         capture("settings")
         ui.onNodeWithTag("view.settings.cancel.table").performClick()

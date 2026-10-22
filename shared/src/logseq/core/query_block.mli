@@ -9,3 +9,5 @@ type result = {
 val render : ?current_page:string -> Datascript.db -> string -> result option
 val owner_uuids : Datascript.db -> string list
 val to_yojson : (Cache_model.block -> Yojson.Basic.t) -> result -> Yojson.Basic.t
+
+val is_query : Datascript.db -> string -> bool

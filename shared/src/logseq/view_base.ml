@@ -385,6 +385,14 @@ let task_status_icon_name status =
   | "canceled" -> "app:task-canceled"
   | _ -> "app:task-todo"
 
+let task_priority_icon_name (priority : Model.task_status) =
+  let level = match priority.ident, priority.icon_id with
+    | Some "logseq.property/priority.urgent", _ | _, Some "priorityLvlUrgent" -> "urgent"
+    | Some "logseq.property/priority.high", _ | _, Some "priorityLvlHigh" -> "high"
+    | Some "logseq.property/priority.medium", _ | _, Some "priorityLvlMedium" -> "medium"
+    | _ -> "low" in
+  "app:priority-" ^ level
+
 let task_status_foreground (status : Model.task_status) =
   match status.icon_color with
   | Some color -> color

@@ -443,6 +443,7 @@ let core_projection fields =
     is_graph_encrypted = bool_member "isGraphEncrypted" fields;
     is_graph_unlocked = bool_member "isGraphUnlocked" fields;
     sidebar = sidebar_projection fields;
+    task_priorities = List.filter_map task_status (list_member "taskPriorities" fields);
     task_statuses =
       List.filter_map task_status (list_member "taskStatuses" fields);
     flashcards = List.filter_map flashcard (list_member "flashcards" fields);

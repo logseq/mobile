@@ -190,6 +190,15 @@ let command base_t now fresh_uuid context cmd =
             ]
             [])
      | None -> Error "task block no longer exists")
+  | State.Set_task_priority_value value ->
+    (match find_block context value.State.priority_uuid with
+     | Some block ->
+       Ok (result [operation base_t fresh_uuid (Ops.Set_property {
+         uuid = value.priority_uuid; attr = "logseq.property/priority";
+         expected = Option.map status_reference block.Model.priority;
+         value = value.priority;
+       })] [])
+     | None -> Error "task block no longer exists")
   | State.Create_linked_page title ->
     let title = String_kit.trim title in
     if title = "" then Error "page title must not be empty"
