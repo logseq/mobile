@@ -400,3 +400,17 @@ let parse references tags source =
             (parse_inline references tags (S.trim (String.sub source 1 (String.length source - 1))));
         ]
       else parse_inline references tags source
+
+let plain_text nodes =
+  let result = Buffer.create 64 in
+  let rec append = function
+    | Markup_text value | Markup_code value | Markup_math (value, _)
+    | Markup_cloze value | Markup_code_block (_, value) -> Buffer.add_string result value
+    | Markup_node_ref (_, label) -> Buffer.add_string result label
+    | Markup_tag_ref (_, label) -> Buffer.add_char result '#'; Buffer.add_string result label
+    | Markup_emphasis (_, nodes) | Markup_quote nodes | Markup_link (_, nodes) -> List.iter append nodes
+    | Markup_image (_, label) -> Buffer.add_string result label
+    | Markup_video _ | Markup_iframe _ | Markup_html _ | Markup_youtube_timestamp _ -> ()
+  in
+  List.iter append nodes;
+  Buffer.contents result

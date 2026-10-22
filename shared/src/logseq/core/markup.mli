@@ -31,3 +31,5 @@ val parse :
   Cache_model.entity_summary list ->
   string ->
   markup_node list
+
+val plain_text : markup_node list -> string

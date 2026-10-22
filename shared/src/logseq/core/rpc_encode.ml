@@ -79,6 +79,7 @@ let block_json (block : Model.block) =
   Wire.json_object
     ([ ("uuid", `String block.uuid)
      ; ("title", `String block.title)
+     ; ("displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title)))
      ; ("pageId", `String block.page_id)
      ; ("createdAt", `Int block.created_at)
      ; ("updatedAt", `Int block.updated_at)

@@ -72,6 +72,7 @@ let property_display db p value =
       let t = Unix.localtime (millis /. 1000.) in
       Printf.sprintf "%04d-%02d-%02d %02d:%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min
     | _ -> ""
+  else if p.attr = "block/title" then G.display_title (fun text -> Ok text) db (display (content db value))
   else display (content db value)
 
 let public_attr attr = attr = "block/title" || String.starts_with ~prefix:"user.property/" attr

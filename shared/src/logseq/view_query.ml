@@ -25,7 +25,9 @@ let decode raw =
      error = (match member "error" json with Some (`String text) -> Some text | _ -> None);
      rows = List.mapi (fun index json -> match member "block" json with
        | Some block_json -> let block = decode_block 0 block_json in {
-           index; uuid = Some block.row.row_uuid; title = block.row.row_title; block = Some block; json}
+           index; uuid = Some block.row.row_uuid;
+           title = (match member "displayTitle" block_json with Some (`String title) -> title | _ -> block.row.row_title);
+           block = Some block; json}
        | None -> let cells = match member "cells" json with Some (`List xs) -> xs | _ -> [] in
          {index; uuid = None; title = String.concat "  ·  " (List.map (fun value -> string (Some value)) cells);
           block = None; json}) rows}
@@ -541,12 +543,15 @@ let collection ~render_block model_source raw_source send : t =
     (column ~gap:8 ~cross:`stretch [
       row ~gap:0 ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [
         (if feature = "query-result" then results_toggle () else
-          tabs ~grow:1.0 ~style_class:"scrollable" ~accessibility_identifier:("view.tabs." ^ owner) [
-          keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
-            let tab = Signal.sample source in
-            button ~text_signal:(own (Signal.map (fun tab -> tab.name) source))
-              ~selected:(tab.id = view.id) ~accessibility_identifier:("view.tab." ^ tab.id)
-              ~on_press:(fun _ -> Signal.set active tab.id) [])]);
+          row ~grow:1.0 ~cross:`center [
+            menu ~text_signal:(own (Signal.map (fun view -> view.name) view_source))
+              ~label:"Views" ~accessibility_identifier:("view.select." ^ owner) [
+              keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
+                let saved = Signal.sample source in
+                menu_item ~text_signal:(own (Signal.map (fun view -> view.name) source))
+                  ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
+                  ~on_press:(fun _ -> Signal.set active saved.id) [])];
+            box ~grow:1.0 []]);
         button ~icon:(`app "view-filter") ~label:"Filters" ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.filter." ^ view.id) ~on_press:(fun _ -> Signal.set settings "filter") [];
         button ~icon:(`app "view-sort") ~label:"Sort" ~variant:`ghost ~width:40 ~height:44

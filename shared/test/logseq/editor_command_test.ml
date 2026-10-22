@@ -361,7 +361,57 @@ let empty_journals_are_projected_without_writes () = R.with_runtime (fun _ runti
     (List.exists (fun page -> member "uuid" page = `String uuid) (items "emptyJournals" response));
   check_eq (Graph_runtime.pending_operations runtime) pending)
 
+let display_titles_resolve_references_without_changing_source () = R.with_runtime (fun session runtime conn ->
+  let nested = "60000000-0000-4000-8000-000000000001" in
+  let cycle = "60000000-0000-4000-8000-000000000002" in
+  let favorite = "60000000-0000-4000-8000-000000000004" in
+  let source = "Read [[" ^ nested ^ "]]" in
+  rebase runtime conn (R.entity 201 nested ("[[" ^ Q.beta ^ "]] notes") @
+    R.entity 202 cycle ("[[" ^ cycle ^ "]]") @
+    R.entity 204 favorite "" @ [
+    put favorite "block/page" (Ds.Ref (Option.get (Graph_read.favorite_page_eid (Graph_runtime.db runtime))));
+    put favorite "block/link" (Ds.Ref_to (Q.ref_uuid Q.page));
+    put Q.page "block/title" (Ds.String source);
+    put Q.alpha "block/title" (Ds.String source);
+    put Q.alpha "block/refs" (Ds.Ref_to (Q.ref_uuid nested))]);
+  let db = Graph_runtime.db runtime in
+  let page = fst (Option.get (Graph_read.node_destination (fun x -> Ok x) db Q.page)) in
+  check_eq ~msg:"scene titles resolve nested UUID references" page.title "Read Beta result notes";
+  let sidebar = Graph_read.sidebar_pages (fun x -> Ok x) db in
+  check_eq ~msg:"favorites use the same display title" (List.hd sidebar.favorites).title page.title;
+  let table = R.find_view R.table_view (R.read session) in
+  let row = List.find (fun row -> member "uuid" (member "block" row) = `String Q.alpha) (items "rows" table) in
+  let name = List.find (fun p -> member "attr" p = `String "block/title") (items "properties" row) in
+  check_eq ~msg:"table names resolve UUID references" (member "text" name) (`String page.title);
+  check_eq ~msg:"gallery names use a resolved display title"
+    (member "displayTitle" (member "block" row)) (`String page.title);
+  check_eq ~msg:"editing and syncing retain the original reference syntax"
+    (member "title" (member "block" row)) (`String source);
+  let cycle_id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid cycle)) in
+  let cycle_summary = Option.get (Graph_read.entity_summary (fun x -> Ok x) db cycle_id) in
+  check ~msg:"cyclic title references remain bounded" (String.length cycle_summary.title < 100))
+
+let saved_views_use_an_intrinsic_native_select () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    let views = R.read ~owner:Q.project ~feature:"class-objects" session in
+    let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+      "selectedGraphId", `String "graph";
+      "selectedPage", `Assoc ["uuid", `String Q.project; "title", `String "Project"];
+      "selectedPageIsTag", `Bool true; "resultViews", views; "outlinerRows", `List []]]) in
+    Q.with_ui backend response (fun app ->
+      let host = Lui_app.runtime app in
+      let root = Lui_app.root_node app in
+      let find id = App_test.descendant_with_identifier host root id in
+      check_eq ~msg:"view selection no longer mounts a tab bar" (find ("view.tabs." ^ Q.project)) (-1);
+      let select = find ("view.select." ^ Q.project) in
+      check ~msg:"view names use one native selection menu" (select <> -1);
+      check ~msg:"the selection trigger keeps its intrinsic width"
+        (App_test.property_float host select Lui_protocol.GrowValue <= 0.0))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "display titles resolve UUID references" display_titles_resolve_references_without_changing_source;
+  case "views use an intrinsic native select" saved_views_use_an_intrinsic_native_select;
   case "zoom placeholder creates a child in its page" zoom_placeholder_creates_a_child_in_the_same_page;
   case "rapid placeholder taps create one editor" repeated_placeholder_taps_create_one_editor;
   case "empty journals project without writes" empty_journals_are_projected_without_writes;

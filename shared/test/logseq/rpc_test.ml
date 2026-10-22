@@ -6177,6 +6177,7 @@ let block_json_publishes_resolved_markup_and_omits_absent_fields () =
     [
       "uuid";
       "title";
+      "displayTitle";
       "pageId";
       "createdAt";
       "updatedAt";

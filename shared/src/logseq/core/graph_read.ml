@@ -125,11 +125,25 @@ let default_task_status_eid db =
   | Some _ -> configured
   | None -> Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status.todo")
 
+let display_title decrypt_title db title =
+  let rec resolve seen depth title =
+    let summaries = Ref_text.page_names title |> List.sort_uniq String.compare
+      |> List.filter_map (fun uuid ->
+        if not (Ref_text.is_uuid uuid) then None else
+        match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+        | None -> None
+        | Some eid -> Option.map (fun source ->
+          let title = if depth >= 16 || List.mem uuid seen then "…"
+            else resolve (uuid :: seen) (depth + 1) source in
+          {Model.uuid; title}) (protected_string decrypt_title (value db eid "block/title"))) in
+    Markup.plain_text (Markup.parse summaries summaries title)
+  in resolve [] 0 title
+
 let entity_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
   let title = protected_string decrypt_title (value db eid "block/title") in
   match (uuid, title) with
-  | Some uuid, Some title -> Some { Model.uuid; title }
+  | Some uuid, Some title -> Some { Model.uuid; title = display_title decrypt_title db title }
   | _ -> None
 
 let entity_summaries decrypt_title db eid attr =
@@ -367,7 +381,7 @@ let page_summary decrypt_title db eid =
       && not (library_entity db eid)
       && not (S.starts_with ~prefix:"$$$" name)
       && not (page_is_hidden db eid)
-    then Some { Model.uuid; title }
+    then Some { Model.uuid; title = display_title decrypt_title db title }
     else None
   | _ -> None
 
