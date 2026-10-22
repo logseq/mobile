@@ -119,8 +119,8 @@ let plan db ~now ~fresh_uuid operation =
     | Ensure_journal ms ->
       let day = Cache_model.journal_day_for_ms ms in
       if Read.journal_page_uuid db day <> None then [] else
-      [Ops.Create_journal {page_uuid = Printf.sprintf "00000001-%04d-%04d-0000-000000000000" (day / 10000) (day mod 10000);
-        block_uuid = fresh_uuid (); block_title = ""; title = Journal.day_title day; journal_day = day; created_at = now}]
+      [Ops.Create_journal {page_uuid = Journal.page_uuid day;
+        block_uuid = fresh_uuid (); block_title = ""; title = Journal.title db day; journal_day = day; created_at = now}]
     | Insert_code (uuid, language) ->
       let target = eid db uuid in
       let page = match Read.ref_eids db target "block/page" with p :: _ -> Option.get (Read.uuid_for_eid db p) | _ -> invalid_arg "Missing page" in

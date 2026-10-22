@@ -156,3 +156,5 @@ val node_icon : Datascript.db -> string -> Yojson.Basic.t option
 val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list
 
 val display_title : (string -> (string, string) result) -> Datascript.db -> string -> string
+
+val entity_title : (string -> (string, string) result) -> Datascript.db -> int -> string option

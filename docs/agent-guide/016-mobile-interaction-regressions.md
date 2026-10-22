@@ -37,7 +37,7 @@ NOTE: I will write *all* tests before I add any implementation behavior.
 | 4 | Trim on leaving editing | Shared RPC tests cover hide, switch, selection, collapse, zoom, Return, autosave, blank content, and failed storage; full core gate passes. |
 | 5 | Nested/search long press | The feature branch already contains the destination-toolbar fix from `bb4575f`. Native direct/nested/search selection now traverses the effect boundary, visibly renders the bar and dispatches Copy/Unselect successfully. Complete the remaining Recent/root-path audit and physical gesture check. |
 | 6 | Master-compatible clipboard | Eleven graph-backed round-trip cases pass: Markdown/EDN snapshots, collapsed descendants, fresh identities, typed properties/ref remapping, empty/nonempty/parent placement, UTF-16 selection, paragraphs, fenced code, foreign graphs and atomic storage failure. Both iOS and Android native clipboard/selection/rapid-typing/failed-save checks pass. Audit remaining master cases before final delivery. |
-| 7 | Date-format preference | Audit master settings and existing formatter support, add persistence and consistent rendering without changing journal identity. |
+| 7 | Date-format preference | Implemented the master graph property, shared 27-format lexer/formatter, all journal creation paths, live journal/reference/property/navigation labels and graph-scoped native settings menus. Twelve graph/shared-host cases and the full 1,036-test gate pass. Coverage includes storage failure, restart/sync, graph changes, all formats, invalid legacy days, UUID date commands and search-index refresh. Native iOS theme/alignment/confirmed-choice checks and all 19 Android query/editor/property/outliner/settings checks pass. |
 | 8 | Table borders and editability | Thirty core cases, the complete iOS native query/view flow and all sixteen Android query/editor/property/outliner checks pass. Name/timestamps are read-only; Tags use the shared typed editor. The Android stretch root cause is fixed upstream with a verified Paparazzi geometry snapshot. |
 | 9 | TestFlight crash | Read the specified crash, identify the crashed build and symbolicated stack, reproduce its cause, and add a regression check before fixing it. |
 | 10 | Delivery | Run final gates, update PRs, and non-destructively install and launch the final build on the user's iPhone. |
@@ -103,9 +103,21 @@ The cached-empty-row native regression now passes all five refresh cycles. Persi
 A diagnostic build must explicitly define `LOGSEQ_INTERACTION_DIAGNOSTICS`; Release does not define `DEBUG`. Verify `Library/Caches/interaction-debug.log` can be pulled from the phone before asking for a repro.
 Clipboard tests must round-trip actual copied blocks rather than merely validating an intermediate JSON shape.
 Final verification includes an iOS build, Android build/instrumentation, and a non-destructive iPhone installation.
-At the user's interim installation request, the latest iOS build (build number `1792693092`) was installed and launched successfully at 02:18 on the paired iPhone, preserving the app container. It adds the tested table policy/dividers and composer graph-isolation/asset-retry fixes to the confirmed jitter fix. Installation/launch evidence is in `/tmp/logseq-table-recovery-install.json` and `/tmp/logseq-table-recovery-launch.json`. Clipboard parity, date-format settings, final native checks and the crash investigation remain open.
+At the user's earlier interim installation request, the iOS build (build number `1792693092`) was installed and launched successfully at 02:18 on the paired iPhone, preserving the app container. It adds the tested table policy/dividers and composer graph-isolation/asset-retry fixes to the confirmed jitter fix. Installation/launch evidence is in `/tmp/logseq-table-recovery-install.json` and `/tmp/logseq-table-recovery-launch.json`. Clipboard parity, date-format settings, final native checks and the crash investigation remain open.
 
 ## Implementation Details
+
+Date-format implementation notes from the master audit:
+
+- Persist the graph property, not a device-only setting. Scope the mutation by graph ID and reject stale requests.
+- Preserve journal UUIDs and stored titles when changing the preference; derive displayed journal titles, reference labels and date-property text from journal day. Native day-picker `editorValue` stays ISO.
+- Share the 27 built-in formats already present in `Dev_query.Date_time_util`. `Dev_query` depends on `Graph_read`, so `Graph_read` cannot call back into `Dev_query`: move the pure formatter/token support into the existing pure `Journal` module and reuse it from both.
+- Update creation paths in `Graph_runtime.ensure_today_journal`, `Rpc_session.ensure_journal`, `Rpc_ops`, `Pending_pump`, `Editor_command_effects` and date-property creation in `Result_view`.
+- Expose the graph preference in snapshots and both native settings menus; preserve graph isolation and avoid changing active date-picker wire values.
+- Date-format TDD evidence: `/tmp/logseq-journal-format-red-7.log` reproduces the missing API/menu; `/tmp/logseq-journal-format-surfaces-red.log` reproduces stale open destination titles. Ten cases pass in `/tmp/logseq-journal-format-surfaces-green.log`, and the complete gate passes 1,034 tests in `/tmp/logseq-date-format-full-core-final.log`.
+- The added date-command/search cases first fail in `/tmp/logseq-date-command-search-red-fixed.log` and then pass with all twelve date cases in `/tmp/logseq-date-command-search-green.log`. Date commands now insert stable journal UUIDs. Search refresh includes journals and their referring blocks when the graph format changes; the persisted index fingerprint is versioned to rebuild older labels.
+- Final date-format verification: `/tmp/logseq-date-picker-complete-core.log` passes all 1,036 core tests. `/tmp/logseq-date-settings-alignment-red.log` reproduces the double-inset/taller custom menu row; reusing the existing native picker contract passes `/tmp/logseq-date-settings-native-final.log`, including light/dark OCR alignment and spacing, colors and confirmed selection. Screenshots in `/tmp/logseq-date-settings-native-final-artifacts` were visually inspected. `/tmp/logseq-date-format-android-all.log` passes all 19 native checks (78.098s), including real dropdown selection and graph isolation.
+- Existing journal read tests now assert derived calendar titles. The 10k-row check verifies physical reuse of the derived journal metadata and no stored-title decryption; the sidebar rename-cache check explicitly uses an ordinary page so it retains coverage of actual renames.
 
 - Preserve the user's `apple/Package.resolved` origin hash and pre-existing `duniverse/lui` edits.
 - Never reset or uninstall the user's graph data.
@@ -123,3 +135,7 @@ No product clarification blocks the interaction fixes.
 Crash investigation may require the existing App Store Connect session and matching symbols; access has not yet been checked because the user requested that investigation last.
 
 ---
+
+## Latest interim device install
+
+At the user's next "install first" request, build `1792695320` from mobile commit `89b151a` was built, signed, installed and launched at 02:56 on the paired iPhone. Process `23154` was verified alive. The install preserves the data container and includes the structured multi-block clipboard changes. Date-format work is subsequent and was not included. Evidence: `/tmp/logseq-latest-device-build.log`, `/tmp/logseq-latest-device-install.json`, `/tmp/logseq-latest-device-launch.json` and `/tmp/logseq-latest-device-processes.json`.

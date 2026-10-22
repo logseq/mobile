@@ -365,7 +365,7 @@ let search_source_version path =
         (fun row -> (Db.column_text row 0, Db.column_int row 1,
           Db.column_text row 2, Db.column_text row 3)) in
       Some (Digest.to_hex (Digest.string
-        (Marshal.to_string ("search-index-v1", roots, pending) []))))
+        (Marshal.to_string ("search-index-v2", roots, pending) []))))
 
 let search_version path =
   with_search_db path (fun connection ->

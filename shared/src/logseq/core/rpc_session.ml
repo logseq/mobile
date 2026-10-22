@@ -92,6 +92,16 @@ let query_db session =
   | Some load -> load ()
   | None -> Some (state session).model.db
 
+let current_summary session (summary : Model.entity_summary) =
+  match Option.bind (query_db session) (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid)) (fun eid ->
+      Option.bind (Graph_read.int_value (Graph_read.value db eid "block/journal-day")) (fun day ->
+        if Journal.valid_day day then Some (Journal.title db day) else None))) with
+  | Some title -> {summary with title}
+  | None -> summary
+
+let summary_json session summary = Rpc.summary_json (current_summary session summary)
+
 let result_block_encoder db =
   let presentation = Node_presentation.decorate db in
   let pages = Hashtbl.create 4 in
@@ -121,8 +131,8 @@ let result_block_encoder db =
 
 let query_for session db uuid =
   let current_page = match active_node_route session with
-    | Some route -> Some route.Types.page.title
-    | None -> Option.map (fun (page : Model.entity_summary) -> page.title)
+    | Some route -> Some (current_summary session route.Types.page).title
+    | None -> Option.map (fun (page : Model.entity_summary) -> (current_summary session page).title)
         (state session).selected_sidebar_page in
   let encode_tree = result_block_encoder db in
   Query_block.render ?current_page db uuid
@@ -258,13 +268,13 @@ let node_routes_json session serialize serialize_plain =
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
-           ; ("breadcrumbs", Rpc.json_list (List.map Rpc.summary_json (route_breadcrumbs context route)))
+           ; ("breadcrumbs", Rpc.json_list (List.map (summary_json session) (route_breadcrumbs context route)))
            ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)
            ; ("isProperty", `Bool route.is_property)
            ; ("resultViews", object_views_for session route.uuid route.is_tag route.is_property)
            ; ("nodeProperties", node_properties_for session route.uuid)
-           ; ("page", Rpc.summary_json route.page)
+           ; ("page", summary_json session route.page)
            ; ( "blocks"
              , Rpc.json_list (List.map serialize (projection_blocks session
                   (if (host session).Types.outliner_projection_limit = None then context.Outliner.blocks else ordered)))
@@ -375,7 +385,8 @@ let snapshot session context_blocks blocks =
                 | Some name -> `String name
                 | None -> `Null)
              | None -> `Null )
-         ; ( "selectedGraphId"
+         ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
+       ; ( "selectedGraphId"
            , match config with
              | Some config ->
                if config.Api.graph_id = "" then `Null
@@ -385,14 +396,14 @@ let snapshot session context_blocks blocks =
            , Rpc.json_list (List.map Rpc.graph_json s.available_graphs) )
          ; ( "favorites"
            , Rpc.json_list
-               (List.map Rpc.summary_json sidebar.Graph_read.favorites) )
+               (List.map (summary_json session) sidebar.Graph_read.favorites) )
          ; ( "recentPages"
            , Rpc.json_list
-               (List.map Rpc.summary_json sidebar.Graph_read.recent_pages)
+               (List.map (summary_json session) sidebar.Graph_read.recent_pages)
            )
          ; ( "selectedPage"
            , match s.selected_sidebar_page with
-             | Some page -> Rpc.summary_json page
+             | Some page -> summary_json session page
              | None -> `Null )
          ; ( "isGraphEncrypted"
            , `Bool (selected_graph_is_encrypted session) )
@@ -543,6 +554,7 @@ let graph_catalog_snapshot session =
               | Some name -> `String name
               | None -> `Null)
            | None -> `Null )
+       ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
        ; ( "selectedGraphId"
          , match s.config with
            | Some config ->
@@ -1073,16 +1085,9 @@ let graph_asset session fields downloaded =
 
 let ensure_journal session payload =
   let day = Option.bind payload int_of_string_opt in
-  let valid day =
-    let year = day / 10000 and month = day / 100 mod 100 and date = day mod 100 in
-    let leap = year mod 4 = 0 && (year mod 100 <> 0 || year mod 400 = 0) in
-    let days = [|31; (if leap then 29 else 28); 31; 30; 31; 30; 31; 31; 30; 31; 30; 31|] in
-    year >= 1 && year <= 9999 && month >= 1 && month <= 12
-    && date >= 1 && date <= days.(month - 1)
-  in
   match day with
   | None -> Rpc.failure "invalid_params" "A journal date is required"
-  | Some day when not (valid day) -> Rpc.failure "invalid_params" "The journal date is invalid"
+  | Some day when not (Journal.valid_day day) -> Rpc.failure "invalid_params" "The journal date is invalid"
   | Some day ->
     let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
     let result = match existing, projection_server_t session, (state session).config with
@@ -1092,13 +1097,41 @@ let ensure_journal session payload =
         let operation = { Ops.operation_id = fresh_squuid ();
           base_t; state = Ops.Queued;
           intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid (); block_title = "";
-            title = Rpc.journal_day_title day; journal_day = day; created_at = now_ms () } } in
+            title = (match query_db session with Some db -> Journal.title db day | None -> Rpc.journal_day_title day); journal_day = day; created_at = now_ms () } } in
         Result.map (fun () -> uuid) (enqueue_semantic session operation)
       | None, _, _ -> Error "Select a graph before creating a journal"
     in
     match result with
     | Ok uuid -> success session (Rpc.json_object ["uuid", `String uuid])
     | Error message -> Rpc.failure "journal_creation_failed" message
+
+let set_journal_title_format session fields =
+  let result =
+    let ( let* ) = Result.bind in
+    let* graph_id = Rpc.required_string fields "graphId" in
+    let* format = Rpc.required_string fields "format" in
+    let* () = match (state session).config with
+      | Some config when config.Api.graph_id = graph_id -> Ok ()
+      | _ -> Error "The active graph changed. Reopen settings to change its date format" in
+    let* () = if List.mem format Journal.built_in_journal_title_formatters then Ok ()
+      else Error "Choose a supported date format" in
+    let* db = Option.to_result ~none:"The graph is unavailable" (query_db session) in
+    let* eid = Option.to_result ~none:"The Journal class is missing"
+      (Datascript.entid db "db/ident" (Datascript.Keyword "logseq.class/Journal")) in
+    let* uuid = Option.to_result ~none:"The Journal class has no UUID" (Graph_read.uuid_for_eid db eid) in
+    let* base_t = match editing_cursor session with Ok value -> Ok value | Error (_, message) -> Error message in
+    let* expected = match Graph_read.value db eid Journal.format_attr with
+      | None -> Ok None
+      | Some (Datascript.String value) -> Ok (Some (Ops.String_value value))
+      | _ -> Error "The existing journal format is invalid" in
+    let value = Some (Ops.String_value format) in
+    if expected = value then Ok () else
+    enqueue_semantic session {Ops.operation_id = fresh_squuid (); base_t; state = Ops.Queued;
+      intent = Ops.Set_property {uuid; attr = Journal.format_attr; expected; value}}
+  in
+  match result with
+  | Ok () -> snapshot_visible session
+  | Error message -> Rpc.failure "date_format_failed" message
 
 let select_page session payload =
   match
@@ -1824,6 +1857,9 @@ let rec dispatch session action payload =
         snapshot_visible session)
   | "selectGraph" -> select_graph session payload
   | "ensureJournal" -> ensure_journal session payload
+  | "setJournalTitleFormat" ->
+    with_object "setJournalTitleFormat" payload "A date format is required"
+      (fun _ fields -> set_journal_title_format session fields)
   | "selectPage" -> select_page session payload
   | "hydrateOutlinerRows" -> hydrate_outliner_rows session payload
   | "queryBlock" ->

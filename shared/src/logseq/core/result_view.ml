@@ -66,7 +66,10 @@ let temporal_value db p value =
   else ""
 
 let property_display db p value =
-  if p.typ = "date" then temporal_value db p value
+  if p.typ = "date" then
+    (match Option.bind (ref_id db value) (fun id -> G.int_value (G.value db id "block/journal-day")) with
+     | Some day when Journal.valid_day day -> Journal.title db day
+     | _ -> "")
   else if p.typ = "datetime" || List.mem p.attr ["block/created-at"; "block/updated-at"] then
     match number (content db value) with
     | Some millis when abs_float millis <= 8640000000000000. ->
@@ -354,7 +357,7 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
            | None ->
              let uuid = Rpc_wire.journal_page_uuid day in
              created := Ops.Create_journal {page_uuid = uuid; block_uuid = fresh_uuid (); block_title = "";
-               title = Rpc_wire.journal_day_title day; journal_day = day; created_at = now} :: !created;
+               title = Journal.title db day; journal_day = day; created_at = now} :: !created;
              Ops.Ref_uuid uuid))
       else if List.mem p.typ ["number"; "datetime"; "default"; "url"] then
         let content = if p.typ = "number" || p.typ = "datetime" then numeric text else Ops.String_value text in

@@ -6,32 +6,8 @@ module Outliner = Outliner_state
 module Cards = Flashcards
 module Api_ = Api
 
-let journal_page_uuid journal_day =
-  Printf.sprintf "00000001-%04d-%04d-0000-000000000000"
-    (journal_day / 10000) (journal_day mod 10000)
-
-let journal_day_title journal_day =
-  let months =
-    [|
-      "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"
-    ; "Oct"; "Nov"; "Dec"
-    |]
-  in
-  let year = journal_day / 10000 in
-  let month = journal_day / 100 mod 100 in
-  let day = journal_day mod 100 in
-  let suffix =
-    if day mod 100 >= 11 && day mod 100 <= 13 then "th"
-    else
-      match day mod 10 with
-      | 1 -> "st"
-      | 2 -> "nd"
-      | 3 -> "rd"
-      | _ -> "th"
-  in
-  if month >= 1 && month <= Array.length months then
-    Printf.sprintf "%s %d%s, %04d" months.(month - 1) day suffix year
-  else invalid_arg "invalid journal month"
+let journal_page_uuid = Journal.page_uuid
+let journal_day_title = Journal.day_title
 
 let fields_of entries =
   List.fold_left

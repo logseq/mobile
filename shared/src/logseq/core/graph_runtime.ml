@@ -544,11 +544,9 @@ let ensure_today_journal runtime =
       (queued_operation runtime (fresh_uuid ())
          (Ops.Create_journal
             {
-              Ops.page_uuid =
-                Printf.sprintf "00000001-%04d-%04d-0000-000000000000"
-                  (day / 10000) (day mod 10000);
+              Ops.page_uuid = Journal.page_uuid day;
               block_uuid = fresh_uuid (); block_title = "";
-              title = Journal.day_title day;
+              title = Journal.title (db runtime) day;
               journal_day = day;
               created_at;
             }))

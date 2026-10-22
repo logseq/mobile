@@ -1294,6 +1294,9 @@ let persisted_offline_pages_reopen_for_every_transport_state () =
 
 let sidebar_cache_reuses_unchanged_reads_and_invalidates_on_rebase () =
   with_runtime (fun path conn current ->
+      (* Ordinary page renames invalidate labels; journal labels derive from the calendar day. *)
+      ignore (Ds.transact_conn conn [Ds.Retract (Ds.Entity_id 1, "block/journal-day", Some (Ds.Int64 20260816L))]);
+      Runtime.rebase current 42 [] [];
       let initial = Runtime.sidebar_pages current in
       Gc.full_major ();
       let before = Gc.allocated_bytes () in

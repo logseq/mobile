@@ -449,6 +449,7 @@ let core_projection fields =
       | Some (`List choices) -> Some (List.filter_map sidebar_page choices) | _ -> None);
     graph_name = string_member "graphName" fields;
     selected_graph_id = string_member "selectedGraphId" fields;
+    journal_title_format = string_member "journalTitleFormat" fields;
     graphs = List.filter_map graph (list_member "graphs" fields);
     is_graph_encrypted = bool_member "isGraphEncrypted" fields;
     is_graph_unlocked = bool_member "isGraphUnlocked" fields;

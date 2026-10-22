@@ -43,6 +43,7 @@ let () =
       "editor_commands", Editor_command_test.cases;
       "composer_tags", Composer_tag_test.cases;
       "block_clipboard", Block_clipboard_test.cases;
+      "journal_format", Journal_format_test.cases;
     "editor_exit", Editor_exit_test.cases;
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;

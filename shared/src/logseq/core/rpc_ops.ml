@@ -129,7 +129,7 @@ let capture_operation base_t uuid title now load_context journal_page_id
             {
               Ops.page_uuid = Wire.journal_page_uuid journal_day;
               block_uuid = uuid; block_title = title;
-              title = Wire.journal_day_title journal_day;
+              title = (match (load_context ()).db with Some db -> Journal.title db journal_day | None -> Wire.journal_day_title journal_day);
               journal_day;
               created_at = now;
             }))

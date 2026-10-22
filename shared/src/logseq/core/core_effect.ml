@@ -39,6 +39,7 @@ let request ~now ~fresh_id payload =
     | "send-asset" -> raw "addAsset"
     | "result-view" -> raw "resultView"
     | "node-property" -> raw "nodeProperty"
+    | "set-journal-title-format" -> raw "setJournalTitleFormat"
     | "recording-transcribed" -> let* uuid = string fields "uuid" in let* text = text () in
       json "completeAssetTranscription" ["parentId", `String uuid; "text", `String text]
     | "load-page-references" -> raw "loadPageReferences"

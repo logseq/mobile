@@ -220,6 +220,7 @@ type core_projection =
   { tag_choices_update : sidebar_page list option
   ; graph_name : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
@@ -269,6 +270,7 @@ type composer_submission =
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
   | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
@@ -332,6 +334,7 @@ type logseq_effect =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
   ; recent_graph_ids : string list
@@ -561,6 +564,7 @@ type logseq_action =
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
+  | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
   | ToggleSidebarTab of string

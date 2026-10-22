@@ -36,6 +36,11 @@ let protected_string decrypt_title value =
      | Error message -> failwith ("decrypt graph title: " ^ message))
   | None -> None
 
+let entity_title decrypt_title db eid =
+  match int_value (value db eid "block/journal-day") with
+  | Some day when Journal.valid_day day -> Some (Journal.title db day)
+  | _ -> protected_string decrypt_title (value db eid "block/title")
+
 let uuid_for_eid db eid = uuid_value (value db eid "block/uuid")
 
 let has_ref db eid attr target_eid =
@@ -135,13 +140,13 @@ let display_title decrypt_title db title =
         | Some eid -> Option.map (fun source ->
           let title = if depth >= 16 || List.mem uuid seen then "…"
             else resolve (uuid :: seen) (depth + 1) source in
-          {Model.uuid; title}) (protected_string decrypt_title (value db eid "block/title"))) in
+          {Model.uuid; title}) (entity_title decrypt_title db eid)) in
     Markup.plain_text (Markup.parse summaries summaries title)
   in resolve [] 0 title
 
 let entity_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
-  let title = protected_string decrypt_title (value db eid "block/title") in
+  let title = entity_title decrypt_title db eid in
   match (uuid, title) with
   | Some uuid, Some title -> Some { Model.uuid; title = display_title decrypt_title db title }
   | _ -> None
@@ -236,7 +241,7 @@ let property_choices decrypt_title db property =
     |> List.filter_map (fun eid ->
       Option.map (fun uuid ->
         let ident = match value db eid "db/ident" with Some (Ds.Keyword ident) -> Some ident | _ -> None in
-        let title = Option.value ~default:uuid (protected_string decrypt_title (value db eid "block/title")) in
+        let title = Option.value ~default:uuid (entity_title decrypt_title db eid) in
         let icon_field field = match value db eid "logseq.property/icon" with
           | Some (Ds.Map fields) -> (match List.assoc_opt (Ds.Keyword field) fields with
               | Some (Ds.String text) | Some (Ds.Keyword text) -> Some text | _ -> None)
@@ -264,7 +269,7 @@ let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db ei
     if entity = eid then Hashtbl.find_opt attributes attr
     else original_value db entity attr in
   let uuid = uuid_value (value db eid "block/uuid") in
-  let title = protected_string decrypt_title (value db eid "block/title") in
+  let title = entity_title decrypt_title db eid in
   let name = value db eid "block/name" in
   match name with
   | Some _ -> None
@@ -300,8 +305,7 @@ let read_block ?(with_breadcrumbs = true) ?page_info ?fields decrypt_title db ei
            let title =
              match ancestors with
              | [] ->
-               protected_string decrypt_title
-                 (value db page_eid "block/title")
+               entity_title decrypt_title db page_eid
              | _ ->
                List.find_map
                  (fun (summary : Model.entity_summary) ->
@@ -372,7 +376,7 @@ let library_entity db eid =
 
 let page_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
-  let title = protected_string decrypt_title (value db eid "block/title") in
+  let title = entity_title decrypt_title db eid in
   let name = string_value (value db eid "block/name") in
   match (uuid, title, name) with
   | Some uuid, Some title, Some name ->
@@ -964,7 +968,7 @@ let read_page_window ?(offset = 0) ?(limit = 32) decrypt_title reader =
         | Some eid ->
           (match int_value (value db eid "block/journal-day") with
            | Some day -> Option.map (fun title -> title, day)
-               (protected_string decrypt_title (value db eid "block/title"))
+               (entity_title decrypt_title db eid)
            | None -> None)
         | None -> None in
       tree.page_uuid, journal) in
@@ -999,7 +1003,7 @@ let blocks_for_page decrypt_title db uuid =
       | Some eid ->
         (match int_value (value db eid "block/journal-day") with
          | Some day -> Option.map (fun title -> title, day)
-             (protected_string decrypt_title (value db eid "block/title"))
+             (entity_title decrypt_title db eid)
          | None -> None)
       | None -> None in
     uuid, journal) in

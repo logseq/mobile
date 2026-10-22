@@ -334,6 +334,7 @@ let empty_core_projection () =
     Model.tag_choices_update = None;
     graph_name = None;
     selected_graph_id = None;
+    journal_title_format = None;
     graphs = [];
     is_graph_encrypted = false;
     is_graph_unlocked = false;

@@ -73,10 +73,9 @@ let candidates db query =
 
 let journal_reference db ms =
   let day = Cache_model.journal_day_for_ms ms in
-  let title = Option.bind db (fun db -> Option.bind (Read.journal_page_uuid db day)
-    (fun uuid -> Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid))
-      (fun eid -> Read.string_value (Read.value db eid "block/title")))) in
-  "[[" ^ Option.value ~default:(Journal.day_title day) title ^ "]]"
+  let uuid = Option.bind db (fun db -> Read.journal_page_uuid db day)
+    |> Option.value ~default:(Journal.page_uuid day) in
+  "[[" ^ uuid ^ "]]"
 
 let date_ms value =
   try

@@ -223,6 +223,7 @@ type core_projection =
   { tag_choices_update : sidebar_page list option
   ; graph_name : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
@@ -272,6 +273,7 @@ type composer_submission =
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
   | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
@@ -335,6 +337,7 @@ type logseq_effect =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
   ; recent_graph_ids : string list
@@ -564,6 +567,7 @@ type logseq_action =
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
+  | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
   | ToggleSidebarTab of string
@@ -679,6 +683,7 @@ let initial () =
   {
     selected_graph = None;
     selected_graph_id = None;
+    journal_title_format = Journal.default_format;
     graphs = [];
     local_graph_ids = [];
     recent_graph_ids = [];
@@ -821,7 +826,7 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
-  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) -> id
+  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
   | LoadComposerTagsEffect (id, _) -> id
   | SendTaggedCaptureEffect (id, _) -> id
   | SendCaptureEffect (id, _) -> id
@@ -2791,6 +2796,12 @@ let rec update (current : logseq_model) action =
            settings_language_menu_open = false;
          }
      | None -> { current with settings_language_menu_open = false })
+  | ChooseJournalTitleFormat format ->
+    (match current.selected_graph_id with
+     | Some graph_id when List.mem format Journal.built_in_journal_title_formatters ->
+       let payload = Yojson.Basic.to_string (`Assoc ["graphId", `String graph_id; "format", `String format]) in
+       enqueue_effect current (SetJournalTitleFormatEffect (current.next_effect_id, payload))
+     | _ -> current)
   | ToggleSpellCheck enabled ->
     persist_settings_change current { current with spell_check = enabled }
   | ToggleAutoCorrection enabled ->
@@ -2969,6 +2980,9 @@ and apply_core_snapshot (current : logseq_model)
       current with
       selected_graph = projection.graph_name;
       selected_graph_id = projection.selected_graph_id;
+      journal_title_format = Option.value
+        ~default:(if current.selected_graph_id = projection.selected_graph_id then current.journal_title_format else Journal.default_format)
+        projection.journal_title_format;
       graphs = projection.graphs;
       is_graph_encrypted = projection.is_graph_encrypted;
       is_graph_unlocked = projection.is_graph_unlocked;
@@ -3126,6 +3140,9 @@ and apply_core_snapshot (current : logseq_model)
         search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;
+        journal_title_format = Option.value
+          ~default:(if current.selected_graph_id = projection.selected_graph_id then current.journal_title_format else Journal.default_format)
+          projection.journal_title_format;
         composer_tags = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tags else []);
         composer_tag_choices = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tag_choices else []);
         composer_tags_open = current.composer_tags_open && projection.selected_graph_id = current.selected_graph_id;

@@ -190,7 +190,7 @@ let incremental_projection_refreshes_dependencies_and_evicts_recycled_journals
   check (!decrypted <= 4);
   check_eq
     (List.map (fun (b : Model.block) -> b.journal) (Projection.blocks current))
-    [ Some ("Journal updated", 20260816); Some ("Journal updated", 20260816) ];
+    [ Some ("Aug 16th, 2026", 20260816); Some ("Aug 16th, 2026", 20260816) ];
   transact conn
     [ Ds.RetractEntity (Ds.Entity_id (eid (Ds.conn_db conn) first_id)) ];
   Projection.update current (Ds.conn_db conn) (change 4 [] [ wire_id first_id ]);
@@ -450,7 +450,7 @@ let graph_blocks_preserve_identities_instants_order_and_decrypt_journal_titles
   check_eq block.page_id page_id;
   check_eq block.order (Some "a1");
   check_eq block.created_at 1776000000000;
-  check_eq block.journal (Some ("Page", 20260815));
+  check_eq block.journal (Some ("Aug 15th, 2026", 20260815));
   add conn block_id "block/title" (Ds.String "cipher-block");
   add conn page_id "block/title" (Ds.String "cipher-page");
   let decrypt value =
@@ -466,7 +466,7 @@ let graph_blocks_preserve_identities_instants_order_and_decrypt_journal_titles
     [ "Decrypted block" ];
   check_eq
     (List.map (fun (b : Model.block) -> b.journal) blocks)
-    [ Some ("Decrypted journal", 20260815) ]
+    [ Some ("Aug 15th, 2026", 20260815) ]
 
 let reference_target_renames_refresh_projections_and_public_tags_stay_visible
     () =
@@ -691,7 +691,7 @@ let restored_raw_numeric_references_remain_navigable () =
   let block = List.hd blocks in
   check_eq block.page_id "raw-page";
   check_eq block.parent_id (Some "raw-page");
-  check_eq block.journal (Some ("Raw journal", 20260817))
+  check_eq block.journal (Some ("Aug 17th, 2026", 20260817))
 
 let title_normalization_resolves_unique_names_and_shares_new_tags_across_titles
     () =
@@ -911,10 +911,11 @@ let large_pages_decrypt_their_shared_journal_metadata_once () =
   in
   let blocks = Read.blocks_for_page decrypt (Ds.conn_db conn) page_id in
   check_eq (List.length blocks) 10_000;
-  check_eq ~msg:"the same page metadata must not be queried and decrypted for every row"
-    !page_reads 1;
-  check (List.for_all (fun (block : Model.block) ->
-    block.page_id = page_id && block.journal = Some ("Shared journal", 20261019)) blocks)
+  check_eq ~msg:"derived journal titles do not decrypt the stored page title" !page_reads 0;
+  let shared = (List.hd blocks).Model.journal in
+  check_eq shared (Some ("Oct 19th, 2026", 20261019));
+  check ~msg:"10k rows reuse the same derived page metadata"
+    (List.for_all (fun (block : Model.block) -> block.page_id = page_id && block.journal == shared) blocks)
 
 let window_conn () =
   new_conn ["block/page"; "block/parent"; "block/order"; "block/created-at";
