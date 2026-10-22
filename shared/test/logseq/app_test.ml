@@ -9611,6 +9611,38 @@ let native_bridge_returns_initial_and_disposal_patch_batches () =
   check ~msg:"the bridge exposes a root node" (Native_bridge.root_node () > 0);
   check ~msg:"disposal emits a patch" (Native_bridge.dispose () <> "")
 
+let native_bridge_preserves_reentrant_flush_batches () =
+  List.iter (fun (os, host) ->
+    let application = ref None in
+    let reentered = ref false in
+    let transport = Native_bridge.backend (Lui_protocol.profile os host) in
+    let backend = {transport with Lui_protocol.apply_batch = (fun batch ->
+      let accepted = transport.apply_batch batch in
+      if not !reentered then begin
+        reentered := true;
+        let app = Option.get !application in
+        let runtime = Lui_app.runtime app in
+        ignore (Lui_runtime.set_prop runtime (Lui_app.root_node app) Lui_protocol.TextValue (Lui_protocol.StringValue "Ready"));
+        ignore (Lui_app.flush app)
+      end;
+      accepted)} in
+    let app = Lui_app.create backend (Model.initial ()) Model.update
+      (fun _ _ _ -> Lui_elements.text ~value:"Starting" []) in
+    application := Some app;
+    Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+      let patch = Native_bridge.start_application app in
+      let batch = Lui_wire.decode_batch patch in
+      check_eq ~msg:"merged batches acknowledge the final generation" batch.generation 2;
+      check ~msg:"the native transport retains the component creation before a reentrant update"
+        (List.exists (function Lui_protocol.CreateNode _ -> true | _ -> false) batch.ops);
+      check ~msg:"the native transport also retains the later property update"
+        (List.exists (function Lui_protocol.SetProp (_, Lui_protocol.TextValue, Lui_protocol.StringValue "Ready") -> true | _ -> false) batch.ops);
+      let index matches = List.find_index matches batch.ops |> Option.get in
+      check ~msg:"component creation precedes updates to that component"
+        (index (function Lui_protocol.CreateNode _ -> true | _ -> false)
+         < index (function Lui_protocol.SetProp (_, Lui_protocol.TextValue, Lui_protocol.StringValue "Ready") -> true | _ -> false))))
+    [Lui_protocol.IOS, Lui_protocol.SwiftUIHost; Lui_protocol.AndroidOS, Lui_protocol.KotlinHost]
+
 let native_bridge_preserves_native_search_query_values () =
   ignore (Native_bridge.initialize 2 2 0);
   let application = Native_bridge.app () in
@@ -10239,6 +10271,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "native bridge preserves reentrant flush batches" native_bridge_preserves_reentrant_flush_batches;
     case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
     case "sidebar-navigation-respects-native-viewport" sidebar_navigation_respects_native_viewport_width;

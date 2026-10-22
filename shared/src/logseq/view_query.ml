@@ -481,7 +481,9 @@ let collection ~render_block model_source raw_source send : t =
             ~accessibility_identifier:("view.scalar." ^ view.id ^ "." ^ string_of_int item.index ^ "." ^ string_of_int index) []
         else
         let property = cell view item attr in
-        button ~text:(jtext (jfield "text" property)) ~text_alignment:`start ~variant:`ghost
+        let value = jtext (jfield "text" property) in
+        let label = jtext (jfield "title" col) ^ ": " ^ (if value = "" then "Empty" else value) in
+        button ~text:value ~label ~text_alignment:`start ~variant:`ghost
           ~width:(if attr = "block/title" then 260 else 170) ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
           ~disabled:(not (jbool (jfield "editable" property)))
           ~accessibility_identifier:("view.cell." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid ^ "." ^ attr)

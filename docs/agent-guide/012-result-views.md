@@ -194,3 +194,16 @@ The native backend resolves theme ancestry through extension parents, reapplies 
 The iOS regression reproduced a full-height dark sheet with system gray pixels, and checks the presented height and actual background color after the fix.
 The shared settings tests verify both native hosts expose the same expandable sheet contract.
 These presentation and theme checks are recorded in the project iOS simulator skill and the reusable iOS development skill.
+
+## Live query type switching regression
+
+The phone's saved type changed correctly, but a table containing missing property values emitted empty buttons without accessible names.
+Apple rejected the entire update batch, leaving the previous List renderer visible.
+Cells now expose their column and displayed value (or Empty) as their accessible name while preserving an empty visual cell.
+The iOS check includes missing values and verifies that switching the current saved view actually replaces the native renderer, then switches back.
+Both shared host tests also exercise type changes on a pushed query destination.
+
+A separate bridge regression reproduced loss of earlier operations when one flush produced multiple batches.
+The bridge now retains all operations in order and acknowledges their final generation, with a fast path for one batch.
+The transport test covers both host profiles and verifies creation precedes the later update.
+The complete core gate now passes 954 tests; the actual mobile core and native UI also switch the phone demo's saved query from List to Table to Gallery successfully.

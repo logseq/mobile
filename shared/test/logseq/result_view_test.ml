@@ -852,7 +852,56 @@ let type_icons_switch_saved_views_and_default_all () =
       check ~msg:"an unsaved collection also exposes a type icon" (find ("view.type." ^ owner ^ ":default") <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let pushed_query_type_changes_refresh_the_visible_renderer () =
+  List.iter (fun backend -> with_runtime (fun session _ _ ->
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let apply response =
+        let projection = match Response_snapshot.decode_response (Json.to_string response) with
+          | Ok value -> value | Error message -> fail message in
+        App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app in
+      App_test.send app (Model.RequestAppNode owner);
+      apply (Rpc_test.dispatch_json session "openNode" (Json.to_string (`Assoc ["uuid", `String owner])));
+      let rec descendants id = id :: List.concat_map descendants (App_test.children host id) in
+      let find identifier = descendants (Lui_app.root_node app) |> List.filter (fun id ->
+        App_test.property_string host id Lui_protocol.AccessibilityIdentifier = identifier) |> List.rev
+        |> function id :: _ -> id | [] -> -1 in
+      List.iter (fun typ ->
+        Gc.full_major ();
+        let option = find ("view.type.option." ^ list_view ^ "." ^ typ) in
+        check ~msg:"the visible pushed query exposes its type action" (option <> -1);
+        App_test.dispatch app (Lui_protocol.Press option); App_test.flush app;
+        let eff = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
+        App_test.send app (Model.DequeueEffect (Model.effect_id eff));
+        let response = Core_effect_test.execute session "result-view"
+          ["text", member "text" (Json.from_string (Native_bridge.encode_effect eff))] in
+        Core_effect_test.success response;
+        apply response;
+        App_test.send app (Model.ResolveEffect (Model.effect_id eff, true, Json.to_string response));
+        App_test.flush app;
+        let id = if typ = "table" then "view.table.scroll." ^ list_view else "view.gallery." ^ list_view in
+        check ~msg:("a saved type must replace the pushed query renderer: " ^ typ) (find id <> -1))
+        ["table"; "gallery"]))) [App_test.ios_backend; App_test.kotlin_backend]
+
+let empty_table_cells_have_accessible_names () =
+  List.iter (fun backend ->
+    let db = Ds.db_with [Ds.Retract (ref_uuid alpha, summary, None)] (fixture ()) in
+    let session, _ = make_session db in
+    ignore (Rpc_test.configure_plain_session session);
+    Q.open_results session;
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
+      let cell = find ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ summary) in
+      check_eq ~msg:"missing properties remain empty cells" (App_test.property_string host cell Lui_protocol.TextValue) "";
+      check_eq ~msg:"empty editable cells retain a meaningful accessible name"
+        (App_test.property_string host cell Lui_protocol.AccessibilityLabel) "Summary: Empty"))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "empty table cells have accessible names" empty_table_cells_have_accessible_names;
+  case "pushed query type changes refresh the visible renderer" pushed_query_type_changes_refresh_the_visible_renderer;
   case "type icons switch saved views and unsaved collections start with All list" type_icons_switch_saved_views_and_default_all;
   case "priority menus use graph choices and edits persist typed references" priority_choices_and_edits_use_the_real_graph;
   case "master filtering sorting and search match all three view scopes" master_conformance;

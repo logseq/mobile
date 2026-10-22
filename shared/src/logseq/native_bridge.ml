@@ -1,14 +1,22 @@
 open Lui_protocol
 
-let latest_patch = ref ""
+let patch_batches : patch_batch list ref = ref []
+
+let take_patch () =
+  match !patch_batches with
+  | [] -> ""
+  | [batch] -> patch_batches := []; Lui_wire.encode_batch batch
+  | latest :: _ as batches ->
+    (* Reentrant flushes can emit several batches. Preserve every operation
+       in order while returning the final generation through the native ABI. *)
+    patch_batches := [];
+    let ops = List.fold_left (fun reversed batch -> List.rev_append batch.ops reversed)
+      [] (List.rev batches) |> List.rev in
+    Lui_wire.encode_batch {generation = latest.generation; ops}
 
 let current_app :
     (Model.logseq_model, Model.logseq_action) Lui_app.reducer_app option ref =
   ref None
-
-let send_patch json =
-  latest_patch := json;
-  true
 
 let operating_system platform_code =
   match platform_code with
@@ -53,18 +61,18 @@ let note_effect_deadlines () =
     if Hashtbl.mem active id then Some deadline else None) effect_deadlines
 
 let flush_event event =
-  latest_patch := "";
+  patch_batches := [];
   ignore (Lui_app.dispatch_event (app ()) event);
   ignore (Lui_app.flush (app ()));
   note_effect_deadlines ();
-  !latest_patch
+  take_patch ()
 
 let flush_action action =
-  latest_patch := "";
+  patch_batches := [];
   ignore (Lui_app.send (app ()) action);
   ignore (Lui_app.flush (app ()));
   note_effect_deadlines ();
-  !latest_patch
+  take_patch ()
 
 let apply_response encoded =
   flush_action
@@ -457,7 +465,7 @@ let backend host_profile =
     backend_profile = host_profile;
     apply_batch =
       (fun batch ->
-         ignore (send_patch (Lui_wire.encode_batch batch));
+         patch_batches := batch :: !patch_batches;
          true);
   }
 
@@ -466,10 +474,10 @@ let start_application application =
   current_app := Some application;
   ignore (Lui_app.start application);
   ignore (Lui_app.flush application);
-  !latest_patch
+  take_patch ()
 
 let initialize platform_code host_code authentication_code =
-  latest_patch := "";
+  patch_batches := [];
   let authentication_state =
     initial_authentication_state authentication_code
   in
@@ -553,10 +561,10 @@ let extension_event node identifier name text value =
   flush_event (ExtensionEvent (node, identifier, name, value_map))
 
 let dispose () =
-  latest_patch := "";
+  patch_batches := [];
   ignore (Lui_app.dispose (app ()));
   current_app := None;
-  !latest_patch
+  take_patch ()
 
 let root_node () = Lui_app.root_node (app ())
 

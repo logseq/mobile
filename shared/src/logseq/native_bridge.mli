@@ -1,5 +1,3 @@
-val send_patch : string -> bool
-
 val operating_system : int -> Lui_protocol.operating_system
 
 val host_kind : int -> Lui_protocol.host_kind

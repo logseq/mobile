@@ -8,12 +8,20 @@ import Vision
     var opened: [String] = []
     var actions: [String] = []
     var viewEdits: [[String: Any]] = []
+    var saveType: ((String, String) throws -> String)?
     func execute(_ effect: LGEffect) async -> LGEffectResolution {
         if effect.kind == "open-node" { opened.append(effect.text) }
         actions.append(effect.kind)
         if effect.kind == "result-view", let data = effect.text.data(using: .utf8),
            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             viewEdits.append(payload)
+            if payload["action"] as? String == "save",
+               let view = payload["viewUuid"] as? String,
+               let type = (payload["config"] as? [String: Any])?["type"] as? String,
+               let saveType {
+                do { return LGEffectResolution(succeeded: true, message: try saveType(view, type)) }
+                catch { return LGEffectResolution(succeeded: false, message: String(describing: error)) }
+            }
         }
         return LGEffectResolution(succeeded: true, message: "", output: .discard)
     }
@@ -25,6 +33,7 @@ import Vision
         var queryError: String?
         var selected: [String] = []
         var includeViews = false
+        var viewTypes: [String: String] = [:]
         func snapshot() throws -> String {
             let results: [[String: Any]] = (0..<resultCount).map { index in
                 ["block": ["uuid": "result-\(index)", "title": "Project result \(index + 1)",
@@ -51,7 +60,7 @@ import Vision
                     result["properties"] = [
                         ["attr": "block/title", "text": "Project result \(index + 1)", "editable": true,
                          "raw": ["type": "string", "value": "Project result \(index + 1)"]],
-                        ["attr": "user.property/Score", "kind": "number", "text": "\(index + 1)", "editable": true,
+                        ["attr": "user.property/Score", "kind": "number", "text": index == 1 ? "" : "\(index + 1)", "editable": true,
                          "raw": ["type": "ref-uuid", "value": String(format: "30000000-0000-4000-8000-%012d", index + 1)]],
                         ["attr": "user.property/Ready", "kind": "checkbox", "text": "true", "editable": true,
                          "raw": ["type": "bool", "value": true]]
@@ -61,7 +70,7 @@ import Vision
                 query["ownerUuid"] = "query-owner"
                 query["featureType"] = "query-result"
                 query["views"] = ["list", "table", "gallery", "broken"].map { type -> [String: Any] in
-                    ["uuid": type, "name": type.capitalized, "type": type == "broken" ? "table" : type,
+                    ["uuid": type, "name": type.capitalized, "type": viewTypes[type] ?? (type == "broken" ? "table" : type),
                      "columns": columns, "rows": type == "broken" ? [] : rows,
                      "error": type == "broken" ? "Invalid view configuration" : NSNull()]
                 }
@@ -76,6 +85,7 @@ import Vision
             return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         }
         let effects = QueryEffects()
+        effects.saveType = { view, type in viewTypes[view] = type; return try snapshot() }
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
         try runtime.applyCoreResponse(snapshot())
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
@@ -273,6 +283,15 @@ import Vision
             effects.viewEdits.contains { ($0["viewUuid"] as? String) == "gallery"
                 && ($0["config"] as? [String: Any])?["type"] as? String == "table" }
         }
+        try await wait("Changing the current view's type must mount its new renderer") {
+            find("view.table.scroll.gallery") != nil && find("view.gallery.gallery") == nil
+        }
+        let changedText = try await capture("query-type-changed-table.png")
+        guard changedText.contains("Name") && changedText.contains("Score") else {
+            throw failure("Changing view type must visibly replace the native gallery: \(changedText)")
+        }
+        try backend.performPress(node: find("view.type.option.gallery.gallery")!)
+        try await wait("Switching back must restore the gallery renderer") { find("view.gallery.gallery") != nil }
         try backend.performTextChange(node: find("view.search.query-owner")!, text: "result 1")
         try await wait("Search must filter gallery cards") { find("view.card.gallery.result-1") == nil }
         try backend.performPress(node: find("view.tab.broken")!)
