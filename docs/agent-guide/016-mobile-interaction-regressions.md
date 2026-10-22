@@ -253,3 +253,10 @@ The view selector opts into leading text alignment and retains native adaptive s
 All six iOS native follow-up checks pass: object pages/alignment, link/image forms, the complete query workflow, actual embed glyph, visible editor focus, and search/link caret focus. Evidence is in `/tmp/logseq-native-menu-final` plus the query workflow rerun above. This follow-up does not establish a fix for the exact TestFlight AttributeGraph crash, which remains open.
 
 The final full core gate passes 1047 tests in 77.289 seconds (`/tmp/logseq-menu-forms-core-final.log`).
+
+
+The expanded Android query/view suite exposed a second upstream validation mismatch: the renderer and shared protocol support button content, but the Android retained tree treated every button as a metadata-only interactive leaf. Exempt buttons/toggle buttons from that leaf-only restriction while retaining it for text fields. A new real-tree regression first fails with the same error as the consumer, then all 12 Android store cases pass (`/tmp/lui-button-labels-android-{red,green}.log`). LUI `4281a516` contains the fix; its Apple and OCaml sources are unchanged from the already validated `ebfc3273` pin.
+
+iPhone build `1792706378` (2.0.2, revision `72ae7c22`, LUI `ebfc3273`) was installed over the existing app and launched; process `24529` was verified alive. It contains the leading view selector, native command-form focus ownership, master embed arrow and block-sized query triangles. The later upstream follow-up changes Android validation/tests only. Evidence: `/tmp/logseq-view-controls-device-{build.log,install.json,launch.json,processes.json}`. Graph data was preserved.
+
+The final rebuilt Android consumer passes all eight query/view instrumentation cases in 33.96 seconds (`/tmp/logseq-query-controls-android-final.log`), including the collapsed-query button label, selector bounds/menu, priority popup, saved views, object pages, table edits, filter/sort sheets, gallery, search and error containment. The upstream store suite passes all 12 cases.
