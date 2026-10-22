@@ -70,12 +70,13 @@ import Vision
                 }
                 return observation.boundingBox
             }
-            let date = try labelRect("Date format")
+            guard recognition.results?.contains(where: { $0.topCandidates(1).first?.string == "Date format" }) != true else {
+                throw failure("Date format must not appear in settings")
+            }
             let spell = try labelRect("Spell check")
             let correction = try labelRect("Auto-correction")
-            guard abs(date.minX - spell.minX) * window.bounds.width <= 3,
-                  abs(date.midY - spell.midY) <= abs(spell.midY - correction.midY) + 3 / window.bounds.height else {
-                throw failure("Date format must align with adjacent native editor settings and retain their row spacing")
+            guard abs(spell.minX - correction.minX) * window.bounds.width <= 3 else {
+                throw failure("Native editor settings must remain aligned")
             }
             func coloredPixels(in rect: CGRect, green: Bool) -> Int {
                 let pixelRect = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
@@ -99,34 +100,17 @@ import Vision
                 let rect = control.convert(control.bounds, to: window)
                 guard coloredPixels(in: rect, green: false) > 100 && coloredPixels(in: rect, green: true) == 0 else { throw failure("Native settings switches must use Logseq teal instead of system green") }
             }
-            for identifier in ["picker.settings.appearance", "picker.settings.language", "picker.settings.date-format"] {
+            for identifier in ["picker.settings.appearance", "picker.settings.language"] {
                 guard let rect = frames[try find(identifier)] else { throw failure("Missing picker frame: " + identifier) }
                 guard coloredPixels(in: rect, green: false) == 0 else { throw failure("Picker value must use text color: " + identifier) }
             }
         }
-        let picker = try find("picker.settings.date-format")
-        guard backend.model(id: try find("settings.date-format.option.yyyy-MM-dd"))?.isChecked == true,
-              let frame = frames[picker], frame.width > 80, frame.maxX < window.bounds.maxX else {
-            throw failure("The date format must show the current graph preference within the settings row")
+        guard backend.rootIDs.flatMap(ids).allSatisfy({
+            backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue != "picker.settings.date-format"
+        }), effects.formats.isEmpty else {
+            throw failure("Hidden date format controls must not retain interactive nodes or emit mutations")
         }
-        let option = try find("settings.date-format.option.dd-MM-yyyy")
-        try backend.performChange(node: option)
-        for _ in 0..<100 {
-            if !effects.formats.isEmpty { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        guard effects.formats.count == 1,
-              let data = effects.formats[0].data(using: .utf8),
-              let payload = try JSONSerialization.jsonObject(with: data) as? [String: String],
-              payload["graphId"] == "settings-colors", payload["format"] == "dd-MM-yyyy" else {
-            throw failure("A date-format choice must reach the graph-scoped mutation boundary")
-        }
-        try runtime.applyCoreResponse(#"{"ok":true,"result":{"selectedGraphId":"settings-colors","graphName":"Settings colors","journalTitleFormat":"dd-MM-yyyy","blocks":[],"outlinerRows":[]}}"#)
-        try await Task.sleep(for: .milliseconds(200))
-        guard backend.model(id: try find("settings.date-format.option.dd-MM-yyyy"))?.isChecked == true else {
-            throw failure("The retained native picker must update from the confirmed graph preference")
-        }
-        print("PASS: native settings retain theme colors and expose graph-scoped date format choices with confirmed updates")
+        print("PASS: native settings retain theme colors and aligned editor controls without date format options")
     }
     static func failure(_ message: String) -> NSError {
         NSError(domain: "SettingsControlColors", code: 1, userInfo: [NSLocalizedDescriptionKey: message])

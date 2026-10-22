@@ -98,22 +98,18 @@ let failed_storage_keeps_the_previous_graph_preference () = R.with_runtime (fun 
     (String_kit.index_of ~sub:"Storage unavailable" ~start:0 (J.to_string response) <> None);
   check_eq (stored_format runtime) before)
 
-let settings_share_native_date_format_choices () =
+let settings_hide_date_format_choices () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
       App_test.send app Model.OpenSettings; App_test.flush app;
       let host = Lui_app.runtime app in
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
-      check ~msg:"both hosts expose an editable date-format preference" (find "picker.settings.date-format" <> -1);
-      let option = find "settings.date-format.option.yyyy-MM-dd" in
-      check ~msg:"format choices use the shared native menu" (option <> -1);
-      App_test.dispatch app (if App_test.node host option = Some Lui_protocol.Radio then Lui_protocol.Change option else Lui_protocol.Press option); App_test.flush app;
-      let effects = (App.model app).pending_effects |> List.map (fun eff -> J.from_string (Native_bridge.encode_effect eff)) in
-      let mutation = List.find_opt (fun eff -> member "kind" eff = `String "set-journal-title-format") effects in
-      check ~msg:"choosing a date format uses the graph mutation boundary" (mutation <> None);
-      let payload = J.from_string (R.text (member "text" (Option.get mutation))) in
-      check_eq (member "graphId" payload) (`String "plain-1");
-      check_eq (member "format" payload) (`String "yyyy-MM-dd")))) [App_test.ios_backend; App_test.kotlin_backend]
+      check_eq ~msg:"date format is not exposed in native settings"
+        (find "picker.settings.date-format") (-1);
+      check_eq ~msg:"hidden format options must not remain interactive"
+        (find "settings.date-format.option.yyyy-MM-dd") (-1);
+      check ~msg:"editor settings remain available" (find "switch.settings.spell-check" <> -1))))
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let open_destinations_refresh_without_reopening () = R.with_runtime (fun _ runtime _ ->
   let day = 20261023 in
@@ -217,5 +213,5 @@ let cases = [
   case "invalid and stale date preferences never write" invalid_and_stale_changes_never_write;
   case "all journal creation paths use the chosen format" all_journal_creation_paths_use_the_preference;
   case "failed storage preserves the graph preference" failed_storage_keeps_the_previous_graph_preference;
-  case "native settings share graph date format choices" settings_share_native_date_format_choices;
+  case "native settings hide date format choices" settings_hide_date_format_choices;
 ]

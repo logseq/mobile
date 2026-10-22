@@ -12,30 +12,6 @@ let with_native_control_tint role (control : t) : t =
      tweak
    | _ -> control context parent
 
-let settings_date_format_control context model_source send : t =
-  let formats = List.sort String.compare Journal.built_in_journal_title_formatters in
-  let selected format = Signal.map (fun (model : Model.logseq_model) -> model.journal_title_format = format) model_source in
-  let choose format _ = ignore (send (Model.ChooseJournalTitleFormat format)) in
-  if Lui_ui.host context <> KotlinHost then
-    radio_group ~label:"Date format" ~style_class:"menu"
-      ~accessibility_identifier:"picker.settings.date-format"
-      (List.map (fun format -> radio ~text:format ~checked_signal:(selected format)
-        ~accessibility_identifier:("settings.date-format.option." ^ format)
-        ~on_change:(choose format) []) formats)
-    |> with_native_control_tint "picker"
-  else row ~min_height:44 ~padding_horizontal:16 ~cross:`center
-    [text ~value:"Date format" []; spacer [];
-     menu ~label:"Date format" ~foreground:"secondary"
-       ~text_signal:(Signal.map (fun (model : Model.logseq_model) -> model.journal_title_format) model_source)
-       ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.selected_graph_id = None) model_source)
-       ~accessibility_identifier:"picker.settings.date-format"
-       (List.map (fun format ->
-         menu_item ~text:format
-           ~selected_signal:(Signal.map (fun (model : Model.logseq_model) -> model.journal_title_format = format) model_source)
-           ~accessibility_identifier:("settings.date-format.option." ^ format)
-           ~on_press:(fun _ -> ignore (send (Model.ChooseJournalTitleFormat format))) [])
-         formats)]
-
 let settings_language_choice_radio model_source
     (choice_source : Model.settings_language_choice Signal.signal) send :
     radio_el =
@@ -779,7 +755,6 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.editor"
             ~value:"Editor" [];
-          settings_date_format_control context model_source send;
           settings_editor_card context
             (Signal.map View_base.settings_spell_check model_source)
             (Signal.map View_base.settings_auto_correction model_source)
@@ -907,7 +882,6 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ];
       heading ~value:"Editor" ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.editor" [];
-      settings_date_format_control context model_source send;
       with_native_control_tint "switch" (toggle
         ~checked_signal:
           (Signal.map View_base.settings_spell_check model_source)
