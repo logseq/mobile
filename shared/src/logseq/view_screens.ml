@@ -588,8 +588,12 @@ let active_overflow_menu model_source send : t =
          (menu_item ~text:"Share" ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
             []);
-       if_ ~test:page_actions_source
+       if_ ~test:(Signal.map (fun current ->
+           match Model.active_page current with
+           | Some page -> Model.page_can_delete current page.uuid
+           | None -> false) model_source)
          (menu_item ~text:"Delete" ~variant:`destructive
+            ~accessibility_identifier:"button.page.delete"
             ?icon:(item_icon "toolbar-delete")
             ~on_press:(press send Model.RequestDeleteActivePage)
             []);
@@ -646,7 +650,8 @@ let native_node_destination ~source:title_source content : t =
 let native_node_screen (context : Lui_ui.ui_context) model_source
     ~source:route_source send : t =
   let route_model_source =
-    Signal.map2 View_base.node_route_model model_source route_source
+    Signal.map2 (fun current (route, active) ->
+      View_base.node_route_model ~active current route) model_source route_source
   in
   if Lui_ui.host context = KotlinHost then
     box ~grow:1.0 ~background:"background"
@@ -661,8 +666,8 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
            route_model_source)
       (column ~gap:0 [
         View_outliner.node_screen context route_model_source send;
-        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) (route : Model.node_projection) ->
-          route.node_outliner_selected_block_ids <> []
+        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) ((route : Model.node_projection), active) ->
+          active && route.node_outliner_selected_block_ids <> []
           && Option.fold ~none:false ~some:(fun (active : Model.node_projection) -> active.node_uuid = route.node_uuid)
             (Model.last_opt current.node_routes)) model_source route_source)
           (View_outliner.outliner_selection_toolbar context route_model_source send);
@@ -679,7 +684,8 @@ let native_node_stack context model_source ~source:routes_source send =
     ~cmp:compare
     ~mount:(fun visit_source ->
       native_node_screen context model_source
-        ~source:(reactive (fun (_, route) -> route) visit_source) send)
+        ~source:(Signal.map2 (fun routes (index, route) ->
+          (route, index = List.length routes - 1)) routes_source visit_source) send)
 
 let native_search_view (_context : Lui_ui.ui_context) model_source send :
     t =

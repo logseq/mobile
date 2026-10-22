@@ -31,7 +31,7 @@ let render db ~owner ~encode_block =
     let rename = if Node_title.can_rename_page db id then
       Result_view.property_json ~include_candidates:false db ~owner ~attr:"block/title" ~encode_block
       else `Null in
-    Ok (`Assoc ["ownerUuid", `String owner; "rename", rename; "properties", `List (List.map (fun attr ->
+    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id); "rename", rename; "properties", `List (List.map (fun attr ->
       Result_view.property_json db ~owner ~attr ~encode_block) attrs)])
 
 let mutation db ~now ~fresh_uuid input =

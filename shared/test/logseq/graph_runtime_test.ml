@@ -287,6 +287,23 @@ let page_deletion_is_optimistic_durable_and_rejects_built_ins () =
          | _ -> false);
       check (not (is_ok (Runtime.delete_page current "recycle-page" "built-in" 101))))
 
+let protected_page_deletion_never_stages_mutations () =
+  List.iter (fun (label, protection) -> with_store (fun path ->
+    let database = Ds.db_with ([
+      add 20 "block/uuid" (Ds.Uuid "recycle-page");
+      add 20 "block/title" (Ds.String "Recycle");
+      add 20 "block/name" (Ds.String "recycle");
+      add 20 "logseq.property/built-in?" (Ds.Bool true)
+    ] @ protection) (base_db "Text") in
+    let current = Runtime.create path 42 (Ds.conn_from_db database) Runtime.default_options in
+    check ~msg:(label ^ " cannot be deleted") (not (is_ok (Runtime.delete_page current "page" "protected-delete" 100)));
+    check_eq ~msg:"rejected deletion does not enqueue a durable operation" (Runtime.pending_operations current) [];
+    check_eq ~msg:"rejected deletion leaves the page unchanged" (Graph_read.value (Runtime.db current) 1 "logseq.property/deleted-at") None))
+    ["built-in flag", [add 1 "logseq.property/built-in?" (Ds.Bool true)];
+     "hidden system page", [add 1 "logseq.property/hide?" (Ds.Bool true)];
+     "built-in class without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.class/Protected")];
+     "built-in property without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.property/protected-test")]]
+
 let flashcard_review_is_one_atomic_millisecond_operation () =
   with_store (fun path ->
       let now = 1776000000000 in
@@ -1871,6 +1888,7 @@ let cases =
       projected_readers_share_offline_edits_without_changing_authoritative_data;
     case "favorites update sidebar and encode the link transaction"
       favorites_update_sidebar_and_encode_the_link_transaction;
+    case "protected deletions never stage mutations" protected_page_deletion_never_stages_mutations;
     case "page deletion is optimistic durable and rejects built-ins"
       page_deletion_is_optimistic_durable_and_rejects_built_ins;
     case "flashcard review is one atomic millisecond operation"

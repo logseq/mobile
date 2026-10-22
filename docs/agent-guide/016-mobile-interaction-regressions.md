@@ -202,3 +202,35 @@ A separately signed `com.logseq.logseq.RuntimeCheck` app runs mock snapshots in 
 The test container's diagnostic log confirms `UIApplicationWillResignActiveNotification` immediately after the search keyboard appears (`/tmp/logseq-device-runtime-check-interaction.log`), without establishing why it resigned. After copying this log, the independently installed RuntimeCheck app was removed (`/tmp/logseq-device-runtime-check-cleanup.json`); the regular Logseq installation/container were not modified. Both experimental source replacements are fully restored, and their final simulator rebuilds succeeded.
 
 Final checks against the restored current simulator pass twelve search-result push/back cycles and all four cold/late app/search restoration cases, with no cycle warning: `/tmp/logseq-crash-audit-current-search.log` and `/tmp/logseq-crash-audit-current-restoration.log`. The runner also passes Python compilation and `git diff --check`. This audit changes test diagnostics/documentation only; the preceding 1042-test core gate and installed application code are unchanged.
+
+
+### Visible editor ownership and native search surface
+
+The user-device interaction log contains two different `outliner-editor` protocol nodes and two attached UITextViews for the same block. Both repeatedly become first responder, leaving the visible editor without a cursor and restoring another editor's end-of-block position. This is an ownership bug across retained panes, not a reason to force the native caret to the latest core offset.
+
+The historical journal projection only cleared editing while `node_routes` was nonempty. `1c69e277` introduced `navigation_root_model` for retained titles, and `7634b389` applied that projection to the actual iOS root content: it erased the route/search state before the journal projection could check it. In addition, a selected journal page and the retained journal could both match the same editing UUID. Inactive cached node routes could also retain their editor state.
+
+Decide root interaction ownership before clearing navigation state, clear interaction state in the retained journal unless it is the visible journal, and permit only the active visit in each native route stack to project editing/selection/autocomplete. Keep retained rows and scroll identities. No native caret-reset workaround is introduced.
+
+- The new shared integration case fails before the fix with duplicate editors and passes for both iOS and Android through journals, selected journal pages and nested routes. The full gate at that stage passes 1043 tests in 66.493s.
+- `outliner-editor-focus.swift` fails before the fix with two editors after selecting a journal page. Afterward it preserves one first responder and native selections at UTF-16 offsets 2, 7 and 0 across stale core acknowledgements. Evidence: `/tmp/logseq-editor-focus-{red,green}.log` and `/tmp/logseq-editor-focus-core-{red,green}.log`.
+- `outliner-search-editor-focus.swift` opens an actual search result, taps its block to edit, then follows its real `open-node` row event and repeats editing. The exact build-18 implementation fails with two editors on the first search destination; the current implementation passes both destinations and all caret positions. The nested test uses a row link event, not the external host's app-navigation deep-link action. Evidence: `/tmp/logseq-search-editor-focus-{old,green}.log`.
+- Four Android native completion/paste/failure-recovery checks pass against the rebuilt app: `/tmp/logseq-editor-focus-android-checks.log`.
+
+The inline result-search fill used SwiftUI's `.quaternary` foreground hierarchy instead of an app surface token. LUI `df9b11ce` resolves the semantic surface with a system-fill fallback. Native screenshot pixel checks fail on the previous gray fill and pass for light/dark, focused/unfocused and app appearance overriding the system theme. The final pinned consumer query/view workflow also passes (`/tmp/logseq-search-surface-red.log`, `/tmp/logseq-search-surface-green.log`, `/tmp/logseq-query-search-final.log`). Upstream PR 258 is updated. Temporary cached-checkout substitutions were restored before resolving the real new pin.
+
+### Built-in deletion and sidebar icon follow-up
+
+Expose a core `canDelete` capability with node properties, hide Delete in protected page menus on both platforms, and reject a protected or stale confirmation at the shared model boundary. Reuse the core built-in classifier for deletion as well as title editing, including internal class/property identifiers without an explicit built-in flag and hidden system pages. Existing ordinary-page deletion remains available. Focused tests first fail on the missing capability and unprotected internal identifier, then pass with no queued operation or deleted-at mutation for protected pages (`/tmp/logseq-builtin-delete-{red,green}.log`).
+
+Sidebar custom monochrome node icons now use the same subdued native foreground as default page icons. The shared node-icon component carries a presentation-only muted property; page titles and outliner icons retain their normal presentation.
+
+### Full build-18 crash controls
+
+A detached full `ce301717` consumer and its exact Swift LUI pin `e91ee491` build successfully. Its OCaml LUI source is identical to the build-18 opam pin. Unlike the earlier file substitutions, this exercises the complete old core/consumer/backend combination. It passes twelve search push/back cycles, all four cold/late restoration cases and the new native transition-hydration stress check on iOS 26. The latter submits 42 snapshots during animated push/pop transitions; this is not a claim that every intermediate snapshot was individually rendered. Logs: `/tmp/logseq-build18-full-{search,restoration,hydration}.log`. The corresponding device core/Swift library build also succeeds, but was not installed over the user's app.
+
+Archive metadata and the original binary's build-version command confirm SDK 26.0 for build 18, matching this machine's Xcode 26.0 SDK; AppStoreTools 27B47 is not its linked SDK. Across the three retrieved crash reports, AttributeGraph's allocation fault follows an invalid free-list offset. This narrows the failure signature but does not identify who corrupted it. No exact EXC_BAD_ACCESS is reproduced, and the specific iOS 27.0.1 TestFlight crash remains unresolved.
+
+The combined focus, deletion and sidebar changes pass the full core gate: `/tmp/logseq-focus-builtin-core-final.log`, 1045 tests in 66.323s. This includes matching iOS/Android node-icon extension fingerprints, protected delete capability/menu checks and unchanged ordinary-page deletion.
+
+The final rebuilt iOS simulator passes all six native checks: visible editor ownership, search-result/link caret taps, protected page menu/rename failure-retry, sidebar node icons, editor/image position retention and nested/search/Recent selection actions. Logs use `/tmp/logseq-focus-final-<test-name>.log`. The sidebar screenshot was inspected: custom monochrome glyphs match the native document/control secondary gray while content titles retain their normal color.

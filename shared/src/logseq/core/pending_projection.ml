@@ -771,10 +771,7 @@ let rec compile db (intent : Ops.pending_intent) =
             = Some recycle_eid
        then Ok []
        else if
-         bool_value (one_value db reference "logseq.property/built-in?")
-         = Some true
-         || bool_value (one_value db reference "logseq.property/hide?")
-            = Some true
+         not (Node_title.can_delete db page_eid)
        then Error "Built-in page cannot be deleted"
        else
          let parent =

@@ -305,9 +305,13 @@ import Vision
         func fields(in view: UIView) -> [UITextField] {
             ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap { fields(in: $0) }
         }
-        for style in [UIUserInterfaceStyle.light, .dark] {
+        for (mode, style, dark) in [
+            ("system", UIUserInterfaceStyle.light, false), ("system", .dark, true),
+            ("light", .dark, false), ("dark", .light, true)
+        ] {
+            try runtime.applyHostUpdate(kind: "settings", payload: "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"test\",\"revision\":\"test\"}")
             window.overrideUserInterfaceStyle = style
-            _ = try await capture(style == .dark ? "query-search-dark.png" : "query-search-light.png")
+            _ = try await capture("query-search-\(mode)-\(style == .dark ? "dark" : "light").png")
             guard let field = fields(in: window.rootViewController!.view).first(where: { $0.placeholder == "Search results" }) else {
                 throw failure("Search must display a native input")
             }
@@ -318,7 +322,27 @@ import Vision
             guard field.borderStyle == .none else {
                 throw failure("An inline search uses one native search surface, without a separate rounded black input")
             }
+            for focused in [false, true] {
+                if focused { field.becomeFirstResponder() } else { field.resignFirstResponder() }
+                try await Task.sleep(for: .milliseconds(200))
+                let frame = field.convert(field.bounds, to: window)
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let pixel = CGPoint(x: frame.maxX - 12, y: frame.midY)
+                var rgba = [UInt8](repeating: 0, count: 4)
+                let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                context.translateBy(x: -pixel.x, y: pixel.y - window.bounds.height + 1)
+                context.draw(image.cgImage!, in: window.bounds)
+                let expected = dark ? [25, 57, 77] : [248, 248, 248]
+                guard zip(rgba.prefix(3), expected).allSatisfy({ abs(Int($0.0) - $0.1) <= 3 }) else {
+                    try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("query-search-wrong-color.png"))
+                    throw failure("Search must use the theme surface in \(mode)/\(style.rawValue), focused=\(focused): \(rgba), expected \(expected)")
+                }
+            }
         }
+        try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}"#)
         try backend.performPress(node: find("view.type.option.gallery.table")!)
         try await wait("The type icon must save the active view's type") {
             effects.viewEdits.contains { ($0["viewUuid"] as? String) == "gallery"

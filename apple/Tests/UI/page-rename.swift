@@ -24,12 +24,13 @@ import UIKit
         var title = "Original page"
         var graph = "rename-check"
         var canRename = true
+        var canDelete = true
         func snapshot() throws -> String {
             let property: [String: Any] = ["attr": "block/title", "title": "Name", "kind": "string",
                 "text": title, "editable": true, "raw": ["type": "string", "value": title]]
             let result: [String: Any] = ["selectedGraphId": graph, "graphName": graph,
                 "selectedPage": ["uuid": "page", "title": title], "outlinerRows": [],
-                "nodeProperties": ["ownerUuid": "page", "properties": [], "rename": canRename ? property as Any : NSNull()]]
+                "nodeProperties": ["ownerUuid": "page", "properties": [], "canDelete": canDelete, "rename": canRename ? property as Any : NSNull()]]
             return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         }
         let effects = RenameEffects()
@@ -65,7 +66,7 @@ import UIKit
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(name))
         }
         let editor = "page.rename.page"
-        try await wait("Ordinary pages offer Rename page") { find("button.page.rename") != nil }
+        try await wait("Ordinary pages offer Rename page and Delete") { find("button.page.rename") != nil && find("button.page.delete") != nil }
         try backend.performPress(node: find("button.page.rename")!)
         try await wait("Rename presents a native sheet") { window.rootViewController?.presentedViewController != nil && find("view.edit.value." + editor) != nil }
         try await capture("page-rename-editor.png")
@@ -89,9 +90,11 @@ import UIKit
         try await wait("Native dismissal finishes") { window.rootViewController?.presentedViewController == nil }
         try await capture("page-renamed.png")
         canRename = false
+        canDelete = false
         try runtime.applyCoreResponse(snapshot())
-        try await wait("Protected pages do not expose Rename page") { find("button.page.rename") == nil }
+        try await wait("Built-in pages expose neither Rename page nor Delete") { find("button.page.rename") == nil && find("button.page.delete") == nil }
         canRename = true
+        canDelete = true
         try runtime.applyCoreResponse(snapshot())
         try await wait("Returning to an ordinary page restores Rename page") { find("button.page.rename") != nil }
         try backend.performPress(node: find("button.page.rename")!)

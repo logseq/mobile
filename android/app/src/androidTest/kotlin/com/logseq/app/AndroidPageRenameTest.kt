@@ -42,7 +42,7 @@ class AndroidPageRenameTest {
         return JSONObject().put("ok", true).put("result", JSONObject().put("selectedGraphId", graph)
             .put("graphName", graph).put("selectedPage", JSONObject().put("uuid", "page").put("title", title))
             .put("outlinerRows", JSONArray()).put("nodeProperties", JSONObject().put("ownerUuid", "page")
-                .put("properties", JSONArray()).put("rename", if (rename) property else JSONObject.NULL))).toString()
+                .put("properties", JSONArray()).put("canDelete", rename).put("rename", if (rename) property else JSONObject.NULL))).toString()
     }
 
     private fun apply(title: String, rename: Boolean = true, graph: String = "rename-check") {
@@ -104,6 +104,7 @@ class AndroidPageRenameTest {
         ui.onNodeWithTag("button.overflow-menu").performClick()
         ui.onNodeWithText("Share").assertIsDisplayed()
         ui.onNodeWithTag("button.page.rename").assertDoesNotExist()
+        ui.onNodeWithText("Delete").assertDoesNotExist()
         pressBack()
         ui.runOnIdle { apply("Renamed page") }
         ui.onNodeWithTag("button.overflow-menu").performClick()

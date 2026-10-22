@@ -1,5 +1,5 @@
 val node_icon : Model.logseq_model -> string -> string
-val node_icon_view : size:int -> string Signal.signal -> Lui_elements.t
+val node_icon_view : ?muted:bool -> size:int -> string Signal.signal -> Lui_elements.t
 val string_wire_value : string -> Lui_protocol.wire_value
 val int_wire_value : int -> Lui_protocol.wire_value
 val bool_wire_value : bool -> Lui_protocol.wire_value
@@ -354,7 +354,7 @@ val selected_page_title : Model.logseq_model -> string
 val navigation_root_model : Model.logseq_model -> Model.logseq_model
 val journal_navigation_model : Model.logseq_model -> Model.logseq_model
 val node_route_model :
-  Model.logseq_model -> Model.node_projection -> Model.logseq_model
+  active:bool -> Model.logseq_model -> Model.node_projection -> Model.logseq_model
 val app_navigation_depth : Model.logseq_model -> int
 val app_back_depth : Model.logseq_model -> int
 val search_navigation_depth : Model.logseq_model -> int

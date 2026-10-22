@@ -1409,6 +1409,16 @@ let active_page (current : logseq_model) =
        | None -> None)
   end
 
+let page_can_delete (current : logseq_model) uuid =
+  let raw = match List.find_opt (fun (route : node_projection) -> route.node_uuid = uuid) current.node_routes with
+    | Some route -> route.node_properties_json
+    | None -> if Option.fold ~none:false ~some:(fun (page : sidebar_page) -> page.uuid = uuid) current.selected_page
+      then current.properties_json else "" in
+  match (try Yojson.Basic.from_string raw with _ -> `Null) with
+  | `Assoc fields when List.assoc_opt "ownerUuid" fields = Some (`String uuid) ->
+    List.assoc_opt "canDelete" fields <> Some (`Bool false)
+  | _ -> true
+
 let page_is_favorite_ (current : logseq_model) uuid =
   List.exists (fun (page : sidebar_page) -> page.uuid = uuid)
     current.favorites
@@ -2716,17 +2726,19 @@ let rec update (current : logseq_model) action =
      | None -> current)
   | RequestDeleteActivePage ->
     (match active_page current with
-     | Some page ->
+     | Some page when page_can_delete current page.uuid ->
        {
          current with
          connection_menu_open = false;
          pending_page_deletion = Some page;
        }
-     | None -> current)
+     | _ -> current)
   | CancelDeleteActivePage ->
     { current with pending_page_deletion = None }
   | ConfirmDeleteActivePage ->
     (match current.pending_page_deletion with
+     | Some page when not (page_can_delete current page.uuid) ->
+       { current with pending_page_deletion = None }
      | Some page ->
        let updated = { current with pending_page_deletion = None } in
        let delete_id = updated.next_effect_id in

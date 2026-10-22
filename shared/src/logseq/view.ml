@@ -108,7 +108,7 @@ let node_icon_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "node-icon" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] false []
-    [property "payload" StringScalar true None; property "size" IntScalar true None] []
+    [property "payload" StringScalar true None; property "size" IntScalar true None; property "muted" BoolScalar true None] []
 
 let outliner_block_row_schema () =
   let open Lui_protocol in

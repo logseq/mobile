@@ -6427,6 +6427,43 @@ let kotlin_selected_pages_retain_the_hidden_journal_pane () =
   let list = descendant_with_identifier renderer journal "list.outliner" in
   check ~msg:"the retained journal is not placed or interactive" (not (property_bool renderer list Lui_protocol.Selected))
 
+let retained_panes_mount_only_the_visible_editor () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    let row = journal_outline_row "shared-block" "journal-page" "Hello world" "Today" 20261023 0 in
+    let editing = { Model.editing_uuid = "shared-block"; editing_title = "Hello world"; caret_utf16_offset = 5 } in
+    let projection sidebar routes =
+      { (empty_core_projection ()) with
+        graph_name = Some "Work"; selected_graph_id = Some "test-graph";
+        sidebar; outliner_rows = [row]; journal_outliner_rows = [row];
+        node_routes = routes; projection_outliner_editing = Some editing }
+    in
+    let editor_count () =
+      Hashtbl.fold (fun _ identifier count ->
+        if identifier = "outliner-editor" then count + 1 else count)
+        (Lui_app.runtime application).Lui_runtime.runtime_extension_nodes 0
+    in
+    start application;
+    send application (Model.ApplyCoreSnapshot (projection (empty_sidebar_projection ()) []));
+    flush application;
+    check_eq ~msg:"the visible journal owns exactly one native editor" (editor_count ()) 1;
+    let sidebar = { (empty_sidebar_projection ()) with Model.selected_page = Some { Model.uuid = "journal-page"; title = "Today" } } in
+    send application (Model.ApplyCoreSnapshot (projection sidebar []));
+    flush application;
+    check_eq ~msg:"opening a journal as a page must not focus a hidden duplicate editor" (editor_count ()) 1;
+    send application (Model.RequestAppNode "journal-page");
+    let route = { (node_projection "journal-page" "journal-page" "Today" [] []) with
+      Model.node_outliner_rows = [row]; node_outliner_editing = Some editing } in
+    send application (Model.ApplyCoreSnapshot (projection sidebar [route]));
+    flush application;
+    check_eq ~msg:"a pushed page owns the editor while its retained root is read-only" (editor_count ()) 1;
+    send application (Model.RequestAppNode "shared-block");
+    let child = {route with Model.node_uuid = "shared-block"} in
+    send application (Model.ApplyCoreSnapshot (projection sidebar [route; child]));
+    flush application;
+    check_eq ~msg:"only the active route may mount the shared block's editor" (editor_count ()) 1)
+    [ios_backend (); kotlin_backend ()]
+
 let kotlin_selected_page_navigation_renders_the_opened_node () =
   let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
@@ -10512,6 +10549,7 @@ let cases =
     case "kotlin-navigation-and-search-own-composed-standard-children" kotlin_navigation_and_search_own_composed_standard_children;
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
     case "kotlin-selected-pages-retain-the-hidden-journal-pane" kotlin_selected_pages_retain_the_hidden_journal_pane;
+    case "retained-panes-mount-only-the-visible-editor" retained_panes_mount_only_the_visible_editor;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;

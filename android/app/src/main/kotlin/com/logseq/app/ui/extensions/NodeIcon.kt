@@ -34,16 +34,17 @@ private object NodeIconAssets {
 
 internal fun LuiExtensionRegistry.registerNodeIcon() {
     register("node-icon",
-        "lui-extension-v1|9:node-icon|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:4:size:int:required:none,7:payload:string:required:none|events:",
+        "lui-extension-v1|9:node-icon|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:4:size:int:required:none,5:muted:bool:required:none,7:payload:string:required:none|events:",
         properties = listOf(
             LuiExtensionProperty("payload", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("size", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("muted", LuiExtensionValueKind.BOOLEAN, required = true),
         ), events = emptyList(),
-    ) { NodeIcon(string("payload"), int("size") ?: 20) }
+    ) { NodeIcon(string("payload"), int("size") ?: 20, bool("muted") == true) }
 }
 
 @Composable
-private fun NodeIcon(encoded: String?, size: Int) {
+private fun NodeIcon(encoded: String?, size: Int, muted: Boolean) {
     val context = LocalContext.current
     val catalog = remember { NodeIconAssets.get(context) }
     val icon = remember(encoded) { runCatching { JSONObject(encoded ?: "{}") }.getOrDefault(JSONObject()) }
@@ -55,7 +56,7 @@ private fun NodeIcon(encoded: String?, size: Int) {
         if (skins != null && skins.length() > 0) skins.optString((icon.optInt("skin", 1) - 1).coerceIn(0, skins.length() - 1))
         else if (id.codePoints().anyMatch { it > 0x2000 }) id else ""
     } else glyph?.let { String(Character.toChars(it.getInt(0))) }.orEmpty()
-    val color = remember(icon.optString("color")) {
+    val color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else remember(icon.optString("color")) {
         runCatching { Color(android.graphics.Color.parseColor(icon.getString("color"))) }.getOrNull()
     } ?: MaterialTheme.colorScheme.onSurface
     Box(Modifier.size(size.dp), contentAlignment = Alignment.Center) {

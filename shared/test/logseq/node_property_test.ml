@@ -346,6 +346,36 @@ let page_rename_updates_lookup_search_and_references () =
     let protected_session, _ = R.make_session protected in
     check_eq ~msg:"built-in pages do not expose Rename page" (member "rename" (member "nodeProperties" (result (read protected_session Q.page)))) `Null)
 
+let builtin_pages_hide_delete_and_reject_deletion_requests () =
+  let base = R.fixture () in
+  List.iter (fun (label, additions, allowed) ->
+    let db = Ds.db_with additions base in
+    let session, _ = R.make_session db in
+    let properties = member "nodeProperties" (result (read session Q.page)) in
+    check_eq ~msg:(label ^ " projects delete capability") (member "canDelete" properties) (`Bool allowed);
+    List.iter (fun backend ->
+      let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+        "selectedGraphId", `String "plain-1";
+        "selectedPage", `Assoc ["uuid", `String Q.page; "title", `String "Workspace"];
+        "nodeProperties", properties; "outlinerRows", `List []]]) in
+      Q.with_ui backend response (fun app ->
+        let host = Lui_app.runtime app in
+        let item = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.page.delete" in
+        check_eq ~msg:(label ^ " menu delete visibility") (item <> -1) allowed;
+        let requested = Model.update (App.model app) Model.RequestDeleteActivePage in
+        check_eq ~msg:(label ^ " cannot open a protected delete confirmation")
+          (requested.pending_page_deletion <> None) allowed;
+        if not allowed then (
+          let stale = { requested with Model.pending_page_deletion = Some {Model.uuid = Q.page; title = "Workspace"} } in
+          let confirmed = Model.update stale Model.ConfirmDeleteActivePage in
+          check ~msg:"a stale confirmation cannot enqueue a protected deletion"
+            (not (List.exists (function Model.DeletePageEffect _ -> true | _ -> false) confirmed.pending_effects)))))
+      [App_test.ios_backend; App_test.kotlin_backend])
+    ["ordinary page", [], true;
+     "built-in page", [put Q.page "logseq.property/built-in?" (Ds.Bool true)], false;
+     "built-in property without flag", [put Q.page "db/ident" (Ds.Keyword "logseq.property/protected-test")], false;
+     "hidden system page", [put Q.page "logseq.property/hide?" (Ds.Bool true)], false]
+
 let native_page_rename_uses_shared_editor () =
   R.with_runtime (fun session _ _ ->
     let node_properties = member "nodeProperties" (result (read session Q.page)) in
@@ -378,6 +408,7 @@ let native_page_rename_uses_shared_editor () =
       [App_test.ios_backend; App_test.kotlin_backend])
 
 let cases = [
+  case "built-in page menus hide Delete and reject stale requests" builtin_pages_hide_delete_and_reject_deletion_requests;
   case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
   case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;
   case "page rename updates lookup, live search, references and sync" page_rename_updates_lookup_search_and_references;
