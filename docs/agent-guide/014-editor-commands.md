@@ -93,3 +93,11 @@ YouTube timestamp insertion needs the active player position when available and 
 - Placeholders are hidden during editing, keep empty journal headings, and share the new empty block's bullet coordinates.
 - Android grouped completion buttons retain a fixed height in their vertical scroll container. Native command, page, tag and paste checks pass.
 - The full core gate passes 996 cases; the Name cell editor omits Clear value while other properties retain it.
+
+## Compact outliner follow-up
+
+- Reproduced the parent/child gap: the disclosure's 44-point target was participating in row height. It now overlays the first line on iOS; Android uses its compact visual cell with the platform's expanded 48-point touch target.
+- The disclosure glyph sits near the trailing edge. A single-line parent and leaf both measure 28.3 points on iOS.
+- Task-date properties start at the block text edge, including nesting, task status and priority. The upstream LUI fast-container path ignored individual edge padding; PR https://github.com/logseq/lui/pull/257 fixes the renderer, and the Apple dependency is pinned to that fix.
+- Scheduled and Deadline use icons only in compact outliner metadata. Page and zoomed block property panels use ordinary text labels through the same renderer.
+- Validation: native iOS disclosure, property alignment and container-padding checks; eight Android spacing/touch-target checks; the complete native core gate passes 996 cases.

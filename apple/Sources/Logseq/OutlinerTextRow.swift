@@ -111,6 +111,11 @@ struct OutlinerTextRow: UIViewRepresentable {
         status.showsMenuAsPrimaryAction = true
         status.preferredMenuElementOrder = .fixed
         status.accessibilityIdentifier = "button.block-task-status"
+        disclosure.contentHorizontalAlignment = .right
+        var disclosureConfiguration = UIButton.Configuration.plain()
+        disclosureConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 6)
+        disclosureConfiguration.baseForegroundColor = .secondaryLabel
+        disclosure.configuration = disclosureConfiguration
         disclosure.addTarget(self, action: #selector(collapse), for: .touchUpInside)
         failure.text = String(localized: "Sync failed")
         failure.textColor = .systemRed
@@ -276,7 +281,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             status.frame = CGRect(x: inset + iconLeading, y: 2, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
             priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
-            disclosure.frame = CGRect(x: width - trailing, y: 0, width: 44, height: 44)
+            disclosure.frame = CGRect(x: width - trailing, y: -8, width: 44, height: 44)
         }
         if !tags.isEmpty {
             var x = leading
@@ -292,7 +297,11 @@ struct OutlinerTextRow: UIViewRepresentable {
             if apply { failure.frame = CGRect(x: leading, y: height, width: bodyWidth, height: size.height) }
             height += size.height + 2
         }
-        return row.hasChildren ? max(44, height) : height
+        return height
+    }
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        super.point(inside: point, with: event)
+            || (!disclosure.isHidden && disclosure.frame.contains(point))
     }
     override func sizeThatFits(_ size: CGSize) -> CGSize { CGSize(width: size.width, height: layout(width: size.width, apply: false)) }
     override func layoutSubviews() {

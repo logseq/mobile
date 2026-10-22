@@ -528,6 +528,23 @@ let task_dates_are_visible_and_editable_in_the_outline () =
         check ~msg:"date editor has Cancel" (cancel <> -1);
         App_test.dispatch app (Lui_protocol.Press cancel); App_test.flush app)
         ["logseq.property/scheduled"; "logseq.property/deadline"]);
+    ignore (Q.dispatch session "openNode" (Yojson.Basic.to_string (`Assoc ["uuid", `String Q.alpha])));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app (Model.RequestAppNode Q.alpha);
+      let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+        | Ok value -> value | Error message -> fail message in
+      App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+      let host = Lui_app.runtime app in
+      let screen = App_test.descendant_with_identifier host (Lui_app.root_node app) "screen.node" in
+      let find id = App_test.descendant_with_identifier host screen id in
+      let expand = find ("properties.expand." ^ Q.alpha) in
+      if expand <> -1 then (App_test.dispatch app (Lui_protocol.Press expand); App_test.flush app);
+      List.iter (fun (attr, title) ->
+        let label = find ("property.label." ^ Q.alpha ^ "." ^ attr) in
+        check ~msg:"zoomed task dates use ordinary property labels" (label <> -1);
+        check_eq ~msg:"zoomed task date key is text rather than an icon" (App_test.node host label) (Some Lui_protocol.Text);
+        check_eq (App_test.property_string host label Lui_protocol.TextValue) title)
+        ["logseq.property/scheduled", "Scheduled"; "logseq.property/deadline", "Deadline"]);
     check ~msg:"displaying task dates does not add extra semantic writes" (List.length (Graph_runtime.pending_operations runtime) < 10)))
     [App_test.ios_backend; App_test.kotlin_backend]
 

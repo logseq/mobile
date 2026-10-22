@@ -256,15 +256,23 @@ struct OutlinerRowPayload: Decodable, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if row.hasChildren {
-                Button { emit("collapse") } label: {
-                    Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")
-                .accessibilityIdentifier("button.outliner.collapse." + row.uuid)
+                Color.clear.frame(width: 44, height: 24)
+                    .overlay(alignment: .topTrailing) {
+                        Button { emit("collapse") } label: {
+                            HStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                                Color.clear.frame(width: 6)
+                            }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .offset(y: -10)
+                        .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")
+                        .accessibilityIdentifier("button.outliner.collapse." + row.uuid)
+                    }
             }
         }
         .font(.body)

@@ -80,8 +80,8 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
           let send_block = function
             | Model.BeginOutlinerEdit uuid -> edit ~value_uuid:uuid (); true
             | action -> send action in
-          let task_icon = match attr with "logseq.property/scheduled" -> Some "calendar"
-            | "logseq.property/deadline" -> Some "deadline" | _ -> None in
+          let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
+            | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
           let label = match task_icon with
             | Some name -> icon ~name:(`app name) ~width:20 ~height:20 ~foreground:"muted-foreground"
                 ~tooltip:(text (field "title" first))

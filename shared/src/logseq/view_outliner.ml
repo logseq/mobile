@@ -67,7 +67,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
               View_base.outliner_collapse_icon_name
                 current_row.is_collapsed)
             row_source)
-         (button ~variant:`ghost ~width:44 ~height:44
+         (button ~variant:`ghost ~width:24 ~height:24
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -576,7 +576,12 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
 
 let outliner_task_dates context model_source row_source send =
   View_base.with_int_prop_signal PaddingLeft
-    (Signal.map (fun (row : Model.outline_row) -> (if Lui_ui.host context = KotlinHost then 12 else 20) + row.depth * 22) row_source)
+    (Signal.map (fun (row : Model.outline_row) ->
+      let status = row.row_status <> None and priority = row.row_priority <> None in
+      let leading = if Lui_ui.host context = KotlinHost then
+        26 + (if status then 31 else 0) + (if priority then 27 else 0)
+      else (if status then 49 else if priority then 20 else 26) + (if priority then 25 else 0) in
+      leading + row.depth * 22) row_source)
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
