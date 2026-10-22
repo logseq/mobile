@@ -649,7 +649,11 @@ let native_direct_value_selection_and_creation () =
           App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
         click ("view.tab." ^ table_view);
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title");
-        check_eq ~msg:"Name is read-only in a table" (find ("view.edit.sheet." ^ table_view)) (-1);
+        check ~msg:"Name opens the shared text editor" (find ("view.edit.value." ^ table_view) <> -1);
+        check_eq ~msg:"Name editing preserves source markup instead of saving its display label"
+          (App_test.property_string host (find ("view.edit.value." ^ table_view)) Lui_protocol.TextValue) "Alpha **result**";
+        check_eq ~msg:"Name has no Clear value action" (find ("view.edit.clear." ^ table_view)) (-1);
+        click ("view.edit.cancel." ^ table_view);
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score);
         check ~msg:"other properties retain Clear value" (find ("view.edit.clear." ^ table_view) <> -1);
         check ~msg:"a cell immediately opens its searchable choices"
@@ -935,11 +939,22 @@ let compact_local_timestamps_and_columns () =
   check ~msg:"updated timestamps remain available for master-compatible filters and sorting"
     (List.exists (fun p -> member "attr" p = `String "block/updated-at") (items "properties" view))
 
-let table_identity_and_timestamps_are_read_only () = with_runtime (fun session runtime conn ->
+let table_name_is_editable_and_timestamps_are_read_only () = with_runtime (fun session runtime conn ->
   ignore (Ds.transact_conn conn [put alpha "block/created-at" (Ds.Int64 1792632600000L);
     put alpha "block/updated-at" (Ds.Int64 1792633600000L)]);
   Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [alpha];
   let view = find_view table_view (read session) in
+  let name = List.find (fun column -> member "attr" column = `String "block/title") (items "properties" view) in
+  check_eq ~msg:"Name is editable in a table" (member "editable" name) (`Bool true);
+  let expected = member "raw" (Result_view.property_json (Graph_runtime.db runtime)
+    ~owner:alpha ~attr:"block/title" ~encode_block:(fun _ -> `Null)) in
+  let rename = base_action "editCell" table_view @ ["blockUuid", `String alpha;
+    "attr", `String "block/title"; "expected", expected; "value", `String "Renamed project"] in
+  check_eq ~msg:"table Name edits save through the graph mutation boundary" (member "ok" (action session rename)) (`Bool true);
+  let id = Option.get (Ds.entid (Graph_runtime.db runtime) "block/uuid" (Ds.Uuid alpha)) in
+  check_eq (Graph_read.value (Graph_runtime.db runtime) id "block/title") (Some (Ds.String "Renamed project"));
+  check_eq ~msg:"a stale Name edit must not overwrite a newer title" (member "ok" (action session rename)) (`Bool false);
+  check_eq (Graph_read.value (Graph_runtime.db runtime) id "block/title") (Some (Ds.String "Renamed project"));
   List.iter (fun attr ->
     let metadata = List.find (fun column -> member "attr" column = `String attr) (items "properties" view) in
     check_eq ~msg:(attr ^ " cannot be edited in a table") (member "editable" metadata) (`Bool false);
@@ -952,7 +967,7 @@ let table_identity_and_timestamps_are_read_only () = with_runtime (fun session r
     check_eq ~msg:"RPC rejects read-only table edits" (member "ok" result) (`Bool false);
     check_eq ~msg:"rejected edits leave the graph unchanged"
       (Graph_read.value (Graph_runtime.db runtime) id attr) before)
-    ["block/title"; "block/created-at"; "block/updated-at"])
+    ["block/created-at"; "block/updated-at"])
 
 let table_tags_are_editable_and_keep_typed_references () = with_runtime (fun session runtime _ ->
   let view = find_view table_view (read session) in
@@ -987,14 +1002,16 @@ let table_cells_have_column_dividers_on_both_hosts () =
         ["header"; alpha; beta; gamma];
       App_test.dispatch app (Lui_protocol.Press (find ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title")));
       App_test.flush app;
-      check_eq ~msg:"read-only Name never opens a value editor" (find ("view.edit.sheet." ^ table_view)) (-1);
+      check ~msg:"Name opens its text editor beside the column dividers" (find ("view.edit.sheet." ^ table_view) <> -1);
+      App_test.dispatch app (Lui_protocol.Press (find ("view.edit.cancel." ^ table_view)));
+      App_test.flush app;
       App_test.dispatch app (Lui_protocol.Press (find ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/tags")));
       App_test.flush app;
       check ~msg:"Tags opens the shared native selector" (find ("view.edit.sheet." ^ table_view) <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
-  case "table identity and timestamps remain read-only at the RPC boundary" table_identity_and_timestamps_are_read_only;
+  case "table Name saves with stale-edit protection while timestamps stay read-only" table_name_is_editable_and_timestamps_are_read_only;
   case "table tags edit typed references and create tag objects" table_tags_are_editable_and_keep_typed_references;
   case "table cells have column dividers and typed editors on both hosts" table_cells_have_column_dividers_on_both_hosts;
   case "compact local timestamps and mobile table metadata order" compact_local_timestamps_and_columns;

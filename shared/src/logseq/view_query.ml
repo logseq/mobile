@@ -439,6 +439,10 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
   let ref_ = jbool (jfield "ref" col) in
   let closed = jlist (jfield "choices" col) <> [] || jbool (jfield "closed" col) in
   let query = state (if temporal then (match jtext (jfield "editorValue" property) with "" -> temporal_default kind | value -> value)
+    else if attr = "block/title" then (match jfield "raw" property with
+      | `Assoc fields when List.assoc_opt "type" fields = Some (`String "string") ->
+        jtext (Option.value ~default:`Null (List.assoc_opt "value" fields))
+      | _ -> jtext (jfield "text" property))
     else if plain then jtext (jfield "text" property) else "") in
   let selected = state (raw_selection_values (jfield "raw" property)) in
   let created = state [] in

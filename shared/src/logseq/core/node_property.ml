@@ -28,12 +28,19 @@ let render db ~owner ~encode_block =
       | None -> "", attr in
     let attrs = Hashtbl.fold (fun attr () acc -> attr :: acc) attrs []
       |> List.sort (fun a b -> compare (order a) (order b)) in
-    Ok (`Assoc ["ownerUuid", `String owner; "properties", `List (List.map (fun attr ->
+    let rename = if Node_title.can_rename_page db id then
+      Result_view.property_json ~include_candidates:false db ~owner ~attr:"block/title" ~encode_block
+      else `Null in
+    Ok (`Assoc ["ownerUuid", `String owner; "rename", rename; "properties", `List (List.map (fun attr ->
       Result_view.property_json db ~owner ~attr ~encode_block) attrs)])
 
 let mutation db ~now ~fresh_uuid input =
   try
     let attr = match input with `Assoc fields -> (match List.assoc_opt "attr" fields with Some (`String attr) -> attr | _ -> "") | _ -> "" in
-    if not (visible db attr) then invalid_arg "This property is read-only";
+    let rename = attr = "block/title" && (match input with
+      | `Assoc fields -> (match List.assoc_opt "blockUuid" fields with Some (`String uuid) ->
+        Option.fold ~none:false ~some:(Node_title.can_rename_page db) (Ds.entid db "block/uuid" (Ds.Uuid uuid)) | _ -> false)
+      | _ -> false) in
+    if not (rename || visible db attr) then invalid_arg "This property is read-only";
     Ok (Result_view.edit_property ~text_value:true ~allow_builtin:true db ~now ~fresh_uuid input)
   with Invalid_argument message -> Error message

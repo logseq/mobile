@@ -48,7 +48,7 @@ import Vision
                                         "error": queryError as Any? ?? NSNull()]
             if includeViews {
                 let columns: [[String: Any]] = [
-                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": false, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
+                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": true, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
                     ["attr": "user.property/Score", "title": "Score", "kind": "number", "editable": true, "ref": true,
                      "filterValues": (1...3).map { value in
                         ["title": "\(value)", "match": [String(format: "30000000-0000-4000-8000-%012d", value)]]
@@ -58,7 +58,7 @@ import Vision
                 let rows = results.enumerated().map { index, result -> [String: Any] in
                     var result = result
                     result["properties"] = [
-                        ["attr": "block/title", "text": "Project result \(index + 1)", "editable": false,
+                        ["attr": "block/title", "text": "Project result \(index + 1)", "editable": true,
                          "raw": ["type": "string", "value": "Project result \(index + 1)"]],
                         ["attr": "user.property/Score", "kind": "number", "text": index == 1 ? "" : "\(index + 1)", "editable": true,
                          "raw": ["type": "ref-uuid", "value": String(format: "30000000-0000-4000-8000-%012d", index + 1)]],
@@ -230,6 +230,11 @@ import Vision
         guard tableText.contains("Name") && tableText.contains("Project result 1") else {
             throw failure("Table cells must have visible native content: \(tableText)")
         }
+        try backend.performPress(node: find("view.cell.table.result-0.block/title")!)
+        try await wait("Name must open its native text editor") { find("view.edit.value.table") != nil }
+        guard find("view.edit.clear.table") == nil else { throw failure("Name must not offer Clear value") }
+        try backend.performPress(node: find("view.edit.cancel.table")!)
+        try await wait("Name dismissal must finish") { window.rootViewController?.presentedViewController == nil }
         try backend.performPress(node: find("view.cell.table.result-0.user.property/Score")!)
         try await wait("Table cell editor must present") { find("view.edit.value.table") != nil }
         _ = try await capture("query-cell-editor.png")

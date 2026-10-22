@@ -8117,6 +8117,47 @@ let tagged_nodes_replace_the_linked_references_section () =
     ) ["main"; "node"; "search"]
   ) [ios_backend; kotlin_backend]
 
+let tag_and_property_pages_hide_blocks_but_keep_objects () =
+  List.iter (fun backend ->
+    List.iter (fun destination ->
+      List.iter (fun kind ->
+        List.iter (fun populated ->
+          let application = App.create (backend ()) in
+          Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose application)) (fun () ->
+            let rows = if populated then [{(outline_row "hidden-child" "Page child") with Model.page_id = "book"}] else [] in
+            let views = {|{"ownerUuid":"book","featureType":"tagged","views":[{"uuid":"objects-view","type":"list","name":"All","rows":[{"block":{"uuid":"object-result","title":"Object result","pageId":"elsewhere"}}]}]}|} in
+            let sidebar = {(empty_sidebar_projection ()) with
+              Model.selected_page = Some {uuid = "book"; title = "Book"};
+              selected_page_is_tag = kind = "tag"; selected_page_is_property = kind = "property";
+              result_views_json = views} in
+            let routes = if destination = "main" then [] else
+              [{(node_projection "book" "book" "Book" [] []) with
+                Model.node_is_tag = kind = "tag"; node_is_property = kind = "property";
+                node_outliner_rows = rows; node_result_views_json = views}] in
+            start application;
+            if destination = "node" then send application (Model.RequestAppNode "book")
+            else if destination = "search" then begin
+              send application Model.OpenSearch;
+              send application (Model.RequestSearchNode "book")
+            end;
+            send application (apply_core_snapshot None sidebar [] false "" [] routes
+              None None [] [] rows false []);
+            flush application;
+            let renderer = Lui_app.runtime application in
+            let root = if destination = "main" then main_root renderer application
+              else descendant_with_identifier renderer (Lui_app.root_node application) "screen.node" in
+            check ~msg:"the destination is mounted" (root <> -1);
+            let find id = descendant_with_identifier renderer root id in
+            check_eq ~msg:(kind ^ " page child visibility via " ^ destination)
+              (find "outliner.block.hidden-child" <> -1) (kind = "page" && populated);
+            check_eq ~msg:(kind ^ " page placeholder visibility via " ^ destination)
+              (find "button.outliner.placeholder.book" <> -1) (kind = "page");
+            check ~msg:"objects remain rendered without the page blocks area"
+              (find "outliner.block.object-result" <> -1))) [false; true]
+      ) ["tag"; "property"; "page"]
+    ) ["main"; "node"; "search"]
+  ) [ios_backend; kotlin_backend]
+
 let thousand_nested_rows () =
   List.init 1_000 (fun index ->
     { (outline_row ("large-" ^ string_of_int index) "Nested block") with
@@ -10515,6 +10556,7 @@ let cases =
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
     case "reference-breadcrumbs-keep-their-navigation-context" reference_breadcrumbs_keep_their_navigation_context;
     case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
+    case "tag-and-property-pages-hide-blocks-but-keep-objects" tag_and_property_pages_hide_blocks_but_keep_objects;
     case "switching-graphs-resets-the-journal-viewport" switching_graphs_resets_the_journal_viewport;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;

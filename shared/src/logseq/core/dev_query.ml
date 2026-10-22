@@ -404,12 +404,24 @@ let encode_utf8 (cps : int list) : string =
 
 (* String.prototype.toLowerCase — per-codepoint full simple case mapping. *)
 let lowercase (s : string) : string =
-  decode_utf8 s
-  |> List.concat_map (fun cp ->
-         match Uucp.Case.Map.to_lower (Uchar.unsafe_of_int cp) with
-         | `Self -> [ cp ]
-         | `Uchars us -> List.map Uchar.to_int us)
-  |> encode_utf8
+  let scalars = Array.of_list (decode_utf8 s) in
+  let cased_after = Array.make (Array.length scalars) false in
+  let following = ref false in
+  for index = Array.length scalars - 1 downto 0 do
+    cased_after.(index) <- !following;
+    let value = Uchar.unsafe_of_int scalars.(index) in
+    if not (Uucp.Case.is_case_ignorable value) then following := Uucp.Case.is_cased value
+  done;
+  let output = Buffer.create (String.length s) and preceding = ref false in
+  Array.iteri (fun index cp ->
+    let value = Uchar.unsafe_of_int cp in
+    (* JavaScript's default lowercase includes the contextual Final_Sigma rule. *)
+    if cp = 0x03A3 && !preceding && not cased_after.(index) then Buffer.add_utf_8_uchar output (Uchar.of_int 0x03C2)
+    else (match Uucp.Case.Map.to_lower value with
+      | `Self -> Buffer.add_utf_8_uchar output value
+      | `Uchars values -> List.iter (Buffer.add_utf_8_uchar output) values);
+    if not (Uucp.Case.is_case_ignorable value) then preceding := Uucp.Case.is_cased value) scalars;
+  Buffer.contents output
 
 (* String.prototype.toUpperCase — per-codepoint full simple case mapping. *)
 let uppercase (s : string) : string =

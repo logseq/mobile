@@ -5,6 +5,10 @@ let text = function `String value -> value | _ -> ""
 let list = function `List values -> values | _ -> []
 let decode raw = try J.from_string raw with _ -> `Null
 let has_properties raw = list (field "properties" (decode raw)) <> []
+let rename_page raw =
+  let source = decode raw in
+  let owner = text (field "ownerUuid" source) and property = field "rename" source in
+  if owner <> "" && field "editable" property = `Bool true then Some (owner, property) else None
 
 let display_value property =
   let raw = text (field "text" property) in

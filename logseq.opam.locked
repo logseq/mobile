@@ -161,6 +161,7 @@ depends: [
   "uopt" {= "v0.17.0" & ?vendor}
   "uri" {= "4.4.0" & ?vendor}
   "uucp" {= "17.0.0+dune" & ?vendor}
+  "uunf" {= "17.0.0+dune" & ?vendor}
   "uutf" {= "1.0.3+dune" & ?vendor}
   "variantslib" {= "v0.17.0" & ?vendor}
   "xmlm" {= "dev" & ?vendor}
@@ -214,6 +215,7 @@ depexts: [
   ["system:pkgconf"] {os = "win32" & os-distribution = "cygwinports"}
 ]
 pin-depends: [
+  ["uunf.17.0.0+dune" "git+https://github.com/dune-universe/uunf.git#3ce81b762a9fcbb817bceab8274bb4636e861442"]
   [
     "alcotest.1.9.1"
     "https://github.com/mirage/alcotest/releases/download/1.9.1/alcotest-1.9.1.tbz"
@@ -785,6 +787,7 @@ x-opam-monorepo-cli-args: [
   "--ocaml-version=5.5.0" "--opam-provided=ocaml-compiler" "logseq"
 ]
 x-opam-monorepo-duniverse-dirs: [
+  ["git+https://github.com/dune-universe/uunf.git#3ce81b762a9fcbb817bceab8274bb4636e861442" "uunf"]
   [
     "https://github.com/dune-universe/uucp/releases/download/v17.0.0%2Bdune/uucp-17.0.0.dune.tbz"
     "uucp"

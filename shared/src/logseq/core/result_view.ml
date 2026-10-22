@@ -160,9 +160,9 @@ let columns db view rows =
     (if ordered = [] then "block/title" :: List.filter (( <> ) "block/title") rest else ordered @ rest)
   |> List.map (property db)
 let editable_type p = List.mem p.typ ["default"; "url"; "number"; "checkbox"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"]
-let editable p = public_attr p.attr
-  && not (List.mem p.attr ["block/title"; "block/created-at"; "block/updated-at"])
-  && editable_type p
+let editable p = p.attr = "block/title" || (public_attr p.attr
+  && not (List.mem p.attr ["block/created-at"; "block/updated-at"])
+  && editable_type p)
 let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
   && match attr_eid db p.attr with None -> false | Some id ->
     get db id "logseq.property/hide?" <> Ds.Bool true && get db id "logseq.property/public?" <> Ds.Bool false)
@@ -196,7 +196,7 @@ let row_json db encode properties = function
   | Query_block.Cells cells -> `Assoc ["cells", `List (List.map (fun cell -> `String cell) cells)]
   | Query_block.Block block -> let id = eid db block.uuid in
     `Assoc ["block", encode block; "properties", `List (List.map (fun p ->
-      `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p);
+      `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
         "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
         "editorValue", `String (match attr_values db id p.attr with value :: _ -> temporal_value db p value | [] -> "");
         "raw", semantic_json db (raw db id p.attr)]) properties)]
@@ -340,8 +340,9 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
   let expected = member "expected" json in
   if expected <> semantic_json db (raw db target_id attr) then invalid_arg "This cell changed. Reopen it to edit the latest value";
   let text = match member "value" json with `String value -> value | _ -> invalid_arg "A cell value is required" in
-  if attr = "block/title" then
-    Ops.Save_title {uuid = target; expected_title = display (get db target_id attr); title = text}
+  if attr = "block/title" then (
+    (match Node_title.validate db target_id text with Ok () -> () | Error message -> invalid_arg message);
+    Ops.Save_title {uuid = target; expected_title = display (get db target_id attr); title = text})
   else
     let created = ref [] in
     let value text =
@@ -429,7 +430,7 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
     ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
     ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
     ("markup", Markup.to_yojson (Markup.parse [] [] text)) ::
-    ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p)) ::
+    ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p && (p.attr <> "block/title" || Node_title.can_edit db id))) ::
     List.remove_assoc "editable" (List.remove_assoc "filterValues" metadata))
 let mutation db ~now ~fresh_uuid json =
   try

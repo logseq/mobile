@@ -229,6 +229,7 @@ let journal_entries rows (current : Model.logseq_model) =
 let page_entries rows current =
   let outline =
     if View_base.journal_home_visible_ current then journal_entries rows current
+    else if View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current then []
     else
       let outline = outline_entries rows in
       let parent = match View_base.active_node_projection current with

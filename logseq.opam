@@ -22,6 +22,7 @@ depends: [
   "sqlite3"
   "re"
   "uucp"
+  "uunf"
 ]
 pin-depends: [
   ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#0561660e4894faee250d551ab2a32a6b5c25a5fb"]

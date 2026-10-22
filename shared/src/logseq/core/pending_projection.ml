@@ -190,6 +190,9 @@ let title_tx db uuid title =
     | None -> []
   in
   [ Ds.Add (reference, "block/title", Ds.String title) ]
+  @ (match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+     | Some id when Node_title.is_page db id -> [Ds.Add (reference, "block/name", Ds.String (Node_title.name title))]
+     | _ -> [])
   @ retractions
   @ List.map
       (fun eid -> Ds.Add (reference, "block/refs", Ds.Ref eid))
@@ -393,7 +396,8 @@ let rec compile db (intent : Ops.pending_intent) =
      with
      | Some current ->
        if current = value.expected_title then
-         Ok (title_tx db value.uuid value.title)
+         let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid value.uuid)) in
+         Result.map (fun () -> title_tx db value.uuid value.title) (Node_title.validate db id value.title)
        else Error "title changed on the server"
      | None -> Error "block no longer exists")
   | Ops.Set_property value ->

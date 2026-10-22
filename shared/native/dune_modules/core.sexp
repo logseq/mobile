@@ -13,6 +13,7 @@
 "Query_block"
 "Result_view"
 "Node_property"
+"Node_title"
 "Journal_sync"
 "E2ee"
 "E2ee_keyring"

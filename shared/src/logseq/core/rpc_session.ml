@@ -93,12 +93,9 @@ let query_db session =
   | None -> Some (state session).model.db
 
 let current_summary session (summary : Model.entity_summary) =
-  match Option.bind (query_db session) (fun db ->
-    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid)) (fun eid ->
-      Option.bind (Graph_read.int_value (Graph_read.value db eid "block/journal-day")) (fun day ->
-        if Journal.valid_day day then Some (Journal.title db day) else None))) with
-  | Some title -> {summary with title}
-  | None -> summary
+  Option.value ~default:summary (Option.bind (query_db session) (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid))
+      (Graph_read.entity_summary (fun value -> Ok value) db)))
 
 let summary_json session summary = Rpc.summary_json (current_summary session summary)
 
@@ -824,6 +821,26 @@ let with_object action payload missing handle =
             (action ^ " payload must be an object")))
   | None -> Rpc.failure "invalid_params" missing
 
+let search_page session ~offset ~limit query =
+  let h = host session in
+  match h.Types.graph_search_page with
+  | Some search -> search ~offset ~limit query
+  | None ->
+    let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+    let rec slice skip remaining acc = function
+      | [] -> List.rev acc, false
+      | _ when remaining = 0 && skip = 0 -> List.rev acc, true
+      | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
+      | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
+    slice offset limit [] all
+
+let refresh_retained_search session =
+  let current = state session in
+  if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
+    let found, has_more = search_page session ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
+    session.Types.state := {current with search_result_pages = [found];
+      search_result_count = List.length found; search_has_more = has_more})
+
 let stage_result session operation_id base_t intent =
   match
     enqueue_semantic session
@@ -834,7 +851,11 @@ let stage_result session operation_id base_t intent =
         intent;
       }
   with
-  | Ok () -> snapshot_visible session
+  | Ok () ->
+    let rec changes_title = function Ops.Save_title _ -> true
+      | Ops.Atomic intents -> List.exists changes_title intents | _ -> false in
+    if changes_title intent then refresh_retained_search session;
+    snapshot_visible session
   | Error message -> Rpc.failure "stage_operation_failed" message
 
 let editing_cursor session =
@@ -1877,9 +1898,17 @@ let rec dispatch session action payload =
   | "nodeProperty" ->
     (match payload, query_db session with
      | Some payload, Some db ->
-       (try match editing_cursor session with
+       (try
+         let input = Json.from_string payload in
+         let requested_graph = match input with `Assoc fields -> List.assoc_opt "graphId" fields | _ -> None in
+         let same_graph = match requested_graph, (state session).config with
+           | None, _ -> true
+           | Some (`String graph), Some config -> graph = config.Api.graph_id
+           | _ -> false in
+         if not same_graph then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
+         else match editing_cursor session with
          | Error (code, message) -> Rpc.failure code message
-         | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid (Json.from_string payload) with
+         | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input with
              | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
              | Error message -> Rpc.failure "invalid_property" message)
         with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
@@ -2054,16 +2083,7 @@ let rec dispatch session action payload =
     let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
     let found, has_more =
       if not valid || String_kit.is_blank query then [], false
-      else match h.Types.graph_search_page with
-      | Some search -> search ~offset ~limit:20 query
-      | None ->
-        let all = match h.Types.graph_search with Some search -> search query | None -> [] in
-        let rec slice skip remaining acc = function
-          | [] -> List.rev acc, false
-          | _ when remaining = 0 && skip = 0 -> List.rev acc, true
-          | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
-          | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
-        slice offset 20 [] all in
+      else search_page session ~offset ~limit:20 query in
     if valid then session.Types.state :=
       { !(session.state) with search_query = query; search_has_more = has_more;
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);

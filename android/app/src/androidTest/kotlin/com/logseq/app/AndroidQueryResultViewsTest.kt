@@ -7,7 +7,6 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
@@ -164,6 +163,22 @@ class AndroidQueryResultViewsTest {
         assertEquals("gallery", action.getJSONObject("config").getString("type"))
     }
 
+    private fun assertObjectPageHidesBlocks(property: Boolean) {
+        mount { result ->
+            val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
+            result.put("selectedPage", JSONObject().put("uuid", "collection").put("title", "Collection"))
+                .put("selectedPageIsTag", !property).put("selectedPageIsProperty", property)
+                .put("resultViews", query)
+        }
+        ui.onNodeWithTag("outliner.block.query-owner").assertDoesNotExist()
+        ui.onNodeWithTag("button.outliner.placeholder.collection").assertDoesNotExist()
+        ui.onNodeWithText("Project result 1").assertIsDisplayed()
+        capture(if (property) "property-objects" else "tag-objects")
+    }
+
+    @Test fun tagPageHidesBlocksAndPlaceholderButShowsObjects() = assertObjectPageHidesBlocks(false)
+    @Test fun propertyPageHidesBlocksAndPlaceholderButShowsObjects() = assertObjectPageHidesBlocks(true)
+
     @Test fun foldedQueryResultsLoadOnlyWhenTapped() {
         mount { result ->
             val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
@@ -212,7 +227,10 @@ class AndroidQueryResultViewsTest {
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeLeft() }
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeRight() }
         ui.onNodeWithTag("sidebar.content").assertIsNotDisplayed()
-        ui.onNodeWithTag("view.cell.table.result-0.block/title").assertHasNoClickAction()
+        ui.onNodeWithTag("view.cell.table.result-0.block/title").performClick()
+        ui.onNodeWithTag("view.edit.value.table").assertIsDisplayed()
+        ui.onNodeWithTag("view.edit.clear.table").assertDoesNotExist()
+        ui.onNodeWithTag("view.edit.cancel.table").performClick()
         ui.onNodeWithTag("view.edit.sheet.table").assertDoesNotExist()
         for (attr in listOf("user.property/Score")) {
             val header = ui.onNodeWithTag("view.cell.separator.table.header.$attr", useUnmergedTree = true)
