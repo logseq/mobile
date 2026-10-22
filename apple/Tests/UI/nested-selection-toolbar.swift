@@ -6,6 +6,7 @@ import UIKit
 @main struct NestedSelectionToolbarCheck {
     @MainActor static func main() async throws {
         var routes: [String] = []
+        var selectedPage: String?
         var selected = false
         var longPressed: [String] = []
         var performed: [String] = []
@@ -15,11 +16,16 @@ import UIKit
                  "outlinerRows": [["depth": 0, "block": ["uuid": uuid + "-child", "title": "Select this block", "pageId": uuid]]],
                  "outlinerState": ["selectedBlockIds": selected && uuid == routes.last ? [uuid + "-child"] : []]]
             }
-            return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": [
+            let root = selectedPage ?? "journal"
+            var result: [String: Any] = [
                 "graphName": "Work", "selectedGraphId": "work", "nodeRoutes": projections,
-                "outlinerRows": [["depth": 0, "block": ["uuid": "journal-child", "title": "Journal", "pageId": "journal"]]],
+                "recentPages": [["uuid": "Recent C", "title": "Recent C"]],
+                "outlinerRows": [["depth": 0, "block": ["uuid": root + "-child", "title": "Select this block", "pageId": root]]],
+                "outlinerState": ["selectedBlockIds": selected && routes.isEmpty ? [root + "-child"] : []],
                 "searchQuery": "Found", "searchResults": [["uuid": "Found", "title": "Found", "isPage": true]]
-            ]]), as: UTF8.self)
+            ]
+            if let selectedPage { result["selectedPage"] = ["uuid": selectedPage, "title": selectedPage] }
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         }
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { request in
             if let data = request.params.payload?.data(using: .utf8),
@@ -28,6 +34,8 @@ import UIKit
                 case "open-node", "open-search-result":
                     if let uuid = effect["text"] as? String { routes.append(uuid); selected = false }
                 case "close-node": _ = routes.popLast(); selected = false
+                case "select-sidebar-page":
+                    selectedPage = effect["text"] as? String; routes = []; selected = false
                 case "long-press-outliner-block":
                     if let uuid = effect["text"] as? String { longPressed.append(uuid); selected = true }
                 case "outliner-toolbar":
@@ -66,7 +74,7 @@ import UIKit
             throw failure(message)
         }
         try await Task.sleep(for: .milliseconds(500))
-        for destination in ["Page A", "Page B", "Found"] {
+        for destination in ["Page A", "Page B", "Recent C", "Linked D", "Found"] {
             if destination == "Found" {
                 guard let search = find("button.search") else { throw failure("Missing search action") }
                 try runtime.renderer.backend.performPress(node: search)
@@ -76,6 +84,23 @@ import UIKit
                 views(window).compactMap { $0 as? UISearchTextField }.first { $0.isFirstResponder }!.insertText("Found")
                 try await wait("Search must show its result") { find("search.result.Found") != nil }
                 try runtime.renderer.backend.performPress(node: find("search.result.Found")!)
+            } else if destination == "Recent C" {
+                let backend = runtime.renderer.backend
+                func navigationControllers(_ controller: UIViewController) -> [UINavigationController] {
+                    (controller as? UINavigationController).map { [$0] } ?? controller.children.flatMap(navigationControllers)
+                }
+                guard let navigation = navigationControllers(window.rootViewController!).first(where: { $0.viewControllers.count > 1 }) else {
+                    throw failure("Linked pages must have a native navigation stack")
+                }
+                _ = navigation.popToRootViewController(animated: true)
+                try await wait("Return to the root before opening Recent") { routes.isEmpty && navigation.transitionCoordinator == nil }
+                guard let drawer = backend.rootIDs.flatMap(descendants).first(where: { backend.model(id: $0)?.kind == .drawer }) else {
+                    throw failure("Missing sidebar drawer")
+                }
+                try backend.performToggle(node: drawer, checked: true)
+                try await wait("Recent must expose its page") { find("link.sidebar.page.Recent C") != nil }
+                try backend.performPress(node: find("link.sidebar.page.Recent C")!)
+                try await wait("Recent selects the root page instead of pushing") { selectedPage == "Recent C" && routes.isEmpty }
             } else {
                 try runtime.applyHostUpdate(kind: "open-node", payload: String(decoding: try JSONSerialization.data(withJSONObject: destination, options: .fragmentsAllowed), as: UTF8.self))
             }
@@ -108,7 +133,7 @@ import UIKit
             try await wait("Unselect must reach the active destination") { performed.last == "unselect" }
             try await wait("Unselect removes native selection chrome") { find("toolbar.outliner.selection") == nil }
         }
-        print("PASS: direct, linked/nested and search destinations display native selection actions and dispatch Copy/Unselect")
+        print("PASS: direct, linked/nested, search, Recent root and links from Recent display native selection actions and dispatch Copy/Unselect")
     }
     static func failure(_ message: String) -> NSError {
         NSError(domain: "NestedSelection", code: 1, userInfo: [NSLocalizedDescriptionKey: message])

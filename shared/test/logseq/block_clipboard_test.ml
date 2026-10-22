@@ -198,7 +198,37 @@ let selected_links_and_wrapped_references_match_master () =
     ["A😀Z", 1, 2, "https://example.com", "A[😀](https://example.com)Z";
      "https://old.example", 0, 19, "https://new.example", "https://new.example";
      "[Label](https://old.example)", 8, 19, "https://new.example", "[Label](https://new.example)";
+     "[Label](https://old.example)", 16, 3, "https://new.example", "[Label](https://https://new.example.example)";
+     "[Label](https://old.example)", 1, 5, "https://new.example", "[https://new.example](https://old.example)";
+     "[Label](https://old.example)", 1, 5, "New label", "[New label](https://old.example)";
+     "[Outer [Label]](https://old.example)", 8, 5, "https://new.example", "[Outer [https://new.example]](https://old.example)";
+     "Outside [Label](https://old.example)", 0, 7, "https://new.example", "[Outside](https://new.example) [Label](https://old.example)";
+     "[One](https://one) gap [Two](https://two)", 19, 3, "https://new.example", "[One](https://one) [gap](https://new.example) [Two](https://two)";
      "(())", 2, 0, "((" ^ Q.alpha ^ "))", "((" ^ Q.alpha ^ "))"]
+
+let nonadjacent_selection_excludes_unselected_siblings () = R.with_runtime (fun session runtime _ ->
+  insert runtime child Q.page "a5" "Paste here";
+  let copied = copy session [target; Q.alpha] in
+  success (paste ~rich:(text (member "blocksEDN" copied)) session child "Paste here" (text (member "plainText" copied)));
+  let all = children runtime Q.page in
+  let rec after = function [] -> [] | (b : Cache_model.block) :: rest -> if b.uuid = child then rest else after rest in
+  check_eq ~msg:"unselected siblings between selected roots are not copied"
+    (List.map (fun (b : Cache_model.block) -> b.title) (after all)) [title runtime Q.alpha; title runtime target];
+  check_eq ~msg:"the unselected source sibling remains unchanged" (title runtime Q.beta) "Beta result")
+
+let alternate_markdown_markers_and_math_match_master () =
+  R.with_runtime (fun session runtime _ ->
+    rename runtime target "";
+    success (paste session target "" "+ Parent\n  * Child\n* Tail");
+    check_eq (title runtime target) "Parent";
+    check_eq (List.map (fun (b : Cache_model.block) -> b.title) (children runtime target)) ["Child"];
+    check_eq (List.hd (List.rev (children runtime Q.page))).title "Tail");
+  R.with_runtime (fun session runtime _ ->
+    rename runtime target "";
+    success (paste session target "" "$$\nx + y\n\n- literal\n$$\n- After math");
+    check_eq (title runtime target) "x + y\n\n- literal";
+    check_eq (value runtime target "logseq.property.node/display-type") (Some (D.Keyword "math"));
+    check_eq (List.hd (List.rev (children runtime Q.page))).title "After math")
 
 let invalid_and_foreign_clipboard_use_plain_text () = R.with_runtime (fun session runtime _ ->
   let copied = copy session [Q.alpha; Q.beta] in
@@ -240,6 +270,8 @@ let cases = [
   case "code editors paste literal text" code_editors_paste_literal_text;
   case "empty targets with children keep master placement" empty_targets_with_children_match_master;
   case "selected links and wrapped refs keep master semantics" selected_links_and_wrapped_references_match_master;
+  case "nonadjacent selected roots exclude intervening siblings" nonadjacent_selection_excludes_unselected_siblings;
+  case "alternate Markdown markers and literal math keep structure" alternate_markdown_markers_and_math_match_master;
   case "foreign and malformed clipboard use plain text" invalid_and_foreign_clipboard_use_plain_text;
   case "invalid trees and failed storage have no partial writes" invalid_tree_and_failed_storage_are_atomic;
 ]

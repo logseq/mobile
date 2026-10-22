@@ -160,6 +160,15 @@ let parse_text ~fresh_uuid source =
 let paragraphs ~fresh_uuid source = Str.split (Str.regexp "\n\n+") source
   |> List.map (fun title -> {uuid = fresh_uuid (); parent = None; attrs = ["block/title", D.String (String.trim title)]})
 
+let formatted_link = Re.compile (Re.Pcre.re "\\[.*?\\]\\(.*?\\)")
+let selection_within_link source first last =
+  let rec scan offset =
+    match Re.exec_opt ~pos:offset formatted_link source with
+    | Some group -> let start, finish = Re.Group.offset group 0 in
+      (first >= start && last <= finish) || scan finish
+    | None -> false in
+  first <> last && scan 0
+
 let inline content =
   let source = content.before_title in
   let first = S.byte_index_of_utf16 source content.selection_start in
@@ -168,7 +177,7 @@ let inline content =
   let selected = String.sub source first (last - first) in
   let plain = normalize_lines content.plain_text in
   let url value = Str.string_match (Str.regexp "^\\(https?\\|file\\|ftp\\)://[^ \t\r\n]+$") value 0 in
-  let within_link = String.ends_with ~suffix:"](" before && String.starts_with ~prefix:")" after in
+  let within_link = selection_within_link source first last in
   let inserted =
     if before <> "" && after <> "" && String.ends_with ~suffix:"((" before && String.starts_with ~prefix:"))" after
        && String.starts_with ~prefix:"((" plain && String.ends_with ~suffix:"))" plain
