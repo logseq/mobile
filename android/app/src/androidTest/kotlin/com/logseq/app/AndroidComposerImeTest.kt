@@ -113,7 +113,10 @@ class AndroidComposerImeTest {
         context.startActivity(requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         waitFor(timeout = 90_000) { it.viewIdResourceName == "list.outliner" }
-        wasCollapsed = node { it.viewIdResourceName == "button.composer.expand" } != null
+        val composer = waitFor {
+            it.viewIdResourceName == "button.composer.expand" || it.viewIdResourceName == "field.composer"
+        }
+        wasCollapsed = composer.viewIdResourceName == "button.composer.expand"
         if (wasCollapsed) click("button.composer.expand")
         val input = field()
         originalDraft = if (input.isShowingHintText) "" else input.text?.toString().orEmpty()

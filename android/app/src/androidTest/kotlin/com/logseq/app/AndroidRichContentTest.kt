@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -30,13 +31,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import dev.lui.LocalLuiSemanticColors
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 
 @RunWith(AndroidJUnit4::class)
 class AndroidRichContentTest {
     @get:Rule val ui = createComposeRule()
     private val events = mutableListOf<LuiEvent>()
 
-    private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null): LuiBackend {
+    private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null,
+        linkColor: Color? = null, dark: Boolean = false): LuiBackend {
         val registry = logseqExtensionRegistry { it }
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray()
@@ -62,8 +67,12 @@ class AndroidRichContentTest {
         val applied = backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString())
         assertTrue(backend.lastError, applied)
         ui.setContent {
-            MaterialTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
-                Box(Modifier.fillMaxSize()) { backend.Content(1) }
+            MaterialTheme(colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
+                typography = LogseqTheme.typography) {
+                CompositionLocalProvider(LocalLuiSemanticColors provides
+                    (linkColor?.let { mapOf("link" to it) } ?: emptyMap())) {
+                    Box(Modifier.fillMaxSize()) { backend.Content(1) }
+                }
             }
         }
         return backend
@@ -78,6 +87,48 @@ class AndroidRichContentTest {
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
         return results.single()
     }
+
+    private fun assertLongPressSelects(markup: String, visible: String) {
+        render(markup)
+        ui.onNodeWithText(visible).performTouchInput { longClick() }
+        ui.runOnIdle {
+            assertEquals("A long press selects the block exactly once without editing", listOf("drag-start"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+        }
+    }
+
+    @Test fun plainBodyLongPressSelectsInsteadOfEditing() =
+        assertLongPressSelects("""[{"type":"text","text":"Plain block"}]""", "Plain block")
+
+    @Test fun richBodyLongPressSelectsInsteadOfEditing() =
+        assertLongPressSelects("""[{"type":"emphasis","style":"bold","children":[{"type":"text","text":"Bold block"}]}]""", "Bold block")
+
+    @Test fun quoteLongPressSelectsInsteadOfEditing() =
+        assertLongPressSelects("""[{"type":"quote","children":[{"type":"text","text":"Quote block"}]}]""", "Quote block")
+
+    @Test fun malformedBodyLongPressStillSelects() = assertLongPressSelects("not-json", "Readable fallback")
+
+    @Test fun shortBodyTapStillEditsExactlyOnce() {
+        render("""[{"type":"text","text":"Tap to edit"}]""")
+        ui.onNodeWithText("Tap to edit").performTouchInput { click() }
+        ui.runOnIdle { assertEquals(listOf("edit"), events.filterIsInstance<LuiEvent.Extension>().map { it.name }) }
+    }
+
+    private fun assertLinkTheme(dark: Boolean, color: Color) {
+        render("""[{"type":"nodeReference","uuid":"page-target","title":"Destination"},
+            {"type":"text","text":" "},{"type":"link","url":"https://logseq.com","children":[{"type":"text","text":"Website"}]}]""",
+            linkColor = color, dark = dark)
+        val text = layout("[[Destination]] Website").layoutInput.text
+        for (label in listOf("Destination", "Website")) {
+            val offset = text.text.indexOf(label)
+            assertTrue("$label follows the scoped Logseq link token", text.spanStyles.any {
+                it.start <= offset && it.end > offset && it.item.color == color
+            })
+        }
+    }
+
+    @Test fun lightLinksUseTheScopedLogseqTheme() = assertLinkTheme(false, Color(0xFF1B6898))
+    @Test fun darkLinksUseTheScopedLogseqTheme() = assertLinkTheme(true, Color(0xFF9BD3D4))
 
     @Test fun timestampsSeekTheExistingMatchingPlayerAcrossBlocks() {
         render("""[{"type":"video","url":"https://youtu.be/abcdefghijk","embedURL":"http://127.0.0.1:18789/embed/abcdefghijk?playsinline=1"},

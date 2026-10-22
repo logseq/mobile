@@ -1597,21 +1597,16 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"the Language select is not pinned to a phone-specific width"
     (property_int renderer language_control Lui_protocol.WidthValue)
     (-1);
-  check_eq ~msg:"Material settings controls fill the available card width"
+  check_eq ~msg:"Material settings preferences fill the available width"
     (property_string renderer general_card Lui_protocol.CrossAlignment)
     "stretch";
   check_eq
     ~msg:
-      "Material settings use a tonal container instead of a white form \
-       rectangle"
-    (property_string renderer general_card Lui_protocol.BackgroundValue)
+      "Material preferences use the native list surface without an Apple card"
+    (property renderer general_card Lui_protocol.BackgroundValue) None;
+  check_eq ~msg:"Settings actions use the Material tonal surface"
+    (property_string renderer actions Lui_protocol.BackgroundValue)
     "surface-container-low";
-  check_eq
-    ~msg:
-      "Material settings cards and the action bar share one tonal hierarchy"
-    (descendant_count_with_property_string renderer root
-       Lui_protocol.BackgroundValue "surface-container-low")
-    8;
   check_eq ~msg:"the appearance select keeps a persistent Material field label"
     (property_string renderer appearance_picker
        Lui_protocol.AccessibilityLabel)
@@ -1655,18 +1650,16 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"settings actions keep Material button separation"
     (property_int renderer actions Lui_protocol.Gap)
     12;
-  check_eq ~msg:"Cancel is the quiet tonal action"
+  check_eq ~msg:"Cancel is the quiet Material text action"
     (property_string renderer cancel Lui_protocol.VariantValue)
-    "secondary";
+    "ghost";
   check_eq ~msg:"Apply is the unmistakable primary action"
     (property_string renderer apply Lui_protocol.VariantValue)
     "primary";
-  check_eq ~msg:"Cancel and Apply share the available phone width"
-    (property_float renderer cancel Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"Cancel and Apply share the available phone width"
-    (property_float renderer apply Lui_protocol.GrowValue)
-    1.0;
+  check ~msg:"Cancel keeps its native content width"
+    (property_float renderer cancel Lui_protocol.GrowValue <= 0.0);
+  check ~msg:"Apply keeps its native content width"
+    (property_float renderer apply Lui_protocol.GrowValue <= 0.0);
   check_eq ~msg:"Kotlin does not lay every language out in one row"
     (descendant_count_with_node_kind renderer picker Lui_protocol.RadioGroup)
     0;

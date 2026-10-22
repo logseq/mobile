@@ -556,14 +556,11 @@ let settings_toggle_auto_correction send input_event =
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    column ~gap:12 ~cross:`stretch ~padding:16
-      ~background:"surface-container-low" ~corner_radius:14
+    column ~gap:0 ~cross:`stretch
       ~accessibility_identifier:"layout.settings.general-card"
       [
         settings_appearance_control context model_source send;
-        separator [];
         settings_language_control context model_source send;
-        separator [];
         list_item ~padding:0
           ~accessibility_identifier:"link.settings.tabs"
           ~on_press:(press send Model.OpenSettingsTabs)
@@ -629,15 +626,13 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
 let settings_editor_card (context : Lui_ui.ui_context) spell_check_source
     auto_correction_source send : t =
   if Lui_ui.host context = KotlinHost then
-    column ~gap:0 ~cross:`stretch ~padding:16
-      ~background:"surface-container-low" ~corner_radius:14
+    column ~gap:0 ~cross:`stretch ~padding_horizontal:16
       [
-        switch_ ~checked_signal:spell_check_source
+        switch_ ~min_height:56 ~checked_signal:spell_check_source
           ~accessibility_identifier:"switch.settings.spell-check"
           ~on_toggle:(settings_toggle_spell_check send)
           ~text:"Spell check" [];
-        separator [];
-        switch_ ~checked_signal:auto_correction_source
+        switch_ ~min_height:56 ~checked_signal:auto_correction_source
           ~accessibility_identifier:"switch.settings.auto-correction"
           ~on_toggle:(settings_toggle_auto_correction send)
           ~text:"Auto-correction" [];
@@ -744,23 +739,20 @@ let sign_out_dialog (context : Lui_ui.ui_context) send : t =
 
 let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
     send : t =
-  let card_bg =
-    if Lui_ui.host context = KotlinHost then "surface-container-low"
-    else "surface"
-  in
-  column ~gap:18 ~padding:20 ~background:"background"
+  let card_bg = "background" in
+  column ~gap:24 ~padding_horizontal:8 ~padding_vertical:16 ~cross:`stretch
     ~accessibility_identifier:"screen.settings"
     [
-      column ~gap:8
+      column ~gap:8 ~cross:`stretch
         [
-          text ~style_class:"headline" ~foreground:"muted-foreground"
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.general"
             ~value:"General" [];
           settings_general_card context model_source send;
         ];
-      column ~gap:8
+      column ~gap:8 ~cross:`stretch
         [
-          text ~style_class:"headline" ~foreground:"muted-foreground"
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.editor"
             ~value:"Editor" [];
           settings_editor_card context
@@ -768,12 +760,12 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             (Signal.map View_base.settings_auto_correction model_source)
             send;
         ];
-      column ~gap:8
+      column ~gap:8 ~cross:`stretch
         [
-          text ~style_class:"headline" ~foreground:"muted-foreground"
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.sync-server"
             ~value:"Sync server" [];
-          column ~gap:8 ~padding:16 ~background:card_bg ~corner_radius:14
+          column ~gap:8 ~padding:16 ~cross:`stretch ~style_class:"form" ~background:card_bg
             [
               text_field
                 ~text_signal:
@@ -793,21 +785,20 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
         ];
       if_
         ~test:(Signal.map View_base.selected_graph_local_ model_source)
-        (column ~gap:8
+        (column ~gap:8 ~cross:`stretch
            [
-             text ~style_class:"headline" ~foreground:"muted-foreground"
+             text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
                ~accessibility_identifier:"label.settings.advanced"
                ~value:"Advanced" [];
-             column ~padding:16 ~background:card_bg ~corner_radius:14
+             column ~padding:16 ~background:card_bg
                [ settings_export_row context send ];
            ]);
-      column ~gap:8
+      column ~gap:8 ~cross:`stretch
         [
-          text ~style_class:"headline" ~foreground:"muted-foreground"
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.about"
             ~value:"About" [];
           column ~gap:12 ~padding:16 ~background:card_bg
-            ~corner_radius:14
             [
               row
                 [
@@ -818,7 +809,6 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                       (Signal.map View_base.settings_version model_source)
                     ~foreground:"secondary" [];
                 ];
-              separator [];
               row
                 [
                   text ~value:"Revision" [];
@@ -828,17 +818,15 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                       (Signal.map View_base.settings_revision model_source)
                     ~foreground:"secondary" [];
                 ];
-              separator [];
               settings_runtime_log_row context send;
             ];
         ];
-      column ~gap:8
+      column ~gap:8 ~cross:`stretch
         [
-          text ~style_class:"headline" ~foreground:"muted-foreground"
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.community"
             ~value:"Community" [];
           column ~gap:12 ~padding:16 ~background:card_bg
-            ~corner_radius:14
             [
               keyed
                 ~source:
@@ -851,7 +839,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                     link_source send);
             ];
         ];
-      column ~padding:16 ~background:card_bg ~corner_radius:14
+      column ~padding:16 ~background:card_bg
         [ settings_sign_out_row context send ];
     ]
 
@@ -1077,15 +1065,16 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ~accessibility_identifier:"layout.settings.sheet"
           [
             scroll ~grow:1.0 [ settings_screen context model_source send ];
-            row ~gap:12 ~padding_horizontal:20 ~padding_vertical:12
+            row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
               ~background:"surface-container-low"
               ~accessibility_identifier:"toolbar.settings.actions"
               [
-                button ~variant:`secondary ~grow:1.0
+                spacer ~grow:1.0 [];
+                button ~variant:`ghost
                   ~accessibility_identifier:"button.connection.cancel"
                   ~on_press:(press send Model.DismissSettings)
                   ~text:"Cancel" [];
-                button ~variant:`primary ~grow:1.0
+                button ~variant:`primary
                   ~accessibility_identifier:"button.connection.apply"
                   ~disabled_signal:
                     (Signal.map View_base.settings_apply_disabled_
@@ -1201,30 +1190,33 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
       ]
   in
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:"Sync status" ~height:420
+    sheet ~text:"Sync status" ~height:480
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
-        column ~gap:8 ~cross:`stretch ~grow:1.0
+        column ~gap:0 ~cross:`stretch ~grow:1.0
           ~accessibility_identifier:"form.sync-status"
           [
-            sync_row "row.sync.status" "Status"
-              (Signal.map View_base.sync_label model_source);
-            sync_row "row.sync.graph" "Graph"
-              (Signal.map View_base.graph_label model_source);
-            sync_row "row.sync.connection" "Connection"
-              (Signal.map View_base.sync_connection_label model_source);
-            list_item ~accessibility_identifier:"row.sync.pending"
-              [
-                row ~grow:1.0 ~cross:`center ~main:`space_between
+            scroll ~grow:1.0
+              [ column ~gap:12 ~cross:`stretch ~padding_horizontal:24 ~padding_vertical:16
                   [
-                    text ~value:"Local changes" [];
-                    text
-                      ~value_signal:
-                        (Signal.map View_base.sync_pending_label
-                           model_source)
-                      ~foreground:"secondary" ~text_alignment:`end_
-                      ~accessibility_identifier:"sync.pending" [];
+                    sync_row "row.sync.status" "Status"
+                      (Signal.map View_base.sync_label model_source);
+                    sync_row "row.sync.graph" "Graph"
+                      (Signal.map View_base.graph_label model_source);
+                    sync_row "row.sync.connection" "Connection"
+                      (Signal.map View_base.sync_connection_label model_source);
+                    list_item ~accessibility_identifier:"row.sync.pending"
+                      [
+                        row ~grow:1.0 ~cross:`center ~main:`space_between
+                          [
+                            text ~value:"Local changes" [];
+                            text
+                              ~value_signal:
+                                (Signal.map View_base.sync_pending_label
+                                   model_source)
+                              ~foreground:"secondary" ~text_alignment:`end_
+                              ~accessibility_identifier:"sync.pending" [];
                   ];
               ];
             list_item ~accessibility_identifier:"row.sync.cursor"
@@ -1251,12 +1243,10 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                    (Signal.map View_base.sync_error_message model_source)
                  ~foreground:"destructive"
                  ~accessibility_identifier:"sync.error" []);
-            spacer ~grow:1.0 [];
-            button ~variant:`primary ~grow:1.0
-              ~accessibility_identifier:"button.sync-now"
-              ~on_press:(press send Model.SyncNow)
-              ~text:"Sync now" [];
-            toolbar ~orientation:`horizontal ~label:"Sync status actions"
+                  ];
+              ];
+            row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
+              ~background:"surface-container-low"
               ~accessibility_identifier:"toolbar.sync.actions"
               [
                 spacer ~grow:1.0 [];
@@ -1264,6 +1254,10 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~accessibility_identifier:"button.sync.done"
                   ~on_press:(press send Model.CloseSyncDetails)
                   ~text:"Done" [];
+                button ~variant:`primary
+                  ~accessibility_identifier:"button.sync-now"
+                  ~on_press:(press send Model.SyncNow)
+                  ~text:"Sync now" [];
               ];
           ];
       ]

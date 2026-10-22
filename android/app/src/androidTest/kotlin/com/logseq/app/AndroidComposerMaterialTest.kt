@@ -1,6 +1,7 @@
 package com.logseq.app
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.lightColorScheme
@@ -18,6 +19,10 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertTouchHeightIsEqualTo
 import androidx.compose.ui.test.assertTouchWidthIsEqualTo
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -45,6 +50,7 @@ class AndroidComposerMaterialTest {
     private var bridge: LogseqNativeBridge? = null
     private val primary = Color(0xFF1655A0)
     private val secondaryContainer = Color(0xFFDCEAF6)
+    private val surfaceContainerLow = Color(0xFFEAF1ED)
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
@@ -64,8 +70,8 @@ class AndroidComposerMaterialTest {
             "isGraphUnlocked":true,"outlinerRows":[]}}"""))
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = lightColorScheme(primary = primary,
-                secondaryContainer = secondaryContainer)) {
-                Box(Modifier.fillMaxSize()) { backend.Content(root) }
+                secondaryContainer = secondaryContainer, surfaceContainerLow = surfaceContainerLow)) {
+                Box(Modifier.fillMaxSize().background(Color.Red)) { backend.Content(root) }
             }
         }
         if (expanded) ui.onNodeWithTag("button.composer.expand").performClick()
@@ -122,6 +128,26 @@ class AndroidComposerMaterialTest {
             if (pixels[x, y] == secondaryContainer) tonalPixels++
         }
         assertTrue("Camera uses the host Material tonal container", tonalPixels > pixels.width * pixels.height / 4)
+    }
+
+    @Test fun collapsedCaptureFillsTheSpaceBesideTheCamera() {
+        composer(expanded = false)
+        val surface = ui.onNodeWithTag("surface.composer.root").getUnclippedBoundsInRoot()
+        val capture = ui.onNodeWithTag("button.composer.expand").getUnclippedBoundsInRoot()
+        assertTrue("Capture reaches the trailing edge of its surface", surface.right - capture.right <= 8.dp)
+    }
+
+    @Test fun collapsedCaptureBlankSpaceOpensTheComposer() {
+        composer(expanded = false)
+        ui.onNodeWithTag("surface.composer.root").performTouchInput { click(Offset(width * .75f, height / 2f)) }
+        ui.onNodeWithTag("field.composer").assertIsDisplayed()
+    }
+
+    @Test fun collapsedCaptureHasAnOpaqueMaterialSurface() {
+        composer(expanded = false)
+        val pixels = ui.onNodeWithTag("surface.composer.root").captureToImage().toPixelMap()
+        assertTrue("The capture surface uses its Material container instead of the red journal underneath",
+            pixels[(pixels.width * .75f).toInt(), pixels.height / 2] == surfaceContainerLow)
     }
 
     @Test fun unicodeMultilineDraftAndStatusSurviveCollapseAndReopen() {

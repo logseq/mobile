@@ -53,12 +53,18 @@ internal object LogseqTheme {
         )
     }
 
-    val accent = Color(0xff2d6cdf)
+    val accent = Color(0xff1b6898)
     val lightSurface = Color(0xfff8f9ff)
     val darkSurface = Color(0xff101318)
 
     val lightScheme = lightColorScheme(
         primary = accent,
+        onPrimary = Color.White,
+        primaryContainer = Color(0xffcfe5ff),
+        onPrimaryContainer = Color(0xff001d32),
+        secondary = Color(0xff51616f),
+        secondaryContainer = Color(0xffd5e5f4),
+        onSecondaryContainer = Color(0xff0e1d2a),
         surface = lightSurface,
         // Match the iOS app chrome background (#fcfcfc) instead of the M3
         // default pink-tinted surface.
@@ -71,7 +77,13 @@ internal object LogseqTheme {
     )
 
     val darkScheme = darkColorScheme(
-        primary = Color(0xff8fb5ff),
+        primary = Color(0xff9bd3d4),
+        onPrimary = Color(0xff002d38),
+        primaryContainer = Color(0xff0d4f50),
+        onPrimaryContainer = Color(0xffbbebec),
+        secondary = Color(0xffb8cad6),
+        secondaryContainer = Color(0xff3a4a55),
+        onSecondaryContainer = Color(0xffd4e6f2),
         surface = darkSurface,
         background = darkSurface,
         surfaceContainerLowest = Color(0xff0b0e12),

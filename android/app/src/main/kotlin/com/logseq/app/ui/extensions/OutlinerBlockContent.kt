@@ -61,6 +61,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -77,6 +79,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.logseq.app.AndroidAudioPlayer
 import com.logseq.app.runtime.AndroidLaunchMetrics
 import dev.lui.LuiExtensionContext
+import dev.lui.luiThemeColor
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -371,7 +374,6 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
             val label = node.optString("title").ifEmpty { uuid }
             withStyle(
                 SpanStyle(
-                    color = Color(0xff2d6cdf),
                     fontWeight = FontWeight.Medium,
                 )
             ) {
@@ -384,7 +386,7 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
             val url = node.optString("url")
             val children = node.optJSONArray("children")
             pushStringAnnotation(TAG_URL, url)
-            withStyle(SpanStyle(color = Color(0xff2d6cdf))) {
+            withStyle(SpanStyle()) {
                 if (children != null && children.length() > 0) {
                     for (i in 0 until children.length()) {
                         children.optJSONObject(i)?.let { appendNode(it, decoration) }
@@ -400,7 +402,6 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
             pushStringAnnotation(TAG_TIMESTAMP, node.optString("embedURL"))
             withStyle(
                 SpanStyle(
-                    color = Color(0xff2d6cdf),
                     fontFamily = FontFamily.Monospace,
                 )
             ) {
@@ -435,10 +436,12 @@ private fun MarkupInlineText(
     val context = LocalContext.current
     val openNode by rememberUpdatedState(onOpenNode)
     val edit by rememberUpdatedState(onTapFallback)
-    val linked = remember(annotated, context) {
+    val linkColor = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary
+    val linked = remember(annotated, context, linkColor) {
         val links = annotated.getStringAnnotations(0, annotated.length)
         if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
             for (link in links) {
+                addStyle(SpanStyle(color = linkColor), link.start, link.end)
                 addLink(LinkAnnotation.Clickable(link.tag, linkInteractionListener = {
                     when (link.tag) {
                         TAG_NODE -> openNode(link.item)
@@ -456,7 +459,10 @@ private fun MarkupInlineText(
         style = textStyle ?: outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
-        modifier = modifier.clickable(onClick = onTapFallback),
+        // The row owns edit/long-press/drag; only annotated links consume a tap here.
+        modifier = modifier.semantics {
+            onClick(label = "Edit block") { onTapFallback(); true }
+        },
     )
 }
 

@@ -160,10 +160,11 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
-        column ~grow:1.0 ~gap:24
+        column ~grow:1.0 ~gap:0 ~cross:`stretch
           ~accessibility_identifier:"layout.graph-create.sheet"
           [
-            column ~gap:20 ~cross:`stretch ~style_class:"form"
+            scroll ~grow:1.0 [
+            column ~gap:20 ~padding:24 ~cross:`stretch ~style_class:"form"
               ~accessibility_identifier:"form.graph-create"
               [
                 text_field
@@ -207,9 +208,8 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                      ~style_class:"footnote" ~foreground:"destructive"
                      ~accessibility_identifier:"text.graph-create.error"
                      []);
-              ];
-            spacer ~grow:1.0 [];
-            row ~main:`end_ ~cross:`center
+              ] ];
+            row ~main:`end_ ~cross:`center ~padding_horizontal:24 ~padding_vertical:16
               [
                 toolbar ~orientation:`horizontal ~toolbar_gap:12
                   ~label:"Graph creation actions"
