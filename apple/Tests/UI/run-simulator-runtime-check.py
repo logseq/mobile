@@ -144,6 +144,8 @@ import SwiftUI
                 destination.mkdir(parents=True, exist_ok=True)
                 for screenshot in (container / "Documents").glob("*.png"):
                     shutil.copy2(screenshot, destination / screenshot.name)
+                for diagnostic in (container / "Library/Caches").glob("interaction-debug*.log"):
+                    shutil.copy2(diagnostic, destination / diagnostic.name)
             if not benchmark:
                 run(["xcrun", "simctl", "uninstall", SIMULATOR, bundle])
 

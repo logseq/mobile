@@ -795,7 +795,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
     | Some group -> text ~value:group ~font_size:"12" ~foreground:"muted-foreground"
         ~padding_horizontal:10 ~padding_vertical:5
         ~accessibility_identifier:("outliner.autocomplete.group." ^ group) []) candidate_source;
-  View_base.with_label_signal
+  row ~height:44 ~grow:0.0 ~cross:`center [View_base.with_label_signal
     (Signal.map View_base.outliner_autocomplete_label candidate_source)
     (View_base.with_string_prop_signal AccessibilityIdentifier
       (Signal.map View_base.outliner_autocomplete_identifier candidate_source)
@@ -803,7 +803,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
        ~text_signal:
          (Signal.map View_base.outliner_autocomplete_label candidate_source)
        ~variant:`ghost
-       ~grow:0.0
+       ~grow:1.0
        ~height:44 ~padding_horizontal:10
        ~background:"autocomplete-row-background" ~foreground:"foreground"
        ~corner_radius:8 ~text_alignment:`start
@@ -814,7 +814,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
            (send
               (Model.ChooseOutlinerAutocomplete
                  (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
-       []))]
+       []))]]
 
 let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : t =
   let kind = function
@@ -1082,7 +1082,8 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
-  let placeholder = if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_editing = None) model_source) placeholder in
+  let placeholder = box ~height:28 [
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_editing = None) model_source) placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, _, divider) ->

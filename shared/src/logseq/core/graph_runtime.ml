@@ -547,7 +547,7 @@ let ensure_today_journal runtime =
               Ops.page_uuid =
                 Printf.sprintf "00000001-%04d-%04d-0000-000000000000"
                   (day / 10000) (day mod 10000);
-              block_uuid = fresh_uuid ();
+              block_uuid = fresh_uuid (); block_title = "";
               title = Journal.day_title day;
               journal_day = day;
               created_at;

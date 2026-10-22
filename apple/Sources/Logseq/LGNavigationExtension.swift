@@ -225,12 +225,9 @@ private struct LGNavigationStack: View {
             context: context,
             rootIndex: 0,
             routeStartIndex: 6,
-            depth: depth,
             synchronizationName: "navigation",
             toolbarStartIndex: 1,
             bottomChromeIndex: 5,
-            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace,
-            composerDismissalEnabled: composerDismissalEnabled,
             rootTransform: nil
         )
         .onGeometryChange(for: Int.self) { geometry in
@@ -238,25 +235,6 @@ private struct LGNavigationStack: View {
         } action: { width in
             try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
         }
-    }
-
-    private var depth: Int {
-        guard case let .int(value) = context.property("depth") else { return 0 }
-        return value
-    }
-
-    private var bottomOccupiesLayoutSpace: Bool {
-        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else {
-            return false
-        }
-        return value
-    }
-
-    private var composerDismissalEnabled: Bool {
-        guard case let .bool(value) = context.property("composer-dismissal-enabled") else {
-            return false
-        }
-        return value
     }
 
 }
@@ -371,12 +349,9 @@ private struct LGSearchSession: View {
             context: context,
             rootIndex: 1,
             routeStartIndex: 3,
-            depth: depth,
             synchronizationName: "search navigation",
             toolbarStartIndex: nil,
             bottomChromeIndex: 2,
-            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace,
-            composerDismissalEnabled: false,
             rootTransform: searchRootTransform
         )
     }
@@ -453,11 +428,6 @@ private struct LGSearchSession: View {
     }
     #endif
 
-    private var bottomOccupiesLayoutSpace: Bool {
-        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else { return false }
-        return value
-    }
-
     private var depth: Int {
         guard case let .int(value) = context.property("depth") else { return 0 }
         return value
@@ -506,12 +476,9 @@ private struct LGNavigationContent: View {
     let context: LUIAppleExtensionViewContext
     let rootIndex: Int
     let routeStartIndex: Int
-    let depth: Int
     let synchronizationName: String
     let toolbarStartIndex: Int?
     let bottomChromeIndex: Int?
-    let bottomOccupiesLayoutSpace: Bool
-    let composerDismissalEnabled: Bool
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
     #if os(iOS)
@@ -521,6 +488,23 @@ private struct LGNavigationContent: View {
     @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+
+    // This view observes the extension independently of its parent. Read the
+    // route depth and chrome from the same live model as the child IDs.
+    private var depth: Int {
+        guard case let .int(value) = context.property("depth") else { return 0 }
+        return value
+    }
+
+    private var bottomOccupiesLayoutSpace: Bool {
+        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else { return false }
+        return value
+    }
+
+    private var composerDismissalEnabled: Bool {
+        guard case let .bool(value) = context.property("composer-dismissal-enabled") else { return false }
+        return value
+    }
 
     @ViewBuilder
     var body: some View {
@@ -627,9 +611,12 @@ private struct LGNavigationContent: View {
         .toolbarBackground(.visible, for: .navigationBar)
         #endif
         .onAppear {
+            LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")
             path = desiredPath
         }
-        .onChange(of: desiredPath) { _, newPath in
+        .onChange(of: desiredPath) {
+            let newPath = desiredPath
+            LGInteractionDiagnostics.event("navigation.change", "node=\(context.nodeID) path=\(path) desired=\(newPath) revision=\(context.revision)")
             if path != newPath {
                 withAnimation { path = newPath }
             }
@@ -781,6 +768,7 @@ private struct LGNavigationContent: View {
         Binding(
             get: { path },
             set: { newPath in
+                LGInteractionDiagnostics.event("navigation.binding", "node=\(context.nodeID) path=\(path) new=\(newPath) desired=\(desiredPath)")
                 let removedCount = max(0, path.count - newPath.count)
                 path = newPath
                 if removedCount > 0 {

@@ -85,6 +85,7 @@ type outliner_priority =
 type outliner_message =
   | Tap_block of string
   | Long_press_block of string
+  | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
@@ -155,6 +156,8 @@ type outliner_command =
   | Take_photo of string
   | Record_audio of string
   | Insert_root_block of outliner_root
+  | Copy_blocks of string list
+  | Paste_blocks of Block_clipboard.content
   | Copy_text of string
   | Copy_references of string list
   | Copy_urls of string list
@@ -228,7 +231,7 @@ val complete :
 val trim_right : string -> string
 val remove_tag_token : editor_draft -> editor_draft option
 val commit_effect :
-  outliner_context -> editor_draft option -> outliner_command list
+  ?trim:bool -> outliner_context -> editor_draft option -> outliner_command list
 val insert_at_caret : editor_draft -> string -> int -> editor_draft
 val compare_blocks : Cache_model.block -> Cache_model.block -> int
 val compare_root_blocks : Cache_model.block -> Cache_model.block -> int

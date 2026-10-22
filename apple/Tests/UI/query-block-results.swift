@@ -48,7 +48,7 @@ import Vision
                                         "error": queryError as Any? ?? NSNull()]
             if includeViews {
                 let columns: [[String: Any]] = [
-                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": true, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
+                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": false, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
                     ["attr": "user.property/Score", "title": "Score", "kind": "number", "editable": true, "ref": true,
                      "filterValues": (1...3).map { value in
                         ["title": "\(value)", "match": [String(format: "30000000-0000-4000-8000-%012d", value)]]
@@ -58,7 +58,7 @@ import Vision
                 let rows = results.enumerated().map { index, result -> [String: Any] in
                     var result = result
                     result["properties"] = [
-                        ["attr": "block/title", "text": "Project result \(index + 1)", "editable": true,
+                        ["attr": "block/title", "text": "Project result \(index + 1)", "editable": false,
                          "raw": ["type": "string", "value": "Project result \(index + 1)"]],
                         ["attr": "user.property/Score", "kind": "number", "text": index == 1 ? "" : "\(index + 1)", "editable": true,
                          "raw": ["type": "ref-uuid", "value": String(format: "30000000-0000-4000-8000-%012d", index + 1)]],
@@ -91,6 +91,10 @@ import Vision
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let backend = runtime.renderer.backend
+        var nativeFrames: [Int: CGRect] = [:]
+        backend.frameReportingEnabled = true
+        backend.onFramesReport = { nativeFrames = $0 }
+        func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         func descendants(_ id: Int) -> [Int] {
             [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
         }
@@ -190,6 +194,21 @@ import Vision
         _ = try await capture("query-multiple-list.png")
         try backend.performPress(node: find("view.tab.table")!)
         try await wait("Table must mount a horizontal scroll container") { find("view.table.scroll.table") != nil }
+        for attr in ["user.property/Score", "user.property/Ready"] {
+            for row in ["header", "result-0", "result-1", "result-2"] {
+                guard let divider = find("view.cell.separator.table.\(row).\(attr)"),
+                      backend.model(id: divider)?.property(.orientation)?.stringValue == "vertical" else {
+                    throw failure("Table columns must have native vertical separators")
+                }
+                try await wait("Column dividers must have visible native geometry") {
+                    nativeFrames[divider].map { $0.width > 0 && $0.width <= 1.1 && $0.height >= 48 } ?? false
+                }
+                let header = find("view.cell.separator.table.header.\(attr)")!
+                if let frame = nativeFrames[divider], let heading = nativeFrames[header], abs(frame.minX - heading.minX) > 0.5 {
+                    throw failure("Header and body column dividers must align")
+                }
+            }
+        }
         let tableText = try await capture("query-table.png")
         guard tableText.contains("Name") && tableText.contains("Project result 1") else {
             throw failure("Table cells must have visible native content: \(tableText)")
@@ -286,6 +305,11 @@ import Vision
         try await wait("Changing the current view's type must mount its new renderer") {
             find("view.table.scroll.gallery") != nil && find("view.gallery.gallery") == nil
         }
+        try await Task.sleep(for: .milliseconds(250))
+        guard let horizontal = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
+            $0.window != nil && $0.contentSize.width > $0.bounds.width + 100
+        }) else { throw failure("The changed table must remain horizontally scrollable") }
+        horizontal.setContentOffset(CGPoint(x: 100, y: 0), animated: false)
         let changedText = try await capture("query-type-changed-table.png")
         guard changedText.contains("Name") && changedText.contains("Score") else {
             throw failure("Changing view type must visibly replace the native gallery: \(changedText)")

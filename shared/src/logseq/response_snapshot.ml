@@ -243,6 +243,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         row_list_number = int_member "listNumber" fields;
         row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
+        row_cached = false;
         query_json = (match List.assoc_opt "query" fields with
           | Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         markup_json =
@@ -444,7 +445,9 @@ let core_projection fields =
     | Some route -> get route
     | None -> fallback
   in
-  { Model.graph_name = string_member "graphName" fields;
+  { Model.tag_choices_update = (match List.assoc_opt "composerTagChoices" fields with
+      | Some (`List choices) -> Some (List.filter_map sidebar_page choices) | _ -> None);
+    graph_name = string_member "graphName" fields;
     selected_graph_id = string_member "selectedGraphId" fields;
     graphs = List.filter_map graph (list_member "graphs" fields);
     is_graph_encrypted = bool_member "isGraphEncrypted" fields;

@@ -8,12 +8,14 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.app.runtime.LogseqNativeBridge
@@ -73,6 +75,11 @@ class AndroidEditorCompletionTest {
             ui.onNodeWithTag("toolbar.outliner.autocomplete").assertIsDisplayed()
             if (kind == "command") ui.onNodeWithTag("outliner.autocomplete.group.BASIC").assertIsDisplayed()
             ui.onNodeWithTag("button.outliner.autocomplete.dismiss").assertIsDisplayed()
+            val panel = ui.onNodeWithTag("toolbar.outliner.autocomplete").fetchSemanticsNode().boundsInRoot
+            val item = ui.onNodeWithTag("button.outliner.autocomplete.0").fetchSemanticsNode().boundsInRoot
+            val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+            assertTrue("Every $kind option fills the menu width", item.width >= panel.width - 17 * density)
+            assertTrue("Grouped options retain their natural height", kotlin.math.abs(item.height - 44 * density) <= density)
             ui.onNodeWithTag("button.outliner.autocomplete.0").assertIsDisplayed().performClick()
             var chosen: JSONObject? = null
             val observed = mutableListOf<String>()
@@ -102,11 +109,18 @@ class AndroidEditorCompletionTest {
         }
     }
 
-    @Test fun nativePasteCarriesItsOriginAcrossTheBridge() {
+    @Test fun nativePasteCarriesItsOriginAcrossTheBridge() = checkNativePaste(null)
+
+    @Test fun nativeRichPasteKeepsTheBlockSnapshot() = checkNativePaste("{:graph \"demo\" :op :copy :blocks []}")
+
+    @Test fun failedPasteReleasesTheEditorAndKeepsNewTyping() = checkNativePaste(null, succeeds = false)
+
+    private fun checkNativePaste(rich: String?, succeeds: Boolean = true) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+            if (rich == null) (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .setPrimaryClip(ClipData.newPlainText("test", "Pasted text /"))
+            else AndroidBlockClipboard.copy(context, JSONObject().put("plainText", "Pasted text /").put("blocksEDN", rich).toString())
         }
         start("Keep ", null)
         ui.onNodeWithTag("field.outliner.block.editing").performTouchInput { longClick() }
@@ -132,14 +146,10 @@ class AndroidEditorCompletionTest {
             throw error
         }
         assertTrue(automation.windows.firstNotNullOf { pasteAction(it.root) }.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
-        ui.waitUntil(timeoutMillis = 5000) {
-            ui.onNodeWithTag("field.outliner.block.editing").fetchSemanticsNode().config
-                .getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) { androidx.compose.ui.text.AnnotatedString("") }
-                .text.contains("Pasted text /")
-        }
         ui.mainClock.advanceTimeBy(200)
         ui.waitForIdle()
         var pasted = false
+        var pasteId = -1L
         val observed = mutableListOf<String>()
         try { ui.waitUntil(timeoutMillis = 5000) {
             ui.runOnIdle {
@@ -147,13 +157,54 @@ class AndroidEditorCompletionTest {
                 if (encoded.isNotEmpty()) {
                     observed.add(encoded)
                     JSONObject(encoded).optJSONObject("effect")?.let { effect ->
-                        pasted = effect.optString("kind") == "paste-outliner-text" &&
-                            effect.optString("text").contains("Pasted text /")
+                        if (effect.optString("kind") == "editor-outliner-event") {
+                            val payload = JSONObject(effect.optString("text"))
+                            pasted = payload.optString("type") == "pasteContent" &&
+                                payload.optString("beforeTitle") == "Keep " &&
+                                payload.optString("plainText") == "Pasted text /" &&
+                                payload.optString("blocksEDN") == rich.orEmpty() && payload.optInt("selectionStart", -1) >= 0
+                            if (pasted) pasteId = effect.getLong("id")
+                        }
                     }
                 }
             }
             pasted
         } } catch (error: Throwable) { throw AssertionError("Paste effects: $observed", error) }
         assertTrue("A pasted slash must reach the core as a paste: $observed", pasted)
+        val text = ui.onNodeWithTag("field.outliner.block.editing").fetchSemanticsNode().config
+            .getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) { androidx.compose.ui.text.AnnotatedString("") }.text
+        assertEquals("The shared core decides how the paste changes the block", "Keep ", text)
+        ui.onNodeWithTag("field.outliner.block.editing").performTextInput("Y")
+        val nextId = if (rich == null) "editing" else "inserted"
+        ui.runOnIdle {
+            if (succeeds) {
+                val response = JSONObject(snapshot(null, "Accepted"))
+                response.getJSONObject("result").getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").put("uuid", nextId)
+                response.getJSONObject("result").getJSONObject("outlinerState").getJSONObject("editing").put("uuid", nextId)
+                bridge.applySnapshot(response.toString()).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+            }
+            bridge.resolveEffect(pasteId, succeeds, if (succeeds) "" else "Storage failed").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        }
+        val expectedId = if (succeeds) nextId else "editing"
+        val expected = if (succeeds) "AcceptedY" else "Keep Y"
+        ui.waitUntil(timeoutMillis = 5000) {
+            ui.onNodeWithTag("field.outliner.block.$expectedId").fetchSemanticsNode().config
+                .getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) { androidx.compose.ui.text.AnnotatedString("") }.text == expected
+        }
+        ui.onNodeWithTag("field.outliner.block.$expectedId").assertIsFocused().performTextInput("Z")
+        ui.mainClock.advanceTimeBy(200)
+        ui.waitForIdle()
+        var continued = false
+        ui.waitUntil(timeoutMillis = 5000) {
+            ui.runOnIdle {
+                repeat(24) {
+                    val encoded = bridge.takeEffect()
+                    if (encoded.isNotEmpty()) JSONObject(encoded).optJSONObject("effect")?.let { effect ->
+                        if (effect.optString("kind") == "change-outliner-text" && effect.optString("text") == expected + "Z") continued = true
+                    }
+                }
+            }
+            continued
+        }
     }
 }

@@ -28,6 +28,10 @@ let request ~now ~fresh_id payload =
     let identity () = ["uuid", `String (fresh_id ()); "now", `Int (now ())] in
     let operation () = ["operationId", `String (fresh_id ()); "now", `Int (now ())] in
     match kind with
+    | "load-composer-tags" -> empty "composerTags"
+    | "send-tagged" ->
+      let* value = text () in let* value = object_string value in
+      (match value with `Assoc fields -> json "sendTagged" (identity () @ fields) | _ -> assert false)
     | "send-capture" -> let* value = text () in json "send" (("text", `String value) :: identity ())
     | "send-task" ->
       let* value = text () in let* status = metadata () in

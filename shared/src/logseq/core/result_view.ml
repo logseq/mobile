@@ -42,7 +42,8 @@ let contains value input = Outliner_state.includes_case_insensitive value input
 type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; choices : int list}
 let property db attr =
   let id = attr_eid db attr in
-  let typ = match Option.map (fun id -> get db id "logseq.property/type") id with Some (Ds.Keyword typ) -> typ | _ -> "default" in
+  let typ = if attr = "block/tags" then "class" else
+    match Option.map (fun id -> get db id "logseq.property/type") id with Some (Ds.Keyword typ) -> typ | _ -> "default" in
   let schema = List.assoc_opt attr db.Ds.schema in
   let choices = match id with None -> [] | Some id ->
     Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" id
@@ -156,10 +157,10 @@ let columns db view rows =
     (if ordered = [] then "block/title" :: List.filter (( <> ) "block/title") rest else ordered @ rest)
   |> List.map (property db)
 let editable_type p = List.mem p.typ ["default"; "url"; "number"; "checkbox"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"]
-let editable p = p.attr = "block/title" ||
-  ((String.starts_with ~prefix:"user.property/" p.attr || List.mem p.attr ["logseq.property/status"; "logseq.property/priority"])
-    && editable_type p)
-let node_editable db p = editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
+let editable p = public_attr p.attr
+  && not (List.mem p.attr ["block/title"; "block/created-at"; "block/updated-at"])
+  && editable_type p
+let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
   && match attr_eid db p.attr with None -> false | Some id ->
     get db id "logseq.property/hide?" <> Ds.Bool true && get db id "logseq.property/public?" <> Ds.Bool false)
 let column_json db rows p =
@@ -352,7 +353,7 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
            | Some (d, _) -> semantic db (Ds.Ref d.e)
            | None ->
              let uuid = Rpc_wire.journal_page_uuid day in
-             created := Ops.Create_journal {page_uuid = uuid; block_uuid = fresh_uuid ();
+             created := Ops.Create_journal {page_uuid = uuid; block_uuid = fresh_uuid (); block_title = "";
                title = Rpc_wire.journal_day_title day; journal_day = day; created_at = now} :: !created;
              Ops.Ref_uuid uuid))
       else if List.mem p.typ ["number"; "datetime"; "default"; "url"] then

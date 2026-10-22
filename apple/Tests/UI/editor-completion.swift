@@ -38,6 +38,9 @@ import UIKit
             let effects = EditorCompletionEffects()
             effects.response = try snapshot(after, caret: caret, kind: nil, label: label, value: value)
             let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
+            var frames: [Int: CGRect] = [:]
+            runtime.renderer.backend.frameReportingEnabled = true
+            runtime.renderer.backend.onFramesReport = { frames = $0 }
             try runtime.applyCoreResponse(snapshot(before, caret: before.utf16.count, kind: kind, label: label, value: value))
             try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
             try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
@@ -58,6 +61,11 @@ import UIKit
             if kind == "command", node("outliner.autocomplete.group.FORMAT") == nil { throw failure("Command group heading is missing") }
             guard node("button.outliner.autocomplete.dismiss") != nil,
                   let candidate = node("button.outliner.autocomplete.0") else { throw failure("Missing shared panel for \(kind)") }
+            guard let panel = node("toolbar.outliner.autocomplete").flatMap({ frames[$0] }),
+                  let item = frames[candidate], item.width >= panel.width - 17,
+                  abs(item.height - 44) <= 1 else {
+                throw failure("Every \(kind) option must fill the panel width with a 44pt target: item=\(String(describing: frames[candidate]))")
+            }
             try backend.performPress(node: candidate)
             await runtime.drainEffectsForTesting()
             try await Task.sleep(for: .milliseconds(400))

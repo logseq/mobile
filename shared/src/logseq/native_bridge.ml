@@ -121,6 +121,7 @@ let host_action (update : Host_update.host_update) =
            | "graphs" -> Model.GraphsDestination
            | _ -> Model.JournalsDestination);
         assets = List.map session_asset session.assets;
+        composer_tags = List.map (fun (uuid, title) -> ({Model.uuid; title} : Model.sidebar_page)) session.composer_tags;
         composer_expanded = session.composer_expanded;
         search_open = session.search_open;
         query = session.query;
@@ -177,7 +178,10 @@ let encode_ui_session (session : Model.ui_session) =
        | Model.JournalsDestination -> "journals")
   ^ ",\"assets\":["
   ^ String.concat "," (List.map encode_session_asset session.assets)
-  ^ "]" ^ ",\"composerExpanded\":"
+  ^ "]" ^ ",\"composerTags\":"
+  ^ Yojson.Basic.to_string (`List (List.map (fun (tag : Model.sidebar_page) ->
+    `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) session.composer_tags))
+  ^ ",\"composerExpanded\":"
   ^ string_of_bool session.composer_expanded
   ^ ",\"searchOpen\":" ^ string_of_bool session.search_open
   ^ ",\"query\":" ^ Lui_wire.quoted session.query ^ ",\"appPath\":"
@@ -223,10 +227,18 @@ let encode_runtime_log_records records =
 
 let encode_effect (eff : Model.logseq_effect) =
   match eff with
-  | SendAssetEffect (id, asset) ->
+  | SendAssetEffect (id, asset, _, _) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"send-asset\",\"text\":"
     ^ Lui_wire.quoted asset.payload ^ "}"
+  | LoadComposerTagsEffect (id, _) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"load-composer-tags\",\"text\":\"\"}"
+  | SendTaggedCaptureEffect (id, capture) ->
+    let status = match capture.capture_status with None -> `Null
+      | Some status -> Yojson.Basic.from_string (encode_task_status status) in
+    let payload = Yojson.Basic.to_string (`Assoc ["text", `String capture.capture_text;
+      "tags", Model.composer_tag_selection capture.capture_tags; "status", status]) in
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"send-tagged\",\"text\":" ^ Lui_wire.quoted payload ^ "}"
   | SendCaptureEffect (id, text) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"send-capture\",\"text\":" ^ Lui_wire.quoted text ^ "}"
@@ -547,6 +559,7 @@ let extension_event node identifier name text value =
              | 1 -> "inside"
              | _ -> "after") );
       ]
+    | _, "paste-content" -> ["value", StringValue text]
     | _, ("text-change" | "paste" | "return") ->
       [
         "title", StringValue text;

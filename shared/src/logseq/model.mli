@@ -24,10 +24,16 @@ type asset_preview =
   ; preview_path : string
   }
 
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
   ; assets : composer_asset list
+  ; composer_tags : sidebar_page list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string
@@ -36,11 +42,6 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
-  }
-
-type sidebar_page =
-  { uuid : string
-  ; title : string
   }
 
 type graph =
@@ -115,6 +116,7 @@ type search_hit =
 type outline_row =
   { row_uuid : string
   ; row_loaded : bool
+  ; row_cached : bool
   ; row_title : string
   ; row_task_dates_json : string
   ; row_list_number : int option
@@ -215,7 +217,8 @@ type outline_row_splice =
   }
 
 type core_projection =
-  { graph_name : string option
+  { tag_choices_update : sidebar_page list option
+  ; graph_name : string option
   ; selected_graph_id : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
@@ -256,11 +259,20 @@ type core_projection =
   ; outliner_row_splices : outline_row_splice list
   }
 
+type composer_submission =
+  { capture_text : string
+  ; capture_status : task_status option
+  ; capture_tags : sidebar_page list
+  ; capture_graph_id : string option
+  }
+
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | LoadComposerTagsEffect of int * string option
+  | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
-  | SendAssetEffect of int * composer_asset
+  | SendAssetEffect of int * composer_asset * sidebar_page list * string option
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
@@ -409,6 +421,10 @@ type logseq_model =
   ; has_older_journals : bool
   ; composer_expanded : bool
   ; composer_draft : string
+  ; composer_tags : sidebar_page list
+  ; composer_tag_choices : sidebar_page list
+  ; composer_tags_open : bool
+  ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
   ; capture_confirmation : int option
@@ -441,6 +457,7 @@ type logseq_action =
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
   | EditorCompletion of string * string
+  | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
@@ -457,6 +474,10 @@ type logseq_action =
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
+  | OpenComposerTags
+  | CloseComposerTags
+  | SetComposerTags of sidebar_page list
+  | RemoveComposerTag of string
   | ExpandComposer
   | FocusComposer
   | ApplyComposerDraft of string
@@ -686,3 +707,5 @@ val restore_ui_session : logseq_model -> ui_session -> logseq_model
 val graph_creation_password_invalid_ : logseq_model -> bool
 
 val wide_content_breakpoint : int
+
+val composer_tag_selection : sidebar_page list -> Yojson.Basic.t

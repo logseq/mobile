@@ -645,8 +645,7 @@ let native_direct_value_selection_and_creation () =
           App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
         click ("view.tab." ^ table_view);
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title");
-        check_eq ~msg:"the Name editor does not offer Clear value" (find ("view.edit.clear." ^ table_view)) (-1);
-        click ("view.edit.cancel." ^ table_view);
+        check_eq ~msg:"Name is read-only in a table" (find ("view.edit.sheet." ^ table_view)) (-1);
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score);
         check ~msg:"other properties retain Clear value" (find ("view.edit.clear." ^ table_view) <> -1);
         check ~msg:"a cell immediately opens its searchable choices"
@@ -932,7 +931,68 @@ let compact_local_timestamps_and_columns () =
   check ~msg:"updated timestamps remain available for master-compatible filters and sorting"
     (List.exists (fun p -> member "attr" p = `String "block/updated-at") (items "properties" view))
 
+let table_identity_and_timestamps_are_read_only () = with_runtime (fun session runtime conn ->
+  ignore (Ds.transact_conn conn [put alpha "block/created-at" (Ds.Int64 1792632600000L);
+    put alpha "block/updated-at" (Ds.Int64 1792633600000L)]);
+  Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [alpha];
+  let view = find_view table_view (read session) in
+  List.iter (fun attr ->
+    let metadata = List.find (fun column -> member "attr" column = `String attr) (items "properties" view) in
+    check_eq ~msg:(attr ^ " cannot be edited in a table") (member "editable" metadata) (`Bool false);
+    let id = Option.get (Ds.entid (Graph_runtime.db runtime) "block/uuid" (Ds.Uuid alpha)) in
+    let before = Graph_read.value (Graph_runtime.db runtime) id attr in
+    let result = action session (base_action "editCell" table_view @ ["blockUuid", `String alpha;
+      "attr", `String attr; "expected", member "raw" (Result_view.property_json
+        (Graph_runtime.db runtime) ~owner:alpha ~attr ~encode_block:(fun _ -> `Null));
+      "value", `String "Changed"] ) in
+    check_eq ~msg:"RPC rejects read-only table edits" (member "ok" result) (`Bool false);
+    check_eq ~msg:"rejected edits leave the graph unchanged"
+      (Graph_read.value (Graph_runtime.db runtime) id attr) before)
+    ["block/title"; "block/created-at"; "block/updated-at"])
+
+let table_tags_are_editable_and_keep_typed_references () = with_runtime (fun session runtime _ ->
+  let view = find_view table_view (read session) in
+  let tags = List.find (fun column -> member "attr" column = `String "block/tags") (items "properties" view) in
+  check_eq ~msg:"Tags can be edited like other table properties" (member "editable" tags) (`Bool true);
+  let expected = member "raw" (Result_view.property_json (Graph_runtime.db runtime)
+    ~owner:alpha ~attr:"block/tags" ~encode_block:(fun _ -> `Null)) in
+  let result = action session (base_action "editCell" table_view @ ["blockUuid", `String alpha;
+    "attr", `String "block/tags"; "expected", expected; "value", `String "";
+    "selectedValues", `List [`String Q.project]; "newValues", `List [`String "Table tag"]; "create", `Bool true]) in
+  check_eq ~msg:(Json.to_string result) (member "ok" result) (`Bool true);
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid alpha)) in
+  let titles = Graph_read.entity_summaries (fun value -> Ok value) db id "block/tags"
+    |> List.map (fun (tag : Cache_model.entity_summary) -> tag.title) |> List.sort String.compare in
+  check_eq ~msg:"selecting and creating tags stores reference values" titles ["Project"; "Table tag"];
+  List.iter (fun operation -> check_ok ~msg:"typed table tag edits compile for sync"
+    (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime))
+
+let table_cells_have_column_dividers_on_both_hosts () =
+  List.iter (fun backend -> with_runtime (fun session _ _ ->
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
+      let view = find_view table_view (read session) in
+      let attrs = List.map (fun column -> text (member "attr" column)) (items "columns" view) in
+      List.iter (fun row -> List.iteri (fun index attr -> if index > 0 then (
+        let divider = find ("view.cell.separator." ^ table_view ^ "." ^ row ^ "." ^ attr) in
+        check ~msg:"adjacent table cells have a visible column divider" (divider <> -1);
+        check_eq (App_test.property_string host divider Lui_protocol.OrientationValue) "vertical")) attrs)
+        ["header"; alpha; beta; gamma];
+      App_test.dispatch app (Lui_protocol.Press (find ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title")));
+      App_test.flush app;
+      check_eq ~msg:"read-only Name never opens a value editor" (find ("view.edit.sheet." ^ table_view)) (-1);
+      App_test.dispatch app (Lui_protocol.Press (find ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/tags")));
+      App_test.flush app;
+      check ~msg:"Tags opens the shared native selector" (find ("view.edit.sheet." ^ table_view) <> -1))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "table identity and timestamps remain read-only at the RPC boundary" table_identity_and_timestamps_are_read_only;
+  case "table tags edit typed references and create tag objects" table_tags_are_editable_and_keep_typed_references;
+  case "table cells have column dividers and typed editors on both hosts" table_cells_have_column_dividers_on_both_hosts;
   case "compact local timestamps and mobile table metadata order" compact_local_timestamps_and_columns;
   case "empty table cells have accessible names" empty_table_cells_have_accessible_names;
   case "pushed query type changes refresh the visible renderer" pushed_query_type_changes_refresh_the_visible_renderer;

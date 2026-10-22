@@ -27,10 +27,16 @@ type asset_preview =
   ; preview_path : string
   }
 
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
   ; assets : composer_asset list
+  ; composer_tags : sidebar_page list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string
@@ -39,11 +45,6 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
-  }
-
-type sidebar_page =
-  { uuid : string
-  ; title : string
   }
 
 type graph =
@@ -118,6 +119,7 @@ type search_hit =
 type outline_row =
   { row_uuid : string
   ; row_loaded : bool
+  ; row_cached : bool
   ; row_title : string
   ; row_task_dates_json : string
   ; row_list_number : int option
@@ -218,7 +220,8 @@ type outline_row_splice =
   }
 
 type core_projection =
-  { graph_name : string option
+  { tag_choices_update : sidebar_page list option
+  ; graph_name : string option
   ; selected_graph_id : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
@@ -259,11 +262,20 @@ type core_projection =
   ; outliner_row_splices : outline_row_splice list
   }
 
+type composer_submission =
+  { capture_text : string
+  ; capture_status : task_status option
+  ; capture_tags : sidebar_page list
+  ; capture_graph_id : string option
+  }
+
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | LoadComposerTagsEffect of int * string option
+  | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
-  | SendAssetEffect of int * composer_asset
+  | SendAssetEffect of int * composer_asset * sidebar_page list * string option
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
@@ -412,6 +424,10 @@ type logseq_model =
   ; has_older_journals : bool
   ; composer_expanded : bool
   ; composer_draft : string
+  ; composer_tags : sidebar_page list
+  ; composer_tag_choices : sidebar_page list
+  ; composer_tags_open : bool
+  ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
   ; capture_confirmation : int option
@@ -444,6 +460,7 @@ type logseq_action =
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
   | EditorCompletion of string * string
+  | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
@@ -460,6 +477,10 @@ type logseq_action =
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
+  | OpenComposerTags
+  | CloseComposerTags
+  | SetComposerTags of sidebar_page list
+  | RemoveComposerTag of string
   | ExpandComposer
   | FocusComposer
   | ApplyComposerDraft of string
@@ -747,6 +768,10 @@ let initial () =
     has_older_journals = false;
     composer_expanded = false;
     composer_draft = "";
+    composer_tags = [];
+    composer_tag_choices = [];
+    composer_tags_open = false;
+    composer_tags_loading = false;
     composer_assets = [];
     composer_autofocus = false;
     capture_confirmation = None;
@@ -797,8 +822,10 @@ let navigation_route_uuid route =
 let effect_id eff =
   match eff with
   | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) -> id
+  | LoadComposerTagsEffect (id, _) -> id
+  | SendTaggedCaptureEffect (id, _) -> id
   | SendCaptureEffect (id, _) -> id
-  | SendAssetEffect (id, _) -> id
+  | SendAssetEffect (id, _, _, _) -> id
   | SendTaskEffect (id, _, _) -> id
   | PersistComposerDraftEffect (id, _) -> id
   | PersistUISessionEffect (id, _) -> id
@@ -887,7 +914,7 @@ let contains_journal_refresh_effect_ effects =
     (fun eff ->
       match eff with
       | LoadOlderJournalsEffect _ -> true
-      | SendCaptureEffect _ -> true
+      | SendTaggedCaptureEffect _ | SendCaptureEffect _ -> true
       | SendTaskEffect _ -> true
       | _ -> false)
     effects
@@ -1564,6 +1591,11 @@ let rollback_navigation_effect (current : logseq_model) eff =
   | OpenGraphEffect _ -> { current with graph_loading = false }
   | _ -> current
 
+let composer_for_graph (current : logseq_model) graph_id =
+  if current.selected_graph_id = graph_id then current
+  else {current with composer_tags = []; composer_tag_choices = [];
+    composer_tags_open = false; composer_tags_loading = false}
+
 let resolve_failed_effect (current : logseq_model) eff message =
   match eff with
   | SignInEffect _ ->
@@ -1576,9 +1608,19 @@ let resolve_failed_effect (current : logseq_model) eff message =
     { current with sync_state = FailedState message }
   | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
     { current with new_graph_password_required = true }
+  | LoadComposerTagsEffect (_, graph_id) ->
+    if graph_id <> current.selected_graph_id then current
+    else {current with composer_tags_open = false; composer_tags_loading = false}
+  | SendTaggedCaptureEffect (_, capture) ->
+    if capture.capture_graph_id <> current.selected_graph_id then current
+    else {current with capture_confirmation = None;
+      composer_draft = (if current.composer_draft = "" then capture.capture_text else current.composer_draft);
+      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags)}
   | SendCaptureEffect _ | SendTaskEffect _ ->
     { current with capture_confirmation = None }
-  | SendAssetEffect (_, asset) ->
+  | SendAssetEffect (_, asset, tags, graph_id) ->
+    if graph_id <> current.selected_graph_id then current else
+    let current = { current with composer_tags = (if current.composer_tags = [] then tags else current.composer_tags) } in
     let current = { current with capture_confirmation = None } in
     if List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) current.composer_assets then current
     else { current with composer_assets = current.composer_assets @ [asset] }
@@ -1586,9 +1628,10 @@ let resolve_failed_effect (current : logseq_model) eff message =
 
 let resolve_successful_effect (current : logseq_model) eff _message =
   match eff with
-  | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
+  | SendTaggedCaptureEffect (id, _) | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
     { current with capture_confirmation = Some id }
-  | SendAssetEffect (id, asset) ->
+  | SendAssetEffect (id, asset, _, graph_id) ->
+    if graph_id <> current.selected_graph_id then current else
     {
       current with
       capture_confirmation = Some id;
@@ -1604,6 +1647,7 @@ let resolve_successful_effect (current : logseq_model) eff _message =
       authentication_error = None;
     }
   | OpenGraphEffect (_, graph_id) ->
+    let current = composer_for_graph current (Some graph_id) in
     (match graph_by_id current.graphs graph_id with
      | Some selected ->
        {
@@ -1767,6 +1811,11 @@ let editing_sync_state (current : logseq_model) =
   | FailedState reason -> FailedState reason
   | _ -> SyncingState
 
+let composer_tag_selection tags =
+  let existing, created = List.partition (fun (tag : sidebar_page) -> not (String.starts_with ~prefix:"new:" tag.uuid)) tags in
+  `Assoc ["selectedValues", `List (List.map (fun (tag : sidebar_page) -> `String tag.uuid) existing);
+    "newValues", `List (List.map (fun (tag : sidebar_page) -> `String tag.title) created)]
+
 let ui_session (current : logseq_model) =
   {
     graph_id = current.selected_graph_id;
@@ -1776,12 +1825,13 @@ let ui_session (current : logseq_model) =
       List.fold_left
         (fun assets eff ->
           match eff with
-          | SendAssetEffect (_, asset)
-            when not (List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) assets) ->
+          | SendAssetEffect (_, asset, _, graph_id)
+            when graph_id = current.selected_graph_id && not (List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) assets) ->
             assets @ [asset]
           | _ -> assets)
         current.composer_assets
         (current.in_flight_effects @ current.pending_effects);
+    composer_tags = current.composer_tags;
     composer_expanded = current.composer_expanded;
     search_open = current.search_open;
     query = current.search_query;
@@ -1816,6 +1866,7 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
         destination = session.destination;
         recent_graph_ids = session.recent_graph_ids;
         composer_assets = session.assets;
+        composer_tags = session.composer_tags;
         composer_expanded = session.composer_expanded;
         composer_autofocus = session.composer_expanded;
         search_open = session.search_open;
@@ -1867,7 +1918,8 @@ let retain_shell_contents previous rows =
     if row.row_loaded then row else
       match Hashtbl.find_opt by_id row.row_uuid with
       | None -> row
-      | Some cached -> { cached with row_loaded = false; depth = row.depth;
+      | Some cached -> { cached with row_loaded = false;
+          row_cached = cached.row_loaded || cached.row_cached; depth = row.depth;
           has_children = row.has_children; is_collapsed = row.is_collapsed;
           opens_as_page = row.opens_as_page; page_id = row.page_id;
           journal_title = row.journal_title; journal_day = row.journal_day }) rows
@@ -1973,6 +2025,16 @@ let rec update (current : logseq_model) action =
     if not (List.mem kind ["searchAutocomplete"; "submitAutocomplete"; "dismissAutocomplete"]) then current
     else enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
       Yojson.Basic.to_string (`Assoc (("type", `String kind) :: fields))))
+  | PasteOutlinerContent (uuid, payload) ->
+    (try match Yojson.Basic.from_string payload with
+     | `Assoc fields ->
+       let updated = cancel_outliner_autosave current in
+       let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = []} in
+       let fields = ("type", `String "pasteContent") :: ("uuid", `String uuid)
+         :: List.remove_assoc "type" (List.remove_assoc "uuid" fields) in
+       enqueue_effect updated (EditorOutlinerEventEffect (updated.next_effect_id, Yojson.Basic.to_string (`Assoc fields)))
+     | _ -> current
+     with _ -> current)
   | PasteOutlinerText (uuid, title, caret) ->
     let updated = update_editing current uuid title caret in
     let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = [];
@@ -2102,6 +2164,13 @@ let rec update (current : logseq_model) action =
       }
     in
     enqueue_close_search_effects closed path
+  | OpenComposerTags ->
+    enqueue_effect {current with composer_tags_open = true; composer_tags_loading = true; composer_autofocus = false}
+      (LoadComposerTagsEffect (current.next_effect_id, current.selected_graph_id))
+  | CloseComposerTags -> {current with composer_tags_open = false; composer_autofocus = true}
+  | SetComposerTags tags -> {current with composer_tags = tags; composer_tags_open = false; composer_autofocus = true}
+  | RemoveComposerTag uuid ->
+    {current with composer_tags = List.filter (fun (tag : sidebar_page) -> tag.uuid <> uuid) current.composer_tags}
   | ExpandComposer ->
     { current with composer_expanded = true; composer_autofocus = true }
   | FocusComposer ->
@@ -2141,9 +2210,18 @@ let rec update (current : logseq_model) action =
       }
   | SendComposer ->
     begin
-      let assets = current.composer_assets in
+      let tags = current.composer_tags in
+      let graph_id = current.selected_graph_id in
+      let assets = List.map (fun (asset : composer_asset) ->
+        let payload = try match Yojson.Basic.from_string asset.payload with
+          | `Assoc fields -> Yojson.Basic.to_string (`Assoc
+              (if tags = [] then List.remove_assoc "tags" fields
+               else ("tags", composer_tag_selection tags) :: List.remove_assoc "tags" fields))
+          | _ -> asset.payload with _ -> asset.payload in
+        {asset with payload}) current.composer_assets in
       let submission = String.trim current.composer_draft in
       let current = { current with composer_assets = [];
+        composer_tags = (if submission = "" && assets = [] then tags else []);
         capture_confirmation =
           (if submission = "" && assets = [] then current.capture_confirmation else None) } in
       let with_text =
@@ -2164,7 +2242,10 @@ let rec update (current : logseq_model) action =
               (PersistComposerDraftEffect (cleared.next_effect_id, ""))
           in
           enqueue_effect persisted
-            (match current.selected_task_status with
+            (if tags <> [] then SendTaggedCaptureEffect (persisted.next_effect_id,
+               {capture_text = submission; capture_status = current.selected_task_status;
+                capture_tags = tags; capture_graph_id = graph_id})
+             else match current.selected_task_status with
              | Some status ->
                SendTaskEffect (persisted.next_effect_id, submission, status)
              | None ->
@@ -2174,7 +2255,7 @@ let rec update (current : logseq_model) action =
       List.fold_left
         (fun updated asset ->
           enqueue_effect updated
-            (SendAssetEffect (updated.next_effect_id, asset)))
+            (SendAssetEffect (updated.next_effect_id, asset, tags, graph_id)))
         with_text assets
     end
   | DequeueEffect id ->
@@ -2205,6 +2286,8 @@ let rec update (current : logseq_model) action =
          in_flight_effects = remove_effect current.in_flight_effects id;
          outliner_selection_revision =
            (match succeeded, eff with
+            | _, EditorOutlinerEventEffect (_, payload)
+              when (try match Yojson.Basic.from_string payload with `Assoc fields -> List.assoc_opt "type" fields = Some (`String "pasteContent") | _ -> false with _ -> false) -> current.outliner_selection_revision + 1
             | true, (ChooseOutlinerAutocompleteEffect _ | EditorOutlinerEventEffect _) -> current.outliner_selection_revision + 1
             | _ -> current.outliner_selection_revision);
          result_view_feedback = (match eff with
@@ -2841,7 +2924,10 @@ let rec update (current : logseq_model) action =
 
 and apply_core_snapshot (current : logseq_model)
     (projection : core_projection) =
-  if Option.is_some projection.reference_update then
+  if Option.is_some projection.tag_choices_update then
+    if projection.selected_graph_id <> current.selected_graph_id then current
+    else {current with composer_tag_choices = Option.get projection.tag_choices_update; composer_tags_loading = false}
+  else if Option.is_some projection.reference_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else
       let uuid, rows = Option.get projection.reference_update in
@@ -2878,6 +2964,7 @@ and apply_core_snapshot (current : logseq_model)
             node_linked_reference_rows = hydrate route.node_linked_reference_rows }) current.node_routes }
   else
   if projection.is_graph_catalog_patch then
+    let current = composer_for_graph current projection.selected_graph_id in
     {
       current with
       selected_graph = projection.graph_name;
@@ -3035,10 +3122,13 @@ and apply_core_snapshot (current : logseq_model)
     in
     let updated =
       {
-        current with
+        (composer_for_graph current projection.selected_graph_id) with
         search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;
+        composer_tags = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tags else []);
+        composer_tag_choices = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tag_choices else []);
+        composer_tags_open = current.composer_tags_open && projection.selected_graph_id = current.selected_graph_id;
         graphs = projection.graphs;
         local_graph_ids;
         is_graph_encrypted = projection.is_graph_encrypted;

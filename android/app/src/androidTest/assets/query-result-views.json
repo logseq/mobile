@@ -43,7 +43,7 @@
                     "attr": "block/title",
                     "kind": "string",
                     "text": "Project result 1",
-                    "editable": true,
+                    "editable": false,
                     "raw": {
                       "type": "string",
                       "value": "Project result 1"
@@ -79,7 +79,7 @@
                     "attr": "block/title",
                     "kind": "string",
                     "text": "Project result 2",
-                    "editable": true,
+                    "editable": false,
                     "raw": {
                       "type": "string",
                       "value": "Project result 2"
@@ -115,7 +115,7 @@
                     "attr": "block/title",
                     "kind": "string",
                     "text": "Project result 3",
-                    "editable": true,
+                    "editable": false,
                     "raw": {
                       "type": "string",
                       "value": "Project result 3"
@@ -144,7 +144,7 @@
                     "attr": "block/title",
                     "title": "Name",
                     "kind": "string",
-                    "editable": true
+                    "editable": false
                   },
                   {
                     "attr": "user.property/Score",
@@ -199,7 +199,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 1",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 1"
@@ -235,7 +235,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 2",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 2"
@@ -271,7 +271,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 3",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 3"
@@ -301,7 +301,7 @@
                     "attr": "block/title",
                     "title": "Name",
                     "kind": "string",
-                    "editable": true
+                    "editable": false
                   },
                   {
                     "attr": "user.property/Score",
@@ -356,7 +356,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 1",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 1"
@@ -392,7 +392,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 2",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 2"
@@ -428,7 +428,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 3",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 3"
@@ -458,7 +458,7 @@
                     "attr": "block/title",
                     "title": "Name",
                     "kind": "string",
-                    "editable": true
+                    "editable": false
                   },
                   {
                     "attr": "user.property/Score",
@@ -513,7 +513,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 1",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 1"
@@ -549,7 +549,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 2",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 2"
@@ -585,7 +585,7 @@
                         "attr": "block/title",
                         "kind": "string",
                         "text": "Project result 3",
-                        "editable": true,
+                        "editable": false,
                         "raw": {
                           "type": "string",
                           "value": "Project result 3"
@@ -615,7 +615,7 @@
                     "attr": "block/title",
                     "title": "Name",
                     "kind": "string",
-                    "editable": true
+                    "editable": false
                   },
                   {
                     "attr": "user.property/Score",

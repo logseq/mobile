@@ -331,7 +331,8 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
 
 let empty_core_projection () =
   {
-    Model.graph_name = None;
+    Model.tag_choices_update = None;
+    graph_name = None;
     selected_graph_id = None;
     graphs = [];
     is_graph_encrypted = false;
@@ -426,6 +427,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_cached = false;
     row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_title = title;
@@ -2038,7 +2040,7 @@ let authentication_screen_uses_the_product_name_on_every_host () =
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_editor_schema ()))
-    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],13:paste-content[5:value:string:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
@@ -2762,6 +2764,7 @@ let outline_row uuid title =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_cached = false;
     row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_title = title;
@@ -4690,7 +4693,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
       "surface.composer.root"
   in
   let expanded =
-    parent_with_child_identifier renderer expanded_composer "field.composer"
+    parent_with_child_identifier renderer expanded_composer "row.composer.controls"
   in
   let field =
     descendant_with_identifier renderer expanded "field.composer"
@@ -4751,7 +4754,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     (property_int renderer controls Lui_protocol.HeightValue)
     44;
   check_eq ~msg:"main's controls include a flexible trailing spacer"
-    (List.length control_children) 4;
+    (List.length control_children) 5;
   check_eq ~msg:"the composer spacer remains directly testable"
     (property_string renderer control_spacer
        Lui_protocol.AccessibilityIdentifier)
@@ -8257,6 +8260,32 @@ let ten_thousand_blocks_mount_only_the_requested_window () =
     check ~msg:"the window stays bounded after reverse scrolling" (count_rows () <= 32)
   ) ["root"; "node"; "tag"; "mixed"; "journals"]
 
+let scrolling_keeps_the_active_editor_outside_the_visible_window () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    let rows = List.init 10_000 (fun index ->
+      { (outline_row ("retained-" ^ string_of_int index) "Block") with Model.page_id = "page" }) in
+    let editing = { Model.editing_uuid = "retained-8"; editing_title = "Unsaved draft"; caret_utf16_offset = 4 } in
+    send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+      (Some editing) None [] [] rows false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = main_root renderer application in
+    let window = descendant_with_identifier renderer root "outliner.window" in
+    let editor = extension_node application "outliner-editor" in
+    check ~msg:"the fixture mounts a real editor" (editor <> -1);
+    List.iter (fun first ->
+      dispatch application (Lui_protocol.VisibleRange (window, first, first + 19));
+      flush application;
+      check_eq ~msg:"scrolling must not dispose and recreate the active editor"
+        (extension_node application "outliner-editor") editor;
+      check_eq ~msg:"the retained editor keeps its unsaved text"
+        (extension_property application editor "title") (Some (Lui_protocol.StringValue "Unsaved draft"));
+      check ~msg:"only the window and one pinned editor may stay mounted"
+        (List.length (children renderer window) <= 33)) [100; 9_980; 0]
+  ) [ios_backend; kotlin_backend]
+
 let kotlin_large_pages_mount_only_the_requested_window () =
   let application = App.create (kotlin_backend ()) in
   start application;
@@ -8325,6 +8354,25 @@ let distant_outline_contents_are_loaded_without_replacing_the_page () =
     check ~msg:"the final block renders after hydration"
       (descendant_with_identifier renderer (root ()) "outliner.block.content-9999" <> -1)
   ) [false; true]
+
+let empty_cached_rows_remain_renderable_during_hydration () =
+  let rows = List.init 96 (fun index -> outline_row ("empty-cache-" ^ string_of_int index)
+    (if index mod 2 = 0 then "" else "Block")) in
+  let projection = { (empty_core_projection ()) with
+    Model.graph_name = Some "Work"; selected_graph_id = Some "graph"; outliner_rows = rows } in
+  let current = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection) in
+  let shells = List.mapi (fun index row -> if index < 32 then row else
+    { row with Model.row_title = ""; row_loaded = false }) rows in
+  let refreshed = Model.update current (Model.ApplyCoreSnapshot { projection with Model.outliner_rows = shells }) in
+  let cached = List.nth (View_rows.retained_outliner_rows refreshed) 40 in
+  check ~msg:"an already loaded empty block must not become a loading skeleton"
+    (View_rows.page_entry_ready (View_rows.Outline_entry cached));
+  check ~msg:"cached empty blocks still request authoritative content"
+    (View_rows.unloaded_entry_id (View_rows.Outline_entry cached) = Some "empty-cache-40");
+  let fresh = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot { projection with Model.outliner_rows = shells }) in
+  let unavailable = List.nth (View_rows.retained_outliner_rows fresh) 40 in
+  check ~msg:"a genuinely unloaded block still uses a loading skeleton"
+    (not (View_rows.page_entry_ready (View_rows.Outline_entry unavailable)))
 
 let returning_to_a_scrolled_page_keeps_hydrated_rows_mounted () =
   let application = App.create (ios_backend ()) in
@@ -9495,8 +9543,8 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     "stretch";
   check_eq ~msg:"suggestions start below their shared header"
     (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "start";
-  check_eq ~msg:"candidate buttons keep their fixed height inside grouped suggestions"
-    (property_float renderer candidate_button Lui_protocol.GrowValue) 0.0;
+  check_eq ~msg:"candidate buttons fill the bounded horizontal suggestion row"
+    (property_float renderer candidate_button Lui_protocol.GrowValue) 1.0;
   check_eq
     ~msg:"Kotlin does not flex rows along an unbounded scroll axis"
     (property_float renderer
@@ -10455,8 +10503,10 @@ let cases =
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
     case "saving-nested-block-preserves-native-row-indentation" saving_nested_block_preserves_native_row_indentation;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
+    case "empty-cached-rows-remain-renderable-during-hydration" empty_cached_rows_remain_renderable_during_hydration;
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
     case "scrolling-prefetches-content-before-mounting-the-next-window" scrolling_prefetches_content_before_mounting_the_next_window;
+    case "scrolling-keeps-the-active-editor-outside-the-visible-window" scrolling_keeps_the_active_editor_outside_the_visible_window;
     case "kotlin-large-pages-mount-only-the-requested-window" kotlin_large_pages_mount_only_the_requested_window;
     case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;

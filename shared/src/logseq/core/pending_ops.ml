@@ -145,6 +145,7 @@ type pending_create =
 type pending_journal =
   { page_uuid : string
   ; block_uuid : string
+  ; block_title : string
   ; title : string
   ; journal_day : int
   ; created_at : int
@@ -686,7 +687,7 @@ let rec intent_json intent =
           ("title", `String value.title);
           ("journalDay", `Int value.journal_day);
           ("createdAt", `Int value.created_at);
-        ] )
+        ] @ (if value.block_title = "" then [] else ["blockTitle", `String value.block_title]) )
     | Add_tag value ->
       ( "add-tag"
       , [
@@ -828,6 +829,7 @@ let rec intent_of_json input =
       {
         page_uuid = string_field fields "pageUuid";
         block_uuid = string_field fields "blockUuid";
+        block_title = (match List.assoc_opt "blockTitle" fields with Some (`String title) -> title | _ -> "");
         title = string_field fields "title";
         journal_day = int_field fields "journalDay";
         created_at = int_field fields "createdAt";

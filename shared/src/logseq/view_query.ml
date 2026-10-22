@@ -588,22 +588,35 @@ let collection ~render_block model_source raw_source send : t =
       List.find_opt (fun property -> jfield "attr" property = `String attr) (jlist (jfield "properties" row))
         |> Option.value ~default:(`Assoc ["text", `String ""; "attr", `String attr; "raw", `Null;
           "editable", jfield "editable" (view_column view attr)]) in
+    let table_cells view_id row_id cells =
+      let rec separated = function
+        | [] -> []
+        | [(_, cell)] -> [cell]
+        | (_, cell) :: ((next_attr, _) :: _ as rest) ->
+          cell :: separator ~orientation:`vertical
+            ~accessibility_identifier:("view.cell.separator." ^ view_id ^ "." ^ row_id ^ "." ^ next_attr) [] :: separated rest
+      in separated cells in
     let table_row item_source : t =
-      dyn (fun (view, item) -> row ~gap:0 ~cross:`stretch (List.map (fun col -> let attr = jtext (jfield "attr" col) in
+      dyn (fun (view, item) -> row ~gap:0 ~cross:`stretch (table_cells view.id
+        (Option.value ~default:(string_of_int item.index) item.uuid)
+        (List.map (fun col -> let attr = jtext (jfield "attr" col) in attr,
         if String.starts_with ~prefix:"query.result/" attr then
           let index = int_of_string (String.sub attr 13 (String.length attr - 13)) in
           let values = jlist (jfield "cells" item.json) in
-          text ~value:(Option.fold ~none:"" ~some:text_value (List.nth_opt values index)) ~width:170 ~min_height:48 ~padding:12
+          text ~value:(Option.fold ~none:"" ~some:text_value (List.nth_opt values index)) ~style_class:"single-line" ~width:170 ~min_height:48 ~padding:12
             ~accessibility_identifier:("view.scalar." ^ view.id ^ "." ^ string_of_int item.index ^ "." ^ string_of_int index) []
         else
         let property = cell view item attr in
         let value = jtext (jfield "text" property) in
         let label = jtext (jfield "title" col) ^ ": " ^ (if value = "" then "Empty" else value) in
-        button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
-          ~width:(if attr = "block/title" then 260 else 170) ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
-          ~disabled:(not (jbool (jfield "editable" property)))
-          ~accessibility_identifier:("view.cell." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid ^ "." ^ attr)
-          ~on_press:(fun _ -> edit item property) []) (choices view))) (own (Signal.map2 (fun view item -> view, item) view_source item_source)) in
+        let identifier = "view.cell." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid ^ "." ^ attr in
+        let width = if attr = "block/title" then 260 else 170 in
+        if jbool (jfield "editable" property) then
+          button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
+            ~width ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
+            ~accessibility_identifier:identifier ~on_press:(fun _ -> edit item property) []
+        else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
+          ~accessibility_identifier:identifier []) (choices view)))) (own (Signal.map2 (fun view item -> view, item) view_source item_source)) in
     let gallery_card item_source : t =
       dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
         ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid) [
@@ -666,8 +679,9 @@ let collection ~render_block model_source raw_source send : t =
           (dyn (fun current -> match current.typ with
           | "table" -> scroll ~orientation:`horizontal ~accessibility_identifier:("view.table.scroll." ^ view.id) [
               column ~gap:0 ~cross:`stretch ~border_color:"border" ~border_width:1 ~corner_radius:10 [
-                row ~gap:0 (List.map (fun col -> text ~value:(jtext (jfield "title" col)) ~style_class:"subheadline single-line"
-                  ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~padding:12 ~background:"secondary" []) (choices current));
+                row ~gap:0 ~cross:`stretch (table_cells view.id "header" (List.map (fun col -> jtext (jfield "attr" col),
+                  text ~value:(jtext (jfield "title" col)) ~style_class:"subheadline single-line"
+                  ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~min_height:48 ~padding:12 ~background:"secondary" []) (choices current)));
                 separator []; keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(fun source -> column ~gap:0 [table_row source; separator []])]]
           | "gallery" -> dyn (fun columns -> grid ~columns ~gap:12 ~accessibility_identifier:("view.gallery." ^ view.id) [
               keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:gallery_card])

@@ -7,6 +7,7 @@ type outliner_platform_command =
   | Platform_haptic of State.outliner_haptic
   | Focus_block of string
   | Confirm_delete of string list
+  | Set_clipboard_blocks of string
   | Set_clipboard_text of string
   | Set_clipboard_references of string list
   | Set_clipboard_urls of string list
@@ -113,11 +114,11 @@ let command base_t now fresh_uuid context cmd =
        let intent = match value.split_placement with
          | State.After -> Ops.Split_block {
              uuid = value.split_uuid; expected_title = value.split_expected_title;
-             before = value.before; after = value.after; new_uuid; new_order; created_at = now ()}
+             before = String_kit.trim value.before; after = value.after; new_uuid; new_order; created_at = now ()}
          | State.Inside | State.Before ->
            let title, inserted = if value.split_placement = State.Before then value.after, value.before
              else value.before, value.after in
-           Ops.Atomic [Ops.Save_title {uuid = block.uuid; expected_title = value.split_expected_title; title};
+           Ops.Atomic [Ops.Save_title {uuid = block.uuid; expected_title = value.split_expected_title; title = String_kit.trim title};
              Ops.Insert_block {uuid = new_uuid; title = inserted; page_uuid = block.page_id;
                parent_uuid; order = new_order; created_at = now ()}]
        in
@@ -294,6 +295,18 @@ let command base_t now fresh_uuid context cmd =
     Ok (result [] [ Platform_pick_attachment uuid ])
   | State.Take_photo uuid -> Ok (result [] [ Platform_take_photo uuid ])
   | State.Record_audio uuid -> Ok (result [] [ Platform_record_audio uuid ])
+  | State.Copy_blocks uuids ->
+    (match context.State.db, context.graph_id with
+     | Some db, Some graph -> let* payload = Block_clipboard.copy db ~graph uuids in
+       Ok (result [] [Set_clipboard_blocks payload])
+     | _ -> Error "Select a graph before copying blocks")
+  | State.Paste_blocks content ->
+    (match context.State.db, context.graph_id with
+     | Some db, Some graph ->
+       let* pasted = Block_clipboard.paste db ~graph ~now:(now ()) ~fresh_uuid content in
+       Ok (result [operation base_t fresh_uuid pasted.intent]
+         (Option.fold ~none:[] ~some:(fun uuid -> [Focus_block uuid]) pasted.focus))
+     | _ -> Error "Select a graph before pasting blocks")
   | State.Copy_text text -> Ok (result [] [ Set_clipboard_text text ])
   | State.Copy_references uuids ->
     Ok (result [] [ Set_clipboard_references uuids ])

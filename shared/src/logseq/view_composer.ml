@@ -151,7 +151,51 @@ let composer_send_button context ?send_icon send_disabled on_send : t =
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
 
-let composer_surface ?key ?accessibility_identifier ?attachments
+let composer_tag_chips model_source send : t =
+  if_ ~test:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags <> []) model_source)
+    (scroll ~orientation:`horizontal ~height:40 [row ~gap:6 [
+      keyed ~source:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags) model_source)
+        ~key:(fun (tag : Model.sidebar_page) -> tag.uuid) ~cmp:String.compare
+        ~mount:(fun source -> let tag = Signal.sample source in
+          button ~text_signal:(Signal.map (fun (tag : Model.sidebar_page) -> "#" ^ tag.title) source)
+            ~icon:(`app "close") ~icon_placement:`trailing ~variant:`secondary ~corner_radius:16
+            ~style_class:"caption single-line" ~min_height:32 ~padding_vertical:0 ~padding_horizontal:10
+            ~foreground:"muted-foreground" ~label:("Remove tag " ^ tag.title)
+            ~accessibility_identifier:("button.composer.tag.remove." ^ tag.uuid)
+            ~on_press:(fun _ -> ignore (send (Model.RemoveComposerTag (Signal.sample source).uuid))) [])
+    ]])
+
+let composer_tag_picker model_source send : t =
+  if_ ~test:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_open && not model.composer_tags_loading) model_source)
+    (fun context parent ->
+      let model : Model.logseq_model = Signal.sample model_source in
+      let seen = Hashtbl.create 32 in
+      let options = List.filter (fun (tag : Model.sidebar_page) ->
+        if Hashtbl.mem seen tag.uuid then false else (Hashtbl.add seen tag.uuid (); true))
+        (model.composer_tag_choices @ model.composer_tags) in
+      let property = `Assoc ["attr", `String "block/tags"; "title", `String "Tags"; "kind", `String "class";
+        "many", `Bool true; "ref", `Bool true; "editable", `Bool true; "closed", `Bool false;
+        "canCreate", `Bool true; "textLayout", `Bool false;
+        "filterValues", `List (List.map (fun (tag : Model.sidebar_page) ->
+          `Assoc ["title", `String tag.title; "match", `List [`String tag.uuid]]) options);
+        "raw", `Assoc ["type", `String "set"; "value", `List (List.map (fun (tag : Model.sidebar_page) ->
+          `Assoc ["type", `String "ref-uuid"; "value", `String tag.uuid]) model.composer_tags)]] in
+      (View_query.property_editor ~id:"composer.tags" ~column:property model_source property
+        (fun () -> ignore (send Model.CloseComposerTags))
+        ~submit:(fun fields ->
+          let strings name = match List.assoc_opt name fields with Some (`List values) ->
+            List.filter_map (function `String value -> Some value | _ -> None) values | _ -> [] in
+          let selected = List.filter_map (fun uuid -> List.find_opt (fun (tag : Model.sidebar_page) -> tag.uuid = uuid) options)
+            (strings "selectedValues") in
+          let created = List.map (fun title -> ({Model.uuid = "new:" ^ Dev_query.Unicode.lowercase title; title} : Model.sidebar_page))
+            (strings "newValues") in
+          let seen = Hashtbl.create 8 in
+          let tags = List.filter (fun (tag : Model.sidebar_page) ->
+            let key = Dev_query.Unicode.lowercase tag.title in
+            if Hashtbl.mem seen key then false else (Hashtbl.add seen key (); true)) (selected @ created) in
+          ignore (send (Model.SetComposerTags tags)))) context parent)
+
+let composer_surface ?key ?accessibility_identifier ?attachments ?tag_strip
     ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
     ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
@@ -189,6 +233,7 @@ let composer_surface ?key ?accessibility_identifier ?attachments
     | None -> field
     | Some signal_ -> View_base.with_bool_prop_signal Lui_protocol.Autofocus signal_ field
   in
+  let field = match tag_strip with None -> field | Some tags -> column ~gap:0 [field; tags] in
   let send_button =
     match on_send with
     | None -> []
@@ -281,10 +326,16 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                   composer_asset_view context asset_source send))
            ~attachments_visible_signal:
              (Signal.map View_base.composer_assets_present_ model_source)
+           ~tag_strip:(composer_tag_chips model_source send)
            ~actions:
              [
                stack [composer_attachment_button context send];
                stack [composer_task_status_button context model_source send];
+               stack [button ~icon:(`app "toolbar-tag") ~variant:`ghost
+                 ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
+                 ~label:"Add tags" ~accessibility_identifier:"button.composer.tags"
+                 ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_loading) model_source)
+                 ~on_press:(press send Model.OpenComposerTags) []];
              ]
            ~send_icon:(if Lui_ui.host context = KotlinHost then `send
                        else `app "arrow-up")
@@ -296,6 +347,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
            ~on_send:(press send Model.SendComposer)
            ~on_press:(press send Model.FocusComposer)
            ());
+      composer_tag_picker model_source send;
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
         (collapsed_composer context send);

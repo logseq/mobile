@@ -43,6 +43,9 @@ let reconcile_authoritative_blocks cache blocks =
 
 let normalize_title_intent normalize (intent : Ops.pending_intent) =
   match intent with
+  | Ops.Create_journal value ->
+    let titles, tags = normalize value.block_uuid [value.block_title] in
+    ((match titles with [block_title] -> Ops.Create_journal {value with Ops.block_title} | _ -> intent), tags)
   | Ops.Save_title value ->
     let titles, tags = normalize value.uuid [ value.title ] in
     ( (match titles with
@@ -125,8 +128,8 @@ let capture_operation base_t uuid title now load_context journal_page_id
          (Ops.Create_journal
             {
               Ops.page_uuid = Wire.journal_page_uuid journal_day;
-              block_uuid = uuid;
-              title;
+              block_uuid = uuid; block_title = title;
+              title = Wire.journal_day_title journal_day;
               journal_day;
               created_at = now;
             }))

@@ -88,6 +88,7 @@ type outliner_priority =
 type outliner_message =
   | Tap_block of string
   | Long_press_block of string
+  | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
@@ -158,6 +159,8 @@ type outliner_command =
   | Take_photo of string
   | Record_audio of string
   | Insert_root_block of outliner_root
+  | Copy_blocks of string list
+  | Paste_blocks of Block_clipboard.content
   | Copy_text of string
   | Copy_references of string list
   | Copy_urls of string list
@@ -284,36 +287,10 @@ let display_block_title (context : outliner_context) (block : Model.block) =
     (summary_title dup (block.references @ block.tags))
     block.title
 
-let utf8_sequence_length byte =
-  if byte land 128 = 0 then 1
-  else if byte land 224 = 192 then 2
-  else if byte land 240 = 224 then 3
-  else if byte land 248 = 240 then 4
-  else 1
-
-let utf16_units byte = if utf8_sequence_length byte = 4 then 2 else 1
-
-let byte_index_of_utf16 value offset =
-  let rec loop index units =
-    if index >= String.length value || units >= max 0 offset then index
-    else
-      let byte = Char.code value.[index] in
-      loop
-        (min (String.length value) (index + utf8_sequence_length byte))
-        (units + utf16_units byte)
-  in
-  loop 0 0
-
-let utf16_length value =
-  let rec loop index units =
-    if index >= String.length value then units
-    else
-      let byte = Char.code value.[index] in
-      loop
-        (min (String.length value) (index + utf8_sequence_length byte))
-        (units + utf16_units byte)
-  in
-  loop 0 0
+let utf8_sequence_length = String_kit.utf8_sequence_length
+let utf16_units = String_kit.utf16_units
+let byte_index_of_utf16 = String_kit.byte_index_of_utf16
+let utf16_length = String_kit.utf16_length
 
 let prefix_at value caret = String.sub value 0 (byte_index_of_utf16 value caret)
 
@@ -627,7 +604,7 @@ let remove_tag_token (editing : editor_draft) =
       }
   | None -> None
 
-let commit_effect (context : outliner_context) editing =
+let commit_effect ?(trim = false) (context : outliner_context) editing =
   match editing with
   | Some (editing : editor_draft) ->
     let expected =
@@ -637,14 +614,15 @@ let commit_effect (context : outliner_context) editing =
           { block with title = editing.expected_title }
       | None -> editing.expected_title
     in
-    if expected = editing.title then []
+    let title = if trim then String_kit.trim editing.title else editing.title in
+    if expected = title then []
     else
       [
         Commit_title
           {
             uuid = editing.uuid;
             expected_title = editing.expected_title;
-            title = editing.title;
+            title;
           };
       ]
   | None -> []
@@ -1007,7 +985,7 @@ let step (state : outliner_state) commands = (state, commands)
 let leave_interaction context (state : outliner_state) =
   step
     { state with editing = None; selected = Sset.empty; autocomplete = None }
-    (commit_effect context state.editing)
+    (commit_effect ~trim:true context state.editing)
 
 let split_editing context (state : outliner_state) (editing : editor_draft) =
   let index = byte_index_of_utf16 editing.title editing.caret in
@@ -1251,7 +1229,7 @@ let apply_editor_action context state editing action =
   | Code language when String.trim editing.title <> ""
       || Option.bind (find_block context editing.uuid) (fun block -> block.Model.display_type) <> None ->
     step {state with editing = None; autocomplete = None}
-      (commit_effect context (Some editing) @ [Execute_editor (Insert_code (editing.uuid, language))])
+      (commit_effect ~trim:true context (Some editing) @ [Execute_editor (Insert_code (editing.uuid, language))])
   | Properties _ | Choice _ | Code _ | Number _ ->
     finish editing (commit_effect context (Some editing) @ [Execute_editor (Apply (editing.uuid, action))])
 
@@ -1402,7 +1380,8 @@ let update context (state : outliner_state) message =
              with
              selected = Sset.empty;
            }
-           (commit_effect context state.editing)
+           (commit_effect ~trim:(Option.fold ~none:false
+              ~some:(fun (editing : editor_draft) -> editing.uuid <> uuid) state.editing) context state.editing)
        | None -> step state [])
   | Long_press_block uuid ->
     step
@@ -1412,7 +1391,14 @@ let update context (state : outliner_state) message =
         selected = Sset.singleton uuid;
         autocomplete = None;
       }
-      (commit_effect context state.editing @ [ Haptic Selection ])
+      (commit_effect ~trim:true context state.editing @ [ Haptic Selection ])
+  | Paste_content content ->
+    (match state.editing with
+     | Some editing when editing.uuid = content.Block_clipboard.target_uuid ->
+       let title, caret = Block_clipboard.inline content in
+       step {state with editing = Some {editing with title; caret};
+         autocomplete = None; completion_dismissed = true} [Paste_blocks content]
+     | _ -> step state [Editor_error "Paste target is no longer being edited"])
   | Text_pasted value | Text_changed value ->
     (match state.editing with
      | Some editing ->
@@ -1508,12 +1494,12 @@ let update context (state : outliner_state) message =
   | Toolbar Hide_keyboard ->
     step
       { state with editing = None; autocomplete = None }
-      (commit_effect context state.editing @ [ Haptic Impact ])
+      (commit_effect ~trim:true context state.editing @ [ Haptic Impact ])
   | Save_editing -> step state (commit_effect context state.editing)
   | Cancel_editing ->
     step
       { state with editing = None; autocomplete = None }
-      (commit_effect context state.editing)
+      (commit_effect ~trim:true context state.editing)
   | Toolbar Tag_action -> toolbar_insert state "#" 0
   | Toolbar Page_reference -> toolbar_insert state "[[]]" 2
   | Toolbar Camera ->
@@ -1532,16 +1518,9 @@ let update context (state : outliner_state) message =
        step state [ Pick_attachment editing.uuid; Haptic Impact ]
      | None -> step state [])
   | Toolbar Copy ->
-    let text =
-      String.concat "\n"
-        (List.filter_map
-           (fun (block : Model.block) ->
-             if Sset.mem block.uuid state.selected then Some block.title
-             else None)
-           context.blocks)
-    in
-    step { state with selected = Sset.empty }
-      [ Copy_text text; Haptic Impact ]
+    let uuids = List.filter_map (fun (block : Model.block) ->
+      if Sset.mem block.uuid state.selected then Some block.uuid else None) context.blocks in
+    step {state with selected = Sset.empty} [Copy_blocks uuids; Haptic Impact]
   | Toolbar Copy_reference ->
     step
       { state with selected = Sset.empty }
@@ -1569,7 +1548,7 @@ let update context (state : outliner_state) message =
         editing = None;
         autocomplete = None;
       }
-      (commit_effect context state.editing @ [ Haptic Impact ])
+      (commit_effect ~trim:true context state.editing @ [ Haptic Impact ])
   | Zoom_in uuid ->
     if Option.is_some (find_block context uuid) then
       let state, effects = leave_interaction context state in

@@ -117,8 +117,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
       metadata_base request) in
     let visible = own (Signal.map (fun (items, start, length) ->
       let visible = Array.sub items start length |> Array.to_list in
-      if Lui_ui.host context <> Lui_protocol.KotlinHost then visible
-      else match Array.find_index is_pinned items with
+      match Array.find_index is_pinned items with
       | Some index when index < start || index >= start + length -> visible @ [items.(index)]
       | _ -> visible) window) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));
@@ -195,7 +194,7 @@ let needs_placeholder rows = match List.rev rows with
   | [] -> true
   | last :: _ ->
     let title = if last.is_editing then last.editing_title else last.value.row_title in
-    not (last.value.row_loaded && String_kit.is_blank title && not last.value.has_children)
+    not ((last.value.row_loaded || last.value.row_cached) && String_kit.is_blank title && not last.value.has_children)
 
 let outline_entries rows = List.map (fun row -> Outline_entry row) rows
 
@@ -221,7 +220,7 @@ let journal_entries rows (current : Model.logseq_model) =
   let entries = List.mapi (fun index (page, title, day, rows) ->
     let outline = outline_entries rows in
     match title, day with
-    | Some title, Some day when (current.outliner_editing = None && needs_placeholder rows) || rows = [] ->
+    | Some title, Some day when needs_placeholder rows || rows = [] ->
       outline @ [Placeholder_entry {parent_uuid = page;
         journal_heading = if rows = [] then Some (title, day, index > 0) else None}]
     | _ -> outline) sections in
@@ -238,7 +237,7 @@ let page_entries rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      if allowed && current.outliner_editing = None && needs_placeholder rows then
+      if allowed && needs_placeholder rows then
         outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
       else outline in
   List.rev_append (List.rev outline)
@@ -283,8 +282,8 @@ let unloaded_entry_id = function
   | _ -> None
 
 let page_entry_ready = function
-  | Outline_entry row -> row.value.Model.row_loaded || row.value.row_title <> "" || row.is_editing
-  | Reference_entry (Reference_row (_, row)) -> row.Model.row_loaded || row.row_title <> ""
+  | Outline_entry row -> row.value.Model.row_loaded || row.value.row_cached || row.value.row_title <> "" || row.is_editing
+  | Reference_entry (Reference_row (_, row)) -> row.Model.row_loaded || row.row_cached || row.row_title <> ""
   | _ -> true
 
 let page_entry_editor_ = function

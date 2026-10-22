@@ -1931,7 +1931,8 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
   (match (List.nth !staged 0).Ops.intent with
    | Ops.Create_journal journal ->
      check_eq journal.block_uuid "encrypted-async";
-     check_eq journal.title "Secret task"
+     check_eq journal.block_title "Secret task";
+     check_eq journal.title (Rpc_wire.journal_day_title journal.journal_day)
    | _ -> check false);
   (match (List.nth !staged 1).Ops.intent with
    | Ops.Set_property property ->

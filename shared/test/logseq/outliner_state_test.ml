@@ -572,7 +572,7 @@ let selection_copy_and_unselect_close_selection () =
       check_eq (selected next) [];
       check_eq commands [ expected; State.Haptic State.Impact ])
     [
-      (State.Copy, State.Copy_text "Alpha");
+      (State.Copy, State.Copy_blocks ["a"]);
       (State.Copy_reference, State.Copy_references [ "a" ]);
       (State.Copy_url, State.Copy_urls [ "a" ]);
     ];

@@ -11,6 +11,7 @@ type host_ui_session =
   { graph_id : string option
   ; destination : string
   ; assets : host_composer_asset list
+  ; composer_tags : (string * string) list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string
@@ -103,6 +104,11 @@ let ui_session value =
       List.map
         (fun asset -> composer_asset asset (string_field "payload" asset))
         (Util.to_list (Util.member "assets" value));
+    composer_tags = (match Util.member "composerTags" value with
+      | `List tags -> List.filter_map (fun tag ->
+          let uuid = string_field "uuid" tag and title = string_field "title" tag in
+          if uuid = "" || title = "" then None else Some (uuid, title)) tags
+      | _ -> []);
     composer_expanded = bool_field "composerExpanded" value;
     search_open = bool_field "searchOpen" value;
     query = string_field "query" value;

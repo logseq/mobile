@@ -60,7 +60,7 @@ private const val EDITOR_FINGERPRINT =
         "properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none|events:11:text-change[" +
         "18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[" +
-        "18:caret-utf16-offset:int:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:" +
+        "18:caret-utf16-offset:int:required],13:paste-content[5:value:string:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:" +
         "required,5:title:string:required],9:backspace[16:selection-length:int:" +
         "required,5:title:string:required]"
 private const val RICH_FINGERPRINT =
@@ -109,6 +109,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING),
         ),
         events = listOf(
+            LuiExtensionEventSchema("paste-content", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true))),
             LuiExtensionEventSchema(
                 "paste",
                 listOf(

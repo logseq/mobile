@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 enum LGOutlinerEditorExtension {
     static let identifier = "outliner-editor"
-    static let fingerprint = "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    static let fingerprint = "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],13:paste-content[5:value:string:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -23,6 +23,7 @@ enum LGOutlinerEditorExtension {
                         .init(name: "title", kind: .string, isRequired: true),
                         .init(name: "caret-utf16-offset", kind: .int, isRequired: true),
                     ]),
+                    .init(name: "paste-content", fields: [.init(name: "value", kind: .string, isRequired: true)]),
                     .init(name: "paste", fields: [
                         .init(name: "title", kind: .string, isRequired: true),
                         .init(name: "caret-utf16-offset", kind: .int, isRequired: true),
@@ -66,6 +67,7 @@ private struct LGOutlinerEditor: View {
             onPaste: { title, caret in
                 emit(name: "paste", values: ["title": .string(title), "caret-utf16-offset": .int(caret)])
             },
+            onPasteContent: { payload in emit(name: "paste-content", values: ["value": .string(payload)]) },
             onReturn: { title, caret in
                 emit(name: "return", values: [
                     "title": .string(title),

@@ -466,7 +466,7 @@ internal class LogseqRuntime(
             scope.launch { runCatching { graphLifecycle?.loadSidebar() } }
         }
         if (resolution.succeeded &&
-            effect.kind in setOf("send-capture", "send-task", "sync-now")
+            effect.kind in setOf("send-capture", "send-task", "send-tagged", "sync-now")
         ) {
             requestSyncNow()
         }
@@ -687,6 +687,7 @@ internal class LogseqRuntime(
                 "haptic" -> performHaptic(command.style)
                 "confirmDelete" -> confirmDeletion(command.uuids)
                 "setClipboardText" -> platformServices.copyText(command.text.orEmpty())
+                "setClipboardBlocks" -> com.logseq.app.AndroidBlockClipboard.copy(activity, command.text.orEmpty())
                 "setClipboardReferences" -> platformServices.copyText(
                     command.uuids.joinToString("\n") { "[[$it]]" }
                 )

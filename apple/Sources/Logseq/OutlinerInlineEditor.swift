@@ -11,6 +11,7 @@ struct OutlinerInlineEditor: View {
     var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
     var onPaste: ((String, Int) -> Void)? = nil
+    var onPasteContent: ((String) -> Void)? = nil
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
@@ -30,6 +31,7 @@ struct OutlinerInlineEditor: View {
             selectionRevision: selectionRevision,
             onTextChange: onTextChange,
             onPaste: onPaste,
+            onPasteContent: onPasteContent,
             onReturn: onReturn,
             onBackspace: onBackspace,
             onCaretChange: onCaretChange
@@ -142,6 +144,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
     var onPaste: ((String, Int) -> Void)? = nil
+    var onPasteContent: ((String) -> Void)? = nil
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
@@ -153,6 +156,16 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = FocusRetainingTextView()
         textView.delegate = context.coordinator
+        let coordinator = context.coordinator
+        textView.onPasteContent = { [weak coordinator, weak textView] payload in
+            guard let coordinator, let textView,
+                  let paste = coordinator.parent.onPasteContent else { return false }
+            coordinator.localText = textView.text
+            coordinator.pasteSelectionRevision = coordinator.parent.selectionRevision
+            coordinator.isAwaitingBlockHandoff = true
+            paste(payload)
+            return true
+        }
         textView.backgroundColor = .clear
         OutlinerNativeTextMeasurement.configureTextContainer(textView)
         textView.adjustsFontForContentSizeCategory = true
@@ -166,6 +179,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             length: 0
         )
         textView.requestFocusWhenAttached()
+        LGInteractionDiagnostics.editor(textView, blockID: blockID, event: "editor.make")
         return textView
     }
 
@@ -174,18 +188,22 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
         let isSameBlock = context.coordinator.activeBlockID == blockID
-        let decision = InlineEditorTextReconciliationPolicy.decision(
+        let pasteAcknowledged = context.coordinator.pasteSelectionRevision.map { $0 != selectionRevision } ?? false
+        let decision: InlineEditorTextReconciliationDecision = pasteAcknowledged ? .applyModel : InlineEditorTextReconciliationPolicy.decision(
             modelText: text,
             localText: context.coordinator.localText,
             isSameBlock: isSameBlock,
             isAwaitingBlockHandoff: context.coordinator.isAwaitingBlockHandoff
         )
+        LGInteractionDiagnostics.editor(textView, blockID: blockID, event: "editor.update")
+        LGInteractionDiagnostics.event("editor.reconcile", "same=\(isSameBlock) decision=\(decision) handoff=\(context.coordinator.isAwaitingBlockHandoff) selectionRevision=\(selectionRevision)")
         switch decision {
         case .keepLocal:
             break
         case .acknowledgeLocal:
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
+            context.coordinator.pasteSelectionRevision = nil
         case .applyModel:
             context.coordinator.isApplyingModel = true
             defer { context.coordinator.isApplyingModel = false }
@@ -195,6 +213,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.pendingHandoffTyping = ""
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
+            context.coordinator.pasteSelectionRevision = nil
             let selection = textView.selectedRange
             if wasAwaitingHandoff {
                 let merged = InlineEditorHandoffMerge.merged(
@@ -210,6 +229,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     length: 0
                 )
                 if !bufferedTyping.isEmpty {
+                    context.coordinator.selectionRevision = selectionRevision
                     context.coordinator.localText = merged.text
                     let onTextChange = context.coordinator.parent.onTextChange
                     DispatchQueue.main.async {
@@ -254,6 +274,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
+        LGInteractionDiagnostics.editor(textView, blockID: coordinator.activeBlockID, event: "editor.dismantle")
         textView.delegate = nil
     }
 
@@ -300,6 +321,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var parent: NativeOutlinerTextView
         var localText: String?
         var isAwaitingBlockHandoff = false
+        var pasteSelectionRevision: Int?
         var pendingHandoffTyping = ""
         var activeBlockID: String
         var isApplyingModel = false
@@ -321,6 +343,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.input")
             localText = textView.text
             guard textView.markedTextRange == nil else { return }
             if (textView as? FocusRetainingTextView)?.isPasting == true, let onPaste = parent.onPaste {
@@ -382,6 +405,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             }
             if replacement == "\n", NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy) { return true }
             if replacement == "\n" {
+                LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.return")
                 var submittedText = textView.text ?? ""
                 if range.length > 0 {
                     let value = submittedText as NSString
@@ -401,6 +425,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 return false
             }
             if replacement.isEmpty, range.location == 0, range.length == 0 {
+                LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.backspace")
                 isAwaitingBlockHandoff = true
                 parent.onBackspace(textView.text, range.length)
                 return false
@@ -411,11 +436,14 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 }
 
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
+    var onPasteContent: ((String) -> Bool)?
     private var focusPending = false
     private(set) var isInsertingLineBreak = false
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
+        if let payload = LGBlockClipboard.content(before: text ?? "", selection: selectedRange),
+           onPasteContent?(payload) == true { return }
         guard let text = UIPasteboard.general.string else {
             super.paste(sender)
             return
@@ -454,7 +482,20 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        LGInteractionDiagnostics.event("editor.window", "view=\(ObjectIdentifier(self)) attached=\(window != nil) responder=\(isFirstResponder)")
         fulfillPendingFocus()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        LGInteractionDiagnostics.event("editor.becomeFirstResponder", "view=\(ObjectIdentifier(self)) result=\(result) attached=\(window != nil)")
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        LGInteractionDiagnostics.event("editor.resignFirstResponder", "view=\(ObjectIdentifier(self)) result=\(result) attached=\(window != nil)")
+        return result
     }
 
     private func fulfillPendingFocus() {

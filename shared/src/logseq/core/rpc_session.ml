@@ -719,6 +719,15 @@ let dispatch_outliner_event session payload =
                       (Outliner.Operation_staged operation.intent)))
                next_state operations
            in
+           let next_state = match message with
+             | Outliner.Paste_content _ ->
+               List.fold_left (fun current -> function
+                 | Effects.Focus_block uuid ->
+                   (match Outliner.find_block projected uuid with
+                    | Some block -> fst (Outliner.staged_editing projected current uuid block.title false)
+                    | None -> current)
+                 | _ -> current) next_state interpreted.platform
+             | _ -> next_state in
            session.Types.state :=
              {
                !(session.state) with
@@ -1082,7 +1091,7 @@ let ensure_journal session payload =
         let uuid = Rpc.journal_page_uuid day in
         let operation = { Ops.operation_id = fresh_squuid ();
           base_t; state = Ops.Queued;
-          intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid ();
+          intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid (); block_title = "";
             title = Rpc.journal_day_title day; journal_day = day; created_at = now_ms () } } in
         Result.map (fun () -> uuid) (enqueue_semantic session operation)
       | None, _, _ -> Error "Select a graph before creating a journal"
@@ -1205,6 +1214,84 @@ let send_message session payload =
         snapshot_visible session
       end
     end
+
+let prepare_capture_tags session uuid tags (operation : Ops.pending_operation) now =
+  let ( let* ) = Result.bind in
+  let* db = match query_db session with Some db -> Ok db | None -> Error "The graph is unavailable" in
+  let* tx = Pending_projection.compile db operation.intent in
+  try
+    let db = Datascript.db_with tx db in
+    let field name = match tags with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
+      | _ -> invalid_arg "Invalid tags" in
+    let strings name = match field name with
+      | `Null -> []
+      | `List values -> List.map (function `String value -> value | _ -> invalid_arg "Choose a tag") values
+      | _ -> invalid_arg "Invalid tag selection" in
+    let catalog = Hashtbl.create 32 in
+    Graph_read.tag_pages (fun value -> Ok value) db |> List.iter (fun (tag : Model.entity_summary) ->
+      let key = Dev_query.Unicode.lowercase tag.title in
+      let previous = Option.value ~default:[] (Hashtbl.find_opt catalog key) in
+      Hashtbl.replace catalog key (tag.uuid :: previous));
+    let selected = ref (strings "selectedValues") and created = ref [] in
+    let seen = Hashtbl.create 8 in
+    List.iter (fun title ->
+      let title = String.trim title in
+      if title = "" then invalid_arg "Enter a tag name";
+      let key = Dev_query.Unicode.lowercase title in
+      if not (Hashtbl.mem seen key) then (
+        Hashtbl.add seen key ();
+        match Hashtbl.find_opt catalog key with
+        | Some [uuid] -> selected := uuid :: !selected
+        | Some _ -> invalid_arg "More than one tag has this name; choose the existing tag"
+        | None -> created := title :: !created)) (strings "newValues");
+    let property = Result_view.property_json ~include_candidates:false db ~owner:uuid ~attr:"block/tags" ~encode_block:(fun _ -> `Null) in
+    let expected = match property with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt "raw" fields) | _ -> `Null in
+    let id = match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with Some id -> id | None -> invalid_arg "Missing capture" in
+    let existing = Graph_read.entity_summaries (fun value -> Ok value) db id "block/tags"
+      |> List.map (fun (tag : Model.entity_summary) -> tag.uuid) in
+    let selected = List.sort_uniq String.compare (existing @ !selected) in
+    let intent = Result_view.edit_property ~allow_builtin:true db ~now ~fresh_uuid:fresh_squuid
+      (`Assoc ["blockUuid", `String uuid; "attr", `String "block/tags"; "expected", expected;
+        "value", `String ""; "create", `Bool true;
+        "selectedValues", `List (List.map (fun uuid -> `String uuid) selected);
+        "newValues", `List (List.map (fun title -> `String title) (List.rev !created))]) in
+    let* _ = Pending_projection.compile db intent in
+    Ok intent
+  with Invalid_argument message | Failure message -> Error message
+
+let send_tagged session input fields =
+  let ( let* ) = Result.bind in
+  let prepared =
+    let* text = Rpc.required_string fields "text" in
+    let* uuid = Rpc.required_string fields "uuid" in
+    let* now = Rpc.optional_int fields "now" in
+    let* status = Rpc.optional_status_payload input in
+    let now = Option.value ~default:(now_ms ()) now in
+    let text = String.trim text in
+    if text = "" then Error "Enter text to capture" else
+    let* operations = capture_operations session uuid text now status in
+    match operations with
+    | [] -> Error "The capture is unavailable"
+    | first :: _ ->
+      let operation = {first with Ops.operation_id = fresh_squuid ();
+        intent = Ops.Atomic (List.map (fun (op : Ops.pending_operation) -> op.intent) operations)} in
+      let tags = match input with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt "tags" fields) | _ -> `Null in
+      let* tag_intent = prepare_capture_tags session uuid tags operation now in
+      Ok {operation with Ops.intent = Ops.Atomic [operation.intent; tag_intent]}
+  in
+  match prepared with
+  | Error message -> Rpc.failure "capture_failed" message
+  | Ok operation -> (match enqueue_semantic session operation with
+      | Ok () -> snapshot_visible session
+      | Error message -> Rpc.failure "capture_failed" message)
+
+let composer_tags session =
+  let tags = match (host session).Types.graph_tag_pages with
+    | Some load -> Option.value ~default:[] (load ())
+    | None -> Option.fold ~none:[] ~some:(Graph_read.tag_pages (fun value -> Ok value)) (query_db session) in
+  Rpc.success (`Assoc ["selectedGraphId", (match (state session).config with Some config -> `String config.graph_id | None -> `Null);
+    "composerTagChoices", `List (List.map (fun (tag : Model.entity_summary) ->
+      `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) tags)])
 
 let send_task session input fields =
   match
@@ -1950,6 +2037,8 @@ let rec dispatch session action payload =
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
       "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
       "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
+  | "composerTags" -> composer_tags session
+  | "sendTagged" -> object_action (send_tagged session)
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
   | "addAsset" ->
@@ -1969,9 +2058,19 @@ let rec dispatch session action payload =
         (base_outliner_context session).Outliner.blocks
     in
     let stage () =
-      if (state session).config <> None then
+      if (state session).config = None then None else
+      Option.map (fun stage operation ->
+        let tags = Option.bind payload (fun raw -> try match Json.from_string raw with
+          | `Assoc fields -> List.assoc_opt "tags" fields | _ -> None with _ -> None) in
+        match tags with
+        | None -> stage operation
+        | Some tags ->
+          let ( let* ) = Result.bind in
+          let uuid = match operation.Ops.intent with Ops.Create_asset asset -> asset.uuid | _ -> "" in
+          let* intent = prepare_capture_tags session uuid tags operation (now_ms ()) in
+          let* () = stage operation in
+          stage {operation with Ops.operation_id = fresh_squuid (); state = Ops.Queued; intent})
         (host session).Types.stage_operation
-      else None
     in
     Rpc.add_asset ~prepare_file:h.import_asset_file payload s.model now_ms target prepare_view
       (fun block -> asset_datoms_operation session block Ops.Applied)

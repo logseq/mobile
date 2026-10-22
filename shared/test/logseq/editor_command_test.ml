@@ -262,7 +262,7 @@ let return_selects_completion_and_code_keeps_line_breaks () = R.with_runtime (fu
 let code_in_text_creates_a_separate_block () = R.with_runtime (fun session runtime _ ->
   ignore (start session "Keep this /");
   ignore (command session "Code block");
-  check_eq ~msg:"a code command preserves nonempty prose" (value runtime Q.alpha "block/title") (Some (Ds.String "Keep this "));
+  check_eq ~msg:"a code command preserves prose and trims its edges on leaving editing" (value runtime Q.alpha "block/title") (Some (Ds.String "Keep this"));
   check_eq (value runtime Q.alpha "logseq.property.node/display-type") None;
   check ~msg:"the code editor gets its own sibling" (List.exists (fun (b : Cache_model.block) ->
     b.uuid <> Q.alpha && b.display_type = Some "code") (Graph_runtime.blocks_for_page runtime Q.page)))

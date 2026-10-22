@@ -687,9 +687,9 @@ let rec compile db (intent : Ops.pending_intent) =
           @ [
               entity_tx
                 (Ds.Temp_id ("pending/" ^ value.block_uuid))
-                [
+                ([
                   ("block/uuid", Ds.One_value (Ds.Uuid value.block_uuid))
-                ; ("block/title", Ds.One_value (Ds.String ""))
+                ; ("block/title", Ds.One_value (Ds.String value.block_title))
                 ; ("block/page", Ds.One_value (Ds.Ref_to page_ref))
                 ; ("block/parent", Ds.One_value (Ds.Ref_to page_ref))
                 ; ("block/order", Ds.One_value (Ds.String "a0"))
@@ -697,8 +697,9 @@ let rec compile db (intent : Ops.pending_intent) =
                   , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                 ; ( "block/updated-at"
                   , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
-                ];
-            ]))
+                ] @ many_refs "block/refs" (refs_for_title db value.block_title)
+                  @ many_refs "block/tags" (tag_eids_for_title db value.block_title));
+            ] @ List.concat_map (tag_behavior_tx db value.block_uuid) (tag_eids_for_title db value.block_title)))
   | Ops.Add_tag value ->
     (match
        ( Ds.entid db "block/uuid" (Ds.Uuid value.uuid)

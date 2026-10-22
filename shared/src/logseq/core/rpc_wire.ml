@@ -215,6 +215,15 @@ let decode_outliner_event fields =
   | "longPressBlock" ->
     let* uuid = required_string fields "uuid" in
     Ok (Outliner.Long_press_block uuid)
+  | "pasteContent" ->
+    let* target_uuid = required_string fields "uuid" in
+    let* before_title = required_string fields "beforeTitle" in
+    let* selection_start = event_int fields "selectionStart" in
+    let* selection_length = event_int fields "selectionLength" in
+    let* plain_text = required_string fields "plainText" in
+    let blocks_edn = match List.assoc_opt "blocksEDN" fields with Some (`String value) -> value | _ -> "" in
+    Ok (Outliner.Paste_content {Block_clipboard.target_uuid; before_title;
+      selection_start; selection_length; plain_text; blocks_edn})
   | "textChanged" ->
     let* title = required_string fields "title" in
     let* caret = event_int fields "caretUTF16Offset" in

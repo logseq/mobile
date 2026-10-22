@@ -68,7 +68,9 @@ let handle_outliner_editor_event input_event block_id_source send =
   match input_event with
   | ExtensionEvent (_node, _identifier, name, values) ->
     let uuid = Signal.sample block_id_source in
-    if name = "paste" then
+    if name = "paste-content" then
+      send (Model.PasteOutlinerContent (uuid, extension_string values "value"))
+    else if name = "paste" then
       send (Model.PasteOutlinerText (uuid, extension_string values "title", extension_int values "caret-utf16-offset"))
     else if name = "text-change" then
       send

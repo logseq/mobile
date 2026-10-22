@@ -38,6 +38,7 @@
 "Editor_command"
 "Editor_command_effects"
 "Node_presentation"
+"Block_clipboard"
 "Outliner_effects"
 "Outliner_state"
 "Pending_projection"

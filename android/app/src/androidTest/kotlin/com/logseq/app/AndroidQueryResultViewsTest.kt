@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
@@ -211,6 +212,19 @@ class AndroidQueryResultViewsTest {
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeLeft() }
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeRight() }
         ui.onNodeWithTag("sidebar.content").assertIsNotDisplayed()
+        ui.onNodeWithTag("view.cell.table.result-0.block/title").assertHasNoClickAction()
+        ui.onNodeWithTag("view.edit.sheet.table").assertDoesNotExist()
+        for (attr in listOf("user.property/Score")) {
+            val header = ui.onNodeWithTag("view.cell.separator.table.header.$attr", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            for (row in listOf("result-0", "result-1", "result-2")) {
+                val divider = ui.onNodeWithTag("view.cell.separator.table.$row.$attr", useUnmergedTree = true)
+                    .getUnclippedBoundsInRoot()
+                assertEquals("Column dividers stay one point wide", 1f, (divider.right - divider.left).value, 0.2f)
+                assertTrue("Column dividers span the cell height", (divider.bottom - divider.top).value >= 48f)
+                assertEquals("Header and body dividers align", header.left.value, divider.left.value, 0.5f)
+            }
+        }
         capture("table")
         ui.onNodeWithTag("view.cell.table.result-0.user.property/Score")
             .performScrollTo().performClick()

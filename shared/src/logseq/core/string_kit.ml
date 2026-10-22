@@ -87,3 +87,34 @@ let to_bytes s = Bytes.of_string s
 
 let is_ascii_whitespace c =
   c = ' ' || c = '\t' || c = '\n' || c = '\r' || c = '\011' || c = '\012'
+
+let utf8_sequence_length byte =
+  if byte land 128 = 0 then 1
+  else if byte land 224 = 192 then 2
+  else if byte land 240 = 224 then 3
+  else if byte land 248 = 240 then 4
+  else 1
+
+let utf16_units byte = if utf8_sequence_length byte = 4 then 2 else 1
+
+let byte_index_of_utf16 value offset =
+  let rec loop index units =
+    if index >= String.length value || units >= max 0 offset then index
+    else
+      let byte = Char.code value.[index] in
+      loop
+        (min (String.length value) (index + utf8_sequence_length byte))
+        (units + utf16_units byte)
+  in
+  loop 0 0
+
+let utf16_length value =
+  let rec loop index units =
+    if index >= String.length value then units
+    else
+      let byte = Char.code value.[index] in
+      loop
+        (min (String.length value) (index + utf8_sequence_length byte))
+        (units + utf16_units byte)
+  in
+  loop 0 0

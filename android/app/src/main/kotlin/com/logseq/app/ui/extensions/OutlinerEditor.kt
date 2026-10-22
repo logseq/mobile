@@ -78,22 +78,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val handoffSegments = remember { ArrayDeque<String>() }
     var applyingModel by remember { mutableStateOf(false) }
     var debounceSeq by remember { mutableIntStateOf(0) }
-    var pasting by remember { mutableStateOf(false) }
-    var pastedChange by remember { mutableStateOf(false) }
+    var pasteRevision by remember { mutableStateOf<Int?>(null) }
     val nativeToolbar = LocalTextToolbar.current
-    val completionToolbar = remember(nativeToolbar) {
-        object : TextToolbar {
-            override val status get() = nativeToolbar.status
-            override fun hide() = nativeToolbar.hide()
-            override fun showMenu(rect: Rect, onCopyRequested: (() -> Unit)?, onPasteRequested: (() -> Unit)?,
-                onCutRequested: (() -> Unit)?, onSelectAllRequested: (() -> Unit)?) {
-                nativeToolbar.showMenu(rect, onCopyRequested, onPasteRequested?.let { paste -> {
-                    pasting = true
-                    paste()
-                } }, onCutRequested, onSelectAllRequested)
-            }
-        }
-    }
     val androidContext = LocalContext.current
     val clipboard = remember(androidContext) {
         androidContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -104,7 +90,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     // Reconcile a structural handoff in this composition, so the IME sees the
     // new text, caret and identity together instead of waiting another frame.
-    if (blockId != rememberedBlockId && awaitingHandoff) {
+    val pasteAcknowledged = pasteRevision != null && selectionRevision != pasteRevision
+    if (awaitingHandoff && (blockId != rememberedBlockId || pasteAcknowledged)) {
+        pasteRevision = null
         val typing = handoffSegments.removeFirstOrNull().orEmpty()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
         val merged = modelTitle.substring(0, offset) + typing + modelTitle.substring(offset)
@@ -163,7 +151,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     // Debounced text-change emission, cancelled by the next edit.
     LaunchedEffect(debounceSeq) {
-        if (debounceSeq == 0 || awaitingHandoff || pastedChange || value.composition != null) return@LaunchedEffect
+        if (debounceSeq == 0 || awaitingHandoff || value.composition != null) return@LaunchedEffect
         delay(80)
         val title = value.text
         publishedTitles.add(title)
@@ -252,17 +240,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 if (prior.composition != null && next.composition == null) debounceSeq++
                 return
             }
-            pastedChange = pasting
-            pasting = false
 
             val title = next.text
             val caret = next.selection.start.coerceAtLeast(0)
-            if (pastedChange) {
-                debounceSeq++
-                publishedTitles.add(title)
-                context.emit("paste", "title" to title, "caret-utf16-offset" to caret)
-                return
-            }
             val newline = caret - 1
             val singleInsertion =
                 title.length == previousText.length + 1 &&
@@ -278,7 +258,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                         previousSelection.end,
                         "\n",
                     ) == title
-            if (!multiline && !pastedChange && (singleInsertion || replacedSelection)) {
+            if (!multiline && (singleInsertion || replacedSelection)) {
                 val splitAt = if (replacedSelection) previousSelection.start else newline
                 val submitted = title.removeRange(splitAt, splitAt + 1)
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
@@ -292,6 +272,27 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             }
     }
 
+    fun submitPaste() {
+        val payload = com.logseq.app.AndroidBlockClipboard.content(androidContext, value.text,
+            value.selection.min, value.selection.max - value.selection.min) ?: return
+        debounceSeq++
+        pasteRevision = selectionRevision
+        awaitingHandoff = true
+        handoffSegments.addLast("")
+        context.emit("paste-content", "value" to payload)
+    }
+    val completionToolbar = remember(nativeToolbar, value, selectionRevision) {
+        object : TextToolbar {
+            override val status get() = nativeToolbar.status
+            override fun hide() = nativeToolbar.hide()
+            override fun showMenu(rect: Rect, onCopyRequested: (() -> Unit)?, onPasteRequested: (() -> Unit)?,
+                onCutRequested: (() -> Unit)?, onSelectAllRequested: (() -> Unit)?) {
+                nativeToolbar.showMenu(rect, onCopyRequested, onPasteRequested?.let { { submitPaste() } },
+                    onCutRequested, onSelectAllRequested)
+            }
+        }
+    }
+
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     BasicTextField(
         value = value,
@@ -302,10 +303,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 val clip = clipboard.primaryClip
                 val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(androidContext)?.toString() else null
                 if (text != null) item(pasteKey, androidContext.getString(android.R.string.paste)) {
-                    val start = value.selection.min.coerceIn(0, value.text.length)
-                    val end = value.selection.max.coerceIn(start, value.text.length)
-                    pasting = true
-                    acceptValue(TextFieldValue(value.text.replaceRange(start, end, text), TextRange(start + text.length)))
+                    submitPaste()
                     close()
                 }
             }
@@ -316,8 +314,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown &&
                     ((event.key == Key.V && event.isCtrlPressed) || (event.key == Key.Insert && event.isShiftPressed))) {
-                    pasting = true
-                    return@onPreviewKeyEvent false
+                    submitPaste()
+                    return@onPreviewKeyEvent true
                 }
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isShiftPressed) {
                     val start = value.selection.min.coerceIn(0, value.text.length)
