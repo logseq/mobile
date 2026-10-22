@@ -22,6 +22,7 @@ public struct SharedDeepLink: Codable, Sendable, Equatable {
     var uuid: String?
     let scheme: String?
     let host: String?
+    let path: String?
     let query: [QueryItem]
 
     public init(_ url: URL) {
@@ -29,7 +30,19 @@ public struct SharedDeepLink: Codable, Sendable, Equatable {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         scheme = components?.scheme
         host = components?.host
+        path = components?.path
         query = (components?.queryItems ?? []).map { QueryItem(name: $0.name, value: $0.value) }
+    }
+}
+
+extension SharedDeepLink {
+    static func blockURL(graphName: String, blockID: String) -> String {
+        var components = URLComponents()
+        components.scheme = "logseq"
+        components.host = "graph"
+        components.path = "/" + graphName
+        components.queryItems = [URLQueryItem(name: "block-id", value: blockID)]
+        return components.url?.absoluteString ?? ""
     }
 }
 

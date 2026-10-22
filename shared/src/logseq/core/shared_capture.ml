@@ -37,6 +37,16 @@ let deep_link fields =
     | _ -> values) [] query in
   if Option.map String.lowercase_ascii scheme <> Some "logseq" then Ok (`Ignore)
   else match Option.map String.lowercase_ascii host with
+    | Some "graph" ->
+      let* path = optional fields "path" in
+      let graph = Option.map (fun path -> if String.starts_with ~prefix:"/" path then
+        String.sub path 1 (String.length path - 1) else path) path in
+      (match graph with
+       | None | Some "" -> Error "A graph name or identifier is required"
+       | Some graph ->
+         let* page = optional values "page" in
+         let* block = optional values "block-id" in
+         Ok (`Graph (graph, page, block)))
     | Some "capture" -> (match text values with Ok value -> Ok (`Capture value) | Error _ -> Ok (`Quick_action "capture"))
     | Some ("audio" | "journal" as action) -> Ok (`Quick_action action)
     | _ -> Ok (`Ignore)

@@ -934,9 +934,13 @@ private struct CreateSyncGraphPayload: Encodable {
     }
 
     public private(set) var deepLinkQuickAction: String?
+    public private(set) var deepLinkGraphId: String?
+    public private(set) var deepLinkNodeUuid: String?
 
     public func handleDeepLink(_ payload: String) async -> Bool {
         deepLinkQuickAction = nil
+        deepLinkGraphId = nil
+        deepLinkNodeUuid = nil
         await dispatchRawAndWait("handleDeepLink", payload: payload)
         guard lastError == nil else { return false }
         syncPending()
@@ -1133,8 +1137,18 @@ private struct CreateSyncGraphPayload: Encodable {
         do {
             let responseData = Data(responseJSON.utf8)
             if actionName == "handleDeepLink" {
-                struct Envelope: Decodable { struct Result: Decodable { let deepLinkQuickAction: String? }; let result: Result? }
-                deepLinkQuickAction = try JSONDecoder().decode(Envelope.self, from: responseData).result?.deepLinkQuickAction
+                struct Envelope: Decodable {
+                    struct Result: Decodable {
+                        let deepLinkQuickAction: String?
+                        let deepLinkGraphId: String?
+                        let deepLinkNodeUuid: String?
+                    }
+                    let result: Result?
+                }
+                let result = try JSONDecoder().decode(Envelope.self, from: responseData).result
+                deepLinkQuickAction = result?.deepLinkQuickAction
+                deepLinkGraphId = result?.deepLinkGraphId
+                deepLinkNodeUuid = result?.deepLinkNodeUuid
             }
             if actionName == "bootstrapGraph" {
                 bootstrapPlan = try JSONDecoder().decode(LogseqBootstrapEnvelope.self, from: responseData).result?.graphBootstrap

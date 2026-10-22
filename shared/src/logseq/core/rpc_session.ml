@@ -1520,6 +1520,48 @@ let child_context session parent_id =
      | None -> current)
   | None -> current
 
+let deep_link_response session extra =
+  match Json.from_string (snapshot_visible session) with
+  | `Assoc envelope ->
+    let fields = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
+    Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
+  | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"
+
+let graph_deep_link session graph page block =
+  let current = state session in
+  let matches (candidate : Api.api_graph) = candidate.id = graph || candidate.name = graph in
+  let candidates = List.filter matches current.available_graphs in
+  let candidates = if candidates <> [] then candidates else
+    List.filter (fun (candidate : Api.api_graph) ->
+      Dev_query.Unicode.lowercase candidate.name = Dev_query.Unicode.lowercase graph) current.available_graphs in
+  let target = match candidates with
+    | [candidate] when candidate.Api.ready -> Ok candidate.id
+    | [_] -> Error "The linked graph is not ready"
+    | _ :: _ -> Error "More than one graph has this name; use its graph identifier"
+    | [] -> (match current.config with
+        | Some config when config.graph_id = graph || config.graph_name = Some graph -> Ok config.graph_id
+        | _ -> Error "The linked graph is not available") in
+  match target with
+  | Error message -> Rpc.failure "invalid_deep_link" message
+  | Ok target when Option.map (fun (config : Api.api_config) -> config.graph_id) current.config <> Some target ->
+    deep_link_response session ["deepLinkGraphId", `String target]
+  | Ok _ ->
+    (match block, page with
+     | None, None -> deep_link_response session ["deepLinkQuickAction", `String "journal"]
+     | _ ->
+       let target = Option.get (match block with Some _ -> block | None -> page) in
+       let uuid = Option.bind (query_db session) (fun db ->
+         let id = match block with
+           | Some _ -> Datascript.entid db "block/uuid" (Datascript.Uuid target)
+           | None -> (match Seq.uncons (Datascript.Db.datoms db Datascript.Avet
+               ~a:"block/name" ~v:(Datascript.String (Dev_query.Unicode.lowercase target)) ()) with
+               | Some (datom, _) -> Some datom.Datascript.e
+               | None -> Datascript.entid db "block/uuid" (Datascript.Uuid target)) in
+         Option.bind id (Graph_read.uuid_for_eid db)) in
+       match uuid with
+       | Some uuid -> deep_link_response session ["deepLinkNodeUuid", `String uuid]
+       | None -> Rpc.failure "invalid_deep_link" "The linked page or block is not available")
+
 let rec dispatch session action payload =
   let s = state session in
   let h = host session in
@@ -1552,6 +1594,7 @@ let rec dispatch session action payload =
     | Error message -> Rpc.failure "invalid_deep_link" message
     | Ok (`Capture text) -> dispatch session "captureShared" (Some (Json.to_string
         (`Assoc (("text", `String text) :: List.filter (fun (key, _) -> key <> "text" && key <> "title" && key <> "url") fields))))
+    | Ok (`Graph (graph, page, block)) -> graph_deep_link session graph page block
     | Ok action ->
       let quick_action = match action with `Quick_action value -> `String value | _ -> `Null in
       let response = Json.from_string (snapshot_visible session) in
