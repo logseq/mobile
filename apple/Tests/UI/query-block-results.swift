@@ -122,6 +122,22 @@ import Vision
         try await wait("Query results must mount in the native outline") {
             find("query.result.query-owner.2") != nil
         }
+        func verifyDisclosure(expanded: Bool, screenshot: String) async throws {
+            guard let toggle = find("query.toggle.query-owner"),
+                  let icon = backend.model(id: toggle)?.property(.icon)?.stringValue else {
+                throw failure("Results must expose a disclosure icon")
+            }
+            let symbol = expanded ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill"
+            guard backend.iconSource(for: icon) == .systemName(symbol), UIImage(systemName: symbol) != nil else {
+                throw failure("Results must resolve the same native triangle as blocks: \(icon), expanded=\(expanded)")
+            }
+            try await Task.sleep(for: .milliseconds(250))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(screenshot))
+        }
+        try await verifyDisclosure(expanded: true, screenshot: "query-disclosure-expanded.png")
         try await Task.sleep(for: .milliseconds(700))
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -158,6 +174,7 @@ import Vision
         try runtime.applyCoreResponse(snapshot())
         try backend.performPress(node: find("query.toggle.query-owner")!)
         try await wait("Folding must unmount query rows") { find("query.rows.query-owner") == nil }
+        try await verifyDisclosure(expanded: false, screenshot: "query-disclosure-collapsed.png")
         try backend.performPress(node: find("query.toggle.query-owner")!)
         try await wait("Unfolding must restore query rows") { find("query.result.query-owner.0") != nil }
         try backend.performExtensionEvent(node: nativeRow("result-0")!, name: "open-node", values: ["uuid": .string("result-0")])

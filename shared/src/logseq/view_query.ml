@@ -78,7 +78,7 @@ let legacy_view ~render_block _model_source row_source send : t =
       ~accessibility_identifier:(identifier "block")
       [column ~gap:4 [
         button ~variant:`ghost ~text_alignment:`start ~min_height:44
-          ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "chevron-down" else "chevron-right")) (Signal.value expanded)))
+          ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "disclosure-down" else "disclosure-right")) (Signal.value expanded)))
           ~text_signal:(own (Signal.map (fun query -> string_of_int (List.length query.rows) ^ " results") query))
           ~label:"Toggle query results" ~accessibility_identifier:(identifier "toggle")
           ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) [];
@@ -557,7 +557,7 @@ let collection ~render_block model_source raw_source send : t =
     button ~variant:`ghost ~text_alignment:`start ~grow:1.0
       ~accessibility_identifier:("query.toggle." ^ owner)
       ~disabled_signal:(waiting model_source owner)
-      ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "chevron-down" else "chevron-right")) (Signal.value expanded)))
+      ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "disclosure-down" else "disclosure-right")) (Signal.value expanded)))
       ~text_signal:(own (Signal.map2 (fun views expanded ->
         if not expanded then "Results" else
         string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results") views (Signal.value expanded)))

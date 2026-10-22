@@ -201,7 +201,11 @@ let ui_states_and_disclosure () =
       check_eq ~msg:"show more reveals the remaining results" (find app "more") (-1);
       let fold = find app "toggle" in
       check (fold <> -1);
+      check_eq ~msg:"expanded results use the block disclosure icon"
+        (App_test.property_string (Lui_app.runtime app) fold Lui_protocol.InlineIconName) "app:disclosure-down";
       App_test.dispatch app (Lui_protocol.Press fold); App_test.flush app;
+      check_eq ~msg:"collapsed results use the block disclosure icon"
+        (App_test.property_string (Lui_app.runtime app) fold Lui_protocol.InlineIconName) "app:disclosure-right";
       check_eq (find app "rows") (-1)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
