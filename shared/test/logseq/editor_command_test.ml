@@ -409,7 +409,30 @@ let saved_views_use_an_intrinsic_native_select () =
         (App_test.property_float host select Lui_protocol.GrowValue <= 0.0))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let command_groups_follow_master_order () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    let response = start session "/" in
+    let commands = choices response in
+    let groups = List.filter_map (fun candidate -> match member "group" candidate with
+      | `String title -> Some title | _ -> None) commands in
+    check_eq ~msg:"master group order survives command exclusions" groups
+      ["BASIC"; "FORMAT"; "Heading"; "TASK STATUS"; "TASK DATE"; "PRIORITY"; "TIME & DATE"; "LIST TYPE"; "ADVANCED"];
+    let labels = List.map (fun candidate -> text (member "label" candidate)) commands in
+    let before a b =
+      check ~msg:(a ^ " precedes " ^ b) (Option.get (List.find_index ((=) a) labels) < Option.get (List.find_index ((=) b) labels)) in
+    before "Link" "Image link"; before "Image link" "Underline"; before "Normal text" "Heading 1";
+    before "No priority" "Low"; before "Calculator" "Template"; before "Embed Twitter tweet" "Cloze";
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      List.iter (fun group -> check ~msg:("native group header " ^ group)
+        (App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.autocomplete.group." ^ group) <> -1)) groups);
+    let response = start session "/head" in
+    check ~msg:"master search uses relevance without group headers"
+      (List.for_all (fun candidate -> member "group" candidate = `Null) (choices response))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "command groups follow master order" command_groups_follow_master_order;
   case "display titles resolve UUID references" display_titles_resolve_references_without_changing_source;
   case "views use an intrinsic native select" saved_views_use_an_intrinsic_native_select;
   case "zoom placeholder creates a child in its page" zoom_placeholder_creates_a_child_in_the_same_page;

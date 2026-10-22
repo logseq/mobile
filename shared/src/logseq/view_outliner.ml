@@ -755,7 +755,12 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     candidate_source send : t =
   let candidate = Signal.sample candidate_source in
-  row ~grow:0.0 ~cross:`stretch [
+  column ~gap:0 ~grow:0.0 ~cross:`stretch [
+  dyn (fun (candidate : Model.outliner_autocomplete_candidate) -> match candidate.candidate_group with
+    | None -> box []
+    | Some group -> text ~value:group ~font_size:"12" ~foreground:"muted-foreground"
+        ~padding_horizontal:10 ~padding_vertical:5
+        ~accessibility_identifier:("outliner.autocomplete.group." ^ group) []) candidate_source;
   View_base.with_label_signal
     (Signal.map View_base.outliner_autocomplete_label candidate_source)
     (View_base.with_string_prop_signal AccessibilityIdentifier

@@ -315,13 +315,16 @@ let outliner_candidates_json context state =
   Wire.json_list
     (match Outliner.autocomplete state with
      | Some request ->
+       let groups = Hashtbl.create 9 in
        List.map
          (fun (candidate : Outliner.outliner_candidate) ->
+           let group = if request.kind <> Outliner.Command || String.trim request.query <> "" then None
+             else Option.bind (Editor_command.group candidate.value) (fun group ->
+               if Hashtbl.mem groups group then None
+               else (Hashtbl.add groups group (); Some group)) in
            Wire.json_object
-             [
-               ("label", `String candidate.label)
-             ; ("value", `String candidate.value)
-             ])
+             (["label", `String candidate.label; "value", `String candidate.value]
+              @ match group with Some group -> ["group", `String group] | None -> []))
          (Outliner.autocomplete_candidates context request)
      | None -> [])
 

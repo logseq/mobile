@@ -4906,7 +4906,7 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
       (empty_core_projection ()) with
       Model.projection_outliner_editing = Some stale;
       projection_outliner_autocomplete_candidates = [
-        { Model.candidate_index = 0; candidate_label = "Old result";
+        { Model.candidate_index = 0; candidate_group = None; candidate_label = "Old result";
           candidate_value = "old-result" } ];
     }
   in
@@ -4940,7 +4940,7 @@ let reference_autocomplete_remains_mounted_while_typing () =
   let application = App.create (ios_backend ()) in
   start application;
   let editing = { Model.editing_uuid = "editing"; editing_title = before; caret_utf16_offset = caret } in
-  let candidate index label value = { Model.candidate_index = index; candidate_label = label; candidate_value = value } in
+  let candidate index label value = { Model.candidate_index = index; candidate_group = None; candidate_label = label; candidate_value = value } in
   let candidates = [candidate 0 "Project" "project"; candidate 1 "Progress" "progress"] in
   let projection = { (empty_core_projection ()) with
     selected_graph_id = Some "test-graph";
@@ -5039,7 +5039,7 @@ let outliner_typing_retains_reference_candidates () =
   in
   let candidate =
     {
-      Model.candidate_index = 0;
+      Model.candidate_index = 0; candidate_group = None;
       candidate_label = "Card";
       candidate_value = "tag-card";
     }
@@ -5074,7 +5074,7 @@ let completion_requests_native_caret_selection () =
   let projection = { (empty_core_projection ()) with selected_graph_id = Some "graph";
     projection_outliner_editing = Some editing;
     projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.NodeAutocomplete; autocomplete_query = "wow" };
-    projection_outliner_autocomplete_candidates = [{ Model.candidate_index = 0; candidate_label = "wow"; candidate_value = "page" }];
+    projection_outliner_autocomplete_candidates = [{ Model.candidate_index = 0; candidate_group = None; candidate_label = "wow"; candidate_value = "page" }];
     outliner_rows = [outline_row "editing" "[[wow]]"] } in
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
@@ -9267,7 +9267,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   in
   let candidate =
     {
-      Model.candidate_index = 10;
+      Model.candidate_index = 10; candidate_group = None;
       candidate_label = "Project Alpha";
       candidate_value = "page-a";
     }
@@ -9447,7 +9447,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   in
   let candidate =
     {
-      Model.candidate_index = 0;
+      Model.candidate_index = 0; candidate_group = None;
       candidate_label = "Project";
       candidate_value = "tag-a";
     }

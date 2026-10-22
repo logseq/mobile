@@ -183,6 +183,7 @@ type outliner_autocomplete =
 
 type outliner_autocomplete_candidate =
   { candidate_index : int
+  ; candidate_group : string option
   ; candidate_label : string
   ; candidate_value : string
   }

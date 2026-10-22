@@ -36,8 +36,9 @@ let catalog db =
       (Properties ["logseq.property/heading", Some (Ops.Int_value n)]))
   @ choices "logseq.property/status"
   @ [entry "deadline" "Deadline" (Pick Deadline); entry "scheduled" "Scheduled" (Pick Scheduled)]
+  @ [entry "no-priority" "No priority" (Choice ("logseq.property/priority", None))]
   @ choices "logseq.property/priority"
-  @ [entry "no-priority" "No priority" (Choice ("logseq.property/priority", None));
+  @ [
      entry "tomorrow" "Tomorrow" (Journal 1); entry "yesterday" "Yesterday" (Journal (-1));
      entry "today" "Today" (Journal 0); entry "time" "Current time" Time; entry "date" "Date picker" (Pick Date);
      entry "number" "Number list" (Number false); entry "number-children" "Number children" (Number true);
@@ -47,6 +48,19 @@ let catalog db =
      entry "youtube" "Embed YouTube timestamp" (Pick Youtube);
      entry "tweet" "Embed Twitter tweet" (Insert ("{{tweet }}", 2));
      entry "cloze" "Cloze" (Insert ("{{cloze }}", 2))]
+
+let group value =
+  if not (String.starts_with ~prefix:"command:" value) then None else
+  let id = String.sub value 8 (String.length value - 8) in
+  Some (if id = "embed" then "BASIC"
+    else if List.mem id ["link"; "image"; "underline"; "code"; "quote"; "math"] then "FORMAT"
+    else if List.mem id ["normal"; "clear-heading"] || String.starts_with ~prefix:"heading-" id then "Heading"
+    else if String.starts_with ~prefix:"logseq.property/status:" id then "TASK STATUS"
+    else if List.mem id ["deadline"; "scheduled"] then "TASK DATE"
+    else if id = "no-priority" || String.starts_with ~prefix:"logseq.property/priority:" id then "PRIORITY"
+    else if List.mem id ["tomorrow"; "yesterday"; "today"; "time"; "date"] then "TIME & DATE"
+    else if List.mem id ["number"; "number-children"] then "LIST TYPE"
+    else "ADVANCED")
 
 let candidates db query =
   let query = String.lowercase_ascii (String.trim query) in

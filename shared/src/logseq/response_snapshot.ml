@@ -325,7 +325,7 @@ let autocomplete_candidate input =
   let fields = object_fields input in
   match string_member "label" fields, string_member "value" fields with
   | Some candidate_label, Some candidate_value ->
-    Some { Model.candidate_index = 0; candidate_label; candidate_value }
+    Some { Model.candidate_index = 0; candidate_group = string_member "group" fields; candidate_label; candidate_value }
   | _ -> None
 
 let autocomplete_candidates_member fields =

@@ -23,3 +23,5 @@ val journal_reference : Datascript.db option -> int -> string
 val date_ms : string -> (int, string) result
 val timestamp : string -> (int, string) result
 val link : image:bool -> string -> (string, string) result
+
+val group : string -> string option
