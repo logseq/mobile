@@ -107,6 +107,7 @@ type host_options =
       (string -> bool -> string -> int -> (unit, string) result) option
   ; graph_delete_page : (string -> string -> int -> (unit, string) result) option
   ; load_older_journals : (unit -> unit) option
+  ; empty_journals : (unit -> (Model.entity_summary * int) list) option
   ; has_older_journals : (unit -> bool) option
   ; load_cached_graph_key : (Api.api_config -> (unit, string) result) option
   ; unlock_graph :
@@ -205,6 +206,7 @@ let default_options =
     graph_set_page_favorite = None;
     graph_delete_page = None;
     load_older_journals = None;
+    empty_journals = None;
     has_older_journals = None;
     load_cached_graph_key = None;
     unlock_graph = None;

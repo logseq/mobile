@@ -39,6 +39,7 @@ let () =
       "graph_read", Graph_read_test.cases;
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
+      "editor_commands", Editor_command_test.cases;
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;
       "rpc", Rpc_test.cases;

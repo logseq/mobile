@@ -10,6 +10,8 @@ type markup_node =
   | Markup_math of string * bool
   | Markup_video of string
   | Markup_iframe of string
+  | Markup_html of string
+  | Markup_image of string * string
   | Markup_youtube_timestamp of int * string
   | Markup_cloze of string
   | Markup_link of string * markup_node list
@@ -36,6 +38,8 @@ let rec debug_string node =
   | Markup_math (expression, display) ->
     "Math(" ^ string_of_bool display ^ "," ^ Printf.sprintf "%S" expression ^ ")"
   | Markup_video url -> "Video(" ^ Printf.sprintf "%S" url ^ ")"
+  | Markup_html html -> "Html(" ^ Printf.sprintf "%S" html ^ ")"
+  | Markup_image (url, _) -> "Image(" ^ Printf.sprintf "%S" url ^ ")"
   | Markup_iframe url -> "Iframe(" ^ Printf.sprintf "%S" url ^ ")"
   | Markup_youtube_timestamp (seconds, label) ->
     "YoutubeTimestamp(" ^ string_of_int seconds ^ "," ^ Printf.sprintf "%S" label
@@ -78,6 +82,8 @@ let rec node_to_yojson node =
       ]
     | Markup_video url ->
       [ ("type", `String "video"); ("url", `String url) ]
+    | Markup_html html -> ["type", `String "html"; "text", `String html]
+    | Markup_image (url, alt) -> ["type", `String "image"; "url", `String url; "text", `String alt]
     | Markup_iframe url ->
       [ ("type", `String "iframe"); ("url", `String url) ]
     | Markup_youtube_timestamp (seconds, label) ->
@@ -287,11 +293,20 @@ and convert_macro (macro : Inline.Macro.t) raw =
     | _ -> raw
 
 and convert_nodes source references tags nodes =
-  List.fold_left
-    (fun converted (node, position) ->
-      List.fold_left append_node converted
-        (convert_node source references tags node position))
-    [] nodes
+  let rec collect converted = function
+    | (Inline.Inline_Html "<ins>", _) :: rest ->
+      let rec closing inside = function
+        | (Inline.Inline_Html "</ins>", _) :: rest -> Some (List.rev inside, rest)
+        | node :: rest -> closing (node :: inside) rest
+        | [] -> None in
+      (match closing [] rest with
+       | Some (inside, rest) -> collect (append_node converted
+           (Markup_emphasis ("underline", convert_nodes source references tags inside))) rest
+       | None -> collect (append_node converted (Markup_text "<ins>")) rest)
+    | (node, position) :: rest -> collect
+        (List.fold_left append_node converted (convert_node source references tags node position)) rest
+    | [] -> converted in
+  collect [] nodes
 
 and convert_node source references tags node position =
   let raw = [ Markup_text (source_slice source position) ] in
@@ -301,11 +316,17 @@ and convert_node source references tags node position =
   | Inline.Break_Line -> [ Markup_text "\n" ]
   | Inline.Hard_Break_Line -> [ Markup_text "\n" ]
   | Inline.Code value -> [ Markup_code value ]
+  | Inline.Inline_Html html when S.starts_with ~prefix:"<ins>" html && S.ends_with ~suffix:"</ins>" html ->
+    let inner = String.sub html 5 (String.length html - 11) in
+    let children = match Angstrom.parse_string ~consume:Angstrom.Consume.All (Inline.parse config) inner with
+      | Ok nodes -> convert_nodes inner references tags nodes | Error _ -> [Markup_text inner] in
+    [Markup_emphasis ("underline", children)]
   | Inline.Verbatim value -> [ Markup_code value ]
   | Inline.Latex_Fragment (Inline.Inline expression) ->
     [ Markup_math (expression, false) ]
   | Inline.Latex_Fragment (Inline.Displayed expression) ->
     [ Markup_math (expression, true) ]
+  | Inline.Export_Snippet ("html", html) -> [Markup_html html]
   | Inline.Macro macro -> convert_macro macro raw
   | Inline.Emphasis (style, children) ->
     [
@@ -325,6 +346,8 @@ and convert_node source references tags node position =
      | Some summary ->
        [ Markup_tag_ref (summary.Cache_model.uuid, summary.Cache_model.title) ]
      | None -> [ Markup_text ("#" ^ value) ])
+  | Inline.Link link when S.starts_with ~prefix:"![" link.full_text ->
+    [Markup_image (Inline.string_of_url link.url, String.concat "" (List.map tag_part link.label))]
   | Inline.Link link ->
     (match link.url with
      | Inline.Block_ref _ -> raw

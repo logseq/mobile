@@ -84,6 +84,13 @@ let append_result left right =
 let command base_t now fresh_uuid context cmd =
   let ( let* ) = Result.bind in
   match cmd with
+  | State.Editor_error message -> Error message
+  | State.Execute_editor operation_ ->
+    (match context.State.db with
+     | None -> Error "Open a graph before using this command"
+     | Some db ->
+       let* intents = Editor_command_effects.plan db ~now:(now ()) ~fresh_uuid operation_ in
+       Ok (result (List.map (operation base_t fresh_uuid) intents) []))
   | State.Haptic haptic -> Ok (result [] [ Platform_haptic haptic ])
   | State.Commit_title value ->
     Ok (result [ operation base_t fresh_uuid (Ops.Save_title value) ] [])
@@ -258,12 +265,15 @@ let command base_t now fresh_uuid context cmd =
     let* position = Order.between lower None in
     let operation_id = fresh_uuid () in
     let uuid = fresh_uuid () in
+    let page_uuid = match List.find_opt (fun (block : Cache_model.block) ->
+      block.uuid = value.page_uuid) context.State.blocks with
+      | Some block -> block.page_id | None -> value.page_uuid in
     let intent =
       Ops.Insert_block
         {
           uuid;
           title = "";
-          page_uuid = value.page_uuid;
+          page_uuid;
           parent_uuid = value.page_uuid;
           order = position;
           created_at = now ();
@@ -280,7 +290,17 @@ let command base_t now fresh_uuid context cmd =
   | State.Copy_text text -> Ok (result [] [ Set_clipboard_text text ])
   | State.Copy_references uuids ->
     Ok (result [] [ Set_clipboard_references uuids ])
-  | State.Copy_urls uuids -> Ok (result [] [ Set_clipboard_urls uuids ])
+  | State.Copy_urls uuids ->
+    let encode value =
+      let buffer = Buffer.create (String.length value) in
+      String.iter (fun c -> match c with
+        | 'a'..'z' | 'A'..'Z' | '0'..'9' | '-' | '_' | '.' | '~' -> Buffer.add_char buffer c
+        | _ -> Buffer.add_string buffer (Printf.sprintf "%%%02X" (Char.code c))) value;
+      Buffer.contents buffer in
+    (match context.State.graph_id with
+     | Some graph -> Ok (result [] [Set_clipboard_text (String.concat "\n" (List.map (fun uuid ->
+         "logseq://graph/" ^ encode graph ^ "?block-id=" ^ encode uuid) uuids))])
+     | None -> Ok (result [] [Set_clipboard_urls uuids]))
 
 let interpret base_t now fresh_uuid context commands =
   let rec loop index operations platform =

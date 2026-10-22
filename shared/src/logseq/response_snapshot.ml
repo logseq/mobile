@@ -239,7 +239,8 @@ let outline_row_from_block youtube_target_url opens_as_page depth
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
     Some
-      { Model.row_uuid; row_title; row_loaded = not (bool_member "isShell" fields);
+      { Model.row_uuid; row_title; row_list_number = int_member "listNumber" fields;
+        row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
         query_json = (match List.assoc_opt "query" fields with
           | Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         markup_json =
@@ -311,6 +312,8 @@ let outliner_autocomplete input =
     | "node" -> Some Model.NodeAutocomplete
     | "tag" -> Some Model.TagAutocomplete
     | "property" -> Some Model.PropertyAutocomplete
+    | "command" -> Some Model.CommandAutocomplete
+    | ("embed" | "template" | "link" | "image" | "date" | "deadline" | "scheduled" | "youtube") as kind -> Some (Model.PickerAutocomplete kind)
     | _ -> None
   in
   match kind, string_member "query" fields with
@@ -456,6 +459,12 @@ let core_projection fields =
     search_results =
       List.filter_map search_hit (list_member "searchResults" fields);
     node_routes = routes;
+    empty_journals = List.filter_map (fun item -> match item with
+      | `Assoc fields -> (match string_member "uuid" fields, string_member "title" fields,
+          int_member "journalDay" fields with
+        | Some uuid, Some title, Some day -> Some ({Model.uuid; title}, day)
+        | _ -> None)
+      | _ -> None) (list_member "emptyJournals" fields);
     journal_outliner_rows = base_rows;
     outliner_rows =
       or_route

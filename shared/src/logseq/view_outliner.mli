@@ -99,9 +99,7 @@ val node_related_row :
   (Model.logseq_action -> bool) -> Lui_elements.t
 val related_section_heading : string -> Lui_elements.t
 val page_loading_view : Model.logseq_model Signal.signal -> Lui_elements.t
-val add_first_block_button :
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> 'a) -> Lui_elements.t
+
 val node_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

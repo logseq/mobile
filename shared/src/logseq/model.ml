@@ -119,6 +119,8 @@ type outline_row =
   { row_uuid : string
   ; row_loaded : bool
   ; row_title : string
+  ; row_list_number : int option
+  ; row_display_type : string option
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -171,6 +173,8 @@ type outliner_autocomplete_kind =
   | NodeAutocomplete
   | TagAutocomplete
   | PropertyAutocomplete
+  | CommandAutocomplete
+  | PickerAutocomplete of string
 
 type outliner_autocomplete =
   { autocomplete_kind : outliner_autocomplete_kind
@@ -237,6 +241,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
   ; projection_outliner_autocomplete : outliner_autocomplete option
@@ -275,6 +280,8 @@ type logseq_effect =
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
+  | EditorOutlinerEventEffect of int * string
+  | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
@@ -391,6 +398,7 @@ type logseq_model =
   ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -433,6 +441,8 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | EditorCompletion of string * string
+  | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int
@@ -723,6 +733,7 @@ let initial () =
     search_has_more = false;
     node_routes = [];
     navigation_root_rows = [];
+    empty_journals = [];
     journal_outliner_rows = [];
     outliner_rows = [];
     outliner_selected_block_ids = [];
@@ -803,6 +814,8 @@ let effect_id eff =
   | LoadPageReferencesEffect (id, _) -> id
   | HydrateOutlinerRowsEffect (id, _) -> id
   | TapOutlinerBlockEffect (id, _) -> id
+  | PasteOutlinerTextEffect (id, _, _, _) -> id
+  | EditorOutlinerEventEffect (id, _) -> id
   | ChangeOutlinerTextEffect (id, _, _, _) -> id
   | ReturnOutlinerEditorEffect (id, _, _, _) -> id
   | BackspaceOutlinerEditorEffect (id, _, _, _) -> id
@@ -909,6 +922,7 @@ let sign_in_active_ (current : logseq_model) =
 
 let change_outliner_text_effect_for_ eff uuid =
   match eff with
+  | PasteOutlinerTextEffect (_, effect_uuid, _, _)
   | ChangeOutlinerTextEffect (_, effect_uuid, _, _) -> effect_uuid = uuid
   | _ -> false
 
@@ -1312,7 +1326,7 @@ let indexed_outliner_autocomplete_candidates candidates =
 
 let reference_autocomplete_candidates (current : logseq_model) =
   match current.outliner_autocomplete with
-  | Some { autocomplete_kind = (TagAutocomplete | NodeAutocomplete); _ } ->
+  | Some _ ->
     current.outliner_autocomplete_candidates
   | _ -> []
 
@@ -1392,6 +1406,7 @@ let cancels_outliner_autosave = function
   | OutlinerToolbarEffect (_, action) ->
     (* Movement and media actions retain the draft without committing it. *)
     List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
+  | PasteOutlinerTextEffect _ | EditorOutlinerEventEffect _
   | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
   | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
@@ -1950,6 +1965,17 @@ let rec update (current : logseq_model) action =
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
+  | EditorCompletion (kind, value) ->
+    let fields = if kind = "searchAutocomplete" then ["query", `String value]
+      else if kind = "submitAutocomplete" then ["value", `String value] else [] in
+    if not (List.mem kind ["searchAutocomplete"; "submitAutocomplete"; "dismissAutocomplete"]) then current
+    else enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc (("type", `String kind) :: fields))))
+  | PasteOutlinerText (uuid, title, caret) ->
+    let updated = update_editing current uuid title caret in
+    let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = [];
+      sync_state = editing_sync_state current} in
+    enqueue_effect updated (PasteOutlinerTextEffect (updated.next_effect_id, uuid, title, caret))
   | ChangeOutlinerText (uuid, title, caret) ->
     let updated =
       {
@@ -2177,7 +2203,7 @@ let rec update (current : logseq_model) action =
          in_flight_effects = remove_effect current.in_flight_effects id;
          outliner_selection_revision =
            (match succeeded, eff with
-            | true, ChooseOutlinerAutocompleteEffect _ -> current.outliner_selection_revision + 1
+            | true, (ChooseOutlinerAutocompleteEffect _ | EditorOutlinerEventEffect _) -> current.outliner_selection_revision + 1
             | _ -> current.outliner_selection_revision);
          result_view_feedback = (match eff with
            | ResultViewEffect (_, uuid, _) | NodePropertyEffect (_, uuid, _) -> (uuid, id, (if succeeded then None else Some message))
@@ -2200,7 +2226,8 @@ let rec update (current : logseq_model) action =
            { resolved with sync_state = SyncedState }
          | _ -> resolved in
        let edited_uuid = match eff with
-         | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | PasteOutlinerTextEffect (_, uuid, _, _) | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | EditorOutlinerEventEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | BackspaceOutlinerEditorEffect (_, uuid, _, _) -> Some uuid
          | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | _ -> None in
@@ -2309,8 +2336,10 @@ let rec update (current : logseq_model) action =
     }
   | BackSearchNavigation count -> back_search_navigation current count
   | AddRootBlock uuid ->
-    let id = current.next_effect_id in
-    enqueue_effect current (AddRootBlockEffect (id, uuid))
+    if List.exists (function AddRootBlockEffect (_, parent) -> parent = uuid | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) then current
+    else let id = current.next_effect_id in
+      enqueue_effect current (AddRootBlockEffect (id, uuid))
   | LoadOlderJournals ->
     if current.graph_loading || load_older_journals_active_ current then current
     else begin
@@ -2901,6 +2930,7 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_sync_request = projection.has_pending_sync_request;
       pending_sync_error = projection.pending_sync_error;
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
+      empty_journals = projection.empty_journals;
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = snapshot_autocomplete current projection;
@@ -3059,6 +3089,7 @@ and apply_core_snapshot (current : logseq_model)
         navigation_root_rows = (if projection.node_routes = [] then projected_rows
           else if selected_graph_changed then projection.journal_outliner_rows
           else retain_shell_contents current.navigation_root_rows projection.journal_outliner_rows);
+        empty_journals = projection.empty_journals;
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
         outliner_autocomplete = snapshot_autocomplete current projection;

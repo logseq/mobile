@@ -804,8 +804,8 @@ let autocomplete_token_parsing_preserves_current_line_rules () =
       ("before\nstatus::", Some (request State.Property "status"));
       ("[[Page]]", None);
       ("((Block", None);
-      ("/query", None);
-      ("text\n/query", None);
+      ("/query", Some (request State.Command "query"));
+      ("text\n/query", Some (request State.Command "query"));
       ("plain text", None);
     ];
   check_eq

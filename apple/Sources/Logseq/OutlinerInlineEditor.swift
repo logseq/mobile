@@ -10,6 +10,7 @@ struct OutlinerInlineEditor: View {
     var inputPolicy: String = "{}"
     var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
+    var onPaste: ((String, Int) -> Void)? = nil
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
@@ -28,6 +29,7 @@ struct OutlinerInlineEditor: View {
             inputPolicy: inputPolicy,
             selectionRevision: selectionRevision,
             onTextChange: onTextChange,
+            onPaste: onPaste,
             onReturn: onReturn,
             onBackspace: onBackspace,
             onCaretChange: onCaretChange
@@ -139,6 +141,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     var inputPolicy: String = "{}"
     var selectionRevision: Int = 0
     let onTextChange: (String, Int) -> Void
+    var onPaste: ((String, Int) -> Void)? = nil
     let onReturn: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
@@ -319,7 +322,12 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             localText = textView.text
-            parent.onTextChange(textView.text, textView.selectedRange.location)
+            guard textView.markedTextRange == nil else { return }
+            if (textView as? FocusRetainingTextView)?.isPasting == true, let onPaste = parent.onPaste {
+                onPaste(textView.text, textView.selectedRange.location)
+            } else {
+                parent.onTextChange(textView.text, textView.selectedRange.location)
+            }
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -356,7 +364,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 }
                 return false
             }
-            if isInlineLineBreak { return true }
+            if isInlineLineBreak || (textView as? FocusRetainingTextView)?.isPasting == true { return true }
             if textView.markedTextRange == nil, let deletion = NativeEditorInputPolicy.deletingEmptyPair(
                 from: textView.text ?? "",
                 range: range,
@@ -372,6 +380,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 parent.onTextChange(deletion.text, deletion.caretUTF16Offset)
                 return false
             }
+            if replacement == "\n", NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy) { return true }
             if replacement == "\n" {
                 var submittedText = textView.text ?? ""
                 if range.length > 0 {
@@ -404,6 +413,19 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
     private var focusPending = false
     private(set) var isInsertingLineBreak = false
+    private(set) var isPasting = false
+
+    override func paste(_ sender: Any?) {
+        guard let text = UIPasteboard.general.string else {
+            super.paste(sender)
+            return
+        }
+        isPasting = true
+        defer { isPasting = false }
+        // This editor stores plain text. Insert it in the same input transaction
+        // so the delegate receives an explicit paste origin, including newlines.
+        insertText(text)
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         let lineBreak = UIKeyCommand(input: "\r", modifierFlags: .shift,

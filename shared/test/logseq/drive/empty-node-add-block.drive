@@ -13,6 +13,6 @@ ext ext:native-search-presentation native-search-presentation query-changed '{"q
 wait prop:accessibility-identifier=search.result.page-1
 press prop:accessibility-identifier=search.result.page-1
 wait prop:accessibility-identifier=screen.node
-wait prop:accessibility-identifier=button.outliner.add-first-block
-press prop:accessibility-identifier=button.outliner.add-first-block
+wait prop:accessibility-identifier=button.outliner.placeholder.page-1
+press prop:accessibility-identifier=button.outliner.placeholder.page-1
 wait text:"New block"

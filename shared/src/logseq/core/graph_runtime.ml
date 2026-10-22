@@ -45,6 +45,7 @@ type graph_runtime =
   ; current_creator : unit -> Created_by.identity option
   ; search_index : Index.search_index option
   ; state : runtime_state ref
+  ; auto_create_today : bool
   }
 
 (* How many flattened journal blocks the first snapshot materializes:
@@ -334,6 +335,7 @@ let create_base path server_t conn options =
       conn;
       encrypt_title = options.encrypt_title;
       current_creator = options.current_creator;
+      auto_create_today = options.auto_create_today;
       search_index;
       state =
         ref
@@ -535,8 +537,9 @@ let queued_operation runtime operation_id intent =
 let ensure_today_journal runtime =
   let created_at = int_of_float (Unix.gettimeofday () *. 1000.0) in
   let day = Model.journal_day_for_ms created_at in
-  if Read.journal_page_uuid (db runtime) day <> None then Ok ()
-  else
+  match Read.journal_page_uuid (db runtime) day with
+  | Some _ -> Ok ()
+  | None ->
     stage runtime
       (queued_operation runtime (fresh_uuid ())
          (Ops.Create_journal
@@ -562,6 +565,9 @@ let create path server_t conn options =
   runtime
 
 let blocks runtime =
+  if runtime.auto_create_today then
+    (match ensure_today_journal runtime with Ok () -> ()
+     | Error message -> failwith ("create today journal: " ^ message));
   let caches = caches_for_db runtime (db runtime) in
   let limit = (state runtime).journal_limit in
   let block_limit = (state runtime).journal_block_limit in
@@ -574,6 +580,16 @@ let blocks runtime =
     in
     Hashtbl.replace caches.blocks (limit, block_limit, through_day) blocks;
     blocks
+
+let empty_journals runtime =
+  let database = db runtime in
+  Read.recent_journal_page_ids (state runtime).journal_limit database
+  |> List.filter_map (fun eid ->
+    if Seq.uncons (Datascript_value.datoms_by_ref database Ds.Aevt "block/parent" eid) <> None then None
+    else match Read.page_summary (fun value -> Ok value) database eid,
+      Read.int_value (Read.value database eid "block/journal-day") with
+    | Some page, Some day -> Some (page, day)
+    | _ -> None)
 
 let due_flashcards runtime now = Cards.due_cards (db runtime) now
 

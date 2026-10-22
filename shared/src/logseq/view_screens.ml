@@ -311,11 +311,6 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                     []);
             ];
           View_outliner.page_loading_view model_source;
-          if_
-            ~test:(Signal.map View_base.main_can_add_first_block_
-                     model_source)
-            (box ~padding_horizontal:8
-               [ View_outliner.add_first_block_button model_source send ]);
           box ~height:120 [];
           ]));
     ])

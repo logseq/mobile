@@ -75,7 +75,7 @@ enum OutlinerMarkupMarkdown {
     static func requiresAttributedText(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .text, .codeBlock, .math, .cloze, .youtubeTimestamp, .video, .iframe:
+            case .text, .codeBlock, .math, .cloze, .youtubeTimestamp, .video, .iframe, .html, .image:
                 return false
             case .code, .emphasis, .quote, .link, .nodeReference, .tagReference:
                 return true
@@ -116,7 +116,7 @@ enum OutlinerMarkupMarkdown {
             return nodeLink(label: "[[" + (node.title ?? "") + "]]", uuid: node.uuid)
         case .tagReference:
             return nodeLink(label: "#" + (node.title ?? ""), uuid: node.uuid)
-        case .video, .iframe:
+        case .video, .iframe, .html, .image:
             return escape(node.url ?? "")
         }
     }
@@ -147,7 +147,7 @@ enum OutlinerMarkupInteractionPolicy {
     static func hasInteractiveContent(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .link, .nodeReference, .tagReference, .video, .iframe,
+            case .link, .nodeReference, .tagReference, .video, .iframe, .html, .image,
                  .youtubeTimestamp, .cloze:
                 return true
             case .emphasis, .quote:
@@ -185,6 +185,10 @@ enum OutlinerMarkupAttributedString {
         case .emphasis, .quote:
             var value = make(nodes: node.children, fallback: "", textStyle: textStyle)
             switch node.style {
+            case "heading-1": value.font = .title.bold()
+            case "heading-2": value.font = .title2.bold()
+            case "heading-3": value.font = .title3.bold()
+            case "heading-4", "heading-5", "heading-6": value.font = .headline
             case "bold": value.font = .system(textStyle).bold()
             case "italic": value.font = .system(textStyle).italic()
             case "underline": value.underlineStyle = .single
@@ -209,7 +213,7 @@ enum OutlinerMarkupAttributedString {
                 value.link = OutlinerMarkupLink.node(uuid: uuid).url
             }
             return value
-        case .video, .iframe:
+        case .video, .iframe, .html, .image:
             return AttributedString(node.url ?? "")
         }
     }
@@ -250,6 +254,21 @@ struct OutlinerRichBlockContent: View {
                     node: node,
                     startSeconds: youtubeStartSeconds
                 )
+            case .html:
+                #if os(iOS)
+                AppleWebView(url: nil, headers: [:], html: node.text).frame(height: 220)
+                #else
+                Text(node.text ?? "")
+                #endif
+            case .image:
+                AsyncImage(url: node.url.flatMap(URL.init(string:))) { phase in
+                    if let image = phase.image { image.resizable().scaledToFit() }
+                    else if phase.error != nil { Text("Image unavailable").foregroundStyle(.secondary) }
+                    else { ProgressView() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: 240)
+                .clipShape(.rect(cornerRadius: 12))
+                .accessibilityLabel(node.text ?? "Image")
             case .iframe:
                 EmbeddedWebContent(url: node.embedURL.flatMap { URL(string: $0) }, headers: node.mediaHeaders)
             case .youtubeTimestamp:
@@ -454,18 +473,30 @@ private struct EmbeddedWebContent: View {
 
 #if os(iOS)
 private struct AppleWebView: UIViewRepresentable {
-    let url: URL
+    let url: URL?
     let headers: [String: String]
+    var html: String? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
-        return WKWebView(frame: .zero, configuration: configuration)
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        view.scrollView.backgroundColor = .clear
+        return view
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        if let html {
+            guard context.coordinator.loadedHTML != html else { return }
+            context.coordinator.loadedHTML = html
+            webView.loadHTMLString("<meta name='viewport' content='width=device-width,initial-scale=1'><style>:root{color-scheme:light dark}body{background:transparent;font:17px -apple-system;margin:0}img{max-width:100%}</style>" + html, baseURL: nil)
+            return
+        }
+        guard let url else { return }
         var request = URLRequest(url: url)
         for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)
@@ -477,6 +508,7 @@ private struct AppleWebView: UIViewRepresentable {
 
     final class Coordinator {
         var loadedRequest: URLRequest?
+        var loadedHTML: String?
     }
 }
 #endif

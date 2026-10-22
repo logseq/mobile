@@ -9,6 +9,8 @@ type markup_node =
   | Markup_math of string * bool
   | Markup_video of string
   | Markup_iframe of string
+  | Markup_html of string
+  | Markup_image of string * string
   | Markup_youtube_timestamp of int * string
   | Markup_cloze of string
   | Markup_link of string * markup_node list

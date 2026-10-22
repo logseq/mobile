@@ -354,6 +354,7 @@ let empty_core_projection () =
     search_has_more = false;
     search_results = [];
     node_routes = [];
+    empty_journals = [];
     journal_outliner_rows = [];
     projection_outliner_editing = None;
     projection_outliner_autocomplete = None;
@@ -425,6 +426,8 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_list_number = None;
+    row_display_type = None;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -2035,7 +2038,7 @@ let authentication_screen_uses_the_product_name_on_every_host () =
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_editor_schema ()))
-    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
@@ -2759,6 +2762,8 @@ let outline_row uuid title =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_list_number = None;
+    row_display_type = None;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -3189,7 +3194,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
   in
   let add_first =
     descendant_with_identifier renderer outliner
-      "button.outliner.add-first-block"
+      "button.outliner.placeholder.page-a"
   in
   let content =
     descendant_with_identifier renderer outliner "outliner.block.content"
@@ -3220,8 +3225,8 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
     ~msg:"selected page titles preserve the combined main horizontal inset"
     (property_int renderer page_title_layout Lui_protocol.PaddingHorizontal)
     16;
-  check ~msg:"non-empty selected pages hide the add-first-block action"
-    (add_first = -1)
+  check ~msg:"non-empty selected pages retain a trailing placeholder"
+    (add_first <> -1)
 
 let flashcard_presentation_and_review_state_are_owned_by_lg () =
   let card =
@@ -6862,7 +6867,7 @@ let empty_node_routes_add_the_first_block_through_the_core () =
   in
   let add_button =
     descendant_with_identifier renderer screen
-      "button.outliner.add-first-block"
+      "button.outliner.placeholder.page-a"
   in
   dispatch application (Lui_protocol.Press add_button);
   flush application;
@@ -7323,7 +7328,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   let metadata = Lui_protocol.data_attrs_decode
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the native collection fills the viewport after the first journal"
-    (List.assoc "data-first-section-count" metadata) "1";
+    (List.assoc "data-first-section-count" metadata) "2";
   check_eq ~msg:"viewport retention leaves room for native chrome"
     (List.assoc "data-first-section-inset" metadata) "136";
   check_eq ~msg:"later journal blocks use their intrinsic height"
@@ -7437,9 +7442,9 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
   let metadata = Lui_protocol.data_attrs_decode
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
-    (List.assoc "data-first-section-count" metadata) "2";
+    (List.assoc "data-first-section-count" metadata) "3";
   check_eq ~msg:"journal dates remain available outside the mounted block window"
-    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-2" metadata)
+    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-3" metadata)
     (Some "August 27th", Some "August 28th");
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
@@ -8398,17 +8403,17 @@ let selected_page_waits_for_blocks_before_showing_empty_state () =
     flush application;
     let renderer = Lui_app.runtime application in
     let root = main_root renderer application in
-    check_eq ~msg:"unresolved pages never pretend to be empty"
-      (descendant_with_identifier renderer root "button.outliner.add-first-block") (-1);
+    check_eq ~msg:"only loaded cached pages offer a trailing placeholder"
+      (descendant_with_identifier renderer root "button.outliner.placeholder.page-a" <> -1) cached;
     check_eq ~msg:"only uncached pages show their loading state"
       (descendant_with_identifier renderer root "status.page-loading" <> -1) (not cached);
     let selected = { sidebar with Model.selected_page = Some page } in
     send application (apply_core_snapshot None selected [] false "" [] [] None
       None [] [] [] false []);
     flush application;
-    check ~msg:"confirmed empty pages expose Add first block"
+    check ~msg:"confirmed empty pages expose an editable placeholder"
       (descendant_with_identifier renderer (main_root renderer application)
-         "button.outliner.add-first-block" <> -1);
+         "button.outliner.placeholder.page-a" <> -1);
     check_eq ~msg:"the authoritative empty response finishes loading"
       (descendant_with_identifier renderer (main_root renderer application)
          "status.page-loading") (-1)
@@ -9287,9 +9292,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     descendant_extension_containing_identifier renderer application chrome
       "liquid-glass" "toolbar.outliner.autocomplete"
   in
-  let autocomplete_column =
-    List.nth (children renderer autocomplete_bar) 0
-  in
+  let autocomplete_column = autocomplete_bar in
   let candidate_button =
     descendant_with_identifier renderer autocomplete_column
       "button.outliner.autocomplete.0"
@@ -9317,9 +9320,9 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     (property_string renderer candidate_button
        Lui_protocol.AccessibilityIdentifier)
     "button.outliner.autocomplete.0";
-  check_eq ~msg:"autocomplete uses main's vertically scrolling surface"
+  check_eq ~msg:"autocomplete provides a shared header above its scrolling candidates"
     (node renderer autocomplete_bar)
-    (Some Lui_protocol.Scroll);
+    (Some Lui_protocol.Column);
   check_eq ~msg:"autocomplete keeps main's maximum height"
     (property_int renderer autocomplete_bar Lui_protocol.MaxHeight)
     220;
@@ -9466,9 +9469,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     descendant_with_identifier renderer editor_container
       "toolbar.outliner.autocomplete"
   in
-  let autocomplete_column =
-    List.nth (children renderer autocomplete_bar) 0
-  in
+  let autocomplete_column = autocomplete_bar in
   let candidate_button =
     descendant_with_identifier renderer autocomplete_column
       "button.outliner.autocomplete.0"
@@ -9484,7 +9485,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
        "toolbar.outliner.editor" <> -1);
   check
     ~msg:"the autocomplete surface shares the visible vertical editor container"
-    (child_with_identifier renderer editor_container
+    (descendant_with_identifier renderer editor_container
        "toolbar.outliner.autocomplete"
     <> -1);
   check_eq
@@ -9492,8 +9493,8 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     (property_string renderer autocomplete_column
        Lui_protocol.CrossAlignment)
     "stretch";
-  check_eq ~msg:"short result lists align candidates with the bottom toolbar"
-    (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "end";
+  check_eq ~msg:"suggestions start below their shared header"
+    (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "start";
   check_eq ~msg:"candidate buttons fill their bounded horizontal row"
     (property_float renderer candidate_button Lui_protocol.GrowValue) 1.0;
   check_eq

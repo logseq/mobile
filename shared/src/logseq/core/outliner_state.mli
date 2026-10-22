@@ -4,7 +4,7 @@ val native_input_policy : string
 
 module Sset : Set.S with type elt = string
 
-type reducer_autocomplete_kind = Node | Tag | Property
+type reducer_autocomplete_kind = Node | Tag | Property | Command | Picker of Editor_command.picker
 
 type reducer_autocomplete =
   { kind : reducer_autocomplete_kind
@@ -28,6 +28,7 @@ type outliner_state =
   ; selected : Sset.t
   ; pending_deletion : string list
   ; autocomplete : reducer_autocomplete option
+  ; completion_dismissed : bool
   ; collapsed : Sset.t
   ; zoomed : string list
   }
@@ -84,6 +85,7 @@ type outliner_priority =
 type outliner_message =
   | Tap_block of string
   | Long_press_block of string
+  | Text_pasted of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
   | Return_pressed
@@ -93,6 +95,9 @@ type outliner_message =
   | Toolbar of outliner_toolbar
   | Drop_blocks of outliner_drop
   | Choose_autocomplete of string
+  | Search_autocomplete of string
+  | Submit_autocomplete of string
+  | Dismiss_autocomplete
   | Confirm_delete
   | Save_editing
   | Cancel_editing
@@ -132,6 +137,8 @@ type outliner_root =
 
 type outliner_command =
   | Haptic of outliner_haptic
+  | Execute_editor of Editor_command.operation
+  | Editor_error of string
   | Commit_title of Pending_ops.pending_title
   | Split_at of outliner_split
   | Merge_into_previous of outliner_merge
@@ -152,7 +159,9 @@ type outliner_command =
   | Copy_urls of string list
 
 type outliner_context =
-  { blocks : Cache_model.block list
+  { graph_id : string option
+  ; db : Datascript.db option
+  ; blocks : Cache_model.block list
   ; pages : outliner_candidate list
   ; tags : outliner_candidate list
   ; label_values : (string, Sset.t) Hashtbl.t
@@ -178,6 +187,8 @@ val zoom_path : outliner_state -> string list
 val find_block : outliner_context -> string -> Cache_model.block option
 val duplicated_labels : outliner_candidate list -> Sset.t
 val context :
+  ?graph_id:string ->
+  ?db:Datascript.db ->
   ?search_nodes:(string -> outliner_candidate list) ->
   ?is_block_reference:(string -> bool) ->
   Cache_model.block list ->

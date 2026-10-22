@@ -115,6 +115,8 @@ internal class LogseqRuntime(
     @Volatile private var selectedGraphId = ""
     @Volatile private var storageBaseUrl = ""
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
+    private var journalDayJob: kotlinx.coroutines.Job? = null
+    private var refreshedJournalDay: String? = null
     private var graphEventsJob: kotlinx.coroutines.Job? = null
     private var graphEventsGraphId: String? = null
     private var graphLifecycle: AndroidGraphLifecycle? = null
@@ -222,6 +224,22 @@ internal class LogseqRuntime(
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         if (resumed && hasOpenGraph) appEntries.markReady()
+        journalDayJob?.cancel()
+        journalDayJob = if (resumed) scope.launch {
+            while (true) {
+                if (hasOpenGraph) {
+                    val key = selectedGraphId + ":" + java.time.LocalDate.now().toString()
+                    if (key != refreshedJournalDay) {
+                        val response = bridge.callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
+                        if (JSONObject(response).optBoolean("ok")) {
+                            applyCoreResponse(response)
+                            refreshedJournalDay = key
+                        }
+                    }
+                }
+                kotlinx.coroutines.delay(30_000)
+            }
+        } else null
     }
 
     suspend fun publishAppEntry(entry: Map<String, Any?>) = appEntries.publish(entry)

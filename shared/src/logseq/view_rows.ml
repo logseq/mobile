@@ -187,15 +187,67 @@ let reference_entry_row = function
   | _ -> invalid_arg "reference_entry_row requires a block entry"
 
 
+type placeholder = { parent_uuid : string; journal_heading : (string * int * bool) option }
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
+  | Placeholder_entry of placeholder
+
+let needs_placeholder rows = match List.rev rows with
+  | [] -> true
+  | last :: _ ->
+    let title = if last.is_editing then last.editing_title else last.value.row_title in
+    not (last.value.row_loaded && String_kit.is_blank title && not last.value.has_children)
+
+let outline_entries rows = List.map (fun row -> Outline_entry row) rows
+
+let journal_entries rows (current : Model.logseq_model) =
+  let groups = Hashtbl.create 16 and sequence = ref [] in
+  List.iter (fun row ->
+    let page = row.value.Model.page_id in
+    if not (Hashtbl.mem groups page) then sequence := page :: !sequence;
+    let previous = Option.value ~default:[] (Hashtbl.find_opt groups page) in
+    Hashtbl.replace groups page (row :: previous)) rows;
+  let sections = List.rev_map (fun page ->
+    let rows = List.rev (Hashtbl.find groups page) in
+    let first = (List.hd rows).value in
+    page, first.journal_title, first.journal_day, rows) !sequence in
+  let rec insert_empty entry = function
+    | [] -> [entry]
+    | ((_, _, day, _) as first) :: rest as sections ->
+      let _, _, incoming, _ = entry in
+      if incoming > day then entry :: sections else first :: insert_empty entry rest in
+  let sections = List.fold_left (fun sections ((page : Model.sidebar_page), day) ->
+    if Hashtbl.mem groups page.uuid then sections
+    else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
+  let entries = List.mapi (fun index (page, title, day, rows) ->
+    let outline = outline_entries rows in
+    match title, day with
+    | Some title, Some day when needs_placeholder rows ->
+      outline @ [Placeholder_entry {parent_uuid = page;
+        journal_heading = if rows = [] then Some (title, day, index > 0) else None}]
+    | _ -> outline) sections in
+  List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
 let page_entries rows current =
-  List.rev_append (List.rev_map (fun row -> Outline_entry row) rows)
+  let outline =
+    if View_base.journal_home_visible_ current then journal_entries rows current
+    else
+      let outline = outline_entries rows in
+      let parent = match View_base.active_node_projection current with
+        | Some route -> route.node_uuid | None -> View_base.active_node_page_uuid current in
+      let allowed = View_base.current_content_active_ current
+        && View_base.page_content_ready_ current && parent <> ""
+        && (match Model.active_page current with
+          | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
+      if allowed && needs_placeholder rows then
+        outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
+      else outline in
+  List.rev_append (List.rev outline)
     (List.map (fun row -> Reference_entry row) (reference_entries current))
 
 let page_entry_identifier = function
   | Outline_entry row -> "outline." ^ retained_row_identifier row
   | Reference_entry row -> "reference." ^ reference_entry_identifier row
+  | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
 
 let page_entry_outline = function
   | Outline_entry row -> row
@@ -205,10 +257,25 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
+let journal_section_titles current =
+  if not (View_base.journal_home_visible_ current) then [] else
+  let previous = ref None in
+  page_entries (retained_outliner_rows current) current
+  |> List.mapi (fun index entry ->
+    let section = match entry with
+      | Outline_entry row -> Option.map (fun title -> row.value.page_id, title) row.value.journal_title
+      | Placeholder_entry {parent_uuid; journal_heading = Some (title, _, _)} -> Some (parent_uuid, title)
+      | _ -> None in
+    match section with
+    | Some (page, title) when !previous <> Some page -> previous := Some page; Some (index, title)
+    | _ -> None)
+  |> List.filter_map Fun.id
+
 let first_journal_section_count current =
-  if first_journal_section_visible_ current then
-    (List.hd current.Model.outliner_section_markers).end_index
-  else 0
+  match journal_section_titles current with
+  | [] -> 0
+  | [_] -> List.length (page_entries (retained_outliner_rows current) current)
+  | _ :: (index, _) :: _ -> index
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

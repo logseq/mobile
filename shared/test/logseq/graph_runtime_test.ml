@@ -1202,7 +1202,27 @@ let authoritative_today_journal_is_not_recreated () =
           { Runtime.default_options with auto_create_today = true }
       in
       check_eq (Runtime.journal_page_uuid current day) (Some "existing-today");
-      check (Runtime.pending_operations current = []))
+      check_eq ~msg:"viewing an empty journal never creates persisted filler"
+        (Runtime.blocks_for_page current "existing-today") [];
+      ignore (Runtime.blocks current);
+      check_eq ~msg:"repeated reads preserve the authoritative empty page"
+        (Runtime.pending_operations current) [])
+
+let journal_reads_fill_a_missing_today_once () =
+  List.iter (fun auto_create_today -> with_store (fun path ->
+    let runtime = Runtime.create_base path 42 (Ds.conn_from_db (Ds.empty_db ~schema ()))
+      {Runtime.default_options with auto_create_today} in
+    check_eq (Runtime.journal_page_uuid runtime (today ())) None;
+    ignore (Runtime.blocks runtime);
+    if auto_create_today then begin
+      check ~msg:"a long-lived graph read creates the missing local day"
+        (Runtime.journal_page_uuid runtime (today ()) <> None);
+      let count = List.length (Runtime.pending_operations runtime) in
+      check_eq count 1;
+      ignore (Runtime.blocks runtime);
+      check_eq ~msg:"refresh and graph restoration do not duplicate the journal"
+        (List.length (Runtime.pending_operations runtime)) count
+    end else check_eq (Runtime.pending_operations runtime) [])) [true; false]
 
 let accepted_journal_discards_its_entire_overlay () =
   with_store (fun path ->
@@ -1916,6 +1936,7 @@ let cases =
       today_journal_is_canonical_atomic_and_not_duplicated_on_reopen;
     case "authoritative today journal is not recreated"
       authoritative_today_journal_is_not_recreated;
+    case "journal reads fill a missing today once" journal_reads_fill_a_missing_today_once;
     case "accepted journal discards its entire overlay"
       accepted_journal_discards_its_entire_overlay;
     case "persisted offline pages reopen for every transport state"

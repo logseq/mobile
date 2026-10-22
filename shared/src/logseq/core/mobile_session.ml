@@ -63,6 +63,7 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun body -> Graph.apply_sync_event graph body);
     sync_cursor = Some (fun () -> Graph.sync_cursor graph);
     graph_blocks = Some (fun () -> Graph.blocks graph);
+    empty_journals = Some (fun () -> Graph.empty_journals graph);
     graph_db = Some (fun () -> Graph.projected_db graph);
     authoritative_graph_blocks =
       Some (fun () -> Graph.authoritative_blocks graph);

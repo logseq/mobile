@@ -219,7 +219,9 @@ let decode_outliner_event fields =
     let* title = required_string fields "title" in
     let* caret = event_int fields "caretUTF16Offset" in
     Ok
-      (Outliner.Text_changed { Outliner.title; caret })
+      (if List.assoc_opt "inputOrigin" fields = Some (`String "paste") then
+         Outliner.Text_pasted { Outliner.title; caret }
+       else Outliner.Text_changed { Outliner.title; caret })
   | "caretMoved" ->
     let* caret = event_int fields "caretUTF16Offset" in
     Ok (Outliner.Caret_moved caret)
@@ -264,6 +266,9 @@ let decode_outliner_event fields =
   | "chooseAutocomplete" ->
     let* value = required_string fields "value" in
     Ok (Outliner.Choose_autocomplete value)
+  | "dismissAutocomplete" -> Ok Outliner.Dismiss_autocomplete
+  | "searchAutocomplete" -> let* query = required_string fields "query" in Ok (Outliner.Search_autocomplete query)
+  | "submitAutocomplete" -> let* value = required_string fields "value" in Ok (Outliner.Submit_autocomplete value)
   | "confirmDelete" -> Ok Outliner.Confirm_delete
   | "saveEditing" -> Ok Outliner.Save_editing
   | "cancelEditing" -> Ok Outliner.Cancel_editing

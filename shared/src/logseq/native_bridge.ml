@@ -300,6 +300,11 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"tap-outliner-block\",\"text\":" ^ Lui_wire.quoted uuid
     ^ "}"
+  | EditorOutlinerEventEffect (id, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "editor-outliner-event"; "text", `String payload])
+  | PasteOutlinerTextEffect (id, uuid, title, caret) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "paste-outliner-text";
+      "text", `String title; "uuid", `String uuid; "value", `Int caret])
   | ChangeOutlinerTextEffect (id, uuid, title, caret) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"change-outliner-text\",\"text\":"
@@ -542,7 +547,7 @@ let extension_event node identifier name text value =
              | 1 -> "inside"
              | _ -> "after") );
       ]
-    | _, ("text-change" | "return") ->
+    | _, ("text-change" | "paste" | "return") ->
       [
         "title", StringValue text;
         "caret-utf16-offset", IntValue value;

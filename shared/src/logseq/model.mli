@@ -116,6 +116,8 @@ type outline_row =
   { row_uuid : string
   ; row_loaded : bool
   ; row_title : string
+  ; row_list_number : int option
+  ; row_display_type : string option
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -168,6 +170,8 @@ type outliner_autocomplete_kind =
   | NodeAutocomplete
   | TagAutocomplete
   | PropertyAutocomplete
+  | CommandAutocomplete
+  | PickerAutocomplete of string
 
 type outliner_autocomplete =
   { autocomplete_kind : outliner_autocomplete_kind
@@ -234,6 +238,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
   ; projection_outliner_autocomplete : outliner_autocomplete option
@@ -272,6 +277,8 @@ type logseq_effect =
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
+  | EditorOutlinerEventEffect of int * string
+  | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
@@ -388,6 +395,7 @@ type logseq_model =
   ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -430,6 +438,8 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | EditorCompletion of string * string
+  | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int

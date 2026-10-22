@@ -21,6 +21,8 @@ public enum LogseqMarkupNodeType: String, Codable, Hashable, Sendable {
     case math
     case video
     case iframe
+    case html
+    case image
     case youtubeTimestamp
     case cloze
     case link

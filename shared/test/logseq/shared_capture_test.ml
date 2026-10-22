@@ -73,6 +73,10 @@ let graph_deep_links_resolve_graphs_pages_and_blocks () =
   check_eq (U.member "deepLinkQuickAction" (result "/Plain" [])) (`String "journal");
   check_eq (U.member "deepLinkNodeUuid" (result "/Plain" ["page", "Workspace"])) (`String Query_block_test.page);
   check_eq (U.member "deepLinkNodeUuid" (result "/plain-1" ["block-id", Query_block_test.alpha])) (`String Query_block_test.alpha);
+  check_eq ~msg:"a block-only URL resolves in the selected graph"
+    (U.member "deepLinkNodeUuid" (result "/" ["block-id", Query_block_test.alpha])) (`String Query_block_test.alpha);
+  check_eq ~msg:"an explicit graph ID query takes precedence over the path name"
+    (U.member "deepLinkGraphId" (result "/Plain" ["graph-id", "other"; "block-id", Query_block_test.alpha])) (`String "other");
   check_eq (U.member "deepLinkNodeUuid" (result "/Plain" ["page", "Workspace"; "block-id", Query_block_test.beta])) (`String Query_block_test.beta);
   let other = result "/Other 中文 +" ["page", "Workspace"] in
   check_eq ~msg:"a graph switch must finish before resolving nodes in that graph"

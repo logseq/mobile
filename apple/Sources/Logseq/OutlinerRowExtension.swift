@@ -55,6 +55,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let selected: Bool
     let opensAsPage: Bool
     let nodeIcon: NodeIconPayload?
+    let listNumber: Int?
     let journalBullet: Bool
     let syncFailed: Bool
     let priority: Status?
@@ -165,7 +166,10 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 } else {
                     Button { emit("open-node") } label: {
-                        if let icon = row.nodeIcon {
+                        if let number = row.listNumber {
+                            Text("\(number).").font(.subheadline).frame(width: 24, height: 24)
+                                .accessibilityIdentifier("outliner.number." + row.uuid)
+                        } else if let icon = row.nodeIcon {
                             NodeIconView(icon: icon, size: 18).frame(width: 24, height: 24)
                         } else {
                             IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)

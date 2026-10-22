@@ -7,6 +7,7 @@ type sidebar_pages =
   }
 
 val value : Datascript.db -> int -> string -> Datascript.value option
+val display_type_for_eid : Datascript.db -> int -> string option
 val string_value : Datascript.value option -> string option
 val uuid_value : Datascript.value option -> string option
 val int_value : Datascript.value option -> int option

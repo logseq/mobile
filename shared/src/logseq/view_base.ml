@@ -68,7 +68,9 @@ let handle_outliner_editor_event input_event block_id_source send =
   match input_event with
   | ExtensionEvent (_node, _identifier, name, values) ->
     let uuid = Signal.sample block_id_source in
-    if name = "text-change" then
+    if name = "paste" then
+      send (Model.PasteOutlinerText (uuid, extension_string values "title", extension_int values "caret-utf16-offset"))
+    else if name = "text-change" then
       send
         (Model.ChangeOutlinerText
            ( uuid
@@ -517,8 +519,7 @@ let outliner_autocomplete_active_ (current : Model.logseq_model) =
   outliner_editor_active_ current
   &&
   (match current.outliner_autocomplete with
-   | Some { autocomplete_kind = (Model.TagAutocomplete | Model.NodeAutocomplete); _ } -> true
-   | Some _ -> current.outliner_autocomplete_candidates <> []
+   | Some _ -> true
    | None -> false)
 
 let outliner_autocomplete_identifier
@@ -815,7 +816,7 @@ let node_outliner_visible_ (current : Model.logseq_model) =
   current.outliner_rows <> []
 
 let node_title_visible_ (current : Model.logseq_model) =
-  node_outliner_visible_ current
+  page_content_ready_ current
   && (not (current_content_is_tag_ current))
   && (not
         (active_node_uuid current <> active_node_page_uuid current))
@@ -1354,7 +1355,7 @@ let sync_error_message (current : Model.logseq_model) =
 let selected_page_content_title_visible_ (current : Model.logseq_model) =
   selected_page_present_ current
   && (not current.selected_page_is_tag)
-  && node_outliner_visible_ current
+  && page_content_ready_ current
 
 let selected_page_title (current : Model.logseq_model) =
   match current.selected_page with

@@ -38,6 +38,7 @@ type graph_runtime =
   ; current_creator : unit -> Created_by.identity option
   ; search_index : Search_index.search_index option
   ; state : runtime_state ref
+  ; auto_create_today : bool
   }
 
 val default_options : runtime_options
@@ -130,3 +131,5 @@ val search : graph_runtime -> string -> Search_index.indexed_search_hit list
 
 val search_page : graph_runtime -> offset:int -> limit:int -> string ->
   Search_index.indexed_search_hit list * bool
+
+val empty_journals : graph_runtime -> (Cache_model.entity_summary * int) list

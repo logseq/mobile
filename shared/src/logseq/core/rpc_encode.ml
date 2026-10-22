@@ -89,6 +89,7 @@ let block_json (block : Model.block) =
      ; ("breadcrumbs", `List (List.map summary_json block.breadcrumbs))
      ; ("markup", markup_json block)
      ]
+     @ (match block.display_type with Some typ -> ["displayType", `String typ] | None -> [])
      @ (match block.order with
         | Some order -> [ ("order", `String order) ]
         | None -> [])
@@ -328,6 +329,8 @@ let autocomplete_kind_json kind =
   | Outliner.Node -> "node"
   | Outliner.Tag -> "tag"
   | Outliner.Property -> "property"
+  | Outliner.Command -> "command"
+  | Outliner.Picker picker -> Editor_command.picker_name picker
 
 let outliner_state_json (state : Outliner.outliner_state) =
   Wire.json_object

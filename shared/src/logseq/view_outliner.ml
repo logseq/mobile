@@ -6,8 +6,12 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
  fun context parent ->
    let node = Lui_ui.extension context "outliner-editor" in
    attach context parent node;
-   Lui_ui.extension_property context node "input-policy"
-     (View_base.string_wire_value Outliner_state.native_input_policy);
+   Lui_ui.extension_property_signal context node "input-policy"
+     (Signal.map2 (fun (current : Model.logseq_model) uuid ->
+       let multiline = List.exists (fun (row : Model.outline_row) -> row.row_uuid = uuid
+         && List.mem row.row_display_type [Some "code"; Some "math"]) current.outliner_rows in
+       StringValue (if multiline then {|{"multiline":true,"emptyPairs":[{"text":"[[]]","deleteOffset":1}]}|}
+         else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "selection-revision"
      (Signal.map (fun (current : Model.logseq_model) ->
        IntValue current.outliner_selection_revision) model_source);
@@ -167,10 +171,15 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
+            if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_list_number <> None) row_source)
+              (text ~value_signal:(Signal.map (fun (row : Model.outline_row) ->
+                Option.fold ~none:"" ~some:(fun n -> string_of_int n ^ ".") row.row_list_number) row_source)
+                ~font_size:"14" ~foreground:"muted-foreground"
+                ~accessibility_identifier:("outliner.number." ^ View_base.outliner_row_uuid current_row) []);
             View_base.node_icon_view ~size:18 (Signal.map2 (fun current (row : Model.outline_row) ->
               View_base.node_icon current row.row_uuid) model_source row_source);
             if_ ~test:(Signal.map2 (fun current (row : Model.outline_row) ->
-              View_base.node_icon current row.row_uuid = "") model_source row_source)
+              View_base.node_icon current row.row_uuid = "" && row.row_list_number = None) model_source row_source)
             (icon ~name_signal:(Signal.map (fun (row : Model.outline_row) ->
                 `app (if row.is_collapsed && row.has_children then "outliner-bullet-closed" else "outliner-bullet")) row_source)
               ~width:24 ~height:24 ~foreground:"border"
@@ -429,6 +438,7 @@ let native_outliner_row model_source retained_source row_source send : t =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "listNumber", (match row.row_list_number with Some n -> `Int n | None -> `Null);
       "nodeIcon", (let icon = View_base.node_icon current row.row_uuid in
         if icon = "" then `Null else Yojson.Basic.from_string icon);
       "markup", (try Yojson.Basic.from_string row.markup_json with _ -> `List []);
@@ -767,27 +777,73 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
                  (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
        []))]
 
-let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
-    send : t =
-  scroll ~height:220 ~max_height:220
-    ~accessibility_identifier:"toolbar.outliner.autocomplete"
-    ~style_class:"outliner-autocomplete"
-    [
-      column ~gap:2 ~padding:8 ~min_height:204 ~main:`end_
-        ~cross:`stretch
-        ~grow:0.0
-        [
-          keyed
-            ~source:
-              (Signal.map
-                 View_base.model_outliner_autocomplete_candidates
-                 model_source)
-            ~key:(fun (candidate : Model.outliner_autocomplete_candidate) -> candidate.candidate_value)
-            ~cmp:compare
-            ~mount:(fun candidate_source ->
-              outliner_autocomplete_row context candidate_source send);
-        ];
-    ]
+let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : t =
+  let kind = function
+    | Model.CommandAutocomplete -> "command" | NodeAutocomplete -> "node" | TagAutocomplete -> "tag"
+    | PropertyAutocomplete -> "property" | PickerAutocomplete kind -> kind in
+  let title = function "command" -> "Commands" | "node" -> "Pages" | "tag" -> "Tags"
+    | "embed" -> "Embed a node" | "template" -> "Templates" | "link" -> "Link"
+    | "image" -> "Image link" | "date" -> "Date picker" | "deadline" -> "Deadline"
+    | "scheduled" -> "Scheduled" | "youtube" -> "YouTube timestamp" | _ -> "Properties" in
+  let emit event value = ignore (send (Model.EditorCompletion (event, value))) in
+  let dismiss () = emit "dismissAutocomplete" "" in
+  let source = Signal.map (fun (current : Model.logseq_model) ->
+    match current.outliner_autocomplete with Some request -> [kind request.autocomplete_kind] | None -> []) model_source in
+  keyed ~source ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
+    let kind = Signal.sample source in
+    let form = List.mem kind ["link"; "image"; "date"; "deadline"; "scheduled"; "youtube"] in
+    if form then (fun context parent ->
+      let temporal = List.mem kind ["date"; "deadline"; "scheduled"] in
+      let date_kind = if kind = "date" then "date" else "datetime" in
+      let value = Signal.state context.Lui_ui.ui_scheduler (if temporal then View_query.temporal_default date_kind else "") in
+      let label = Signal.state context.ui_scheduler "" in
+      let input state = function TextChanged (_, value) -> Signal.set state value | _ -> () in
+      let confirm _ =
+        let value = Signal.sample (Signal.value value) in
+        let value = if kind = "link" || kind = "image" then Yojson.Basic.to_string (`Assoc
+          ["url", `String value; "label", `String (Signal.sample (Signal.value label))]) else value in
+        emit "submitAutocomplete" value in
+      let cancel = button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+        ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) [] in
+      let done_ = button ~text:"Insert" ~variant:`ghost ~style_class:"confirmation-action"
+        ~accessibility_identifier:"button.outliner.autocomplete.submit" ~on_press:confirm [] in
+      (sheet ~text:(title kind) ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+        ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
+        list ~grow:1.0 ~style:`inset_grouped [list_section (
+          if temporal then [list_item ~padding_horizontal:0 ~padding_vertical:0 [
+            View_query.temporal_picker date_kind "editor-command" (Signal.value value) (Signal.set value)]]
+          else [list_item [text_field ~text_signal:(Signal.value value) ~autofocus:true
+            ~placeholder:(if kind = "youtube" then "1:32" else "https://example.com")
+            ~label:(if kind = "youtube" then "Timestamp" else "URL")
+            ~accessibility_identifier:"field.outliner.autocomplete.value" ~on_input:(input value) []]]
+          @ (if kind = "link" || kind = "image" then [list_item [text_field ~text_signal:(Signal.value label)
+            ~placeholder:"Label (optional)" ~label:"Label" ~accessibility_identifier:"field.outliner.autocomplete.label"
+            ~on_input:(input label) []]] else []))];
+        (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; done_]
+         else toolbar ~label:"Insert content" ~style_class:"navigation-actions" [cancel; done_]);
+      ]) context parent)
+    else
+      column ~gap:2 ~padding:8 ~height:220 ~max_height:220 ~cross:`stretch ~main:`start ~accessibility_identifier:"toolbar.outliner.autocomplete" [
+        row ~grow:0.0 ~main:`space_between ~cross:`center [
+          text ~value:(title kind) ~font_size:"13" ~foreground:"muted-foreground" ~padding_horizontal:8 [];
+          button ~text:"Close" ~variant:`ghost ~height:36 ~label:"Close suggestions"
+            ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) []];
+        (if kind = "embed" || kind = "template" then
+          search_field ~placeholder:"Search" ~label:(title kind) ~autofocus:true
+            ~text_signal:(Signal.map (fun (current : Model.logseq_model) ->
+              Option.fold ~none:"" ~some:(fun request -> request.Model.autocomplete_query) current.outliner_autocomplete) model_source)
+            ~accessibility_identifier:"field.outliner.autocomplete.search"
+            ~on_input:(function TextChanged (_, value) -> emit "searchAutocomplete" value | _ -> ()) []
+         else box []);
+        scroll ~height:(if kind = "embed" || kind = "template" then 128 else 164) ~max_height:164 ~style_class:"outliner-autocomplete" [
+          column ~gap:2 ~cross:`stretch [
+            keyed ~source:(Signal.map View_base.model_outliner_autocomplete_candidates model_source)
+              ~key:(fun (c : Model.outliner_autocomplete_candidate) -> c.candidate_value) ~cmp:String.compare
+              ~mount:(fun source -> outliner_autocomplete_row context source send);
+            if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_autocomplete_candidates = []) model_source)
+              (text ~value:"No results" ~foreground:"muted-foreground" ~padding:16 []);
+          ]];
+      ])
 
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =
@@ -975,19 +1031,33 @@ let page_loading_view model_source : t =
        [ spinner ~width:16 ~height:16 [];
          text ~foreground:"muted-foreground" ~value:"Loading blocks…" [] ])
 
-let add_first_block_button model_source send : t =
-  box ~padding_horizontal:8
-    [
-      button ~label:"Add first block"
-        ~accessibility_identifier:"button.outliner.add-first-block"
-        ~on_press:(fun _ ->
-          ignore
-            (send
-               (Model.AddRootBlock
-                  (View_base.active_node_page_uuid
-                     (Signal.sample model_source)))))
-        ~text:"Add first block" [];
-    ]
+let placeholder_block context (value : View_rows.placeholder) send : t =
+  let placeholder : t = fun mount_context parent ->
+    let node = box ~height:44 ~padding_horizontal:8
+      ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
+      [row ~cross:`center ~gap:0
+        [text ~width:24 ~foreground:"muted-foreground" ~value:"•" [];
+         box ~grow:1.0 []]] mount_context parent in
+    Lui_ui.string_property mount_context node AccessibilityLabel "Add block";
+    Lui_ui.bool_property mount_context node PressEnabled true;
+    register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
+    node in
+  match value.journal_heading with
+  | None -> box ~padding_horizontal:8 [placeholder]
+  | Some (title, _, divider) ->
+    column ~padding_horizontal:8 ~gap:0 [
+      (if divider then column ~gap:0 [box ~height:26 []; separator ~accessibility_identifier:"journal.divider" []; box ~height:26 []]
+       else box []);
+      (fun mount_context parent ->
+        let node = View_base.with_label_signal
+          (Signal.constant mount_context.Lui_ui.ui_scheduler ("Open " ^ title))
+          (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
+            ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
+            [heading ~level:3 ~style_class:"scroll-section-title" ~value:title []]) mount_context parent in
+        Lui_ui.bool_property mount_context node PressEnabled true;
+        register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
+        node);
+      box ~height:12 []; placeholder]
 
 let outliner_entries context model_source ~source send : t =
  fun mount_context parent ->
@@ -996,11 +1066,7 @@ let outliner_entries context model_source ~source send : t =
   let first_section = Signal.own_signal mount_context.ui_scope
     (Signal.map View_rows.first_journal_section_count model_source) in
   let section_titles = Signal.own_signal mount_context.ui_scope
-    (Signal.map (fun (current : Model.logseq_model) ->
-      if View_base.journal_root_visible_ current && current.selected_page = None then
-        List.map (fun (marker : Model.journal_section_marker) ->
-          marker.start_index, marker.section_title) current.outliner_section_markers
-      else []) model_source) in
+    (Signal.map View_rows.journal_section_titles model_source) in
   let ensure_content () =
     let requested = ref [] in
     fun entries ->
@@ -1023,6 +1089,7 @@ let outliner_entries context model_source ~source send : t =
         let retained = Signal.map View_rows.page_entry_outline entry_source in
         outliner_entry context model_source retained
           (Signal.map View_rows.retained_row_value retained) send
+      | View_rows.Placeholder_entry value -> placeholder_block context value send
       | View_rows.Reference_entry _ ->
         reference_entry context model_source
           (Signal.map View_rows.page_entry_reference entry_source) send in
@@ -1065,8 +1132,6 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
             (node_properties context model_source send);
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
-          if_ ~test:(reactive View_base.node_can_add_first_block_ model_source)
-            (box ~padding_horizontal:8 [ add_first_block_button model_source send ]);
           box ~height:120 [];
         ]);
     ])

@@ -164,6 +164,7 @@ let with_queries session result =
   | None -> result
   | Some db ->
     let cache = Hashtbl.create 8 in
+    let presentation = Node_presentation.decorate db in
     let query uuid = match Hashtbl.find_opt cache uuid with
       | Some value -> value
       | None -> let value = query_projection session db uuid in
@@ -176,7 +177,7 @@ let with_queries session result =
         (match List.assoc_opt "uuid" fields, List.assoc_opt "pageId" fields,
            List.assoc_opt "isShell" fields with
          | Some (`String uuid), Some _, shell when shell <> Some (`Bool true) ->
-           (match query uuid with
+           presentation uuid (match query uuid with
             | Some value -> `Assoc (("query", value) :: List.remove_assoc "query" fields)
             | None -> `Assoc fields)
          | _ -> `Assoc fields)
@@ -280,6 +281,13 @@ let node_routes_json session serialize serialize_plain =
              , Rpc.outliner_candidates_json context current )
            ])
        (state session).node_routes)
+
+let empty_journals_json session =
+  let pages = match (host session).Types.empty_journals with
+    | Some read -> read () | None -> [] in
+  `List (List.map (fun ((page : Model.entity_summary), day) ->
+    `Assoc ["uuid", `String page.uuid; "title", `String page.title;
+      "journalDay", `Int day]) pages)
 
 let snapshot session context_blocks blocks =
   let s = state session in
@@ -416,6 +424,7 @@ let snapshot session context_blocks blocks =
                (List.map Rpc.outliner_command_json s.outliner_commands) )
          ; ( "hasPendingSemanticOperations"
            , `Bool (has_pending_operations session) )
+         ; ("emptyJournals", empty_journals_json session)
          ; ( "hasOlderJournals"
            , `Bool
                (match h.Types.has_older_journals with
@@ -451,6 +460,7 @@ let outliner_patch_result session context blocks deleted splices =
     blocks deleted splices in
   match Json.from_string encoded with
   | `Assoc fields -> (match List.assoc_opt "result" fields with
+      | Some (`Assoc result) -> success session (`Assoc (("emptyJournals", empty_journals_json session) :: result))
       | Some result -> success session result | None -> encoded)
   | _ -> encoded
 
@@ -1538,6 +1548,7 @@ let deep_link_response session extra =
 
 let graph_deep_link session graph page block =
   let current = state session in
+  let graph = if graph = "" then Option.fold ~none:"" ~some:(fun (c : Api.api_config) -> c.graph_id) current.config else graph in
   let matches (candidate : Api.api_graph) = candidate.id = graph || candidate.name = graph in
   let candidates = List.filter matches current.available_graphs in
   let candidates = if candidates <> [] then candidates else
