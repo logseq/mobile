@@ -49,6 +49,7 @@ Runtime checks exercise actual SwiftUI and Compose rendering with empty and mult
 The complete native core gate passes 964 tests, including nine new property integration cases.
 The cases cover navigation visibility, inherited empty properties, closed values, hidden metadata, typed edits, persistence, sync acknowledgements, stale edits, direct checkbox changes and rollback, multiline editing, existing-value choices, per-value text edits, and built-in page descriptions.
 Actual iOS checks pass in light and dark appearances, including leading-edge alignment and a pixel check that property values and checkboxes contain no system-blue accent.
+`property-datetime-interaction.swift` plus its Maestro flow exercise actual calendar taps and Done for both date and datetime, verifying the selected day reaches the bridge while retaining the time.
 A real mobile-core check against a copied demo graph passes block property edits through `LGCoreEffectExecutor` and immediate page-property rendering.
 The copied graph is isolated from the existing phone graph.
 Android instrumentation covers the property surface alongside the existing five query-result checks.

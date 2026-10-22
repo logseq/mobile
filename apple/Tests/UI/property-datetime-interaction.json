@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "result": {
+    "graphName": "Properties",
+    "selectedGraphId": "properties-check",
+    "selectedPage": {
+      "uuid": "page",
+      "title": "Project details"
+    },
+    "nodeProperties": {
+      "ownerUuid": "page",
+      "properties": [
+        {
+          "attr": "user.property/Due",
+          "title": "Due",
+          "kind": "date",
+          "text": "2026-10-22",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Due-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "2026-10-22"
+        },
+        {
+          "attr": "user.property/Deadline",
+          "title": "Deadline",
+          "kind": "datetime",
+          "text": "2026-10-22 09:30",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Deadline-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "1792632600000"
+        }
+      ]
+    },
+    "outlinerRows": [
+      {
+        "depth": 0,
+        "hasChildren": false,
+        "isCollapsed": false,
+        "block": {
+          "uuid": "body",
+          "title": "Regular block",
+          "pageId": "page"
+        }
+      }
+    ]
+  }
+}
