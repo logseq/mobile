@@ -85,3 +85,11 @@ YouTube timestamp insertion needs the active player position when available and 
 - Native disclosure controls expose a 44-point touch target, including its edges.
 - Placeholder blocks use the regular bullet asset with reduced opacity.
 - The shared properties renderer uses compact task-date icons and local readable datetime labels.
+
+## Editing geometry verification
+
+- Reproduced the plain-text display/editor mismatch with native screenshots: one physical pixel on a single line and a 3.3-point wrapped-height difference.
+- Readonly titles now use cached TextKit layout, the editor's measurement, and a pixel-aligned drawing origin. Native checks show zero ink displacement and equal title frames.
+- Placeholders are hidden during editing, keep empty journal headings, and share the new empty block's bullet coordinates.
+- Android grouped completion buttons retain a fixed height in their vertical scroll container. Native command, page, tag and paste checks pass.
+- The full core gate passes 996 cases; the Name cell editor omits Clear value while other properties retain it.

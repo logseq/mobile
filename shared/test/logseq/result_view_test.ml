@@ -644,7 +644,11 @@ let native_direct_value_selection_and_creation () =
         let click id = let node = find id in check ~msg:id (node <> -1);
           App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
         click ("view.tab." ^ table_view);
+        click ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title");
+        check_eq ~msg:"the Name editor does not offer Clear value" (find ("view.edit.clear." ^ table_view)) (-1);
+        click ("view.edit.cancel." ^ table_view);
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score);
+        check ~msg:"other properties retain Clear value" (find ("view.edit.clear." ^ table_view) <> -1);
         check ~msg:"a cell immediately opens its searchable choices"
           (find ("view.edit.option." ^ table_view ^ "." ^ value_b) <> -1);
         App_test.dispatch app (Lui_protocol.TextChanged (find ("view.edit.value." ^ table_view), "35"));

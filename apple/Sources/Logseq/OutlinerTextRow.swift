@@ -32,6 +32,46 @@ struct OutlinerTextRow: UIViewRepresentable {
 
 @MainActor private final class OutlinerTitleLabel: UILabel {
     var activate: (() -> Void)?
+    private let textStorage = NSTextStorage()
+    private let textLayout = NSLayoutManager()
+    private let textContainer = NSTextContainer(size: .zero)
+    private var contentNeedsLayout = true
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        textContainer.lineFragmentPadding = 0
+        textStorage.addLayoutManager(textLayout)
+        textLayout.addTextContainer(textContainer)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    override var attributedText: NSAttributedString? { didSet { contentNeedsLayout = true } }
+    override var font: UIFont! { didSet { contentNeedsLayout = true } }
+
+    var verticalInset: CGFloat {
+        OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: font.lineHeight, minimumLineHeight: OutlinerLayoutMetrics.titleLineHeight)
+    }
+
+    // UITextView rasterizes the padded glyph origin on the physical pixel grid.
+    var drawingInset: CGFloat {
+        floor(verticalInset * contentScaleFactor) / contentScaleFactor
+    }
+
+    override func drawText(in rect: CGRect) {
+        if contentNeedsLayout {
+            let content = NSMutableAttributedString(attributedString: attributedText ?? NSAttributedString(string: text ?? ""))
+            content.addAttribute(.font, value: font as Any, range: NSRange(location: 0, length: content.length))
+            textStorage.setAttributedString(content)
+            contentNeedsLayout = false
+        }
+        textContainer.size = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        textLayout.ensureLayout(for: textContainer)
+        let range = textLayout.glyphRange(for: textContainer)
+        let origin = CGPoint(x: 0, y: drawingInset)
+        textLayout.drawBackground(forGlyphRange: range, at: origin)
+        textLayout.drawGlyphs(forGlyphRange: range, at: origin)
+    }
+
     override func accessibilityActivate() -> Bool {
         guard let activate else { return false }
         activate()
@@ -227,7 +267,9 @@ struct OutlinerTextRow: UIViewRepresentable {
         let iconLeading: CGFloat = row.status != nil ? OutlinerLayoutMetrics.statusLeading : (row.priority != nil ? 20 : 26)
         let leading = inset + iconLeading + statusWidth + priorityWidth
         let bodyWidth = max(1, width - leading - trailing)
-        let titleHeight = max(24, ceil(title.sizeThatFits(CGSize(width: bodyWidth, height: .greatestFiniteMagnitude)).height))
+        let titleHeight = OutlinerNativeTextMeasurement.size(text: title.attributedText?.string ?? "",
+            font: title.font, width: bodyWidth, verticalInset: title.verticalInset,
+            scale: traitCollection.displayScale).height
         var height = titleHeight + 4
         if apply {
             bullet.frame = CGRect(x: inset, y: 2, width: 24, height: 24)
@@ -277,8 +319,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         storage.addLayoutManager(manager)
         manager.addTextContainer(container)
         manager.ensureLayout(for: container)
-        let rect = manager.usedRect(for: container)
-        let location = CGPoint(x: point.x, y: point.y - max(0, (title.bounds.height - rect.height) / 2))
+        let location = CGPoint(x: point.x, y: point.y - title.drawingInset)
         let glyph = manager.glyphIndex(for: location, in: container)
         if glyph < manager.numberOfGlyphs,
            manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).contains(location) {

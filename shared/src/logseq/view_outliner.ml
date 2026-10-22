@@ -777,7 +777,7 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
        ~text_signal:
          (Signal.map View_base.outliner_autocomplete_label candidate_source)
        ~variant:`ghost
-       ~grow:1.0
+       ~grow:0.0
        ~height:44 ~padding_horizontal:10
        ~background:"autocomplete-row-background" ~foreground:"foreground"
        ~corner_radius:8 ~text_alignment:`start
@@ -1044,11 +1044,11 @@ let page_loading_view model_source : t =
        [ spinner ~width:16 ~height:16 [];
          text ~foreground:"muted-foreground" ~value:"Loading blocks…" [] ])
 
-let placeholder_block context (value : View_rows.placeholder) send : t =
+let placeholder_block context model_source (value : View_rows.placeholder) send : t =
   let placeholder : t = fun mount_context parent ->
-    let node = box ~height:44
+    let node = box ~height:28
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
-      [row ~cross:`center ~gap:0
+      [row ~cross:`center ~gap:0 ~padding_vertical:2
         [box ~opacity:0.35 [icon ~name:(`app "outliner-bullet") ~width:24 ~height:24 ~foreground:"muted-foreground"
            ~accessibility_identifier:("outliner.placeholder.bullet." ^ value.parent_uuid) []];
          box ~grow:1.0 []]] mount_context parent in
@@ -1056,6 +1056,7 @@ let placeholder_block context (value : View_rows.placeholder) send : t =
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
+  let placeholder = if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_editing = None) model_source) placeholder in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, _, divider) ->
@@ -1103,7 +1104,7 @@ let outliner_entries context model_source ~source send : t =
         let retained = Signal.map View_rows.page_entry_outline entry_source in
         outliner_entry context model_source retained
           (Signal.map View_rows.retained_row_value retained) send
-      | View_rows.Placeholder_entry value -> placeholder_block context value send
+      | View_rows.Placeholder_entry value -> placeholder_block context model_source value send
       | View_rows.Reference_entry _ ->
         reference_entry context model_source
           (Signal.map View_rows.page_entry_reference entry_source) send in

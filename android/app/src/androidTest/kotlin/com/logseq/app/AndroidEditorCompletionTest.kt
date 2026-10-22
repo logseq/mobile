@@ -73,18 +73,32 @@ class AndroidEditorCompletionTest {
             ui.onNodeWithTag("toolbar.outliner.autocomplete").assertIsDisplayed()
             if (kind == "command") ui.onNodeWithTag("outliner.autocomplete.group.BASIC").assertIsDisplayed()
             ui.onNodeWithTag("button.outliner.autocomplete.dismiss").assertIsDisplayed()
-            ui.onNodeWithTag("button.outliner.autocomplete.0").performClick()
-            ui.runOnIdle {
-                var chosen: JSONObject? = null
-                repeat(24) {
-                    val encoded = bridge.takeEffect()
-                    if (encoded.isNotEmpty()) {
-                        val effect = JSONObject(encoded).optJSONObject("effect") ?: return@repeat
-                        if (effect.optString("kind") == "choose-outliner-autocomplete") chosen = effect
+            ui.onNodeWithTag("button.outliner.autocomplete.0").assertIsDisplayed().performClick()
+            var chosen: JSONObject? = null
+            val observed = mutableListOf<String>()
+            try { ui.waitUntil(timeoutMillis = 5000) {
+                ui.runOnIdle {
+                    repeat(24) {
+                        val encoded = bridge.takeEffect()
+                        if (encoded.isNotEmpty()) {
+                            val effect = JSONObject(encoded).optJSONObject("effect") ?: return@repeat
+                            observed.add(effect.toString())
+                            if (effect.optString("kind") == "choose-outliner-autocomplete") chosen = effect
+                        }
                     }
                 }
-                assertEquals(if (kind == "command") "command:embed" else "project", chosen?.optString("text"))
+                chosen != null
+            } } catch (error: Throwable) {
+                InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+                    val context = InstrumentationRegistry.getInstrumentation().targetContext
+                    java.io.File(context.getExternalFilesDir(null), "editor-command.png").outputStream().use {
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                }
+                throw AssertionError("Command $kind did not dispatch; effects: $observed", error)
             }
+            assertEquals(if (kind == "command") "command:embed" else "project", chosen?.optString("text"))
+            ui.runOnIdle { bridge.resolveEffect(chosen!!.getLong("id"), true, "").takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
         }
     }
 

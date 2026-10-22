@@ -341,6 +341,24 @@ let zoom_placeholder_creates_a_child_in_the_same_page () = R.with_runtime (fun s
   check_eq child.parent_id (Some Q.alpha);
   check_eq child.page_id Q.page)
 
+let placeholders_hide_while_editing_and_keep_empty_journal_headings () =
+  List.iter (fun backend ->
+    let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+      "selectedGraphId", `String "graph";
+      "outlinerState", `Assoc ["editing", `Assoc ["uuid", `String "editing"; "title", `String "Hello"; "caretUTF16Offset", `Int 5]];
+      "outlinerRows", `List [`Assoc ["depth", `Int 0; "block", `Assoc [
+        "uuid", `String "editing"; "title", `String "Hello"; "pageId", `String Q.page;
+        "journalTitle", `String "Today"; "journalDay", `Int 20261023]]];
+      "emptyJournals", `List [`Assoc ["uuid", `String "empty-day"; "title", `String "Yesterday"; "journalDay", `Int 20261022]]]]) in
+    Q.with_ui backend response (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      check ~msg:"the fixture is actually editing" ((App.model app).outliner_editing <> None);
+      check_eq ~msg:"editing hides the current page placeholder" (find ("button.outliner.placeholder." ^ Q.page)) (-1);
+      check_eq ~msg:"editing hides placeholders for other empty days" (find "button.outliner.placeholder.empty-day") (-1);
+      check ~msg:"empty journal headings remain visible while editing" (find "button.journal.empty-day" <> -1)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let repeated_placeholder_taps_create_one_editor () =
   let model = Model.update (Model.initial ()) (Model.AddRootBlock "page") in
   let repeated = Model.update model (Model.AddRootBlock "page") in
@@ -514,6 +532,7 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;
   case "task dates are visible and editable in the outline" task_dates_are_visible_and_editable_in_the_outline;

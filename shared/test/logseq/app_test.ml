@@ -9495,8 +9495,8 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     "stretch";
   check_eq ~msg:"suggestions start below their shared header"
     (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "start";
-  check_eq ~msg:"candidate buttons fill their bounded horizontal row"
-    (property_float renderer candidate_button Lui_protocol.GrowValue) 1.0;
+  check_eq ~msg:"candidate buttons keep their fixed height inside grouped suggestions"
+    (property_float renderer candidate_button Lui_protocol.GrowValue) 0.0;
   check_eq
     ~msg:"Kotlin does not flex rows along an unbounded scroll axis"
     (property_float renderer

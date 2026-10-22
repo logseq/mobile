@@ -522,9 +522,10 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
                 else submit ~create:true value) []]);
           ];
         ]) @ [
-        list_section [list_item [button ~text:"Clear value" ~variant:`ghost ~min_height:44
+        if_ ~test:(Signal.constant context.ui_scheduler (attr <> "block/title"))
+        (list_section [list_item [button ~text:"Clear value" ~variant:`ghost ~min_height:44
           ~accessibility_identifier:("view.edit.clear." ^ view.id) ~disabled_signal:(waiting model_source view.id)
-          ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]];
+          ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]]);
         action_error_section model_source view.id;
       ]);
     (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 controls

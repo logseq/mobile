@@ -221,7 +221,7 @@ let journal_entries rows (current : Model.logseq_model) =
   let entries = List.mapi (fun index (page, title, day, rows) ->
     let outline = outline_entries rows in
     match title, day with
-    | Some title, Some day when needs_placeholder rows ->
+    | Some title, Some day when (current.outliner_editing = None && needs_placeholder rows) || rows = [] ->
       outline @ [Placeholder_entry {parent_uuid = page;
         journal_heading = if rows = [] then Some (title, day, index > 0) else None}]
     | _ -> outline) sections in
@@ -238,7 +238,7 @@ let page_entries rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      if allowed && needs_placeholder rows then
+      if allowed && current.outliner_editing = None && needs_placeholder rows then
         outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
       else outline in
   List.rev_append (List.rev outline)
