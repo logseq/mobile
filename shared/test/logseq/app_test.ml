@@ -304,6 +304,7 @@ let empty_sidebar_projection () =
     selected_page = None;
     selected_page_is_tag = false;
     selected_page_is_property = false;
+    result_views_json = "";
     related_rows = [];
     linked_reference_rows = [];
   }
@@ -317,6 +318,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     node_is_tag = false;
     node_is_property = false;
     node_outliner_rows = [];
+    node_result_views_json = "";
     node_related_rows = related_rows;
     node_linked_reference_rows = linked_reference_rows;
     node_outliner_editing = None;
@@ -421,7 +423,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_title = title;
-    markup_json = "[]";
+    markup_json = "[]"; query_json = "";
     youtube_target_url = None;
     row_breadcrumb = "";
     row_breadcrumbs = [];
@@ -2755,7 +2757,7 @@ let outline_row uuid title =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_title = title;
-    markup_json = "[]";
+    markup_json = "[]"; query_json = "";
     youtube_target_url = None;
     row_breadcrumb = "";
     row_breadcrumbs = [];
@@ -2823,7 +2825,8 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
            selected_page = None;
            selected_page_is_tag = false;
            selected_page_is_property = false;
-           related_rows = [];
+           result_views_json = "";
+    related_rows = [];
            linked_reference_rows = [];
          }
          [] false "" [] [] None None [] [] [ journal_row ] false [])
@@ -2840,7 +2843,8 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       selected_page = Some favorite;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -2892,7 +2896,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       selected_page = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -3106,7 +3111,8 @@ let sidebar_drag_reserves_app_navigation () =
       selected_page = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -3147,6 +3153,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
       selected_page = Some page;
       selected_page_is_tag = false;
       selected_page_is_property = false;
+      result_views_json = "";
       related_rows = [ related_row ];
       linked_reference_rows = [];
     }
@@ -9088,6 +9095,47 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
 
+let pushed_node_selection_has_a_destination_toolbar () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.RequestAppNode "child");
+  let route = { (node_projection "child" "page" "Child" [] []) with
+    Model.node_outliner_rows = [outline_row "child" "Child"];
+    node_outliner_selected_block_ids = ["child"] } in
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [route]; outliner_rows = route.node_outliner_rows });
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let destination = extension_node application "native-navigation-title" in
+  let toolbar = descendant_with_identifier renderer destination "toolbar.outliner.selection" in
+  check ~msg:"a pushed node owns its selection toolbar inside the navigation destination" (toolbar <> -1);
+  let copy = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
+  dispatch application (Lui_protocol.Press copy);
+  flush application;
+  check ~msg:"destination toolbar actions reach the shared outliner effect pipeline"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "copy") -> true | _ -> false)
+      (App.model application).pending_effects);
+  let unselected_route = {route with Model.node_outliner_selected_block_ids = []} in
+  let apply routes =
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+      Model.selected_graph_id = Some "graph"; node_routes = routes });
+    flush application
+  in
+  apply [unselected_route];
+  check_eq ~msg:"clearing route selection removes its toolbar"
+    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+  send application (Model.RequestAppNode "grandchild");
+  let nested = { (node_projection "grandchild" "page" "Grandchild" [] []) with
+    Model.node_outliner_rows = [outline_row "grandchild" "Grandchild"] } in
+  apply [route; nested];
+  check_eq ~msg:"a covered destination cannot keep its selection toolbar active"
+    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+  apply [route; {nested with Model.node_outliner_selected_block_ids = ["grandchild"]}];
+  let toolbar_count = descendant_count_with_identifier renderer
+    (Lui_app.root_node application) "toolbar.outliner.selection" in
+  check_eq ~msg:"only the visible destination owns a select bar" toolbar_count 1
+
 let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   let application = App.create (kotlin_backend ()) in
   let row = outline_row "parent" "Parent" in
@@ -10393,6 +10441,7 @@ let cases =
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
+    case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;
     case "outliner-editor-toolbar-and-autocomplete-use-core-owned-state" outliner_editor_toolbar_and_autocomplete_use_core_owned_state;

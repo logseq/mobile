@@ -10,6 +10,10 @@ type pending_state =
   | Conflicted of string
 
 type semantic_value =
+  | Nil_value
+  | Uuid_value of string
+  | Vector_value of semantic_value list
+  | Set_value of semantic_value list
   | String_value of string
   | Int_value of int
   | Instant_value of int
@@ -23,6 +27,12 @@ type semantic_value =
 let rec semantic_value_from_datascript input =
   let ( let* ) = Result.bind in
   match input with
+  | Ds.Nil -> Ok Nil_value
+  | Ds.Uuid value -> Ok (Uuid_value value)
+  | Ds.Vector values | Ds.Set values ->
+    let* converted = List.fold_left (fun result value ->
+      let* acc = result in let* value = semantic_value_from_datascript value in Ok (value :: acc)) (Ok []) values in
+    Ok (match input with Ds.Set _ -> Set_value (List.rev converted) | _ -> Vector_value (List.rev converted))
   | Ds.String value -> Ok (String_value value)
   | Ds.Int64 value -> Ok (Int_value (Int64.to_int value))
   | Ds.Instant value -> Ok (Instant_value (Int64.to_int value))
@@ -39,12 +49,12 @@ let rec semantic_value_from_datascript input =
             let* converted_value =
               semantic_value_from_datascript native_value
             in
-            Ok (acc @ [ (name, converted_value) ])
-          | _ -> Error "flashcard state contains a non-keyword key")
+            Ok ((name, converted_value) :: acc)
+          | _ -> Error "semantic map contains a non-keyword key")
         (Ok []) entries
     in
-    Ok (Map_value converted)
-  | _ -> Error "flashcard state contains an unsupported value"
+    Ok (Map_value (List.rev converted))
+  | _ -> Error "unsupported semantic value"
 
 type property_change =
   { attr : string
@@ -159,7 +169,17 @@ type pending_page_delete =
   ; deleted_at : int
   }
 
+type pending_property_value =
+  { uuid : string
+  ; owner_uuid : string
+  ; property_ident : string
+  ; content : semantic_value
+  ; created_at : int
+  }
+
 type pending_intent =
+  | Atomic of pending_intent list
+  | Create_property_value of pending_property_value
   | Save_title of pending_title
   | Set_property of pending_property
   | Set_properties of pending_properties
@@ -228,10 +248,15 @@ let normalize_property_change (change : property_change) =
     value = normalize_optional_value change.attr change.value;
   }
 
-let normalize_operation db operation =
+let rec normalize_operation db operation =
   let ( let* ) = Result.bind in
   let* intent =
     match operation.intent with
+    | Atomic intents ->
+      let* normalized = List.fold_left (fun result intent ->
+        let* acc = result in let* next = normalize_operation db {operation with intent} in
+        Ok (next.intent :: acc)) (Ok []) intents in
+      Ok (Atomic (List.rev normalized))
     | Save_title value ->
       let* expected =
         normalize_expected_title db value.uuid value.expected_title
@@ -315,8 +340,9 @@ let search_visible_property attr =
       "logseq.property/deleted-at";
     ]
 
-let affected_uuids db intent =
+let rec affected_uuids db intent =
   match intent with
+  | Atomic intents -> List.concat_map (affected_uuids db) intents |> List.sort_uniq String.compare
   | Set_property value -> if search_visible_property value.attr then [ value.uuid ] else []
   | Set_properties value ->
     if
@@ -325,6 +351,7 @@ let affected_uuids db intent =
         value.changes
     then [ value.uuid ]
     else []
+  | Create_property_value value -> [ value.uuid ]
   | Save_title value -> [ value.uuid ]
   | Insert_block value -> [ value.uuid ]
   | Create_asset value -> value.uuid :: (match value.transcript with Some child -> [child.uuid] | None -> [])
@@ -340,9 +367,10 @@ let affected_uuids db intent =
   | Set_favorite value -> [ value.page_uuid; value.favorite_uuid ]
   | Delete_page value -> [ value.page_uuid ]
 
-let safe_to_rebase intent =
+let rec safe_to_rebase intent =
   match intent with
-  | Save_title _ | Set_property _ | Set_properties _ | Split_block _
+  | Atomic intents -> List.for_all safe_to_rebase intents
+  | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Split_block _
   | Merge_backward _ | Create_tag _ | Create_page _ | Create_journal _
   | Add_tag _ | Insert_block _ | Create_asset _ | Move_block _ | Move_blocks _
   | Set_favorite _ | Delete_page _ -> true
@@ -383,7 +411,7 @@ let remove_raw = Graph_sqlite.remove_pending
 
 let outliner_op intent =
   match intent with
-  | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
+  | Atomic _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
   | Create_page _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
   | Set_favorite value -> if value.favorite then "insert-blocks" else "delete-blocks"
@@ -427,6 +455,10 @@ let option_value f value =
 let rec semantic_value_json value =
   let kind, value =
     match value with
+    | Nil_value -> ("nil", `Null)
+    | Uuid_value value -> ("uuid", `String value)
+    | Vector_value values -> ("vector", `List (List.map semantic_value_json values))
+    | Set_value values -> ("set", `List (List.map semantic_value_json values))
     | String_value value -> ("string", `String value)
     | Int_value value -> ("int", `Int value)
     | Instant_value value -> ("instant", `Int value)
@@ -455,6 +487,10 @@ let rec semantic_value_of_json input =
   match object_fields input "invalid pending semantic value" with
   | [ ("type", `String kind); ("value", value) ] ->
     (match (kind, value) with
+     | "nil", `Null -> Nil_value
+     | "uuid", `String value -> Uuid_value value
+     | "vector", `List values -> Vector_value (List.map semantic_value_of_json values)
+     | "set", `List values -> Set_value (List.map semantic_value_of_json values)
      | "string", `String value -> String_value value
      | "int", `Int value -> Int_value value
      | "instant", `Int value -> Instant_value value
@@ -560,9 +596,14 @@ let insert_fields (value : pending_insert) =
     ("createdAt", `Int value.created_at);
   ]
 
-let intent_json intent =
+let rec intent_json intent =
   let kind, fields =
     match intent with
+    | Atomic intents -> ("atomic", ["intents", `List (List.map intent_json intents)])
+    | Create_property_value value -> ("create-property-value", [
+        "uuid", `String value.uuid; "ownerUuid", `String value.owner_uuid;
+        "propertyIdent", `String value.property_ident; "content", semantic_value_json value.content;
+        "createdAt", `Int value.created_at])
     | Save_title value ->
       ( "save-title"
       , [
@@ -685,9 +726,10 @@ let merged_title fields =
   | None -> None
   | _ -> invalid_arg "invalid pending intent field: mergedTitle"
 
-let intent_of_json input =
+let rec intent_of_json input =
   let fields = object_fields input "pending intent must be an object" in
   match string_field fields "type" with
+  | "atomic" -> Atomic (List.map intent_of_json (array_field fields "intents"))
   | "save-title" ->
     Save_title
       {
@@ -709,6 +751,11 @@ let intent_of_json input =
         uuid = string_field fields "uuid";
         changes = List.map change_of_json (array_field fields "changes");
       }
+  | "create-property-value" ->
+    Create_property_value {uuid = string_field fields "uuid";
+      owner_uuid = string_field fields "ownerUuid"; property_ident = string_field fields "propertyIdent";
+      content = semantic_value_of_json (Option.get (field fields "content"));
+      created_at = int_field fields "createdAt"}
   | "insert-block" ->
     Insert_block
       {

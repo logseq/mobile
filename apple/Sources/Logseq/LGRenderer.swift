@@ -110,6 +110,8 @@ enum LGIconPolicy {
             "toolbar-copy": .systemName("doc.on.doc"),
             "toolbar-copy-reference": .systemName("r.square"),
             "toolbar-copy-url": .systemName("link"),
+            "view-filter": .systemName("line.3.horizontal.decrease"),
+            "view-sort": .systemName("arrow.up.arrow.down"),
             "toolbar-delete": .systemName("trash"),
             "toolbar-hide-keyboard": .assetName("toolbar_hide_keyboard"),
             "toolbar-indent": .assetName("toolbar_indent"),

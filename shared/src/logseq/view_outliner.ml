@@ -455,7 +455,7 @@ let native_outliner_row model_source retained_source row_source send : t =
     | input -> ignore (View_base.handle_outliner_block_content_event input model_source send));
   node
 
-let outliner_row (context : Lui_ui.ui_context) model_source
+let outliner_row_body (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
@@ -546,6 +546,30 @@ let outliner_row (context : Lui_ui.ui_context) model_source
               outliner_row_content context model_source
                 retained_row_source row_source send search_open;
             ]))
+
+let render_result_block context model_source row_source send =
+    let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
+    column ~gap:0 [
+      if_ ~test:(Signal.map View_base.outliner_row_structured_breadcrumb_ row_source)
+        (scroll ~orientation:`horizontal ~height:28 [related_row_breadcrumbs model_source row_source send]);
+      if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
+        (text ~value_signal:(Signal.map View_base.outliner_row_breadcrumb row_source)
+          ~style_class:"caption" ~foreground:"muted-foreground" []);
+      outliner_row_body context model_source retained row_source send]
+
+let outliner_row context model_source retained_row_source row_source send : t =
+  let body = outliner_row_body context model_source retained_row_source row_source send in
+  let render_block = render_result_block context model_source in
+  let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
+  dyn (fun has_query ->
+    if has_query then column ~gap:0 [body;
+      View_base.with_int_prop_signal PaddingLeft
+        (Signal.map (fun (row : Model.outline_row) -> bullet_inset + row.depth * 22) row_source)
+        (box ~padding_horizontal:8
+          ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
+          [View_query.view ~render_block model_source row_source send])]
+    else body)
+    (Signal.map (fun (row : Model.outline_row) -> row.query_json <> "") row_source)
 
 let journal_heading model_source row_source send children : t =
  fun context parent ->
@@ -896,6 +920,10 @@ let related_section_heading title : t =
 let reference_entry context model_source entry_source send : t =
       (* The key fixes the entry kind; row values keep their own reactive bindings. *)
       match Signal.sample entry_source with
+      | View_rows.Result_views _ ->
+        let raw_source = Signal.map (function View_rows.Result_views value -> value | _ -> "") entry_source in
+        box ~padding_horizontal:16 ~padding_vertical:12 [
+          View_query.collection ~render_block:(render_result_block context model_source) model_source raw_source send]
       | View_rows.Reference_heading (key, title) ->
         let identifier =
           if key = "tagged" then "section.tag.tagged-nodes"

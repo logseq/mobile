@@ -150,6 +150,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
       [Lui_elements.keyed ~source:visible ~key ~cmp ~mount]) context parent
 
 type reference_entry =
+  | Result_views of string
   | Reference_heading of string * string
   | Empty_tag
   | Reference_row of string * Model.outline_row
@@ -164,16 +165,19 @@ let reference_entries (current : Model.logseq_model) =
         let acc = if key = "tagged" && rows = [] then Empty_tag :: acc else acc in
         List.fold_left (fun acc row -> Reference_row (key, row) :: acc) acc rows
     in
-    []
-    |> add_section (View_base.node_related_section_visible_ current)
+    let views = View_base.active_node_result_views current in
+    let sections = []
+    |> add_section (views = "" && View_base.node_related_section_visible_ current)
          "related" "Linked references" (View_base.active_node_related_rows current)
-    |> add_section (View_base.node_tag_section_visible_ current)
+    |> add_section (views = "" && View_base.node_tag_section_visible_ current)
          "tagged" "Tagged nodes" (View_base.active_node_related_rows current)
     |> add_section (View_base.node_linked_reference_section_visible_ current)
          "linked" "Linked references" (View_base.active_node_linked_reference_rows current)
-    |> List.rev
+    |> List.rev in
+    if views = "" then sections else Result_views views :: sections
 
 let reference_entry_identifier = function
+  | Result_views _ -> "objects.views"
   | Reference_heading (key, _) -> key ^ ".heading"
   | Empty_tag -> "tagged.empty"
   | Reference_row (key, row) -> key ^ "." ^ row.Model.row_uuid

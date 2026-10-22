@@ -87,7 +87,91 @@ let cancel_pending_sync = Pump.cancel_pending_sync
 let node_icon session uuid =
   Option.bind (host session).Types.graph_node_icon (fun resolve -> resolve uuid)
 
-let success session result = Rpc.success (Rpc.with_node_icons (node_icon session) result)
+let query_db session =
+  match (host session).Types.graph_db with
+  | Some load -> load ()
+  | None -> Some (state session).model.db
+
+let result_block_encoder db =
+  let pages = Hashtbl.create 4 in
+  let encode_tree block =
+    let children = match Hashtbl.find_opt pages block.Model.page_id with
+      | Some children -> children
+      | None ->
+        let children = Hashtbl.create 16 in
+        List.iter (fun (block : Model.block) -> Option.iter (fun parent ->
+          let siblings = Option.value ~default:[] (Hashtbl.find_opt children parent) in
+          Hashtbl.replace children parent (block :: siblings)) block.parent_id)
+          (Graph_read.blocks_for_page (fun text -> Ok text) db block.page_id);
+        Hashtbl.iter (fun parent blocks -> Hashtbl.replace children parent
+          (List.sort Outliner.compare_blocks blocks)) children;
+        Hashtbl.replace pages block.page_id children;
+        children in
+    let rec encode ancestors depth (block : Model.block) =
+      if depth > 128 then invalid_arg "Result block nesting is too deep";
+      let descendants = Option.value ~default:[] (Hashtbl.find_opt children block.uuid)
+        |> List.filter (fun (child : Model.block) -> not (Outliner.Sset.mem child.uuid ancestors)) in
+      let ancestors = Outliner.Sset.add block.uuid ancestors in
+      match Rpc.block_json block with
+      | `Assoc fields -> `Assoc (("children", `List (List.map (encode ancestors (depth + 1)) descendants)) :: fields)
+      | value -> value in
+    encode Outliner.Sset.empty 0 block in
+  encode_tree
+
+let query_for session db uuid =
+  let current_page = match active_node_route session with
+    | Some route -> Some route.Types.page.title
+    | None -> Option.map (fun (page : Model.entity_summary) -> page.title)
+        (state session).selected_sidebar_page in
+  let encode_tree = result_block_encoder db in
+  Query_block.render ?current_page db uuid
+  |> Option.map (fun result ->
+      try
+        let views = Result_view.render_rows db ~owner:uuid ~feature:"query-result" ~encode_block:encode_tree result.Query_block.rows in
+        (match Query_block.to_yojson encode_tree result, views with
+         | `Assoc fields, `Assoc view_fields -> `Assoc (fields @ view_fields)
+         | value, _ -> value)
+      with error -> Query_block.to_yojson Rpc.block_json
+        {result with Query_block.rows = []; error = Some (Printexc.to_string error)})
+
+let object_views_for session owner is_tag is_property =
+  if not is_tag && not is_property then `Null
+  else match query_db session with
+  | None -> `Null
+  | Some db ->
+    let feature = if is_tag then "class-objects" else "property-objects" in
+    match Result_view.render db ~owner ~feature ~encode_block:(result_block_encoder db) with
+    | Ok value -> value
+    | Error message -> `Assoc ["ownerUuid", `String owner; "featureType", `String feature;
+        "views", `List [`Assoc ["uuid", `String (owner ^ ":default"); "name", `String "All";
+          "type", `String "list"; "rows", `List []; "columns", `List []; "error", `String message]]]
+
+let with_queries session result =
+  match query_db session with
+  | None -> result
+  | Some db ->
+    let cache = Hashtbl.create 8 in
+    let query uuid = match Hashtbl.find_opt cache uuid with
+      | Some value -> value
+      | None -> let value = query_for session db uuid in
+        Hashtbl.replace cache uuid value; value in
+    let rec decorate = function
+      | `List values -> `List (List.map decorate values)
+      | `Assoc fields ->
+        let fields = List.map (fun (key, value) ->
+          key, if key = "query" then value else decorate value) fields in
+        (match List.assoc_opt "uuid" fields, List.assoc_opt "pageId" fields,
+           List.assoc_opt "isShell" fields with
+         | Some (`String uuid), Some _, shell when shell <> Some (`Bool true) ->
+           (match query uuid with
+            | Some value -> `Assoc (("query", value) :: List.remove_assoc "query" fields)
+            | None -> `Assoc fields)
+         | _ -> `Assoc fields)
+      | value -> value in
+    decorate result
+
+let success session result =
+  Rpc.success (Rpc.with_node_icons (node_icon session) (with_queries session result))
 
 let take count values =
   let rec loop count result = function
@@ -157,6 +241,7 @@ let node_routes_json session serialize serialize_plain =
            ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)
            ; ("isProperty", `Bool route.is_property)
+           ; ("resultViews", object_views_for session route.uuid route.is_tag route.is_property)
            ; ("page", Rpc.summary_json route.page)
            ; ( "blocks"
              , Rpc.json_list (List.map serialize (projection_blocks session
@@ -234,6 +319,9 @@ let snapshot session context_blocks blocks =
          ; ( "linkedReferenceBlocks"
            , Rpc.json_list
                (List.map linked_serialize linked) )
+         ; ("resultViews", (match s.selected_sidebar_page with
+             | Some page -> object_views_for session page.uuid (selected_page_is_tag session) (selected_page_is_property session)
+             | None -> `Null))
          ; ("selectedPageIsTag", `Bool (selected_page_is_tag session))
          ; ( "selectedPageIsProperty"
            , `Bool (selected_page_is_property session) )
@@ -317,12 +405,27 @@ let snapshot session context_blocks blocks =
 
 let outliner_patch_result session context blocks deleted splices =
   let s = state session in
-  Rpc.outliner_patch_result s.model.revision context s.outliner_state
+  let blocks =
+    if blocks = [] && splices = [] then blocks
+    else match query_db session with
+      | None -> blocks
+      | Some db ->
+        let queries = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
+        List.iter (fun uuid -> Hashtbl.replace queries uuid ()) (Query_block.owner_uuids db);
+        List.iter (fun (block : Model.block) -> Hashtbl.replace included block.uuid ()) blocks;
+        let refreshed = List.filter (fun (block : Model.block) ->
+          Hashtbl.mem queries block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
+        List.rev_append (List.rev blocks) refreshed in
+  let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
     ~node_icon:(node_icon session)
     ?sync_error:(Pump.pending_sync_error session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)
-    blocks deleted splices
+    blocks deleted splices in
+  match Json.from_string encoded with
+  | `Assoc fields -> (match List.assoc_opt "result" fields with
+      | Some result -> success session result | None -> encoded)
+  | _ -> encoded
 
 let outliner_patch session context changed_ids =
   let changed =
@@ -478,6 +581,32 @@ let resolve_graph (config : Api.api_config) =
   end
   else Error "Select a Logseq graph before syncing"
 
+let outliner_action_context session context message =
+  let current = (state session).outliner_state in
+  let targets = Outliner.interaction_targets current |> Outliner.Sset.elements in
+  let targets = match message with
+    | Outliner.Tap_block uuid | Long_press_block uuid | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
+    | Drop_blocks value -> value.target_uuid :: targets
+    | Set_task_status value -> value.status_uuid :: targets
+    | _ -> targets in
+  let missing = List.filter (fun uuid -> Outliner.find_block context uuid = None) targets in
+  match missing, query_db session with
+  | [], _ | _, None -> context, false
+  | _, Some db ->
+    let pages = Hashtbl.create 4 in
+    let extra = List.fold_left (fun blocks uuid ->
+      match Graph_read.node_destination (fun text -> Ok text) db uuid with
+      | Some (page, _) when not (Hashtbl.mem pages page.Model.uuid) ->
+        Hashtbl.add pages page.uuid ();
+        let loaded = Graph_read.blocks_for_page (fun text -> Ok text) db page.uuid in
+        let loaded = match Datascript.entid db "block/uuid" (Datascript.Uuid page.uuid) with
+          | Some eid -> (match Graph_read.page_block (fun text -> Ok text) db eid with
+              | Some block -> block :: loaded | None -> loaded)
+          | None -> loaded in
+        List.rev_append loaded blocks
+      | _ -> blocks) [] missing in
+    So.with_extra_blocks context extra, extra <> []
+
 let dispatch_outliner_event session payload =
   match Rpc.outliner_message payload with
   | Error message -> Rpc.failure "invalid_outliner_event" message
@@ -488,11 +617,12 @@ let dispatch_outliner_event session payload =
            (state session).outliner_state payload)
     then outliner_patch session (outliner_context session) []
     else begin
-      let context, aggregate =
+      let display_context, aggregate =
         match aggregate_return_context session payload message with
         | Some (context, uuid) -> (context, Some uuid)
         | None -> (outliner_context session, None)
       in
+      let context, external_results = outliner_action_context session display_context message in
       let previous = (state session).outliner_state in
       let next_state, commands =
         Outliner.update context previous message
@@ -554,8 +684,14 @@ let dispatch_outliner_event session payload =
              {
                !(session.state) with
                outliner_state = next_state;
-               outliner_optimistic_blocks =
-                 Some projected.Outliner.blocks;
+               outliner_optimistic_blocks = Some
+                 (if not external_results then projected.Outliner.blocks
+                  else
+                    let pages = Hashtbl.create 4 in
+                    List.iter (fun (block : Model.block) -> Hashtbl.replace pages block.page_id ())
+                      display_context.Outliner.blocks;
+                    List.filter (fun (block : Model.block) -> Hashtbl.mem pages block.page_id)
+                      projected.blocks);
                outliner_commands = interpreted.platform;
                outliner_revision =
                  (state session).outliner_revision + 1;
@@ -563,7 +699,7 @@ let dispatch_outliner_event session payload =
            (match message with
             | Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
             | _ -> ());
-           if (state session).node_routes <> [] then
+           if external_results || (state session).node_routes <> [] then
              snapshot_visible session
            else
              (match event_patch_plan message operations with
@@ -1520,6 +1656,33 @@ let rec dispatch session action payload =
   | "ensureJournal" -> ensure_journal session payload
   | "selectPage" -> select_page session payload
   | "hydrateOutlinerRows" -> hydrate_outliner_rows session payload
+  | "queryBlock" ->
+    (match payload, query_db session with
+     | Some uuid, Some db -> success session (Rpc.json_object ["query",
+         Option.value ~default:`Null (query_for session db uuid)])
+     | None, _ -> Rpc.failure "invalid_params" "A query block UUID is required"
+     | _, None -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "resultViews" ->
+    (match payload, query_db session with
+     | Some payload, Some db ->
+       (try let json = Json.from_string payload in
+         let string key = match json with `Assoc fields ->
+           (match List.assoc_opt key fields with Some (`String s) -> s | _ -> "") | _ -> "" in
+         (match Result_view.render ~input:(string "input") db ~owner:(string "ownerUuid")
+           ~feature:(string "featureType") ~encode_block:Rpc.block_json with
+          | Ok value -> success session value
+          | Error message -> Rpc.failure "invalid_view" message)
+        with error -> Rpc.failure "invalid_view" (Printexc.to_string error))
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "resultView" ->
+    (match payload, query_db session, editing_cursor session with
+     | Some payload, Some db, Ok cursor ->
+       (try match Result_view.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid (Json.from_string payload) with
+        | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
+        | Error message -> Rpc.failure "invalid_view" message
+        with error -> Rpc.failure "invalid_view" (Printexc.to_string error))
+     | _, _, Error (code, message) -> Rpc.failure code message
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "cachedImageGallery" ->
     (match payload with Some uuid -> cached_image_gallery session uuid
      | None -> Rpc.failure "invalid_params" "An image UUID is required")

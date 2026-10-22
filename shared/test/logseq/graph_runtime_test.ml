@@ -189,11 +189,11 @@ let semantic_maps_reject_invalid_keys_and_unsupported_values () =
   check_eq
     (Pending.semantic_value_from_datascript
        (Ds.Map [ (Ds.String "invalid", Ds.Int64 1L); (Ds.Keyword "later", Ds.Int64 2L) ]))
-    (Error "flashcard state contains a non-keyword key");
+    (Error "semantic map contains a non-keyword key");
   check_eq
     (Pending.semantic_value_from_datascript
        (Ds.Map [ (Ds.Keyword "invalid", Ds.Ref 42) ]))
-    (Error "flashcard state contains an unsupported value")
+    (Error "unsupported semantic value")
 
 let projected_readers_share_offline_edits_without_changing_authoritative_data () =
   with_runtime (fun path conn current ->

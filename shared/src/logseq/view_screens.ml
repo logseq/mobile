@@ -624,7 +624,14 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
              (if View_base.node_title_visible_ current then ""
               else View_base.active_node_title current))
            route_model_source)
-      (View_outliner.node_screen context route_model_source send)
+      (column ~gap:0 [
+        View_outliner.node_screen context route_model_source send;
+        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) (route : Model.node_projection) ->
+          route.node_outliner_selected_block_ids <> []
+          && Option.fold ~none:false ~some:(fun (active : Model.node_projection) -> active.node_uuid = route.node_uuid)
+            (Model.last_opt current.node_routes)) model_source route_source)
+          (View_outliner.outliner_selection_toolbar context route_model_source send);
+      ])
 
 let native_node_stack context model_source ~source:routes_source send =
   keyed

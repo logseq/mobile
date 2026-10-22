@@ -27,6 +27,8 @@
   mldoc
   sqlite3
   str
+  re
+  uucp
   unix
   threads.posix
   ctypes.foreign)

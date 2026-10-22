@@ -83,6 +83,7 @@ type host_options =
   ; apply_sync_event : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Model.block list option) option
+  ; graph_db : (unit -> Datascript.db option) option
   ; authoritative_graph_blocks : (unit -> Model.block list option) option
   ; graph_sidebar_pages : (unit -> Graph.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Model.entity_summary list option) option
@@ -184,6 +185,7 @@ let default_options =
     apply_sync_event = None;
     sync_cursor = None;
     graph_blocks = None;
+    graph_db = None;
     authoritative_graph_blocks = None;
     graph_sidebar_pages = None;
     graph_tag_pages = None;

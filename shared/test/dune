@@ -34,6 +34,7 @@
   ../native/logseq_live_sync.exe
   ../native/pending_ops_golden.jsonl
   test_main.exe
+  (source_tree logseq/fixtures)
   (source_tree logseq/drive))
  (action
   (run ./test_main.exe)))

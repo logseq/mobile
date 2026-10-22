@@ -259,6 +259,8 @@ let encode_effect (eff : Model.logseq_effect) =
   | DeletePageEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"delete-page\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"
+  | ResultViewEffect (id, _, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "result-view"; "text", `String payload])
   | SyncNowEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sync-now\",\"text\":\"\"}"
   | SyncPendingEffect id ->

@@ -258,6 +258,7 @@ let projected_status (value : Ops.semantic_value option) =
 let rec project_outliner_intent (blocks : Model.block list)
     (intent : Ops.pending_intent) =
   match intent with
+  | Ops.Atomic intents -> List.fold_left project_outliner_intent blocks intents
   | Ops.Save_title value ->
     List.map
       (fun (block : Model.block) ->

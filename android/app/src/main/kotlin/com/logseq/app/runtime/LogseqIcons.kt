@@ -191,6 +191,8 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "toolbar-copy" to Icons.Outlined.FileCopy,
     "toolbar-copy-reference" to copyReference,
     "toolbar-copy-url" to Icons.Outlined.Link,
+    "view-filter" to Icons.Outlined.FilterList,
+    "view-sort" to Icons.Outlined.SwapVert,
     "toolbar-delete" to Icons.Outlined.Delete,
     "toolbar-hide-keyboard" to Icons.Outlined.KeyboardHide,
     "toolbar-indent" to Icons.AutoMirrored.Filled.ArrowForward,

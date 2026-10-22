@@ -29,6 +29,7 @@ val import_asset_file : mobile_graph -> string -> string -> (string, string) res
 val resolve_asset_path : mobile_graph -> string -> string
 val sync_cursor : mobile_graph -> int option
 val blocks : mobile_graph -> Cache_model.block list option
+val projected_db : mobile_graph -> Datascript.db option
 val authoritative_blocks : mobile_graph -> Cache_model.block list option
 val sidebar_pages : mobile_graph -> Graph_read.sidebar_pages option
 val tag_pages : mobile_graph -> Cache_model.entity_summary list option
