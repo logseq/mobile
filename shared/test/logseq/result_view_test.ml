@@ -899,7 +899,29 @@ let empty_table_cells_have_accessible_names () =
         (App_test.property_string host cell Lui_protocol.AccessibilityLabel) "Summary: Empty"))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let compact_local_timestamps_and_columns () =
+  let db = Ds.db_with [
+    put alpha "block/created-at" (Ds.Int64 1792632600000L);
+    put alpha "block/updated-at" (Ds.Int64 1792719000000L);
+    put table_view "logseq.property.table/ordered-columns" (Ds.Vector [
+      Ds.Keyword "block/updated-at"; Ds.Keyword "block/created-at"; Ds.Keyword "block/title"; Ds.Keyword score])] (fixture ()) in
+  let session, _ = make_session db in
+  Q.open_results session;
+  let view = find_view table_view (read session) in
+  let attrs = List.map (member "attr") (items "columns" view) in
+  check ~msg:"updated timestamps stay out of the table" (not (List.mem (`String "block/updated-at") attrs));
+  check_eq ~msg:"created timestamp is always the last visible column" (List.hd (List.rev attrs)) (`String "block/created-at");
+  let row = List.find (fun row -> member "uuid" (member "block" row) = `String alpha) (items "rows" view) in
+  let created = List.find (fun p -> member "attr" p = `String "block/created-at") (items "properties" row) in
+  let expected = Unix.localtime 1792632600. in
+  let label = Printf.sprintf "%04d-%02d-%02d %02d:%02d" (expected.Unix.tm_year + 1900)
+      (expected.tm_mon + 1) expected.tm_mday expected.tm_hour expected.tm_min in
+  check_eq ~msg:"time uses the local timezone and a compact format" (member "text" created) (`String label);
+  check ~msg:"updated timestamps remain available for master-compatible filters and sorting"
+    (List.exists (fun p -> member "attr" p = `String "block/updated-at") (items "properties" view))
+
 let cases = [
+  case "compact local timestamps and mobile table metadata order" compact_local_timestamps_and_columns;
   case "empty table cells have accessible names" empty_table_cells_have_accessible_names;
   case "pushed query type changes refresh the visible renderer" pushed_query_type_changes_refresh_the_visible_renderer;
   case "type icons switch saved views and unsaved collections start with All list" type_icons_switch_saved_views_and_default_all;

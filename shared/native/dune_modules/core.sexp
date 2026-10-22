@@ -12,6 +12,7 @@
 "Dev_view"
 "Query_block"
 "Result_view"
+"Node_property"
 "Journal_sync"
 "E2ee"
 "E2ee_keyring"

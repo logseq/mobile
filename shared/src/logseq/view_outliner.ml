@@ -574,19 +574,30 @@ let render_result_block context model_source row_source send =
           ~style_class:"caption" ~foreground:"muted-foreground" []);
       outliner_row_body context model_source retained row_source send]
 
+let node_properties ?(root = false) context model_source send =
+  View_property.view ~render_block:(render_result_block context model_source) model_source
+    (Signal.map (fun (model : Model.logseq_model) -> if root then model.properties_json else match View_base.active_node_projection model with
+      | Some route -> route.node_properties_json | None -> model.properties_json) model_source) send
+
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
-  dyn (fun has_query ->
-    if has_query then column ~gap:0 [body;
+  dyn (fun (has_query, has_properties) ->
+    if not has_query && not has_properties then body else
+    column ~gap:0 ([body] @
+      (if has_properties then [box ~margin_left:16 [node_properties context model_source send]] else []) @
+      (if not has_query then [] else [
       View_base.with_int_prop_signal PaddingLeft
         (Signal.map (fun (row : Model.outline_row) -> bullet_inset + row.depth * 22) row_source)
         (box ~padding_horizontal:8
           ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
-          [View_query.view ~render_block model_source row_source send])]
-    else body)
-    (Signal.map (fun (row : Model.outline_row) -> row.query_json <> "") row_source)
+          [View_query.view ~render_block model_source row_source send])])))
+    (Signal.map2 (fun (model : Model.logseq_model) (row : Model.outline_row) ->
+      row.query_json <> "", (match View_base.active_node_projection model with
+      | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
+        && View_property.has_properties route.node_properties_json
+      | None -> false)) model_source row_source)
 
 let journal_heading model_source row_source send children : t =
  fun context parent ->
@@ -1044,8 +1055,14 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                          View_base.node_icon current (View_base.active_node_uuid current)) model_source);
                        heading ~level:3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
                          ~accessibility_identifier:"title.node" [] ] ];
-                 box ~height:12 [] ]);
+                 dyn (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
+                   (Signal.map (fun model -> match View_base.active_node_projection model with
+                     | Some route -> View_property.has_properties route.node_properties_json | None -> false) model_source) ]);
           page_loading_view model_source;
+          if_ ~test:(Signal.map (fun (model : Model.logseq_model) ->
+            match View_base.active_node_projection model with
+            | Some route -> route.node_uuid = route.node_page_uuid | None -> false) model_source)
+            (node_properties context model_source send);
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
           if_ ~test:(reactive View_base.node_can_add_first_block_ model_source)

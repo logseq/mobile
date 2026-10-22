@@ -395,6 +395,7 @@ let node_route input =
         node_breadcrumbs = breadcrumbs fields;
         node_scroll_target = string_member "scrollTarget" fields;
         node_outliner_rows = outliner_rows_member "outlinerRows" fields;
+        node_properties_json = (match List.assoc_opt "nodeProperties" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
         node_result_views_json = (match List.assoc_opt "resultViews" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
         node_related_rows = related_rows_member "relatedBlocks" fields;
         node_linked_reference_rows =
@@ -416,6 +417,7 @@ let sidebar_projection fields =
     selected_page_is_tag = bool_member "selectedPageIsTag" fields;
     selected_page_is_property =
       bool_member "selectedPageIsProperty" fields;
+    properties_json = (match List.assoc_opt "nodeProperties" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
     result_views_json = (match List.assoc_opt "resultViews" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
     related_rows = related_rows_member "relatedBlocks" fields;
     linked_reference_rows =

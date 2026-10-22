@@ -1,0 +1,21 @@
+# Launch property-datetime-interaction.swift with the native runtime runner's
+# --interactive mode and an empty fixture directory before running this flow.
+# The harness captures submitted values without changing a real graph.
+appId: com.logseq.logseq.PageBenchmark
+---
+- tapOn:
+    id: property.value.page.user.property/Deadline
+- tapOn: "23"
+- tapOn:
+    id: view.edit.save.property.page.user.property/Deadline
+- tapOn:
+    id: view.edit.cancel.property.page.user.property/Deadline
+- assertVisible: "Saved datetime: 2026-10-23 09:30"
+- tapOn:
+    id: property.value.page.user.property/Due
+- tapOn: "23"
+- tapOn:
+    id: view.edit.save.property.page.user.property/Due
+- tapOn:
+    id: view.edit.cancel.property.page.user.property/Due
+- assertVisible: "Saved date: 2026-10-23"

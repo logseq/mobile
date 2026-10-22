@@ -147,6 +147,7 @@ type sidebar_projection =
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; result_views_json : string
+  ; properties_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   }
@@ -192,6 +193,7 @@ type node_projection =
   ; node_is_property : bool
   ; node_outliner_rows : outline_row list
   ; node_result_views_json : string
+  ; node_properties_json : string
   ; node_related_rows : outline_row list
   ; node_linked_reference_rows : outline_row list
   ; node_outliner_editing : outliner_editing option
@@ -252,6 +254,7 @@ type core_projection =
 
 type logseq_effect =
   | ResultViewEffect of int * string * string
+  | NodePropertyEffect of int * string * string
   | SendCaptureEffect of int * string
   | SendAssetEffect of int * composer_asset
   | SendTaskEffect of int * string * task_status
@@ -340,6 +343,7 @@ type logseq_model =
   ; selected_page_is_property : bool
   ; selected_page_ready : bool
   ; result_views_json : string
+  ; properties_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
@@ -417,6 +421,7 @@ type logseq_model =
 
 type logseq_action =
   | SubmitResultView of string * string
+  | SubmitNodeProperty of string * string
   | SelectGraph of string
   | BeginSync
   | SyncSucceeded
@@ -670,6 +675,7 @@ let initial () =
     selected_page_is_property = false;
     selected_page_ready = true;
     result_views_json = "";
+    properties_json = "";
     related_rows = [];
     linked_reference_rows = [];
     task_statuses = built_in_task_statuses ();
@@ -777,7 +783,7 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
-  | ResultViewEffect (id, _, _) -> id
+  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) -> id
   | SendCaptureEffect (id, _) -> id
   | SendAssetEffect (id, _) -> id
   | SendTaskEffect (id, _, _) -> id
@@ -1038,6 +1044,7 @@ let journal_preview_route (current : logseq_model) uuid =
         node_outliner_rows =
           sub_list section.start_index section.end_index rows;
         node_result_views_json = "";
+        node_properties_json = "";
         node_related_rows = [];
         node_linked_reference_rows = [];
         node_outliner_editing = None;
@@ -1082,6 +1089,7 @@ let outliner_preview_route (current : logseq_model) uuid =
         node_is_property = false;
         node_outliner_rows = sub_list index end_index rows;
         node_result_views_json = "";
+        node_properties_json = "";
         node_related_rows = [];
         node_linked_reference_rows = [];
         node_outliner_editing = None;
@@ -1169,6 +1177,7 @@ let preview_sidebar_page (current : logseq_model) uuid =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
     related_rows = [];
       linked_reference_rows = [];
       outliner_rows = rows;
@@ -1853,6 +1862,9 @@ let sidebar_after_navigation current =
 
 let rec update (current : logseq_model) action =
   match action with
+  | SubmitNodeProperty (uuid, payload) ->
+    enqueue_effect {current with result_view_feedback = List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback}
+      (NodePropertyEffect (current.next_effect_id, uuid, payload))
   | SubmitResultView (uuid, payload) ->
     enqueue_effect {current with result_view_feedback = List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback}
       (ResultViewEffect (current.next_effect_id, uuid, payload))
@@ -2168,11 +2180,11 @@ let rec update (current : logseq_model) action =
             | true, ChooseOutlinerAutocompleteEffect _ -> current.outliner_selection_revision + 1
             | _ -> current.outliner_selection_revision);
          result_view_feedback = (match eff with
-           | ResultViewEffect (_, uuid, _) -> (uuid, id, (if succeeded then None else Some message))
+           | ResultViewEffect (_, uuid, _) | NodePropertyEffect (_, uuid, _) -> (uuid, id, (if succeeded then None else Some message))
                :: List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback
            | _ -> resolved_current.result_view_feedback);
          effect_error =
-           (if succeeded || (match eff with ResultViewEffect _ -> true | _ -> false) || (match eff with
+           (if succeeded || (match eff with ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
               | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message
               | _ -> false)
             then None else Some message);
@@ -3019,6 +3031,7 @@ and apply_core_snapshot (current : logseq_model)
         selected_page_is_tag = sidebar.selected_page_is_tag;
         selected_page_is_property = sidebar.selected_page_is_property;
         result_views_json = sidebar.result_views_json;
+        properties_json = sidebar.properties_json;
         related_rows = (if root_reference_pending && not sidebar.selected_page_is_tag then current.related_rows
           else if selected_graph_changed then sidebar.related_rows else retain_shell_contents current.related_rows sidebar.related_rows);
         linked_reference_rows = (if root_reference_pending && sidebar.selected_page_is_tag then current.linked_reference_rows

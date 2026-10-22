@@ -1380,6 +1380,7 @@ let journal_navigation_model (current : Model.logseq_model) =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
       related_rows = [];
       linked_reference_rows = [];
       node_routes = [];

@@ -34,6 +34,7 @@ let request ~now ~fresh_id payload =
       json "sendTask" (["text", `String value; "status", status] @ identity ())
     | "send-asset" -> raw "addAsset"
     | "result-view" -> raw "resultView"
+    | "node-property" -> raw "nodeProperty"
     | "recording-transcribed" -> let* uuid = string fields "uuid" in let* text = text () in
       json "completeAssetTranscription" ["parentId", `String uuid; "text", `String text]
     | "load-page-references" -> raw "loadPageReferences"

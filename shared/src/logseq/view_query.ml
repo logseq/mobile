@@ -98,6 +98,14 @@ let legacy_view ~render_block _model_source row_source send : t =
           ]);
       ]])) context parent
 
+let block_values ~render_block owner source send =
+  let render_block source send =
+    render_block (Signal.map (fun row -> {row with Model.row_breadcrumb = ""; row_breadcrumbs = []}) source) send in
+  let rows = Signal.map (fun json -> (decode (Yojson.Basic.to_string (`Assoc [
+    "rows", `List (match json with `List blocks -> List.map (fun block -> `Assoc ["block", block]) blocks | _ -> [])]))).rows) source in
+  keyed ~source:rows ~key:(fun item -> Option.value ~default:"" item.uuid) ~cmp:String.compare
+    ~mount:(result_item owner render_block send)
+
 
 module Json = Yojson.Basic
 let jfield name json = Option.value ~default:`Null (member name json)
@@ -148,7 +156,7 @@ let action_error source id = if_ ~test:(Signal.map (function Some (_, _, Some _)
   (text ~foreground:"destructive" ~style_class:"footnote" ~accessibility_identifier:("view.action.error." ^ id)
     ~value_signal:(Signal.map (function Some (_, _, Some message) -> message | _ -> "") (feedback source id)) [])
 let waiting source id = Signal.map (fun (model : Model.logseq_model) ->
-  List.exists (function Model.ResultViewEffect (_, view, _) -> view = id | _ -> false)
+  List.exists (function Model.ResultViewEffect (_, view, _) | Model.NodePropertyEffect (_, view, _) -> view = id | _ -> false)
     (model.pending_effects @ model.in_flight_effects)) source
 let action_error_section source id =
   if_ ~test:(Signal.map (function Some (_, _, Some _) -> true | _ -> false) (feedback source id))
@@ -326,26 +334,46 @@ let rec raw_selection_values raw =
   | "" -> []
   | _ -> [text_value (jfield "value" raw)]
 
-let value_sheet owner feature view model_source send item property close : t =
+let temporal_picker kind id source set : t = fun context parent ->
+  let node = Lui_ui.extension context "native-property-date" in
+  attach context parent node;
+  Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
+  Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue ("view.edit.date." ^ id));
+  Lui_ui.extension_property_signal context node "value" (Signal.map (fun value -> Lui_protocol.StringValue value) source);
+  Lui_ui.on_event context node (function
+    | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
+      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> set value | _ -> ())
+    | _ -> ());
+  node
+
+let temporal_default kind =
+  let now = Unix.gettimeofday () in
+  if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
+  else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
+
+let property_editor ~id ~column:col ~submit:save model_source property close : t =
  fun context parent ->
+  let view = {id; name = ""; typ = ""; data = `Null} in
   let own value = Signal.own_signal context.ui_scope value in
   let state value = Signal.state context.ui_scheduler value in
   let attr = jtext (jfield "attr" property) in
-  let col = view_column view attr in
-  let plain = attr = "block/title" in
+  let plain = attr = "block/title" || jbool (jfield "textLayout" property) in
   let checkbox = jfield "kind" col = `String "checkbox" in
+  let kind = jtext (jfield "kind" col) in
+  let temporal = List.mem kind ["date"; "datetime"] in
   let many = jbool (jfield "many" col) in
   let ref_ = jbool (jfield "ref" col) in
   let closed = jlist (jfield "choices" col) <> [] || jbool (jfield "closed" col) in
-  let query = state (if plain then jtext (jfield "text" property) else "") in
+  let query = state (if temporal then (match jtext (jfield "editorValue" property) with "" -> temporal_default kind | value -> value)
+    else if plain then jtext (jfield "text" property) else "") in
   let selected = state (raw_selection_values (jfield "raw" property)) in
   let created = state [] in
   let submit ?selected_values ?(new_values = []) ?(create = false) value =
-    ignore (send (Model.SubmitResultView (view.id, payload owner feature view.id "editCell"
-      (["blockUuid", `String (Option.value ~default:"" item.uuid); "attr", `String attr;
+    save
+      (["attr", `String attr;
         "expected", jfield "raw" property; "value", `String value; "create", `Bool create]
        @ (match selected_values with None -> [] | Some values -> ["selectedValues", `List (List.map (fun value -> `String value) values)])
-       @ (if new_values = [] then [] else ["newValues", `List (List.map (fun value -> `String value) new_values)]))))) in
+       @ (if new_values = [] then [] else ["newValues", `List (List.map (fun value -> `String value) new_values)])) in
   let options =
     let choices = jlist (jfield "choices" col) in
     if choices <> [] then List.map (fun choice ->
@@ -364,12 +392,12 @@ let value_sheet owner feature view model_source send item property close : t =
   let choose value =
     if many then toggle value
     else if ref_ then submit ~selected_values:[value] "" else submit value in
-  let can_create = not closed && not plain && not checkbox &&
+  let can_create = not closed && not plain && not checkbox && not temporal &&
     (jfield "canCreate" col <> `Bool false) in
   let create_visible = own (Signal.map (fun input -> can_create && String.trim input <> ""
     && not (List.exists (fun (_, title) -> Dev_query.Unicode.lowercase title = Dev_query.Unicode.lowercase (String.trim input)) options)
     && not (List.mem (String.trim input) (Signal.sample (Signal.value created)))) (Signal.value query)) in
-  let confirm _ = if plain then submit (Signal.sample (Signal.value query))
+  let confirm _ = if plain || temporal then submit (Signal.sample (Signal.value query))
     else if ref_ then submit ~selected_values:(Signal.sample (Signal.value selected))
       ~new_values:(Signal.sample (Signal.value created)) ~create:true ""
     else submit (String.concat ", " (Signal.sample (Signal.value selected) @ Signal.sample (Signal.value created))) in
@@ -378,19 +406,25 @@ let value_sheet owner feature view model_source send item property close : t =
   let confirm = button ~text:"Done" ~variant:`ghost ~style_class:"confirmation-action"
     ~accessibility_identifier:("view.edit.save." ^ view.id)
     ~disabled_signal:(waiting model_source view.id) ~on_press:confirm [] in
-  let option_row (value, title) = list_item [
-    menu_item ~text:title ~min_height:44
+  let option_row (value, title) = list_item ~height:44 ~padding_vertical:0 [
+    menu_item ~text:title ~height:44 ~padding_vertical:0
       ~selected_signal:(own (Signal.map (List.mem value) (Signal.value selected)))
       ~disabled_signal:(waiting model_source view.id)
       ~accessibility_identifier:("view.edit.option." ^ view.id ^ "." ^ value)
       ~on_press:(fun _ -> choose value) []] in
-  let controls = if plain || many then [cancel; confirm] else [cancel] in
+  let controls = if plain || temporal || many then [cancel; confirm] else [cancel] in
   (sheet ~text:(jtext (jfield "title" col)) ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view.edit.list." ^ view.id)
-      ((if plain then [list_section [list_item [text_field ~text_signal:(Signal.value query)
+      ((if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
+        temporal_picker kind view.id (Signal.value query) (Signal.set query)]]]
+        else if plain then [list_section [list_item [
+        (if jbool (jfield "textLayout" property) then textarea ~min_height:120 ~max_height:260 ~submit_on_enter:false
+          ~text_signal:(Signal.value query) ~label:"Value" ~placeholder:"Value" ~autofocus:true
+          ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) []
+        else text_field ~text_signal:(Signal.value query)
           ~label:"Value" ~placeholder:"Value" ~autofocus:true ~accessibility_identifier:("view.edit.value." ^ view.id)
-          ~on_input:(local_input (Signal.set query)) []]]]
+          ~on_input:(local_input (Signal.set query)) [])]]]
         else if checkbox then [list_section (List.map (fun value -> list_item [
           menu_item ~text:(if value then "True" else "False") ~min_height:44
             ~selected:(jfield "value" (jfield "raw" property) = `Bool value)
@@ -403,7 +437,7 @@ let value_sheet owner feature view model_source send item property close : t =
           list_section [
             keyed ~source:visible ~key:fst ~cmp:String.compare ~mount:(fun source -> option_row (Signal.sample source));
             keyed ~source:(Signal.value created) ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
-              let value = Signal.sample source in list_item [menu_item ~text:value ~selected:true
+              let value = Signal.sample source in list_item ~height:44 ~padding_vertical:0 [menu_item ~height:44 ~padding_vertical:0 ~text:value ~selected:true
                 ~on_press:(fun _ -> Signal.set created (List.filter ((<>) value) (Signal.sample (Signal.value created)))) []]);
             if_ ~test:create_visible (list_item [button ~variant:`ghost ~text_alignment:`start ~min_height:44
               ~text_signal:(own (Signal.map (fun input -> "Create “" ^ String.trim input ^ "”") (Signal.value query)))
@@ -415,12 +449,18 @@ let value_sheet owner feature view model_source send item property close : t =
         ]) @ [
         list_section [list_item [button ~text:"Clear value" ~variant:`ghost ~min_height:44
           ~accessibility_identifier:("view.edit.clear." ^ view.id) ~disabled_signal:(waiting model_source view.id)
-          ~on_press:(fun _ -> if many then (Signal.set selected []; Signal.set created []) else submit "") []]];
+          ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]];
         action_error_section model_source view.id;
       ]);
     (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 controls
      else toolbar ~label:"Property value actions" ~style_class:"navigation-actions" controls);
   ]) context parent
+
+let value_sheet owner feature view model_source send item property close =
+  property_editor ~id:view.id ~column:(view_column view (jtext (jfield "attr" property)))
+    ~submit:(fun fields -> ignore (send (Model.SubmitResultView (view.id,
+      payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
+    model_source property close
 
 let collection ~render_block model_source raw_source send : t =
  fun context parent ->
@@ -483,7 +523,7 @@ let collection ~render_block model_source raw_source send : t =
         let property = cell view item attr in
         let value = jtext (jfield "text" property) in
         let label = jtext (jfield "title" col) ^ ": " ^ (if value = "" then "Empty" else value) in
-        button ~text:value ~label ~text_alignment:`start ~variant:`ghost
+        button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
           ~width:(if attr = "block/title" then 260 else 170) ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
           ~disabled:(not (jbool (jfield "editable" property)))
           ~accessibility_identifier:("view.cell." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid ^ "." ^ attr)
@@ -547,7 +587,7 @@ let collection ~render_block model_source raw_source send : t =
           (dyn (fun current -> match current.typ with
           | "table" -> scroll ~orientation:`horizontal ~accessibility_identifier:("view.table.scroll." ^ view.id) [
               column ~gap:0 ~cross:`stretch ~border_color:"border" ~border_width:1 ~corner_radius:10 [
-                row ~gap:0 (List.map (fun col -> text ~value:(jtext (jfield "title" col)) ~style_class:"subheadline"
+                row ~gap:0 (List.map (fun col -> text ~value:(jtext (jfield "title" col)) ~style_class:"subheadline single-line"
                   ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~padding:12 ~background:"secondary" []) (choices current));
                 separator []; keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(fun source -> column ~gap:0 [table_row source; separator []])]]
           | "gallery" -> dyn (fun columns -> grid ~columns ~gap:12 ~accessibility_identifier:("view.gallery." ^ view.id) [

@@ -269,6 +269,8 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted uuid ^ "}"
   | ResultViewEffect (id, _, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "result-view"; "text", `String payload])
+  | NodePropertyEffect (id, _, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "node-property"; "text", `String payload])
   | SyncNowEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sync-now\",\"text\":\"\"}"
   | SyncPendingEffect id ->
@@ -548,6 +550,7 @@ let extension_event node identifier name text value =
     | _, "backspace" ->
       [ "title", StringValue text; "selection-length", IntValue value ]
     | _, "caret-change" -> [ "caret-utf16-offset", IntValue value ]
+    | "native-property-date", "change" -> ["value", StringValue text]
     | _, "query-changed" -> [ "query", StringValue text ]
     | "native-navigation-stack", "viewport-changed" -> [ "width", IntValue value ]
     | _, "back" -> [ "count", IntValue value ]

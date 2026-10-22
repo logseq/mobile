@@ -322,6 +322,7 @@ public final class LGRuntime {
                 ?? Self.extensionString(values, name: "query")
                 ?? Self.extensionString(values, name: "priority")
                 ?? Self.extensionString(values, name: "uuid")
+                ?? Self.extensionString(values, name: "value")
                 ?? ""
             let value = Self.extensionInt(values, name: "caret-utf16-offset")
                 ?? Self.extensionInt(values, name: "selection-length")

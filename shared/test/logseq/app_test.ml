@@ -305,6 +305,7 @@ let empty_sidebar_projection () =
     selected_page_is_tag = false;
     selected_page_is_property = false;
     result_views_json = "";
+    properties_json = "";
     related_rows = [];
     linked_reference_rows = [];
   }
@@ -319,6 +320,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     node_is_property = false;
     node_outliner_rows = [];
     node_result_views_json = "";
+    node_properties_json = "";
     node_related_rows = related_rows;
     node_linked_reference_rows = linked_reference_rows;
     node_outliner_editing = None;
@@ -2827,6 +2829,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
            selected_page_is_tag = false;
            selected_page_is_property = false;
            result_views_json = "";
+           properties_json = "";
     related_rows = [];
            linked_reference_rows = [];
          }
@@ -2845,6 +2848,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
     related_rows = [];
       linked_reference_rows = [];
     }
@@ -2898,6 +2902,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
     related_rows = [];
       linked_reference_rows = [];
     }
@@ -3113,6 +3118,7 @@ let sidebar_drag_reserves_app_navigation () =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
     related_rows = [];
       linked_reference_rows = [];
     }
@@ -3155,6 +3161,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
+      properties_json = "";
       related_rows = [ related_row ];
       linked_reference_rows = [];
     }

@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "ssh://git@github.com/logseq/lui.git",
       "state" : {
-        "revision" : "c1a098f2f7893b7714c3a60118413b1c6d24cd50"
+        "revision" : "daa22591cca58e733ef8b24c55e4dea5cd301417"
       }
     },
     {

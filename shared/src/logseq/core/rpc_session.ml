@@ -228,6 +228,12 @@ let route_breadcrumbs context (route : Types.node_route) =
       end
     in walk route.uuid []
 
+let node_properties_for session uuid =
+  match query_db session with
+  | None -> `Null
+  | Some db -> (match Node_property.render db ~owner:uuid ~encode_block:(result_block_encoder db) with
+      | Ok value -> value | Error _ -> `Null)
+
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
   Rpc.json_list
@@ -255,6 +261,7 @@ let node_routes_json session serialize serialize_plain =
            ; ("isTag", `Bool route.is_tag)
            ; ("isProperty", `Bool route.is_property)
            ; ("resultViews", object_views_for session route.uuid route.is_tag route.is_property)
+           ; ("nodeProperties", node_properties_for session route.uuid)
            ; ("page", Rpc.summary_json route.page)
            ; ( "blocks"
              , Rpc.json_list (List.map serialize (projection_blocks session
@@ -336,6 +343,8 @@ let snapshot session context_blocks blocks =
              | Some page -> object_views_for session page.uuid (selected_page_is_tag session) (selected_page_is_property session)
              | None -> `Null))
          ; ("selectedPageIsTag", `Bool (selected_page_is_tag session))
+         ; ("nodeProperties", (match s.selected_sidebar_page with
+             | Some page -> node_properties_for session page.uuid | None -> `Null))
          ; ( "selectedPageIsProperty"
            , `Bool (selected_page_is_property session) )
          ; ("searchQuery", `String s.search_query)
@@ -1724,6 +1733,22 @@ let rec dispatch session action payload =
          Option.value ~default:`Null (query_for session db uuid)])
      | None, _ -> Rpc.failure "invalid_params" "A query block UUID is required"
      | _, None -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "nodeProperties" ->
+    (match payload, query_db session with
+     | Some owner, Some db -> (match Node_property.render db ~owner ~encode_block:(result_block_encoder db) with
+         | Ok value -> success session (`Assoc ["nodeProperties", value])
+         | Error message -> Rpc.failure "invalid_property" message)
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "nodeProperty" ->
+    (match payload, query_db session with
+     | Some payload, Some db ->
+       (try match editing_cursor session with
+         | Error (code, message) -> Rpc.failure code message
+         | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid (Json.from_string payload) with
+             | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
+             | Error message -> Rpc.failure "invalid_property" message)
+        with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "resultViews" ->
     (match payload, query_db session with
      | Some payload, Some db ->

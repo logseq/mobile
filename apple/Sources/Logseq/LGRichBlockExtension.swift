@@ -14,6 +14,7 @@ enum LGExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
         try LGLiquidGlassTweak.register(in: registry)
         try LGNavigationExtension.register(in: registry)
+        try LGPropertyExtension.register(in: registry)
         try LGSearchPresentationExtension.register(in: registry)
         try NodeIconExtension.register(in: registry)
         try LGOutlinerEditorExtension.register(in: registry)
@@ -147,6 +148,7 @@ private struct LGRichBlock: View {
     let context: LUIAppleExtensionViewContext
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
+    @Environment(\.lgPropertyValue) private var propertyValue
 
     var body: some View {
         #if os(iOS)
@@ -199,7 +201,7 @@ private struct LGRichBlock: View {
                 .padding(.vertical, titleVerticalInset)
             }
         }
-        .font(.body)
+        .font(propertyValue ? .callout : .body)
         .frame(
             maxWidth: .infinity,
             minHeight: boolProperty("is-asset") ? nil : OutlinerLayoutMetrics.titleLineHeight,

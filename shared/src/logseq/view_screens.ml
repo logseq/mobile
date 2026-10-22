@@ -285,8 +285,10 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                             model_source)
                        ~accessibility_identifier:"title.selected-page" []];
                    ];
-                 box ~height:12 [];
+                 dyn (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
+                   (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);
                ]);
+          View_outliner.node_properties ~root:true context model_source send;
           View_outliner.outliner_entries context model_source
             ~source:
               (Signal.map View_rows.retained_outliner_rows

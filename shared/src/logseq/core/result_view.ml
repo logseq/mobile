@@ -49,10 +49,31 @@ let property db attr =
     |> Seq.map (fun (d : Ds.datom) -> d.e) |> List.of_seq
     |> List.sort (fun a b -> compare (display (get db a "block/order"), a) (display (get db b "block/order"), b)) in
   {attr; typ; choices;
-   title = (if attr = "block/title" then "Name" else
+   title = (if attr = "block/title" then "Name" else if attr = "block/created-at" then "Created" else
      match Option.map (fun id -> display (get db id "block/title")) id with Some title when title <> "" -> title | _ -> attr);
    many = Option.fold ~none:false ~some:(fun schema -> schema.Ds.cardinality = Ds.Many) schema;
    ref_ = Option.fold ~none:false ~some:(fun schema -> schema.Ds.value_type = Some Ds.RefType) schema}
+let temporal_value db p value =
+  if empty db value then "" else
+  if p.typ = "date" then
+    (match Option.map (fun id -> get db id "block/journal-day") (ref_id db value) with
+     | Some (Ds.Int64 day) -> let day = Int64.to_int day in
+       Printf.sprintf "%04d-%02d-%02d" (day / 10000) (day / 100 mod 100) (day mod 100)
+     | _ -> "")
+  else if p.typ = "datetime" then
+    Option.fold ~none:"" ~some:(Printf.sprintf "%.0f") (number (content db value))
+  else ""
+
+let property_display db p value =
+  if p.typ = "date" then temporal_value db p value
+  else if p.typ = "datetime" || List.mem p.attr ["block/created-at"; "block/updated-at"] then
+    match number (content db value) with
+    | Some millis when abs_float millis <= 8640000000000000. ->
+      let t = Unix.localtime (millis /. 1000.) in
+      Printf.sprintf "%04d-%02d-%02d %02d:%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min
+    | _ -> ""
+  else display (content db value)
+
 let public_attr attr = attr = "block/title" || String.starts_with ~prefix:"user.property/" attr
   || List.mem attr ["logseq.property/status"; "logseq.property/priority"; "block/tags"; "block/created-at"; "block/updated-at"]
 
@@ -133,9 +154,13 @@ let columns db view rows =
   List.filter (fun attr -> public_attr attr && not (List.mem (key attr) hidden))
     (if ordered = [] then "block/title" :: List.filter (( <> ) "block/title") rest else ordered @ rest)
   |> List.map (property db)
+let editable_type p = List.mem p.typ ["default"; "url"; "number"; "checkbox"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"]
 let editable p = p.attr = "block/title" ||
   ((String.starts_with ~prefix:"user.property/" p.attr || List.mem p.attr ["logseq.property/status"; "logseq.property/priority"])
-    && List.mem p.typ ["default"; "url"; "number"; "checkbox"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"])
+    && editable_type p)
+let node_editable db p = editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
+  && match attr_eid db p.attr with None -> false | Some id ->
+    get db id "logseq.property/hide?" <> Ds.Bool true && get db id "logseq.property/public?" <> Ds.Bool false)
 let column_json db rows p =
   let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @
@@ -144,7 +169,7 @@ let column_json db rows p =
   let filter_values = List.map (fun value ->
     let match_value = match value with Ds.Bool value -> `Bool value
       | Ds.Ref id -> `List [`String (uuid db id)] | _ -> `List [plain value] in
-    `Assoc ["title", `String (display (content db value)); "match", match_value;
+    `Assoc ["title", `String (property_display db p value); "match", match_value;
       "value", plain value;
       "journalDay", (match ref_id db value with Some id -> plain (get db id "block/journal-day") | None -> `Null)]) values in
   `Assoc ["attr", `String p.attr; "title", `String p.title; "kind", `String p.typ;
@@ -158,7 +183,8 @@ let row_json db encode properties = function
   | Query_block.Block block -> let id = eid db block.uuid in
     `Assoc ["block", encode block; "properties", `List (List.map (fun p ->
       `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p);
-        "text", `String (String.concat ", " (List.map (fun value -> display (content db value)) (attr_values db id p.attr)));
+        "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
+        "editorValue", `String (match attr_values db id p.attr with value :: _ -> temporal_value db p value | [] -> "");
         "raw", semantic_json db (raw db id p.attr)]) properties)]
 let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
   let views = saved_views db owner feature in
@@ -179,6 +205,10 @@ let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
       let rows = apply_view db feature (setting "logseq.property.table/sorting")
           (setting "logseq.property.table/filters") input rows in
       let properties = columns db view original_rows in
+      let properties = if typ <> "table" then properties else
+        let visible = List.filter (fun p -> p.attr <> "block/updated-at") properties in
+        let ordinary, created = List.partition (fun p -> p.attr <> "block/created-at") visible in
+        ordinary @ created in
       let available = columns db None original_rows in
       let known = Ds.Db.datoms db Ds.Aevt ~a:"db/ident" ()
         |> Seq.filter_map (fun (d : Ds.datom) -> match d.v with
@@ -288,13 +318,11 @@ let resolve_reference db p value =
     if p.choices <> [] && not (List.mem id p.choices) then invalid_arg "Choose one of the property's values";
     resolved id
   | None -> invalid_arg "Choose an existing object"
-let edit_cell db ~now ~fresh_uuid owner feature view json =
+let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_uuid json =
   let target = required "blockUuid" json and attr = required "attr" json in
   let target_id = eid db target in
-  if not (List.exists (function Query_block.Block block -> block.uuid = target | _ -> false) (scope db owner feature))
-  then invalid_arg "This object is no longer in the view";
   let p = property db attr in
-  if not (editable p) then invalid_arg "This cell is read-only";
+  if not ((if allow_builtin then node_editable db else editable) p) then invalid_arg "This property is read-only";
   let expected = member "expected" json in
   if expected <> semantic_json db (raw db target_id attr) then invalid_arg "This cell changed. Reopen it to edit the latest value";
   let text = match member "value" json with `String value -> value | _ -> invalid_arg "A cell value is required" in
@@ -331,7 +359,16 @@ let edit_cell db ~now ~fresh_uuid owner feature view json =
           created := (if p.typ = "class" then Ops.Create_tag page else Ops.Create_page page) :: !created;
           Ops.Ref_uuid uuid)
       else resolve_reference db p text in
-    let assigned = match member "selectedValues" json with
+    let assigned = if text_value && p.many && List.mem p.typ ["default"; "url"] && p.choices = [] then (
+      let previous = List.map (semantic db) (attr_values db target_id attr) in
+      let replaced = match member "textValueUuid" json with
+        | `Null -> None
+        | `String uuid when List.mem (Ops.Ref_uuid uuid) previous -> Some (Ops.Ref_uuid uuid)
+        | _ -> invalid_arg "This text value no longer belongs to the object" in
+      let remaining = List.filter (fun value -> Some value <> replaced) previous in
+      let next = if String.trim text = "" then remaining else remaining @ [value text] in
+      match next with [] -> None | values -> Some (Ops.Set_value values))
+    else match member "selectedValues" json with
       | `List selected ->
         if not p.ref_ then invalid_arg "This property does not accept object references";
         if not p.many && List.length selected > 1 then invalid_arg "Choose a single value";
@@ -351,8 +388,35 @@ let edit_cell db ~now ~fresh_uuid owner feature view json =
         else value text)
       | _ -> invalid_arg "Invalid selected values" in
     let intent = Ops.Set_property {uuid = target; attr; expected = Option.map (semantic db) (raw db target_id attr); value = assigned} in
-    let _ = view in
     if !created = [] then intent else Ops.Atomic (List.rev !created @ [intent])
+let edit_cell db ~now ~fresh_uuid owner feature _view json =
+  let target = required "blockUuid" json in
+  if not (List.exists (function Query_block.Block block -> block.uuid = target | _ -> false) (scope db owner feature))
+  then invalid_arg "This object is no longer in the view";
+  edit_property db ~now ~fresh_uuid json
+
+let property_json db ~owner ~attr ~encode_block =
+  let p = property db attr in
+  let id = eid db owner in
+  let assigned = attr_values db id attr in
+  let text_layout = List.mem p.typ ["default"; "url"] && p.choices = [] in
+  let blocks = if not text_layout then [] else List.filter_map (fun value ->
+    Option.bind (ref_id db value) (fun id -> Option.map encode_block
+      (G.block (fun value -> Ok value) db id))) assigned in
+  let metadata = match column_json db [] p with `Assoc fields -> fields | _ -> [] in
+  let text = String.concat ", " (List.map (property_display db p) assigned) in
+  let candidates = if text_layout then [] else
+    Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
+  let candidates = List.sort_uniq compare (assigned @ candidates) in
+  let filter_values = List.map (fun value -> `Assoc [
+    "title", `String (property_display db p value); "value", plain value;
+    "match", (match ref_id db value with Some id -> `List [`String (uuid db id)] | None -> `List [plain value])]) candidates in
+  `Assoc (("editorValue", `String (match assigned with value :: _ -> temporal_value db p value | [] -> "")) ::
+    ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
+    ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
+    ("markup", Markup.to_yojson (Markup.parse [] [] text)) ::
+    ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p)) ::
+    List.remove_assoc "editable" (List.remove_assoc "filterValues" metadata))
 let mutation db ~now ~fresh_uuid json =
   try
     let owner = required "ownerUuid" json and feature = required "featureType" json in

@@ -54,6 +54,9 @@ import SwiftUI
 """)
         app = directory / "RuntimeCheck.app"
         app.mkdir()
+        fixture_json = Path(entry).with_suffix(".json")
+        if fixture_json.exists():
+            shutil.copy2(fixture_json, app / fixture_json.name)
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
         testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
