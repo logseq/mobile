@@ -144,6 +144,7 @@ type sidebar_projection =
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; result_views_json : string
+  ; properties_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   }
@@ -189,6 +190,7 @@ type node_projection =
   ; node_is_property : bool
   ; node_outliner_rows : outline_row list
   ; node_result_views_json : string
+  ; node_properties_json : string
   ; node_related_rows : outline_row list
   ; node_linked_reference_rows : outline_row list
   ; node_outliner_editing : outliner_editing option
@@ -249,6 +251,7 @@ type core_projection =
 
 type logseq_effect =
   | ResultViewEffect of int * string * string
+  | NodePropertyEffect of int * string * string
   | SendCaptureEffect of int * string
   | SendAssetEffect of int * composer_asset
   | SendTaskEffect of int * string * task_status
@@ -337,6 +340,7 @@ type logseq_model =
   ; selected_page_is_property : bool
   ; selected_page_ready : bool
   ; result_views_json : string
+  ; properties_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
@@ -414,6 +418,7 @@ type logseq_model =
 
 type logseq_action =
   | SubmitResultView of string * string
+  | SubmitNodeProperty of string * string
   | SelectGraph of string
   | BeginSync
   | SyncSucceeded

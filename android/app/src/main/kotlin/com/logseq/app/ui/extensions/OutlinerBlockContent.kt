@@ -93,8 +93,8 @@ import org.json.JSONObject
 // Block text matches iOS `.body` (17pt, ~22pt leading).
 private val outlinerBodyStyle: androidx.compose.ui.text.TextStyle
     @Composable get() = MaterialTheme.typography.bodyLarge.copy(
-        fontSize = 17.sp,
-        lineHeight = 22.sp,
+        fontSize = if (LocalPropertyValue.current) 16.sp else 17.sp,
+        lineHeight = if (LocalPropertyValue.current) 21.sp else 22.sp,
     )
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)

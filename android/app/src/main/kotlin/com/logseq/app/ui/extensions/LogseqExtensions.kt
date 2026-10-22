@@ -96,6 +96,7 @@ fun logseqExtensionRegistry(
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
     val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     registerNodeIcon()
+    registerProperties()
 
     register(
         "outliner-editor",

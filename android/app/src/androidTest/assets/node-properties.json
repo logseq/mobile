@@ -1,0 +1,236 @@
+{
+  "ok": true,
+  "result": {
+    "graphName": "Properties",
+    "selectedGraphId": "properties-check",
+    "selectedPage": {
+      "uuid": "page",
+      "title": "Project details"
+    },
+    "nodeProperties": {
+      "ownerUuid": "page",
+      "properties": [
+        {
+          "attr": "user.property/Summary",
+          "title": "Summary",
+          "kind": "default",
+          "text": "Research notes",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "text-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": true,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [
+            {
+              "uuid": "text-value",
+              "title": "Research **notes**",
+              "pageId": "page",
+              "markup": [
+                {
+                  "type": "text",
+                  "text": "Research notes"
+                }
+              ],
+              "breadcrumbs": [
+                {
+                  "uuid": "page",
+                  "title": "Property breadcrumb must stay hidden"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "attr": "user.property/Score",
+          "title": "Score",
+          "kind": "number",
+          "text": "20",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "score-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": []
+        },
+        {
+          "attr": "user.property/Ready",
+          "title": "Ready",
+          "kind": "checkbox",
+          "text": "true",
+          "raw": {
+            "type": "bool",
+            "value": true
+          },
+          "editable": true,
+          "ref": false,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": []
+        },
+        {
+          "attr": "user.property/Assignee",
+          "title": "Assignee(legacy)",
+          "kind": "page",
+          "text": "Tienson",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Assignee-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "Tienson"
+        },
+        {
+          "attr": "user.property/Reproducible",
+          "title": "Reproducible?",
+          "kind": "checkbox",
+          "text": "true",
+          "raw": {
+            "type": "bool",
+            "value": true
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "true"
+        },
+        {
+          "attr": "user.property/Long",
+          "title": "A very long property name for this project",
+          "kind": "page",
+          "text": "Next line",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Long-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "Next line"
+        },
+        {
+          "attr": "user.property/Due",
+          "title": "Due",
+          "kind": "date",
+          "text": "2026-10-22",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Due-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "2026-10-22"
+        },
+        {
+          "attr": "user.property/Deadline",
+          "title": "Deadline",
+          "kind": "datetime",
+          "text": "2026-10-22 09:30",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Deadline-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": false,
+          "closed": false,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": "1792632600000"
+        },
+        {
+          "attr": "user.property/Skills",
+          "title": "Skills",
+          "kind": "page",
+          "text": "",
+          "raw": {
+            "type": "ref-uuid",
+            "value": "Skills-value"
+          },
+          "editable": true,
+          "ref": true,
+          "many": true,
+          "closed": true,
+          "canCreate": true,
+          "textLayout": false,
+          "choices": [
+            {
+              "uuid": "skill-0",
+              "title": "logseq-review-workflow"
+            },
+            {
+              "uuid": "skill-1",
+              "title": "logseq-debug-workflow"
+            },
+            {
+              "uuid": "skill-2",
+              "title": "logseq-answer-machine"
+            }
+          ],
+          "filterValues": [],
+          "blocks": [],
+          "editorValue": ""
+        }
+      ]
+    },
+    "outlinerRows": [
+      {
+        "depth": 0,
+        "hasChildren": false,
+        "isCollapsed": false,
+        "block": {
+          "uuid": "body",
+          "title": "Regular block",
+          "pageId": "page"
+        }
+      }
+    ]
+  }
+}

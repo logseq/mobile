@@ -3,3 +3,12 @@ val view : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action
   (Model.logseq_action -> bool) -> Lui_elements.t
 val collection : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
   Model.logseq_model Signal.signal -> string Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
+
+val property_editor : id:string -> column:Yojson.Basic.t ->
+  submit:((string * Yojson.Basic.t) list -> unit) -> Model.logseq_model Signal.signal ->
+  Yojson.Basic.t -> (unit -> unit) -> Lui_elements.t
+
+val block_values : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
+  string -> Yojson.Basic.t Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
+
+val action_error : Model.logseq_model Signal.signal -> string -> Lui_elements.t

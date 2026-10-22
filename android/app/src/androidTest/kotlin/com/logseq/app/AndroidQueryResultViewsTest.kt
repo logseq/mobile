@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -207,6 +208,9 @@ class AndroidQueryResultViewsTest {
         selectView("table")
         ui.onNodeWithTag("view.type.table").assertIsDisplayed()
         ui.onNodeWithTag("view.table.scroll.table").assertIsDisplayed()
+        ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeLeft() }
+        ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeRight() }
+        ui.onNodeWithTag("sidebar.content").assertIsNotDisplayed()
         capture("table")
         ui.onNodeWithTag("view.cell.table.result-0.user.property/Score")
             .performScrollTo().performClick()

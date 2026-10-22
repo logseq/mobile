@@ -11,6 +11,7 @@ import WebKit
 
 
 struct OutlinerMixedRichMarkupContent: View {
+    @Environment(\.lgPropertyValue) private var propertyValue
     let nodes: [LogseqMarkupNode]
     let fallback: String
     let youtubePlaybackStarts: [String: Int]
@@ -57,7 +58,7 @@ struct OutlinerMixedRichMarkupContent: View {
             if chunk.allSatisfy({ $0.type == .text }) {
                 Text(verbatim: chunk.isEmpty ? fallback : chunk.map { $0.text ?? "" }.joined())
             } else {
-                Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
+                Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback, textStyle: propertyValue ? .callout : .body))
             }
         }
             .environment(\.openURL, OpenURLAction { url in
@@ -159,22 +160,22 @@ enum OutlinerMarkupInteractionPolicy {
 }
 
 enum OutlinerMarkupAttributedString {
-    static func make(nodes: [LogseqMarkupNode], fallback: String) -> AttributedString {
+    static func make(nodes: [LogseqMarkupNode], fallback: String, textStyle: Font.TextStyle = .body) -> AttributedString {
         guard !nodes.isEmpty else { return AttributedString(fallback) }
         var result = AttributedString()
         for node in nodes {
-            result.append(make(node))
+            result.append(make(node, textStyle: textStyle))
         }
         return result
     }
 
-    private static func make(_ node: LogseqMarkupNode) -> AttributedString {
+    private static func make(_ node: LogseqMarkupNode, textStyle: Font.TextStyle) -> AttributedString {
         switch node.type {
         case .text:
             return AttributedString(node.text ?? "")
         case .code:
             var value = AttributedString(node.text ?? "")
-            value.font = .system(.body, design: .monospaced)
+            value.font = .system(textStyle, design: .monospaced)
             value.backgroundColor = Color.secondary.opacity(0.12)
             return value
         case .codeBlock, .math, .cloze:
@@ -182,10 +183,10 @@ enum OutlinerMarkupAttributedString {
         case .youtubeTimestamp:
             return AttributedString("◷ " + (node.text ?? ""))
         case .emphasis, .quote:
-            var value = make(nodes: node.children, fallback: "")
+            var value = make(nodes: node.children, fallback: "", textStyle: textStyle)
             switch node.style {
-            case "bold": value.font = .body.bold()
-            case "italic": value.font = .body.italic()
+            case "bold": value.font = .system(textStyle).bold()
+            case "italic": value.font = .system(textStyle).italic()
             case "underline": value.underlineStyle = .single
             case "strikeThrough": value.strikethroughStyle = .single
             case "highlight": value.backgroundColor = Color.yellow.opacity(0.25)
@@ -193,7 +194,7 @@ enum OutlinerMarkupAttributedString {
             }
             return value
         case .link:
-            var value = make(nodes: node.children, fallback: node.url ?? "")
+            var value = make(nodes: node.children, fallback: node.url ?? "", textStyle: textStyle)
             value.link = node.url.flatMap(URL.init(string:))
             return value
         case .nodeReference:
@@ -215,6 +216,7 @@ enum OutlinerMarkupAttributedString {
 }
 
 struct OutlinerRichBlockContent: View {
+    @Environment(\.lgPropertyValue) private var propertyValue
     let node: LogseqMarkupNode
     let youtubeStartSeconds: Int?
     let onSeekYouTube: (String, Int) -> Void
@@ -281,7 +283,7 @@ struct OutlinerRichBlockContent: View {
     }
 
     @ViewBuilder private var quoteText: some View {
-        Text(OutlinerMarkupAttributedString.make(nodes: node.children, fallback: ""))
+        Text(OutlinerMarkupAttributedString.make(nodes: node.children, fallback: "", textStyle: propertyValue ? .callout : .body))
             .environment(\.openURL, OpenURLAction { url in
                 guard allowsLinkInteraction() else { return .discarded }
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
