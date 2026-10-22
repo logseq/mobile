@@ -431,7 +431,62 @@ let command_groups_follow_master_order () =
       (List.for_all (fun candidate -> member "group" candidate = `Null) (choices response))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let enter_on_a_parent_matches_master_placement () =
+  List.iter (fun (collapsed, caret, expected_parent, expected_title) -> R.with_runtime (fun session runtime conn ->
+    let child = "70000000-0000-4000-8000-000000000001" in
+    rebase runtime conn (R.entity 220 child "Existing child" @ [
+      put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+      put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.alpha)); put child "block/order" (Ds.String "a0")]);
+    if collapsed then ignore (event session "toggleCollapsed" ["uuid", `String Q.alpha]);
+    ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+    ignore (type_at session "Hello" caret);
+    let response = event session "returnPressed" [] in
+    let uuid = text (member "uuid" (draft response)) in
+    let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+    let created = List.find (fun (b : Cache_model.block) -> b.uuid = uuid) blocks in
+    check_eq ~msg:"Enter chooses the same parent as master" created.parent_id (Some expected_parent);
+    check_eq created.title expected_title;
+    let existing = List.find (fun (b : Cache_model.block) -> b.uuid = child) blocks in
+    check_eq ~msg:"existing children keep their identity and parent" existing.parent_id (Some Q.alpha);
+    if expected_parent = Q.alpha then check ~msg:"the new child comes before existing children" (created.order < existing.order);
+    if caret = 0 then begin
+      let parent = List.find (fun (b : Cache_model.block) -> b.uuid = Q.alpha) blocks in
+      check_eq ~msg:"Enter at the start preserves the original block" parent.title "Hello";
+      check ~msg:"Enter at the start inserts above the parent" (created.order < parent.order)
+    end;
+    List.iter (fun operation -> match Graph_runtime.prepare_sync runtime operation with
+      | Ok _ -> () | Error message -> fail message) (Graph_runtime.pending_operations runtime)))
+    [false, 5, Q.alpha, ""; false, 2, Q.alpha, "llo"; true, 5, Q.page, ""; false, 0, Q.page, ""]
+
+let task_dates_are_visible_and_editable_in_the_outline () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
+    List.iter (fun label -> ignore (run session label); ignore (submit session "1792719000000"); save session)
+      ["Scheduled"; "Deadline"];
+    let response = snapshot session in
+    let block = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" response) in
+    let dates = items "properties" (member "taskDates" block) in
+    check_eq ~msg:"ordinary outline rows include populated task dates" (List.length dates) 2;
+    List.iter (fun date -> let value = text (member "text" date) in
+      check ~msg:"dates are local labels rather than numeric timestamps" (value <> "" && not (String_kit.includes ~sub:"1792719000000" value))) dates;
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      List.iter (fun attr ->
+        let value = find ("property.value." ^ Q.alpha ^ "." ^ attr) in
+        check ~msg:"task date is visible before zooming in" (value <> -1);
+        App_test.dispatch app (Lui_protocol.Press value); App_test.flush app;
+        check ~msg:"task date opens the existing native date editor"
+          (find ("view.edit.sheet.property." ^ Q.alpha ^ "." ^ attr) <> -1);
+        let cancel = find ("view.edit.cancel.property." ^ Q.alpha ^ "." ^ attr) in
+        check ~msg:"date editor has Cancel" (cancel <> -1);
+        App_test.dispatch app (Lui_protocol.Press cancel); App_test.flush app)
+        ["logseq.property/scheduled"; "logseq.property/deadline"]);
+    check ~msg:"displaying task dates does not add extra semantic writes" (List.length (Graph_runtime.pending_operations runtime) < 10)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;
+  case "task dates are visible and editable in the outline" task_dates_are_visible_and_editable_in_the_outline;
   case "command groups follow master order" command_groups_follow_master_order;
   case "display titles resolve UUID references" display_titles_resolve_references_without_changing_source;
   case "views use an intrinsic native select" saved_views_use_an_intrinsic_native_select;

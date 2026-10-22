@@ -93,6 +93,7 @@ let query_db session =
   | None -> Some (state session).model.db
 
 let result_block_encoder db =
+  let presentation = Node_presentation.decorate db in
   let pages = Hashtbl.create 4 in
   let encode_tree block =
     let children = match Hashtbl.find_opt pages block.Model.page_id with
@@ -112,7 +113,7 @@ let result_block_encoder db =
       let descendants = Option.value ~default:[] (Hashtbl.find_opt children block.uuid)
         |> List.filter (fun (child : Model.block) -> not (Outliner.Sset.mem child.uuid ancestors)) in
       let ancestors = Outliner.Sset.add block.uuid ancestors in
-      match Rpc.block_json block with
+      match presentation block.uuid (Rpc.block_json block) with
       | `Assoc fields -> `Assoc (("children", `List (List.map (encode ancestors (depth + 1)) descendants)) :: fields)
       | value -> value in
     encode Outliner.Sset.empty 0 block in

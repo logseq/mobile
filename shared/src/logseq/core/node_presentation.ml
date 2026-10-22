@@ -49,6 +49,19 @@ let calculator source =
 
 let decorate db =
   let numbers = Hashtbl.create 8 in
+  let dates = Hashtbl.create 16 in
+  let task_dates uuid eid = match Hashtbl.find_opt dates uuid with
+    | Some value -> value
+    | None ->
+      let properties = List.filter_map (fun attr ->
+        match Read.value db eid attr with
+        | None -> None
+        | Some _ ->
+          let property = Result_view.property_json ~include_candidates:false db ~owner:uuid ~attr ~encode_block:(fun _ -> `Null) in
+          (match property with `Assoc fields when List.assoc_opt "text" fields <> Some (`String "") -> Some property | _ -> None))
+        ["logseq.property/scheduled"; "logseq.property/deadline"] in
+      let value = if properties = [] then `Null else `Assoc ["ownerUuid", `String uuid; "properties", `List properties] in
+      Hashtbl.add dates uuid value; value in
   let list_number eid =
     let numbered eid = match Read.ref_eids db eid "logseq.property/order-list-type" with
       | value :: _ -> Read.string_value (Read.value db value "block/title") = Some "number"
@@ -96,5 +109,5 @@ let decorate db =
         || Read.value db eid "logseq.property/heading" <> None
         || Read.value db eid "logseq.property.code/lang" <> None in
       let fields = if decorated then ("markup", M.to_yojson (markup [] 16 eid)) :: List.remove_assoc "markup" fields else fields in
-      `Assoc ((match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
+      `Assoc (("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded

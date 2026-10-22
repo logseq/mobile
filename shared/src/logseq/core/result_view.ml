@@ -396,7 +396,7 @@ let edit_cell db ~now ~fresh_uuid owner feature _view json =
   then invalid_arg "This object is no longer in the view";
   edit_property db ~now ~fresh_uuid json
 
-let property_json db ~owner ~attr ~encode_block =
+let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   let p = property db attr in
   let id = eid db owner in
   let assigned = attr_values db id attr in
@@ -406,7 +406,7 @@ let property_json db ~owner ~attr ~encode_block =
       (G.block (fun value -> Ok value) db id))) assigned in
   let metadata = match column_json db [] p with `Assoc fields -> fields | _ -> [] in
   let text = String.concat ", " (List.map (property_display db p) assigned) in
-  let candidates = if text_layout then [] else
+  let candidates = if text_layout || not include_candidates then [] else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
   let candidates = List.sort_uniq compare (assigned @ candidates) in
   let filter_values = List.map (fun value -> `Assoc [

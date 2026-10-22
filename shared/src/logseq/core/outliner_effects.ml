@@ -97,22 +97,29 @@ let command base_t now fresh_uuid context cmd =
   | State.Split_at value ->
     (match find_block context value.State.split_uuid with
      | Some block ->
-       let* new_order =
-         Order.between block.order (next_order context block)
-       in
+       let parent_uuid = Option.value ~default:block.page_id block.parent_id in
+       let lower, upper, parent_uuid = match value.split_placement with
+         | State.Inside -> None, (match sorted_siblings context (Some block.uuid) with
+             | first :: _ -> first.order | [] -> None), block.uuid
+         | State.Before ->
+           let rec previous order = function
+             | [] -> order | (sibling : Cache_model.block) :: _ when sibling.uuid = block.uuid -> order
+             | sibling :: rest -> previous sibling.order rest in
+           previous None (sorted_siblings context (Some parent_uuid)), block.order, parent_uuid
+         | State.After -> block.order, next_order context block, parent_uuid in
+       let* new_order = Order.between lower upper in
        let operation_id = fresh_uuid () in
        let new_uuid = fresh_uuid () in
-       let intent =
-         Ops.Split_block
-           {
-             uuid = value.split_uuid;
-             expected_title = value.split_expected_title;
-             before = value.before;
-             after = value.after;
-             new_uuid;
-             new_order;
-             created_at = now ();
-           }
+       let intent = match value.split_placement with
+         | State.After -> Ops.Split_block {
+             uuid = value.split_uuid; expected_title = value.split_expected_title;
+             before = value.before; after = value.after; new_uuid; new_order; created_at = now ()}
+         | State.Inside | State.Before ->
+           let title, inserted = if value.split_placement = State.Before then value.after, value.before
+             else value.before, value.after in
+           Ops.Atomic [Ops.Save_title {uuid = block.uuid; expected_title = value.split_expected_title; title};
+             Ops.Insert_block {uuid = new_uuid; title = inserted; page_uuid = block.page_id;
+               parent_uuid; order = new_order; created_at = now ()}]
        in
        Ok
          (result

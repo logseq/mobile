@@ -62,7 +62,7 @@ let only_operation (result : Effects.outliner_effects) =
 
 let split uuid before after : State.outliner_command =
   State.Split_at
-    { split_uuid = uuid; split_expected_title = "Second"; before; after }
+    { split_uuid = uuid; split_placement = State.After; split_expected_title = "Second"; before; after }
 
 let split_generates_between_sibling_order_and_focus () =
   let result =

@@ -239,7 +239,9 @@ let outline_row_from_block youtube_target_url opens_as_page depth
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
     Some
-      { Model.row_uuid; row_title; row_list_number = int_member "listNumber" fields;
+      { Model.row_uuid; row_title;
+        row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
+        row_list_number = int_member "listNumber" fields;
         row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
         query_json = (match List.assoc_opt "query" fields with
           | Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");

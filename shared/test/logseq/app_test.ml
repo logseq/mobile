@@ -426,7 +426,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
-    row_list_number = None;
+    row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_title = title;
     markup_json = "[]"; query_json = "";
@@ -2762,7 +2762,7 @@ let outline_row uuid title =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
-    row_list_number = None;
+    row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_title = title;
     markup_json = "[]"; query_json = "";

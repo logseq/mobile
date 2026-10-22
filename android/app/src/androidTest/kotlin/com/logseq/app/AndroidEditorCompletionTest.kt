@@ -48,7 +48,7 @@ class AndroidEditorCompletionTest {
             .put("selectedBlockIds", org.json.JSONArray()).put("autocomplete", if (kind == null) JSONObject.NULL
                 else JSONObject().put("kind", kind).put("query", "")))
         .put("outlinerAutocompleteCandidates", org.json.JSONArray().apply {
-            if (kind != null) put(JSONObject().put("label", "Project").put("value", if (kind == "command") "command:embed" else "project"))
+            if (kind != null) put(JSONObject().put("label", "Project").put("value", if (kind == "command") "command:embed" else "project").put("group", if (kind == "command") "BASIC" else JSONObject.NULL))
         })).toString()
 
     private fun start(title: String, kind: String?) {
@@ -71,6 +71,7 @@ class AndroidEditorCompletionTest {
         for ((kind, title) in listOf("command" to "/", "node" to "[[Pro", "tag" to "#Pro")) {
             ui.runOnIdle { bridge.applySnapshot(snapshot(kind, title)).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
             ui.onNodeWithTag("toolbar.outliner.autocomplete").assertIsDisplayed()
+            if (kind == "command") ui.onNodeWithTag("outliner.autocomplete.group.BASIC").assertIsDisplayed()
             ui.onNodeWithTag("button.outliner.autocomplete.dismiss").assertIsDisplayed()
             ui.onNodeWithTag("button.outliner.autocomplete.0").performClick()
             ui.runOnIdle {

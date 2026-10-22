@@ -574,6 +574,12 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
                 retained_row_source row_source send search_open;
             ]))
 
+let outliner_task_dates context model_source row_source send =
+  View_base.with_int_prop_signal PaddingLeft
+    (Signal.map (fun (row : Model.outline_row) -> (if Lui_ui.host context = KotlinHost then 12 else 20) + row.depth * 22) row_source)
+    (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
+      model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
+
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
     column ~gap:0 [
@@ -582,7 +588,8 @@ let render_result_block context model_source row_source send =
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value_signal:(Signal.map View_base.outliner_row_breadcrumb row_source)
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      outliner_row_body context model_source retained row_source send]
+      outliner_row_body context model_source retained row_source send;
+      outliner_task_dates context model_source row_source send]
 
 let node_properties ?(root = false) context model_source send =
   View_property.view ~render_block:(render_result_block context model_source) model_source
@@ -593,9 +600,10 @@ let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
-  dyn (fun (has_query, has_properties) ->
-    if not has_query && not has_properties then body else
-    column ~gap:0 ([body] @
+  dyn (fun (has_query, has_properties, has_dates) ->
+    if not has_query && not has_properties && not has_dates then body else
+    let dates = if has_properties || not has_dates then [] else [outliner_task_dates context model_source row_source send] in
+    column ~gap:0 ([body] @ dates @
       (if has_properties then [box ~margin_left:16 [node_properties context model_source send]] else []) @
       (if not has_query then [] else [
       View_base.with_int_prop_signal PaddingLeft
@@ -607,7 +615,7 @@ let outliner_row context model_source retained_row_source row_source send : t =
       row.query_json <> "", (match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
         && View_property.has_properties route.node_properties_json
-      | None -> false)) model_source row_source)
+      | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source)
 
 let journal_heading model_source row_source send children : t =
  fun context parent ->

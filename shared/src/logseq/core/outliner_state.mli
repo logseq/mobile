@@ -113,6 +113,7 @@ type outliner_haptic = Selection | Impact
 
 type outliner_split =
   { split_uuid : string
+  ; split_placement : outliner_placement
   ; split_expected_title : string
   ; before : string
   ; after : string

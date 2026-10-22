@@ -119,6 +119,7 @@ type outline_row =
   { row_uuid : string
   ; row_loaded : bool
   ; row_title : string
+  ; row_task_dates_json : string
   ; row_list_number : int option
   ; row_display_type : string option
   ; markup_json : string

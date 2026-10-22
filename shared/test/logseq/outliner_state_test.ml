@@ -60,6 +60,7 @@ let split uuid expected before after =
   State.Split_at
     {
       split_uuid = uuid;
+      split_placement = State.After;
       split_expected_title = expected;
       before;
       after;

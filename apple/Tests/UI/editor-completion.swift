@@ -23,9 +23,11 @@ import UIKit
         func snapshot(_ title: String, caret: Int, kind: String?, label: String, value: String) throws -> String {
             var state: [String: Any] = ["editing": ["uuid": "editing", "title": title, "caretUTF16Offset": caret], "selectedBlockIds": []]
             if let kind { state["autocomplete"] = ["kind": kind, "query": ""] }
+            var candidate: [String: Any] = ["label": label, "value": value]
+            if kind == "command" { candidate["group"] = "FORMAT" }
             let result: [String: Any] = ["selectedGraphId": "demo", "graphName": "Demo",
                 "outlinerRows": [["depth": 0, "block": ["uuid": "editing", "title": title, "pageId": "page"]]],
-                "outlinerState": state, "outlinerAutocompleteCandidates": kind == nil ? [] : [["label": label, "value": value]]]
+                "outlinerState": state, "outlinerAutocompleteCandidates": kind == nil ? [] : [candidate]]
             return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         }
         for (kind, before, after, caret, label, value) in [
@@ -53,6 +55,7 @@ import UIKit
             func node(_ identifier: String) -> Int? {
                 all.first { backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue == identifier }
             }
+            if kind == "command", node("outliner.autocomplete.group.FORMAT") == nil { throw failure("Command group heading is missing") }
             guard node("button.outliner.autocomplete.dismiss") != nil,
                   let candidate = node("button.outliner.autocomplete.0") else { throw failure("Missing shared panel for \(kind)") }
             try backend.performPress(node: candidate)

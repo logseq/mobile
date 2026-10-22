@@ -13,7 +13,7 @@ let adaptive_row stacked children : t = fun context parent ->
   List.iter (fun child -> ignore (child context (Some node))) children;
   node
 
-let view ~render_block model_source raw_source send : t =
+let view ?(compact = false) ~render_block model_source raw_source send : t =
  fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
@@ -25,7 +25,7 @@ let view ~render_block model_source raw_source send : t =
     let all_properties = own (Signal.map (fun json -> list (field "properties" json)) source) in
     let properties = own (Signal.map2 (fun values expanded ->
       if expanded then values else List.filteri (fun index _ -> index < 3) values) all_properties (Signal.value expanded)) in
-    View_base.with_string_prop Lui_protocol.FontSize "16" (column ~gap:2 ~padding_horizontal:16 ~margin_bottom:12 ~cross:`stretch
+    View_base.with_string_prop Lui_protocol.FontSize (if compact then "14" else "16") (column ~gap:(if compact then 0 else 2) ~padding_horizontal:(if compact then 0 else 16) ~margin_bottom:(if compact then 0 else 12) ~cross:`stretch
       ~accessibility_identifier:("properties." ^ owner) [
       keyed ~source:properties ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
         ~mount:(fun property_source -> fun context parent ->
@@ -66,7 +66,7 @@ let view ~render_block model_source raw_source send : t =
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
-            ~min_height:32 ~padding_horizontal:0 ~padding_vertical:0 ~grow:1.0
+            ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:1.0
             ~text_signal:(own (Signal.map (fun p -> let value = text (field "text" p) in if value = "" then "Empty" else value) property_source))
             ~label:(text (field "title" first)) ~disabled:(field "editable" first <> `Bool true)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in

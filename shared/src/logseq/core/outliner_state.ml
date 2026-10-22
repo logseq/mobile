@@ -116,6 +116,7 @@ type outliner_haptic = Selection | Impact
 
 type outliner_split =
   { split_uuid : string
+  ; split_placement : outliner_placement
   ; split_expected_title : string
   ; before : string
   ; after : string
@@ -1008,7 +1009,7 @@ let leave_interaction context (state : outliner_state) =
     { state with editing = None; selected = Sset.empty; autocomplete = None }
     (commit_effect context state.editing)
 
-let split_editing (state : outliner_state) (editing : editor_draft) =
+let split_editing context (state : outliner_state) (editing : editor_draft) =
   let index = byte_index_of_utf16 editing.title editing.caret in
   step
     { state with editing = None; autocomplete = None }
@@ -1016,6 +1017,9 @@ let split_editing (state : outliner_state) (editing : editor_draft) =
       Split_at
         {
           split_uuid = editing.uuid;
+          split_placement = (if index = 0 && not (String_kit.is_blank editing.title) then Before
+            else if not (Sset.mem editing.uuid state.collapsed)
+              && sorted_siblings context (Some editing.uuid) <> [] then Inside else After);
           split_expected_title = editing.expected_title;
           before = String.sub editing.title 0 index;
           after =
@@ -1043,8 +1047,8 @@ let split_or_outdent (context : outliner_context) (state : outliner_state)
       step
         { state with editing = Some editing; autocomplete = None }
         (commit_effect context (Some editing) @ [ Reparent_blocks moves ])
-    | None -> split_editing state editing
-  else split_editing state editing
+    | None -> split_editing context state editing
+  else split_editing context state editing
 
 let start_editing context (state : outliner_state) block caret =
   {
@@ -1594,6 +1598,8 @@ let update context (state : outliner_state) message =
          | Ops.Set_property property -> property.uuid = block.uuid
            && property.attr = "logseq.property.node/display-type" && property.value = Some (Ops.Keyword_value "code")
          | _ -> false) rest -> staged_editing context state block.uuid block.title false
+     | Ops.Atomic [Ops.Save_title _; Ops.Insert_block block] ->
+       staged_editing context state block.uuid block.title true
      | Ops.Split_block value ->
        staged_editing context state value.new_uuid value.after true
      | Ops.Insert_block value ->
