@@ -112,6 +112,22 @@ class AndroidReviewLayoutTest {
         assertTrue("Settings actions align to the trailing inset", sheet.right - apply.right <= 32.dp)
     }
 
+    @Test fun settingsMenuSelectionSurvivesItsOwnDismissal() {
+        settings()
+        ui.onNodeWithTag("picker.settings.appearance").performClick()
+        ui.onNodeWithText("Dark").performClick()
+        ui.onNodeWithTag("picker.settings.appearance.option.dark").assertDoesNotExist()
+        ui.onNodeWithText("Dark").assertIsDisplayed()
+    }
+
+    @Test fun syncLabelsAndValuesHaveNativeRowSpacing() {
+        app("Server unavailable")
+        ui.onNodeWithTag("sync.failed").performClick()
+        val label = ui.onNodeWithText("Status", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val value = ui.onNodeWithText("Sync failed", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("Sync values must be separated: label=$label value=$value", value.left - label.right >= 16.dp)
+    }
+
     @Test fun settingsSwitchRowsFillTheAvailableWidthAndToggleOnce() {
         settings()
         val spelling = ui.onNodeWithTag("switch.settings.spell-check")

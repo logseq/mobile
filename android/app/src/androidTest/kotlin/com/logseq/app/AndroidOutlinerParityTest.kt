@@ -38,6 +38,39 @@ import org.junit.runner.RunWith
 class AndroidOutlinerParityTest {
     @get:Rule val ui = createComposeRule()
 
+    @Test fun editorRetainsItsNativeIdentityWhenAnInsertionMovesItToTheNextRow() {
+        lateinit var bridge: LogseqNativeBridge
+        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
+            extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
+        val filter = LuiPatchFilter(backend)
+        bridge = LogseqNativeBridge(onPatch = { filter.applyJson(it) })
+        val root = bridge.initialize(authenticationCode = 3)
+        fun snapshot(insertions: Int): String {
+            val rows = JSONArray()
+            repeat(insertions) { index -> rows.put(JSONObject().put("depth", 0).put("hasChildren", false)
+                .put("block", JSONObject().put("uuid", "empty-$index").put("title", "").put("pageId", "journal"))) }
+            repeat(500) { index -> rows.put(JSONObject().put("depth", 0).put("hasChildren", false)
+                .put("block", JSONObject().put("uuid", "block-$index").put("title", "Block $index").put("pageId", "journal"))) }
+            return JSONObject().put("ok", true).put("result", JSONObject().put("graphName", "Editor retention")
+                .put("selectedGraphId", "editor-retention").put("isGraphUnlocked", true).put("outlinerRows", rows)
+                .put("outlinerState", JSONObject().put("editing", JSONObject().put("uuid", "block-0")
+                    .put("title", "Block 0").put("caretUTF16Offset", 0)))).toString()
+        }
+        filter.applyJson(bridge.applySnapshot(snapshot(0)))
+        ui.setContent { MaterialTheme(colorScheme = LogseqTheme.lightScheme) { backend.Content(root) } }
+        try {
+            val editor = ui.onNodeWithTag("field.outliner.block.block-0").assertIsFocused()
+            val nativeId = editor.fetchSemanticsNode().id
+            ui.runOnIdle {
+                // Core responses can advance through a whole mounted window before the next frame.
+                repeat(40) { index -> filter.applyJson(bridge.applySnapshot(snapshot(index + 1))) }
+            }
+            editor.assertIsFocused().assertIsDisplayed().assertTextEquals("Block 0")
+            assertEquals("A delayed viewport report must not discard the editor", nativeId, editor.fetchSemanticsNode().id)
+
+        } finally { ui.runOnIdle { bridge.close() } }
+    }
+
     @Test fun tenThousandNestedBlocksScrollUpdateTheTitleAndRetainPositionOnBack() {
         lateinit var bridge: LogseqNativeBridge
         val liveRows = mutableMapOf<Long, String>()

@@ -17,10 +17,12 @@ import org.junit.Test
 class AndroidEditorKeyboardTest {
     @get:Rule val ui = createComposeRule()
     private val events = mutableListOf<LuiEvent>()
+    private lateinit var backend: LuiBackend
+    private var generation = 1
 
     private fun render(title: String): SemanticsNodeInteraction {
         val registry = logseqExtensionRegistry { it }
-        val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
+        backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray().put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
             .put(JSONObject().put("op", "create-extension").put("id", 2).put("identifier", "outliner-editor")
                 .put("fingerprint", registry.registration("outliner-editor")!!.fingerprint))
@@ -32,6 +34,92 @@ class AndroidEditorKeyboardTest {
         assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString()))
         ui.setContent { MaterialExpressiveTheme { backend.Content(1) } }
         return ui.onNodeWithTag("field.outliner.block.keyboard-block").assertIsFocused()
+    }
+
+    private fun acknowledge(block: String, title: String, caret: Int) {
+        ui.runOnIdle {
+            val ops = JSONArray()
+            mapOf("block-id" to block, "title" to title, "caret-utf16-offset" to caret).forEach { (name, value) ->
+                ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2).put("property", name).put("value", value))
+            }
+            assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+        }
+    }
+
+    @Test fun splitKeepsTextUntilTheEditorMovesToTheNewBlock() {
+        val editor = render("Hello 中文 📝")
+        editor.performTextInputSelection(TextRange(6))
+        editor.performKeyInput { pressKey(Key.Enter) }
+        acknowledge("keyboard-block", "Hello ", 6)
+        editor.assertTextEquals("Hello 中文 📝")
+        acknowledge("next-block", "中文 📝", 0)
+        ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("中文 📝")
+    }
+
+    @Test fun typingDuringSplitIsMergedAtTheNewCaretAndPublishedForTheNewBlock() {
+        val editor = render("Hello 中文 📝")
+        editor.performTextInputSelection(TextRange(6))
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("新📝")
+        acknowledge("keyboard-block", "Hello ", 6)
+        acknowledge("next-block", "中文 📝", 0)
+        ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("新📝中文 📝")
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
+            it.name == "text-change" && it.values["title"] == "新📝中文 📝"
+        } }
+    }
+
+    @Test fun rapidEnterAndUnicodeTypingKeepTheirOrderAcrossTwoHandoffs() {
+        val editor = render("Tail")
+        editor.performTextInputSelection(TextRange(0))
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("first")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("后📝")
+        acknowledge("next-one", "Tail", 0)
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" } >= 2 }
+        ui.runOnIdle {
+            val returns = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "return" }
+            assertEquals("firstTail", returns.last().values["title"])
+            assertEquals(5, returns.last().values["caret-utf16-offset"])
+        }
+        acknowledge("next-two", "Tail", 0)
+        ui.onNodeWithTag("field.outliner.block.next-two").assertIsFocused().assertTextEquals("后📝Tail")
+    }
+
+    @Test fun repeatedEnterDuringHandoffIsNeverDebouncedIntoATextChange() {
+        val editor = render("Draft")
+        repeat(3) { editor.performKeyInput { pressKey(Key.Enter) } }
+        acknowledge("second", "", 0)
+        acknowledge("third", "", 0)
+        ui.runOnIdle { assertEquals(3, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
+    }
+
+    @Test fun splitAppliesTheNewEditorTextAndIdentityInOneFrame() {
+        val editor = render("Original text")
+        editor.performTextInputSelection(TextRange(0))
+        editor.performKeyInput { pressKey(Key.Enter) }
+        ui.mainClock.autoAdvance = false
+        try {
+            ui.runOnUiThread {
+                val ops = JSONArray()
+                mapOf("block-id" to "next-block", "title" to "Retained text", "caret-utf16-offset" to 0).forEach { (name, value) ->
+                    ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2).put("property", name).put("value", value))
+                }
+                assertTrue(backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+            }
+            ui.mainClock.advanceTimeByFrame()
+            ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("Retained text")
+        } finally { ui.mainClock.autoAdvance = true }
+    }
+
+    @Test fun softwareKeyboardNextCreatesOneBlockWithoutCommittingANewline() {
+        val editor = render("Native keyboard")
+        assertEquals(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,
+            editorInfo().imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION)
+        editor.performImeAction()
+        editor.assertTextEquals("Native keyboard")
+        ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
 
     @Test fun shiftEnterInsertsANewlineWithoutSplittingTheBlock() {

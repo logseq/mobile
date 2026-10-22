@@ -205,6 +205,20 @@ let performance_reset_retains_one_hundred_journals () =
   check_eq (Graph.journal_page_count (Ds.conn_db conn)) 100;
   check_eq (List.length (visible (Ds.conn_db conn))) 56
 
+let performance_fixture_supports_insertion_between_adjacent_blocks () =
+  let conn = Ds.create_conn ~schema () in
+  ignore (expect_ok (Seed.seed_performance_sized conn 1788000000000 1 500));
+  let blocks = visible (Ds.conn_db conn) in
+  check_eq (List.length blocks) 500;
+  let rec adjacent = function
+    | first :: (second :: _ as rest) ->
+      let order = expect_ok (Fractional_order.between first.Cache_model.order second.Cache_model.order) in
+      check (Some order > first.order && Some order < second.order);
+      adjacent rest
+    | _ -> ()
+  in
+  adjacent blocks
+
 let header_navigation_has_fixed_date_and_title () =
   let conn = Ds.create_conn ~schema () in
   ignore (expect_ok (Seed.seed_header_navigation conn));
@@ -303,6 +317,8 @@ let cases =
     case "standard reset is idempotent" standard_reset_is_idempotent;
     case "performance reset retains one hundred journals"
       performance_reset_retains_one_hundred_journals;
+    case "performance fixture supports insertion between adjacent blocks"
+      performance_fixture_supports_insertion_between_adjacent_blocks;
     case "header navigation has fixed date and title"
       header_navigation_has_fixed_date_and_title;
     case "composer reset preserves built-ins and removes user content"

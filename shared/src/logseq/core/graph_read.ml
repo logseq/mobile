@@ -66,13 +66,14 @@ let class_descendants db root_eid =
   loop [ root_eid ] []
 
 let entity_is_instance_of db eid class_ident =
-  match Ds.entid db "db/ident" (Ds.Keyword class_ident) with
-  | Some class_eid ->
-    let accepted = class_descendants db class_eid in
-    List.exists
-      (fun eid -> List.mem eid accepted)
-      (ref_eids db eid "block/tags")
-  | None -> false
+  match ref_eids db eid "block/tags" with
+  | [] -> false
+  | tags ->
+    (match Ds.entid db "db/ident" (Ds.Keyword class_ident) with
+     | Some class_eid ->
+       let accepted = class_descendants db class_eid in
+       List.exists (fun eid -> List.mem eid accepted) tags
+     | None -> false)
 
 let node_icon db uuid =
   let descriptor = function

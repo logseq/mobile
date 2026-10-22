@@ -424,6 +424,56 @@ let transport_state (value : Ops.pending_state) =
   | Ops.Retryable -> true
   | _ -> false
 
+(* Preserve the complete page read across a normal adjacent split. Only the
+   source, new leaf and labels referring to the source need to be hydrated. *)
+let refresh_split_page_cache runtime before intent =
+  match intent, (state runtime).read_cache with
+  | Ops.Split_block split, Some (cached_db, cached) when cached_db == before ->
+    let page = Hashtbl.fold (fun page blocks found ->
+      match found with
+      | Some _ -> found
+      | None -> Option.map (fun source -> page, blocks, source)
+          (List.find_opt (fun (block : Model.block) -> block.uuid = split.uuid) blocks))
+        cached.page_blocks None in
+    Option.iter (fun (page, blocks, source) ->
+      let adjacent = match source.Model.order with
+        | None -> false
+        | Some lower -> split.new_order > lower && not (List.exists (fun (block : Model.block) ->
+            block.parent_id = source.parent_id && Option.fold ~none:false
+              ~some:(fun order -> order > lower && order <= split.new_order) block.order) blocks) in
+      let database = db runtime in
+      let read uuid = Option.bind (Ds.entid database "block/uuid" (Ds.Uuid uuid))
+          (Read.block ~with_breadcrumbs:false (fun value -> Ok value) database) in
+      if adjacent then match read split.uuid, read split.new_uuid with
+      | Some source, Some created ->
+        let subtree = Hashtbl.create 16 in
+        Hashtbl.add subtree split.uuid ();
+        let seen_source = ref false and inserted = ref false and missing = ref false in
+        let label_changed (items : Model.entity_summary list) =
+          List.exists (fun (item : Model.entity_summary) -> item.uuid = split.uuid) items in
+        let choice_changed (value : Model.status option) =
+          Option.fold ~none:false ~some:(fun (value : Model.status) -> value.uuid = split.uuid) value in
+        let reversed = List.fold_left (fun acc (block : Model.block) ->
+          let descendant = Option.fold ~none:false ~some:(Hashtbl.mem subtree) block.parent_id in
+          if !seen_source && descendant then Hashtbl.replace subtree block.uuid ();
+          let acc = if !seen_source && not descendant && not !inserted then
+              (inserted := true; created :: acc) else acc in
+          let refreshed = if block.uuid = split.uuid then source
+            else if label_changed block.references || label_changed block.tags
+                    || choice_changed block.status || choice_changed block.priority then
+              match read block.uuid with Some value -> value | None -> missing := true; block
+            else block in
+          if block.uuid = split.uuid then seen_source := true;
+          refreshed :: acc) [] blocks in
+        let reversed = if !inserted then reversed else created :: reversed in
+        if not !missing then begin
+          let caches = new_read_caches () in
+          Hashtbl.add caches.page_blocks page (List.rev reversed);
+          runtime.state := { !(runtime.state) with read_cache = Some (database, caches) }
+        end
+      | _ -> ()) page
+  | _ -> ()
+
 let stage runtime (operation : Ops.pending_operation) =
   let existing = Ops.list runtime.path in
   let previous = List.find_opt
@@ -471,6 +521,7 @@ let stage runtime (operation : Ops.pending_operation) =
                { s.snapshot with Projection.db = projected;
                  statuses = s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
       refresh_search_affected runtime before operation.intent;
+      (match previous with None -> refresh_split_page_cache runtime before normalized.intent | Some _ -> ());
       Ok ()
 
 let queued_operation runtime operation_id intent =

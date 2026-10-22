@@ -143,6 +143,9 @@ class AndroidComposerImeTest {
         waitFor { it.text?.toString() == "Todo" }
         val clear = node { it.text?.toString() == "Clear task status" }
         if (clear != null) tap(bounds(clear)) else back()
+        // Material popups finish dismissal asynchronously; restore through the
+        // underlying editor only after its accessibility actions are exposed.
+        waitUntil { node { it.text?.toString() == "Todo" } == null }
         setDraft(original)
         if (wasCollapsed) click("surface.composer.dismiss")
     }

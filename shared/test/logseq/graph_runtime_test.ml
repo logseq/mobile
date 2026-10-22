@@ -382,6 +382,41 @@ let split_preparation_is_atomic_and_leaves_authoritative_data_unchanged () =
          | _ -> false);
       check_eq (title (Ds.conn_db conn) "block") "Old")
 
+let split_page_cache_preserves_nested_order_and_live_reference_metadata () =
+  let run new_order expected = with_store (fun path ->
+      let database = Ds.db_with
+        [ add 11 "block/uuid" (Ds.Uuid "child");
+          add 11 "block/title" (Ds.String "Child");
+          add 11 "block/page" (Ds.Ref 1); add 11 "block/parent" (Ds.Ref 10);
+          add 11 "block/order" (Ds.String "a0"); add 11 "block/refs" (Ds.Ref 10);
+          add 12 "block/uuid" (Ds.Uuid "sibling");
+          add 12 "block/title" (Ds.String "Sibling");
+          add 12 "block/page" (Ds.Ref 1); add 12 "block/parent" (Ds.Ref 1);
+          add 12 "block/order" (Ds.String "a2"); add 12 "logseq.property/status" (Ds.Ref 10);
+          add 2 "block/uuid" (Ds.Uuid "other-page");
+          add 2 "block/title" (Ds.String "Other page"); add 2 "block/name" (Ds.String "other page");
+          add 20 "block/uuid" (Ds.Uuid "other-reference");
+          add 20 "block/title" (Ds.String "Other reference");
+          add 20 "block/page" (Ds.Ref 2); add 20 "block/parent" (Ds.Ref 2);
+          add 20 "block/order" (Ds.String "a0"); add 20 "block/refs" (Ds.Ref 10) ]
+        (base_db "Old") in
+      let current = Runtime.create path 42 (Ds.conn_from_db database) Runtime.default_options in
+      ignore (Runtime.blocks_for_page current "page");
+      ignore (Runtime.blocks_for_page current "other-page");
+      check_ok (Runtime.stage current (operation "split-cache" (Pending.Split_block {
+        uuid = "block"; expected_title = "Old"; before = "O"; after = "ld";
+        new_uuid = "new-block"; new_order; created_at = 100 })));
+      let verify page =
+        check_eq (Runtime.blocks_for_page current page)
+          (Graph_read.blocks_for_page (fun value -> Ok value) (Runtime.db current) page) in
+      verify "page"; verify "other-page";
+      check_eq (List.map (fun b -> b.Model.uuid) (Runtime.blocks_for_page current "page"))
+        expected;
+      check_ok (Runtime.stage current (save_title "after-split" "O" "Edited"));
+      verify "page"; verify "other-page") in
+  run "a1" [ "block"; "child"; "new-block"; "sibling" ];
+  run "a3" [ "block"; "child"; "sibling"; "new-block" ]
+
 let consecutive_empty_splits_and_merges_use_the_latest_projection () =
   with_runtime (fun _path _conn current ->
       let operations =
@@ -1821,6 +1856,8 @@ let cases =
       legacy_fsrs_instants_never_reach_the_wire_as_dates;
     case "split preparation is atomic and leaves authoritative data unchanged"
       split_preparation_is_atomic_and_leaves_authoritative_data_unchanged;
+    case "split page cache preserves nested order and live reference metadata"
+      split_page_cache_preserves_nested_order_and_live_reference_metadata;
     case "consecutive empty splits and merges use the latest projection"
       consecutive_empty_splits_and_merges_use_the_latest_projection;
     case "remote title changes preserve recorded overlay"

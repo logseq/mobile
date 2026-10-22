@@ -87,7 +87,23 @@ let scope_selected_page (session : Types.session)
       context with
       Outliner.blocks = page_overlay session page.uuid context.blocks;
     }
-  | None -> context
+  | None ->
+    (* Journal launch reads are bounded. While editing, refreshes must keep
+       the complete active page so insertions cannot push its editor out. *)
+    (match Outliner.editing_uuid (Types.state session).outliner_state,
+           (Types.host session).graph_page_blocks with
+     | Some uuid, Some load ->
+       let find blocks = List.find_opt (fun (block : Model.block) -> block.uuid = uuid) blocks in
+       let source = match find context.Outliner.blocks with
+         | Some block -> Some block
+         | None -> Option.bind (Types.state session).outliner_optimistic_blocks find in
+       (match Option.bind source (fun block ->
+          Option.map (fun blocks -> block.Model.page_id, blocks) (load block.page_id)) with
+        | Some (page, blocks) ->
+          { context with Outliner.blocks = blocks @ List.filter
+              (fun (block : Model.block) -> block.page_id <> page) context.blocks }
+        | None -> context)
+     | _ -> context)
 
 let base_outliner_context_with_blocks session sidebar blocks =
   scope_selected_page session

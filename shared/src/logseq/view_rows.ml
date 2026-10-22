@@ -67,6 +67,8 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
     let range = Signal.state context.ui_scheduler (0, 32) in
+    let pinned = own (Signal.map (fun items ->
+      match Array.find_index is_pinned items with Some index -> index | None -> -1) items) in
     Option.iter (fun reset ->
       let previous_key = ref (Signal.sample reset) in
       ignore (Signal.own context.ui_scope
@@ -94,12 +96,11 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
       (items, start, min length (count - start))) items (Signal.value range)) in
     let first_section = match first_section with
       | Some source -> source | None -> Signal.constant context.ui_scheduler 0 in
-    let pinned = own (Signal.map (fun items ->
-      match Array.find_index is_pinned items with Some index -> index | None -> -1) items) in
     let layout = own (Signal.map2 (fun first pinned -> first, pinned) first_section pinned) in
-    let metadata_base = own (Signal.map2 (fun (items, start, _) (first_count, pinned_index) ->
+    let metadata_base = own (Signal.map2 (fun (items, start, length) (first_count, pinned_index) ->
       ["data-virtual-count", string_of_int (Array.length items);
        "data-virtual-start", string_of_int start;
+       "data-virtual-length", string_of_int length;
        "data-item-extent", string_of_int item_extent;
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
@@ -115,7 +116,11 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
         ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
       metadata_base request) in
     let visible = own (Signal.map (fun (items, start, length) ->
-      Array.sub items start length |> Array.to_list) window) in
+      let visible = Array.sub items start length |> Array.to_list in
+      if Lui_ui.host context <> Lui_protocol.KotlinHost then visible
+      else match Array.find_index is_pinned items with
+      | Some index when index < start || index >= start + length -> visible @ [items.(index)]
+      | _ -> visible) window) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));
     let adjacent = own (Signal.map (fun (items, start, length) ->
       let before = max 0 (start - 16) in

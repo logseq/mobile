@@ -6390,6 +6390,53 @@ let mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows () =
   check_eq (List.map (fun value -> member "title" value) (json_items "hydratedBlocks" hydrated))
     [`String "Block 9999"; `String "Block 9998"]
 
+let journal_refresh_keeps_the_edited_page_beyond_the_launch_window () =
+  let page : Model.entity_summary = { uuid = "journal-page"; title = "Oct 22nd, 2026" } in
+  let orders = Fractional.n_between None None 500 |> Result.get_ok |> Array.of_list in
+  let projected = ref (List.init 500 (fun index ->
+    { (Model.local_block ("row-" ^ string_of_int index) ("Block " ^ string_of_int index)
+         page.uuid (Some page.uuid) 1) with
+      Model.order = Some orders.(index); journal = Some (page.title, 20261022) })) in
+  let first_window () = List.filteri (fun index _ -> index < 32) !projected in
+  let session = configure_plain_session (Session.create_session {
+    Session.default_options with
+    outliner_projection_limit = Some 32;
+    sync_cursor = Some (fun () -> Some 5);
+    graph_blocks = Some (fun () -> Some (first_window ()));
+    graph_page_blocks = Some (fun _ -> Some !projected);
+    graph_node_destination = Some (fun _ -> Some (page, true));
+    stage_operation = Some (fun operation ->
+      projected := Rpc.project_outliner_intent !projected operation.Ops.intent; Ok ());
+    prepare_operation = Some prepare_operation;
+  }) in
+  let snapshot () = response_result (Json.from_string (Session.call session
+    {|{"apiVersion":1,"method":"snapshot","params":{}}|})) in
+  check_eq ~msg:"launch still hydrates only its bounded window"
+    (List.length (json_items "outlinerRows" (snapshot ()))) 32;
+  ignore (outliner_block_event session "tapBlock" "row-0");
+  let active = ref "row-0" in
+  for insertion = 1 to 35 do
+    let result = outliner_event session (Json.to_string (`Assoc [
+      "type", `String "returnPressed"; "uuid", `String !active;
+      "title", `String "Block 0"; "caretUTF16Offset", `Int 0])) in
+    active := editing_uuid result;
+    if insertion mod 5 = 0 then begin
+      let refreshed = snapshot () in
+      let rows = json_items "outlinerRows" refreshed in
+      check_eq ~msg:"a background refresh must retain the complete edited page topology"
+        (List.length rows) (500 + insertion);
+      check ~msg:"the active editor must remain in the refreshed rows"
+        (List.exists (fun row -> member "uuid" (member "block" row) = `String !active) rows);
+      check_eq (editing_uuid refreshed) !active
+    end
+  done;
+  projected := List.map (fun (block : Model.block) ->
+    if block.uuid = "row-1" then { block with title = "Remote update" } else block) !projected;
+  ignore (snapshot ());
+  let hydrated = response_result (dispatch_json session "hydrateOutlinerRows" "[\"row-1\"]") in
+  check_eq ~msg:"retaining the edited page must still read current authoritative data"
+    (member "title" (List.hd (json_items "hydratedBlocks" hydrated))) (`String "Remote update")
+
 let mobile_reference_hydration_preserves_ancestry () =
   List.iter (fun node_route ->
     let page : Model.entity_summary = { uuid = "source-page"; title = "Source page" } in
@@ -6517,6 +6564,7 @@ let cases =
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
     case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
  case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
+ case "journal refresh keeps the edited page beyond the launch window" journal_refresh_keeps_the_edited_page_beyond_the_launch_window;
  case "mobile reference hydration preserves ancestry" mobile_reference_hydration_preserves_ancestry;
     case "semantic completion preserves error and status precedence"
       semantic_completion_preserves_error_and_status_precedence;

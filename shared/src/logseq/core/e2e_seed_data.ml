@@ -321,6 +321,11 @@ let performance_block_title page_index block_index =
 
 let seed_performance_sized conn now journal_count block_count =
   attempt "Seed iOS performance graph: " (fun () ->
+      let orders =
+        match Fractional_order.n_between None None block_count with
+        | Ok values -> Array.of_list values
+        | Error message -> failwith message
+      in
       reset_user_page_entities conn;
       transact conn
         (List.concat_map
@@ -339,7 +344,7 @@ let seed_performance_sized conn now journal_count block_count =
                          (performance_block_uuid page_index block_index)
                          (performance_block_title page_index block_index)
                          parent
-                         (Printf.sprintf "a%02d" block_index)
+                         orders.(block_index)
                          (time + block_index + 1))))
            (List.init journal_count Fun.id)))
 
