@@ -10,6 +10,10 @@ type pending_state =
   | Conflicted of string
 
 type semantic_value =
+  | Nil_value
+  | Uuid_value of string
+  | Vector_value of semantic_value list
+  | Set_value of semantic_value list
   | String_value of string
   | Int_value of int
   | Instant_value of int
@@ -133,7 +137,17 @@ type pending_page_delete =
   ; deleted_at : int
   }
 
+type pending_property_value =
+  { uuid : string
+  ; owner_uuid : string
+  ; property_ident : string
+  ; content : semantic_value
+  ; created_at : int
+  }
+
 type pending_intent =
+  | Atomic of pending_intent list
+  | Create_property_value of pending_property_value
   | Save_title of pending_title
   | Set_property of pending_property
   | Set_properties of pending_properties

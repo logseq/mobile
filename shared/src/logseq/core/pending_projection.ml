@@ -59,6 +59,10 @@ let favorite_block_eid db page_uuid =
 
 let rec datascript_value (value : Ops.semantic_value) : Ds.value =
   match value with
+  | Ops.Nil_value -> Ds.Nil
+  | Ops.Uuid_value uuid -> Ds.Uuid uuid
+  | Ops.Vector_value values -> Ds.Vector (List.map datascript_value values)
+  | Ops.Set_value values -> Ds.Set (List.map datascript_value values)
   | Ops.String_value value -> Ds.String value
   | Ops.Int_value value -> Ds.Int64 (Int64.of_int value)
   | Ops.Instant_value value -> Ds.Instant (Int64.of_int value)
@@ -76,6 +80,13 @@ let rec datascript_value (value : Ops.semantic_value) : Ds.value =
 
 let rec semantic_value_equal_value db left right =
   match (left, right) with
+  | Ds.Nil, Ops.Nil_value -> true
+  | Ds.Uuid value, Ops.Uuid_value expected -> value = expected
+  | Ds.Vector values, Ops.Vector_value expected ->
+    List.length values = List.length expected && List.for_all2 (semantic_value_equal_value db) values expected
+  | Ds.Set values, Ops.Set_value expected ->
+    List.length values = List.length expected && List.for_all (fun expected ->
+      List.exists (fun value -> semantic_value_equal_value db value expected) values) expected
   | Ds.String value, Ops.String_value expected -> value = expected
   | Ds.Int64 value, Ops.Int_value expected -> Int64.equal value (Int64.of_int expected)
   | Ds.Instant value, Ops.Instant_value expected -> Int64.equal value (Int64.of_int expected)
@@ -313,10 +324,39 @@ let page_entity db eid =
 let would_create_cycle db moving_eid parent_eid =
   List.exists (fun eid -> eid = parent_eid) (subtree db [ moving_eid ])
 
-let property_tx uuid attr value =
-  match value with
+let property_tx uuid attr = function
   | Some value -> Ds.Add (lookup uuid, attr, datascript_value value)
   | None -> Ds.RetractAttr (lookup uuid, attr)
+
+let property_value db reference attr =
+  match Ds.entity db reference with
+  | Some entity -> (match Entity.entity_attr_raw entity attr with
+      | Some (Ds.One_value value) -> Some value
+      | Some (Ds.Many_values values) when values <> [] -> Some (Ds.Set values)
+      | _ -> None)
+  | None -> None
+
+let property_txs db uuid attr value =
+  let many = Option.fold ~none:false ~some:(fun spec -> spec.Ds.cardinality = Ds.Many)
+      (List.assoc_opt attr db.Ds.schema) in
+  match many, value with
+  | true, Some (Ops.Set_value values) ->
+    Ds.RetractAttr (lookup uuid, attr) :: List.map (fun value ->
+      Ds.Add (lookup uuid, attr, datascript_value value)) values
+  | _, value -> [property_tx uuid attr value]
+
+let property_value_attrs db (value : Ops.pending_property_value) =
+  let owner = lookup value.owner_uuid in
+  let page = Option.value ~default:(Ds.Ref_to owner) (one_value db owner "block/page") in
+  let content_attr = match value.content with Ops.String_value _ -> "block/title" | _ -> "logseq.property/value" in
+  ["block/uuid", Ds.One_value (Ds.Uuid value.uuid);
+   "block/page", Ds.One_value page;
+   "block/parent", Ds.One_value (Ds.Ref_to owner);
+   "block/order", Ds.One_value (Ds.String (Result.get_ok (Fractional_order.between None None)));
+   "logseq.property/created-from-property", Ds.One_value (Ds.Ref_to (Ds.Ident value.property_ident));
+   content_attr, Ds.One_value (datascript_value value.content);
+   "block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int value.created_at));
+   "block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int value.created_at))]
 
 let create_attrs db uuid title created_at =
   let attrs = [ ("block/uuid", Ds.One_value (Ds.Uuid uuid))
@@ -332,6 +372,21 @@ let create_attrs db uuid title created_at =
 
 let rec compile db (intent : Ops.pending_intent) =
   match intent with
+  | Ops.Atomic intents ->
+    if intents = [] then Error "atomic operation cannot be empty"
+    else
+      let ( let* ) = Result.bind in
+      let* _, reversed = List.fold_left (fun result intent ->
+        let* projected, reversed = result in
+        let* tx = compile projected intent in
+        try Ok (Ds.db_with tx projected, List.rev_append tx reversed)
+        with error -> Error (Printexc.to_string error)) (Ok (db, [])) intents in
+      Ok (List.rev reversed)
+  | Ops.Create_property_value value ->
+    if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then Error "property value UUID already exists"
+    else if Ds.entid db "block/uuid" (Ds.Uuid value.owner_uuid) = None then Error "property owner no longer exists"
+    else if Ds.entid db "db/ident" (Ds.Keyword value.property_ident) = None then Error "property no longer exists"
+    else Ok [entity_tx (Ds.Temp_id ("pending/" ^ value.uuid)) (property_value_attrs db value)]
   | Ops.Save_title value ->
     (match
        string_value (one_value db (lookup value.uuid) "block/title")
@@ -347,10 +402,10 @@ let rec compile db (intent : Ops.pending_intent) =
     else if
       not
         (semantic_value_equal db
-           (one_value db (lookup value.uuid) value.attr)
+           (property_value db (lookup value.uuid) value.attr)
            value.expected)
     then Error "property changed on the server"
-    else Ok [ property_tx value.uuid value.attr value.value ]
+    else Ok (property_txs db value.uuid value.attr value.value)
   | Ops.Set_properties value ->
     if value.changes = [] then
       Error "property changes cannot be empty"
@@ -361,15 +416,15 @@ let rec compile db (intent : Ops.pending_intent) =
         (List.for_all
            (fun (change : Ops.property_change) ->
              semantic_value_equal db
-               (one_value db (lookup value.uuid) change.attr)
+               (property_value db (lookup value.uuid) change.attr)
                change.expected)
            value.changes)
     then Error "property changed on the server"
     else
       Ok
-        (List.map
+        (List.concat_map
            (fun (change : Ops.property_change) ->
-             property_tx value.uuid change.attr change.value)
+             property_txs db value.uuid change.attr change.value)
            value.changes)
   | Ops.Insert_block value ->
     if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then
@@ -770,19 +825,26 @@ let block_location_matches db uuid page_uuid parent_uuid order =
 
 let rec satisfied db (intent : Ops.pending_intent) =
   match intent with
+  | Ops.Atomic intents -> intents <> [] && List.for_all (satisfied db) intents
+  | Ops.Create_property_value value ->
+    let content_attr = match value.content with Ops.String_value _ -> "block/title" | _ -> "logseq.property/value" in
+    semantic_value_equal db (one_value db (lookup value.uuid) content_attr) (Some value.content)
+    && semantic_value_equal db (one_value db (lookup value.uuid) "block/parent") (Some (Ops.Ref_uuid value.owner_uuid))
+    && semantic_value_equal db (one_value db (lookup value.uuid) "logseq.property/created-from-property")
+         (Some (Ops.Ref_ident value.property_ident))
   | Ops.Save_title value ->
     string_value (one_value db (lookup value.uuid) "block/title")
     = Some value.title
   | Ops.Set_property value ->
     semantic_value_equal db
-      (one_value db (lookup value.uuid) value.attr)
+      (property_value db (lookup value.uuid) value.attr)
       value.value
   | Ops.Set_properties value ->
     value.changes <> []
     && List.for_all
          (fun (change : Ops.property_change) ->
            semantic_value_equal db
-             (one_value db (lookup value.uuid) change.attr)
+             (property_value db (lookup value.uuid) change.attr)
              change.value)
          value.changes
   | Ops.Insert_block value ->

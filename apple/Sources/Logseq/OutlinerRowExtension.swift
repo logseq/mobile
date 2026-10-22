@@ -60,6 +60,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let priority: Status?
     let status: Status?
     let statuses: [Status]
+    let priorities: [Status]?
     let tags: [Summary]
 }
 
@@ -86,7 +87,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     static let identifier = "outliner-block-row"
-    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry, playback: LGYouTubePlaybackState) throws {
         let uuid = LUIExtensionEventField(name: "uuid", kind: .string, isRequired: true)
@@ -96,7 +97,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
             events: ["edit", "open-node", "collapse", "long-press", "drag-start"].map {
                 LUIExtensionEvent(name: $0, fields: [uuid])
             } + [.init(name: "drop", fields: [uuid, .init(name: "placement", kind: .string, isRequired: true)]),
-                 .init(name: "set-status", fields: [uuid, .init(name: "count", kind: .int, isRequired: true)])]
+                 .init(name: "set-status", fields: [uuid, .init(name: "count", kind: .int, isRequired: true)]),
+                 .init(name: "set-priority", fields: [.init(name: "priority", kind: .string, isRequired: true)])]
         ) { context in
             guard case let .string(encoded) = context.property("payload"),
                   let row = payload(encoded) else {
@@ -201,9 +203,25 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 .accessibilityIdentifier("button.block-task-status")
             }
             if let priority = row.priority {
-                statusIcon(priority).frame(width: 20, height: 24)
-                    .padding(.trailing, 5)
-                    .accessibilityLabel(priority.title)
+                Menu {
+                    Picker("Priority", selection: Binding(get: { priority.uuid }, set: {
+                        emit("set-priority", extra: ["priority": .string($0)])
+                    })) {
+                        ForEach(row.priorities ?? []) { item in
+                            SwiftUI.Label { Text(verbatim: item.title) } icon: { statusIcon(item) }
+                                .tag(item.uuid)
+                                .accessibilityIdentifier("button.block-task-priority-option." + item.uuid)
+                        }
+                    }
+                    Button("Clear priority", role: .destructive) {
+                        emit("set-priority", extra: ["priority": .string("")])
+                    }
+                } label: {
+                    statusIcon(priority).frame(width: 20, height: 24)
+                }
+                .padding(.trailing, 5)
+                .accessibilityLabel(priority.title)
+                .accessibilityIdentifier("button.block-task-priority")
             }
             VStack(alignment: .leading, spacing: 2) {
                 if let editor = context.childIDs.first {
@@ -275,7 +293,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     private func emit(_ name: String, uuid: String? = nil, extra: [String: LUIExtensionValue] = [:]) {
         guard context.isUserInteractionEnabled else { return }
         var values = extra
-        values["uuid"] = .string(uuid ?? row.uuid)
+        if name != "set-priority" { values["uuid"] = .string(uuid ?? row.uuid) }
         do { try context.emit(name: name, values: values) }
         catch { LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Outliner interaction failed: \(error)") }
     }

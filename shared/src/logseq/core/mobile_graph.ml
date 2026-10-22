@@ -47,6 +47,9 @@ let sync_cursor (host : mobile_graph) =
   | Some opened -> Some (Sync.applied_server_t opened.state)
   | None -> None
 
+let projected_db (host : mobile_graph) =
+  Option.map (fun opened -> Runtime.db opened.read_runtime) !(host.current)
+
 let blocks (host : mobile_graph) =
   match !(host.current) with
   | Some opened -> Some (Runtime.blocks opened.read_runtime)

@@ -160,6 +160,7 @@ depends: [
   "typerep" {= "v0.17.1" & ?vendor}
   "uopt" {= "v0.17.0" & ?vendor}
   "uri" {= "4.4.0" & ?vendor}
+  "uucp" {= "17.0.0+dune" & ?vendor}
   "uutf" {= "1.0.3+dune" & ?vendor}
   "variantslib" {= "v0.17.0" & ?vendor}
   "xmlm" {= "dev" & ?vendor}
@@ -760,6 +761,10 @@ pin-depends: [
     "https://github.com/mirage/ocaml-uri/releases/download/v4.4.0/uri-4.4.0.tbz"
   ]
   [
+    "uucp.17.0.0+dune"
+    "https://github.com/dune-universe/uucp/releases/download/v17.0.0%2Bdune/uucp-17.0.0.dune.tbz"
+  ]
+  [
     "uutf.1.0.3+dune"
     "https://github.com/dune-universe/uutf/releases/download/v1.0.3%2Bdune/uutf-1.0.3.dune.tbz"
   ]
@@ -780,6 +785,14 @@ x-opam-monorepo-cli-args: [
   "--ocaml-version=5.5.0" "--opam-provided=ocaml-compiler" "logseq"
 ]
 x-opam-monorepo-duniverse-dirs: [
+  [
+    "https://github.com/dune-universe/uucp/releases/download/v17.0.0%2Bdune/uucp-17.0.0.dune.tbz"
+    "uucp"
+    [
+      "sha256=7e67f7167b73beb48f2e78c4544b07ed50f0b1cf5697d581f2bbdfe00762ab2a"
+      "sha512=4e9eabf92bec65b9e04d74f224953086a935bf25be7f94848dcdd5d1c08c4abdd7f68ff7f141ef8c97b291762ad405194d7c6505e6852a84aa069afc502334f9"
+    ]
+  ]
   [
     "https://github.com/OCamlPro/ocplib-endian/archive/refs/tags/1.2.tar.gz"
     "ocplib-endian"

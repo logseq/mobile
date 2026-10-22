@@ -394,3 +394,6 @@ val with_int_prop_signal :
 val with_liquid_glass : string -> Lui_elements.t -> Lui_elements.t
 val with_reading_insets : Lui_elements.t -> Lui_elements.t
 val icon_of_wire_name : string -> Lui_elements.icon
+val active_node_result_views : Model.logseq_model -> string
+
+val task_priority_icon_name : Model.task_status -> string

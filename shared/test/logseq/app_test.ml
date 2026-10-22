@@ -304,6 +304,7 @@ let empty_sidebar_projection () =
     selected_page = None;
     selected_page_is_tag = false;
     selected_page_is_property = false;
+    result_views_json = "";
     related_rows = [];
     linked_reference_rows = [];
   }
@@ -317,6 +318,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     node_is_tag = false;
     node_is_property = false;
     node_outliner_rows = [];
+    node_result_views_json = "";
     node_related_rows = related_rows;
     node_linked_reference_rows = linked_reference_rows;
     node_outliner_editing = None;
@@ -334,6 +336,7 @@ let empty_core_projection () =
     is_graph_unlocked = false;
     sidebar = empty_sidebar_projection ();
     task_statuses = [];
+    task_priorities = [];
     flashcards = [];
     sync_connected = false;
     applied_server_t = None;
@@ -421,7 +424,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_title = title;
-    markup_json = "[]";
+    markup_json = "[]"; query_json = "";
     youtube_target_url = None;
     row_breadcrumb = "";
     row_breadcrumbs = [];
@@ -2755,7 +2758,7 @@ let outline_row uuid title =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_title = title;
-    markup_json = "[]";
+    markup_json = "[]"; query_json = "";
     youtube_target_url = None;
     row_breadcrumb = "";
     row_breadcrumbs = [];
@@ -2823,7 +2826,8 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
            selected_page = None;
            selected_page_is_tag = false;
            selected_page_is_property = false;
-           related_rows = [];
+           result_views_json = "";
+    related_rows = [];
            linked_reference_rows = [];
          }
          [] false "" [] [] None None [] [] [ journal_row ] false [])
@@ -2840,7 +2844,8 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       selected_page = Some favorite;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -2892,7 +2897,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       selected_page = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -3106,7 +3112,8 @@ let sidebar_drag_reserves_app_navigation () =
       selected_page = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
-      related_rows = [];
+      result_views_json = "";
+    related_rows = [];
       linked_reference_rows = [];
     }
   in
@@ -3147,6 +3154,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
       selected_page = Some page;
       selected_page_is_tag = false;
       selected_page_is_property = false;
+      result_views_json = "";
       related_rows = [ related_row ];
       linked_reference_rows = [];
     }
@@ -8935,7 +8943,7 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
-    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;
@@ -9087,6 +9095,47 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   check_eq ~msg:"selection toolbar actions cross the typed core boundary"
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
+
+let pushed_node_selection_has_a_destination_toolbar () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.RequestAppNode "child");
+  let route = { (node_projection "child" "page" "Child" [] []) with
+    Model.node_outliner_rows = [outline_row "child" "Child"];
+    node_outliner_selected_block_ids = ["child"] } in
+  send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [route]; outliner_rows = route.node_outliner_rows });
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let destination = extension_node application "native-navigation-title" in
+  let toolbar = descendant_with_identifier renderer destination "toolbar.outliner.selection" in
+  check ~msg:"a pushed node owns its selection toolbar inside the navigation destination" (toolbar <> -1);
+  let copy = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
+  dispatch application (Lui_protocol.Press copy);
+  flush application;
+  check ~msg:"destination toolbar actions reach the shared outliner effect pipeline"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "copy") -> true | _ -> false)
+      (App.model application).pending_effects);
+  let unselected_route = {route with Model.node_outliner_selected_block_ids = []} in
+  let apply routes =
+    send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+      Model.selected_graph_id = Some "graph"; node_routes = routes });
+    flush application
+  in
+  apply [unselected_route];
+  check_eq ~msg:"clearing route selection removes its toolbar"
+    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+  send application (Model.RequestAppNode "grandchild");
+  let nested = { (node_projection "grandchild" "page" "Grandchild" [] []) with
+    Model.node_outliner_rows = [outline_row "grandchild" "Grandchild"] } in
+  apply [route; nested];
+  check_eq ~msg:"a covered destination cannot keep its selection toolbar active"
+    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+  apply [route; {nested with Model.node_outliner_selected_block_ids = ["grandchild"]}];
+  let toolbar_count = descendant_count_with_identifier renderer
+    (Lui_app.root_node application) "toolbar.outliner.selection" in
+  check_eq ~msg:"only the visible destination owns a select bar" toolbar_count 1
 
 let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   let application = App.create (kotlin_backend ()) in
@@ -9561,6 +9610,38 @@ let native_bridge_returns_initial_and_disposal_patch_batches () =
   check ~msg:"initialization emits a patch" (initial_patch <> "");
   check ~msg:"the bridge exposes a root node" (Native_bridge.root_node () > 0);
   check ~msg:"disposal emits a patch" (Native_bridge.dispose () <> "")
+
+let native_bridge_preserves_reentrant_flush_batches () =
+  List.iter (fun (os, host) ->
+    let application = ref None in
+    let reentered = ref false in
+    let transport = Native_bridge.backend (Lui_protocol.profile os host) in
+    let backend = {transport with Lui_protocol.apply_batch = (fun batch ->
+      let accepted = transport.apply_batch batch in
+      if not !reentered then begin
+        reentered := true;
+        let app = Option.get !application in
+        let runtime = Lui_app.runtime app in
+        ignore (Lui_runtime.set_prop runtime (Lui_app.root_node app) Lui_protocol.TextValue (Lui_protocol.StringValue "Ready"));
+        ignore (Lui_app.flush app)
+      end;
+      accepted)} in
+    let app = Lui_app.create backend (Model.initial ()) Model.update
+      (fun _ _ _ -> Lui_elements.text ~value:"Starting" []) in
+    application := Some app;
+    Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+      let patch = Native_bridge.start_application app in
+      let batch = Lui_wire.decode_batch patch in
+      check_eq ~msg:"merged batches acknowledge the final generation" batch.generation 2;
+      check ~msg:"the native transport retains the component creation before a reentrant update"
+        (List.exists (function Lui_protocol.CreateNode _ -> true | _ -> false) batch.ops);
+      check ~msg:"the native transport also retains the later property update"
+        (List.exists (function Lui_protocol.SetProp (_, Lui_protocol.TextValue, Lui_protocol.StringValue "Ready") -> true | _ -> false) batch.ops);
+      let index matches = List.find_index matches batch.ops |> Option.get in
+      check ~msg:"component creation precedes updates to that component"
+        (index (function Lui_protocol.CreateNode _ -> true | _ -> false)
+         < index (function Lui_protocol.SetProp (_, Lui_protocol.TextValue, Lui_protocol.StringValue "Ready") -> true | _ -> false))))
+    [Lui_protocol.IOS, Lui_protocol.SwiftUIHost; Lui_protocol.AndroidOS, Lui_protocol.KotlinHost]
 
 let native_bridge_preserves_native_search_query_values () =
   ignore (Native_bridge.initialize 2 2 0);
@@ -10190,6 +10271,7 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "native bridge preserves reentrant flush batches" native_bridge_preserves_reentrant_flush_batches;
     case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
     case "sidebar-navigation-respects-native-viewport" sidebar_navigation_respects_native_viewport_width;
@@ -10393,6 +10475,7 @@ let cases =
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
+    case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;
     case "outliner-editor-toolbar-and-autocomplete-use-core-owned-state" outliner_editor_toolbar_and_autocomplete_use_core_owned_state;

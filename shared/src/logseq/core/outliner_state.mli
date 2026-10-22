@@ -76,6 +76,11 @@ type outliner_status =
   ; status : Pending_ops.semantic_value
   }
 
+type outliner_priority =
+  { priority_uuid : string
+  ; priority : Pending_ops.semantic_value option
+  }
+
 type outliner_message =
   | Tap_block of string
   | Long_press_block of string
@@ -92,6 +97,7 @@ type outliner_message =
   | Save_editing
   | Cancel_editing
   | Set_task_status of outliner_status
+  | Set_task_priority of outliner_priority
   | Toggle_collapsed of string
   | Zoom_in of string
   | Zoom_out
@@ -134,6 +140,7 @@ type outliner_command =
   | Remove_blocks of string list
   | Cycle_task_status of string
   | Set_task_status_value of outliner_status
+  | Set_task_priority_value of outliner_priority
   | Create_linked_page of string
   | Assign_tag of outliner_tag
   | Pick_attachment of string

@@ -210,6 +210,26 @@ let choice_for_eid decrypt_title db eid property =
     else None
   | None -> None
 
+let property_choices decrypt_title db property =
+  match Ds.entid db "db/ident" (Ds.Keyword property) with
+  | None -> []
+  | Some property_eid ->
+    Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" property_eid
+    |> Seq.map (fun (datom : Ds.datom) -> datom.e)
+    |> List.of_seq
+    |> List.sort (fun a b -> compare (string_value (value db a "block/order"), a)
+        (string_value (value db b "block/order"), b))
+    |> List.filter_map (fun eid ->
+      Option.map (fun uuid ->
+        let ident = match value db eid "db/ident" with Some (Ds.Keyword ident) -> Some ident | _ -> None in
+        let title = Option.value ~default:uuid (protected_string decrypt_title (value db eid "block/title")) in
+        let icon_field field = match value db eid "logseq.property/icon" with
+          | Some (Ds.Map fields) -> (match List.assoc_opt (Ds.Keyword field) fields with
+              | Some (Ds.String text) | Some (Ds.Keyword text) -> Some text | _ -> None)
+          | _ -> None in
+        {Model.uuid; ident; title; icon_type = icon_field "type"; icon_id = icon_field "id"; icon_color = icon_field "color"})
+        (uuid_for_eid db eid))
+
 let status_for_eid decrypt_title db eid =
   choice_for_eid decrypt_title db eid "logseq.property/status"
 

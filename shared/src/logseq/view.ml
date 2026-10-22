@@ -116,6 +116,7 @@ let outliner_block_row_schema () =
      Lui_extension.event "collapse" [uuid]; Lui_extension.event "long-press" [uuid];
      Lui_extension.event "drag-start" [uuid];
      Lui_extension.event "drop" [uuid; Lui_extension.event_field "placement" StringScalar true];
+     Lui_extension.event "set-priority" [Lui_extension.event_field "priority" StringScalar true];
      Lui_extension.event "set-status" [uuid; Lui_extension.event_field "count" IntScalar true]]
 
 let native_navigation_stack_schema () =

@@ -117,6 +117,7 @@ type outline_row =
   ; row_loaded : bool
   ; row_title : string
   ; markup_json : string
+  ; query_json : string
   ; youtube_target_url : string option
   ; row_breadcrumb : string
   ; row_breadcrumbs : sidebar_page list
@@ -142,6 +143,7 @@ type sidebar_projection =
   ; selected_page : sidebar_page option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
+  ; result_views_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   }
@@ -186,6 +188,7 @@ type node_projection =
   ; node_is_tag : bool
   ; node_is_property : bool
   ; node_outliner_rows : outline_row list
+  ; node_result_views_json : string
   ; node_related_rows : outline_row list
   ; node_linked_reference_rows : outline_row list
   ; node_outliner_editing : outliner_editing option
@@ -211,6 +214,7 @@ type core_projection =
   ; is_graph_unlocked : bool
   ; sidebar : sidebar_projection
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; flashcards : flashcard list
   ; sync_connected : bool
   ; applied_server_t : int option
@@ -244,6 +248,7 @@ type core_projection =
   }
 
 type logseq_effect =
+  | ResultViewEffect of int * string * string
   | SendCaptureEffect of int * string
   | SendAssetEffect of int * composer_asset
   | SendTaskEffect of int * string * task_status
@@ -258,6 +263,7 @@ type logseq_effect =
   | SyncNowEffect of int
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
+  | SetOutlinerTaskPriorityEffect of int * string * task_status option
   | SearchNodesEffect of int * string
   | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
@@ -330,9 +336,11 @@ type logseq_model =
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; selected_page_ready : bool
+  ; result_views_json : string
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
   ; task_statuses : task_status list
+  ; task_priorities : task_status list
   ; selected_task_status : task_status option
   ; flashcards : flashcard list
   ; flashcard_cloze_revealed : bool
@@ -393,6 +401,7 @@ type logseq_model =
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
   ; next_effect_id : int
+  ; result_view_feedback : (string * int * string option) list
   ; effect_error : string option
   ; last_core_response : string option
   ; attachment_picker_open : bool
@@ -404,6 +413,7 @@ type logseq_model =
   }
 
 type logseq_action =
+  | SubmitResultView of string * string
   | SelectGraph of string
   | BeginSync
   | SyncSucceeded
@@ -501,6 +511,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
   | DismissSettings

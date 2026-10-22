@@ -277,6 +277,17 @@ let decode_outliner_event fields =
   | "addRootBlock" ->
     let* uuid = required_string fields "uuid" in
     Ok (Outliner.Add_root_block uuid)
+  | "setTaskPriority" ->
+    let* uuid = required_string fields "uuid" in
+    let* ident = optional_string fields "priorityIdent" in
+    let* priority_uuid = optional_string fields "priorityUuid" in
+    let priority = match ident, priority_uuid with
+      | Some ident, _ -> Ok (Some (Ops.Ref_ident ident))
+      | None, Some uuid -> Ok (Some (Ops.Ref_uuid uuid))
+      | None, None when List.assoc_opt "priority" fields = Some `Null -> Ok None
+      | _ -> Error "setTaskPriority requires a priority reference or explicit null" in
+    let* priority = priority in
+    Ok (Outliner.Set_task_priority {Outliner.priority_uuid = uuid; priority})
   | "setTaskStatus" ->
     let* uuid = required_string fields "uuid" in
     let* ident = optional_string fields "statusIdent" in

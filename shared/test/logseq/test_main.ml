@@ -21,6 +21,8 @@ let () =
       "lui_snapshot", Lui_snapshot_test.cases;
       "journal_sync", Journal_sync_test.cases;
       "markup", Markup_test.cases;
+      "query_block", Query_block_test.cases;
+      "result_view", Result_view_test.cases;
       "flashcards", Flashcards_test.cases;
       "mobile_session", Mobile_session_test.cases;
       "outliner", Outliner_test.cases;

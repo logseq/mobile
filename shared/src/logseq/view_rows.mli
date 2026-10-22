@@ -25,6 +25,7 @@ val windowed_keyed :
   cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
 
 type reference_entry =
+  | Result_views of string
   | Reference_heading of string * string
   | Empty_tag
   | Reference_row of string * Model.outline_row

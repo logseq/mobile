@@ -258,13 +258,16 @@ let projected_node_destination (session : Types.session) uuid =
   | _ -> None
 
 let with_extra_blocks (context : Outliner.outliner_context) extra =
-  let present = List.map (fun b -> b.Model.uuid) context.blocks in
+  let present = Hashtbl.create (List.length context.blocks) in
+  List.iter (fun (block : Model.block) -> Hashtbl.replace present block.uuid ()) context.blocks;
   {
     context with
     Outliner.blocks =
       context.blocks
       @ List.filter
-          (fun block -> not (List.mem block.Model.uuid present))
+          (fun (block : Model.block) ->
+            if Hashtbl.mem present block.uuid then false
+            else begin Hashtbl.add present block.uuid (); true end)
           extra;
   }
 

@@ -240,6 +240,8 @@ let outline_row_from_block youtube_target_url opens_as_page depth
   | Some row_uuid, Some row_title ->
     Some
       { Model.row_uuid; row_title; row_loaded = not (bool_member "isShell" fields);
+        query_json = (match List.assoc_opt "query" fields with
+          | Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         markup_json =
           (match List.assoc_opt "markup" fields with
            | Some markup -> Yojson.Basic.to_string markup
@@ -393,6 +395,7 @@ let node_route input =
         node_breadcrumbs = breadcrumbs fields;
         node_scroll_target = string_member "scrollTarget" fields;
         node_outliner_rows = outliner_rows_member "outlinerRows" fields;
+        node_result_views_json = (match List.assoc_opt "resultViews" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
         node_related_rows = related_rows_member "relatedBlocks" fields;
         node_linked_reference_rows =
           related_rows_member "linkedReferenceBlocks" fields;
@@ -413,6 +416,7 @@ let sidebar_projection fields =
     selected_page_is_tag = bool_member "selectedPageIsTag" fields;
     selected_page_is_property =
       bool_member "selectedPageIsProperty" fields;
+    result_views_json = (match List.assoc_opt "resultViews" fields with Some (`Assoc _ as value) -> Json.to_string value | _ -> "");
     related_rows = related_rows_member "relatedBlocks" fields;
     linked_reference_rows =
       related_rows_member "linkedReferenceBlocks" fields }
@@ -439,6 +443,7 @@ let core_projection fields =
     is_graph_encrypted = bool_member "isGraphEncrypted" fields;
     is_graph_unlocked = bool_member "isGraphUnlocked" fields;
     sidebar = sidebar_projection fields;
+    task_priorities = List.filter_map task_status (list_member "taskPriorities" fields);
     task_statuses =
       List.filter_map task_status (list_member "taskStatuses" fields);
     flashcards = List.filter_map flashcard (list_member "flashcards" fields);

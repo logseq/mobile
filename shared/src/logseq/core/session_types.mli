@@ -76,6 +76,7 @@ type host_options =
   ; apply_sync_event : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Cache_model.block list option) option
+  ; graph_db : (unit -> Datascript.db option) option
   ; authoritative_graph_blocks : (unit -> Cache_model.block list option) option
   ; graph_sidebar_pages : (unit -> Graph_read.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Cache_model.entity_summary list option) option
@@ -156,6 +157,7 @@ type session_state =
   ; outliner_optimistic_blocks : Cache_model.block list option
   ; outliner_commands : Outliner_effects.outliner_platform_command list
   ; outliner_revision : int
+  ; expanded_queries : Outliner_state.Sset.t
   ; sidebar_deferred : bool
   }
 

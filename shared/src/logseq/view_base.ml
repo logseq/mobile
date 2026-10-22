@@ -385,6 +385,14 @@ let task_status_icon_name status =
   | "canceled" -> "app:task-canceled"
   | _ -> "app:task-todo"
 
+let task_priority_icon_name (priority : Model.task_status) =
+  let level = match priority.ident, priority.icon_id with
+    | Some "logseq.property/priority.urgent", _ | _, Some "priorityLvlUrgent" -> "urgent"
+    | Some "logseq.property/priority.high", _ | _, Some "priorityLvlHigh" -> "high"
+    | Some "logseq.property/priority.medium", _ | _, Some "priorityLvlMedium" -> "medium"
+    | _ -> "low" in
+  "app:priority-" ^ level
+
 let task_status_foreground (status : Model.task_status) =
   match status.icon_color with
   | Some color -> color
@@ -771,6 +779,11 @@ let node_related_section_visible_ (current : Model.logseq_model) =
   current_content_active_ current
   && (not (current_content_is_tag_ current))
   && active_node_related_rows current <> []
+
+let active_node_result_views (current : Model.logseq_model) =
+  match active_node_projection current with
+  | Some node -> node.node_result_views_json
+  | None -> current.result_views_json
 
 let node_tag_section_visible_ (current : Model.logseq_model) =
   current_content_active_ current && current_content_is_tag_ current
@@ -1366,6 +1379,7 @@ let journal_navigation_model (current : Model.logseq_model) =
       selected_page = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
+      result_views_json = "";
       related_rows = [];
       linked_reference_rows = [];
       node_routes = [];

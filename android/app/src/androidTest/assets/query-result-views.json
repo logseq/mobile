@@ -1,0 +1,657 @@
+{
+  "ok": true,
+  "result": {
+    "graphName": "Query rendering",
+    "selectedGraphId": "query-check",
+    "isGraphUnlocked": true,
+    "outlinerRows": [
+      {
+        "depth": 0,
+        "hasChildren": false,
+        "isCollapsed": false,
+        "block": {
+          "uuid": "query-owner",
+          "title": "Project overview",
+          "pageId": "page",
+          "query": {
+            "kind": "simple",
+            "source": "#Project",
+            "ownerUuid": "query-owner",
+            "featureType": "query-result",
+            "rows": [
+              {
+                "block": {
+                  "uuid": "result-0",
+                  "title": "Project result 1",
+                  "pageId": "page",
+                  "breadcrumbs": [
+                    {
+                      "uuid": "page",
+                      "title": "Workspace"
+                    }
+                  ],
+                  "children": [
+                    {
+                      "uuid": "child",
+                      "title": "Nested child",
+                      "pageId": "page"
+                    }
+                  ]
+                },
+                "properties": [
+                  {
+                    "attr": "block/title",
+                    "kind": "string",
+                    "text": "Project result 1",
+                    "editable": true,
+                    "raw": {
+                      "type": "string",
+                      "value": "Project result 1"
+                    }
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "kind": "number",
+                    "text": "1",
+                    "editable": true,
+                    "raw": {
+                      "type": "ref-uuid",
+                      "value": "30000000-0000-4000-8000-000000000001"
+                    }
+                  }
+                ]
+              },
+              {
+                "block": {
+                  "uuid": "result-1",
+                  "title": "Project result 2",
+                  "pageId": "page",
+                  "breadcrumbs": [
+                    {
+                      "uuid": "page",
+                      "title": "Workspace"
+                    }
+                  ],
+                  "children": []
+                },
+                "properties": [
+                  {
+                    "attr": "block/title",
+                    "kind": "string",
+                    "text": "Project result 2",
+                    "editable": true,
+                    "raw": {
+                      "type": "string",
+                      "value": "Project result 2"
+                    }
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "kind": "number",
+                    "text": "2",
+                    "editable": true,
+                    "raw": {
+                      "type": "ref-uuid",
+                      "value": "30000000-0000-4000-8000-000000000002"
+                    }
+                  }
+                ]
+              },
+              {
+                "block": {
+                  "uuid": "result-2",
+                  "title": "Project result 3",
+                  "pageId": "page",
+                  "breadcrumbs": [
+                    {
+                      "uuid": "page",
+                      "title": "Workspace"
+                    }
+                  ],
+                  "children": []
+                },
+                "properties": [
+                  {
+                    "attr": "block/title",
+                    "kind": "string",
+                    "text": "Project result 3",
+                    "editable": true,
+                    "raw": {
+                      "type": "string",
+                      "value": "Project result 3"
+                    }
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "kind": "number",
+                    "text": "3",
+                    "editable": true,
+                    "raw": {
+                      "type": "ref-uuid",
+                      "value": "30000000-0000-4000-8000-000000000003"
+                    }
+                  }
+                ]
+              }
+            ],
+            "views": [
+              {
+                "uuid": "list",
+                "name": "List",
+                "type": "list",
+                "columns": [
+                  {
+                    "attr": "block/title",
+                    "title": "Name",
+                    "kind": "string",
+                    "editable": true
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "title": "Score",
+                    "kind": "number",
+                    "editable": true,
+                    "ref": true,
+                    "filterValues": [
+                      {
+                        "title": "1",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000001"
+                        ]
+                      },
+                      {
+                        "title": "2",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000002"
+                        ]
+                      },
+                      {
+                        "title": "3",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000003"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "rows": [
+                  {
+                    "block": {
+                      "uuid": "result-0",
+                      "title": "Project result 1",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "uuid": "child",
+                          "title": "Nested child",
+                          "pageId": "page"
+                        }
+                      ]
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 1",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 1"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "1",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-1",
+                      "title": "Project result 2",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 2",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 2"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "2",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000002"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-2",
+                      "title": "Project result 3",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 3",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 3"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "3",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000003"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "error": null
+              },
+              {
+                "uuid": "table",
+                "name": "Table",
+                "type": "table",
+                "columns": [
+                  {
+                    "attr": "block/title",
+                    "title": "Name",
+                    "kind": "string",
+                    "editable": true
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "title": "Score",
+                    "kind": "number",
+                    "editable": true,
+                    "ref": true,
+                    "filterValues": [
+                      {
+                        "title": "1",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000001"
+                        ]
+                      },
+                      {
+                        "title": "2",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000002"
+                        ]
+                      },
+                      {
+                        "title": "3",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000003"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "rows": [
+                  {
+                    "block": {
+                      "uuid": "result-0",
+                      "title": "Project result 1",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "uuid": "child",
+                          "title": "Nested child",
+                          "pageId": "page"
+                        }
+                      ]
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 1",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 1"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "1",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-1",
+                      "title": "Project result 2",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 2",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 2"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "2",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000002"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-2",
+                      "title": "Project result 3",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 3",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 3"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "3",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000003"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "error": null
+              },
+              {
+                "uuid": "gallery",
+                "name": "Gallery",
+                "type": "gallery",
+                "columns": [
+                  {
+                    "attr": "block/title",
+                    "title": "Name",
+                    "kind": "string",
+                    "editable": true
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "title": "Score",
+                    "kind": "number",
+                    "editable": true,
+                    "ref": true,
+                    "filterValues": [
+                      {
+                        "title": "1",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000001"
+                        ]
+                      },
+                      {
+                        "title": "2",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000002"
+                        ]
+                      },
+                      {
+                        "title": "3",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000003"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "rows": [
+                  {
+                    "block": {
+                      "uuid": "result-0",
+                      "title": "Project result 1",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": [
+                        {
+                          "uuid": "child",
+                          "title": "Nested child",
+                          "pageId": "page"
+                        }
+                      ]
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 1",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 1"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "1",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-1",
+                      "title": "Project result 2",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 2",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 2"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "2",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000002"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "block": {
+                      "uuid": "result-2",
+                      "title": "Project result 3",
+                      "pageId": "page",
+                      "breadcrumbs": [
+                        {
+                          "uuid": "page",
+                          "title": "Workspace"
+                        }
+                      ],
+                      "children": []
+                    },
+                    "properties": [
+                      {
+                        "attr": "block/title",
+                        "kind": "string",
+                        "text": "Project result 3",
+                        "editable": true,
+                        "raw": {
+                          "type": "string",
+                          "value": "Project result 3"
+                        }
+                      },
+                      {
+                        "attr": "user.property/Score",
+                        "kind": "number",
+                        "text": "3",
+                        "editable": true,
+                        "raw": {
+                          "type": "ref-uuid",
+                          "value": "30000000-0000-4000-8000-000000000003"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "error": null
+              },
+              {
+                "uuid": "broken",
+                "name": "Broken",
+                "type": "table",
+                "columns": [
+                  {
+                    "attr": "block/title",
+                    "title": "Name",
+                    "kind": "string",
+                    "editable": true
+                  },
+                  {
+                    "attr": "user.property/Score",
+                    "title": "Score",
+                    "kind": "number",
+                    "editable": true,
+                    "ref": true,
+                    "filterValues": [
+                      {
+                        "title": "1",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000001"
+                        ]
+                      },
+                      {
+                        "title": "2",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000002"
+                        ]
+                      },
+                      {
+                        "title": "3",
+                        "match": [
+                          "30000000-0000-4000-8000-000000000003"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "rows": [],
+                "error": "Invalid view configuration"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

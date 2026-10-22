@@ -45,7 +45,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let guides = OutlinerIndentGuideView()
     private let title = OutlinerTitleLabel()
     private let bullet = UIButton(type: .custom)
-    private let priority = UIImageView()
+    private let priority = UIButton(type: .custom)
     private let status = UIButton(type: .custom)
     private let disclosure = UIButton(type: .custom)
     private let failure = UILabel()
@@ -64,6 +64,9 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.setImage(UIImage(named: "outliner_bullet", in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.tintColor = UIColor.secondaryLabel.withAlphaComponent(0.4)
         bullet.addTarget(self, action: #selector(open), for: .touchUpInside)
+        priority.showsMenuAsPrimaryAction = true
+        priority.preferredMenuElementOrder = .fixed
+        priority.accessibilityIdentifier = "button.block-task-priority"
         status.imageView?.contentMode = .scaleAspectFit
         status.showsMenuAsPrimaryAction = true
         status.preferredMenuElementOrder = .fixed
@@ -137,11 +140,23 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.isUserInteractionEnabled = !row.journalBullet
         bullet.accessibilityTraits = row.journalBullet ? .image : .button
         priority.isHidden = row.priority == nil
-        priority.contentMode = .scaleAspectFit
-        priority.image = row.priority.flatMap { statusImage($0.icon) }
-        applyIconShadow(priority)
+        priority.imageView?.contentMode = .scaleAspectFit
+        priority.setImage(row.priority.flatMap { statusImage($0.icon) }, for: .normal)
+        applyIconShadow(priority.imageView)
         priority.tintColor = .secondaryLabel
         priority.accessibilityLabel = row.priority?.title
+        if let selected = row.priority {
+            var actions = (row.priorities ?? []).map { item in
+                UIAction(title: item.title, image: item.menuImage(in: semanticColors),
+                         state: item.uuid == selected.uuid ? .on : .off) { [weak self] _ in
+                    self?.emit?("set-priority", nil, ["priority": .string(item.uuid)])
+                }
+            }
+            actions.append(UIAction(title: String(localized: "Clear priority"), attributes: .destructive) { [weak self] _ in
+                self?.emit?("set-priority", nil, ["priority": .string("")])
+            })
+            priority.menu = UIMenu(children: actions)
+        } else { priority.menu = nil }
         status.isHidden = row.status == nil
         if let task = row.status {
             status.setImage(statusImage(task.icon), for: .normal)
