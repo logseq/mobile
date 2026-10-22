@@ -128,7 +128,8 @@ import SwiftUI
             return
         try:
             output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
-                                     SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180 if testing else (90 if benchmark else 30), env=launch_environment)
+                                     SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    timeout=180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30"))), env=launch_environment)
             print(output.stdout)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
                 raise SystemExit("Simulator runtime check did not complete")

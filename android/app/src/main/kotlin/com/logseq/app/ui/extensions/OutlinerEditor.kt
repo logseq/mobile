@@ -58,6 +58,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val modelCaret = context.int("caret-utf16-offset") ?: -1
     val selectionRevision = context.int("selection-revision") ?: 0
     val inputPolicy = context.string("input-policy") ?: "{}"
+    val focusEnabled = context.bool("focus-enabled") == true
     val multiline = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optBoolean("multiline") }.getOrDefault(false) }
 
     val focusRequester = remember { FocusRequester() }
@@ -148,7 +149,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         }
     }
 
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
     // Debounced text-change emission, cancelled by the next edit.
     LaunchedEffect(debounceSeq) {
         if (debounceSeq == 0 || awaitingHandoff || value.composition != null) return@LaunchedEffect

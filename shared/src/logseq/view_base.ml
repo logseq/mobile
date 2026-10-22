@@ -3,6 +3,10 @@ open Lui_protocol
 let node_icon (current : Model.logseq_model) uuid =
   Option.value ~default:"" (String_map.find_opt uuid current.node_icons)
 
+let outliner_node_icon current (row : Model.outline_row) =
+  if row.row_is_embed then {|{"type":"tabler-icon","id":"arrow-narrow-right"}|}
+  else node_icon current row.row_uuid
+
 let node_icon_view ?(muted = false) ~size source : Lui_elements.t =
   Lui_elements.if_ ~test:(Signal.map (fun value -> value <> "") source)
     (fun context parent ->

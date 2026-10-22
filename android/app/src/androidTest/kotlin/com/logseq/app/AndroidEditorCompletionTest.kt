@@ -109,6 +109,22 @@ class AndroidEditorCompletionTest {
         }
     }
 
+    @Test fun linkAndImageFormsKeepNativeInputFocusAcrossSnapshots() {
+        start("/", "link")
+        for (kind in listOf("link", "image")) {
+            ui.runOnIdle { bridge.applySnapshot(snapshot(kind, "/")).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            ui.onNodeWithTag("field.outliner.autocomplete.value").assertIsDisplayed().performClick().performTextInput("https://example.com/image.png")
+            ui.runOnIdle { bridge.applySnapshot(snapshot(kind, "/")).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            ui.onNodeWithTag("field.outliner.autocomplete.value").assertIsFocused()
+            ui.onNodeWithTag("field.outliner.autocomplete.label").performClick().performTextInput("A useful label")
+            ui.runOnIdle { bridge.applySnapshot(snapshot(kind, "/")).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            ui.onNodeWithTag("field.outliner.autocomplete.label").assertIsFocused()
+            ui.onNodeWithTag("button.outliner.autocomplete.dismiss").performClick()
+            ui.runOnIdle { bridge.applySnapshot(snapshot(null, "/")).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            ui.onNodeWithTag("field.outliner.block.editing").assertIsFocused()
+        }
+    }
+
     @Test fun nativePasteCarriesItsOriginAcrossTheBridge() = checkNativePaste(null)
 
     @Test fun nativeRichPasteKeepsTheBlockSnapshot() = checkNativePaste("{:graph \"demo\" :op :copy :blocks []}")

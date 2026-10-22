@@ -59,6 +59,16 @@ let result_item owner render_block send source : t =
          ~mount:(fun source -> render_block source send)
      | None -> text ~value_signal:(Signal.map (fun item -> item.title) source) ~text_alignment:`start [])]) context parent
 
+let results_disclosure context identifier expanded label =
+  let size = if Lui_ui.host context = KotlinHost then 24 else 10 in
+  row ~gap:8 ~cross:`center [
+    icon ~name_signal:(Signal.map (fun expanded ->
+      `app (if expanded then "disclosure-down" else "disclosure-right")) expanded)
+      ~width:size ~height:size ~foreground:"muted-foreground"
+      ~accessibility_identifier:identifier [];
+    text ~value_signal:label [];
+  ]
+
 let legacy_view ~render_block _model_source row_source send : t =
  fun context parent ->
   let owner = (Signal.sample row_source).Model.row_uuid in
@@ -78,10 +88,10 @@ let legacy_view ~render_block _model_source row_source send : t =
       ~accessibility_identifier:(identifier "block")
       [column ~gap:4 [
         button ~variant:`ghost ~text_alignment:`start ~min_height:44
-          ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "disclosure-down" else "disclosure-right")) (Signal.value expanded)))
-          ~text_signal:(own (Signal.map (fun query -> string_of_int (List.length query.rows) ^ " results") query))
           ~label:"Toggle query results" ~accessibility_identifier:(identifier "toggle")
-          ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) [];
+          ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded))))
+          [results_disclosure context (identifier "disclosure") (Signal.value expanded)
+            (own (Signal.map (fun query -> string_of_int (List.length query.rows) ^ " results") query))];
         if_ ~test:(Signal.value expanded)
           (column ~gap:4 ~accessibility_identifier:(identifier "rows") [
             if_ ~test:(own (Signal.map (fun query -> query.error <> None) query))
@@ -558,18 +568,20 @@ let collection ~render_block model_source raw_source send : t =
     match List.find_opt (fun view -> view.id = id) views with Some view -> [view]
     | None -> list_take 1 views) views (Signal.value active)) in
   let results_toggle () =
-    button ~variant:`ghost ~text_alignment:`start ~grow:1.0
-      ~accessibility_identifier:("query.toggle." ^ owner)
-      ~disabled_signal:(waiting model_source owner)
-      ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "disclosure-down" else "disclosure-right")) (Signal.value expanded)))
-      ~text_signal:(own (Signal.map2 (fun views expanded ->
-        if not expanded then "Results" else
-        string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results") views (Signal.value expanded)))
-      ~on_press:(fun _ ->
-        let next = not (Signal.sample (Signal.value expanded)) in
-        if is_query_expansion (Signal.sample raw_source) then
-          ignore (send (Model.SubmitResultView (owner, payload owner feature "" "setExpanded" ["expanded", `Bool next])))
-        else Signal.set expanded next) [] in
+    let label = own (Signal.map2 (fun views expanded ->
+      if not expanded then "Results" else
+      string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results")
+      views (Signal.value expanded)) in
+    View_base.with_label_signal label
+      (button ~variant:`ghost ~text_alignment:`start ~grow:1.0
+        ~accessibility_identifier:("query.toggle." ^ owner)
+        ~disabled_signal:(waiting model_source owner)
+        ~on_press:(fun _ ->
+          let next = not (Signal.sample (Signal.value expanded)) in
+          if is_query_expansion (Signal.sample raw_source) then
+            ignore (send (Model.SubmitResultView (owner, payload owner feature "" "setExpanded" ["expanded", `Bool next])))
+          else Signal.set expanded next)
+        [results_disclosure context ("query.disclosure." ^ owner) (Signal.value expanded) label]) in
   let mount view_source : t =
    fun context parent ->
     let own value = Signal.own_signal context.ui_scope value in
@@ -635,13 +647,14 @@ let collection ~render_block model_source raw_source send : t =
       row ~gap:0 ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [
         (if feature = "query-result" then results_toggle () else
           row ~grow:1.0 ~cross:`center [
-            menu ~text_signal:(own (Signal.map (fun view -> view.name) view_source))
+            View_base.with_string_prop TextAlignment "start"
+              (menu ~text_signal:(own (Signal.map (fun view -> view.name) view_source))
               ~label:"Views" ~accessibility_identifier:("view.select." ^ owner) [
               keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
                 let saved = Signal.sample source in
                 menu_item ~text_signal:(own (Signal.map (fun view -> view.name) source))
                   ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
-                  ~on_press:(fun _ -> Signal.set active saved.id) [])];
+                  ~on_press:(fun _ -> Signal.set active saved.id) [])]);
             box ~grow:1.0 []]);
         button ~icon:(`app "view-filter") ~label:"Filters" ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.filter." ^ view.id) ~on_press:(fun _ -> Signal.set settings "filter") [];

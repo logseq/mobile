@@ -1,3 +1,4 @@
+val outliner_node_icon : Model.logseq_model -> Model.outline_row -> string
 val node_icon : Model.logseq_model -> string -> string
 val node_icon_view : ?muted:bool -> size:int -> string Signal.signal -> Lui_elements.t
 val string_wire_value : string -> Lui_protocol.wire_value

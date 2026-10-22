@@ -92,6 +92,25 @@ class AndroidQueryResultViewsTest {
 
     private var selectedView = "list"
 
+    @Test fun allViewSelectorAlignsLeadingAndKeepsAdaptiveWidth() {
+        mount { result ->
+            result.put("selectedPage", JSONObject().put("uuid", "collection").put("title", "Collection"))
+            result.put("selectedPageIsTag", true)
+            result.put("resultViews", JSONObject().put("ownerUuid", "collection").put("featureType", "tagged")
+                .put("views", JSONArray().put(JSONObject().put("uuid", "all").put("name", "All")
+                    .put("type", "list").put("rows", JSONArray()))))
+        }
+        val selector = ui.onNodeWithTag("view.select.collection").assertIsDisplayed()
+        val label = ui.onNodeWithText("All", useUnmergedTree = true).assertIsDisplayed()
+        val controlBounds = selector.getUnclippedBoundsInRoot()
+        val textBounds = label.getUnclippedBoundsInRoot()
+        assertTrue("All must align with the native selector's leading edge",
+            kotlin.math.abs(controlBounds.left.value - textBounds.left.value) <= 1f)
+        assertTrue("The selector must retain an adaptive width", (controlBounds.right - controlBounds.left).value < 100f)
+        selector.performClick()
+        ui.onNodeWithTag("view.tab.all").assertIsDisplayed()
+    }
+
     private fun selectView(name: String) {
         ui.onNodeWithTag("view.type.$selectedView").performClick()
         ui.onNodeWithText("Saved views").performClick()

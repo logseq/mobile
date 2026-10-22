@@ -124,6 +124,7 @@ type outline_row =
   ; row_task_dates_json : string
   ; row_list_number : int option
   ; row_display_type : string option
+  ; row_is_embed : bool
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option

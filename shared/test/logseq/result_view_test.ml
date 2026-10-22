@@ -612,7 +612,7 @@ let native_toolbar_alignment_and_search_expansion () =
         ["query.toggle." ^ owner; "view.filter." ^ list_view; "view.sort." ^ list_view; "view.search.toggle." ^ owner; "view.type." ^ list_view];
       let assert_disclosure expected =
         check_eq ~msg:"collection results reuse the block disclosure icon"
-          (App_test.property_string host (find ("query.toggle." ^ owner)) Lui_protocol.InlineIconName) expected in
+          (App_test.property_string host (find ("query.disclosure." ^ owner)) Lui_protocol.IconName) expected in
       assert_disclosure "app:disclosure-down";
       check_eq ~msg:"search expands only when requested" (find ("view.search." ^ owner)) (-1);
       click ("view.search.toggle." ^ owner);

@@ -123,9 +123,12 @@ import Vision
             find("query.result.query-owner.2") != nil
         }
         func verifyDisclosure(expanded: Bool, screenshot: String) async throws {
-            guard let toggle = find("query.toggle.query-owner"),
-                  let icon = backend.model(id: toggle)?.property(.icon)?.stringValue else {
+            guard let iconID = find("query.disclosure.query-owner"), let model = backend.model(id: iconID) else {
                 throw failure("Results must expose a disclosure icon")
+            }
+            let icon = model.iconName
+            guard model.iconWidth == 10 && model.iconHeight == 10 else {
+                throw failure("Query disclosure must match the block's 10pt glyph")
             }
             let symbol = expanded ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill"
             guard backend.iconSource(for: icon) == .systemName(symbol), UIImage(systemName: symbol) != nil else {

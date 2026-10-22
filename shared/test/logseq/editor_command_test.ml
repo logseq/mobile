@@ -210,6 +210,30 @@ let command_output_has_native_presentation () = R.with_runtime (fun session runt
   check ~msg:"embedded nodes render their source content" (String_kit.includes ~sub:"Beta result" markup);
   check_eq ~msg:"rendered embed identity stays the wrapper UUID" (member "uuid" (block ())) (`String Q.alpha))
 
+let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ ->
+  ignore (run session "Number list"); save session;
+  ignore (run session "Node embed"); ignore (choose session Q.beta);
+  let response = snapshot session in
+  let embedded = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" response) in
+  check_eq ~msg:"only linked wrapper rows carry the embed marker" (member "isEmbed" embedded) (`Bool true);
+  let ordinary = List.find (fun block -> member "uuid" block = `String Q.beta) (items "blocks" response) in
+  check ~msg:"source blocks retain their ordinary bullet" (member "isEmbed" ordinary <> `Bool true);
+  List.iter (fun (backend, ios) -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+    let host = Lui_app.runtime app in
+    let row = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.block." ^ Q.alpha) in
+    check ~msg:"embedded wrapper is present in the outliner" (row <> -1);
+    let descriptor = if ios then (
+      let payload = App_test.native_row_payload app row in
+      check_eq ~msg:"embed arrows take precedence over numbered bullets" (member "listNumber" payload) `Null;
+      member "nodeIcon" payload)
+    else (
+      let icon = App_test.descendant_with_extension host app row "node-icon" in
+      match App_test.extension_property app icon "payload" with
+      | Some (Lui_protocol.StringValue raw) -> J.from_string raw
+      | _ -> `Null) in
+    check_eq ~msg:"both platforms render master's arrow-narrow-right" (member "id" descriptor) (`String "arrow-narrow-right")))
+    [App_test.ios_backend, true; App_test.kotlin_backend, false])
+
 let embedding_in_text_preserves_the_original_block () = R.with_runtime (fun session runtime _ ->
   ignore (start session "Keep this /");
   ignore (command session "Node embed");
@@ -549,6 +573,7 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;
   case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;

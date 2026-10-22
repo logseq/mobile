@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Vision
 @testable import LUIAppleBackend
 @testable import Logseq
 
@@ -55,6 +56,18 @@ import UIKit
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("objects-" + kind + ".png"))
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: image.cgImage!).perform([request])
+            guard let text = request.results?.first(where: { $0.topCandidates(1).first?.string == "All" }) else {
+                throw NSError(domain: "ObjectPages", code: 3, userInfo: [NSLocalizedDescriptionKey: "The native view selector must visibly render All"])
+            }
+            let x = text.boundingBox.minX * window.bounds.width
+            let leading = window.safeAreaInsets.left + 16
+            guard abs(x - leading) <= 3 else {
+                throw NSError(domain: "ObjectPages", code: 4, userInfo: [NSLocalizedDescriptionKey:
+                    "All must align with the selector's leading edge: text=\(x), heading=\(leading)"])
+            }
         }
         print("PASS: tag/property pages hide blocks and placeholders, ordinary pages retain them, and objects stay mounted")
     }

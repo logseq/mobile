@@ -44,7 +44,7 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "df9b11ce1f7316afa86ac60e61dbb6985786a1b7"),
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "ebfc32735f3647a825e9daa558dab28b70ae2503"),
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],

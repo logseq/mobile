@@ -242,6 +242,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
       { Model.row_uuid; row_title;
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         row_list_number = int_member "listNumber" fields;
+        row_is_embed = bool_member "isEmbed" fields;
         row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
         row_cached = false;
         query_json = (match List.assoc_opt "query" fields with

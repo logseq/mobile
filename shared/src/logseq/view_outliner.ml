@@ -12,6 +12,11 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
          && List.mem row.row_display_type [Some "code"; Some "math"]) current.outliner_rows in
        StringValue (if multiline then {|{"multiline":true,"emptyPairs":[{"text":"[[]]","deleteOffset":1}]}|}
          else Outliner_state.native_input_policy)) model_source block_id_source);
+   Lui_ui.extension_property_signal context node "focus-enabled"
+     (Signal.map (fun (current : Model.logseq_model) -> BoolValue
+       (match current.outliner_autocomplete with
+        | Some {autocomplete_kind = Model.PickerAutocomplete _; _} -> false
+        | _ -> true)) model_source);
    Lui_ui.extension_property_signal context node "selection-revision"
      (Signal.map (fun (current : Model.logseq_model) ->
        IntValue current.outliner_selection_revision) model_source);
@@ -171,15 +176,15 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
-            if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_list_number <> None) row_source)
+            if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_list_number <> None && not row.row_is_embed) row_source)
               (text ~value_signal:(Signal.map (fun (row : Model.outline_row) ->
                 Option.fold ~none:"" ~some:(fun n -> string_of_int n ^ ".") row.row_list_number) row_source)
                 ~font_size:"14" ~foreground:"muted-foreground"
                 ~accessibility_identifier:("outliner.number." ^ View_base.outliner_row_uuid current_row) []);
             View_base.node_icon_view ~size:18 (Signal.map2 (fun current (row : Model.outline_row) ->
-              View_base.node_icon current row.row_uuid) model_source row_source);
+              View_base.outliner_node_icon current row) model_source row_source);
             if_ ~test:(Signal.map2 (fun current (row : Model.outline_row) ->
-              View_base.node_icon current row.row_uuid = "" && row.row_list_number = None) model_source row_source)
+              View_base.outliner_node_icon current row = "" && row.row_list_number = None) model_source row_source)
             (icon ~name_signal:(Signal.map (fun (row : Model.outline_row) ->
                 `app (if row.is_collapsed && row.has_children then "outliner-bullet-closed" else "outliner-bullet")) row_source)
               ~width:24 ~height:24 ~foreground:"border"
@@ -438,8 +443,8 @@ let native_outliner_row model_source retained_source row_source send : t =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
-      "listNumber", (match row.row_list_number with Some n -> `Int n | None -> `Null);
-      "nodeIcon", (let icon = View_base.node_icon current row.row_uuid in
+      "listNumber", (match (if row.row_is_embed then None else row.row_list_number) with Some n -> `Int n | None -> `Null);
+      "nodeIcon", (let icon = View_base.outliner_node_icon current row in
         if icon = "" then `Null else Yojson.Basic.from_string icon);
       "markup", (try Yojson.Basic.from_string row.markup_json with _ -> `List []);
       "depth", `Int row.depth; "hasChildren", `Bool row.has_children;

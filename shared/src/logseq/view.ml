@@ -49,6 +49,7 @@ let outliner_editor_schema () =
       Lui_extension.property "caret-utf16-offset" IntScalar true None;
       Lui_extension.property "selection-revision" IntScalar true None;
       Lui_extension.property "input-policy" StringScalar true None;
+      Lui_extension.property "focus-enabled" BoolScalar true None;
     ]
     [
       Lui_extension.event "text-change"

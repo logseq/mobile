@@ -9,6 +9,7 @@ struct OutlinerInlineEditor: View {
     let desiredCaretUTF16Offset: Int?
     var inputPolicy: String = "{}"
     var selectionRevision: Int = 0
+    var focusEnabled: Bool = true
     let onTextChange: (String, Int) -> Void
     var onPaste: ((String, Int) -> Void)? = nil
     var onPasteContent: ((String) -> Void)? = nil
@@ -29,6 +30,7 @@ struct OutlinerInlineEditor: View {
             desiredCaretUTF16Offset: desiredCaretUTF16Offset,
             inputPolicy: inputPolicy,
             selectionRevision: selectionRevision,
+            focusEnabled: focusEnabled,
             onTextChange: onTextChange,
             onPaste: onPaste,
             onPasteContent: onPasteContent,
@@ -142,6 +144,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let desiredCaretUTF16Offset: Int?
     var inputPolicy: String = "{}"
     var selectionRevision: Int = 0
+    var focusEnabled: Bool = true
     let onTextChange: (String, Int) -> Void
     var onPaste: ((String, Int) -> Void)? = nil
     var onPasteContent: ((String) -> Void)? = nil
@@ -178,7 +181,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             location: min(desiredCaretUTF16Offset ?? text.utf16.count, text.utf16.count),
             length: 0
         )
-        textView.requestFocusWhenAttached()
+        if focusEnabled { textView.requestFocusWhenAttached() }
         LGInteractionDiagnostics.editor(textView, blockID: blockID, event: "editor.make")
         return textView
     }
@@ -265,7 +268,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.activeBlockID = blockID
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
-        if InlineEditorFocusPolicy.shouldRequestFocus(
+        if !focusEnabled {
+            (textView as? FocusRetainingTextView)?.cancelPendingFocus()
+        } else if InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: textView.window != nil,
             isFirstResponder: textView.isFirstResponder
         ) {
@@ -469,6 +474,10 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
         if delegate?.textView?(self, shouldChangeTextIn: selectedRange, replacementText: "\n") ?? true {
             insertText("\n")
         }
+    }
+
+    func cancelPendingFocus() {
+        focusPending = false
     }
 
     func requestFocusWhenAttached() {

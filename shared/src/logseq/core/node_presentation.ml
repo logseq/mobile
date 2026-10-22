@@ -105,9 +105,10 @@ let decorate db =
     | _ -> parsed in
   fun uuid encoded -> match Ds.entid db "block/uuid" (Ds.Uuid uuid), encoded with
     | Some eid, `Assoc fields ->
-      let decorated = Read.ref_eids db eid "block/link" <> []
+      let embedded = Read.ref_eids db eid "block/link" <> [] in
+      let decorated = embedded
         || Read.value db eid "logseq.property/heading" <> None
         || Read.value db eid "logseq.property.code/lang" <> None in
       let fields = if decorated then ("markup", M.to_yojson (markup [] 16 eid)) :: List.remove_assoc "markup" fields else fields in
-      `Assoc (("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
+      `Assoc (("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded
