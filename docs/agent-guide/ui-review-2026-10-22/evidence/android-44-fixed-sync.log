@@ -1,0 +1,9 @@
+Running on logseq_release_qa_33
+ > Flow review-android-44-fixed-sync
+Launch app "com.logseq.app"... COMPLETED
+Tap on id: sync.failed... COMPLETED
+Assert that "Sync status" is visible... COMPLETED
+Assert that "Done" is visible... COMPLETED
+Assert that "Sync now" is visible... COMPLETED
+Take screenshot fixed-sync... COMPLETED
+Tap on "Done"... COMPLETED

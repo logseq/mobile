@@ -9,7 +9,7 @@ Goal: Keep repeated Enter block creation responsive near the beginning of a page
 - [x] Add focused regressions at the responsible boundary before implementing the fix, including ordering/data integrity and rapid repeated input.
 - [x] Apply the smallest root-cause fix. Do not conceal latency with delays or replace native controls.
 - [x] Repeat the identical fixture and measurement after changes; report median, p95, worst latency and any environment limits.
-- [ ] Restore the dedicated QA graph, run relevant regressions, commit separately and update the mobile review with evidence.
+- [x] Restore the dedicated QA graph, run relevant regressions, commit separately and update the mobile review with evidence.
 
 Only emulator-5556 and the dedicated UI Regression graph may receive fixture changes. Back up the graph using SQLite backup, restore it in finally, and reject physical device serials. No user action is required.
 
@@ -23,3 +23,5 @@ Only emulator-5556 and the dedicated UI Regression graph may receive fixture cha
 - A separate actual-app failure exposed background journal refresh truncating rows to the initial 32. Once insertions moved the editor past that limit, its row vanished and focus jumped to the header. Refresh now retains the active page topology while editing; launch hydration remains bounded. The regression first failed, then passed across 35 insertions and an authoritative content update. This is a shared data correctness fix; no Apple renderer, app source, layout or style was changed.
 - Full serialized core gate: 904 passed in 43.838s. Android JVM: 64 passed; LUI JVM: 29 passed. Installed keyboard/parity, native layout and real IME regressions are recorded in the report verification summary.
 - LUI changes are pushed to main through `e3ed35af33f6c0c1965cd719327ee4dd67c47d0f`; the application pin is updated. No Dune files changed; no swift test ran.
+
+Application code is committed and pushed as `eddb347`. The detailed report and curated evidence are published to the existing private mobile review; the source fixtures and raw artifacts stay ignored. The complete installed regression reruns pass without skips. Redmi and signed Release performance remain unverified by these emulator measurements.

@@ -1,0 +1,5 @@
+Running on logseq_release_qa_33
+ > Flow review-android-30-current-capture-hit
+Tap on id: button.outliner.editor.hideKeyboard... COMPLETED
+Tap on point (55%,92%)... COMPLETED
+Assert that id: image.preview.close is visible... COMPLETED

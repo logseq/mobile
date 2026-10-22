@@ -1,0 +1,6 @@
+Running on logseq_release_qa_33
+ > Flow review-android-29-current-longpress
+Assert that id: button.composer.expand is visible... COMPLETED
+Long press on "Performance row 001-01.*"... COMPLETED
+Wait for animation to end... COMPLETED
+Assert that id: field.outliner.block.e2f20000-0000-4000-8000-000000000065 is visible... COMPLETED

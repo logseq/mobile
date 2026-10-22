@@ -1,0 +1,8 @@
+Running on logseq_release_qa_33
+ > Flow review-android-40-fixed-selection
+Launch app "com.logseq.app"... COMPLETED
+Long press on "Performance row 001-01.*"... COMPLETED
+Assert that id: toolbar.outliner.selection is visible... COMPLETED
+Take screenshot fixed-selection... COMPLETED
+Tap on id: button.outliner.selection.unselect... COMPLETED
+Assert that id: button.composer.expand is visible... COMPLETED

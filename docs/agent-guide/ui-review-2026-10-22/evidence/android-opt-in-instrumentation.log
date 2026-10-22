@@ -1,0 +1,259 @@
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+com.logseq.app.AndroidComposerImeTest:
+INSTRUMENTATION_STATUS: test=openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen
+INSTRUMENTATION_STATUS_CODE: 1
+s_glBindAttribLocation: bind attrib 0 name position
+s_glBindAttribLocation: bind attrib 1 name color
+s_glBindAttribLocation: bind attrib 2 name localCoord
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=outsideMenuTapPreservesTheKeyboardAndDraft
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in outsideMenuTapPreservesTheKeyboardAndDraft(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=outsideMenuTapPreservesTheKeyboardAndDraft
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=attachmentMenuKeepsTheKeyboardAndBackClosesOnlyTheMenu
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in attachmentMenuKeepsTheKeyboardAndBackClosesOnlyTheMenu(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=attachmentMenuKeepsTheKeyboardAndBackClosesOnlyTheMenu
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=statusMenuKeepsTheRealKeyboardAndComposerPosition
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in statusMenuKeepsTheRealKeyboardAndComposerPosition(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=statusMenuKeepsTheRealKeyboardAndComposerPosition
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=statusSelectionPreservesTheInputCaret
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidComposerImeTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: stream=
+Error in statusSelectionPreservesTheInputCaret(com.logseq.app.AndroidComposerImeTest):
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+INSTRUMENTATION_STATUS: test=statusSelectionPreservesTheInputCaret
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidNativeGraphProgressTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=
+com.logseq.app.AndroidNativeGraphProgressTest:
+INSTRUMENTATION_STATUS: test=actualSnapshotImportDeliversNativePhasesAndRecordCount
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.logseq.app.AndroidNativeGraphProgressTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=8
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=actualSnapshotImportDeliversNativePhasesAndRecordCount
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 70.564
+There were 6 failures:
+1) outsideMenuTapPreservesTheKeyboardAndDraft(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+2) installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+3) attachmentMenuKeepsTheKeyboardAndBackClosesOnlyTheMenu(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+4) blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+5) statusMenuKeepsTheRealKeyboardAndComposerPosition(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+6) statusSelectionPreservesTheInputCaret(com.logseq.app.AndroidComposerImeTest)
+java.lang.IllegalStateException: Expected installed-app accessibility control did not appear
+	at com.logseq.app.AndroidComposerImeTest.waitFor(AndroidComposerImeTest.kt:57)
+	at com.logseq.app.AndroidComposerImeTest.waitFor$default(AndroidComposerImeTest.kt:51)
+	at com.logseq.app.AndroidComposerImeTest.control(AndroidComposerImeTest.kt:69)
+	at com.logseq.app.AndroidComposerImeTest.field(AndroidComposerImeTest.kt:70)
+	at com.logseq.app.AndroidComposerImeTest.prepareRealComposer(AndroidComposerImeTest.kt:118)
+
+FAILURES!!!
+Tests run: 8,  Failures: 6
+
+
+INSTRUMENTATION_CODE: -1

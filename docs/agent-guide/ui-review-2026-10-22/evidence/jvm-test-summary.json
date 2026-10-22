@@ -1,0 +1,264 @@
+[
+  {
+    "suite": "com.logseq.app.AndroidAppEntryParserTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "preservesDecodedDeepLinkFieldsForTheCore"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AndroidAudioTranscriberTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "emptyRecognitionUpdatesDoNotCreateTranscriptWhitespace",
+      "finalSegmentsReplaceTheirPrecedingPartialResult"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AndroidGraphLocalStorageTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "spaced directories migrate with assets and readable unicode names",
+      "named storage migrates legacy graphs and retains offline state"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AndroidGraphSnapshotDownloaderTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "gzipDownloadReportsDecodingAndRejectedDownloadCleansArtifacts",
+      "downloads the shared snapshot plan and preserves binary bytes"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AndroidPlatformServicesTest",
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "absolute asset paths remain unchanged",
+      "asset titles cannot escape the Assets directory",
+      "relative assets resolve against the app files directory",
+      "configured base URL is trimmed and preserved",
+      "shared Android paths resolve relative uploads against app storage",
+      "stored session inspection does not require token decryption",
+      "blank base URL falls back to the local backend"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AndroidRuntimeLogTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "encodes the LG runtime log payload and escapes messages",
+      "bounds filters and orders runtime records like iOS"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.AuthenticationActivityContractTest",
+    "tests": 5,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "oauth callback remains routed to the authentication activity",
+      "android app is distinguishable from the existing Logseq app",
+      "debug builds allow user configured LAN development backends",
+      "cleartext networking is limited to the local development backend",
+      "oauth callback returns to the existing authentication activity"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.CognitoOAuthTest",
+    "tests": 6,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "callback returns the authorization code after state validation",
+      "callback surfaces provider errors and missing codes",
+      "authorization URL uses PKCE and the configured callback",
+      "callback rejects mismatched state",
+      "callback rejects unrelated deep links",
+      "form encoding is stable and escapes reserved characters"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.LuiHexColorTest",
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "cssAlphaRemainsAtTheEndForBothLengths",
+      "opaqueRgbDoesNotRotateItsChannelsIntoAlpha",
+      "invalidColorsAreRejected"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.NativeEditorInputPolicyTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "executesOnlyDeclaredRulesUsingUtf16Offsets"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.OutlinerDropPlacementTest",
+    "tests": 5,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "droppingOnTheLeftCreatesASibling",
+      "shortBlocksAndZeroHeightUseSafeBoundaries",
+      "longBlocksKeepACompactInsertionZone",
+      "draggingRightNestsTheBlock",
+      "droppingNearTheTopInsertsBeforeEvenWhenIndented"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidAppEntryQueueTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "restartRestoresOrderedSharesAndAcknowledgesOnlySuccess",
+      "cancellationRetainsStableCaptureIdentifierAndAttachmentBytesOutsideCache"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidGraphAssetLoaderTest",
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "failedDownloadCanRetryAndCachesExactBytesWithGraphOwnership",
+      "graphSwitchRejectionDoesNotLeakTemporaryFiles",
+      "cachedImageDoesNotDownload"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidGraphEventsSyncTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "core retry command defers snapshot even without a local cursor"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidGraphLifecycleTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "resync downloads a fresh snapshot without resetting an active editor",
+      "deferred snapshot import cleans its download and preserves the core failure"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidPendingSyncPumpTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "native pump waits for the core retry command"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.AndroidPendingSyncTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "composerAttachmentPersistsThroughTheLocalCoreEffect",
+      "interruptedUploadRetriesTheSameFileAndIdentity"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.CoreBootstrapTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "cachedEncryptedGraphOpensOnlyWhenTheCoreHasUnlockedIt"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.CoreEffectExecutorTest",
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "automatic pending sync reaches the platform upload pump",
+      "native deletion confirmation uses the shared core event"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.LuiDispatchTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "viewportWidthCrossesTheNativeEventBoundary"
+    ]
+  },
+  {
+    "suite": "com.logseq.app.runtime.LuiPatchFilterTest",
+    "tests": 9,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "presentationRulesRemainSpecificToNodeKindAndValue",
+      "droppedNodeIdsCanBeReusedWithDifferentPresentationRules",
+      "rejectedBatchDoesNotCommitFilterBookkeeping",
+      "malformedInputLeavesTheNextValidGenerationUsable",
+      "extensionRegistrationTextAndDefaultRestorationPassThrough",
+      "emptyBatchStillAdvancesTheBackendGeneration",
+      "ignoredRemovalThenAllowedReplacementAndRemovalStayInOrder",
+      "iconButtonsKeepTheExistingCenteredGlyphBehavior",
+      "unsupportedHintsDoNotHideAllowedTextOrUnicode"
+    ]
+  },
+  {
+    "suite": "logseq.app.AndroidE2EECryptoTests",
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      "privateKeyDecryptionUsesPBKDF2HMACSHA256",
+      "secureRandomReturnsTheRequestedNumberOfBytes",
+      "rsaOAEPGraphKeyRoundTripAcceptsLogseqKeyEncodings",
+      "aesGCMRoundTripMatchesTheNativeBridgeContract"
+    ]
+  }
+]

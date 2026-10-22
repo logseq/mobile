@@ -1,0 +1,8 @@
+Running on logseq_release_qa_33
+ > Flow review-android-plain-selection-repro
+Press back... COMPLETED
+Scrolling DOWN until "UX review selection target", Above id: field.search is visible with speed 40, visibility percentage 70%, timeout 15000 ms, with centering disabled... COMPLETED
+Take screenshot 23-plain-row... COMPLETED
+Long press on "UX review selection target", Above id: field.search... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 24-plain-longpress... COMPLETED

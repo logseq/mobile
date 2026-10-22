@@ -1,0 +1,232 @@
+[
+  {
+    "file": "assets/android-01-journals.png",
+    "sha256": "2fd7d012d66df72c97c7de70e4f244ee23c11a27cd8f051fa70926d791849844",
+    "bytes": 182442
+  },
+  {
+    "file": "assets/android-03-attachment.png",
+    "sha256": "e2a279a74263a7714c81ac197341cdd6cf08c4e0d0770ea7d1088773c231a711",
+    "bytes": 206441
+  },
+  {
+    "file": "assets/android-05-dismiss.png",
+    "sha256": "8f1b91657ebdd47384575947d83c64e2afbaa1e65721f191f2d5edf04bd6348c",
+    "bytes": 182314
+  },
+  {
+    "file": "assets/android-06-sidebar.png",
+    "sha256": "0ab3f1de918ecf6b77d4c974a82c9e4783b41f6c4fabce033cbeaea839a49633",
+    "bytes": 97303
+  },
+  {
+    "file": "assets/android-07-settings.png",
+    "sha256": "832139bb9d4075e923f81085986ae8b119fd94419ddfec8613f5e45dee97bb02",
+    "bytes": 99128
+  },
+  {
+    "file": "assets/android-08-theme-menu.png",
+    "sha256": "394dabc5a8674f0b9a469d6ff895c00f4d3f2daf6aa53f57d0e5ec52faf2c1db",
+    "bytes": 103427
+  },
+  {
+    "file": "assets/android-09-graphs.png",
+    "sha256": "6ba1be1896b4e4fe4d25ce6728d34f0afa13d4de04bf927bfdf722bbf2970e32",
+    "bytes": 52993
+  },
+  {
+    "file": "assets/android-10-add-graph-expanded.png",
+    "sha256": "a57ce870c42668c7f355525e39d3b4c7c2f106e0a8b25340dee80fd4bd906c2c",
+    "bytes": 57936
+  },
+  {
+    "file": "assets/android-10-add-graph.png",
+    "sha256": "6471d6791cfce79bdfab6e5677578963700db5fb75877a69a917ac7b3901610a",
+    "bytes": 78627
+  },
+  {
+    "file": "assets/android-11-calendar.png",
+    "sha256": "fba86c63c6aaab9e8722b0d4e5d3b5d94b9fc50d633b88854643d056f56f7c15",
+    "bytes": 136420
+  },
+  {
+    "file": "assets/android-12-editor.png",
+    "sha256": "5a940efe31ba8b807d6d2193f0bfa12ed7ef79efdf829b089bae52401738d6b6",
+    "bytes": 228493
+  },
+  {
+    "file": "assets/android-13-editor-trailing.png",
+    "sha256": "fea1aa1d9092eba2922a4e483f9175ee1f56b460fbe7bdf3c42aca25eca34473",
+    "bytes": 208020
+  },
+  {
+    "file": "assets/android-16-search.png",
+    "sha256": "16c3be3de16148ced1342d7c0fc9f82a145cf84b1ec1bcc53f2575a436b6ec0f",
+    "bytes": 194762
+  },
+  {
+    "file": "assets/android-17-gallery.png",
+    "sha256": "3eb7db38f4ef73ffadb5ed26f1cd727b194431ffb2384a22590a9a02131ec5c6",
+    "bytes": 24334
+  },
+  {
+    "file": "assets/android-24-plain-longpress.png",
+    "sha256": "9abed732c612a72e6593bfa5446b70da5ca9ba6d665e63ccccb06d8c40d6a4aa",
+    "bytes": 121007
+  },
+  {
+    "file": "assets/android-25-recording.png",
+    "sha256": "a8993a34b49d56d5232e132a70d5cfe6d2c06b1ab8a477ce84bf1f0f1c9599bd",
+    "bytes": 131683
+  },
+  {
+    "file": "assets/android-30-current-capture-hit.png",
+    "sha256": "02369cb5a528902a64b7a8eef1e559ebfe3227ebbf4168740da05313fdf6633b",
+    "bytes": 25513
+  },
+  {
+    "file": "assets/android-32-card-question.png",
+    "sha256": "a498f68df12ca3367dc3ad7b7d8c9f0405cafcd24fad8169bdbe6ccebbd87d75",
+    "bytes": 46414
+  },
+  {
+    "file": "assets/android-33-card-cloze.png",
+    "sha256": "ff99d7432dd0f9c78d7e7b42a42173bca2ef2bf827b353921491edfa7abb064e",
+    "bytes": 47690
+  },
+  {
+    "file": "assets/android-34-card-answer.png",
+    "sha256": "3c2e71c663e2676858f9b31fcca51827aeaa3ea7edfdf7984bd7a7a4470a0306",
+    "bytes": 60182
+  },
+  {
+    "file": "assets/android-35-flashcard-complete.png",
+    "sha256": "bf22a91684d0d358a1962ed51d087f336084c73697bb03f7c4ef137c7e8d6fec",
+    "bytes": 52454
+  },
+  {
+    "file": "assets/android-fixed-capture.png",
+    "sha256": "618f23d2137415e27fc47dcb9c82cb91dc36b7b5eec1b6a49d3658d24c0d6174",
+    "bytes": 169814
+  },
+  {
+    "file": "assets/android-fixed-graph-initial.png",
+    "sha256": "c0abe34a74d34947e21bc0a15e5284c26d8e5381083265a9a7d567a09370d345",
+    "bytes": 92061
+  },
+  {
+    "file": "assets/android-fixed-graph-keyboard.png",
+    "sha256": "159caf7a917be829c7d756b455bb8acc201304b3bbf5a8a252dd49f6f3b46135",
+    "bytes": 130925
+  },
+  {
+    "file": "assets/android-fixed-selection.png",
+    "sha256": "d1e9ff175c25bb8453f712a83ad5fecfc9bc39422d6bc0f24c3b758f6f6a2e97",
+    "bytes": 159147
+  },
+  {
+    "file": "assets/android-fixed-settings-dark.png",
+    "sha256": "e835dcf4c2506be3dd3016b6326d0cc776cbd72646e71e2afe7b1daf60b529c3",
+    "bytes": 100707
+  },
+  {
+    "file": "assets/android-fixed-settings-light.png",
+    "sha256": "dea354b1b02cefe68a46e7c35dee16ba3a6d15c6bdb5c9b892d219adba60d974",
+    "bytes": 99577
+  },
+  {
+    "file": "assets/android-fixed-sync.png",
+    "sha256": "db0c8f8b8da8d0e22c56845832eb22c5df508ab8590960478a4db5e4921c7b0d",
+    "bytes": 152148
+  },
+  {
+    "file": "assets/ios-01-journals.png",
+    "sha256": "28d0d9312d4617e798a51d9a8243ced7cc9bbaea0f400cd4016c5af34acf91fb",
+    "bytes": 1756338
+  },
+  {
+    "file": "assets/ios-03-attachment.png",
+    "sha256": "56ee8dc907d191463992c1859ba31e5e2651ea83f536de95d7ad722e6b65977d",
+    "bytes": 1380063
+  },
+  {
+    "file": "assets/ios-05-dismiss.png",
+    "sha256": "cd8ad765c2118f786a847d777cac629f3a3875c96c62a4835e553a723afd808b",
+    "bytes": 1499361
+  },
+  {
+    "file": "assets/ios-06-sidebar.png",
+    "sha256": "6ddc20c07658c561c966fcfd484ea7d3ca3287ae2897b26b5684c7c12ddf5a7b",
+    "bytes": 355031
+  },
+  {
+    "file": "assets/ios-07-settings.png",
+    "sha256": "431f94e91fc3551d6d16e23fc24c5e5fdd31e5fe2a2733396ca418500ae059fd",
+    "bytes": 223267
+  },
+  {
+    "file": "assets/ios-08-theme-menu.png",
+    "sha256": "1d30a47f48b80a30ccf10cfdfbb85a7c74e73f71128494814b56e8c869e56760",
+    "bytes": 279250
+  },
+  {
+    "file": "assets/ios-09-graphs.png",
+    "sha256": "e39987ca490a2c2dae086d4470cb27fcbdc358aec449de3a43a38f6ded0cc039",
+    "bytes": 128359
+  },
+  {
+    "file": "assets/ios-10-add-graph.png",
+    "sha256": "b5ecdb90603a67e9d23831bc623a55ead11932e5ae87d00e44b95b2de871b087",
+    "bytes": 147187
+  },
+  {
+    "file": "assets/ios-11-calendar.png",
+    "sha256": "3dc97988b0ac7b414f02e137b8a30ef9d2c0f55c6a3ebe50fd9fc1cc7501e555",
+    "bytes": 659812
+  },
+  {
+    "file": "assets/ios-12-editor.png",
+    "sha256": "94c08fe532d9d45f5815d7f6bca06462cad30b681a84172e754a15f77448e276",
+    "bytes": 395035
+  },
+  {
+    "file": "assets/ios-13-editor-trailing.png",
+    "sha256": "4f9f661b4a3075c7e8a6e32d3c6c8a7bd8956c7f6b6fcfa3038ef9b0cb7aa8a8",
+    "bytes": 394696
+  },
+  {
+    "file": "assets/ios-14-selection.png",
+    "sha256": "646f7e0f887eeb7f1a1768d43dc3a2ca7c488db088a953326b2198d429c9d35a",
+    "bytes": 1506412
+  },
+  {
+    "file": "assets/ios-16-search.png",
+    "sha256": "58b940d55260d4ff95be34ac14cc1d660d085c905ce98ab11f407cc0e7b202c4",
+    "bytes": 287996
+  },
+  {
+    "file": "assets/ios-17-gallery.png",
+    "sha256": "2408aeac817ad27cc58d71506e82e4ad0125a2efb33ef86c5f2540e15dd70f62",
+    "bytes": 2027370
+  },
+  {
+    "file": "assets/ios-25-recording.png",
+    "sha256": "9775fad0dab320f9392ddb469624f75fd7b234daa0b14a25de54adace8cb8148",
+    "bytes": 130102
+  },
+  {
+    "file": "assets/ios-27-flashcards.png",
+    "sha256": "5d9843517a2feb144acc9d3310b095edc1330860a7aa1ac72630ba4469dbb4cc",
+    "bytes": 127946
+  },
+  {
+    "file": "assets/ios-28-flashcard-reveal.png",
+    "sha256": "4fa661c85b35d951db554c798a9165955ee8158d6380210615a9ff3c5be8938a",
+    "bytes": 135097
+  },
+  {
+    "file": "assets/ios-31-flashcard-answer.png",
+    "sha256": "1c29986c320142f71e14d1244f203b9cbececa7baa046b5cfa81dce68ba6d3f6",
+    "bytes": 160570
+  }
+]

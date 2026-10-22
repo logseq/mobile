@@ -1,0 +1,5 @@
+Running on Logseq Demo - iOS 26.0 - B5C472E1-25F4-4541-A20F-174DD2B2F74A
+ > Flow review-ios-10-add-graph
+Tap on id: button.graph-add... COMPLETED
+Assert that id: button.graph-add.cancel is visible... COMPLETED
+Wait for animation to end... COMPLETED

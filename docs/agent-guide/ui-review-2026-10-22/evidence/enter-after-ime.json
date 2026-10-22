@@ -1,0 +1,31 @@
+{
+  "fixture_blocks": 500,
+  "warmup_enters": 3,
+  "input_mode": "ime",
+  "burst_enters": 20,
+  "native_editor_instances": 1,
+  "samples_ms": [
+    68,
+    57,
+    65,
+    62,
+    105,
+    101,
+    43,
+    88,
+    59,
+    71,
+    68,
+    65
+  ],
+  "median_ms": 66.5,
+  "p95_ms": 105,
+  "measurement": "Injected Enter down to focused editor in the live Compose semantics tree; no accessibility IPC polling",
+  "label": "after",
+  "build_revision": "94fcee3c",
+  "fixture_sha256": "089d1ce138ae9b77332a464153f3f332c7e2f6061c04201efbe1673e60f77942",
+  "persisted_splits": 35,
+  "apk_sha256": "5b87ae204553b94cfcd4c6fe5e7c3183ec63fd9b4e10b8eb69ddbea91164333f",
+  "source_commit": "eddb347",
+  "apk_build_revision_note": "Measured APK built from this source before its commit, so BuildConfig records parent 94fcee3c."
+}

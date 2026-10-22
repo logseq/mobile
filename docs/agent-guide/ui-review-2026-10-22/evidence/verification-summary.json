@@ -1,0 +1,57 @@
+{
+  "source_commit": "eddb347",
+  "ui_fix_commit": "94fcee3",
+  "lui_commit": "e3ed35af33f6c0c1965cd719327ee4dd67c47d0f",
+  "environment": "API 33 arm64 debug emulator-5556; dedicated UI Regression graph only",
+  "core": {
+    "tests": 904,
+    "passed": 904,
+    "seconds": 43.838,
+    "log": "core-final.log"
+  },
+  "android_jvm": {
+    "passed": 64,
+    "failed": 0,
+    "skipped": 0
+  },
+  "lui_jvm": {
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0
+  },
+  "installed_ui": {
+    "passed": 61,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 125.687,
+    "verifyComposerIme": true,
+    "log": "ui-final.log"
+  },
+  "installed_broad": {
+    "passed": 61,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 66.193,
+    "log": "ui-broad-final.log"
+  },
+  "enter_performance": {
+    "hardware_rounds": [
+      "enter-after-key-run1.json",
+      "enter-after-key.json"
+    ],
+    "native_ime": "enter-after-ime.json",
+    "each_round_persisted": 35,
+    "each_round_native_editors": 1
+  },
+  "teardown_race": {
+    "log": "ui-final-teardown-race.log",
+    "details": "First combined run passed test bodies but two cleanup actions raced native popup dismissal. Cleanup now waits for dismissal; combined rerun passed all 61."
+  },
+  "screenshots": "screenshot-manifest.json",
+  "ios_changes": "No Apple app or renderer sources, layout or styles changed. Shared core retains the active journal page during editing on both platforms.",
+  "limits": [
+    "Debug emulator timing is not Redmi or signed Release performance.",
+    "No new cloud E2EE/account end-to-end certification.",
+    "12 measured latency samples per round do not characterize long-run tail latency."
+  ]
+}

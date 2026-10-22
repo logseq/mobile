@@ -1,0 +1,7 @@
+Running on logseq_release_qa_33
+ > Flow review-android-26-capture-blank-hit
+Tap on "Cancel"... COMPLETED
+Tap on (Optional) id: surface.composer.dismiss at 50%,15%... COMPLETED
+Assert that id: button.composer.expand is visible... COMPLETED
+Tap on point (55%,92%)... COMPLETED
+Wait for animation to end... COMPLETED

@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logseq Android / iOS UI UX Review · 2026-10-22</title>
+<style>*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:80px}body{margin:0;background:#f6f7f4;color:#172823;font:16px/1.85 system-ui,-apple-system,'PingFang SC',sans-serif}header,section,footer{max-width:1120px;margin:auto;padding:64px 36px}header{padding-top:88px}h1{font-size:clamp(38px,6vw,68px);line-height:1.15;letter-spacing:-2px;margin:20px 0 28px}h2{font-size:32px;line-height:1.4;margin:10px 0 24px}h3{font-size:23px;line-height:1.5;margin:14px 0}.eyebrow{font:700 12px/1.5 system-ui;letter-spacing:2px;color:#3b6b5a}.lede{font-size:21px;max-width:830px;color:#38564a}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:36px 0}.metrics div{background:#e7eee6;padding:20px;border-radius:16px}.metrics b{display:block;font-size:34px;line-height:1.4}.metrics span{font-size:13px}.note{font-size:14px;color:#596b60}nav{position:sticky;top:0;z-index:2;display:flex;justify-content:center;gap:26px;padding:16px;background:#f6f7f4f5;border-block:1px solid #dce3da;backdrop-filter:blur(10px);overflow-x:auto;white-space:nowrap}a{color:#216649;text-decoration-thickness:1px;text-underline-offset:4px}nav a{font-size:14px;text-decoration:none}section{border-bottom:1px solid #dce3da}.callout{padding:24px 28px;background:#e6eee5;border-left:4px solid #387454;border-radius:0 16px 16px 0;margin:28px 0}.callout p{margin-bottom:0}.table-wrap{overflow:auto;border:1px solid #dce3da;border-radius:14px;margin:24px 0}table{width:100%;border-collapse:collapse;background:#fff;font-size:14px;line-height:1.75;min-width:650px}th,td{text-align:left;vertical-align:top;padding:16px 18px;border-bottom:1px solid #e5e9e3}th{background:#e9eee7;font-size:13px;white-space:nowrap}tr:last-child td{border-bottom:0}td:first-child{width:22%;font-weight:600}code{font:12px/1.6 ui-monospace,monospace;background:#e9eee8;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}.issue{background:#fff;border:1px solid #dce3da;border-radius:20px;padding:30px;margin:28px 0}.issue-head{display:flex;align-items:center;gap:12px;font-size:13px;color:#65736a}.badge{border-radius:6px;padding:2px 8px;font-weight:700}.p1{background:#f8e2db;color:#973e24}.p2{background:#fff0ca;color:#79580c}.pair{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}figure{margin:24px 0;text-align:center;min-width:0}.zoom{padding:0;border:0;background:transparent;display:block;margin:auto;cursor:zoom-in;max-width:100%}figure img{display:block;width:100%;max-width:310px;height:auto;border-radius:18px;border:1px solid #d6ded5;box-shadow:0 8px 24px #13251a0b}figcaption{font-size:13px;color:#40594b;margin:14px auto 0;max-width:340px;line-height:1.6}figcaption small{display:block;font-size:10px;color:#78847b;overflow-wrap:anywhere}.evidence{font-size:11px;line-height:2;overflow-wrap:anywhere}.walkthrough{margin:40px 0 64px}.walkthrough>p{font-size:15px;color:#4c6356}.filters{display:flex;gap:10px;flex-wrap:wrap}.filters button{border:1px solid #b8c9b9;background:#fff;padding:8px 18px;border-radius:30px;font:inherit;font-size:13px;cursor:pointer}.filters button[aria-pressed=true]{background:#244f3b;color:#fff;border-color:#244f3b}#filter-count{font-size:12px;color:#708073}details{padding:20px;background:#eaf0e8;border-radius:12px;font-size:14px}summary{cursor:pointer;font-weight:600}footer{font-size:13px;color:#586c5d;padding-bottom:80px}dialog{border:0;border-radius:16px;padding:20px;max-width:95vw;max-height:95vh;background:#f6f7f4;color:#172823}dialog::backdrop{background:#10251bd9}dialog img{display:block;max-height:78vh;max-width:85vw;margin:10px auto}dialog p{font-size:12px;text-align:center}#close-lightbox{border:0;background:#dce8da;border-radius:20px;padding:10px 18px;cursor:pointer;display:block;margin-left:auto}button:focus-visible,a:focus-visible{outline:3px solid #b28129;outline-offset:4px}[hidden]{display:none!important}@media(max-width:700px){header,section,footer{padding:40px 18px}h2{font-size:26px}.metrics{grid-template-columns:1fr 1fr}.metrics b{font-size:28px}nav{justify-content:flex-start;gap:22px;padding-left:18px}.issue{padding:18px}.pair{gap:12px}figure img{border-radius:10px}figcaption{font-size:11px}.callout{padding:18px}h1{letter-spacing:-1px}}@media print{nav,.filters,#filter-count,dialog{display:none}body{background:white}section,header{padding:30px 0}figure img{max-width:240px;box-shadow:none}.issue{break-inside:avoid}.table-wrap{overflow:visible}table{min-width:0}a{color:inherit}.issue[hidden]{display:block!important}}</style>
+</head>
+<body>
+<header>
+<p class="eyebrow">LOGSEQ MOBILE · UI / UX REVIEW · 2026.10.22</p>
+<h1>Android 与 iOS<br>功能与交互审查</h1>
+<p class="lede">四项追加功能已交付。UX-01 / 02 / 03 已修复并复测；Settings 与 Sync status 已调整为 Android 原生风格。新增 500-block 连续 Enter 专项实测。</p>
+<div class="metrics">
+<div>
+<b>4 / 4</b>
+<span>追加功能 · 分别提交</span>
+</div>
+<div>
+<b>3 / 3</b>
+<span>Android 审查问题已修复</span>
+</div>
+<div>
+<b>2</b>
+<span>平台 · 新截图对照</span>
+</div>
+<div>
+<b>35 / 35</b>
+<span>快速 Enter 拆分落盘验收</span>
+</div>
+</div>
+<p class="note">本报告记录实际模拟器操作、安装测试与代码核查。没有把自动化等待时间当作 App 性能，也没有把组件测试通过等同于整个产品通过。</p>
+</header>
+<nav aria-label="报告目录">
+<a href="#verdict">结论</a>
+<a href="#scope">环境</a>
+<a href="#fixes">修复验收</a>
+<a href="#issues">问题</a>
+<a href="#coverage">覆盖范围</a>
+<a href="#screens">双端截图</a>
+<a href="#delivered">交付验证</a>
+<a href="#release">发布差距</a>
+</nav>
+<section id="verdict">
+<p class="eyebrow">01 · DECISION</p>
+<h2>功能已补齐，正式 release 仍有明确差距</h2>
+<p>现在不应再把图库、外部多类型分享、快捷录音、YouTube 时间戳、Shift+Enter、后台同步，以及本轮的远程图片、分享持久化、编辑器设置、graph 导入进度列作“Android 尚未实现”。它们已有实现与自动化证据。</p>
+<p>原始只读审查发现的正文长按、Capture 命中区域和 Graph 表单问题，现已修复并补做整页操作验证。下方保留修改前截图，另列修复后证据，避免用组件通过代替实际入口验证。</p>
+<div class="callout">
+<strong>UX-01 / UX-02 / UX-03：已修复。UX-04：撤回真机缺陷判定。</strong>
+<p>用户确认 iOS 真机点击 + / status 会保持键盘。原模拟器现象不能代表真机；本次不修改 iOS。Android 也继续保持键盘、草稿与光标。</p>
+</div>
+</section>
+<section id="scope">
+<p class="eyebrow">02 · EVIDENCE BOUNDARY</p>
+<h2>测试环境与可比性</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>Android</th>
+<th>iOS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行环境</td>
+<td>Android API 33 arm64 模拟器 · emulator-5556</td>
+<td>Logseq Demo · iOS 26.0 Simulator</td>
+</tr>
+<tr>
+<td>截图尺寸</td>
+<td>1080 × 2400 · density 2.625，约 411 dp 宽</td>
+<td>1206 × 2622 · 402 pt 宽</td>
+</tr>
+<tr>
+<td>测试数据</td>
+<td>专用 UI Regression graph；富文本、代码、公式、五张图片与测试分享文件</td>
+<td>Field Notes 演示 graph；笔记、页面链接、图片与 cloze 卡片</td>
+</tr>
+<tr>
+<td>版本</td>
+<td>原审查 ce30171 / aceda1d；UI 修复 94fcee3；专项 APK 的精确 SHA 见性能证据</td>
+<td>重新构建并安装 ce301717；2.0.2。未沿用旧安装包</td>
+</tr>
+<tr>
+<td>数据保护</td>
+<td>仅操作专用模拟器 graph；没有清除或写入红米用户 graph</td>
+<td>保留演示数据；任务状态循环后恢复，录音取消，未提交测试 capture</td>
+</tr>
+<tr>
+<td>验证方法</td>
+<td>Maestro 实际点击 / 输入 / 长按 / 滚动；Android instrumentation；JVM；真实 native core</td>
+<td>Maestro 实际点击 / 输入 / 长按；原生 simctl 截图；只读实现核查</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>双端 graph 内容不同，因此文本换行、照片尺寸和卡片数量不能作为像素对齐证据。Composer 菜单使用相同操作步骤；长按问题另用新建普通文本块排除了富文本特例。主截图采集在功能完成后；最终 Android 重新构建、安装后又补跑功能验证与关键问题复核。</p>
+<p>这不是红米性能报告，也不是云服务全链路认证。未执行的场景在覆盖表中明确标注。原始审查阶段没有修改应用源码；本次按用户后续指令执行修复并追加验证。仅使用专用模拟器 graph，原始构建与测试目录保持 ignore。</p>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/build-artifacts.json">build-artifacts.json</a>
+</p>
+</section>
+<section id="fixes">
+<p class="eyebrow">03 · FIX VERIFICATION</p>
+<h2>修复后：真实 App 入口与原生页面</h2>
+<p>UI 修复已提交并推送：94fcee3；连续 Enter 与后续回归：eddb347。LUI 的原生布局修复与编辑器身份保留分别提交。本次 Apple 源码与布局样式没有改动；共享 core 的编辑页保留修复适用于双端。以下截图来自实际安装的 Android App。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：已修复 · 富文本正文长按进入块选择工具栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-selection.png" alt="已修复 · 富文本正文长按进入块选择工具栏">
+</button>
+<figcaption>已修复 · 富文本正文长按进入块选择工具栏<small>android-fixed-selection.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：已修复 · 不透明 surface 和完整 Capture 按钮；区域内空白打开输入">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-capture.png" alt="已修复 · 不透明 surface 和完整 Capture 按钮；区域内空白打开输入">
+</button>
+<figcaption>已修复 · 不透明 surface 和完整 Capture 按钮；区域内空白打开输入<small>android-fixed-capture.png</small>
+</figcaption>
+</figure>
+</div>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：已修复 · 新建 Graph 首次打开就有标题、Cancel 与 Add">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-graph-initial.png" alt="已修复 · 新建 Graph 首次打开就有标题、Cancel 与 Add">
+</button>
+<figcaption>已修复 · 新建 Graph 首次打开就有标题、Cancel 与 Add<small>android-fixed-graph-initial.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：已修复 · 打开键盘、输入名称后主要动作仍可见；测试取消提交">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-graph-keyboard.png" alt="已修复 · 打开键盘、输入名称后主要动作仍可见；测试取消提交">
+</button>
+<figcaption>已修复 · 打开键盘、输入名称后主要动作仍可见；测试取消提交<small>android-fixed-graph-keyboard.png</small>
+</figcaption>
+</figure>
+</div>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android Settings · 原生偏好项、尾部开关、统一主题色与右侧动作">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-settings-light.png" alt="Android Settings · 原生偏好项、尾部开关、统一主题色与右侧动作">
+</button>
+<figcaption>Android Settings · 原生偏好项、尾部开关、统一主题色与右侧动作<small>android-fixed-settings-light.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：Android Sync status · 原生标题、滚动内容、固定的右侧动作">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-sync.png" alt="Android Sync status · 原生标题、滚动内容、固定的右侧动作">
+</button>
+<figcaption>Android Sync status · 原生标题、滚动内容、固定的右侧动作<small>android-fixed-sync.png</small>
+</figcaption>
+</figure>
+</div>
+<figure>
+<button class="zoom" aria-label="放大：Android Settings · 深色模式使用 Logseq 深色主题；截图后恢复 Light">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-fixed-settings-dark.png" alt="Android Settings · 深色模式使用 Logseq 深色主题；截图后恢复 Light">
+</button>
+<figcaption>Android Settings · 深色模式使用 Logseq 深色主题；截图后恢复 Light<small>android-fixed-settings-dark.png</small>
+</figcaption>
+</figure>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-40-fixed-selection.log">android-40-fixed-selection.log</a> · <a href="ui-review-2026-10-22/evidence/android-41-fixed-capture.log">android-41-fixed-capture.log</a> · <a href="ui-review-2026-10-22/evidence/android-43-fixed-graph.log">android-43-fixed-graph.log</a> · <a href="ui-review-2026-10-22/evidence/android-44-fixed-sync.log">android-44-fixed-sync.log</a> · <a href="ui-review-2026-10-22/evidence/android-45-fixed-settings.log">android-45-fixed-settings.log</a> · <a href="ui-review-2026-10-22/evidence/android-46-settings-dark.log">android-46-settings-dark.log</a>
+</p>
+<h3>500 个 block：连续 Enter 实测</h3>
+<p>比较的是同一份专用 SQLite fixture、同一 API 33 arm64 模拟器、同一真实安装 App 的输入路径。每轮 15 次逐次输入（前 3 次预热，后 12 次计时），再以 20ms 间隔发送 20 次快速输入；核对 35 条连续 split intent 的落盘顺序、原文、光标和新 UUID。测量按键或原生输入法 action 到编辑框可用，直接读取当前 Compose 语义树，不含无障碍 IPC 遍历。fixture 数据库有 500 个既有 block；日记启动只加载前 32 行，Return 使用整页上下文。此次也修复了后台刷新把编辑页截回 32 行、丢失编辑器的问题。这里不声称已经测出完整像素呈现耗时或红米真机性能。</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>500-block 场景</th>
+<th>修改前 · 硬件 Enter</th>
+<th>修复后 · 硬件 Enter</th>
+<th>修复后 · 原生输入法 action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中位延迟</td>
+<td>117.5 ms</td>
+<td>87.0 ms</td>
+<td>66.5 ms</td>
+</tr>
+<tr>
+<td>p95 / 本轮最慢（12 个样本）</td>
+<td>160.0 ms</td>
+<td>126.0 ms</td>
+<td>105.0 ms</td>
+</tr>
+<tr>
+<td>15 次逐次输入的原生编辑器实例</td>
+<td>16</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>35 次输入的实际拆分落盘</td>
+<td>24 / 35</td>
+<td>35 / 35</td>
+<td>35 / 35</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>
+<strong>与 Swift 实现的区别：</strong>iOS 的虚拟列表专门保留 active editor 身份，UITextView 交接时保留 first responder，并保留等待期间的输入；Android 原先按行号标识编辑行，每次 Enter 会重建输入框，且从 text-change 猜测结构按键。本次对齐编辑器身份和交接原则，使用 Android 原生键盘 action / 硬件按键入口，并让编辑行保持可见。另一个独立问题来自共享日记的启动窗口：后台刷新曾截回 32 行，连续插入后编辑器会消失；现在刷新保留当前编辑页的完整结构，启动仍按需加载。共享 core 对正常相邻 split 复用完整页面读取结果，只重新读取受影响的内容与引用标签；非相邻或数据版本不匹配时仍走完整读取。嵌套顺序和引用/状态元数据与原始读取结果逐项对照。</p>
+<p>输入法动作使用原生 <a href="https://developer.android.com/develop/ui/compose/text/user-input">Compose 键盘交互 API</a>；普通多行粘贴和 Shift+Enter 仍按文本处理。没有增加第二套编辑器或修改 iOS 布局。</p>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/enter-before.json">enter-before.json</a> · <a href="ui-review-2026-10-22/evidence/enter-after-key.json">enter-after-key.json</a> · <a href="ui-review-2026-10-22/evidence/enter-after-key-run1.json">enter-after-key-run1.json</a> · <a href="ui-review-2026-10-22/evidence/enter-after-ime.json">enter-after-ime.json</a> · <a href="ui-review-2026-10-22/evidence/enter-benchmark.py">enter-benchmark.py</a> · <a href="ui-review-2026-10-22/evidence/verification-summary.json">verification-summary.json</a>
+</p>
+<p>最终空闲环境中，硬件 Enter 连续两轮通过（中位数 91 / 87ms），输入法 action 一轮通过（66.5ms）；三轮各 35 次拆分均按序持久化。曾有一轮与 core 测试并行运行出现 180ms 样本，故最终计时与构建/其他测试串行执行；不据模拟器数字外推真机。</p>
+<p class="note">12 个计时样本不足以代表各种设备与输入法的长期分布；p95 采用 nearest-rank，因此等于本轮最大值。红米体验仍需用对应真机版本验证，当前完成的是自动化模拟器专项。</p>
+<h3>本次最终回归</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>测试</th>
+<th>结果</th>
+<th>证据边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>共享 core</td>
+<td>904 / 904 · 43.838s</td>
+<td>含编辑页保留、相邻 split 缓存与有效 fixture 顺序</td>
+</tr>
+<tr>
+<td>Android / LUI JVM</td>
+<td>64 + 29 通过 · 0 skip</td>
+<td>真实 I/O 与原生 renderer 单元边界</td>
+</tr>
+<tr>
+<td>安装 UI / 原生 IME</td>
+<td>61 / 61 · 125.687s · 0 skip</td>
+<td>verifyComposerIme=true；含菜单、光标、编辑器交接与 10k 列表</td>
+</tr>
+<tr>
+<td>安装扩展回归</td>
+<td>61 / 61 · 66.193s · 0 skip</td>
+<td>Material 菜单/布局、图库、分享、录音、工具栏和进度</td>
+</tr>
+<tr>
+<td>500-block 连续 Enter</td>
+<td>三轮各 35 / 35 落盘</td>
+<td>硬件两轮、原生 IME 一轮；每轮一个原生编辑器</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/core-final.log">core-final.log</a> · <a href="ui-review-2026-10-22/evidence/ui-final.log">ui-final.log</a> · <a href="ui-review-2026-10-22/evidence/ui-broad-final.log">ui-broad-final.log</a> · <a href="ui-review-2026-10-22/evidence/jvm-final.log">jvm-final.log</a> · <a href="ui-review-2026-10-22/evidence/journal-window-red.log">journal-window-red.log</a> · <a href="ui-review-2026-10-22/evidence/ui-final-teardown-race.log">ui-final-teardown-race.log</a>
+</p>
+</section>
+<section id="issues">
+<p class="eyebrow">03 · REPRODUCED FINDINGS</p>
+<h2>原始发现与当前修复状态</h2>
+<p>P1：主操作路径不可达或会打开错误内容。P2：可恢复，但打断输入或使动作难以发现。优先级来自本次产品影响判断，不是 Material 官方评级。</p>
+<div class="filters" aria-label="问题筛选">
+<button data-filter="all" aria-pressed="true">全部</button>
+<button data-filter="P1" aria-pressed="false">P1</button>
+<button data-filter="P2" aria-pressed="false">P2</button>
+<button data-filter="Android" aria-pressed="false">Android</button>
+<button data-filter="iOS" aria-pressed="false">iOS</button>
+</div>
+<p id="filter-count" aria-live="polite">显示 4 个历史发现</p>
+<article class="issue" data-priority="P1" data-platform="Android" id="UX-01">
+<div class="issue-head">
+<span class="badge p1">P1</span>
+<span>UX-01 · Android</span>
+</div>
+<h3>已修复 · 正文长按进入块选择</h3>
+<p class="callout">
+<strong>当前：已修复并通过组件及真实 App 入口复测。</strong>以下为修改前的复现与截图；修复后证据见追加验收。</p>
+<p>
+<strong>修改前复现：</strong>打开 journal，隐藏键盘，长按一行正文。先对含粗体、inline code 的现有块操作，再新建普通文本“UX review selection target”，滚动到正文可见后长按。</p>
+<p>
+<strong>实际：</strong>两类正文都打开原生编辑器和键盘；没有出现 <code>toolbar.outliner.selection</code>。点击 bullet 则会 zoom，不能替代块选择入口。iOS 对正文相同手势会高亮块并显示 Copy / Outdent / Indent / Delete / Copy reference / Copy URL / Unselect。</p>
+<p>
+<strong>影响：</strong>用户无法按预期进入批量块操作。独立工具栏测试证明按钮可渲染、可发事件，不能覆盖页面中的手势入口。子文本点击和父行长按的事件竞争值得后续排查，该描述保留原始只读审查边界；后续已确认子文本 click 抢占父级长按，并修复与复测。</p>
+<p>
+<strong>验收：</strong>普通文本、富文本、任务块的正文长按均进入块选择；短按仍编辑，bullet 仍 zoom；工具栏出现后至少验证复制、取消选择和缩进的整条路径。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 长按普通正文后出现编辑器">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-24-plain-longpress.png" alt="Android · 长按普通正文后出现编辑器">
+</button>
+<figcaption>Android · 长按普通正文后出现编辑器<small>android-24-plain-longpress.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 长按正文后出现块选择工具栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-14-selection.png" alt="iOS · 长按正文后出现块选择工具栏">
+</button>
+<figcaption>iOS · 长按正文后出现块选择工具栏<small>ios-14-selection.png</small>
+</figcaption>
+</figure>
+</div>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-plain-selection-repro.log">android-plain-selection-repro.log</a> · <a href="ui-review-2026-10-22/evidence/android-plain-selection-repro.csv">android-plain-selection-repro.csv</a> · <a href="ui-review-2026-10-22/evidence/android-29-current-longpress.log">android-29-current-longpress.log</a> · <a href="ui-review-2026-10-22/evidence/ios-editor-keyboard.log">ios-editor-keyboard.log</a> · <a href="ui-review-2026-10-22/evidence/ios-editor-keyboard.csv">ios-editor-keyboard.csv</a>
+</p>
+</article>
+<article class="issue" data-priority="P2" data-platform="Android" id="UX-02">
+<div class="issue-head">
+<span class="badge p2">P2</span>
+<span>UX-02 · Android</span>
+</div>
+<h3>已修复 · 新建 Graph 首次打开即可操作</h3>
+<p class="callout">
+<strong>当前：已修复并通过组件及真实 App 入口复测。</strong>以下为修改前的复现与截图；修复后证据见追加验收。</p>
+<p>
+<strong>修改前复现：</strong>侧栏 → Graphs → Add graph，保持默认半展开状态，不先拖拽面板。</p>
+<p>
+<strong>实际：</strong>可见 Graph name、加密开关与说明，看不到 Cancel / Add。输入框贴左，内容缺少清晰标题。将 drag handle 向上拖至完全展开后，动作才在底部出现；输入名称后 Add 可用，本轮取消，没有创建服务端 graph。</p>
+<p>
+<strong>对照：</strong>iOS 原生表单一开始就显示标题与顶部 Cancel / Add。Android 不必复制 iOS 布局，但主要动作需要在正常打开状态可发现。</p>
+<p>
+<strong>验收：</strong>初始状态与键盘打开时都能找到提交、取消；窄屏与大字不会把动作留在不可见区域；输入和开关遵循统一页面边距。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 初始半屏，动作不可见">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-10-add-graph.png" alt="Android · 初始半屏，动作不可见">
+</button>
+<figcaption>Android · 初始半屏，动作不可见<small>android-10-add-graph.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 初始状态有标题及顶部动作">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-10-add-graph.png" alt="iOS · 初始状态有标题及顶部动作">
+</button>
+<figcaption>iOS · 初始状态有标题及顶部动作<small>ios-10-add-graph.png</small>
+</figcaption>
+</figure>
+</div>
+<figure>
+<button class="zoom" aria-label="放大：Android · 手动展开并输入名称后，Cancel / Add 才可见">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-10-add-graph-expanded.png" alt="Android · 手动展开并输入名称后，Cancel / Add 才可见">
+</button>
+<figcaption>Android · 手动展开并输入名称后，Cancel / Add 才可见<small>android-10-add-graph-expanded.png</small>
+</figcaption>
+</figure>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-10-add-graph.log">android-10-add-graph.log</a> · <a href="ui-review-2026-10-22/evidence/android-10-add-graph-expanded.log">android-10-add-graph-expanded.log</a> · <a href="ui-review-2026-10-22/evidence/ios-10-add-graph.log">ios-10-add-graph.log</a>
+</p>
+</article>
+<article class="issue" data-priority="P1" data-platform="Android" id="UX-03">
+<div class="issue-head">
+<span class="badge p1">P1</span>
+<span>UX-03 · Android</span>
+</div>
+<h3>已修复 · Capture 背景、宽度与命中区域一致</h3>
+<p class="callout">
+<strong>当前：已修复并通过组件及真实 App 入口复测。</strong>以下为修改前的复现与截图；修复后证据见追加验收。</p>
+<p>
+<strong>修改前复现：</strong>在包含图片的 journal 展开 composer，点外部收起；确认显示 Capture；点击底部 Capture 所在横向区域中部的空白处（本机约屏幕 55% / 92%）。</p>
+<p>
+<strong>实际：</strong>打开图片图库，而非 Capture。底部只剩相机图标和较小的 outlined Capture 按钮，图片透到它们背后。可访问树中按钮宽约 84 dp，所在横向布局约 312 dp，视觉上的底部输入区没有形成一致的点击目标。</p>
+<p>
+<strong>对照：</strong>iOS 用连续的输入面板明确区分页面内容与 Capture。Android 应用自己的 M3 surface 与合适的命中范围即可，无需照搬玻璃样式。</p>
+<p>
+<strong>验收：</strong>统一底部可见边界、surface 和命中范围；背景为图片或深色内容时保持可读；面板区域内部空白不会触发下层内容；面板外的真实图片仍能进入图库。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Capture 悬在图片上，面板边界不明确">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-05-dismiss.png" alt="Android · Capture 悬在图片上，面板边界不明确">
+</button>
+<figcaption>Android · Capture 悬在图片上，面板边界不明确<small>android-05-dismiss.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 收起后的 Capture 有连续背景">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-05-dismiss.png" alt="iOS · 收起后的 Capture 有连续背景">
+</button>
+<figcaption>iOS · 收起后的 Capture 有连续背景<small>ios-05-dismiss.png</small>
+</figcaption>
+</figure>
+</div>
+<figure>
+<button class="zoom" aria-label="放大：Android · 最终重建 APK，点击底部区域空白后仍进入图库">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-30-current-capture-hit.png" alt="Android · 最终重建 APK，点击底部区域空白后仍进入图库">
+</button>
+<figcaption>Android · 最终重建 APK，点击底部区域空白后仍进入图库<small>android-30-current-capture-hit.png</small>
+</figcaption>
+</figure>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-26-capture-blank-hit.log">android-26-capture-blank-hit.log</a> · <a href="ui-review-2026-10-22/evidence/android-26-capture-blank-hit.csv">android-26-capture-blank-hit.csv</a> · <a href="ui-review-2026-10-22/evidence/android-30-current-capture-hit.log">android-30-current-capture-hit.log</a> · <a href="ui-review-2026-10-22/evidence/android-05-dismiss.log">android-05-dismiss.log</a>
+</p>
+</article>
+<article class="issue" data-priority="INFO" data-platform="iOS" id="UX-04">
+<div class="issue-head">
+<span class="badge info">INFO</span>
+<span>UX-04 · iOS</span>
+</div>
+<h3>已撤回 · 模拟器键盘现象不代表 iOS 真机</h3>
+<p>用户已在 iOS 真机确认：点击 composer 的 + 与 status，软件键盘保持打开。因此撤回此前把模拟器现象判定为 iOS 产品回归的结论，不把它计入待修复问题，也不修改 iOS 的布局、样式或交互。原始模拟器证据仅作为环境差异记录。</p>
+<p>Android 的菜单保留键盘行为继续通过专门的真实 IME 会话测试。</p>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/ios-keyboard-same-session.log">ios-keyboard-same-session.log</a>
+</p>
+</article>
+</section>
+<section id="coverage">
+<p class="eyebrow">04 · COVERAGE MAP</p>
+<h2>功能逐项对照与实际覆盖</h2>
+<p>“通过”只指表内所述操作；“边界测试”指真实控件、文件、系统接口或 native core 的测试，不自动代表登录云端后的端到端体验通过。</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>本次实际结果</th>
+<th>Android ↔ iOS 差异 / 验证边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Journals / 侧栏 / 页面入口</td>
+<td>双端打开、切换、浏览</td>
+<td>Android 顶部额外显示当前 journal 标题，正文再次显示日期；iOS 顶部主要保留操作。属于信息层级差异。</td>
+</tr>
+<tr>
+<td>Bullet / 正文排版</td>
+<td>截图复核 + spacing 安装测试</td>
+<td>当前 bullet 与标题左缘基本对齐；bullet 中心到正文约 14 dp/pt，旧的过大间距没有在本轮继续复现。</td>
+</tr>
+<tr>
+<td>Composer 展开 / 外部关闭</td>
+<td>双端实际点击通过</td>
+<td>点击面板外会关闭；Android 收起区域 UX-03 已修复并通过空白处点击测试。</td>
+</tr>
+<tr>
+<td>Composer 发送 / task status</td>
+<td>Android 新建测试块成功；双端菜单打开</td>
+<td>Android 保存后清空输入，可继续 capture；Todo / Doing / Done 等项存在。</td>
+</tr>
+<tr>
+<td>+ 附件菜单</td>
+<td>双端实际打开</td>
+<td>File / Camera / Photo / Audio recording 均出现；视觉顺序不同；Android 保留键盘；用户确认 iOS 真机也保持打开。UX-04 已撤回。相机实拍未覆盖。</td>
+</tr>
+<tr>
+<td>块编辑 / task status</td>
+<td>双端实际编辑与状态循环</td>
+<td>None → Todo → Doing → Done → None 均可切换；Android 旧的“点击无效”没有重现。</td>
+</tr>
+<tr>
+<td>编辑工具栏</td>
+<td>双端截图、Android 按钮事件测试通过</td>
+<td>窄屏的滚动 / overflow 形式不同；工具栏本体可用。</td>
+</tr>
+<tr>
+<td>块选择工具栏</td>
+<td>双端入口可达；Android 已补复测</td>
+<td>UX-01 已修复：富文本正文长按进入选择，取消选择恢复原页；短按与链接仍可用。</td>
+</tr>
+<tr>
+<td>Shift+Enter / 多行 / Unicode</td>
+<td>Android 实际原生输入安装测试通过</td>
+<td>Shift+Enter 留在同块；普通 Enter 仍分块，Unicode selection 替换保留文本。未做中文输入法完整候选词过程。</td>
+</tr>
+<tr>
+<td>代码 / 数学 / 引用 / 富文本</td>
+<td>Android 实际页面显示 + rich-content / math-code 测试</td>
+<td>粗体、inline code、引用、数学、语法高亮当前均有证据；不是现存缺失项。</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>双端输入、结果展示和结果入口操作</td>
+<td>Android 底部常驻搜索与 iOS 原生搜索面板不同；查询返回与文本显示可用。</td>
+</tr>
+<tr>
+<td>Calendar</td>
+<td>双端实际打开并取消</td>
+<td>Android M3 日期面板，iOS 原生日期选择；本轮没有进行大范围历史日期定位回归。</td>
+</tr>
+<tr>
+<td>语言 / Tabs / Export / Runtime log</td>
+<td>Settings 中入口可见，源码核对；未逐项执行</td>
+<td>不把入口存在视为翻译完整、Tabs 持久排序、导出后可恢复、日志可复制等流程已经通过。</td>
+</tr>
+<tr>
+<td>块移动 / 删除 / 属性 / 引用</td>
+<td>本轮仅覆盖工具栏、编辑、zoom 与部分引用显示</td>
+<td>拖拽重排、实际删除确认、复杂属性编辑与 backlinks 遍历未完整操作；块选择入口已修复；复杂操作仍需逐项验收。</td>
+</tr>
+<tr>
+<td>Settings / Theme</td>
+<td>双端实际打开、主题菜单显示</td>
+<td>Android 采用 M3 sheet / switches，iOS Form / Picker；Android 标题、trailing switch 和右侧动作已修复；Light → Dark → Light 的真实菜单应用与截图已复测。</td>
+</tr>
+<tr>
+<td>Graphs / Add graph</td>
+<td>双端实际列表与新建表单，未提交</td>
+<td>UX-02 已修复，首次打开及键盘出现时动作可达；云端创建、下载和锁定解密没有本轮账号全链路实测。</td>
+</tr>
+<tr>
+<td>本地图片图库 / 分享保存</td>
+<td>双端打开；Android 实际 OS 分享 + 安装测试</td>
+<td>Android M3 全屏 surface / top app bar；paging、pinch、错误图、当前图片的 MediaStore 保存有测试。iOS 当前页保存分享未逐项重跑。</td>
+</tr>
+<tr>
+<td>远程图片 / retry / cache</td>
+<td>JVM 实际 HTTP 与安装控件测试</td>
+<td>Android 已支持。加密云资产跨设备完整回路未在本轮验证。</td>
+</tr>
+<tr>
+<td>外部文本 / 多类型文件分享</td>
+<td>Android OS MIME 匹配、真实字节导入与重建队列测试</td>
+<td>已支持 audio / video / PDF / Markdown / 通用文件 / 多附件；iOS Share Extension 未本轮逐项回归。</td>
+</tr>
+<tr>
+<td>分享持久化</td>
+<td>Android 磁盘文件、队列重建、失败重试 / 取消测试通过</td>
+<td>原始缓存删除后队列副本仍存活；此证据不等同于 OS 进程 kill 后完整重投测试。</td>
+</tr>
+<tr>
+<td>录音 / 快捷入口</td>
+<td>双端实际录音界面打开并取消；Android 真 M4A 文件测试</td>
+<td>Android M3 dialog，iOS sheet；Android widget / shortcut / tile 路由测试通过。转写 UI 两端都有；Android 要求 API 31+ 且模型可用。识别准确率与可用模型未验证。</td>
+</tr>
+<tr>
+<td>YouTube 时间戳</td>
+<td>Android native WebView 实例与 URL/seek 测试通过</td>
+<td>点击关联同一个已有播放器，不创建重复播放器；未作远端视频带声音的完整播放验收。</td>
+</tr>
+<tr>
+<td>后台同步</td>
+<td>Android 本地端点 + 真实 native core 六例</td>
+<td>已持久调度；重试、取消、凭证和 foreground lease 受测。云端长时间运行与 OEM 杀后台未认证。</td>
+</tr>
+<tr>
+<td>Flashcards</td>
+<td>Android 实际 cloze → 揭示 → 显示答案 → Good → No cards due 全流程通过；iOS 揭示与答案展示通过</td>
+<td>Android 使用临时 fixture，完成后恢复原 QA graph；iOS 没有提交评分。跨设备学习进度与排期未验证。</td>
+</tr>
+<tr>
+<td>通用文档 / 视频 inline preview</td>
+<td>只读双端实现核查</td>
+<td>普通附件主要显示摘要；不是只有 Android 缺少完整文档阅读器。文件可接收不等于 App 内可预览全部格式。</td>
+</tr>
+<tr>
+<td>登录 / 登出 / E2EE / 首次同步</td>
+<td>本轮没有重新完成账号全链路</td>
+<td>不能从当前离线 QA graph 或几个 RPC 测试推导正式云端体验通过。</td>
+</tr>
+<tr>
+<td>性能 / 无障碍 / 旋转 / 大字</td>
+<td>未作完整验收</td>
+<td>500-block 连续 Enter 专项已实测，结果见上；启动、滚动、红米真机和 Release 包仍未全面验收。TalkBack / VoiceOver、横屏、大字仍待专项。</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>Android 目前仍缺少或受平台限制的能力</h3>
+<p>正文长按入口 UX-01 已修复。仍有条件限制：录音转写实现要求 Android 12 / API 31 以上且模型可用，不能承诺在最低支持的 Android 8–11 上转写；锁定的加密 graph 需要解锁后才能同步。后台同步受系统调度约束，不能等同于前台实时连接。本轮未验证的功能见上表，不按“未验证 = 不支持”处理。</p>
+</section>
+<section id="screens">
+<p class="eyebrow">05 · SCREEN WALKTHROUGH</p>
+<h2>双端页面与交互截图</h2>
+<p>以下为真实 App 截图。点击任意图片可放大；Esc 关闭。截图只对应所述状态，没有用设计稿替代运行结果。</p>
+<div class="walkthrough">
+<h3>Journals 与视觉层级</h3>
+<p>Android 使用 Material surface 与字体，iOS 使用原生平台样式。两端内容不同；当前可比较的是导航、标题、底部输入区的层级。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Journals">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-01-journals.png" alt="Android · Journals">
+</button>
+<figcaption>Android · Journals<small>android-01-journals.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Journals">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-01-journals.png" alt="iOS · Journals">
+</button>
+<figcaption>iOS · Journals<small>ios-01-journals.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>侧栏导航</h3>
+<p>Journals、Flashcards、Graphs 与页面入口都存在。保留平台导航手感，功能入口要对应。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 侧栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-06-sidebar.png" alt="Android · 侧栏">
+</button>
+<figcaption>Android · 侧栏<small>android-06-sidebar.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 侧栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-06-sidebar.png" alt="iOS · 侧栏">
+</button>
+<figcaption>iOS · 侧栏<small>ios-06-sidebar.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Composer 与附件菜单</h3>
+<p>Android 采用 M3 菜单，iOS 为系统 Menu；功能相同，菜单顺序和原生动画形式不同；用户确认 iOS 真机与 Android 都保持键盘。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · + 菜单">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-03-attachment.png" alt="Android · + 菜单">
+</button>
+<figcaption>Android · + 菜单<small>android-03-attachment.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · + 菜单">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-03-attachment.png" alt="iOS · + 菜单">
+</button>
+<figcaption>iOS · + 菜单<small>ios-03-attachment.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Settings</h3>
+<p>修改前截图：原表单标题、行宽与开关对齐存在问题。当前已采用原生标题、trailing switch 和固定动作；最新截图见修复验收。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Settings">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-07-settings.png" alt="Android · Settings">
+</button>
+<figcaption>Android · Settings<small>android-07-settings.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Settings">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-07-settings.png" alt="iOS · Settings">
+</button>
+<figcaption>iOS · Settings<small>ios-07-settings.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Theme</h3>
+<p>主题选择都提供 System / Light / Dark。此图展示弹出菜单，不代表已验证全部页面的暗色对比度。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Theme 菜单">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-08-theme-menu.png" alt="Android · Theme 菜单">
+</button>
+<figcaption>Android · Theme 菜单<small>android-08-theme-menu.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Theme 菜单">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-08-theme-menu.png" alt="iOS · Theme 菜单">
+</button>
+<figcaption>iOS · Theme 菜单<small>ios-08-theme-menu.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Graphs</h3>
+<p>本地 graph 条目和 Add graph 可达。服务端 graph 列表取决于会话；本轮没有做线上创建和删除。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Graphs">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-09-graphs.png" alt="Android · Graphs">
+</button>
+<figcaption>Android · Graphs<small>android-09-graphs.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Graphs">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-09-graphs.png" alt="iOS · Graphs">
+</button>
+<figcaption>iOS · Graphs<small>ios-09-graphs.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Calendar</h3>
+<p>两端采用各自的日期选择交互；日历面板不是 Android 功能缺失。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Calendar">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-11-calendar.png" alt="Android · Calendar">
+</button>
+<figcaption>Android · Calendar<small>android-11-calendar.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Calendar">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-11-calendar.png" alt="iOS · Calendar">
+</button>
+<figcaption>iOS · Calendar<small>ios-11-calendar.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>块编辑器</h3>
+<p>原生输入与编辑工具栏可见。任务状态按钮已在实际 App 中循环验证；长按选择入口本次已修复。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 原生输入与编辑工具栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-12-editor.png" alt="Android · 原生输入与编辑工具栏">
+</button>
+<figcaption>Android · 原生输入与编辑工具栏<small>android-12-editor.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 原生输入与编辑工具栏">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-12-editor.png" alt="iOS · 原生输入与编辑工具栏">
+</button>
+<figcaption>iOS · 原生输入与编辑工具栏<small>ios-12-editor.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>编辑工具栏尾部动作</h3>
+<p>检查 overflow / 横向滚动后的动作可达性。隐藏键盘需要保留明确入口。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 工具栏尾部">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-13-editor-trailing.png" alt="Android · 工具栏尾部">
+</button>
+<figcaption>Android · 工具栏尾部<small>android-13-editor-trailing.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 工具栏尾部">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-13-editor-trailing.png" alt="iOS · 工具栏尾部">
+</button>
+<figcaption>iOS · 工具栏尾部<small>ios-13-editor-trailing.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Search</h3>
+<p>实际输入了查询并显示结果。不同 graph 导致结果数量不同，不作搜索质量排名。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Search">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-16-search.png" alt="Android · Search">
+</button>
+<figcaption>Android · Search<small>android-16-search.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Search">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-16-search.png" alt="iOS · Search">
+</button>
+<figcaption>iOS · Search<small>ios-16-search.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>图片图库</h3>
+<p>Android 使用全屏 M3 surface 与 Save / Share 图标，系统分享由 Android chooser 承载；iOS 保留原生相册预览风格。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 图片图库">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-17-gallery.png" alt="Android · 图片图库">
+</button>
+<figcaption>Android · 图片图库<small>android-17-gallery.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 图片图库">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-17-gallery.png" alt="iOS · 图片图库">
+</button>
+<figcaption>iOS · 图片图库<small>ios-17-gallery.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>录音</h3>
+<p>双端录音计时和转写选项可见，随后取消。Android 另用平台录音 API 在模拟器生成非空 M4A 并验证元数据。转写成功不包含在本次结论。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · M3 录音 Dialog">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-25-recording.png" alt="Android · M3 录音 Dialog">
+</button>
+<figcaption>Android · M3 录音 Dialog<small>android-25-recording.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 原生录音 Sheet">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-25-recording.png" alt="iOS · 原生录音 Sheet">
+</button>
+<figcaption>iOS · 原生录音 Sheet<small>ios-25-recording.png</small>
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="walkthrough">
+<h3>Flashcards：揭示、答案与评分</h3>
+<p>Android 在专用 QA graph 的临时副本上运行现有 E2E fixture，实际依次点击 Show cloze、Show answer、Good，直到 No cards due；测试完成后恢复原 graph。iOS 展示并揭示 demo 卡片、显示答案，没有评分。内容不同，不进行文本尺寸的逐像素比较。</p>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Cloze 问题">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-32-card-question.png" alt="Android · Cloze 问题">
+</button>
+<figcaption>Android · Cloze 问题<small>android-32-card-question.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Cloze 问题">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-27-flashcards.png" alt="iOS · Cloze 问题">
+</button>
+<figcaption>iOS · Cloze 问题<small>ios-27-flashcards.png</small>
+</figcaption>
+</figure>
+</div>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · Cloze 已揭示">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-33-card-cloze.png" alt="Android · Cloze 已揭示">
+</button>
+<figcaption>Android · Cloze 已揭示<small>android-33-card-cloze.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · Cloze 已揭示">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-28-flashcard-reveal.png" alt="iOS · Cloze 已揭示">
+</button>
+<figcaption>iOS · Cloze 已揭示<small>ios-28-flashcard-reveal.png</small>
+</figcaption>
+</figure>
+</div>
+<div class="pair">
+<figure>
+<button class="zoom" aria-label="放大：Android · 答案及评分按钮">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-34-card-answer.png" alt="Android · 答案及评分按钮">
+</button>
+<figcaption>Android · 答案及评分按钮<small>android-34-card-answer.png</small>
+</figcaption>
+</figure>
+<figure>
+<button class="zoom" aria-label="放大：iOS · 答案及评分按钮">
+<img loading="lazy" src="ui-review-2026-10-22/assets/ios-31-flashcard-answer.png" alt="iOS · 答案及评分按钮">
+</button>
+<figcaption>iOS · 答案及评分按钮<small>ios-31-flashcard-answer.png</small>
+</figcaption>
+</figure>
+</div>
+<figure>
+<button class="zoom" aria-label="放大：Android · 点击 Good 后进入 No cards due">
+<img loading="lazy" src="ui-review-2026-10-22/assets/android-35-flashcard-complete.png" alt="Android · 点击 Good 后进入 No cards due">
+</button>
+<figcaption>Android · 点击 Good 后进入 No cards due<small>android-35-flashcard-complete.png</small>
+</figcaption>
+</figure>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-35-flashcard-complete.log">android-35-flashcard-complete.log</a> · <a href="ui-review-2026-10-22/evidence/ios-28-flashcard-reveal.log">ios-28-flashcard-reveal.log</a> · <a href="ui-review-2026-10-22/evidence/ios-31-flashcard-answer.log">ios-31-flashcard-answer.log</a>
+</p>
+</div>
+</section>
+<section id="delivered">
+<p class="eyebrow">06 · DELIVERED & VERIFIED</p>
+<h2>四项追加功能的交付记录</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>功能 / commit</th>
+<th>实现与真实验证</th>
+<th>仍不能由此推出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>远程图片 · <code>0fef9bb</code>
+</td>
+<td>经过 core 授权与 graph 归属检查；异步 HTTP 下载、缓存、Retry、实际文件预览；JVM 测试包括真实 HTTP 失败后重试和逐字节缓存校验</td>
+<td>已通过真实云端、加密账户和另一台设备产生的图片完整回路</td>
+</tr>
+<tr>
+<td>持久分享队列 · <code>22e0fb8</code>
+</td>
+<td>附件和元数据先落盘，稳定 ID，有序交付，仅成功后确认；对象重建、取消、失败重试与原始缓存丢失受测</td>
+<td>已覆盖 OS 任意时刻 kill / 崩溃 / 重启后的所有重投窗口</td>
+</tr>
+<tr>
+<td>编辑器设置 · <code>3b00134</code>
+</td>
+<td>保存 autocorrection / spell-check 后检查实际 EditorInfo；设置变化后文本与 selection 保持；Unicode 与 Shift+Enter 回归</td>
+<td>所有 OEM / 第三方 IME 的词典、候选词与自动纠错行为一致</td>
+</tr>
+<tr>
+<td>Graph 进度 · <code>ce30171</code>
+</td>
+<td>真实下载字节、gzip、native import / opening 回调与实际记录总数；M3 对话框未知总量时不伪造百分比，活动导入禁止 Back 关闭</td>
+<td>所有线上 graph 大小、加密流程、断网与版本迁移均已端到端完成</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Android 的 <code>TYPE_TEXT_FLAG_NO_SUGGESTIONS</code> 会覆盖 autocorrection，属于平台输入规则。不能承诺它与 iOS 两个设置在所有键盘中完全独立。<a href="https://developer.android.com/reference/android/text/InputType#TYPE_TEXT_FLAG_NO_SUGGESTIONS">Android InputType 官方说明</a>。</p>
+<h3>原始审查阶段的回归记录</h3>
+<div id="test-results">
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>测试</th>
+<th>最终结果</th>
+<th>范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JVM</td>
+<td>64 / 64 通过，0 failure / error / skip</td>
+<td>真实 HTTP、缓存、磁盘队列、生命周期、输入偏好等</td>
+</tr>
+<tr>
+<td>常规 Android 安装回归</td>
+<td>78 项通过</td>
+<td>独立 Compose 控件、图库、rich content、输入、系统 share / recording 等</td>
+</tr>
+<tr>
+<td>真实 native import</td>
+<td>1 项带正确 fixture 参数重跑通过</td>
+<td>当前重建的 core 输出 importing / opening 与正数记录总量</td>
+</tr>
+<tr>
+<td>真实 IME / installed App</td>
+<td>7 项分别独立 instrumentation 运行通过</td>
+<td>菜单 / 键盘 / 光标、任务状态、编辑后的数学；整组串行准备仍有 6 项失败，保留限制</td>
+</tr>
+<tr>
+<td>后台同步</td>
+<td>6 / 6 通过</td>
+<td>本地端点、真实 core、磁盘游标、重试 / 取消 / lease；0.197 秒</td>
+</tr>
+<tr>
+<td>Maestro 双端探索</td>
+<td>实际操作与 PNG / hierarchy 证据</td>
+<td>发现 4 项交互问题；不是“全产品功能测试全部通过”</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/jvm-test-summary.json">jvm-test-summary.json</a> · <a href="ui-review-2026-10-22/evidence/test-summary.json">test-summary.json</a> · <a href="ui-review-2026-10-22/evidence/android-final-instrumentation.log">android-final-instrumentation.log</a> · <a href="ui-review-2026-10-22/evidence/android-opt-in-instrumentation.log">android-opt-in-instrumentation.log</a> · <a href="ui-review-2026-10-22/evidence/android-background-sync.log">android-background-sync.log</a>
+</p>
+<p class="evidence">证据：<a href="ui-review-2026-10-22/evidence/android-ime-attachment-isolated.log">android-ime-attachment-isolated.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-isolated-blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens.log">android-ime-isolated-blockTaskButtonVisiblyCyclesStatusAndRetainsItWhenEditingReopens.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-isolated-installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable.log">android-ime-isolated-installedReleaseRendersMathAfterEditingAndKeepsInvalidInputReadable.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-isolated-openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen.log">android-ime-isolated-openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-isolated-outsideMenuTapPreservesTheKeyboardAndDraft.log">android-ime-isolated-outsideMenuTapPreservesTheKeyboardAndDraft.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-isolated-statusSelectionPreservesTheInputCaret.log">android-ime-isolated-statusSelectionPreservesTheInputCaret.log</a> · <a href="ui-review-2026-10-22/evidence/android-ime-status-isolated.log">android-ime-status-isolated.log</a>
+</p>
+<details>
+<summary>测试记录的解释与可重复性</summary>
+<p>最初 86 项安装测试调用漏传了 native import fixture，造成 1 项参数校验失败；7 项真实 IME 用例因 opt-in 参数未开启而跳过。原始日志保留，没有把这次运行当作全通过。之后带 <code>verifyComposerIme=true</code> 与 <code>backgroundGraphFixture</code> 重跑：native import 通过，IME 首项通过、其余六项在页面准备阶段找不到 field.composer。七项 IME 随后逐项独立 instrumentation 运行均通过。这些是原始审查记录。修复阶段已纠正测试准备顺序；最新六类组合回归带 verifyComposerIme=true 执行，结果另见追加验收，不覆盖或改写历史日志。</p>
+<p>后台同步脚本只接受 emulator serial，先克隆专用 QA graph，在克隆上准备快照，使用本地 WebSocket 端点验证真实 native sync。它不是生产服务器测试。普通 UI 自动化失败中，旧 ID、菜单标签误匹配、过渡中的空层级、搜索框与正文同文本等已通过查看截图排除，没有作为产品 bug 计数。</p>
+<p>构建和安装使用 debug APK；重建 Android native core 与 iOS simulator app，未运行 swift test。没有测试 signed Release、ProGuard 后安装包或线上分发。</p>
+</details>
+</section>
+<section id="native">
+<p class="eyebrow">07 · PLATFORM FIT</p>
+<h2>Native / M3 的边界</h2>
+<p>当前构建配置为 Compose BOM 2026.09.00、Material 3 1.5.0-beta01，minSdk 26 / targetSdk 36；本轮 Android UI 实测只覆盖 API 33。版本号来自仓库构建配置，不代表已验证所有新系统交互。</p>
+<p>Android 菜单、对话框、输入框、开关与面板应使用当前 Material 3 组件；文件选择、照片选择、权限、分享、桌面快捷方式和通知栏 tile 则交给 Android 系统容器。iOS 使用自己的系统菜单、表单与键盘。相同功能不要求两个平台使用相同外观。</p>
+<p>
+<a href="https://developer.android.com/develop/ui/compose/components/menu">Compose 官方菜单文档</a>介绍 DropdownMenu / DropdownMenuItem / IconButton，<a href="https://developer.android.com/develop/ui/compose/components/bottom-sheets">官方 Bottom sheet 文档</a>提供 ModalBottomSheet。当前采用这些原生组件不代表组合后的点击、焦点、留白与可达性自动正确。UX-02 与 UX-03 正是这类整页集成问题。菜单视觉评审参照用户提供的 <a href="https://m3.material.io/components/menus/overview">Material 3 menus</a>，本报告不作像素级全规范认证。</p>
+<p>Composer 没有一颗能覆盖本产品所有行为的现成“native composer”。它需要由原生输入、按钮、菜单和 surface 组合；编辑器工具栏也需要表达应用的块操作。后续应修正现有组合的行为，保持实现简单，不为统一外观引入第二套组件系统。</p>
+</section>
+<section id="release">
+<p class="eyebrow">08 · RELEASE GATES</p>
+<h2>距离可放心发布还差什么</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>具体工作与验收</th>
+<th>依据 / 当前状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>已完成 · 主操作入口</td>
+<td>正文长按选择与 Capture 命中范围已修复，实际 App 入口通过</td>
+<td>UX-01 / UX-03：保留修改前与修复后截图</td>
+</tr>
+<tr>
+<td>已完成 · Android 表单与输入</td>
+<td>Add graph 首屏/键盘动作可达；Settings / Sync 采用原生面板、尾部动作与主题色</td>
+<td>UX-02 已修复；UX-04 已按真机反馈撤回</td>
+</tr>
+<tr>
+<td>3 · 完成关键云端回路</td>
+<td>使用独立测试账户完成：登录 → 加密 graph 首次下载 → 编辑同步 → 第二端看到内容与远程图片 → 离线重试 → 锁定/解锁 → 登出</td>
+<td>本轮没有生产云端全链路证据，不能据边界测试放行</td>
+</tr>
+<tr>
+<td>4 · 补齐数据耐久的进程边界</td>
+<td>分享入队后，在未完成 graph 交付时执行 OS kill / 重新启动；确认内容与附件只有一份且不丢失</td>
+<td>当前验证到磁盘队列重建、取消与失败重试，尚未覆盖完整 OS kill 窗口</td>
+</tr>
+<tr>
+<td>5 · 指定目标设备的 Release 验收</td>
+<td>在签名 Release 与红米上测启动、长 journal 滚动、输入、菜单；记录帧时间 / hitch 证据，再决定是否恢复优化</td>
+<td>连续 Enter 专项已恢复并完成模拟器验证；没有新的红米真机性能结论</td>
+</tr>
+<tr>
+<td>6 · 最小兼容与可用性专项</td>
+<td>中文 IME 组合输入、TalkBack / VoiceOver、放大字体、窄屏与旋转；录音转写可用模型和失败提示；双端同一卡组的排期与跨设备学习进度</td>
+<td>当前只有默认尺寸和部分 Unicode selection 测试，覆盖不能替代这些实际操作</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="callout">
+<strong>当前三个 Android 审查缺陷已修复，正式发布仍需完成真实云端和目标设备验收。</strong>
+<p>其余不能在本轮证明的云端、转写、卡片跨设备排期和兼容场景属于待验收，不应直接称为“Android 不支持”。普通附件完整预览则是双端共同的产品能力范围，需另定需求。</p>
+</div>
+<h3>仓库卫生</h3>
+<p>
+<code>aceda1d</code> 已 push main，只新增一条针对 <code>docs/agent-guide/ui-review-*/evidence/*-artifacts/</code> 的 ignore。Build 原本已忽略；README 仍被追踪；本 HTML 和选用截图没有被忽略。原始 Maestro 调试目录约 120 MB，不纳入正式报告版本。本报告使用相对路径引用原始截图，避免把二进制编码成大量 HTML 源码；移动文件时请保留同级 <code>ui-review-2026-10-22</code> 目录。</p>
+<p>报告浏览器校验：1280 px 桌面与 390 px 手机布局无横向溢出；全部截图解码成功，问题筛选与图片放大可用。<a href="ui-review-2026-10-22/evidence/report-browser-check.json">校验记录</a>。</p>
+<p>原始审查阶段没有改源码；后续按用户指令修复了 Android 及共享逻辑并追加测试。共享工作区中已有的 <code>apple/Package.resolved</code> 变化未包含在本轮提交中。</p>
+</section>
+<footer>
+<strong>Logseq · Android / iOS UI & UX Review</strong>
+<p>2026-10-22 · 自动化实测与截图证据 · 原始审查及修复追加验收</p>
+<a href="#">返回顶部 ↑</a>
+</footer>
+<dialog id="lightbox">
+<button id="close-lightbox" aria-label="关闭放大图片">关闭 ×</button>
+<img alt="">
+<p>
+</p>
+</dialog>
+<script>const dialog=document.querySelector('#lightbox');document.querySelectorAll('.zoom').forEach(button=>button.addEventListener('click',()=>{const img=button.querySelector('img');dialog.querySelector('img').src=img.src;dialog.querySelector('img').alt=img.alt;dialog.querySelector('p').textContent=img.alt;dialog.showModal()}));document.querySelector('#close-lightbox').addEventListener('click',()=>dialog.close());dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));let count=0;document.querySelectorAll('.issue').forEach(issue=>{const filter=button.dataset.filter;const show=filter==='all'||issue.dataset.priority===filter||issue.dataset.platform===filter;issue.hidden=!show;if(show)count++});document.querySelector('#filter-count').textContent='显示 '+count+' 个问题'}));</script>
+</body>
+</html>

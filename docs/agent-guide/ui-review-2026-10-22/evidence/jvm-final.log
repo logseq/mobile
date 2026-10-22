@@ -1,0 +1,77 @@
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :lui:preBuild UP-TO-DATE
+> Task :lui:preDebugBuild UP-TO-DATE
+> Task :lui:processDebugNavigationResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :lui:generateDebugResources UP-TO-DATE
+> Task :lui:packageDebugResources UP-TO-DATE
+> Task :lui:parseDebugLocalResources UP-TO-DATE
+> Task :lui:generateDebugRFile UP-TO-DATE
+> Task :lui:compileDebugKotlin UP-TO-DATE
+> Task :lui:javaPreCompileDebug UP-TO-DATE
+> Task :lui:compileDebugJavaWithJavac NO-SOURCE
+> Task :lui:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :lui:writeDebugAarMetadata UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :lui:extractDeepLinksDebug UP-TO-DATE
+> Task :lui:processDebugManifest UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :lui:mapDebugSourceSetPaths UP-TO-DATE
+> Task :lui:compileDebugLibraryResources UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :lui:generateDebugAssets UP-TO-DATE
+> Task :lui:mergeDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :app:mergeDebugUnitTestManifest UP-TO-DATE
+> Task :app:processDebugUnitTestManifest UP-TO-DATE
+> Task :app:generateDebugUnitTestConfig UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :lui:bundleLibRuntimeToJarDebug
+> Task :lui:processDebugJavaRes UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:testDebugUnitTest
+> Task :lui:preDebugUnitTestBuild UP-TO-DATE
+> Task :lui:generateDebugUnitTestStubRFile UP-TO-DATE
+> Task :lui:preparePaparazziDebugResources UP-TO-DATE
+> Task :lui:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :lui:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :lui:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :lui:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :lui:transformDebugUnitTestClassesWithAsm
+> Task :lui:testDebugUnitTest SKIPPED
+
+[Incubating] Problems report is available at: file:///Users/tiensonqin/Codes/projects/logseq-chat/android/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.8.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 3s
+53 actionable tasks: 5 executed, 48 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.8.1/userguide/configuration_cache_enabling.html

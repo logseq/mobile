@@ -1,0 +1,19 @@
+Running on Logseq Demo - iOS 26.0 - B5C472E1-25F4-4541-A20F-174DD2B2F74A
+ > Flow review-ios-keyboard-same-session
+Tap on id: button.outliner.selection.unselect... COMPLETED
+Tap on id: button.composer.expand... COMPLETED
+Tap on id: field.composer... COMPLETED
+Input text  ... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 02-keyboard-baseline... COMPLETED
+Tap on id: button.attachment... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 03-attachment... COMPLETED
+Tap on point (90%,30%)... COMPLETED
+Tap on id: field.composer... COMPLETED
+Input text  ... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 02-status-keyboard-baseline... COMPLETED
+Tap on id: button.task-status... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 04-status... COMPLETED

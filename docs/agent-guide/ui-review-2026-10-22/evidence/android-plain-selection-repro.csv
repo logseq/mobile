@@ -1,0 +1,251 @@
+element_num,depth,attributes,parent_num
+0,0,"",
+1,1,"",0
+2,2,"bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",1
+3,3,"resource-id=com.android.systemui:id/status_bar_launch_animation_container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",2
+4,3,"resource-id=com.android.systemui:id/container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",2
+5,3,"resource-id=com.android.systemui:id/status_bar_container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",2
+6,4,"resource-id=com.android.systemui:id/status_bar; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",5
+7,5,"resource-id=com.android.systemui:id/status_bar_contents; bounds=[136,0][1027,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",6
+8,6,"resource-id=com.android.systemui:id/status_bar_start_side_container; bounds=[157,5][581,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",7
+9,7,"resource-id=com.android.systemui:id/status_bar_start_side_content; bounds=[157,5][292,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",8
+10,8,"resource-id=com.android.systemui:id/status_bar_start_side_except_heads_up; bounds=[157,5][292,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",9
+11,9,"text=7:19; accessibilityText=7:19 AM; resource-id=com.android.systemui:id/clock; bounds=[157,5][234,136]; enabled=true; class=android.widget.TextView; important-for-accessibility=true; enabled=true",10
+12,9,"resource-id=com.android.systemui:id/notification_icon_area; bounds=[234,5][292,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",10
+13,10,"resource-id=com.android.systemui:id/notificationIcons; bounds=[234,5][292,136]; enabled=true; class=android.view.ViewGroup; enabled=true",12
+14,11,"accessibilityText=Android System notification: Wi‑Fi will turn on automatically; bounds=[234,5][292,136]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; enabled=true",13
+15,6,"resource-id=com.android.systemui:id/status_bar_end_side_container; bounds=[581,5][1006,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",7
+16,7,"resource-id=com.android.systemui:id/status_bar_end_side_content; bounds=[931,5][1006,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",15
+17,8,"resource-id=com.android.systemui:id/system_icons; bounds=[931,5][1006,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",16
+18,9,"resource-id=com.android.systemui:id/statusIcons; bounds=[931,5][986,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",17
+19,10,"accessibilityText=Phone signal full.; resource-id=com.android.systemui:id/mobile_combo; bounds=[931,41][970,99]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",18
+20,11,"resource-id=com.android.systemui:id/mobile_group; bounds=[931,41][970,99]; enabled=true; class=android.widget.LinearLayout; enabled=true",19
+21,12,"bounds=[931,50][970,89]; enabled=true; class=android.widget.FrameLayout; enabled=true",20
+22,13,"resource-id=com.android.systemui:id/mobile_signal; bounds=[931,50][970,89]; enabled=true; class=android.widget.ImageView; enabled=true",21
+23,9,"accessibilityText=Battery charging, 100 percent.; resource-id=com.android.systemui:id/battery; bounds=[986,5][1006,136]; enabled=true; class=android.widget.LinearLayout; important-for-accessibility=true; enabled=true",17
+24,10,"bounds=[986,53][1006,87]; enabled=true; class=android.widget.ImageView; enabled=true",23
+25,2,"bounds=[0,136][1080,2400]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",1
+26,3,"bounds=[0,136][1080,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",25
+27,4,"resource-id=android:id/content; bounds=[0,136][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",26
+28,5,"resource-id=android:id/parentPanel; bounds=[0,136][1080,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",27
+29,6,"resource-id=android:id/inputArea; bounds=[0,136][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",28
+30,7,"bounds=[0,136][1080,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",29
+31,8,"bounds=[0,1494][1080,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",30
+32,9,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[0,1494][1080,1517]; enabled=true; class=android.widget.FrameLayout; enabled=true",31
+33,9,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[0,1517][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",31
+34,10,"resource-id=com.google.android.inputmethod.latin:id/keyboard_holder; bounds=[0,1517][1080,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",33
+35,11,"resource-id=com.google.android.inputmethod.latin:id/keyboard_header_view_holder; bounds=[0,1517][1080,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",34
+36,12,"bounds=[0,1517][1080,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",35
+37,13,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[0,1517][1080,1633]; enabled=true; class=android.view.ViewGroup; enabled=true",36
+38,14,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[5,1517][1075,1633]; enabled=true; class=android.view.View; enabled=true",37
+39,14,"accessibilityText=More features; resource-id=com.google.android.inputmethod.latin:id/key_pos_header_access_points_menu; clickable=true; bounds=[5,1517][115,1633]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",37
+40,15,"bounds=[15,1530][104,1619]; enabled=true; class=android.view.View; enabled=true",39
+41,15,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[28,1543][91,1606]; enabled=true; class=android.widget.ImageView; enabled=true",39
+42,14,"bounds=[115,1517][965,1633]; enabled=true; class=android.widget.LinearLayout; enabled=true",37
+43,15,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[115,1517][965,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",42
+44,16,"resource-id=com.google.android.inputmethod.latin:id/softkey_holder_fixed_candidates; bounds=[115,1517][965,1633]; enabled=true; class=android.widget.LinearLayout; enabled=true",43
+45,17,"accessibilityText=target; clickable=true; bounds=[115,1517][387,1633]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",44
+46,18,"bounds=[115,1517][387,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",45
+47,19,"bounds=[115,1517][387,1633]; enabled=true; class=android.widget.LinearLayout; enabled=true",46
+48,20,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[115,1517][387,1633]; enabled=true; class=android.widget.TextView; enabled=true",47
+49,19,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[384,1543][387,1606]; enabled=true; class=android.widget.ImageView; enabled=true",46
+50,17,"accessibilityText=Target; clickable=true; bounds=[387,1517][693,1633]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",44
+51,18,"bounds=[387,1517][693,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",50
+52,19,"bounds=[387,1517][693,1633]; enabled=true; class=android.widget.LinearLayout; enabled=true",51
+53,20,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[387,1517][693,1633]; enabled=true; class=android.widget.TextView; enabled=true",52
+54,19,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[690,1543][693,1606]; enabled=true; class=android.widget.ImageView; enabled=true",51
+55,17,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[693,1517][965,1633]; enabled=true; class=android.widget.LinearLayout; enabled=true",44
+56,18,"accessibilityText=emoji 🎯; clickable=true; bounds=[693,1517][965,1633]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",55
+57,19,"bounds=[693,1517][965,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",56
+58,20,"bounds=[693,1517][965,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",57
+59,21,"accessibilityText=🎯; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[693,1517][965,1633]; enabled=true; class=android.view.View; enabled=true",58
+60,14,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[965,1517][1075,1633]; enabled=true; class=android.widget.FrameLayout; enabled=true",37
+61,15,"accessibilityText=Voice input; resource-id=com.google.android.inputmethod.latin:id/key_pos_header_power_key; clickable=true; bounds=[965,1517][1075,1633]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",60
+62,16,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[988,1517][1051,1633]; enabled=true; class=android.widget.ImageView; enabled=true",61
+63,11,"bounds=[0,1633][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",34
+64,12,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[0,1633][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",63
+65,13,"bounds=[0,1633][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",64
+66,14,"bounds=[0,1633][1080,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",65
+67,15,"resource-id=com.google.android.inputmethod.latin:id/input_area; bounds=[5,1654][1075,2118]; enabled=true; class=android.widget.LinearLayout; enabled=true",66
+68,16,"bounds=[5,1654][1075,1808]; enabled=true; class=android.widget.LinearLayout; enabled=true",67
+69,17,"accessibilityText=q; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_0; clickable=true; bounds=[5,1654][112,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+70,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[12,1654][105,1777]; enabled=true; class=android.widget.TextView; enabled=true",69
+71,18,"text=1; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[89,1654][105,1696]; enabled=true; class=android.widget.TextView; enabled=true",69
+72,17,"accessibilityText=w; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_1; clickable=true; bounds=[112,1654][219,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+73,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[119,1654][212,1777]; enabled=true; class=android.widget.TextView; enabled=true",72
+74,18,"text=2; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[192,1654][212,1696]; enabled=true; class=android.widget.TextView; enabled=true",72
+75,17,"accessibilityText=e; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_2; clickable=true; bounds=[219,1654][326,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+76,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[226,1654][319,1777]; enabled=true; class=android.widget.TextView; enabled=true",75
+77,18,"text=3; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[298,1654][319,1696]; enabled=true; class=android.widget.TextView; enabled=true",75
+78,17,"accessibilityText=r; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_3; clickable=true; bounds=[326,1654][433,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+79,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[333,1654][426,1777]; enabled=true; class=android.widget.TextView; enabled=true",78
+80,18,"text=4; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[404,1654][426,1696]; enabled=true; class=android.widget.TextView; enabled=true",78
+81,17,"accessibilityText=t; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_4; clickable=true; bounds=[433,1654][540,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+82,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[440,1654][533,1777]; enabled=true; class=android.widget.TextView; enabled=true",81
+83,18,"text=5; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[512,1654][533,1696]; enabled=true; class=android.widget.TextView; enabled=true",81
+84,17,"accessibilityText=y; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_5; clickable=true; bounds=[540,1654][647,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+85,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[547,1654][640,1777]; enabled=true; class=android.widget.TextView; enabled=true",84
+86,18,"text=6; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[619,1654][640,1696]; enabled=true; class=android.widget.TextView; enabled=true",84
+87,17,"accessibilityText=u; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_6; clickable=true; bounds=[647,1654][754,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+88,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[654,1654][747,1777]; enabled=true; class=android.widget.TextView; enabled=true",87
+89,18,"text=7; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[727,1654][747,1696]; enabled=true; class=android.widget.TextView; enabled=true",87
+90,17,"accessibilityText=i; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_7; clickable=true; bounds=[754,1654][861,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+91,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[761,1654][854,1777]; enabled=true; class=android.widget.TextView; enabled=true",90
+92,18,"text=8; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[833,1654][854,1696]; enabled=true; class=android.widget.TextView; enabled=true",90
+93,17,"accessibilityText=o; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_8; clickable=true; bounds=[861,1654][968,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+94,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[868,1654][961,1777]; enabled=true; class=android.widget.TextView; enabled=true",93
+95,18,"text=9; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[940,1654][961,1696]; enabled=true; class=android.widget.TextView; enabled=true",93
+96,17,"accessibilityText=p; resource-id=com.google.android.inputmethod.latin:id/key_pos_0_9; clickable=true; bounds=[968,1654][1075,1808]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",68
+97,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[975,1654][1068,1777]; enabled=true; class=android.widget.TextView; enabled=true",96
+98,18,"text=0; resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[1044,1654][1068,1696]; enabled=true; class=android.widget.TextView; enabled=true",96
+99,16,"bounds=[5,1808][1075,1963]; enabled=true; class=android.widget.LinearLayout; enabled=true",67
+100,17,"accessibilityText=a; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_0; clickable=true; bounds=[5,1808][165,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+101,18,"bounds=[5,1808][165,1963]; enabled=true; class=android.widget.LinearLayout; enabled=true",100
+102,19,"resource-id=com.google.android.inputmethod.latin:id/host; bounds=[59,1808][165,1963]; enabled=true; class=android.widget.FrameLayout; enabled=true",101
+103,20,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[66,1808][158,1932]; enabled=true; class=android.widget.TextView; enabled=true",102
+104,17,"accessibilityText=s; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_1; clickable=true; bounds=[165,1808][272,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+105,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[172,1808][265,1932]; enabled=true; class=android.widget.TextView; enabled=true",104
+106,17,"accessibilityText=d; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_2; clickable=true; bounds=[272,1808][379,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+107,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[279,1808][372,1932]; enabled=true; class=android.widget.TextView; enabled=true",106
+108,17,"accessibilityText=f; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_3; clickable=true; bounds=[379,1808][486,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+109,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[386,1808][479,1932]; enabled=true; class=android.widget.TextView; enabled=true",108
+110,17,"accessibilityText=g; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_4; clickable=true; bounds=[486,1808][593,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+111,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[493,1808][586,1932]; enabled=true; class=android.widget.TextView; enabled=true",110
+112,17,"accessibilityText=h; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_5; clickable=true; bounds=[593,1808][700,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+113,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[600,1808][693,1932]; enabled=true; class=android.widget.TextView; enabled=true",112
+114,17,"accessibilityText=j; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_6; clickable=true; bounds=[700,1808][807,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+115,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[707,1808][800,1932]; enabled=true; class=android.widget.TextView; enabled=true",114
+116,17,"accessibilityText=k; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_7; clickable=true; bounds=[807,1808][914,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+117,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[814,1808][907,1932]; enabled=true; class=android.widget.TextView; enabled=true",116
+118,17,"accessibilityText=l; resource-id=com.google.android.inputmethod.latin:id/key_pos_1_8; clickable=true; bounds=[914,1808][1075,1963]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",99
+119,18,"bounds=[914,1808][1075,1963]; enabled=true; class=android.widget.LinearLayout; enabled=true",118
+120,19,"resource-id=com.google.android.inputmethod.latin:id/host; bounds=[914,1808][1021,1963]; enabled=true; class=android.widget.FrameLayout; enabled=true",119
+121,20,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[921,1808][1014,1932]; enabled=true; class=android.widget.TextView; enabled=true",120
+122,16,"bounds=[5,1963][1075,2118]; enabled=true; class=android.widget.LinearLayout; enabled=true",67
+123,17,"accessibilityText=Shift; resource-id=com.google.android.inputmethod.latin:id/key_pos_shift; clickable=true; bounds=[5,1963][165,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+124,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[48,1988][122,2062]; enabled=true; class=android.widget.ImageView; enabled=true",123
+125,17,"accessibilityText=z; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_1; clickable=true; bounds=[165,1963][272,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+126,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[172,1963][265,2087]; enabled=true; class=android.widget.TextView; enabled=true",125
+127,17,"accessibilityText=x; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_2; clickable=true; bounds=[272,1963][379,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+128,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[279,1963][372,2087]; enabled=true; class=android.widget.TextView; enabled=true",127
+129,17,"accessibilityText=c; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_3; clickable=true; bounds=[379,1963][486,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+130,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[386,1963][479,2087]; enabled=true; class=android.widget.TextView; enabled=true",129
+131,17,"accessibilityText=v; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_4; clickable=true; bounds=[486,1963][593,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+132,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[493,1963][586,2087]; enabled=true; class=android.widget.TextView; enabled=true",131
+133,17,"accessibilityText=b; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_5; clickable=true; bounds=[593,1963][700,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+134,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[600,1963][693,2087]; enabled=true; class=android.widget.TextView; enabled=true",133
+135,17,"accessibilityText=n; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_6; clickable=true; bounds=[700,1963][807,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+136,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[707,1963][800,2087]; enabled=true; class=android.widget.TextView; enabled=true",135
+137,17,"accessibilityText=m; resource-id=com.google.android.inputmethod.latin:id/key_pos_2_7; clickable=true; bounds=[807,1963][914,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+138,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[814,1963][907,2087]; enabled=true; class=android.widget.TextView; enabled=true",137
+139,17,"accessibilityText=Delete; resource-id=com.google.android.inputmethod.latin:id/key_pos_del; clickable=true; bounds=[914,1963][1075,2118]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",122
+140,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[957,1988][1031,2062]; enabled=true; class=android.widget.ImageView; enabled=true",139
+141,15,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[5,2118][1075,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",66
+142,16,"accessibilityText=Symbol keyboard; resource-id=com.google.android.inputmethod.latin:id/key_pos_switch_to_symbol; clickable=true; bounds=[5,2118][165,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",141
+143,17,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[36,2147][133,2213]; enabled=true; class=android.widget.TextView; enabled=true",142
+144,16,"accessibilityText=,; resource-id=com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_1; clickable=true; bounds=[165,2118][272,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",141
+145,17,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[213,2147][224,2227]; enabled=true; class=android.widget.TextView; enabled=true",144
+146,16,"bounds=[272,2118][807,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",141
+147,17,"accessibilityText=Emoji button; resource-id=com.google.android.inputmethod.latin:id/key_pos_switch_to_next_language; clickable=true; bounds=[272,2118][379,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",146
+148,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[294,2149][357,2212]; enabled=true; class=android.widget.ImageView; enabled=true",147
+149,17,"bounds=[379,2118][807,2274]; enabled=true; class=android.widget.LinearLayout; enabled=true",146
+150,18,"accessibilityText=Space; resource-id=com.google.android.inputmethod.latin:id/key_pos_space; clickable=true; bounds=[379,2118][807,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",149
+151,19,"bounds=[386,2118][800,2243]; enabled=true; class=android.widget.FrameLayout; enabled=true",150
+152,20,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[386,2118][800,2243]; enabled=true; class=android.widget.TextView; enabled=true",151
+153,16,"accessibilityText=.; resource-id=com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_2; clickable=true; bounds=[807,2118][914,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",141
+154,17,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[856,2147][865,2227]; enabled=true; class=android.widget.TextView; enabled=true",153
+155,16,"accessibilityText=Enter; resource-id=com.google.android.inputmethod.latin:id/key_pos_ime_action; clickable=true; bounds=[914,2118][1075,2274]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; clickable=true; enabled=true",141
+156,17,"bounds=[921,2118][1068,2243]; enabled=true; class=android.widget.FrameLayout; enabled=true",155
+157,18,"resource-id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated; bounds=[963,2149][1026,2212]; enabled=true; class=android.widget.ImageView; enabled=true",156
+158,18,"bounds=[989,2175][1000,2186]; enabled=true; class=android.widget.ImageView; enabled=true",156
+159,10,"bounds=[0,1517][1080,2274]; enabled=true; class=android.widget.FrameLayout; enabled=true",33
+160,11,"bounds=[0,1517][1080,1520]; enabled=true; class=android.widget.ImageView; enabled=true",159
+161,3,"resource-id=android:id/navigationBarBackground; bounds=[0,2274][1080,2400]; enabled=true; class=android.view.View; enabled=true",25
+162,3,"bounds=[0,2274][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",25
+163,4,"resource-id=android:id/input_method_navigation_bar_view; bounds=[0,2274][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",162
+164,5,"resource-id=android:id/input_method_nav_inflater; bounds=[0,2274][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",163
+165,6,"resource-id=android:id/input_method_nav_horizontal; bounds=[0,2274][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",164
+166,7,"resource-id=android:id/input_method_nav_buttons; bounds=[21,2274][1059,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",165
+167,8,"resource-id=android:id/input_method_nav_ends_group; bounds=[21,2274][1059,2400]; enabled=true; class=android.widget.LinearLayout; enabled=true",166
+168,9,"bounds=[21,2274][204,2400]; enabled=true; class=android.widget.RelativeLayout; enabled=true",167
+169,10,"accessibilityText=Back; resource-id=android:id/input_method_nav_back; clickable=true; bounds=[21,2274][204,2400]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; clickable=true; enabled=true",168
+170,9,"bounds=[876,2274][1059,2400]; enabled=true; class=android.widget.RelativeLayout; enabled=true",167
+171,10,"accessibilityText=Switch input method; resource-id=android:id/input_method_nav_ime_switcher; clickable=true; bounds=[876,2274][1059,2400]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; clickable=true; enabled=true",170
+172,8,"resource-id=android:id/input_method_nav_center_group; bounds=[445,2274][634,2400]; enabled=true; class=android.widget.LinearLayout; enabled=true",166
+173,2,"bounds=[0,0][1080,2400]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",1
+174,3,"bounds=[0,0][1080,2337]; enabled=true; class=android.widget.LinearLayout; enabled=true",173
+175,4,"resource-id=android:id/content; bounds=[0,136][1080,1517]; enabled=true; class=android.widget.FrameLayout; enabled=true",174
+176,5,"bounds=[0,136][1080,1517]; enabled=true; class=androidx.compose.ui.platform.ComposeView; important-for-accessibility=true; enabled=true",175
+177,6,"bounds=[0,136][1080,1517]; enabled=true; class=android.view.View; enabled=true",176
+178,7,"bounds=[0,136][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",177
+179,8,"bounds=[0,136][1080,1517]; enabled=true; class=android.view.View; enabled=true",178
+180,9,"accessibilityText=application.shell; resource-id=application.shell; bounds=[0,136][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",179
+181,10,"accessibilityText=capture.confirmation.overlay; resource-id=capture.confirmation.overlay; bounds=[0,136][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",180
+182,11,"resource-id=native-search-presentation; bounds=[0,136][1080,1349]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",181
+183,12,"bounds=[0,136][1080,1134]; enabled=true; class=android.view.View; enabled=true",182
+184,13,"accessibilityText=screen.node; resource-id=screen.node; bounds=[0,136][1080,1134]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",183
+185,14,"accessibilityText=list.outliner; resource-id=list.outliner; bounds=[0,136][1080,1134]; enabled=true; scrollable=true; class=android.view.View; important-for-accessibility=true; enabled=true",184
+186,15,"accessibilityText=outliner.block.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; resource-id=outliner.block.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; bounds=[21,136][1059,958]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",185
+187,16,"resource-id=outliner.block-action.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; clickable=true; bounds=[89,136][1059,958]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",186
+188,17,"accessibilityText=outliner.block-action.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; bounds=[89,136][1059,978]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",187
+189,17,"accessibilityText=outliner.title-and-tags.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; resource-id=outliner.title-and-tags.f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; bounds=[131,136][1017,952]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",187
+190,18,"resource-id=outliner-block-content-f9c79b46-b7aa-4bc1-8cf8-e72dde60e691; bounds=[131,136][1017,952]; enabled=true; class=android.view.View; enabled=true",189
+191,19,"accessibilityText=gallery-entry-one.png; resource-id=asset.preview.image; clickable=true; bounds=[131,73][1017,952]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; clickable=true; enabled=true",190
+192,17,"bounds=[89,136][1059,978]; enabled=true; class=android.widget.RadioButton; important-for-accessibility=true; enabled=true",187
+193,15,"accessibilityText=outliner.block.6ad94729-b4b3-46c8-b2e7-00050f38f3dd; resource-id=outliner.block.6ad94729-b4b3-46c8-b2e7-00050f38f3dd; bounds=[21,983][1059,1056]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",185
+194,16,"resource-id=button.outliner.zoom.6ad94729-b4b3-46c8-b2e7-00050f38f3dd.UX review selection target; clickable=true; bounds=[0,957][116,1083]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",193
+195,17,"accessibilityText=button.outliner.zoom.6ad94729-b4b3-46c8-b2e7-00050f38f3dd.UX review selection target; bounds=[21,983][116,1056]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",194
+196,17,"bounds=[21,983][116,1056]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",194
+197,16,"resource-id=button.block-task-status; clickable=true; bounds=[59,958][185,1084]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",193
+198,17,"accessibilityText=button.block-task-status; bounds=[90,989][153,1052]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",197
+199,17,"bounds=[90,989][153,1052]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",197
+200,16,"accessibilityText=outliner.title-and-tags.6ad94729-b4b3-46c8-b2e7-00050f38f3dd; resource-id=outliner.title-and-tags.6ad94729-b4b3-46c8-b2e7-00050f38f3dd; bounds=[170,988][1059,1046]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",193
+201,17,"text=UX review selection target; resource-id=field.outliner.block.6ad94729-b4b3-46c8-b2e7-00050f38f3dd; clickable=true; bounds=[170,954][1059,1080]; enabled=true; focused=true; class=android.widget.EditText; important-for-accessibility=true; clickable=true; enabled=true; focused=true",200
+202,18,"bounds=[170,988][1059,1046]; enabled=true; class=android.view.View; enabled=true",201
+203,12,"bounds=[42,1155][860,1307]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",182
+204,13,"text=UX review selection target; resource-id=field.search; clickable=true; bounds=[147,1158][734,1305]; enabled=true; class=android.widget.EditText; important-for-accessibility=true; clickable=true; enabled=true",203
+205,14,"bounds=[189,1169][692,1295]; enabled=true; class=android.view.View; enabled=true",204
+206,13,"clickable=true; bounds=[713,1168][839,1294]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",203
+207,14,"accessibilityText=Clear; bounds=[753,1208][800,1255]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",206
+208,14,"bounds=[734,1189][818,1273]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",206
+209,12,"bounds=[886,1155][1038,1307]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",182
+210,13,"resource-id=button.search.close; clickable=true; bounds=[886,1155][1038,1307]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",209
+211,14,"accessibilityText=Close search; bounds=[931,1200][994,1263]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",210
+212,14,"bounds=[886,1155][1038,1307]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",210
+213,11,"accessibilityText=container.outliner.editor-chrome; resource-id=container.outliner.editor-chrome; bounds=[0,1349][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",181
+214,12,"accessibilityText=surface.outliner.editor-toolbar; resource-id=surface.outliner.editor-toolbar; bounds=[0,1349][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",213
+215,13,"accessibilityText=toolbar.outliner.editor; resource-id=toolbar.outliner.editor; bounds=[0,1349][1080,1517]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",214
+216,14,"bounds=[21,1370][1059,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",215
+217,15,"bounds=[21,1370][922,1496]; enabled=true; scrollable=true; class=android.widget.HorizontalScrollView; important-for-accessibility=true; enabled=true",216
+218,16,"resource-id=button.outliner.editor.task; clickable=true; bounds=[21,1370][147,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+219,17,"accessibilityText=button.outliner.editor.task; bounds=[21,1370][147,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",218
+220,17,"accessibilityText=Task: Doing; bounds=[53,1402][116,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",218
+221,17,"bounds=[21,1370][147,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",218
+222,16,"resource-id=button.outliner.editor.outdent; clickable=true; bounds=[158,1370][284,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+223,17,"accessibilityText=button.outliner.editor.outdent; bounds=[158,1370][284,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",222
+224,17,"accessibilityText=Outdent; bounds=[190,1402][253,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",222
+225,17,"bounds=[158,1370][284,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",222
+226,16,"resource-id=button.outliner.editor.indent; clickable=true; bounds=[295,1370][421,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+227,17,"accessibilityText=button.outliner.editor.indent; bounds=[295,1370][421,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",226
+228,17,"accessibilityText=Indent; bounds=[327,1402][390,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",226
+229,17,"bounds=[295,1370][421,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",226
+230,16,"resource-id=button.outliner.editor.moveUp; clickable=true; bounds=[432,1370][558,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+231,17,"accessibilityText=button.outliner.editor.moveUp; bounds=[432,1370][558,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",230
+232,17,"accessibilityText=Move up; bounds=[464,1402][527,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",230
+233,17,"bounds=[432,1370][558,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",230
+234,16,"resource-id=button.outliner.editor.moveDown; clickable=true; bounds=[569,1370][695,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+235,17,"accessibilityText=button.outliner.editor.moveDown; bounds=[569,1370][695,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",234
+236,17,"accessibilityText=Move down; bounds=[601,1402][664,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",234
+237,17,"bounds=[569,1370][695,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",234
+238,16,"resource-id=button.outliner.editor.tag; clickable=true; bounds=[706,1370][832,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+239,17,"accessibilityText=button.outliner.editor.tag; bounds=[706,1370][832,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",238
+240,17,"accessibilityText=Tag; bounds=[738,1402][801,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",238
+241,17,"bounds=[706,1370][832,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",238
+242,16,"resource-id=button.outliner.editor.camera; clickable=true; bounds=[843,1370][933,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",217
+243,17,"accessibilityText=button.outliner.editor.camera; bounds=[843,1370][922,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",242
+244,17,"accessibilityText=Photo; bounds=[875,1402][922,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",242
+245,17,"bounds=[843,1370][922,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",242
+246,15,"resource-id=button.outliner.editor.hideKeyboard; clickable=true; bounds=[933,1370][1059,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",216
+247,16,"accessibilityText=button.outliner.editor.hideKeyboard; bounds=[933,1370][1059,1496]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",246
+248,16,"accessibilityText=Hide keyboard; bounds=[965,1402][1028,1465]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",246
+249,16,"bounds=[933,1370][1059,1496]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",246

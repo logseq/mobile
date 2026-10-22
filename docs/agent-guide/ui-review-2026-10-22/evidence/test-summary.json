@@ -1,0 +1,48 @@
+{
+  "rows": [
+    [
+      "JVM",
+      "64 / 64 通过，0 failure / error / skip",
+      "真实 HTTP、缓存、磁盘队列、生命周期、输入偏好等"
+    ],
+    [
+      "常规 Android 安装回归",
+      "78 项通过",
+      "独立 Compose 控件、图库、rich content、输入、系统 share / recording 等"
+    ],
+    [
+      "真实 native import",
+      "1 项带正确 fixture 参数重跑通过",
+      "当前重建的 core 输出 importing / opening 与正数记录总量"
+    ],
+    [
+      "真实 IME / installed App",
+      "7 项分别独立 instrumentation 运行通过",
+      "菜单 / 键盘 / 光标、任务状态、编辑后的数学；整组串行准备仍有 6 项失败，保留限制"
+    ],
+    [
+      "后台同步",
+      "6 / 6 通过",
+      "本地端点、真实 core、磁盘游标、重试 / 取消 / lease；0.197 秒"
+    ],
+    [
+      "Maestro 双端探索",
+      "实际操作与 PNG / hierarchy 证据",
+      "发现 4 项交互问题；不是“全产品功能测试全部通过”"
+    ]
+  ],
+  "initialRun": {
+    "tests": 86,
+    "passed": 78,
+    "skipped": 7,
+    "failed": 1
+  },
+  "optInGroupedRun": {
+    "tests": 8,
+    "passed": 2,
+    "failed": 6
+  },
+  "isolatedIme": 7,
+  "nativeImportRetry": 1,
+  "backgroundSync": 6
+}

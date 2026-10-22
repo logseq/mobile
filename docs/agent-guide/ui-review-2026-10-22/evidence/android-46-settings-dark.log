@@ -1,0 +1,17 @@
+Running on logseq_release_qa_33
+ > Flow review-android-46-settings-dark
+Launch app "com.logseq.app"... COMPLETED
+Tap on id: button.sidebar... COMPLETED
+Tap on id: button.sidebar.settings... COMPLETED
+Tap on "Theme"... COMPLETED
+Tap on "Dark"... COMPLETED
+Assert that "Dark" is visible... COMPLETED
+Tap on "Apply"... COMPLETED
+Tap on id: button.sidebar.settings... COMPLETED
+Assert that "Settings" is visible... COMPLETED
+Assert that "Dark" is visible... COMPLETED
+Take screenshot fixed-settings-dark... COMPLETED
+Tap on "Theme"... COMPLETED
+Tap on "Light"... COMPLETED
+Assert that "Light" is visible... COMPLETED
+Tap on "Apply"... COMPLETED

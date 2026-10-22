@@ -1,0 +1,30 @@
+{
+  "report": "../008-android-ios-ui-ux-review_report.html",
+  "viewports": [
+    [
+      1280,
+      800
+    ],
+    [
+      390,
+      844
+    ]
+  ],
+  "horizontalOverflow": false,
+  "uniqueScreenshots": 46,
+  "renderedScreenshotInstances": 46,
+  "imageDecodeFailures": 0,
+  "filters": {
+    "P1": [
+      "UX-01",
+      "UX-03"
+    ]
+  },
+  "lightbox": {
+    "open": true,
+    "escapeCloses": true
+  },
+  "localLinks": "all 94 targets exist",
+  "applicationCodeChangedByReview": true,
+  "note": "Original review was read-only; follow-up fixes are authorized. Smooth scrolling was disabled only in browser QA to stabilize automated hit coordinates."
+}

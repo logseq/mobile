@@ -1,0 +1,5 @@
+Running on logseq_release_qa_33
+ > Flow review-android-10-add-graph-expanded
+Assert that "UX_Review_Graph" is visible... COMPLETED
+Assert that "Add" is visible... COMPLETED
+Wait for animation to end... COMPLETED

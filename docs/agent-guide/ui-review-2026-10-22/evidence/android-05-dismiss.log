@@ -1,0 +1,6 @@
+Running on logseq_release_qa_33
+ > Flow review-android-05-dismiss
+Tap on "Doing"... COMPLETED
+Tap on id: surface.composer.dismiss at 50%,15%... COMPLETED
+Assert that id: button.composer.expand is visible... COMPLETED
+Assert that id: field.composer is not visible... COMPLETED

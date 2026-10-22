@@ -1,0 +1,20 @@
+Running on logseq_release_qa_33
+ > Flow review-android-35-flashcard-complete
+Launch app "com.logseq.app"... COMPLETED
+Assert that id: button.sidebar is visible... COMPLETED
+Tap on id: button.sidebar... COMPLETED
+Tap on id: link.sidebar.flashcards... COMPLETED
+Assert that id: flashcard.question is visible... COMPLETED
+Assert that id: button.composer.expand is not visible... COMPLETED
+Assert that id: button.search is not visible... COMPLETED
+Assert that "The capital of France is \[…\]" is visible... COMPLETED
+Take screenshot 32-card-question... COMPLETED
+Tap on id: button.flashcard.show-cloze... COMPLETED
+Assert that "The capital of France is Paris" is visible... COMPLETED
+Take screenshot 33-card-cloze... COMPLETED
+Tap on id: button.flashcard.show-answer... COMPLETED
+Assert that "Paris is the answer" is visible... COMPLETED
+Take screenshot 34-card-answer... COMPLETED
+Tap on id: button.flashcard.rating.good... COMPLETED
+Assert that id: flashcards.empty is visible... COMPLETED
+Assert that "No cards due" is visible... COMPLETED

@@ -1,0 +1,10 @@
+{
+  "android/app/build/outputs/apk/debug/app-debug.apk": {
+    "sha256": "d83dd0b13363b77c8cc6883fd55b54a4449050a2617d2d47119e544d682bf7fa",
+    "bytes": 43430661
+  },
+  "android/app/src/main/jniLibs/arm64-v8a/liblogseq_core.so": {
+    "sha256": "0855c7ee8e72fd99109946ee8b5ef2b817ee46583a383d618967186dc19cda86",
+    "bytes": 18276864
+  }
+}

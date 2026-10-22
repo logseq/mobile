@@ -1,0 +1,16 @@
+Running on Logseq Demo - iOS 26.0 - B5C472E1-25F4-4541-A20F-174DD2B2F74A
+ > Flow review-ios-editor-keyboard
+Tap on "Clear task status"... COMPLETED
+Tap on id: surface.composer.dismiss at 50%,15%... COMPLETED
+Tap on id: outliner.block-action.de000000-0000-4000-8000-000000000011... COMPLETED
+Tap on id: field.outliner.block.de000000-0000-4000-8000-000000000011... COMPLETED
+Input text  ... COMPLETED
+Press Backspace key... COMPLETED
+Wait for animation to end... COMPLETED
+Take screenshot 12-editor... COMPLETED
+Swipe from (80%,59%) to (20%,59%) in 600 ms... COMPLETED
+Take screenshot 13-editor-trailing... COMPLETED
+Tap on id: button.outliner.editor.hideKeyboard... COMPLETED
+Long press on id: outliner.block-action.de000000-0000-4000-8000-000000000011... COMPLETED
+Assert that id: toolbar.outliner.selection is visible... COMPLETED
+Take screenshot 14-selection... COMPLETED

@@ -1,0 +1,49 @@
+element_num,depth,attributes,parent_num
+0,0,"",
+1,1,"",0
+2,2,"bounds=[0,0][1080,2400]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",1
+3,3,"bounds=[0,0][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",2
+4,4,"resource-id=android:id/content; bounds=[0,0][1080,2400]; enabled=true; class=android.widget.FrameLayout; enabled=true",3
+5,5,"bounds=[0,0][1080,2400]; enabled=true; class=android.view.ViewGroup; important-for-accessibility=true; enabled=true",4
+6,6,"bounds=[0,0][1080,2400]; enabled=true; class=android.view.View; enabled=true",5
+7,7,"bounds=[0,0][1080,2400]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",6
+8,8,"bounds=[0,0][1080,2400]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",7
+9,9,"resource-id=image.preview.gallery; bounds=[0,304][1080,2337]; enabled=true; scrollable=true; class=android.view.View; important-for-accessibility=true; enabled=true",8
+10,10,"resource-id=image.preview.zoom.0; bounds=[0,304][1080,2337]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",9
+11,11,"accessibilityText=61fa31ad-5059-48c1-acdc-7f26d9ca3d40-61fa31ad-5059-48c1-acdc-7f26d9ca3d40-gallery-entry-one.png; bounds=[0,304][1080,2337]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; enabled=true",10
+12,9,"bounds=[0,0][1080,304]; enabled=true; class=android.view.View; enabled=true",8
+13,10,"bounds=[0,136][1080,304]; enabled=true; class=android.view.View; enabled=true",12
+14,11,"resource-id=image.preview.close; clickable=true; bounds=[12,158][138,284]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",13
+15,12,"accessibilityText=Close image preview; bounds=[43,189][106,252]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",14
+16,12,"bounds=[22,168][127,273]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",14
+17,11,"bounds=[140,157][266,283]; enabled=true; class=android.view.View; enabled=true",13
+18,12,"text=1 / 5; bounds=[148,183][258,257]; enabled=true; class=android.widget.TextView; important-for-accessibility=true; enabled=true",17
+19,11,"resource-id=image.preview.save; clickable=true; bounds=[818,158][944,284]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",13
+20,12,"accessibilityText=Save image; bounds=[849,189][912,252]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",19
+21,12,"bounds=[828,168][933,273]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",19
+22,11,"resource-id=image.preview.share; clickable=true; bounds=[944,158][1070,284]; enabled=true; class=android.view.View; important-for-accessibility=true; clickable=true; enabled=true",13
+23,12,"accessibilityText=Share image; bounds=[975,189][1038,252]; enabled=true; class=android.view.View; important-for-accessibility=true; enabled=true",22
+24,12,"bounds=[954,168][1059,273]; enabled=true; class=android.widget.Button; important-for-accessibility=true; enabled=true",22
+25,2,"bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",1
+26,3,"resource-id=com.android.systemui:id/status_bar_launch_animation_container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",25
+27,3,"resource-id=com.android.systemui:id/container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",25
+28,3,"resource-id=com.android.systemui:id/status_bar_container; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",25
+29,4,"resource-id=com.android.systemui:id/status_bar; bounds=[0,0][1080,136]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",28
+30,5,"resource-id=com.android.systemui:id/status_bar_contents; bounds=[136,0][1027,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",29
+31,6,"resource-id=com.android.systemui:id/status_bar_start_side_container; bounds=[157,5][581,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",30
+32,7,"resource-id=com.android.systemui:id/status_bar_start_side_content; bounds=[157,5][292,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",31
+33,8,"resource-id=com.android.systemui:id/status_bar_start_side_except_heads_up; bounds=[157,5][292,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",32
+34,9,"text=7:22; accessibilityText=7:22 AM; resource-id=com.android.systemui:id/clock; bounds=[157,5][234,136]; enabled=true; class=android.widget.TextView; important-for-accessibility=true; enabled=true",33
+35,9,"resource-id=com.android.systemui:id/notification_icon_area; bounds=[234,5][292,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",33
+36,10,"resource-id=com.android.systemui:id/notificationIcons; bounds=[234,5][292,136]; enabled=true; class=android.view.ViewGroup; enabled=true",35
+37,11,"accessibilityText=Android System notification: Wi‑Fi will turn on automatically; bounds=[234,5][292,136]; enabled=true; class=android.widget.ImageView; important-for-accessibility=true; enabled=true",36
+38,6,"resource-id=com.android.systemui:id/status_bar_end_side_container; bounds=[581,5][1006,136]; enabled=true; class=android.widget.FrameLayout; enabled=true",30
+39,7,"resource-id=com.android.systemui:id/status_bar_end_side_content; bounds=[931,5][1006,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",38
+40,8,"resource-id=com.android.systemui:id/system_icons; bounds=[931,5][1006,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",39
+41,9,"resource-id=com.android.systemui:id/statusIcons; bounds=[931,5][986,136]; enabled=true; class=android.widget.LinearLayout; enabled=true",40
+42,10,"accessibilityText=Phone signal full.; resource-id=com.android.systemui:id/mobile_combo; bounds=[931,41][970,99]; enabled=true; class=android.widget.FrameLayout; important-for-accessibility=true; enabled=true",41
+43,11,"resource-id=com.android.systemui:id/mobile_group; bounds=[931,41][970,99]; enabled=true; class=android.widget.LinearLayout; enabled=true",42
+44,12,"bounds=[931,50][970,89]; enabled=true; class=android.widget.FrameLayout; enabled=true",43
+45,13,"resource-id=com.android.systemui:id/mobile_signal; bounds=[931,50][970,89]; enabled=true; class=android.widget.ImageView; enabled=true",44
+46,9,"accessibilityText=Battery charging, 100 percent.; resource-id=com.android.systemui:id/battery; bounds=[986,5][1006,136]; enabled=true; class=android.widget.LinearLayout; important-for-accessibility=true; enabled=true",40
+47,10,"bounds=[986,53][1006,87]; enabled=true; class=android.widget.ImageView; enabled=true",46

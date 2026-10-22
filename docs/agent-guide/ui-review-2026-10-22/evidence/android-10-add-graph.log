@@ -1,0 +1,17 @@
+Running on logseq_release_qa_33
+ > Flow review-android-10-add-graph
+Tap on id: button.graph-add... COMPLETED
+Assert that id: button.graph-add.cancel is visible... FAILED
+
+Assertion is false: id: button.graph-add.cancel is visible
+
+Assertion 'id: button.graph-add.cancel is visible' failed. Check the UI hierarchy in debug artifacts to verify the element state and properties.
+
+Possible causes:
+- Element selector may be incorrect - check if there are similar elements with slightly different names/properties.
+- Element may be temporarily unavailable due to loading state
+- This could be a real regression that needs to be addressed
+
+==== Debug output (logs & screenshots) ====
+
+/Users/tiensonqin/Codes/projects/logseq-chat/docs/agent-guide/ui-review-2026-10-22/evidence/android-10-add-graph-artifacts/2026-10-22_070218

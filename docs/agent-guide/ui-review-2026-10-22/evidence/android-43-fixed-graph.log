@@ -1,0 +1,17 @@
+Running on logseq_release_qa_33
+ > Flow review-android-43-fixed-graph
+Launch app "com.logseq.app"... COMPLETED
+Tap on id: button.sidebar... COMPLETED
+Tap on id: link.sidebar.graphs... COMPLETED
+Tap on id: button.graph-add... COMPLETED
+Assert that "Add sync graph" is visible... COMPLETED
+Assert that "Cancel" is visible... COMPLETED
+Assert that "Add" is visible... COMPLETED
+Take screenshot fixed-graph-initial... COMPLETED
+Tap on "Graph name"... COMPLETED
+Input text Unsent review graph... COMPLETED
+Assert that "Cancel" is visible... COMPLETED
+Assert that "Add" is visible... COMPLETED
+Take screenshot fixed-graph-keyboard... COMPLETED
+Tap on "Cancel"... COMPLETED
+Assert that "Add sync graph" is not visible... COMPLETED

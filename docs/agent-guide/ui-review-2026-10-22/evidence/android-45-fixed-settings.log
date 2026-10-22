@@ -1,0 +1,9 @@
+Running on logseq_release_qa_33
+ > Flow review-android-45-fixed-settings
+Launch app "com.logseq.app"... COMPLETED
+Tap on id: button.sidebar... COMPLETED
+Tap on id: button.sidebar.settings... COMPLETED
+Assert that "Settings" is visible... COMPLETED
+Assert that "Apply" is visible... COMPLETED
+Take screenshot fixed-settings-light... COMPLETED
+Tap on "Cancel"... COMPLETED
