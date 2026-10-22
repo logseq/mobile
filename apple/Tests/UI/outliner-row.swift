@@ -54,6 +54,13 @@ import UIKit
               element("outliner.sync-failed.row") != nil else {
             throw NSError(domain: "OutlinerRowCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Native row controls must actually render"])
         }
+        let disclosure = element("button.outliner.collapse.row") as! UIButton
+        precondition(disclosure.bounds.width >= 44 && disclosure.bounds.height >= 44,
+                     "Disclosure must have a full 44-point touch target")
+        let nearEdge = CGPoint(x: disclosure.bounds.minX + 2, y: disclosure.bounds.maxY - 2)
+        let pointInRow = disclosure.convert(nearEdge, to: disclosure.superview)
+        precondition(disclosure.superview?.hitTest(pointInRow, with: nil) === disclosure,
+                     "Tapping the edge of the disclosure target must not edit the title")
         var missing: [String] = []
         for identifier in ["button.outliner.zoom.row.Visible title", "button.block-task-status"] {
             guard let button = element(identifier) as? UIButton else { fatalError("Missing glyph control") }

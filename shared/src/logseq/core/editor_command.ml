@@ -29,15 +29,14 @@ let catalog db =
    entry "image" "Image link" (Pick Image); entry "underline" "Underline" (Insert ("<ins></ins>", 6));
    entry "code" "Code block" (Code None);
    entry "quote" "Quote" (Properties ["logseq.property.node/display-type", Some (Ops.Keyword_value "quote")]);
-   entry "math" "Math block" (Properties ["logseq.property.node/display-type", Some (Ops.Keyword_value "math")]);
-   entry "normal" "Normal text" (Properties ["logseq.property/heading", None]);
-   entry "clear-heading" "Clear heading" (Properties ["logseq.property/heading", None])]
+   entry "math" "Math block" (Properties ["logseq.property.node/display-type", Some (Ops.Keyword_value "math")])]
   @ List.init 6 (fun i -> let n = i + 1 in entry ("heading-" ^ string_of_int n) ("Heading " ^ string_of_int n)
       (Properties ["logseq.property/heading", Some (Ops.Int_value n)]))
+  @ [entry "clear-heading" "Clear heading" (Properties ["logseq.property/heading", None])]
   @ choices "logseq.property/status"
   @ [entry "deadline" "Deadline" (Pick Deadline); entry "scheduled" "Scheduled" (Pick Scheduled)]
-  @ [entry "no-priority" "No priority" (Choice ("logseq.property/priority", None))]
   @ choices "logseq.property/priority"
+  @ [entry "no-priority" "No priority" (Choice ("logseq.property/priority", None))]
   @ [
      entry "tomorrow" "Tomorrow" (Journal 1); entry "yesterday" "Yesterday" (Journal (-1));
      entry "today" "Today" (Journal 0); entry "time" "Current time" Time; entry "date" "Date picker" (Pick Date);
@@ -54,7 +53,7 @@ let group value =
   let id = String.sub value 8 (String.length value - 8) in
   Some (if id = "embed" then "BASIC"
     else if List.mem id ["link"; "image"; "underline"; "code"; "quote"; "math"] then "FORMAT"
-    else if List.mem id ["normal"; "clear-heading"] || String.starts_with ~prefix:"heading-" id then "Heading"
+    else if id = "clear-heading" || String.starts_with ~prefix:"heading-" id then "Heading"
     else if String.starts_with ~prefix:"logseq.property/status:" id then "TASK STATUS"
     else if List.mem id ["deadline"; "scheduled"] then "TASK DATE"
     else if id = "no-priority" || String.starts_with ~prefix:"logseq.property/priority:" id then "PRIORITY"

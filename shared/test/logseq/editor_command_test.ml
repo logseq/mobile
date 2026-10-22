@@ -61,13 +61,13 @@ let catalog_search_and_literal_boundaries () = R.with_runtime (fun session _ _ -
   let labels = List.map (fun row -> text (member "label" row)) (choices response) in
   List.iter (fun label -> check ~msg:("built-in command missing: " ^ label) (List.mem label labels))
     ["Node embed"; "Link"; "Image link"; "Underline"; "Code block"; "Quote"; "Math block";
-     "Normal text"; "Clear heading"; "Heading 1"; "Heading 6"; "Deadline"; "Scheduled";
+     "Clear heading"; "Heading 1"; "Heading 6"; "Deadline"; "Scheduled";
      "Tomorrow"; "Yesterday"; "Today"; "Current time"; "Date picker"; "Number list";
      "Number children"; "Calculator"; "Template"; "Embed HTML"; "Embed Video URL";
      "Embed YouTube timestamp"; "Embed Twitter tweet"; "Cloze"; "No priority"];
   List.iter (fun label -> check ~msg:("excluded command: " ^ label) (not (List.mem label labels)))
     ["Query"; "Advanced Query"; "Query function"; "Add property"; "Add comment";
-     "Upload an asset"; "Node reference"];
+     "Upload an asset"; "Node reference"; "Normal text"];
   let response = start session "/h6" in
   check ~msg:"command search is fuzzy" (List.exists (fun row -> member "label" row = `String "Heading 6") (choices response));
   List.iter (fun title -> let response = start session title in
@@ -112,7 +112,7 @@ let graph_choices_headings_and_block_types () = R.with_runtime (fun session runt
     check_eq (value runtime uuid "logseq.property.node/display-type") (Some (Ds.Keyword typ));
     if label = "Calculator" then check_eq (value runtime uuid "logseq.property.code/lang") (Some (Ds.String "calc")))
     ["Quote", "quote"; "Math block", "math"; "Code block", "code"; "Calculator", "code"];
-  ignore (run session "Normal text"); save session;
+  ignore (run session "Clear heading"); save session;
   check_eq (value runtime Q.alpha "logseq.property/heading") None;
   ignore (run session "Todo"); save session;
   check ~msg:"task statuses are graph choices" (value runtime Q.alpha "logseq.property/status" <> None);
@@ -420,8 +420,8 @@ let command_groups_follow_master_order () =
     let labels = List.map (fun candidate -> text (member "label" candidate)) commands in
     let before a b =
       check ~msg:(a ^ " precedes " ^ b) (Option.get (List.find_index ((=) a) labels) < Option.get (List.find_index ((=) b) labels)) in
-    before "Link" "Image link"; before "Image link" "Underline"; before "Normal text" "Heading 1";
-    before "No priority" "Low"; before "Calculator" "Template"; before "Embed Twitter tweet" "Cloze";
+    before "Link" "Image link"; before "Image link" "Underline"; before "Heading 6" "Clear heading";
+    before "Low" "No priority"; before "Calculator" "Template"; before "Embed Twitter tweet" "Cloze";
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
       List.iter (fun group -> check ~msg:("native group header " ^ group)
@@ -458,6 +458,30 @@ let enter_on_a_parent_matches_master_placement () =
       | Ok _ -> () | Error message -> fail message) (Graph_runtime.pending_operations runtime)))
     [false, 5, Q.alpha, ""; false, 2, Q.alpha, "llo"; true, 5, Q.page, ""; false, 0, Q.page, ""]
 
+let backspace_at_start_keeps_the_caret_at_the_merge_boundary () =
+  List.iter (fun (previous_title, nested, collapsed) -> R.with_runtime (fun session runtime conn ->
+    let descendant = "70000000-0000-4000-8000-000000000002" in
+    rebase runtime conn ([put Q.alpha "block/title" (Ds.String previous_title);
+      put Q.beta "block/title" (Ds.String "Hello")]
+      @ (if nested then [put Q.beta "block/parent" (Ds.Ref_to (Q.ref_uuid Q.alpha))] else [])
+      @ R.entity 221 descendant "Preserved child" @ [
+        put descendant "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+        put descendant "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta));
+        put descendant "block/order" (Ds.String "a0")]);
+    if collapsed then ignore (event session "toggleCollapsed" ["uuid", `String Q.beta]);
+    ignore (event session "tapBlock" ["uuid", `String Q.beta]);
+    ignore (type_at session "Hello" 0);
+    let response = event session "backspacePressed" ["title", `String "Hello"; "selectionLength", `Int 0] in
+    check_eq ~msg:"Backspace edits the surviving previous block" (member "uuid" (draft response)) (`String Q.alpha);
+    check_eq ~msg:"merged text is preserved" (member "title" (draft response)) (`String (previous_title ^ "Hello"));
+    check_eq ~msg:"caret stays between the previous title and Hello, in native UTF-16 units"
+      (member "caretUTF16Offset" (draft response)) (`Int (Outliner_state.utf16_length previous_title));
+    let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+    check ~msg:"only the merged source is removed" (not (List.exists (fun (b : Cache_model.block) -> b.uuid = Q.beta) blocks));
+    check_eq ~msg:"source children survive under the merged block"
+      (List.find (fun (b : Cache_model.block) -> b.uuid = descendant) blocks).parent_id (Some Q.alpha)))
+    ["World", false, false; "中文🙂", false, true; "Parent", true, false]
+
 let task_dates_are_visible_and_editable_in_the_outline () =
   List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
     List.iter (fun label -> ignore (run session label); ignore (submit session "1792719000000"); save session)
@@ -474,6 +498,11 @@ let task_dates_are_visible_and_editable_in_the_outline () =
       List.iter (fun attr ->
         let value = find ("property.value." ^ Q.alpha ^ "." ^ attr) in
         check ~msg:"task date is visible before zooming in" (value <> -1);
+        let label = find ("property.label." ^ Q.alpha ^ "." ^ attr) in
+        check_eq ~msg:"task date keys use compact icons" (App_test.property_string host label Lui_protocol.IconName)
+          ("app:" ^ if attr = "logseq.property/scheduled" then "calendar" else "deadline");
+        check ~msg:"date text uses a readable month rather than a numeric date"
+          (not (String_kit.includes ~sub:"2026-10-" (App_test.property_string host value Lui_protocol.TextValue)));
         App_test.dispatch app (Lui_protocol.Press value); App_test.flush app;
         check ~msg:"task date opens the existing native date editor"
           (find ("view.edit.sheet.property." ^ Q.alpha ^ "." ^ attr) <> -1);
@@ -485,6 +514,7 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;
   case "task dates are visible and editable in the outline" task_dates_are_visible_and_editable_in_the_outline;
   case "command groups follow master order" command_groups_follow_master_order;

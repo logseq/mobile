@@ -222,7 +222,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         guard let row else { return 0 }
         let inset = CGFloat(max(0, row.depth)) * 22
         let statusWidth: CGFloat = row.status == nil ? 0 : OutlinerLayoutMetrics.statusIconSize + OutlinerLayoutMetrics.statusContentSpacing
-        let trailing: CGFloat = row.hasChildren ? 28 : 0
+        let trailing: CGFloat = row.hasChildren ? 44 : 0
         let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
         let iconLeading: CGFloat = row.status != nil ? OutlinerLayoutMetrics.statusLeading : (row.priority != nil ? 20 : 26)
         let leading = inset + iconLeading + statusWidth + priorityWidth
@@ -234,7 +234,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             status.frame = CGRect(x: inset + iconLeading, y: 2, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
             priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
-            disclosure.frame = CGRect(x: width - trailing, y: 2, width: 28, height: 24)
+            disclosure.frame = CGRect(x: width - trailing, y: 0, width: 44, height: 44)
         }
         if !tags.isEmpty {
             var x = leading
@@ -250,7 +250,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             if apply { failure.frame = CGRect(x: leading, y: height, width: bodyWidth, height: size.height) }
             height += size.height + 2
         }
-        return height
+        return row.hasChildren ? max(44, height) : height
     }
     override func sizeThatFits(_ size: CGSize) -> CGSize { CGSize(width: size.width, height: layout(width: size.width, apply: false)) }
     override func layoutSubviews() {

@@ -38,8 +38,8 @@ private struct LGPropertyRowLayout: Layout {
     let stacked: Bool
 
     private func metrics(width: CGFloat, subviews: Subviews) -> (Bool, CGFloat, CGSize, CGSize) {
-        let keyWidth = min(148, width * 0.46)
         let intrinsic = subviews[0].sizeThatFits(.unspecified)
+        let keyWidth = intrinsic.width <= 24 ? intrinsic.width : min(144, width * 0.44)
         let vertical = stacked || intrinsic.width > keyWidth || width - keyWidth - 8 < 96
         let key = subviews[0].sizeThatFits(.init(width: vertical ? width : keyWidth, height: nil))
         let value = subviews[1].sizeThatFits(.init(width: vertical ? width : width - keyWidth - 8, height: nil))

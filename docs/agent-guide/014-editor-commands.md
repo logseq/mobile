@@ -77,3 +77,11 @@ YouTube timestamp insertion needs the active player position when available and 
 - iOS native runtime check passed for shared command/reference/tag completion, keyboard and caret retention, and real clipboard paste.
 - Android app and instrumentation APKs built; both native completion and clipboard-paste checks passed.
 - No graph reset or uninstall is needed for the device update.
+
+## Follow-up parity fixes
+
+- Backspace keeps the native UTF-16 caret at the boundary between merged titles.
+- Heading levels precede Clear heading, and graph priorities precede No priority. The duplicate Normal text command is removed in mobile and upstream PR 13826.
+- Native disclosure controls expose a 44-point touch target, including its edges.
+- Placeholder blocks use the regular bullet asset with reduced opacity.
+- The shared properties renderer uses compact task-date icons and local readable datetime labels.

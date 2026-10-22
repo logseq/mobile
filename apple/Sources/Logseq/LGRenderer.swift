@@ -69,6 +69,7 @@ enum LGIconPolicy {
     static var icons: [String: LUIAppleIconSource] {
         var result: [String: LUIAppleIconSource] = [
             "calendar": .assetName("calendar"),
+            "deadline": .assetName("deadline"),
             "add": .assetName("plus"),
             "composer-add": .systemName("plus"),
             "composer-file": .systemName("doc"),

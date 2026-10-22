@@ -6,6 +6,24 @@ let list = function `List values -> values | _ -> []
 let decode raw = try J.from_string raw with _ -> `Null
 let has_properties raw = list (field "properties" (decode raw)) <> []
 
+let display_value property =
+  let raw = text (field "text" property) in
+  if field "kind" property <> `String "datetime" then raw else
+  match float_of_string_opt (text (field "editorValue" property)) with
+  | Some millis when Float.is_finite millis && abs_float millis <= 8640000000000000. ->
+    let value = Unix.localtime (millis /. 1000.) in
+    let now = Unix.localtime (Unix.gettimeofday ()) in
+    let day t = t.Unix.tm_year, t.tm_mon, t.tm_mday in
+    let noon, _ = Unix.mktime {now with tm_hour = 12; tm_min = 0; tm_sec = 0} in
+    let date = if day value = day now then "Today"
+      else if day value = day (Unix.localtime (noon +. 86400.)) then "Tomorrow"
+      else if day value = day (Unix.localtime (noon -. 86400.)) then "Yesterday"
+      else let months = [|"Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"|] in
+        Printf.sprintf "%s %d%s" months.(value.tm_mon) value.tm_mday
+          (if value.tm_year = now.tm_year then "" else ", " ^ string_of_int (value.tm_year + 1900)) in
+    Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
+  | _ -> raw
+
 let adaptive_row stacked children : t = fun context parent ->
   let node = Lui_ui.extension context "native-property-row" in
   attach context parent node;
@@ -62,12 +80,18 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
           let send_block = function
             | Model.BeginOutlinerEdit uuid -> edit ~value_uuid:uuid (); true
             | action -> send action in
-          let label = Lui_elements.text ~value_signal:(own (Signal.map (fun p -> text (field "title" p)) property_source))
+          let task_icon = match attr with "logseq.property/scheduled" -> Some "calendar"
+            | "logseq.property/deadline" -> Some "deadline" | _ -> None in
+          let label = match task_icon with
+            | Some name -> icon ~name:(`app name) ~width:20 ~height:20 ~foreground:"muted-foreground"
+                ~tooltip:(text (field "title" first))
+                ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) []
+            | None -> Lui_elements.text ~value_signal:(own (Signal.map (fun p -> text (field "title" p)) property_source))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
             ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:1.0
-            ~text_signal:(own (Signal.map (fun p -> let value = text (field "text" p) in if value = "" then "Empty" else value) property_source))
+            ~text_signal:(own (Signal.map (fun p -> let value = display_value p in if value = "" then "Empty" else value) property_source))
             ~label:(text (field "title" first)) ~disabled:(field "editable" first <> `Bool true)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
           let checkbox_value = checkbox ~foreground:"muted-foreground" ~width:32 ~height:32

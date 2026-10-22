@@ -67,7 +67,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
               View_base.outliner_collapse_icon_name
                 current_row.is_collapsed)
             row_source)
-         (button ~variant:`ghost ~width:28 ~height:28
+         (button ~variant:`ghost ~width:44 ~height:44
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -86,7 +86,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
               else "app:disclosure-down")
             row_source)
          (button ~size:`icon ~style_class:"body-line"
-            ~foreground:"secondary" ~variant:`ghost ~width:28 ~height:24
+            ~foreground:"secondary" ~variant:`ghost ~width:44 ~height:44
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -1046,10 +1046,11 @@ let page_loading_view model_source : t =
 
 let placeholder_block context (value : View_rows.placeholder) send : t =
   let placeholder : t = fun mount_context parent ->
-    let node = box ~height:44 ~padding_horizontal:8
+    let node = box ~height:44
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
       [row ~cross:`center ~gap:0
-        [text ~width:24 ~foreground:"muted-foreground" ~value:"•" [];
+        [box ~opacity:0.35 [icon ~name:(`app "outliner-bullet") ~width:24 ~height:24 ~foreground:"muted-foreground"
+           ~accessibility_identifier:("outliner.placeholder.bullet." ^ value.parent_uuid) []];
          box ~grow:1.0 []]] mount_context parent in
     Lui_ui.string_property mount_context node AccessibilityLabel "Add block";
     Lui_ui.bool_property mount_context node PressEnabled true;

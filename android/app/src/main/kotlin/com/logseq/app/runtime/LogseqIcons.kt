@@ -144,6 +144,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "arrow-up" to Icons.Filled.ArrowUpward,
     "arrow-down" to Icons.Filled.ArrowDownward,
     "calendar" to Icons.Outlined.DateRange,
+    "deadline" to Icons.Outlined.Flag,
     "chevron-down" to Icons.Filled.KeyboardArrowDown,
     "chevron-up" to Icons.Filled.KeyboardArrowUp,
     "chevron-right" to Icons.AutoMirrored.Filled.KeyboardArrowRight,

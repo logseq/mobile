@@ -1606,7 +1606,13 @@ let update context (state : outliner_state) message =
        staged_editing context state value.uuid value.title false
      | Ops.Merge_backward value ->
        (match find_block context value.previous_uuid with
-        | Some block -> staged_editing context state block.uuid block.title false
+        | Some block ->
+          let previous = {block with title = value.expected_previous_title} in
+          let caret = utf16_length (display_block_title context previous) in
+          let next, commands = staged_editing context state block.uuid block.title false in
+          let editing = Option.map (fun (draft : editor_draft) ->
+            {draft with caret = min caret (utf16_length draft.title)}) next.editing in
+          ({next with editing}, commands)
         | None -> step state [])
      | Ops.Save_title value ->
        (match state.editing with

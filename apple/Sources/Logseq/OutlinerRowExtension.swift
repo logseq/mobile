@@ -259,7 +259,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 Button { emit("collapse") } label: {
                     Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
-                        .frame(width: 28, height: 24)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")

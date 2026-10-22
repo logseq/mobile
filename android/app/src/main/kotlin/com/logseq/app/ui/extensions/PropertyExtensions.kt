@@ -58,9 +58,10 @@ private fun PropertyRow(context: LuiExtensionContext) {
     Layout(content = { context.Children() }, modifier = Modifier.fillMaxWidth()) { children, constraints ->
         if (children.size != 2) return@Layout layout(0, 0) {}
         val width = constraints.maxWidth
-        val keyWidth = minOf(148.dp.roundToPx(), (width * 0.46f).toInt())
+        val intrinsic = children[0].maxIntrinsicWidth(Constraints.Infinity)
+        val keyWidth = if (intrinsic <= 24.dp.roundToPx()) intrinsic else minOf(144.dp.roundToPx(), (width * 0.44f).toInt())
         val gap = 8.dp.roundToPx()
-        val vertical = stacked || children[0].maxIntrinsicWidth(Constraints.Infinity) > keyWidth || width - keyWidth - gap < 96.dp.roundToPx()
+        val vertical = stacked || intrinsic > keyWidth || width - keyWidth - gap < 96.dp.roundToPx()
         val key = children[0].measure(Constraints(maxWidth = if (vertical) width else keyWidth))
         val value = children[1].measure(Constraints(maxWidth = if (vertical) width else width - keyWidth - gap))
         val rowGap = 2.dp.roundToPx()
