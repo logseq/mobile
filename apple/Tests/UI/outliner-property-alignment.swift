@@ -65,12 +65,45 @@ import UIKit
                       let value = find("property.value.body." + attr).flatMap({ frames[$0] }),
                       let pageID = find("property.label.page." + attr) else { fatalError("Missing property") }
                 print("PROPERTY variant=\(variant) title=\(titleFrame) label=\(key) value=\(value)")
-                if abs(key.minX - titleFrame.minX) > 1 { failures.append("Outliner \(variant) \(name) must align with text") }
+                if name == "scheduled", abs(key.minX - titleFrame.minX) > 1 { failures.append("Outliner \(variant) must align with text") }
+                if name == "deadline", let scheduled = find("property.label.body.logseq.property/scheduled").flatMap({ frames[$0] }),
+                   abs(key.midY - scheduled.midY) > 1 { failures.append("Task dates must share one line") }
                 if abs(key.width - 20) > 1 || value.minX - key.maxX > 9 { failures.append("Inline dates retain compact icons") }
                 if backend.model(id: pageID)?.property(.text)?.stringValue != name.capitalized {
                     failures.append("Page dates must use ordinary text labels: \(name)")
                 }
             }
+            guard let guide = views(window).first(where: { $0.accessibilityIdentifier == "outliner.indent-guides.metadata.body" }),
+                  let shape = guide.layer as? CAShapeLayer, let path = shape.path,
+                  let child = views(window).first(where: { $0.accessibilityIdentifier == "outliner.block-action.child" }) else {
+                failures.append("Properties must continue the ancestor and child guides")
+                continue
+            }
+            let guideFrame = guide.convert(guide.bounds, to: window)
+            let childFrame = child.convert(child.bounds, to: window)
+            var segments: [CGPoint] = []
+            path.applyWithBlock { element in
+                if element.pointee.type == .moveToPoint || element.pointee.type == .addLineToPoint {
+                    segments.append(element.pointee.points[0])
+                }
+            }
+            if segments.count != (variant % 2 + 1) * 2 || segments.contains(where: { $0.y != 0 && abs($0.y - guide.bounds.height) > 0.1 }) {
+                failures.append("Every metadata guide must span its full height")
+            }
+            if abs(guideFrame.minY - titleFrame.maxY - 2) > 0.5 || abs(guideFrame.maxY - childFrame.minY + 2) > 0.5 {
+                failures.append("Property guides must join both adjacent block rows: \(guideFrame), \(titleFrame), \(childFrame)")
+            }
+        }
+        for name in ["scheduled", "deadline"] {
+            try backend.performPress(node: find("property.value.body.logseq.property/" + name)!)
+            for _ in 0..<100 {
+                if views(window).contains(where: { $0 is UIDatePicker }) { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            if !views(window).contains(where: { $0 is UIDatePicker }) { failures.append("Inline \(name) must open a native picker") }
+            guard let cancel = find("view.edit.cancel.property.body.logseq.property/" + name) else { fatalError("Missing date editor Cancel") }
+            try backend.performPress(node: cancel)
+            try await Task.sleep(for: .milliseconds(350))
         }
         guard failures.isEmpty else { throw NSError(domain: "PropertyAlignment", code: 1,
             userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "; ")]) }

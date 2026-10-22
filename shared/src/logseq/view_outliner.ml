@@ -574,14 +574,30 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
                 retained_row_source row_source send search_open;
             ]))
 
+let outliner_text_leading context (row : Model.outline_row) =
+  let status = row.row_status <> None and priority = row.row_priority <> None in
+  let leading = if Lui_ui.host context = KotlinHost then
+    26 + (if status then 31 else 0) + (if priority then 27 else 0)
+  else (if status then 49 else if priority then 20 else 26) + (if priority then 25 else 0) in
+  leading + row.depth * 22
+
+let outliner_continuation ?(is_body = false) row_source content : t = fun context parent ->
+  let node = Lui_ui.extension context "outliner-continuation" in
+  attach context parent node;
+  Lui_ui.extension_property_signal context node "guide-count"
+    (Signal.map (fun (row : Model.outline_row) -> IntValue
+      (row.depth + if row.has_children && not row.is_collapsed then 1 else 0)) row_source);
+  Lui_ui.extension_property_signal context node "bullet-depth"
+    (Signal.map (fun (row : Model.outline_row) -> IntValue
+      (if is_body && row.has_children && not row.is_collapsed then row.depth else -1)) row_source);
+  Lui_ui.extension_property_signal context node "identifier"
+    (Signal.map (fun (row : Model.outline_row) -> StringValue ((if is_body then "body." else "metadata.") ^ row.row_uuid)) row_source);
+  ignore (content context (Some node));
+  node
+
 let outliner_task_dates context model_source row_source send =
   View_base.with_int_prop_signal PaddingLeft
-    (Signal.map (fun (row : Model.outline_row) ->
-      let status = row.row_status <> None and priority = row.row_priority <> None in
-      let leading = if Lui_ui.host context = KotlinHost then
-        26 + (if status then 31 else 0) + (if priority then 27 else 0)
-      else (if status then 49 else if priority then 20 else 26) + (if priority then 25 else 0) in
-      leading + row.depth * 22) row_source)
+    (Signal.map (outliner_text_leading context) row_source)
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
@@ -593,8 +609,9 @@ let render_result_block context model_source row_source send =
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value_signal:(Signal.map View_base.outliner_row_breadcrumb row_source)
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      outliner_row_body context model_source retained row_source send;
-      outliner_task_dates context model_source row_source send]
+      (let body = outliner_row_body context model_source retained row_source send in
+       if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
+      outliner_continuation row_source (outliner_task_dates context model_source row_source send)]
 
 let node_properties ?(root = false) context model_source send =
   View_property.view ~render_block:(render_result_block context model_source) model_source
@@ -603,19 +620,23 @@ let node_properties ?(root = false) context model_source send =
 
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
+  let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
   dyn (fun (has_query, has_properties, has_dates) ->
     if not has_query && not has_properties && not has_dates then body else
     let dates = if has_properties || not has_dates then [] else [outliner_task_dates context model_source row_source send] in
-    column ~gap:0 ([body] @ dates @
-      (if has_properties then [box ~margin_left:16 [node_properties context model_source send]] else []) @
-      (if not has_query then [] else [
+    let properties = if not has_properties then [] else [
+      View_base.with_int_prop_signal PaddingLeft
+        (Signal.map (fun row -> max 0 (outliner_text_leading context row - 16)) row_source)
+        (box [node_properties context model_source send])] in
+    let query = if not has_query then [] else [
       View_base.with_int_prop_signal PaddingLeft
         (Signal.map (fun (row : Model.outline_row) -> bullet_inset + row.depth * 22) row_source)
         (box ~padding_horizontal:8
           ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
-          [View_query.view ~render_block model_source row_source send])])))
+          [View_query.view ~render_block model_source row_source send])] in
+    column ~gap:0 [body; outliner_continuation row_source (column ~gap:0 (dates @ properties @ query))])
     (Signal.map2 (fun (model : Model.logseq_model) (row : Model.outline_row) ->
       row.query_json <> "", (match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid

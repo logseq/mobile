@@ -209,6 +209,13 @@ let property_row_schema () =
   component "native-property-row" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
     true [] [property "stacked" BoolScalar true None] []
 
+let outliner_continuation_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "outliner-continuation" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "guide-count" IntScalar true None; property "identifier" StringScalar true None;
+      property "bullet-depth" IntScalar true None] []
+
 let property_date_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -222,6 +229,7 @@ let extension_registry () =
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (property_date_schema ());
+  Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry (outliner_block_row_schema ());
   Lui_extension.register_component registry

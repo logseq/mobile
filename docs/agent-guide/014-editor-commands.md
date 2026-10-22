@@ -101,3 +101,7 @@ YouTube timestamp insertion needs the active player position when available and 
 - Task-date properties start at the block text edge, including nesting, task status and priority. The upstream LUI fast-container path ignored individual edge padding; PR https://github.com/logseq/lui/pull/257 fixes the renderer, and the Apple dependency is pinned to that fix.
 - Scheduled and Deadline use icons only in compact outliner metadata. Page and zoomed block property panels use ordinary text labels through the same renderer.
 - Validation: native iOS disclosure, property alignment and container-padding checks; eight Android spacing/touch-target checks; the complete native core gate passes 996 cases.
+
+- Scheduled and Deadline share one horizontally scrollable compact metadata row. The full page/zoomed property panel retains its regular label layout.
+- A native continuation wrapper carries ancestor/child guides through metadata, full property panels and query content. The wrapper uses the same 22-point indentation and 12-point bullet center, draws no hit surface, and suppresses the current child guide when collapsed.
+- Native iOS checks verify shared date baselines, guide path coverage and row joins, and both date picker interactions. Eleven Android spacing, property editor and completion checks pass; the full core gate remains green (996 cases).

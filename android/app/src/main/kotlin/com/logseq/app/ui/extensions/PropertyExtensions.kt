@@ -1,5 +1,6 @@
 package com.logseq.app.ui.extensions
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DatePicker
@@ -16,6 +17,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
@@ -40,6 +44,27 @@ internal fun LuiExtensionRegistry.registerProperties() {
         properties = listOf(LuiExtensionProperty("stacked", LuiExtensionValueKind.BOOLEAN, required = true)),
     ) {
         CompositionLocalProvider(LocalPropertyValue provides true) { PropertyRow(this) }
+    }
+    register("outliner-continuation",
+        "lui-extension-v1|21:outliner-continuation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:identifier:string:required:none,11:guide-count:int:required:none,12:bullet-depth:int:required:none|events:",
+        acceptsStandardChildren = true,
+        properties = listOf(
+            LuiExtensionProperty("bullet-depth", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("guide-count", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("identifier", LuiExtensionValueKind.STRING, required = true),
+        ),
+    ) {
+        val count = int("guide-count") ?: 0
+        val bulletDepth = int("bullet-depth") ?: -1
+        val color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+        Box(Modifier.fillMaxWidth().testTag("outliner." + (string("identifier") ?: "").replace("metadata.", "metadata.guides."))
+            .drawBehind {
+                for (level in 0 until count) {
+                    val x = (12 + level * 22).dp.toPx()
+                    val top = if (level == bulletDepth) 17.5.dp.toPx() else 0f
+                    if (size.height > top) drawLine(color, Offset(x, top), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                }
+            }) { Children() }
     }
     register("native-property-date",
         "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",

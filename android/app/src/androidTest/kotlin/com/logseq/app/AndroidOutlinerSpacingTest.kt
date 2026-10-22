@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTouchHeightIsEqualTo
 import androidx.compose.ui.test.assertTouchWidthIsEqualTo
@@ -51,9 +53,11 @@ class AndroidOutlinerSpacingTest {
                 .put("uuid", "priority-high").put("ident", "logseq.property.priority/high").put("title", "High"))
             if (status && id == "parent") block.put("status", JSONObject()
                 .put("uuid", "todo").put("ident", "logseq.property.status/todo").put("title", "Todo"))
-            if (dates) block.put("taskDates", JSONObject().put("ownerUuid", id).put("properties", JSONArray().put(JSONObject()
-                .put("attr", "logseq.property/scheduled").put("title", "Scheduled").put("kind", "datetime")
-                .put("text", "Oct 23, 09:30").put("editorValue", "1792719000000").put("editable", true))))
+            if (dates) block.put("taskDates", JSONObject().put("ownerUuid", id).put("properties", JSONArray().apply {
+                for (name in listOf("scheduled", "deadline")) put(JSONObject()
+                    .put("attr", "logseq.property/$name").put("title", name.replaceFirstChar { it.uppercase() }).put("kind", "datetime")
+                    .put("text", "Oct 23, 09:30").put("editorValue", "1792719000000").put("editable", true))
+            }))
             return JSONObject().put("depth", depth).put("hasChildren", depth == 0 && hasChildren).put("block", block)
         }
         val state = JSONObject()
@@ -147,6 +151,14 @@ class AndroidOutlinerSpacingTest {
                 val label = ui.onNodeWithTag("property.label.$id.logseq.property/scheduled").getUnclippedBoundsInRoot()
                 val title = ui.onNodeWithText(text).getUnclippedBoundsInRoot()
                 assertEquals("Task dates follow the text edge for variant $variant, $id", title.left.value, label.left.value, 1f)
+                val deadline = ui.onNodeWithTag("property.label.$id.logseq.property/deadline").getUnclippedBoundsInRoot()
+                assertEquals("Scheduled and deadline share one line", ((label.top + label.bottom) / 2).value, ((deadline.top + deadline.bottom) / 2).value, 1f)
+            }
+            val guide = ui.onNodeWithTag("outliner.metadata.guides.parent").captureToImage().asAndroidBitmap()
+            val x = with(ui.density) { 12.dp.roundToPx() }
+            val reference = guide.getPixel(0, guide.height / 2)
+            for (y in 0 until guide.height) {
+                assertTrue("The child guide spans the entire metadata region", guide.getPixel(x, y) != reference)
             }
         }
     }
