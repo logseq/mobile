@@ -29,6 +29,7 @@ import logseq.app.AndroidRuntimeLogLevel
 import logseq.app.AndroidRuntimeLogSource
 import logseq.app.AndroidRuntimeLogs
 import org.json.JSONObject
+import com.logseq.app.AndroidAppEntryParser
 
 // Kotlin port of the former Dart app state: owns the LUI
 // backend, the JNI bridge, the effect drain, bootstrap/restore, graph
@@ -582,13 +583,26 @@ internal class LogseqRuntime(
         return NativeEffectResolution.HostUpdate(kind = "open-node", payload = JSONObject.quote(uuid))
     }
 
-    private suspend fun applyAppEntryCoreRequest(request: String) {
+    private suspend fun applyAppEntryCoreRequest(request: String, allowGraphSwitch: Boolean = true) {
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
             error("The native core rejected the Android app entry")
         }
         applyCoreResponse(response)
+        val result = decoded.optJSONObject("result")
+        val graphID = result?.optString("deepLinkGraphId")?.takeIf { it.isNotEmpty() && it != "null" }
+        if (graphID != null) {
+            check(allowGraphSwitch) { "The linked graph did not finish opening" }
+            val opened = executeEffect(NativeEffect(id = 0, kind = "open-graph", text = graphID))
+            check(opened.succeeded) { opened.message }
+            if (opened is NativeEffectResolution.CoreResponse) applyCoreResponse(opened.response)
+            applyAppEntryCoreRequest(request, allowGraphSwitch = false)
+            return
+        }
+        result?.optString("deepLinkNodeUuid")?.takeIf { it.isNotEmpty() && it != "null" }?.let { uuid ->
+            applyPatch(bridge.applyHostUpdate("open-node", JSONObject.quote(uuid)))
+        }
         decoded.optJSONObject("result")?.optString("deepLinkQuickAction")?.takeIf(String::isNotEmpty)?.let { action ->
             applyPatch(bridge.applyHostUpdate("open-quick-action", JSONObject.quote(action)))
         }
@@ -660,7 +674,7 @@ internal class LogseqRuntime(
                 )
                 "setClipboardURLs" -> platformServices.copyText(
                     command.uuids.joinToString("\n") {
-                        "logseq://graph/${batch.graphName}?block-id=$it"
+                        AndroidAppEntryParser.blockURL(batch.graphName.orEmpty(), it)
                     }
                 )
                 "pickAttachment" -> presentAttachment("files", command.uuid)

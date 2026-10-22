@@ -59,7 +59,33 @@ let late_recording_transcripts_are_core_owned_and_idempotent () =
   check_eq (List.length children) 1;
   check_eq (List.hd children).title "Spoken note"
 
+let graph_deep_links_resolve_graphs_pages_and_blocks () =
+  let db = Query_block_test.fixture "#Project" in
+  let catalog = {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"other","graph-name":"Other 中文 +","graph-e2ee?":false,"graph-ready-for-use?":true}]}|} in
+  let session = Rpc_session.create_session {Rpc_session.default_options with
+    load_graph_catalog = Some (fun () -> Some catalog); graph_db = Some (fun () -> Some db)} in
+  ignore (Rpc_test.configure_plain_session session);
+  let fields path query = ["scheme", `String "logseq"; "host", `String "graph"; "path", `String path;
+    "query", `List (List.map (fun (name, value) -> `Assoc ["name", `String name; "value", `String value]) query)] in
+  let navigate path query = call session "handleDeepLink" (fields path query) in
+  let result path query = let response = navigate path query in
+    check_eq ~msg:(J.to_string response) (U.member "ok" response) (`Bool true); Rpc_test.response_result response in
+  check_eq (U.member "deepLinkQuickAction" (result "/Plain" [])) (`String "journal");
+  check_eq (U.member "deepLinkNodeUuid" (result "/Plain" ["page", "Workspace"])) (`String Query_block_test.page);
+  check_eq (U.member "deepLinkNodeUuid" (result "/plain-1" ["block-id", Query_block_test.alpha])) (`String Query_block_test.alpha);
+  check_eq (U.member "deepLinkNodeUuid" (result "/Plain" ["page", "Workspace"; "block-id", Query_block_test.beta])) (`String Query_block_test.beta);
+  let other = result "/Other 中文 +" ["page", "Workspace"] in
+  check_eq ~msg:"a graph switch must finish before resolving nodes in that graph"
+    (U.member "deepLinkGraphId" other) (`String "other");
+  check_eq (U.member "deepLinkNodeUuid" other) `Null;
+  check_eq (Option.map (fun (config : Api.api_config) -> config.graph_id) (Rpc_session.state session).config) (Some "plain-1");
+  List.iter (fun (path, query) -> check_eq (U.member "ok" (navigate path query)) (`Bool false))
+    ["/Missing graph", []; "/", []; "/Plain", ["page", "Missing page"]; "/Plain", ["block-id", "missing"]];
+  ignore (Rpc_test.dispatch_json session "configure" {|{"baseUrl":"http://127.0.0.1:8787","graphId":"other","token":"access"}|});
+  check_eq (U.member "deepLinkNodeUuid" (result "/Other 中文 +" ["page", "Workspace"])) (`String Query_block_test.page)
+
 let cases = [
+  case "graph deep links resolve graph page and block targets without changing the wrong graph" graph_deep_links_resolve_graphs_pages_and_blocks;
   case "late recording transcripts are core owned and idempotent" late_recording_transcripts_are_core_owned_and_idempotent;
   case "shared text is canonical and retries are idempotent" shared_text_is_canonical_and_retries_are_idempotent;
   case "empty or invalid shared payload does not create a note" empty_or_invalid_shared_payload_does_not_create_a_note;

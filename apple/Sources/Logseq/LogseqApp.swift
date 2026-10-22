@@ -758,8 +758,18 @@ public struct LogseqRootView : View {
                 case .deepLink:
                     guard var link = item.captureLink else { return true }
                     link.uuid = item.id
-                    guard let data = try? JSONEncoder().encode(link),
-                          await self.store.handleDeepLink(String(decoding: data, as: UTF8.self)) else { return false }
+                    guard let data = try? JSONEncoder().encode(link) else { return false }
+                    let payload = String(decoding: data, as: UTF8.self)
+                    guard await self.store.handleDeepLink(payload) else { return false }
+                    if let graphID = self.store.deepLinkGraphId {
+                        let opened = await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
+                        guard opened.succeeded, await self.store.handleDeepLink(payload), self.store.deepLinkGraphId == nil else { return false }
+                    }
+                    if let uuid = self.store.deepLinkNodeUuid {
+                        guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
+                        do { try self.lgRuntime.applyHostUpdate(kind: "open-node", payload: String(decoding: encoded, as: UTF8.self)) }
+                        catch { return false }
+                    }
                     if let action = self.store.deepLinkQuickAction {
                         self.pendingQuickAction = action
                         self.presentPendingQuickAction()

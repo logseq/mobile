@@ -12,6 +12,8 @@ internal object AndroidAppEntryParser {
             val pair = item.split('=', limit = 2)
             mapOf("name" to decode(pair[0]), "value" to pair.getOrNull(1)?.let(::decode))
         }
-        return mapOf("kind" to "deep-link", "scheme" to uri.scheme, "host" to uri.host, "query" to query)
+        return mapOf("kind" to "deep-link", "scheme" to uri.scheme, "host" to uri.host, "path" to decode(uri.rawPath.orEmpty()), "query" to query)
     }
+    fun blockURL(graphName: String, blockID: String): String =
+        URI("logseq", "graph", "/$graphName", "block-id=$blockID", null).toASCIIString()
 }

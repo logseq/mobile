@@ -61,7 +61,7 @@ public final class LGPlatformCommandRouter: LGPlatformCommandHandling {
 
     private static func blockURLs(graphName: String, blockIDs: [String]) -> String {
         blockIDs.map {
-            "logseq://graph/\(graphName)?block-id=\($0)"
+            SharedDeepLink.blockURL(graphName: graphName, blockID: $0)
         }.joined(separator: "\n")
     }
 }
