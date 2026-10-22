@@ -175,6 +175,15 @@ let column_json db rows p =
       "journalDay", (match ref_id db value with Some id -> plain (get db id "block/journal-day") | None -> `Null)]) values in
   `Assoc ["attr", `String p.attr; "title", `String p.title; "kind", `String p.typ;
   "many", `Bool p.many; "ref", `Bool p.ref_; "editable", `Bool (editable p);
+  "filterTimestamp", `Bool (List.mem p.attr ["block/created-at"; "block/updated-at"]);
+  "filterOperators", `List (List.map (fun op -> `String op)
+    (if List.mem p.attr ["block/created-at"; "block/updated-at"] then ["before"; "after"]
+     else ["is"; "is-not"] @ (match p.typ with
+       | "datetime" -> ["before"; "after"]
+       | "default" | "url" | "node" | "string" -> ["text-contains"; "text-not-contains"]
+       | "date" -> ["date-before"; "date-after"]
+       | "number" -> ["number-gt"; "number-lt"; "number-gte"; "number-lte"; "between"]
+       | _ -> [])));
   "closed", `Bool (p.choices <> []);
   "canCreate", `Bool (p.choices = [] && p.typ <> "checkbox" && p.typ <> "property");
   "filterValues", `List filter_values;

@@ -48,7 +48,7 @@ import Vision
                                         "error": queryError as Any? ?? NSNull()]
             if includeViews {
                 let columns: [[String: Any]] = [
-                    ["attr": "block/title", "title": "Name", "kind": "string", "editable": true],
+                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": true, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
                     ["attr": "user.property/Score", "title": "Score", "kind": "number", "editable": true, "ref": true,
                      "filterValues": (1...3).map { value in
                         ["title": "\(value)", "match": [String(format: "30000000-0000-4000-8000-%012d", value)]]
@@ -240,7 +240,7 @@ import Vision
         try backend.performPress(node: find("view.filter.add.table")!)
         try await verifySettingsSheet("query-filter-dark.png")
         let settingsText = try await capture("query-view-settings.png")
-        guard settingsText.contains("Filters") && settingsText.contains("Filter 1") else {
+        guard settingsText.contains("Filters") && settingsText.contains("Name") && settingsText.contains("Contains") else {
             throw failure("Filter and sort controls must render visibly: \(settingsText)")
         }
         try backend.performPress(node: find("view.settings.cancel.table")!)

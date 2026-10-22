@@ -722,8 +722,16 @@ let native_filter_choices_preserve_master_sets () =
       press (find ("view.filter.add." ^ table_view));
       let list = find ("view.filter.list." ^ table_view) in
       press (choice list "Score");
-      press (choice list "10");
-      press (choice list "20");
+      press (find ("view.filter.values." ^ table_view ^ ".2"));
+      let pick label =
+        let rec find_choice node =
+          if App_test.node host node = Some Lui_protocol.Button
+            && App_test.property_string host node Lui_protocol.TextValue = label then node
+          else List.fold_left (fun found child -> if found <> -1 then found else find_choice child)
+            (-1) (App_test.children host node) in
+        press (find_choice (find ("view.filter.values.sheet." ^ table_view ^ ".2"))) in
+      pick "10"; pick "20";
+      press (find ("view.filter.values.done." ^ table_view ^ ".2"));
       press (find ("view.settings.save." ^ table_view));
       let pending = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
       let _, body = Result.get_ok (Core_effect.request ~now:(fun () -> 1) ~fresh_id:(fun () -> "unused")

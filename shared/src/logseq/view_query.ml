@@ -141,10 +141,7 @@ let operator_title = function
   | "number-gte" -> "At least" | "number-lt" -> "Less than" | "number-lte" -> "At most"
   | "between" -> "Between" | "date-before" | "before" -> "Before"
   | "date-after" | "after" -> "After" | value -> value
-let operators kind = ["is"; "is-not"] @ (match kind with
-  | "number" -> ["number-gt"; "number-gte"; "number-lt"; "number-lte"; "between"]
-  | "date" -> ["date-before"; "date-after"] | "datetime" -> ["before"; "after"; "between"]
-  | "checkbox" -> [] | _ -> ["text-contains"; "text-not-contains"])
+let operators col = jlist (jfield "filterOperators" col) |> List.map jtext
 let choices view = jlist (jfield "columns" view.data)
 let property_choices view = match jlist (jfield "properties" view.data) with [] -> choices view | values -> values
 let view_column view attr = Option.value ~default:(`Assoc ["attr", `String attr; "title", `String attr; "kind", `String "default"])
@@ -172,6 +169,44 @@ let filter_value_title col value = match value with
       | Some choice -> jtext (jfield "title" choice) | None -> text_value value) values)
   | value -> input_value value
 
+let temporal_picker kind id source set : t = fun context parent ->
+  let node = Lui_ui.extension context "native-property-date" in
+  attach context parent node;
+  Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
+  Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue ("view.edit.date." ^ id));
+  Lui_ui.extension_property_signal context node "value" (Signal.map (fun value -> Lui_protocol.StringValue value) source);
+  Lui_ui.on_event context node (function
+    | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
+      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> set value | _ -> ())
+    | _ -> ());
+  node
+
+let temporal_default kind =
+  let now = Unix.gettimeofday () in
+  if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
+  else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
+
+let filter_transition op value =
+  let number = function `Int _ | `Float _ -> true | _ -> false in
+  let keep = match op with
+    | "is" | "is-not" -> (match value with `List _ -> true | _ -> false)
+    | "text-contains" | "text-not-contains" -> (match value with `String _ -> true | _ -> false)
+    | "between" -> (match value with `List values -> List.for_all (fun value -> value = `Null || number value) values | _ -> false)
+    | _ -> number value in
+  if keep then value else `Null
+let filter_error (draft : filter_draft) =
+  let number = function `Null | `Int _ | `Float _ -> true | _ -> false in
+  if draft.op = "between" then
+    let values = jlist draft.value in
+    if not (List.for_all number values) then Some "Enter a number or leave a bound empty."
+    else (match values with
+      | [lo; hi] when lo <> `Null && hi <> `Null ->
+        let n = function `Int n -> float_of_int n | `Float n -> n | _ -> 0. in
+        if n lo > n hi then Some "Minimum must not exceed maximum." else None
+      | _ -> None)
+  else if List.mem draft.op ["number-gt"; "number-lt"; "number-gte"; "number-lte"] && not (number draft.value)
+  then Some "Enter a valid number." else None
+
 let settings_sheet mode owner feature view_source model_source send close : t =
  fun context parent ->
   let initial = Signal.sample view_source in
@@ -195,80 +230,129 @@ let settings_sheet mode owner feature view_source model_source send close : t =
       ~mount:(fun col -> let col = Signal.sample col in
         menu_item ~text:(jtext (jfield "title" col)) ~selected_signal:(own (Signal.map ((=) (jtext (jfield "attr" col))) value))
           ~on_press:(fun _ -> choose (jtext (jfield "attr" col))) [])] in
-  let filter_row source : t =
+  let filter_row source : t = fun context parent ->
+    let own value = Signal.own_signal context.ui_scope value in
+    let state value = Signal.state context.ui_scheduler value in
     let first : filter_draft = Signal.sample source in
-    let attr_source = own (Signal.map (fun (value : filter_draft) -> value.attr) source) in
-    let col = own (Signal.map2 view_column view_source attr_source) in
-    let matches = own (Signal.map (fun (value : filter_draft) -> List.mem value.op ["is"; "is-not"]) source) in
-    let between = own (Signal.map (fun (value : filter_draft) -> value.op = "between") source) in
-    let bound index label = text_field ~grow:1.0 ~placeholder:label ~label
+    let id part = "view.filter." ^ part ^ "." ^ initial.id ^ "." ^ string_of_int first.key in
+    let attr = own (Signal.map (fun (draft : filter_draft) -> draft.attr) source) in
+    let col = own (Signal.map2 view_column view_source attr) in
+    let change f = update_filter first.key f in
+    let set_value value = change (fun draft -> {draft with value}) in
+    let selecting = state false in
+    let selection = state `Null in
+    let query = state "" in
+    let custom = state false in
+    let numeric text = match float_of_string_opt (String.trim text) with
+      | Some n when Float.is_finite n -> `Float n
+      | _ -> if String.trim text = "" then `Null else `String text in
+    let number_input part label index = text_field ~grow:1.0 ~placeholder:label ~label
+      ~accessibility_identifier:(id part)
       ~text_signal:(own (Signal.map (fun (draft : filter_draft) ->
-        Option.fold ~none:"" ~some:text_value (List.nth_opt (jlist draft.value) index)) source))
-      ~on_input:(local_input (fun text -> update_filter first.key (fun draft ->
-        let scalar text = match float_of_string_opt (String.trim text) with
-          | Some value when Float.is_finite value -> `Float value
-          | _ -> if String.trim text = "" then `Null else `String text in
-        {draft with value = `List (List.init 2 (fun position ->
-          if position = index then scalar text else Option.value ~default:`Null (List.nth_opt (jlist draft.value) position)))}))) [] in
-    list_section ~header:(text ~value_signal:(own (Signal.map (fun values ->
-      let rec position index = function
-        | [] -> index | (value : filter_draft) :: _ when value.key = first.key -> index
-        | _ :: rest -> position (index + 1) rest in
-      "Filter " ^ string_of_int (position 1 values)) (Signal.value filters))) []) [
-      list_item [row ~main:`space_between ~cross:`center [
-        choose_property (own (Signal.map (fun col -> jtext (jfield "title" col)) col)) attr_source
-          (fun attr -> update_filter first.key (fun value -> {value with attr; op = "is"; value = `String "empty"}));
-        button ~variant:`ghost ~text:"Remove" ~label:"Remove filter"
-          ~on_press:(fun _ -> Signal.set filters (List.filter (fun (value : filter_draft) -> value.key <> first.key) (Signal.sample (Signal.value filters)))) []]];
-      list_item [menu ~text_signal:(own (Signal.map (fun (value : filter_draft) -> operator_title value.op) source)) ~label:"Filter operator" [
-        keyed ~source:(own (Signal.map (fun col -> operators (jtext (jfield "kind" col))) col)) ~key:Fun.id ~cmp:String.compare
-          ~mount:(fun op -> let op = Signal.sample op in menu_item ~text:(operator_title op)
-            ~on_press:(fun _ -> update_filter first.key (fun value -> {value with op})) [])]];
-      if_ ~test:(own (Signal.map2 (fun matches between -> not matches && not between) matches between))
-      (list_item [text_field ~text_signal:(own (Signal.map2 (fun col (value : filter_draft) -> filter_value_title col value.value) col source))
-        ~placeholder:"Value" ~label:"Filter value" ~accessibility_identifier:("view.filter.value." ^ initial.id ^ "." ^ string_of_int first.key)
-        ~on_input:(local_input (fun text -> update_filter first.key (fun value ->
-          let kind = jtext (jfield "kind" (Signal.sample col)) in
-          let scalar text = match float_of_string_opt text with Some n when Float.is_finite n -> `Float n | _ -> `String text in
-          let matched = if value.op = "between" then
-              let values = String.split_on_char ',' text in
-              `List (List.map (fun value -> if String.trim value = "" then `Null else scalar (String.trim value)) values)
-            else if (value.op = "is" || value.op = "is-not") && text = "empty" then `String "empty"
-            else if kind = "checkbox" && (text = "true" || text = "false") then `Bool (text = "true")
-            else if value.op = "is" || value.op = "is-not" then
-              let choices = jlist (jfield "filterValues" (Signal.sample col)) in
-              `List (List.concat_map (fun title ->
-                match List.find_opt (fun choice -> jfield "title" choice = `String title) choices with
-                | Some choice -> jlist (jfield "match" choice)
-                | None -> [if kind = "number" && not (jbool (jfield "ref" (Signal.sample col))) then scalar title else `String title]) (csv text))
-            else if kind = "date" then (match int_of_string_opt (String.concat "" (String.split_on_char '-' text)) with
-              | Some day -> `Assoc ["block/journal-day", `Int day] | _ -> `String text)
-            else if kind = "number" || kind = "datetime" then scalar text else `String text in
-          {value with value = matched}))) []]);
-      if_ ~test:between (list_item [row ~gap:12 [bound 0 "Minimum"; bound 1 "Maximum"]]);
-      if_ ~test:(own (Signal.map (fun (draft : filter_draft) -> List.mem draft.op ["is"; "is-not"; "date-before"; "date-after"]) source))
-      (list_item [row ~gap:8 [
-        if_ ~test:matches (button ~text:"Empty" ~variant:`ghost ~on_press:(fun _ -> update_filter first.key (fun value -> {value with value = `String "empty"})) []);
-        menu ~text_signal:(own (Signal.map2 (fun col (draft : filter_draft) ->
-          let title = filter_value_title col draft.value in if title = "" then "Select values" else title) col source))
-          ~label:"Choose filter value" [
-          keyed ~source:(own (Signal.map (fun col -> jlist (jfield "filterValues" col)) col)) ~key:(fun value -> Json.to_string value) ~cmp:String.compare
-            ~mount:(fun value -> let value = Signal.sample value in menu_item ~text:(jtext (jfield "title" value))
-              ~selected_signal:(own (Signal.map (fun (draft : filter_draft) ->
-                let matched = jfield "match" value in
-                match matched with `Bool _ -> draft.value = matched
-                | `List values -> values <> [] && List.for_all (fun value -> List.mem value (jlist draft.value)) values
-                | _ -> false) source))
-              ~on_press:(fun _ -> update_filter first.key (fun draft -> {draft with value =
-                (if draft.op = "date-before" || draft.op = "date-after" then
-                  `Assoc ["block/journal-day", jfield "journalDay" value]
-                 else match jfield "match" value with
-                 | `List values -> let current = jlist draft.value in
-                   `List (if List.for_all (fun value -> List.mem value current) values then
-                     List.filter (fun value -> not (List.mem value values)) current
-                     else current @ List.filter (fun value -> not (List.mem value current)) values)
-                 | value -> value)})) [])]]])
+        input_value (match index with None -> draft.value | Some index ->
+          Option.value ~default:`Null (List.nth_opt (jlist draft.value) index))) source))
+      ~on_input:(local_input (fun text -> change (fun draft -> {draft with value =
+        match index with None -> numeric text | Some index ->
+          `List (List.init 2 (fun i -> if i = index then numeric text else
+            Option.value ~default:`Null (List.nth_opt (jlist draft.value) i)))}))) [] in
+    let choose_values = button ~variant:`ghost ~text_alignment:`start ~min_height:44 ~grow:1.0
+      ~text_signal:(own (Signal.map2 (fun col (draft : filter_draft) ->
+        match draft.value with `Null | `List [] -> "Select values" | `String "empty" -> "Empty"
+        | `Bool b -> if b then "Checked" else "Unchecked" | value -> filter_value_title col value) col source))
+      ~accessibility_identifier:(id "values") ~on_press:(fun _ ->
+        Signal.set selection (Signal.sample source).value; Signal.set query ""; Signal.set selecting true) [] in
+    let values_sheet =
+      let option key label matched = button ~variant:`ghost ~min_height:44 ~text_alignment:`start
+        ~text:label ~accessibility_identifier:(id "choice" ^ "." ^ key)
+        ~icon_signal:(own (Signal.map (fun selected -> `app (if selected = matched then "task-done" else "outliner-bullet")) (Signal.value selection)))
+        ~on_press:(fun _ -> Signal.set selection matched) [] in
+      let filtered = own (Signal.map2 (fun col query ->
+        jlist (jfield "filterValues" col) |> List.filter (fun value ->
+          String_kit.includes ~sub:(String.lowercase_ascii query) (String.lowercase_ascii (jtext (jfield "title" value))))) col (Signal.value query)) in
+      let cancel = button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+        ~accessibility_identifier:(id "values.cancel") ~on_press:(fun _ -> Signal.set selecting false) [] in
+      let done_ = button ~text:"Done" ~variant:`ghost ~style_class:"confirmation-action"
+        ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
+      sheet ~text_signal:(own (Signal.map (fun col -> jtext (jfield "title" col)) col))
+        ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+        ~accessibility_identifier:(id "values.sheet") ~on_dismiss:(fun _ -> Signal.set selecting false) [
+        list ~grow:1.0 ~style:`inset_grouped [
+          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text_field ~placeholder:"Search values" ~label:"Search values"
+            ~accessibility_identifier:(id "values.search") ~text_signal:(Signal.value query)
+            ~on_input:(local_input (Signal.set query)) []]];
+          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "empty" "Empty" (`String "empty")];
+            list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "any" "Any value" `Null]];
+          dyn (fun col -> if jfield "kind" col = `String "checkbox" then
+            list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "true" "Checked" (`Bool true)]; list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "false" "Unchecked" (`Bool false)]]
+            else list_section [
+              keyed ~source:(own (Signal.map (List.mapi (fun i value -> i, value)) filtered))
+                ~key:(fun (_, value) -> Json.to_string value) ~cmp:String.compare ~mount:(fun value ->
+                  let index, value = Signal.sample value in
+                  let matched = jlist (jfield "match" value) in
+                  list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [button ~text:(jtext (jfield "title" value)) ~variant:`ghost ~min_height:44 ~text_alignment:`start
+                    ~accessibility_identifier:(id "choice" ^ "." ^ string_of_int index)
+                    ~icon_signal:(own (Signal.map (fun selected -> `app (if matched <> [] &&
+                      List.for_all (fun value -> List.mem value (jlist selected)) matched then "task-done" else "outliner-bullet")) (Signal.value selection)))
+                    ~on_press:(fun _ -> let current = jlist (Signal.sample (Signal.value selection)) in
+                      Signal.set selection (`List (if List.for_all (fun value -> List.mem value current) matched then
+                        List.filter (fun value -> not (List.mem value matched)) current
+                        else current @ List.filter (fun value -> not (List.mem value current)) matched))) []])]) col];
+        (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; done_]
+         else toolbar ~style_class:"navigation-actions" [cancel; done_])
+      ] in
+    let temporal kind =
+      let value = own (Signal.map (fun (draft : filter_draft) ->
+        if draft.value = `Null then temporal_default kind else input_value draft.value) source) in
+      temporal_picker kind (id "date") value (fun value ->
+        if kind = "datetime" then (match int_of_string_opt value with Some value -> set_value (`Int value) | None -> ())
+        else match int_of_string_opt (String.concat "" (String.split_on_char '-' value)) with
+          | Some day -> set_value (`Assoc ["block/journal-day", `Int day]) | None -> ()) in
+    let timestamp = column ~gap:0 ~cross:`stretch [
+      menu ~label:"Date range" ~accessibility_identifier:(id "timestamp")
+        ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> match draft.value with
+          | `String label -> label | `Int _ | `Float _ -> "Custom date" | _ -> "Choose date") source))
+        (List.map (fun (key, label) -> menu_item ~text:label ~accessibility_identifier:(id "preset" ^ "." ^ key)
+          ~on_press:(fun _ -> Signal.set custom false; set_value (`String label)) [])
+          ["day", "1 day ago"; "three-days", "3 days ago"; "week", "1 week ago";
+           "month", "1 month ago"; "three-months", "3 months ago"; "year", "1 year ago"] @
+         [menu_item ~text:"Custom date…" ~accessibility_identifier:(id "custom")
+           ~on_press:(fun _ -> Signal.set custom true; let current = (Signal.sample source).value in
+             match current with `Int _ | `Float _ -> () | _ ->
+               set_value (`Int (int_of_string (temporal_default "datetime")))) []]);
+      if_ ~test:(own (Signal.map2 (fun custom (draft : filter_draft) -> custom ||
+        match draft.value with `Int _ | `Float _ -> true | _ -> false) (Signal.value custom) source)) (temporal "datetime")
     ] in
+    (list_section [
+      list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [row ~gap:4 ~cross:`center ~accessibility_identifier:(id "row") [
+        box ~grow:1.0 [menu ~text_signal:(own (Signal.map (fun col -> jtext (jfield "title" col)) col)) ~label:"Property" [
+          keyed ~source:(own (Signal.map property_choices view_source)) ~key:(fun col -> jtext (jfield "attr" col)) ~cmp:String.compare
+            ~mount:(fun col -> let col = Signal.sample col in let attr = jtext (jfield "attr" col) in
+              menu_item ~text:(jtext (jfield "title" col)) ~accessibility_identifier:(id "property" ^ "." ^ attr)
+                ~on_press:(fun _ -> Signal.set custom false; change (fun draft ->
+                  {draft with attr; op = (if jbool (jfield "filterTimestamp" col) then "after" else "is"); value = `Null})) [])]];
+        menu ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> operator_title draft.op) source)) ~label:"Operator" [
+          keyed ~source:(own (Signal.map operators col)) ~key:Fun.id ~cmp:String.compare
+            ~mount:(fun op -> let op = Signal.sample op in menu_item ~text:(operator_title op)
+              ~accessibility_identifier:(id "operator" ^ "." ^ op)
+              ~on_press:(fun _ -> Signal.set custom false; change (fun draft -> {draft with op; value = filter_transition op draft.value})) [])];
+        button ~icon:(`app "close") ~variant:`ghost ~width:44 ~height:44 ~label:"Remove filter"
+          ~accessibility_identifier:(id "remove") ~on_press:(fun _ -> Signal.set filters
+            (List.filter (fun (draft : filter_draft) -> draft.key <> first.key) (Signal.sample (Signal.value filters)))) []]];
+      list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [dyn (fun op -> match op with
+        | "is" | "is-not" -> choose_values
+        | "between" -> row ~gap:8 [number_input "minimum" "Minimum" (Some 0); number_input "maximum" "Maximum" (Some 1)]
+        | "number-gt" | "number-lt" | "number-gte" | "number-lte" -> number_input "value" "Number" None
+        | "date-before" | "date-after" -> temporal "date"
+        | "before" | "after" -> timestamp
+        | _ -> text_field ~label:"Filter value" ~placeholder:"Text" ~accessibility_identifier:(id "value")
+            ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> input_value draft.value) source))
+            ~on_input:(local_input (fun value -> set_value (`String value))) [])
+        (own (Signal.map (fun (draft : filter_draft) -> draft.op) source))];
+      if_ ~test:(own (Signal.map (fun draft -> filter_error draft <> None) source))
+        (list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text ~foreground:"destructive" ~accessibility_identifier:(id "error")
+          ~value_signal:(own (Signal.map (fun draft -> Option.value ~default:"" (filter_error draft)) source)) []]);
+      if_ ~test:(Signal.value selecting) (list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [values_sheet]);
+    ]) context parent in
   let sort_row source : t =
     let first : sort_draft = Signal.sample source in
     let attr_source = own (Signal.map (fun (value : sort_draft) -> value.attr) source) in
@@ -305,7 +389,8 @@ let settings_sheet mode owner feature view_source model_source send close : t =
   let cancel = button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
     ~accessibility_identifier:("view.settings.cancel." ^ initial.id) ~on_press:(fun _ -> close ()) [] in
   let save = button ~text:"Done" ~variant:`ghost ~style_class:"confirmation-action"
-    ~disabled_signal:(waiting model_source initial.id)
+    ~disabled_signal:(own (Signal.map2 (fun waiting filters -> waiting || (mode = "filter" && List.exists (fun draft -> filter_error draft <> None) filters))
+      (waiting model_source initial.id) (Signal.value filters)))
     ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save [] in
   (sheet ~text:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.settings.sheet." ^ initial.id)
@@ -313,10 +398,15 @@ let settings_sheet mode owner feature view_source model_source send close : t =
       list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view." ^ mode ^ ".list." ^ initial.id)
         (action_error_section model_source initial.id ::
         (if mode = "filter" then [
-          list_section ~header:(text ~value:"Match" []) [list_item [
-            tabs (List.map (fun value -> button ~text:(if value then "Any" else "All")
-              ~selected_signal:(own (Signal.map ((=) value) (Signal.value or_)))
-              ~on_press:(fun _ -> Signal.set or_ value) []) [false; true])]];
+          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [menu ~label:"Match conditions"
+            ~text_signal:(own (Signal.map (fun any -> if any then "Match any condition" else "Match all conditions") (Signal.value or_)))
+            (List.map (fun any -> menu_item ~text:(if any then "Any condition" else "All conditions")
+              ~accessibility_identifier:("view.filter.match." ^ initial.id ^ "." ^ string_of_bool any)
+              ~selected_signal:(own (Signal.map ((=) any) (Signal.value or_))) ~on_press:(fun _ -> Signal.set or_ any) []) [false; true])]];
+          if_ ~test:(own (Signal.map ((=) []) (Signal.value filters)))
+            (list_section [list_item [button ~text:"Created in the last month" ~icon:(`app "calendar") ~variant:`ghost
+              ~accessibility_identifier:("view.filter.recent." ^ initial.id) ~on_press:(fun _ ->
+                Signal.set filters [{key = next (); attr = "block/created-at"; op = "after"; value = `String "1 month ago"}]) []]]);
           keyed ~source:(Signal.value filters) ~key:(fun (value : filter_draft) -> value.key) ~cmp:Int.compare ~mount:filter_row;
           list_section [list_item [button ~text:"Add filter" ~variant:`ghost ~accessibility_identifier:("view.filter.add." ^ initial.id)
             ~on_press:(fun _ -> Signal.set filters (Signal.sample (Signal.value filters) @ [{key = next (); attr = "block/title"; op = "text-contains"; value = `String ""}])) []]];
@@ -335,23 +425,6 @@ let rec raw_selection_values raw =
   | "set" | "vector" -> List.concat_map raw_selection_values (jlist (jfield "value" raw))
   | "" -> []
   | _ -> [text_value (jfield "value" raw)]
-
-let temporal_picker kind id source set : t = fun context parent ->
-  let node = Lui_ui.extension context "native-property-date" in
-  attach context parent node;
-  Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
-  Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue ("view.edit.date." ^ id));
-  Lui_ui.extension_property_signal context node "value" (Signal.map (fun value -> Lui_protocol.StringValue value) source);
-  Lui_ui.on_event context node (function
-    | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
-      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> set value | _ -> ())
-    | _ -> ());
-  node
-
-let temporal_default kind =
-  let now = Unix.gettimeofday () in
-  if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
-  else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
 
 let property_editor ~id ~column:col ~submit:save model_source property close : t =
  fun context parent ->
