@@ -109,11 +109,13 @@ import SwiftUI
         if CONFIGURATION == "release":
             runtime_exports += ["-Xlinker", "-dead_strip"]
         entry_flags = ["-DLOGSEQ_BENCH_EXTERNAL_ENTRY"] if external_entry else []
+        clang_modules = [argument for path in sorted(BUILD.glob("*.build/module.modulemap"))
+                         for argument in ("-I", str(path.parent))]
         if app_entry:
             entry_flags += ["-DLOGSEQ_BENCH_APP_ENTRY"]
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, *entry_flags, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
-             "-I", str(BUILD / "LogseqCoreABI.build"), str(source), *objects, *testing_args, str(runtime),
+             *clang_modules, str(source), *objects, *testing_args, str(runtime),
              str(core / "logseq_https_darwin.o"), str(core / "logseq_crypto_darwin.o"),
              str(toolchain / "arm64-apple-ios17.0-simulator-5.5.0/lib/ocaml/libthreadsnat.a"),
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),

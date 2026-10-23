@@ -57,6 +57,7 @@ let package = Package(
         ),
         .target(name: "Logseq", dependencies: [
             "LogseqModel",
+            .target(name: "LogseqAuthenticationUI", condition: .when(platforms: [.iOS])),
             .product(name: "LUIAppleBackendStatic", package: "lui"),
             .product(
                 name: "SwiftUIMath",
@@ -80,6 +81,14 @@ let package = Package(
             "LogseqCoreABI"
         ], resources: [.process("Resources")],
         swiftSettings: logseqCoreSwiftSettings),
+        .target(
+            name: "LogseqAuthenticationUI",
+            path: "Sources/LogseqAuthenticationUI",
+            publicHeadersPath: "include",
+            // The implementation uses SDK declarations for type checking; UI loads
+            // through dyld when sign-in actually starts.
+            cSettings: [.unsafeFlags(["-fobjc-arc", "-fno-autolink"])]
+        ),
         .target(
             name: "LogseqCoreABI",
             path: "Sources/LogseqCoreABI",

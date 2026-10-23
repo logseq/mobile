@@ -25,6 +25,7 @@ def main():
         ("first-content-frame.swift", "FirstContentFrameCheck"),
         ("drawer-first-reveal.swift", "DrawerFirstRevealCheck"),
         ("file-preview-launch.swift", "FilePreviewLaunchCheck"),
+        ("authentication-launch.swift", "AuthenticationLaunchCheck"),
     ]:
         subprocess.run([sys.executable, str(RUNNER), str(ROOT / "apple/Tests/UI" / filename), entry],
                        cwd=ROOT, env=environment, check=True)
