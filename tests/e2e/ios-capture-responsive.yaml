@@ -23,6 +23,8 @@ appId: com.logseq.logseq
     id: "field.base-url"
 - tapOn:
     id: "button.connection.cancel"
+- tapOn:
+    id: "button.sidebar.dismiss"
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
