@@ -15,8 +15,9 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
-    id: "button.connection"
-- tapOn: "Settings"
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar.settings"
 - assertVisible: "Sync server"
 - assertVisible:
     id: "field.base-url"

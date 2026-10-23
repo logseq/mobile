@@ -380,7 +380,7 @@ if [[ -n ${LOGSEQ_E2E_BASE_URL:-} ]]; then
     '</map>' >"$preferences_file"
   adb -s "$device" push "$preferences_file" "$remote_preferences" >/dev/null
   adb -s "$device" shell run-as "$app_id" mkdir -p shared_prefs
-  adb -s "$device" shell run-as "$app_id" cp "$remote_preferences" shared_prefs/defaults.xml
+  adb -s "$device" shell run-as "$app_id" cp "$remote_preferences" shared_prefs/logseq.xml
   adb -s "$device" shell rm -f "$remote_preferences"
 fi
 
