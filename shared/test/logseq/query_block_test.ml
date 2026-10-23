@@ -533,7 +533,47 @@ let result_encoding_reads_subtrees_without_hydrating_page_siblings () =
   check ~msg:(Printf.sprintf "encoding one result must not hydrate 5k unrelated siblings (%d storage reads)" !reads)
     (!reads < 300)
 
+let reference_query_keeps_bound_values_indexed value expected () =
+  let source = Printf.sprintf "(property :user.property/assignee %S)" value in
+  let db = fixture source in
+  let attr = "user.property/assignee" in
+  let db = {db with Ds.schema = (attr, {Storage_codec.default_schema_attr with
+    Ds.cardinality = Ds.Many; value_type = Some Ds.RefType}) :: db.schema} in
+  let extras = List.init 5_000 (fun index ->
+    Ds.Add (Ds.Entity_id (1_000_000 + index), "block/title", Ds.String ("Unrelated title " ^ string_of_int index))) in
+  let db = Ds.db_with ([
+    Ds.Add (Ds.Entity_id 920000, "db/ident", Ds.Keyword attr);
+    Ds.Add (Ds.Entity_id 920000, "db/cardinality", Ds.Keyword "db.cardinality/many");
+    Ds.Add (Ds.Entity_id 920000, "db/valueType", Ds.Keyword "db.type/ref");
+    Ds.Add (Ds.Entity_id 920000, "logseq.property/type", Ds.Keyword "node");
+    Ds.Add (Ds.Entity_id 920000, "block/tags", Ds.Ref_to (Ds.Ident "logseq.class/Property"));
+    Ds.Add (Ds.Entity_id 920001, "block/title", Ds.String "Alice");
+    Ds.Add (Ds.Entity_id 920002, "block/title", Ds.String "Bob");
+    put alpha attr (Ds.Ref 920001); put alpha attr (Ds.Ref 920002);
+    put beta attr (Ds.Ref 920002)] @ extras) db in
+  let storage = Ds.memory_storage () in
+  let snapshot = match Graph_bootstrap.snapshot_rows db with Ok rows -> rows | Error error -> fail error in
+  storage.Ds.storage_store (List.map (fun (row : Snapshot.snapshot_row) ->
+    string_of_int row.addr, Storage_codec.decode row.addresses row.content) snapshot);
+  let reads = ref 0 in
+  let counted = {storage with Ds.storage_restore = (fun address ->
+    incr reads; storage.storage_restore address)} in
+  let db = Option.get (Ds.restore counted) in
+  reads := 0;
+  let rows = Option.get (Dev_query.Db_query_dsl.execute_query db source {
+    opt_cards = false; opt_block_attrs = Some "[:db/id]";
+    opt_current_page_title = None; opt_today_day = None}) in
+  let ids = List.filter_map (function
+    | [Ds.Result_pull entity] -> Some entity.Ds.pulled_id | _ -> None) rows in
+  check_eq (List.sort Int.compare ids)
+    (List.map (fun uuid -> Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid))) expected |> List.sort Int.compare);
+  check ~msg:(Printf.sprintf "bound reference values must not scan 5k unrelated titles (%d storage reads)" !reads)
+    (!reads < 100)
+
 let cases = [
+  case "reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Alice" [alpha]);
+  case "multi-valued reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Bob" [alpha; beta]);
+  case "unmatched reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Nobody" []);
   case "result encoding reads only the requested subtree on large pages" result_encoding_reads_subtrees_without_hydrating_page_siblings;
   case "results disclosure executes and folds real simple and advanced queries" results_disclosure_executes_real_session;
   case "queries stay unevaluated until expanded and refresh when reopened" collapsed_queries_do_not_evaluate_until_opened;
