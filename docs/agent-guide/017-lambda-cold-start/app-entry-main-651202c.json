@@ -1,0 +1,75 @@
+{
+  "scope": "actual AppMain, LogseqRootView and stored-session authentication restoration; synthetic unexpired credentials and offline API",
+  "bundle_id": "com.logseq.logseq.ColdStartAppEntry",
+  "binary_sha256": "12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324",
+  "diagnostic_cpu_counters": false,
+  "cache": "fresh process; OS file cache and graph state retained between launches",
+  "configuration": "Release without testability; exact shipping FFI exports; installed once",
+  "endpoint": "display callback after a committed visible nonempty native outliner title",
+  "rows": "visible native title labels at first frame commit",
+  "samples": [
+    {"process_ms": 884.3996863579378, "first_commit_ms": 870.1248113065958, "nonempty_rows": 5, "authentication_state": "signedIn"},
+    {"process_ms": 742.8674283437431, "first_commit_ms": 718.4048866620287, "nonempty_rows": 5, "authentication_state": "signedIn"},
+    {"process_ms": 758.842286420986, "first_commit_ms": 755.2725780988112, "nonempty_rows": 5, "authentication_state": "signedIn"},
+    {"process_ms": 765.8905655844137, "first_commit_ms": 749.1183573147282, "nonempty_rows": 5, "authentication_state": "signedIn"},
+    {"process_ms": 789.0989943407476, "first_commit_ms": 783.936035935767, "nonempty_rows": 5, "authentication_state": "signedIn"}
+  ],
+  "median_ms": 765.8905655844137,
+  "maximum_ms": 884.3996863579378,
+  "threshold_ms": 300.0,
+  "passed": false,
+  "base_revision": "651202c3fc11ff714bcaddfae4d01bc3a5e57989",
+  "core_fingerprint": "4e5bcf1282b9d0569d086ab3c5964dc869608e97e158f17c8cbdd3a24ccbb21b",
+  "stages_ms": [
+    {
+      "main_entry": 233.4872279316187,
+      "delegate_init_begin": 269.7823529597372,
+      "delegate_init_end": 325.5974779604003,
+      "delegate_launch_begin": 326.06697792652994,
+      "delegate_launch_end": 326.0735613293946,
+      "window_became_key": 509.81514470186085,
+      "first_commit": 870.2808530069888,
+      "first_display_after_commit": 884.37118625734
+    },
+    {
+      "main_entry": 219.65072001330554,
+      "delegate_init_begin": 255.48346992582083,
+      "delegate_init_end": 307.6543449424207,
+      "delegate_launch_begin": 308.0907199764624,
+      "delegate_launch_end": 308.1009283196181,
+      "window_became_key": 466.5270115947351,
+      "first_commit": 718.5465532820672,
+      "first_display_after_commit": 742.8503866540268
+    },
+    {
+      "main_entry": 235.16882804688066,
+      "delegate_init_begin": 270.26266139000654,
+      "delegate_init_end": 319.663078058511,
+      "delegate_launch_begin": 320.1709530549124,
+      "delegate_launch_end": 320.1822864357382,
+      "window_became_key": 475.8790780324489,
+      "first_commit": 755.4256614530459,
+      "first_display_after_commit": 758.8240780169144
+    },
+    {
+      "main_entry": 233.20214892737567,
+      "delegate_init_begin": 269.8084405856207,
+      "delegate_init_end": 318.8336072489619,
+      "delegate_launch_begin": 319.25981561653316,
+      "delegate_launch_end": 319.26760729402304,
+      "window_became_key": 478.1663989415392,
+      "first_commit": 749.2699823342264,
+      "first_display_after_commit": 765.8673572586849
+    },
+    {
+      "main_entry": 235.4453692678362,
+      "delegate_init_begin": 270.7639526342973,
+      "delegate_init_end": 320.47291100025177,
+      "delegate_launch_begin": 320.91091095935553,
+      "delegate_launch_end": 320.91916096396744,
+      "window_became_key": 488.8539109379053,
+      "first_commit": 784.0949526289478,
+      "first_display_after_commit": 789.0785776544362
+    }
+  ]
+}

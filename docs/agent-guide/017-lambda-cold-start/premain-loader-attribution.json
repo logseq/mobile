@@ -1,0 +1,42 @@
+{
+  "scope": "Pre-main CPU attribution, not production wall timing. Instruments affects loader waits and machine conditions vary.",
+  "actual_app": {
+    "binary_sha256": "12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324",
+    "trace": "/tmp/logseq-current-main-app-entry-20261024.trace",
+    "cpu_sample_ms": 229.0,
+    "disjoint_categories_ms": {
+      "other loader work": 30.0,
+      "recursive dependency resolution": 96.0,
+      "shared-cache override patching": 67.0,
+      "initializers": 36.0
+    },
+    "initializers_include": "libSystem and Objective-C runtime image/class registration; not all application static initializers"
+  },
+  "minimal_libsystem_control": {
+    "trace": "/tmp/logseq-minimal-system-premain.trace",
+    "eager_dependencies": ["/usr/lib/libSystem.B.dylib"],
+    "diagnostic_image_count": 45,
+    "injected_libraries": false,
+    "cpu_sample_ms": 82.0,
+    "disjoint_categories_ms": {
+      "recursive dependency resolution": 40.0,
+      "shared-cache override patching": 40.0,
+      "other loader work": 2.0
+    },
+    "symbolication": "dyld_sim addresses resolved with atos using the runtime image and trace load address"
+  },
+  "app_launch_monitor_artifact": {
+    "trace": "/tmp/logseq-current-main-premain-launch.trace",
+    "inner_dyld_sim_launch_ms": 646.720625,
+    "main_thread_states_ms": {
+      "Blocked": 497.425,
+      "Running": 148.297,
+      "Interrupted": 1.233,
+      "Runnable": 0.242,
+      "Preempted": 0.166
+    },
+    "longest_wait_ms": 460.690959,
+    "wait_stack": ["mach_msg2_trap", "dyld4::RemoteNotificationResponder::sendMessage", "dyld4::ExternallyViewableState::blockOnSynchronousEvent", "notifyMonitorOfImageListChangesSim", "notifyDebuggerLoad", "dyld4::prepare", "_dyld_sim_prepare"],
+    "conclusion": "The synchronous dyld monitor notification is recording overhead; do not classify this wait as an application bottleneck or scale instrumented subintervals into production durations."
+  }
+}
