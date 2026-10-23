@@ -79,19 +79,14 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
               Signal.set checked (checked_value (Signal.sample property_source));
               if error = None then Signal.set editing None
             | _ -> ())));
-          let edit ?value_uuid () =
+          let edit () =
             let property = Signal.sample property_source in
-            if field "editable" property = `Bool true then (
-              let value = Option.bind value_uuid (fun uuid -> List.find_opt (fun block -> field "uuid" block = `String uuid) (list (field "blocks" property))) in
-              let property = match value, property with
-                | Some block, `Assoc fields -> `Assoc (("text", field "title" block) ::
-                    ("textValueUuid", field "uuid" block) :: List.remove_assoc "text" fields)
-                | _ -> property in
-              Signal.set editing (Some property)) in
+            if field "editable" property = `Bool true then Signal.set editing (Some property) in
           let submit fields = ignore (send (Model.SubmitNodeProperty (id,
             J.to_string (`Assoc (("blockUuid", `String owner) :: fields))))) in
           let send_block = function
-            | Model.BeginOutlinerEdit uuid -> edit ~value_uuid:uuid (); true
+            | (Model.BeginOutlinerEdit _ | Model.BeginOutlinerEditAt _) as action ->
+              if field "editable" (Signal.sample property_source) = `Bool true then send action else true
             | action -> send action in
           let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
             | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
@@ -107,6 +102,19 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             ~text_signal:(own (Signal.map (fun p -> let value = display_value p in if value = "" then "Empty" else value) property_source))
             ~label:(text (field "title" first)) ~disabled:(field "editable" first <> `Bool true)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
+          let node_value = dyn (fun property -> match list (field "references" property) with
+            | [] -> value
+            | references -> column ~gap:2 ~grow:1.0
+                ~accessibility_identifier:("property.reference." ^ owner ^ "." ^ attr)
+                (List.mapi (fun index reference ->
+                  let uuid = text (field "uuid" reference) in
+                  button ~text:(text (field "title" reference)) ~variant:`ghost ~text_alignment:`start
+                    ~padding_horizontal:0 ~padding_vertical:0 ~foreground:"primary" ~min_width:44
+                    ~min_height:(if compact then 28 else 44)
+                    ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr ^ (if index = 0 then "" else "." ^ uuid))
+                    ~on_press:(fun _ -> if field "editable" property = `Bool true then edit ()
+                      else ignore (send (Model.RequestAppNode uuid)))
+                    ~on_long_press:(fun _ -> ignore (send (Model.RequestAppNode uuid))) []) references)) property_source in
           let checkbox_value = checkbox ~foreground:"muted-foreground" ~width:32 ~height:32
             ~checked_signal:(Signal.value checked)
             ~disabled_signal:(own (Signal.map2 (fun property model -> field "editable" property <> `Bool true || List.exists (function
@@ -130,11 +138,16 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                     | blocks -> `List blocks) property_source)) send_block])
                   (own (Signal.map (fun p -> list (field "blocks" p) = [] && text (field "text" p) = "") property_source))
                 else row ~gap:0 ~cross:`center ~accessibility_identifier:("property.inline." ^ owner ^ "." ^ attr) [
-                  if field "kind" first = `String "checkbox" then checkbox_value else value])
+                  if field "kind" first = `String "checkbox" then checkbox_value else node_value])
                 (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
             ];
             if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-              (dyn (function None -> box [] | Some property -> View_query.property_editor ~id ~column:property
+              (dyn (function None -> box [] | Some property ->
+                let open_nodes = List.map (fun reference ->
+                  let uuid = text (field "uuid" reference) in
+                  uuid, "Open “" ^ text (field "title" reference) ^ "”", (fun () -> ignore (send (Model.RequestAppNode uuid))))
+                  (list (field "references" property)) in
+                View_query.property_editor ~open_nodes ~id ~column:property
                 ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
                 model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
             if_ ~test:(own (Signal.map Option.is_none (Signal.value editing))) (View_query.action_error model_source id);

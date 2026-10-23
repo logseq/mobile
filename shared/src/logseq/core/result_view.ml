@@ -54,6 +54,13 @@ let property ?owner db attr =
      match Option.map (fun id -> display (get db id "block/title")) id with Some title when title <> "" -> title | _ -> attr);
    many = Option.fold ~none:false ~some:(fun schema -> schema.Ds.cardinality = Ds.Many) schema;
    ref_ = Option.fold ~none:false ~some:(fun schema -> schema.Ds.value_type = Some Ds.RefType) schema}
+let node_target_id db p value =
+  Option.map (fun id ->
+    if p.typ <> "node" || ref_id db (get db id "logseq.property/created-from-property") <> attr_eid db p.attr then id else
+    match get db id "block/title" with
+    | Ds.String uuid when Ref_text.is_uuid uuid -> Option.value ~default:id (Ds.entid db "block/uuid" (Ds.Uuid uuid))
+    | _ -> id) (ref_id db value)
+
 let temporal_value db p value =
   if empty db value then "" else
   if p.typ = "date" then
@@ -66,7 +73,10 @@ let temporal_value db p value =
   else ""
 
 let property_display db p value =
-  if p.typ = "date" then
+  if p.typ = "node" && node_target_id db p value <> ref_id db value then
+    Option.fold ~none:"" ~some:(fun id -> G.display_title (fun value -> Ok value) db (display (get db id "block/title")))
+      (node_target_id db p value)
+  else if p.typ = "date" then
     (match Option.bind (ref_id db value) (fun id -> G.int_value (G.value db id "block/journal-day")) with
      | Some day when Journal.valid_day day -> Journal.title db day
      | _ -> "")
@@ -427,6 +437,11 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   let blocks = if not text_layout then [] else List.filter_map (fun value ->
     Option.bind (ref_id db value) (fun id -> Option.map encode_block
       (G.block (fun value -> Ok value) db id))) assigned in
+  let references = if not (List.mem p.typ ["page"; "node"; "entity"; "class"; "property"]) then [] else
+    List.filter_map (fun value -> Option.bind (node_target_id db p value) (fun id ->
+      if empty db value then None else Option.map (fun (node : Cache_model.entity_summary) ->
+        `Assoc ["uuid", `String node.uuid; "title", `String node.title])
+        (G.entity_summary (fun value -> Ok value) db id))) assigned in
   let metadata = match column_json db [] p with `Assoc fields -> fields | _ -> [] in
   let text = String.concat ", " (List.map (property_display db p) assigned) in
   let candidates = if text_layout || not include_candidates then [] else
@@ -438,6 +453,7 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   `Assoc (("editorValue", `String (match assigned with value :: _ -> temporal_value db p value | [] -> "")) ::
     ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
     ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
+    ("references", `List references) ::
     ("markup", Markup.to_yojson (Markup.parse [] [] text)) ::
     ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p && (p.attr <> "block/title" || Node_title.can_edit db id))) ::
     List.remove_assoc "editable" (List.remove_assoc "filterValues" metadata))

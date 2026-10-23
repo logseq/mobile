@@ -438,7 +438,7 @@ let rec raw_selection_values raw =
   | "" -> []
   | _ -> [text_value (jfield "value" raw)]
 
-let property_editor ~id ~column:col ~submit:save model_source property close : t =
+let property_editor ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
  fun context parent ->
   let view = {id; name = ""; typ = ""; data = `Null} in
   let own value = Signal.own_signal context.ui_scope value in
@@ -507,7 +507,10 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
   (sheet ~text:(jtext (jfield "title" col)) ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view.edit.list." ^ view.id)
-      ((if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
+      ((if open_nodes = [] then [] else [list_section (List.map (fun (uuid, label, open_) ->
+          list_item [menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id ^ "." ^ uuid)
+            ~on_press:(fun _ -> close (); open_ ()) []]) open_nodes)]) @
+       (if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
         temporal_picker kind view.id (Signal.value query) (Signal.set query)]]]
         else if plain then [list_section [list_item [
         (if jbool (jfield "textLayout" property) then textarea ~min_height:120 ~max_height:260 ~submit_on_enter:false

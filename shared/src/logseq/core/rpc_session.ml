@@ -644,8 +644,11 @@ let outliner_action_context session context message =
     | Set_task_priority value -> value.priority_uuid :: targets
     | _ -> targets in
   let missing = List.filter (fun uuid -> Outliner.find_block context uuid = None) targets in
+  let metadata = List.exists (fun uuid ->
+    not (List.exists (fun (block : Model.block) -> block.uuid = uuid) context.Outliner.blocks)
+    && Outliner.find_block context uuid <> None) targets in
   match missing, query_db session with
-  | [], _ | _, None -> context, false
+  | [], _ | _, None -> context, metadata
   | _, Some db ->
     let pages = Hashtbl.create 4 in
     let extra = List.fold_left (fun blocks uuid ->
@@ -659,7 +662,7 @@ let outliner_action_context session context message =
           | None -> loaded in
         List.rev_append loaded blocks
       | _ -> blocks) [] missing in
-    So.with_extra_blocks context extra, extra <> []
+    So.with_extra_blocks context extra, metadata || extra <> []
 
 let dispatch_outliner_event session payload =
   match Rpc.outliner_message payload with

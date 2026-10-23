@@ -209,7 +209,19 @@ let autocomplete (state : outliner_state) = state.autocomplete
 let zoom_path (state : outliner_state) = state.zoomed
 
 let find_block (context : outliner_context) uuid =
-  List.find_opt (fun (block : Model.block) -> block.uuid = uuid) context.blocks
+  match List.find_opt (fun (block : Model.block) -> block.uuid = uuid) context.blocks with
+  | Some _ as block -> block
+  (* Property values are editable blocks, but are excluded from outline membership. *)
+  | None -> Option.bind context.db (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid uuid)) (fun id ->
+      match Graph_read.ref_eids db id "logseq.property/created-from-property" with
+      | [definition] when not (Graph_read.page_is_hidden db id)
+          && Graph_read.value db definition "logseq.property/hide?" <> Some (Datascript.Bool true)
+          && Graph_read.closed_value_eids db definition = []
+          && (match Graph_read.value db definition "logseq.property/type" with
+            | None | Some (Datascript.Keyword ("default" | "url")) -> true | _ -> false) ->
+        Graph_read.block (fun text -> Ok text) db id
+      | _ -> None))
 
 let candidate_label_values candidates =
   List.fold_left
@@ -1369,8 +1381,11 @@ let enter context state editing =
      | [] -> step state [])
   | Some _ -> step state []
   | None ->
-    if Option.fold ~none:false ~some:(fun block -> List.mem block.Model.display_type [Some "code"; Some "math"])
-      (find_block context editing.uuid) then
+    let block = find_block context editing.uuid in
+    let property_value = Option.is_some block && not (List.exists
+      (fun (block : Model.block) -> block.uuid = editing.uuid) context.blocks) in
+    if property_value || Option.fold ~none:false
+      ~some:(fun block -> List.mem block.Model.display_type [Some "code"; Some "math"]) block then
       let index = byte_index_of_utf16 editing.title editing.caret in
       step {state with editing = Some {editing with
         title = replace_range editing.title index index "\n"; caret = editing.caret + 1}} []

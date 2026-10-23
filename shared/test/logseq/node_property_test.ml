@@ -407,6 +407,192 @@ let native_page_rename_uses_shared_editor () =
         check_eq (member "value" payload) (`String "Renamed page")))
       [App_test.ios_backend; App_test.kotlin_backend])
 
+let text_and_url_values_edit_inline_as_blocks () =
+  List.iter (fun backend -> List.iter (fun kind -> List.iter (fun owner ->
+    R.with_runtime (fun session runtime conn ->
+      ignore (Ds.transact_conn conn [
+        put R.summary_property "logseq.property/type" (Ds.Keyword kind);
+        put R.summary_property "db/cardinality" (Ds.Keyword "db.cardinality/many");
+        put owner R.summary (Ds.Ref_to (Q.ref_uuid R.text_a));
+        put owner R.summary (Ds.Ref_to (Q.ref_uuid R.text_b));
+        put R.text_a "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+        put R.text_a "block/parent" (Ds.Ref_to (Q.ref_uuid owner));
+        put R.text_a "block/order" (Ds.String "a0")]);
+      Graph_runtime.rebase runtime 42 [] [owner; R.summary_property; R.text_a];
+      ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String owner])));
+      Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+        App_test.send app (Model.RequestAppNode owner);
+        let apply response =
+          if member "ok" response <> `Bool true then fail (J.to_string response);
+          match Response_snapshot.decode_response (J.to_string response) with
+          | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app
+          | Error message -> fail message in
+        apply (J.from_string (Rpc_session.snapshot_visible session));
+        List.iter (fun eff -> App_test.send app (Model.DequeueEffect (Model.effect_id eff)))
+          (App.model app).pending_effects;
+        let rec execute_pending () =
+          let next = List.find_opt (function
+            | Model.TapOutlinerBlockEffect _ | Model.EditorOutlinerEventEffect _
+            | Model.ChangeOutlinerTextEffect _ | Model.OutlinerToolbarEffect _
+            | Model.ReturnOutlinerEditorEffect _ -> true
+            | _ -> false) (App.model app).pending_effects in
+          match next with None -> () | Some eff ->
+            let id = Model.effect_id eff in
+            let encoded = J.from_string (Native_bridge.encode_effect eff) in
+            let fields = match encoded with `Assoc fields -> List.remove_assoc "kind" (List.remove_assoc "id" fields) | _ -> assert false in
+            App_test.send app (Model.DequeueEffect id);
+            let response = Core_effect_test.execute session (R.text (member "kind" encoded)) fields in
+            App_test.send app (Model.ResolveEffect (id, true, J.to_string response));
+            apply response; execute_pending () in
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let expand = find ("properties.expand." ^ owner) in
+        if expand <> -1 then (App_test.dispatch app (Lui_protocol.Press expand); App_test.flush app);
+        List.iter (fun next ->
+          let node = find ("outliner.block." ^ R.text_a) in
+          check ~msg:"the value remains a real block" (node <> -1);
+          let native = App_test.descendant_with_extension host app node "outliner-block-row" in
+          let identifier, native, fields = if native <> -1 then "outliner-block-row", native,
+              Lui_protocol.String_map.singleton "caret-utf16-offset" (Lui_protocol.IntValue 2)
+            else "outliner-block-content", App_test.descendant_with_extension host app node "outliner-block-content",
+              Lui_protocol.String_map.empty in
+          App_test.dispatch app (Lui_protocol.ExtensionEvent (native, identifier, "edit",
+            Lui_protocol.String_map.add "uuid" (Lui_protocol.StringValue R.text_a) fields));
+          App_test.flush app;
+          check_eq ~msg:"clicking a Text/URL block never opens a property sheet"
+            (find ("view.edit.sheet.property." ^ owner ^ "." ^ R.summary)) (-1);
+          execute_pending ();
+          let editing = (App.model app).outliner_editing |> Option.get in
+          check_eq editing.editing_uuid R.text_a;
+          if identifier = "outliner-block-row" then check_eq ~msg:"native caret placement is preserved" editing.caret_utf16_offset 2;
+          let editor = App_test.descendant_with_extension host app node "outliner-editor" in
+          check ~msg:"the ordinary editor mounts inside the clicked value block" (editor <> -1);
+          App_test.dispatch app (Lui_protocol.ExtensionEvent (editor, "outliner-editor", "text-change",
+            Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue next;
+              "caret-utf16-offset", Lui_protocol.IntValue (String.length next)]));
+          App_test.flush app; execute_pending ();
+          let next = if kind <> "default" then next else (
+            App_test.dispatch app (Lui_protocol.ExtensionEvent (editor, "outliner-editor", "return",
+              Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue next;
+                "caret-utf16-offset", Lui_protocol.IntValue (String.length next)]));
+            App_test.flush app; execute_pending ();
+            let draft = (App.model app).outliner_editing |> Option.get in
+            check_eq ~msg:"Return adds a line inside the value instead of creating an outline sibling" draft.editing_uuid R.text_a;
+            check_eq draft.editing_title (next ^ "\n");
+            next ^ "\n") in
+          App_test.send app (Model.PerformOutlinerToolbarAction "hideKeyboard"); App_test.flush app;
+          execute_pending ();
+          check_eq (App.model app).outliner_editing None;
+          let next = String.trim next in
+          let values = items "blocks" (property R.summary (result (read session owner))) in
+          check ~msg:"inline saves preserve the value block UUID" (List.exists (fun block ->
+            member "uuid" block = `String R.text_a && member "title" block = `String next) values);
+          check ~msg:"editing one value preserves sibling values" (List.exists (fun block ->
+            member "uuid" block = `String R.text_b && member "title" block = `String "Writing") values);
+          let snapshot = Rpc_test.response_result (J.from_string (Rpc_session.snapshot_visible session)) in
+          check ~msg:"metadata values never leak into ordinary outline rows" (List.for_all (fun route ->
+            List.for_all (fun row -> member "uuid" (member "block" row) <> `String R.text_a)
+              (items "outlinerRows" route)) (items "nodeRoutes" snapshot));
+          List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation))
+            (Graph_runtime.pending_operations runtime))
+          (if kind = "url" then ["https://logseq.com/one"; "https://logseq.com/two"]
+           else ["Updated once"; "Updated twice"])))) [Q.alpha; Q.page]) ["default"; "url"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let node_property_values_open_select_and_navigate () =
+  List.iter (fun backend -> List.iter (fun owner -> List.iter (fun many ->
+    R.with_runtime (fun session runtime conn ->
+      ignore (Ds.transact_conn conn [put R.summary_property "logseq.property/type" (Ds.Keyword "node");
+        put R.summary_property "db/cardinality" (Ds.Keyword (if many then "db.cardinality/many" else "db.cardinality/one"));
+        Ds.RetractAttr (Q.ref_uuid owner, R.summary);
+        put owner R.summary (Ds.Ref_to (Q.ref_uuid Q.page));
+        put Q.beta R.summary (Ds.Ref_to (Q.ref_uuid Q.project))]);
+      Graph_runtime.rebase runtime 42 [] [owner; Q.beta; R.summary_property];
+      ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String owner])));
+      Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+        App_test.send app (Model.RequestAppNode owner);
+        let apply response =
+          let snapshot = match Response_snapshot.decode_response response with
+            | Ok value -> value | Error message -> fail message in
+          App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app in
+        apply (Rpc_session.snapshot_visible session);
+        List.iter (fun eff -> App_test.send app (Model.DequeueEffect (Model.effect_id eff)))
+          (App.model app).pending_effects;
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let click id = let node = find id in check ~msg:id (node <> -1);
+          App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+        let expand = find ("properties.expand." ^ owner) in
+        if expand <> -1 then (App_test.dispatch app (Lui_protocol.Press expand); App_test.flush app);
+        let id = "property." ^ owner ^ "." ^ R.summary in
+        let open_select () =
+          click ("property.value." ^ owner ^ "." ^ R.summary);
+          check ~msg:"one tap on a Node value opens the selector" (find ("view.edit.sheet." ^ id) <> -1);
+          check ~msg:"Node selection uses search, not a block editor"
+            (find ("view.edit.value." ^ id) <> -1);
+          check ~msg:"opening select never navigates" (not (List.exists (function
+            | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects)) in
+        let initial = member "raw" (property R.summary (result (read session owner))) in
+        open_select ();
+        if many then click ("view.edit.option." ^ id ^ "." ^ Q.project);
+        click ("view.edit.cancel." ^ id);
+        check_eq ~msg:"cancelling selection submits no mutation" (App.model app).pending_effects [];
+        check_eq (member "raw" (property R.summary (result (read session owner)))) initial;
+        open_select ();
+        click ("view.edit.option." ^ id ^ "." ^ Q.project);
+        if many then click ("view.edit.save." ^ id);
+        let eff = List.find (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects in
+        let encoded = J.from_string (Native_bridge.encode_effect eff) in
+        let response = Core_effect_test.execute session "node-property" ["text", member "text" encoded] in
+        ignore (result response);
+        let effect_id = Model.effect_id eff in
+        App_test.send app (Model.DequeueEffect effect_id);
+        App_test.send app (Model.ResolveEffect (effect_id, true, J.to_string response));
+        apply (J.to_string response);
+        check_eq ~msg:"successful selection dismisses the selector" (find ("view.edit.sheet." ^ id)) (-1);
+        let refs = items "references" (property R.summary (result (read session owner)))
+          |> List.map (member "uuid") in
+        check ~msg:"select persists the chosen node" (List.mem (`String Q.project) refs);
+        check_eq ~msg:"many keeps prior nodes; single replaces its reference"
+          (List.mem (`String Q.page) refs) many;
+        open_select ();
+        let navigation = "view.edit.open." ^ id ^ "." ^ Q.project in
+        check ~msg:"select offers navigation for the saved reference" (find navigation <> -1);
+        click navigation;
+        check_eq ~msg:"navigation closes the selector" (find ("view.edit.sheet." ^ id)) (-1);
+        check ~msg:"the select navigation entry opens the referenced node"
+          (List.exists (function Model.OpenAppNodeEffect (_, uuid) -> uuid = Q.project | _ -> false)
+            (App.model app).pending_effects);
+        check ~msg:"navigation never submits a property mutation"
+          (not (List.exists (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects));
+        App_test.send app (Model.RequestAppNode owner);
+        apply (Rpc_session.snapshot_visible session);
+        List.iter (fun eff -> App_test.send app (Model.DequeueEffect (Model.effect_id eff)))
+          (App.model app).pending_effects;
+        let reference = find ("property.value." ^ owner ^ "." ^ R.summary ^ (if many then "." ^ Q.project else "")) in
+        check ~msg:"each reference has its own gesture target" (reference <> -1);
+        App_test.dispatch app (Lui_protocol.LongPress reference); App_test.flush app;
+        check_eq ~msg:"long press goes straight to the node without opening select"
+          (find ("view.edit.sheet." ^ id)) (-1);
+        check ~msg:"long press opens the corresponding node"
+          (List.exists (function Model.OpenAppNodeEffect (_, uuid) -> uuid = Q.project | _ -> false)
+            (App.model app).pending_effects))))
+      [false; true]) [Q.alpha; Q.page]) [App_test.ios_backend; App_test.kotlin_backend]
+
+let wrapped_node_values_resolve_only_the_owning_property () =
+  let base = Ds.db_with [put R.summary_property "logseq.property/type" (Ds.Keyword "node");
+    put R.text_a "block/title" (Ds.String Q.page)] (R.fixture ()) in
+  let session, _ = R.make_session base in
+  let p = property R.summary (result (read session Q.alpha)) in
+  check_eq ~msg:"a hidden node value displays its target name" (member "text" p) (`String "Workspace");
+  check_eq ~msg:"navigation targets the referenced node, not its hidden value block"
+    (member "uuid" (List.hd (items "references" p))) (`String Q.page);
+  let foreign = Ds.db_with [put R.text_a "logseq.property/created-from-property" (Ds.Ref_to (Q.ref_uuid R.score_property))] base in
+  let session, _ = R.make_session foreign in
+  let p = property R.summary (result (read session Q.alpha)) in
+  check_eq ~msg:"value blocks owned by another property keep their content" (member "text" p) (`String Q.page);
+  check_eq (member "uuid" (List.hd (items "references" p))) (`String R.text_a)
+
 let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session runtime _ ->
   ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.page])));
   Q.with_ui App_test.ios_backend (Rpc_session.snapshot_visible session) (fun app ->
@@ -443,6 +629,9 @@ let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session ru
 
 let cases = [
   case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;
+  case "wrapped node values navigate to their actual target safely" wrapped_node_values_resolve_only_the_owning_property;
+  case "Text and URL blocks edit inline with stable identity and sibling values" text_and_url_values_edit_inline_as_blocks;
+  case "node property taps open select with navigation" node_property_values_open_select_and_navigate;
   case "built-in page menus hide Delete and reject stale requests" builtin_pages_hide_delete_and_reject_deletion_requests;
   case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
   case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;
