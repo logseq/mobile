@@ -1,13 +1,15 @@
 name: Start db-sync server
 description: >-
-  Check out logseq@feature/native-mobile-app, build the db-sync node adapter,
+  Check out the native-compatible Logseq revision, build the db-sync node adapter,
   and start it on the given port (default 8787). The app e2e flows create sync
   graphs against it. logseq/logseq is public, so no credential is needed.
 inputs:
   ref:
     description: logseq/logseq ref to check out.
     required: false
-    default: feature/native-mobile-app
+    # This revision includes the snapshot transaction cursor required by the
+    # shared native bootstrap protocol. The old feature branch omitted it.
+    default: a63da5cb7993302f8c58ccf42eaf0083b77cf42b
   port:
     description: Port the server binds.
     required: false
