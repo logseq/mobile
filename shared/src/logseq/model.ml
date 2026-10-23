@@ -246,6 +246,7 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
   ; empty_journals : (sidebar_page * int) list
@@ -463,6 +464,7 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | BeginOutlinerEditAt of string * int
   | EditorCompletion of string * string
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
@@ -2035,6 +2037,10 @@ let rec update (current : logseq_model) action =
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
+  | BeginOutlinerEditAt (uuid, caret) ->
+    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc ["type", `String "tapBlock"; "uuid", `String uuid;
+        "caretUTF16Offset", `Int caret])))
   | EditorCompletion (kind, value) ->
     let fields = if kind = "searchAutocomplete" then ["query", `String value]
       else if kind = "submitAutocomplete" then ["value", `String value] else [] in
@@ -2951,6 +2957,21 @@ and apply_core_snapshot (current : logseq_model)
   if Option.is_some projection.tag_choices_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else {current with composer_tag_choices = Option.get projection.tag_choices_update; composer_tags_loading = false}
+  else if Option.is_some projection.query_update then
+    if projection.selected_graph_id <> current.selected_graph_id then current
+    else
+      let uuid, query_json = Option.get projection.query_update in
+      let update = List.map (fun (row : outline_row) ->
+        if row.row_uuid = uuid then {row with query_json} else row) in
+      {current with outliner_rows = update current.outliner_rows;
+        navigation_root_rows = update current.navigation_root_rows;
+        journal_outliner_rows = update current.journal_outliner_rows;
+        related_rows = update current.related_rows;
+        linked_reference_rows = update current.linked_reference_rows;
+        node_routes = List.map (fun (route : node_projection) ->
+          {route with node_outliner_rows = update route.node_outliner_rows;
+            node_related_rows = update route.node_related_rows;
+            node_linked_reference_rows = update route.node_linked_reference_rows}) current.node_routes}
   else if Option.is_some projection.reference_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else

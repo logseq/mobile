@@ -501,6 +501,11 @@ let core_projection fields =
         (selection_member fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
+    query_update = (if bool_member "isQueryPatch" fields then
+      Option.bind (string_member "queryOwnerUuid" fields) (fun uuid ->
+        match List.assoc_opt "query" fields with
+        | Some (`Assoc _ as value) -> Some (uuid, Yojson.Basic.to_string value)
+        | _ -> None) else None);
     reference_update = (if bool_member "isReferencePatch" fields then
       Option.map (fun uuid -> (uuid, related_rows_member "referenceBlocks" fields))
         (string_member "referenceUuid" fields) else None);

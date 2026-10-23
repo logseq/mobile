@@ -93,6 +93,7 @@ fingerprinted_core_object="$native_link_dir/logseq_runtime.o"
 mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
 native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
+printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
 
 swift_build_args=(
   --configuration "$configuration"

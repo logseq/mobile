@@ -43,6 +43,7 @@ private struct LGCoreResponseEnvelope: Decodable, Sendable {
         let isOutlinerContentPatch: Bool?
         let isSearchPatch: Bool?
         let isReferencePatch: Bool?
+        let isQueryPatch: Bool?
         let graphName: String?
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
@@ -221,7 +222,7 @@ public final class LGRuntime {
         if result.isPendingSyncPatch == true {
             return syncProjection(result) != lastCoreSyncProjection
         }
-        if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true {
+        if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true || result.isQueryPatch == true {
             return true
         }
         return response != lastAuthoritativeCoreResponse
@@ -239,7 +240,7 @@ public final class LGRuntime {
         if result.isPendingSyncPatch == true {
             lastCoreSyncProjection = syncProjection(result)
             authoritativeCoreResponseInvalidated = true
-        } else if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true {
+        } else if result.isOutlinerPatch == true || result.isOutlinerContentPatch == true || result.isSearchPatch == true || result.isReferencePatch == true || result.isQueryPatch == true {
             if result.isOutlinerPatch == true {
                 lastCoreSyncProjection = syncProjection(result)
             }
@@ -330,7 +331,7 @@ public final class LGRuntime {
                 ?? Self.extensionInt(values, name: "count")
                 ?? Self.extensionInt(values, name: "width")
                 ?? Self.extensionPlacement(values)
-                ?? 0
+                ?? (identifier == "outliner-block-row" && name == "edit" ? -1 : 0)
             operation = .extensionEvent(event.nodeID, identifier, name, text, value)
         }
 

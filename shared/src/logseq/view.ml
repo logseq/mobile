@@ -117,7 +117,8 @@ let outliner_block_row_schema () =
   let uuid = Lui_extension.event_field "uuid" StringScalar true in
   Lui_extension.component "outliner-block-row" [profile IOS SwiftUIHost] true []
     [Lui_extension.property "payload" StringScalar true None]
-    [Lui_extension.event "edit" [uuid]; Lui_extension.event "open-node" [uuid];
+    [Lui_extension.event "edit" [uuid; Lui_extension.event_field "caret-utf16-offset" IntScalar false];
+     Lui_extension.event "open-node" [uuid];
      Lui_extension.event "collapse" [uuid]; Lui_extension.event "long-press" [uuid];
      Lui_extension.event "drag-start" [uuid];
      Lui_extension.event "drop" [uuid; Lui_extension.event_field "placement" StringScalar true];

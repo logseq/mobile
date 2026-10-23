@@ -537,7 +537,7 @@ let event_patch_plan (message : Outliner.outliner_message) operations =
         | _ -> Structural_diff)
      | [] ->
        (match message with
-        | Outliner.Tap_block _ -> Patch_blocks []
+        | Outliner.Tap_block _ | Outliner.Tap_block_at _ -> Patch_blocks []
         | Outliner.Long_press_block _ -> Patch_blocks []
         | Outliner.Text_changed _ -> Patch_blocks []
         | Outliner.Caret_moved _ -> Patch_blocks []

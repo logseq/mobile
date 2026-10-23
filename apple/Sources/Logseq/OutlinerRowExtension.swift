@@ -88,16 +88,17 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     static let identifier = "outliner-block-row"
-    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry, playback: LGYouTubePlaybackState) throws {
         let uuid = LUIExtensionEventField(name: "uuid", kind: .string, isRequired: true)
         try registry.register(LUIAppleExtension(identifier: identifier, fingerprint: fingerprint,
             acceptsStandardChildren: true,
             properties: [.init(name: "payload", kind: .string, isRequired: true)],
-            events: ["edit", "open-node", "collapse", "long-press", "drag-start"].map {
+            events: ["open-node", "collapse", "long-press", "drag-start"].map {
                 LUIExtensionEvent(name: $0, fields: [uuid])
-            } + [.init(name: "drop", fields: [uuid, .init(name: "placement", kind: .string, isRequired: true)]),
+            } + [.init(name: "edit", fields: [uuid, .init(name: "caret-utf16-offset", kind: .int, isRequired: false)]),
+                 .init(name: "drop", fields: [uuid, .init(name: "placement", kind: .string, isRequired: true)]),
                  .init(name: "set-status", fields: [uuid, .init(name: "count", kind: .int, isRequired: true)]),
                  .init(name: "set-priority", fields: [.init(name: "priority", kind: .string, isRequired: true)])]
         ) { context in
@@ -115,6 +116,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let row: OutlinerRowPayload
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
+    @State private var titleWidth: CGFloat = 0
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
@@ -237,7 +239,17 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .accessibilityIdentifier("outliner.block-action." + row.uuid)
                         .accessibilityLabel("Edit block " + row.title)
                         .contentShape(Rectangle())
-                        .onTapGesture { emit(row.opensAsPage ? "open-node" : "edit") }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                        .onTapGesture(coordinateSpace: .local) { point in
+                            #if os(iOS)
+                            if !row.opensAsPage && !OutlinerRichMarkupPolicy.containsRich(row.markup) {
+                                emit("edit", extra: ["caret-utf16-offset": .int(OutlinerTapCaret.offset(
+                                    at: point, width: titleWidth, title: row.title, nodes: row.markup))])
+                            } else { emit(row.opensAsPage ? "open-node" : "edit") }
+                            #else
+                            emit(row.opensAsPage ? "open-node" : "edit")
+                            #endif
+                        }
                 }
                 if !row.tags.isEmpty {
                     HStack(spacing: 6) {

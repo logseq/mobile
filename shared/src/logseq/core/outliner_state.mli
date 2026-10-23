@@ -84,6 +84,7 @@ type outliner_priority =
 
 type outliner_message =
   | Tap_block of string
+  | Tap_block_at of string * int
   | Long_press_block of string
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text

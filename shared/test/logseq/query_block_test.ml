@@ -570,7 +570,110 @@ let reference_query_keeps_bound_values_indexed value expected () =
   check ~msg:(Printf.sprintf "bound reference values must not scan 5k unrelated titles (%d storage reads)" !reads)
     (!reads < 100)
 
+let disclosure_only_projects_its_query () =
+  let db = fixture "#Project" in
+  let reads = ref 0 in
+  let blocks () = incr reads; Graph_read.blocks_for_page (fun text -> Ok text) db page in
+  let session = Session.create_session {Session.default_options with
+    graph_db = Some (fun () -> Some db); graph_blocks = Some (fun () -> Some (blocks ()))} in
+  ignore (Rpc_test.configure_plain_session session);
+  List.iter (fun expanded ->
+    reads := 0;
+    let response = dispatch session "resultView" (Json.to_string (`Assoc [
+      "ownerUuid", `String owner; "featureType", `String "query-result";
+      "action", `String "setExpanded"; "expanded", `Bool expanded])) in
+    check_eq ~msg:"query disclosure must not reload the surrounding page" !reads 0;
+    check_eq ~msg:"query disclosure returns a dedicated patch" (member "isQueryPatch" response) (`Bool true);
+    check_eq (member "queryOwnerUuid" response) (`String owner);
+    check_eq (member "expanded" (member "query" response)) (`Bool expanded);
+    List.iter (fun field -> check_eq ~msg:("query patches omit " ^ field) (member field response) `Null)
+      ["blocks"; "outlinerRows"; "nodeRoutes"];
+    if expanded then (
+      check_eq ~msg:"the query patch carries result rows only once" (member "rows" (member "query" response)) `Null;
+      check_eq (row_ids (List.hd (items "views" (member "query" response)))) [alpha])
+    else check_eq (items "rows" (member "query" response)) []) [true; false; true]
+
+let query_patch_preserves_page_and_editing () =
+  let root = Rpc_test.response_result (Json.from_string (ui_response ())) in
+  let response = Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+    "selectedGraphId", `String "test-graph"; "outlinerRows", member "outlinerRows" root;
+    "nodeRoutes", `List [`Assoc ["uuid", `String owner; "outlinerRows", member "outlinerRows" root]]]]) in
+  let before = match Response_snapshot.decode_response response with
+    | Ok projection -> Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection)
+    | Error message -> fail message in
+  let before = {before with Model.outliner_editing = Some {editing_uuid = alpha;
+    editing_title = "Unsaved local draft"; caret_utf16_offset = 3}} in
+  let patch graph expanded = Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+    "isQueryPatch", `Bool true; "selectedGraphId", graph;
+    "queryOwnerUuid", `String owner; "query", `Assoc ["expanded", `Bool expanded;
+      "ownerUuid", `String owner; "featureType", `String "query-result"; "rows", `List []; "views", `List []]]]) in
+  let apply current body = match Response_snapshot.decode_response body with
+    | Ok projection -> Model.update current (Model.ApplyCoreSnapshot projection)
+    | Error message -> fail message in
+  let after = apply before (patch (`String "test-graph") true) in
+  check_eq ~msg:"query patches retain local editing" after.outliner_editing before.outliner_editing;
+  check_eq (List.map (fun (row : Model.outline_row) -> row.row_uuid) after.outliner_rows)
+    (List.map (fun (row : Model.outline_row) -> row.row_uuid) before.outliner_rows);
+  check_eq (List.map (fun (route : Model.node_projection) -> route.node_uuid) after.node_routes) [owner];
+  check ~msg:"query patches update the zoomed owner" (List.exists (fun (row : Model.outline_row) ->
+    row.row_uuid = owner && member "expanded" (Json.from_string row.query_json) = `Bool true) after.outliner_rows);
+  let stale = apply after (patch (`String "other-graph") false) in
+  check_eq ~msg:"query patches from another graph are ignored" stale after
+
+let disclosure_does_not_reparse_unchanged_results () =
+  let rows = List.init 400 (fun index -> `Assoc [
+    "block", query_result_block (Printf.sprintf "result-%d" index) ("Result " ^ string_of_int index);
+    "properties", `List [`Assoc ["attr", `String "user.property/Notes"; "text", `String (String.make 4096 'x')]]]) in
+  let query = `Assoc ["ownerUuid", `String owner; "featureType", `String "query-result";
+    "expanded", `Bool true; "rows", `List rows; "views", `List [`Assoc [
+      "uuid", `String (owner ^ ":default"); "name", `String "All"; "type", `String "list";
+      "columns", `List []; "rows", `List rows]]] in
+  let response = Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+    "selectedGraphId", `String "test-graph"; "graphName", `String "Query graph";
+    "outlinerRows", `List [`Assoc ["depth", `Int 0; "block", `Assoc [
+      "uuid", `String owner; "title", `String "Large query"; "pageId", `String page; "query", query]]]]]) in
+  List.iter (fun backend -> with_ui backend response (fun app ->
+    let runtime = Lui_app.runtime app in
+    let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+    check (find ("query.result." ^ owner ^ ".0") <> -1);
+    let allocated operation = let before = Gc.allocated_bytes () in operation (); Gc.allocated_bytes () -. before in
+    let cost = allocated (fun () ->
+      App_test.dispatch app (Lui_protocol.Press (find ("query.toggle." ^ owner))); App_test.flush app) in
+    check ~msg:(Printf.sprintf "disclosure must not reparse megabytes of unchanged results (allocated %.1f MB)" (cost /. 1e6))
+      (cost < 4e6);
+    check ~msg:"results remain available until the expansion response" (find ("query.result." ^ owner ^ ".0") <> -1)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let tapped_caret_survives_the_core_boundary () =
+  let db = Ds.db_with [put alpha "block/title" (Ds.String "Hello 👋 world")] (fixture "#Project") in
+  let session, _ = make_session db in
+  ignore (Rpc_test.configure_plain_session session);
+  List.iter (fun (caret, expected) ->
+    let result = dispatch session "outlinerEvent" (Json.to_string (`Assoc [
+      "type", `String "tapBlock"; "uuid", `String alpha; "caretUTF16Offset", `Int caret])) in
+    check_eq ~msg:"native tap positions survive into the editor draft"
+      (member "caretUTF16Offset" (member "editing" (member "outlinerState" result))) (`Int expected))
+    [0, 0; 3, 3; 8, 8; -1, 0; 999, 14]
+
+let tapped_caret_resolves_reference_lengths () =
+  List.iter (fun (source, expected) ->
+    let title = source ^ " after" in
+    let db = Ds.db_with [put alpha "block/title" (Ds.String title)] (fixture "#Project") in
+    let session, _ = make_session db in
+    ignore (Rpc_test.configure_plain_session session);
+    let result = dispatch session "outlinerEvent" (Json.to_string (`Assoc [
+      "type", `String "tapBlock"; "uuid", `String alpha;
+      "caretUTF16Offset", `Int (String.length source + 2)])) in
+    check_eq ~msg:"reference UUIDs resolve before positioning the editor caret"
+      (member "caretUTF16Offset" (member "editing" (member "outlinerState" result))) (`Int expected))
+    [("[[" ^ project ^ "]]", 13); ("#[[" ^ project ^ "]]", 10)]
+
 let cases = [
+  case "block taps account for resolved reference lengths" tapped_caret_resolves_reference_lengths;
+  case "query disclosure patches do not reload the page" disclosure_only_projects_its_query;
+  case "query patches preserve navigation drafts and graph isolation" query_patch_preserves_page_and_editing;
+  case "disclosure does not reparse unchanged large results" disclosure_does_not_reparse_unchanged_results;
+  case "block taps retain requested UTF16 caret positions" tapped_caret_survives_the_core_boundary;
   case "reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Alice" [alpha]);
   case "multi-valued reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Bob" [alpha; beta]);
   case "unmatched reference queries retain bound index probes" (reference_query_keeps_bound_values_indexed "Nobody" []);
