@@ -12,6 +12,7 @@ val block_values : render_block:(Model.outline_row Signal.signal -> (Model.logse
   string -> Yojson.Basic.t Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 
 val action_error : Model.logseq_model Signal.signal -> string -> Lui_elements.t
+val waiting : Model.logseq_model Signal.signal -> string -> bool Signal.signal
 
 val temporal_picker : string -> string -> string Signal.signal -> (string -> unit) -> Lui_elements.t
 val temporal_default : string -> string

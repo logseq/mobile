@@ -161,6 +161,7 @@ type pending_intent =
   | Delete_blocks of pending_delete
   | Create_tag of pending_create
   | Create_page of pending_create
+  | Create_property of pending_create
   | Create_journal of pending_journal
   | Add_tag of pending_tag
   | Set_favorite of pending_favorite

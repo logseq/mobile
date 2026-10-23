@@ -552,6 +552,7 @@ let active_overflow_menu model_source send : t =
    let kotlin_host = Lui_ui.host context = KotlinHost in
    (* iOS menu items carry no icons; the Kotlin popup did. *)
    let item_icon name = if kotlin_host then Some (`app name) else None in
+   (View_property.with_add_property_picker model_source raw_source send (fun add_property add_picker ->
    let entries =
      [ if_ ~test:page_actions_source
          (if kotlin_host then
@@ -593,6 +594,7 @@ let active_overflow_menu model_source send : t =
                finished := Option.map (fun (_, revision, _) -> revision)
                  (List.find_opt (fun (key, _, _) -> key = "page.tags." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "tags", property))) []);
+       add_property;
        if_ ~test:page_actions_source
          (menu_item ~text:"Share" ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
@@ -619,7 +621,7 @@ let active_overflow_menu model_source send : t =
      box ~width:44 ~height:44
        [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
            ~accessibility_identifier:"button.connection" entries ] in
-   (stack [menu;
+   stack [menu; add_picker;
      if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
        (dyn (function None -> box [] | Some (graph, owner, action, property) ->
          let column = if action <> "rename" then property else match property with `Assoc fields ->
@@ -630,7 +632,7 @@ let active_overflow_menu model_source send : t =
                ("graphId", `String (Option.value ~default:"" graph)) ::
                (if action = "tags" then ("action", `String "addTags") :: fields else fields)))))))
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
-   ]) context parent
+   ])) context parent
 
 let main_header_connection model_source send : t =
   stack

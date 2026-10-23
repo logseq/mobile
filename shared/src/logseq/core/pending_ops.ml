@@ -193,6 +193,7 @@ type pending_intent =
   | Delete_blocks of pending_delete
   | Create_tag of pending_create
   | Create_page of pending_create
+  | Create_property of pending_create
   | Create_journal of pending_journal
   | Add_tag of pending_tag
   | Set_favorite of pending_favorite
@@ -359,7 +360,7 @@ let rec affected_uuids db intent =
   | Move_block value -> [ value.uuid ]
   | Add_tag value -> [ value.uuid ]
   | Create_tag value -> [ value.uuid ]
-  | Create_page value -> [ value.uuid ]
+  | Create_page value | Create_property value -> [ value.uuid ]
   | Move_blocks value -> List.map (fun (move : pending_move) -> move.uuid) value.moves
   | Split_block value -> [ value.uuid; value.new_uuid ]
   | Merge_backward value -> [ value.uuid; value.previous_uuid ]
@@ -372,7 +373,7 @@ let rec safe_to_rebase intent =
   match intent with
   | Atomic intents -> List.for_all safe_to_rebase intents
   | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Split_block _
-  | Merge_backward _ | Create_tag _ | Create_page _ | Create_journal _
+  | Merge_backward _ | Create_tag _ | Create_page _ | Create_property _ | Create_journal _
   | Add_tag _ | Insert_block _ | Create_asset _ | Move_block _ | Move_blocks _
   | Set_favorite _ | Delete_page _ -> true
   | Delete_blocks _ -> false
@@ -413,7 +414,7 @@ let remove_raw = Graph_sqlite.remove_pending
 let outliner_op intent =
   match intent with
   | Atomic _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
-  | Create_page _ | Add_tag _ -> "save-block"
+  | Create_page _ | Create_property _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
   | Set_favorite value -> if value.favorite then "insert-blocks" else "delete-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
@@ -679,6 +680,7 @@ let rec intent_json intent =
         ] )
     | Create_tag value -> ("create-tag", creation_fields value)
     | Create_page value -> ("create-page", creation_fields value)
+    | Create_property value -> ("create-property", creation_fields value)
     | Create_journal value ->
       ( "create-journal"
       , [
@@ -824,6 +826,7 @@ let rec intent_of_json input =
       }
   | "create-tag" -> Create_tag (create_of_fields fields)
   | "create-page" -> Create_page (create_of_fields fields)
+  | "create-property" -> Create_property (create_of_fields fields)
   | "create-journal" ->
     Create_journal
       {

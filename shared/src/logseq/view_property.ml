@@ -4,7 +4,9 @@ let field name = function `Assoc fields -> Option.value ~default:`Null (List.ass
 let text = function `String value -> value | _ -> ""
 let list = function `List values -> values | _ -> []
 let decode raw = try J.from_string raw with _ -> `Null
-let has_properties raw = list (field "properties" (decode raw)) <> []
+let local_input set = function Lui_protocol.TextChanged (_, value) -> set value | _ -> ()
+let has_properties raw = let source = decode raw in
+  list (field "properties" source) <> [] || list (field "schemaProperties" source) <> []
 let rename_page raw =
   let source = decode raw in
   let owner = text (field "ownerUuid" source) and property = field "rename" source in
@@ -40,12 +42,64 @@ let adaptive_row stacked children : t = fun context parent ->
   List.iter (fun child -> ignore (child context (Some node))) children;
   node
 
+let with_add_property_picker model_source raw_source send render : t =
+ fun context parent ->
+  let own source = Signal.own_signal context.ui_scope source in
+  let source = own (Signal.map decode raw_source) in
+  let keys = own (Signal.map2 (fun (model : Model.logseq_model) json ->
+    [Option.value ~default:"" model.selected_graph_id ^ ":" ^ text (field "ownerUuid" json)]) model_source source) in
+  (keyed ~source:keys ~key:Fun.id ~cmp:String.compare ~mount:(fun _ -> fun context parent ->
+    let own source = Signal.own_signal context.ui_scope source in
+    let owner = text (field "ownerUuid" (Signal.sample source)) in
+    let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
+    let adding = Signal.state context.ui_scheduler false in
+    let search = Signal.state context.ui_scheduler "" in
+    let add_id = "property.add." ^ owner in
+    let finished = ref None in
+    ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (model : Model.logseq_model) ->
+      match List.find_opt (fun (key, _, _) -> key = add_id) model.result_view_feedback with
+      | Some (_, revision, error) when !finished <> Some revision ->
+        finished := Some revision; if error = None then Signal.set adding false
+      | _ -> ())));
+    let add fields = ignore (send (Model.SubmitNodeProperty (add_id,
+      J.to_string (`Assoc (("blockUuid", `String owner) :: ("graphId", `String graph) :: fields))))) in
+    let available = own (Signal.map2 (fun json query -> list (field "availableProperties" json)
+      |> List.filter (fun property -> Outliner_state.includes_case_insensitive (text (field "title" property)) query)) source (Signal.value search)) in
+    let can_create = own (Signal.map2 (fun json query ->
+      let title = String.trim query in
+      title <> "" && not (List.exists (fun name -> List.exists (fun property -> text (field "title" property) = title)
+        (list (field name json))) ["availableProperties"; "properties"; "schemaProperties"])) source (Signal.value search)) in
+    let action = if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
+      (menu_item ~text:"Add property" ~accessibility_identifier:add_id
+        ~on_press:(fun _ -> Signal.set search ""; Signal.set adding true) []) in
+    let picker = if_ ~test:(Signal.value adding)
+      (sheet ~text:"Add property" ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+        ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
+        Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
+          search_field ~text_signal:(Signal.value search) ~placeholder:"Search or create a property" ~label:"Search properties"
+            ~accessibility_identifier:(add_id ^ ".search") ~on_input:(local_input (Signal.set search)) [];
+          list_section [keyed ~source:available ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
+            ~mount:(fun property_source -> let property = Signal.sample property_source in
+              let attr = text (field "attr" property) in
+              list_item [button ~text:(text (field "title" property)) ~variant:`ghost ~text_alignment:`start ~min_height:44
+                ~accessibility_identifier:("property.add.option." ^ owner ^ "." ^ attr)
+                ~disabled_signal:(View_query.waiting model_source add_id)
+                ~on_press:(fun _ -> add ["action", `String "add"; "attr", `String attr]) []])];
+          if_ ~test:can_create
+            (list_section [list_item [button ~text:"Create text property" ~variant:`ghost ~min_height:44
+              ~accessibility_identifier:(add_id ^ ".create") ~disabled_signal:(View_query.waiting model_source add_id)
+              ~on_press:(fun _ -> add ["action", `String "create"; "title", `String (String.trim (Signal.sample (Signal.value search)))]) []]]);
+          View_query.action_error model_source add_id];
+        toolbar ~label:"Property actions" ~style_class:"navigation-actions" [button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+          ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
+    (render action picker) context parent)) context parent
+
 let view ?(compact = false) ~render_block model_source raw_source send : t =
  fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
   let owners = own (Signal.map (fun json -> let owner = text (field "ownerUuid" json) in
-    if owner = "" || list (field "properties" json) = [] then [] else [owner]) source) in
+    if owner = "" || (list (field "properties" json) = [] && (compact || list (field "schemaProperties" json) = [])) then [] else [owner]) source) in
   (keyed ~source:owners ~key:Fun.id ~cmp:String.compare ~mount:(fun owner_source ->
     let owner = Signal.sample owner_source in
     let expanded = Signal.state context.ui_scheduler false in
@@ -158,4 +212,12 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
           ~text_signal:(own (Signal.map (fun expanded -> if expanded then "Collapse" else "Expand") (Signal.value expanded)))
           ~accessibility_identifier:("properties.expand." ^ owner)
           ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) []);
+      (if compact then box [] else
+        if_ ~test:(own (Signal.map (fun json -> list (field "schemaProperties" json) <> []) source))
+          (column ~gap:2 ~cross:`stretch [
+            Lui_elements.text ~value:"Tag properties" ~foreground:"muted-foreground" ~style_class:"callout" [];
+            keyed ~source:(own (Signal.map (fun json -> list (field "schemaProperties" json)) source))
+              ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare ~mount:(fun property_source ->
+                Lui_elements.text ~value_signal:(own (Signal.map (fun property -> text (field "title" property)) property_source))
+                  ~min_height:32 ~accessibility_identifier:("property.schema." ^ owner ^ "." ^ text (field "attr" (Signal.sample property_source))) [])]));
     ]))) context parent

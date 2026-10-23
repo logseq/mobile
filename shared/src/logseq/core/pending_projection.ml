@@ -408,6 +408,41 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
   let resolved = resolve_page_references literal_blocks db intent in
   if resolved <> intent then compile_with_literals literal_blocks db resolved else
   match intent with
+  | Ops.Create_property value ->
+    let existing = Ds.entid db "block/uuid" (Ds.Uuid value.uuid) in
+    let valid_name = Dev_query.Unicode.trim value.title <> "" && not (String.contains value.title '#')
+      && not (String.starts_with ~prefix:"[[" value.title)
+      && (not (String.contains value.title '/') || Dev_query.Date_time_util.valid_journal_title value.title) in
+    let duplicate = Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String value.title) () |> Seq.exists (fun (d : Ds.datom) ->
+      Some d.e <> existing && Node_title.is_property db d.e && Node_title.can_edit db d.e) in
+    if not valid_name then Error "Enter a valid property name"
+    else if duplicate then Error "Another property with this name already exists"
+    else if Option.fold ~none:false ~some:(fun id ->
+      not (Node_title.can_rename_page db id) || Node_title.is_class db id || Node_title.is_property db id
+      || Graph_read.ref_eids db id "block/parent" <> []) existing
+    then Error "This page cannot be converted to a property"
+    else
+    let reference = match existing with Some id -> Ds.Entity_id id | None -> Ds.Temp_id ("pending/" ^ value.uuid) in
+    Ok ([entity_tx reference [
+      "block/uuid", Ds.One_value (Ds.Uuid value.uuid);
+      "block/title", Ds.One_value (Ds.String value.title);
+      "block/name", Ds.One_value (Ds.String (Node_title.name value.title));
+      "db/ident", Ds.One_value (Ds.Keyword ("user.property/property-" ^ value.uuid));
+      "db/valueType", Ds.One_value (Ds.Keyword "db.type/ref");
+      "db/cardinality", Ds.One_value (Ds.Keyword "db.cardinality/one");
+      "db/index", Ds.One_value (Ds.Bool true);
+      "block/order", Ds.One_value (Ds.String (match existing with
+        | Some id -> Option.value ~default:"a0" (string_value (one_value db (Ds.Entity_id id) "block/order"))
+        | None -> "a0"));
+      "logseq.property/type", Ds.One_value (Ds.Keyword "default");
+      "block/tags", Ds.Many_values [Ds.Ref_to (Ds.Ident "logseq.class/Property")];
+      "block/created-at", Ds.One_value (match existing with
+        | Some id -> Option.value ~default:(Ds.Int64 (Int64.of_int value.created_at)) (one_value db (Ds.Entity_id id) "block/created-at")
+        | None -> Ds.Int64 (Int64.of_int value.created_at));
+      "block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int value.created_at))]]
+      @ (match existing, Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Page") with
+        | Some _, Some page -> [Ds.Retract (reference, "block/tags", Some (Ds.Ref page))]
+        | _ -> []))
   | Ops.Atomic intents ->
     if intents = [] then Error "atomic operation cannot be empty"
     else
@@ -952,6 +987,10 @@ let rec satisfied db (intent : Ops.pending_intent) =
     List.for_all
       (fun uuid -> Ds.entid db "block/uuid" (Ds.Uuid uuid) = None)
       value.uuids
+  | Ops.Create_property value ->
+    Option.fold ~none:false ~some:(fun id -> Node_title.is_property db id
+      && one_value db (Ds.Entity_id id) "db/ident" = Some (Ds.Keyword ("user.property/property-" ^ value.uuid)))
+      (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
   | Ops.Create_tag value | Ops.Create_page value ->
     Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None
   | Ops.Create_journal value ->

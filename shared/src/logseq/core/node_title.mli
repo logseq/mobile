@@ -1,4 +1,6 @@
 val is_page : Datascript.db -> int -> bool
+val is_class : Datascript.db -> int -> bool
+val is_property : Datascript.db -> int -> bool
 val can_delete : Datascript.db -> int -> bool
 val can_edit : Datascript.db -> int -> bool
 val can_rename_page : Datascript.db -> int -> bool
