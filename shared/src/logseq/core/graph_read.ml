@@ -194,60 +194,58 @@ let rec breadcrumbs_loop decrypt_title db seen eid ancestors =
 let breadcrumbs decrypt_title db eid =
   breadcrumbs_loop decrypt_title db [] eid []
 
+let recycled db eid =
+  let rec loop seen eid =
+    if List.mem eid seen then false
+    else if Option.is_some (value db eid "logseq.property/deleted-at") then true
+    else match Ds_value.optional_ref_eid db "block/parent" (value db eid "block/parent") with
+      | Some parent -> loop (eid :: seen) parent
+      | None -> false
+  in loop [] eid
+
+let scope_closed_value_eids db ~owner choices =
+  let tags = ref_eids db owner "block/tags" in
+  let classes = match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Tag") with
+    | Some tag when List.mem tag tags -> owner :: tags
+    | _ -> tags in
+  let excluded = List.concat_map (fun tag -> ref_eids db tag "logseq.property/choice-exclusions") tags in
+  List.filter (fun eid -> match ref_eids db eid "logseq.property/choice-classes" with
+    | [] -> not (List.mem eid excluded)
+    | scopes -> List.exists (fun scope -> List.mem scope classes) scopes) choices
+
+let closed_value_eids db property_eid = Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" property_eid
+    |> Seq.map (fun (datom : Ds.datom) -> datom.e)
+    |> Seq.filter (fun eid -> not (recycled db eid))
+    |> List.of_seq
+    |> List.sort (fun a b -> compare (string_value (value db a "block/order"), a)
+        (string_value (value db b "block/order"), b))
+
+let choice_metadata decrypt_title db eid =
+  let ident = match value db eid "db/ident" with Some (Ds.Keyword ident) -> Some ident | _ -> None in
+  let uuid = Option.value ~default:(Option.value ~default:"" ident) (uuid_for_eid db eid) in
+  if uuid = "" then None else
+  let title = Option.value ~default:uuid (entity_title decrypt_title db eid) in
+  let icon_field field = match value db eid "logseq.property/icon" with
+    | Some (Ds.Map fields) -> (match List.assoc_opt (Ds.Keyword field) fields with
+        | Some (Ds.String text) | Some (Ds.Keyword text) -> Some text | _ -> None)
+    | _ -> None in
+  Some {Model.uuid; ident; title; icon_type = icon_field "type";
+    icon_id = icon_field "id"; icon_color = icon_field "color"}
+
 let choice_for_eid decrypt_title db eid property =
-  let selected =
-    Ds_value.optional_ref_eid db property
-      (value db eid property)
-  in
+  let selected = Ds_value.optional_ref_eid db property (value db eid property) in
   let selected =
     if selected = None && property = "logseq.property/status"
        && value db eid property = None
        && entity_is_instance_of db eid "logseq.class/Task"
     then default_task_status_eid db else selected in
-  match selected with
-  | Some status_eid ->
-    let ident =
-      match value db status_eid "db/ident" with
-      | Some (Ds.Keyword ident) -> Some ident
-      | _ -> None
-    in
-    let uuid = Option.value ~default:(Option.value ~default:"" ident) (uuid_for_eid db status_eid) in
-    let title =
-      Option.value ~default:uuid
-        (protected_string decrypt_title (value db status_eid "block/title"))
-    in
-    if uuid <> "" then
-      Some
-        {
-          Model.uuid;
-          ident;
-          title;
-          icon_type = None;
-          icon_id = None;
-          icon_color = None;
-        }
-    else None
-  | None -> None
+  Option.bind selected (choice_metadata decrypt_title db)
 
 let property_choices decrypt_title db property =
   match Ds.entid db "db/ident" (Ds.Keyword property) with
   | None -> []
-  | Some property_eid ->
-    Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" property_eid
-    |> Seq.map (fun (datom : Ds.datom) -> datom.e)
-    |> List.of_seq
-    |> List.sort (fun a b -> compare (string_value (value db a "block/order"), a)
-        (string_value (value db b "block/order"), b))
-    |> List.filter_map (fun eid ->
-      Option.map (fun uuid ->
-        let ident = match value db eid "db/ident" with Some (Ds.Keyword ident) -> Some ident | _ -> None in
-        let title = Option.value ~default:uuid (entity_title decrypt_title db eid) in
-        let icon_field field = match value db eid "logseq.property/icon" with
-          | Some (Ds.Map fields) -> (match List.assoc_opt (Ds.Keyword field) fields with
-              | Some (Ds.String text) | Some (Ds.Keyword text) -> Some text | _ -> None)
-          | _ -> None in
-        {Model.uuid; ident; title; icon_type = icon_field "type"; icon_id = icon_field "id"; icon_color = icon_field "color"})
-        (uuid_for_eid db eid))
+  | Some property_eid -> closed_value_eids db property_eid
+    |> List.filter_map (choice_metadata decrypt_title db)
 
 let status_for_eid decrypt_title db eid =
   choice_for_eid decrypt_title db eid "logseq.property/status"

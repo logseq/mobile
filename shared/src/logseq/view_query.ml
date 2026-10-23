@@ -447,10 +447,10 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
   let plain = attr = "block/title" || jbool (jfield "textLayout" property) in
   let checkbox = jfield "kind" col = `String "checkbox" in
   let kind = jtext (jfield "kind" col) in
-  let temporal = List.mem kind ["date"; "datetime"] in
   let many = jbool (jfield "many" col) in
   let ref_ = jbool (jfield "ref" col) in
   let closed = jlist (jfield "choices" col) <> [] || jbool (jfield "closed" col) in
+  let temporal = not closed && List.mem kind ["date"; "datetime"] in
   let query = state (if temporal then (match jtext (jfield "editorValue" property) with "" -> temporal_default kind | value -> value)
     else if attr = "block/title" then (match jfield "raw" property with
       | `Assoc fields when List.assoc_opt "type" fields = Some (`String "string") ->
@@ -467,7 +467,7 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
        @ (if new_values = [] then [] else ["newValues", `List (List.map (fun value -> `String value) new_values)])) in
   let options =
     let choices = jlist (jfield "choices" col) in
-    if choices <> [] then List.map (fun choice ->
+    if closed then List.map (fun choice ->
       jtext (jfield "uuid" choice), jtext (jfield "title" choice)) choices
     else List.map (fun choice ->
       let value = if ref_ then match jlist (jfield "match" choice) with
@@ -549,7 +549,13 @@ let property_editor ~id ~column:col ~submit:save model_source property close : t
   ]) context parent
 
 let value_sheet owner feature view model_source send item property close =
-  property_editor ~id:view.id ~column:(view_column view (jtext (jfield "attr" property)))
+  let column = view_column view (jtext (jfield "attr" property)) in
+  let column = match column, property with
+    | `Assoc fields, `Assoc editor ->
+      let overrides = List.filter (fun (key, _) -> List.mem key ["choices"; "closed"; "canCreate"]) editor in
+      `Assoc (overrides @ List.filter (fun (key, _) -> not (List.mem_assoc key overrides)) fields)
+    | _ -> column in
+  property_editor ~id:view.id ~column
     ~submit:(fun fields -> ignore (send (Model.SubmitResultView (view.id,
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close

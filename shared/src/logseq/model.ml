@@ -1242,23 +1242,9 @@ let graph_by_id graphs target =
 let task_status_by_id statuses target =
   List.find_opt (fun (status : task_status) -> status.uuid = target) statuses
 
-let task_status_identity status =
-  match status.ident with
-  | Some ident -> ident
-  | None -> status.uuid
-
-let contains_task_status_identity_ statuses target =
-  List.exists
-    (fun status -> task_status_identity status = target)
-    statuses
-
-let available_task_statuses catalog =
-  List.fold_left
-    (fun choices status ->
-      if contains_task_status_identity_ choices (task_status_identity status)
-      then choices
-      else choices @ [ status ])
-    catalog (built_in_task_statuses ())
+let available_task_statuses = function
+  | [] -> built_in_task_statuses ()
+  | catalog -> catalog
 
 let string_vector_contains_ values target = List.mem target values
 

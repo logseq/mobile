@@ -1159,7 +1159,32 @@ let pages_only_display_icons_stored_in_the_graph () =
   check_eq ~msg:"an explicitly configured document icon retains its color"
     (Option.map (Yojson.Basic.Util.member "color") (Read.node_icon db "custom-file")) (Some (`String "#5e69d2"))
 
+let custom_status_icons_are_shared_by_selected_and_default_values () =
+  let conn = Ds.create_conn ~schema:(schema @ [
+    "logseq.property/status", ref_attr;
+    "logseq.property/default-value", ref_attr]) () in
+  let icon = Ds.Map [Ds.Keyword "type", Ds.String "tabler-icon";
+    Ds.Keyword "id", Ds.String "clock"; Ds.Keyword "color", Ds.String "#7c3aed"] in
+  ignore (Ds.transact_conn conn [
+    Ds.Add (Ds.Entity_id 10, "db/ident", Ds.Keyword "logseq.property/status");
+    Ds.Add (Ds.Entity_id 10, "logseq.property/default-value", Ds.Ref 11);
+    Ds.Add (Ds.Entity_id 11, "block/uuid", Ds.Uuid "waiting");
+    Ds.Add (Ds.Entity_id 11, "block/title", Ds.String "Waiting");
+    Ds.Add (Ds.Entity_id 11, "block/closed-value-property", Ds.Ref 10);
+    Ds.Add (Ds.Entity_id 11, "logseq.property/icon", icon);
+    Ds.Add (Ds.Entity_id 12, "db/ident", Ds.Keyword "logseq.class/Task");
+    Ds.Add (Ds.Entity_id 20, "logseq.property/status", Ds.Ref 11);
+    Ds.Add (Ds.Entity_id 21, "block/tags", Ds.Ref 12);
+  ]);
+  let db = Ds.conn_db conn in
+  let expected = List.hd (Read.property_choices (fun text -> Ok text) db "logseq.property/status") in
+  List.iter (fun eid ->
+    check_eq ~msg:"selected and default statuses preserve the property's custom icon and color"
+      (Read.status_for_eid (fun text -> Ok text) db eid) (Some expected)) [20; 21]
+
 let cases =
+  case "custom status icons are shared by selected and default values"
+    custom_status_icons_are_shared_by_selected_and_default_values ::
   [ case "pages only display icons stored in the graph" pages_only_display_icons_stored_in_the_graph;
     case "builtin Library is hidden without hiding ordinary pages" builtin_library_is_hidden_without_hiding_ordinary_pages;
     case "cyclic block references have finite rendered projections" cyclic_block_references_have_finite_rendered_projections;
