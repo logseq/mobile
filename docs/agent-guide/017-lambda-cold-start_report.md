@@ -50,6 +50,21 @@ A separate subsequent production five-run sample measured **928.6 ms median / 1,
 
 The native regression was first observed failing because the old executable loaded AuthenticationServices before any sign-in request. It now verifies unloaded stored-session restoration and invalid requests, then completes a real native browser OAuth callback through a local HTTP redirect, rejects overlapping requests, cancels exactly once, and reopens successfully. The native check uses its own keychain entitlement and synthetic credentials.
 
+## Minimal native-content controls
+
+Seven randomized interleaved rounds compare the unchanged production app-entry binary with three standalone native-content paths, using five drawn nonempty UILabels and a conservative display callback after their commit. The minimal controls contain no graph, authentication restoration, app navigation toolbar, composer, or feature tree. They are attribution aids, not app replacements or proof of a universal platform floor. The control source is included in [minimal-content-control.swift](017-lambda-cold-start/minimal-content-control.swift); raw samples, binary identities and phases are in [minimal-content-first-frame.json](017-lambda-cold-start/minimal-content-first-frame.json).
+
+| Path | Median process-to-display | Difference from actual app |
+| --- | ---: | ---: |
+| Actual Logseq AppMain / Journals | 768.3 ms | — |
+| UIKit with five native labels | 359.0 ms | 409.3 ms |
+| UIKit hosting a SwiftUI native-label body | 360.9 ms | 407.4 ms |
+| SwiftUI App with the native-label body | 393.3 ms | 375.0 ms |
+
+Phase medians show **276.7 ms key-window-to-content-commit in the actual app versus 12.5 ms in the minimal SwiftUI App**. Main-to-key-window is 254.1 versus 138.8 ms, and process-to-main is 228.3 versus 198.5 ms. Medians are not additive. The minimal controls explicitly require their labels' drawText callbacks, whereas the actual probe checks visible native title labels; their commit-to-display medians differ, so the end-to-end difference is not an estimate of directly removable feature cost. An Android simulator was active throughout the batch; absolute values are local to this environment. The first actual-app launch is a retained high outlier, and every endpoint still has five titles.
+
+This shifts the largest remaining app-specific investigation to first view construction/layout, including the previously observed conformance scanning, rather than assuming graph loading accounts for the whole difference.
+
 ## Same-binary component controls
 
 Seven randomized, interleaved rounds used one Release binary. Each mode still presented five real journal titles. The binary's SHA-256 was checked after every run. These omissions are diagnostic controls, not proposed product behavior, and have all been removed from application source.
@@ -107,6 +122,18 @@ Stacks locate costs in SwiftUI generic metadata, conditional view lists, dynamic
 
 Phase evidence: [profile attribution](017-lambda-cold-start/profile-phases.json). VM-local traces: `/tmp/logseq-startup-component-full.trace` and `/tmp/logseq-startup-component-no-top.trace`.
 
+## Simulator protocol-conformance cache attribution
+
+The largest exclusive leaf in the actual first-layout CPU sample is the Swift runtime's protocol-descriptor scan, with 82 ms of leaf samples and approximately 95 ms inclusive in conformance lookup. Counting executable symbols alone is misleading: the diagnostic executable has **1,232 registered protocol records**, but the process has **108,905 mapped records in 245 images** by its first-content endpoint.
+
+An after-endpoint C helper observes `dyld_shared_cache_some_image_overridden() == true` in the actual AppMain launch, the three minimal-content controls, and standalone SDK-layer controls. It uses a dedicated executable with no interposer or injected library. The private dyld query runs only in diagnostic binaries at exit and is not added to application sources. [Raw cache/section evidence](017-lambda-cold-start/protocol-cache-diagnostics.json) and the [diagnostic helper](017-lambda-cold-start/protocol-cache-control.c) are preserved for review.
+
+[Swift 6.2's runtime source](https://github.com/swiftlang/swift/blob/swift-6.2-RELEASE/stdlib/public/runtime/ProtocolConformance.cpp#L790-L843) explains the consequence: when any shared-cache image is overridden, registering protocol sections must include shared-cache images instead of excluding them in favor of prebuilt tables. Its subsequent lookup slow path scans the registered sections after cache lookup fails. This observed condition and the profiler's descriptor-scan stack explain the broad scan candidate set. Mapped totals do not prove every lookup visits every record; they are not per-query scan counters.
+
+All three minimal-content lifecycle paths load **106,058 records in 237 images** by their first display. The actual application's additional 2,847 records include its own executable and Photos/AV overlays. SDK-only entry controls stop before UIKit creates a scene and have 68,700 records with SwiftUI or 83,945 with the application framework list. This establishes substantial system loading after main even in the minimal interface. The actual-app trace locates 63 ms inclusive dlopen samples in UIKit scene icon-appearance setup and 28 ms in accessibility initialization; these are system paths, not proof of an app feature that can be removed.
+
+The actionable implication is to reduce avoidable application-triggered construction and distinct cold view/type lookups while preserving behavior. Removing a few application Codable conformances cannot remove most of the process's candidate records. No private runtime override, debug cache flag, interposition, or speculative prewarming is retained.
+
 ## Native row subphases
 
 Timers accumulated across all five visible rows before the first commit. Medians below come from the complete-interface mode in the second diagnostic binary.
@@ -162,9 +189,11 @@ An actual-entry render-count diagnostic found 58 node-body evaluations for 58 di
 
 The concrete navigation experiment extracts the unchanged destination surface and shares its unchanged trailing toolbar through named view/content types. Two seven-pair batches with native CPU counters had median paired wall-time savings of 117.9 and 57.6 ms, positive in 11/14 pairs, but substantial VM variation. The first seven-pair **uninstrumented** replicate produced only **12.2 ms median paired saving**, positive in 5/7 pairs. A second uninstrumented replicate overlapped an Android emulator, two Xcode builds, and core tests; its 216.6 ms median paired difference is retained as explicitly contended evidence and is not a production performance claim. No navigation refactor is retained yet. Stable uninstrumented confirmation and native navigation/toolbar/focus checks are required before adopting it. See [all navigation controls](017-lambda-cold-start/named-navigation-controls.json).
 
+A subsequent surface-style omission keeps sizing, padding, margins, graph data and native controls while skipping generic surface foreground/background/shadow/border/clip modifiers. The styled and unstyled modes share one immutable binary and a common AnyView boundary. Seven randomized three-way rounds also retain a separate production control. Styled-minus-unstyled paired savings have a median of 84.1 ms but are positive in only 4/7 rounds, with large reversals; production-minus-styled extraction savings have a median of only 3.7 ms. The second half overlaps two Android emulators and a Java build/test process, and absolute times drift substantially. No stable removable style cost or extraction gain is established. All temporary source is restored. See [surface omission evidence](017-lambda-cold-start/surface-visual-control.json).
+
 ## Next optimization priorities
 
-1. Attribute the approximately 230 ms remaining before `main` after deferring preview and interactive authentication UI. Treat standalone SDK controls as attribution aids, rather than guaranteed removable cost in the complete app.
+1. Prioritize the approximately 277 ms actual-app window-to-content-commit phase, compared with 13 ms for the minimal SwiftUI content control. Attribute concrete construction/layout paths while preserving the complete app UI. The minimal control is not a smaller substitute for the goal.
 2. Resolve which concrete navigation/control view types drive the approximately 100 ms of main-thread conformance scanning. Preserve navigation, native menus, focus, accessibility, gestures, and visual behavior while testing any smaller representation. Do not repeat the ineffective blanket type-erasure changes.
 3. Investigate the icon catalog and first bitmap rendering after the larger launch costs. Preserve emoji skin variants, colored icons, font variants, appearance, and display-scale cache keys.
 4. Use the actual-entry trace and node-count evidence to isolate navigation and toolbar metadata construction. Validate any structural change with immutable paired binaries and real navigation/focus checks. A renderer-only lower bound cannot satisfy the 300 ms goal.

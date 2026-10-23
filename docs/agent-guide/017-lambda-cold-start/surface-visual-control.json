@@ -1,0 +1,62 @@
+{
+  "scope": "Actual application entry with same Lambda graph, journals and native controls. Diagnostic visual omissions retain surface padding, frames and margins but omit foreground/background/shadow/border/clip modifiers; not proposed product behavior.",
+  "control": "Same immutable binary for styled and unstyled; common AnyView boundary in both. Separate production binary diagnoses the common extraction. Seven randomized interleaved rounds without CPU counters or instrumentation.",
+  "manifests": {
+    "production": {
+      "bundle": "com.logseq.logseq.ColdStartAppEntry",
+      "sha256": "12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324"
+    },
+    "styled": {
+      "bundle": "com.logseq.logseq.ColdStartSurfaceControl",
+      "sha256": "1c63c37b2aa0a5d4253f3af817c0d67ba3dfeec606f3eea43218dbe778b901af",
+      "source_restored_sha256": "7c5753ae0f9d0f27f259adcffad391b9b6e0b9f38f95044f4be87dbcc5fa4e20"
+    },
+    "unstyled": {
+      "bundle": "com.logseq.logseq.ColdStartSurfaceControl",
+      "sha256": "1c63c37b2aa0a5d4253f3af817c0d67ba3dfeec606f3eea43218dbe778b901af",
+      "source_restored_sha256": "7c5753ae0f9d0f27f259adcffad391b9b6e0b9f38f95044f4be87dbcc5fa4e20"
+    }
+  },
+  "samples": [
+    {"round": 1, "mode": "unstyled", "result": {"process_ms": 1513.5143930092454, "first_commit_ms": 1498.5182263189927, "nonempty_rows": 5}, "stages_ms": {"main_entry": 290.796518092975, "delegate_init_begin": 516.7569346958771, "delegate_init_end": 661.7774763144553, "delegate_launch_begin": 662.9706013482064, "delegate_launch_end": 662.9783096723258, "window_became_key": 1043.9494763268158, "first_commit": 1498.7270180135965, "first_display_after_commit": 1513.4929347550496}},
+    {"round": 1, "mode": "styled", "result": {"process_ms": 1075.3910813946277, "first_commit_ms": 1050.2647063694894, "nonempty_rows": 5}, "stages_ms": {"main_entry": 301.3353729620576, "delegate_init_begin": 349.809373030439, "delegate_init_end": 447.58116465527564, "delegate_launch_begin": 448.14191467594355, "delegate_launch_end": 448.1515813386068, "window_became_key": 699.8809979995713, "first_commit": 1050.4791230196133, "first_display_after_commit": 1075.3614980494604}},
+    {"round": 1, "mode": "production", "result": {"process_ms": 1079.0535401320085, "first_commit_ms": 1067.6813317695633, "nonempty_rows": 5}, "stages_ms": {"main_entry": 295.6092484528199, "delegate_init_begin": 342.7289150422439, "delegate_init_end": 478.3706234302372, "delegate_launch_begin": 478.9794150274247, "delegate_launch_end": 478.9896650472656, "window_became_key": 727.1954984171316, "first_commit": 1067.8957900963724, "first_display_after_commit": 1079.029540065676}},
+    {"round": 2, "mode": "styled", "result": {"process_ms": 1102.877491619438, "first_commit_ms": 1081.398116541095, "nonempty_rows": 5}, "stages_ms": {"main_entry": 304.3593248585239, "delegate_init_begin": 357.4129499029368, "delegate_init_end": 447.8683666093275, "delegate_launch_begin": 448.4904499258846, "delegate_launch_end": 448.500408208929, "window_became_key": 703.8815749110654, "first_commit": 1081.5672832541168, "first_display_after_commit": 1102.8510332107544}},
+    {"round": 2, "mode": "production", "result": {"process_ms": 1236.1548711778596, "first_commit_ms": 1220.0940795009956, "nonempty_rows": 5}, "stages_ms": {"main_entry": 295.05849617999047, "delegate_init_begin": 350.15662119258195, "delegate_init_end": 455.4199544945732, "delegate_launch_begin": 456.07199624646455, "delegate_launch_end": 456.0807045781985, "window_became_key": 745.4851628281176, "first_commit": 1220.4153295606375, "first_display_after_commit": 1236.1325378296897}},
+    {"round": 2, "mode": "unstyled", "result": {"process_ms": 1018.7661558156833, "first_commit_ms": 1002.4044475285336, "nonempty_rows": 5}, "stages_ms": {"main_entry": 272.6769058499485, "delegate_init_begin": 321.55244750902057, "delegate_init_end": 402.61598920915276, "delegate_launch_begin": 403.2728224992752, "delegate_launch_end": 403.28190580476075, "window_became_key": 625.2864474663511, "first_commit": 1002.6412808801979, "first_display_after_commit": 1018.7399057904258}},
+    {"round": 3, "mode": "unstyled", "result": {"process_ms": 1372.4396738689393, "first_commit_ms": 1295.1782571617514, "nonempty_rows": 5}, "stages_ms": {"main_entry": 366.7444238672033, "delegate_init_begin": 432.64696549158543, "delegate_init_end": 561.0886737704277, "delegate_launch_begin": 561.8322571972385, "delegate_launch_end": 561.8460071273148, "window_became_key": 878.9790904847905, "first_commit": 1295.3531738603488, "first_display_after_commit": 1372.407173854299}},
+    {"round": 3, "mode": "production", "result": {"process_ms": 1260.6791107682511, "first_commit_ms": 1182.6427774503827, "nonempty_rows": 5}, "stages_ms": {"main_entry": 327.4113608058542, "delegate_init_begin": 379.7158191446215, "delegate_init_end": 498.8817775156349, "delegate_launch_begin": 499.6209858218208, "delegate_launch_end": 499.6323607629165, "window_became_key": 788.157194154337, "first_commit": 1182.870694086887, "first_display_after_commit": 1260.6372775044292}},
+    {"round": 3, "mode": "styled", "result": {"process_ms": 982.8407383756712, "first_commit_ms": 968.7861549900845, "nonempty_rows": 5}, "stages_ms": {"main_entry": 250.28686330188066, "delegate_init_begin": 293.79332170356065, "delegate_init_end": 367.30919661931694, "delegate_launch_begin": 367.9094467079267, "delegate_launch_end": 367.9201550548896, "window_became_key": 586.5829467074946, "first_commit": 969.1082383506, "first_display_after_commit": 982.8155300347134}},
+    {"round": 4, "mode": "styled", "result": {"process_ms": 967.3707238398492, "first_commit_ms": 956.9909737911075, "nonempty_rows": 5}, "stages_ms": {"main_entry": 249.85109886620194, "delegate_init_begin": 293.231557123363, "delegate_init_end": 354.69997383188456, "delegate_launch_begin": 355.1940572215244, "delegate_launch_end": 355.201140511781, "window_became_key": 557.8871405450627, "first_commit": 957.2923905216157, "first_display_after_commit": 967.34297380317}},
+    {"round": 4, "mode": "production", "result": {"process_ms": 927.9154859250411, "first_commit_ms": 911.5834442200139, "nonempty_rows": 5}, "stages_ms": {"main_entry": 255.15811087097973, "delegate_init_begin": 297.4376109195873, "delegate_init_end": 360.0935691501945, "delegate_launch_begin": 360.7356525026262, "delegate_launch_end": 360.7465692330152, "window_became_key": 572.0560691552237, "first_commit": 911.8247774895281, "first_display_after_commit": 927.8882358921692}},
+    {"round": 4, "mode": "unstyled", "result": {"process_ms": 1063.633708981797, "first_commit_ms": 1056.807917309925, "nonempty_rows": 5}, "stages_ms": {"main_entry": 252.69475067034364, "delegate_init_begin": 296.2847090093419, "delegate_init_end": 367.22900066524744, "delegate_launch_begin": 367.9184173233807, "delegate_launch_end": 367.9320423398167, "window_became_key": 623.4047090401873, "first_commit": 1057.0162090007216, "first_display_after_commit": 1063.597000669688}},
+    {"round": 5, "mode": "production", "result": {"process_ms": 1406.2819522805512, "first_commit_ms": 1383.977118995972, "nonempty_rows": 5}, "stages_ms": {"main_entry": 405.86120227817446, "delegate_init_begin": 467.20928559079766, "delegate_init_end": 588.1791606079787, "delegate_launch_begin": 588.9293273212388, "delegate_launch_end": 588.9409106457606, "window_became_key": 893.0458689574152, "first_commit": 1384.2054106062278, "first_display_after_commit": 1406.2542855972424}},
+    {"round": 5, "mode": "unstyled", "result": {"process_ms": 1111.2563267815858, "first_commit_ms": 1085.976618458517, "nonempty_rows": 5}, "stages_ms": {"main_entry": 336.0907434253022, "delegate_init_begin": 380.9207434533164, "delegate_init_end": 462.8420767839998, "delegate_launch_begin": 463.45774352084845, "delegate_launch_end": 463.4722851915285, "window_became_key": 694.7291601682082, "first_commit": 1086.1967434175313, "first_display_after_commit": 1111.2025767797604}},
+    {"round": 5, "mode": "styled", "result": {"process_ms": 1306.2814563745633, "first_commit_ms": 1289.5888313651085, "nonempty_rows": 5}, "stages_ms": {"main_entry": 342.0279147103429, "delegate_init_begin": 403.00008130725473, "delegate_init_end": 494.31708140764385, "delegate_launch_begin": 495.7658313214779, "delegate_launch_end": 495.7767480518669, "window_became_key": 798.7843313021585, "first_commit": 1289.922081399709, "first_display_after_commit": 1306.2374563887715}},
+    {"round": 6, "mode": "unstyled", "result": {"process_ms": 1175.3579984651878, "first_commit_ms": 1164.9412900442258, "nonempty_rows": 5}, "stages_ms": {"main_entry": 354.32966507505625, "delegate_init_begin": 408.2462067017332, "delegate_init_end": 497.1892067696899, "delegate_launch_begin": 497.951706754975, "delegate_launch_end": 497.9643734404817, "window_became_key": 781.8796650972217, "first_commit": 1165.155081776902, "first_display_after_commit": 1175.3234567586333}},
+    {"round": 6, "mode": "production", "result": {"process_ms": 1186.892802710645, "first_commit_ms": 1166.081261006184, "nonempty_rows": 5}, "stages_ms": {"main_entry": 323.50038609001786, "delegate_init_begin": 376.9669693429023, "delegate_init_end": 470.9808026673272, "delegate_launch_begin": 471.58746933564544, "delegate_launch_end": 471.59851097967476, "window_became_key": 753.2352193957195, "first_commit": 1166.3410944165662, "first_display_after_commit": 1186.855469364673}},
+    {"round": 6, "mode": "styled", "result": {"process_ms": 1442.3194359987974, "first_commit_ms": 1425.7183943409473, "nonempty_rows": 5}, "stages_ms": {"main_entry": 322.6683943066746, "delegate_init_begin": 378.4505194053054, "delegate_init_end": 479.8661860404536, "delegate_launch_begin": 480.5204776348546, "delegate_launch_end": 480.5341443279758, "window_became_key": 792.963977670297, "first_commit": 1425.9990609716624, "first_display_after_commit": 1442.2926442930475}},
+    {"round": 7, "mode": "production", "result": {"process_ms": 1734.4172260491177, "first_commit_ms": 1716.3833094527945, "nonempty_rows": 5}, "stages_ms": {"main_entry": 462.451517698355, "delegate_init_begin": 539.1825177939609, "delegate_init_end": 673.7228927668184, "delegate_launch_begin": 674.6847677277401, "delegate_launch_end": 674.7030176920816, "window_became_key": 1083.5835593752563, "first_commit": 1716.7627260787413, "first_display_after_commit": 1734.3928926857188}},
+    {"round": 7, "mode": "unstyled", "result": {"process_ms": 2075.3392508486286, "first_commit_ms": 2057.564250892028, "nonempty_rows": 5}, "stages_ms": {"main_entry": 528.1629592645913, "delegate_init_begin": 609.2857092153281, "delegate_init_end": 794.6985425660387, "delegate_launch_begin": 795.7355008693412, "delegate_launch_end": 795.751542551443, "window_became_key": 1339.9191258940846, "first_commit": 2057.954209158197, "first_display_after_commit": 2075.2991675399244}},
+    {"round": 7, "mode": "styled", "result": {"process_ms": 2285.7861544471234, "first_commit_ms": 2272.8608627803624, "nonempty_rows": 5}, "stages_ms": {"main_entry": 550.4971960326657, "delegate_init_begin": 660.0600710371509, "delegate_init_end": 865.2756126830354, "delegate_launch_begin": 866.5834877174348, "delegate_launch_end": 866.6280710604042, "window_became_key": 1447.9053627001122, "first_commit": 2273.3488210942596, "first_display_after_commit": 2285.7538626994938}}
+  ],
+  "comparisons": {
+    "styled-unstyled": {
+      "paired_savings_ms": [-438.1233116146177, 84.11133580375463, -389.5989354932681, -96.26298514194787, 195.02512959297746, 266.96143753360957, 210.44690359849483],
+      "median_paired_saving_ms": 84.11133580375463,
+      "positive_pairs": 4
+    },
+    "production-styled": {
+      "paired_savings_ms": [3.6624587373808026, 133.27737955842167, 277.8383723925799, -39.455237914808095, 100.00049590598792, -255.42663328815252, -551.3689283980057],
+      "median_paired_saving_ms": 3.6624587373808026,
+      "positive_pairs": 4
+    }
+  },
+  "median_ms": {
+    "production": 1236.1548711778596,
+    "styled": 1102.877491619438,
+    "unstyled": 1175.3579984651878
+  },
+  "status": "Not retained. The direction is mixed across paired rounds; the second half overlaps two Android emulators and a Java build/test process. No stable production improvement is established.",
+  "contended": true
+}
