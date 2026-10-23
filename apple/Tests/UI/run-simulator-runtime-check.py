@@ -13,7 +13,7 @@ if CONFIGURATION not in ("debug", "release"):
     raise SystemExit("LOGSEQ_IOS_CONFIGURATION must be debug or release")
 BUILD = ROOT / "apple/.build/arm64-apple-ios-simulator" / CONFIGURATION
 SIMULATOR = os.environ.get("LOGSEQ_IOS_SIMULATOR", "booted")
-BUNDLE = "com.logseq.logseq.RuntimeCheck"
+BUNDLE = os.environ.get("LOGSEQ_IOS_RUNTIME_CHECK_BUNDLE_ID", "com.logseq.logseq.RuntimeCheck")
 
 
 def run(arguments, **kwargs):
@@ -31,7 +31,7 @@ def main():
     prepare = check_type == "--prepare-benchmark"
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
     bundle = os.environ.get("LOGSEQ_IOS_BENCHMARK_BUNDLE_ID", "com.logseq.logseq.PageBenchmark") if benchmark else BUNDLE
-    app_name = bundle.rsplit(".", 1)[-1] if benchmark and bundle.startswith("com.logseq.logseq.ColdStart") else "RuntimeCheck"
+    app_name = bundle.rsplit(".", 1)[-1] if bundle.startswith("com.logseq.logseq.ColdStart") else "RuntimeCheck"
     with tempfile.TemporaryDirectory(prefix="logseq-runtime-check-") as temporary:
         directory = Path(temporary)
         source = directory / "check.swift"

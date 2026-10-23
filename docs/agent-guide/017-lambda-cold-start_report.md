@@ -106,7 +106,7 @@ The benchmark now optionally records process and main-thread CPU counters at eac
 
 ## Validation and reproduction
 
-The retained fixes passed 1,063 native core tests, 104 Swift UI tests using a direct Swift Testing app host, and native launch-cover, once-only first-frame observer, first-reveal drawer, deferred file-preview, real-graph deferred-sidebar, and host-metadata rendering checks. No XCTest or `swift test` was run. The simulator core was rebuilt from the worktree's current-main source.
+After rebasing onto mobile main revision `d0f1dc98343daf6369675f6e26cf3b337a07b51d` (including PRs 78 and 79), the retained fixes passed 1,071 native core tests, 104 Swift UI tests using a direct Swift Testing app host, and native launch-cover, once-only first-frame observer, first-reveal drawer, deferred file-preview, real-graph deferred-sidebar, and host-metadata rendering checks. No XCTest or `swift test` was run. The simulator core was rebuilt from this source; its native link-input fingerprint is `724324f7030b2a07bfea700021613b72b31ceada2d36c4f77bf63022e8e80ff2`. These functional checks use dedicated cold-start bundles so unrelated simulator checks cannot replace them.
 
 Build the production simulator app with `LOGSEQ_IOS_CONFIGURATION=release scripts/build-mobile-ios-simulator.sh`, then measure an isolated fixture:
 

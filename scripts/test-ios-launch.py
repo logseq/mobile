@@ -13,6 +13,9 @@ RUNNER = ROOT / "apple/Tests/UI/run-simulator-runtime-check.py"
 def main():
     environment = os.environ.copy()
     environment.setdefault("LOGSEQ_IOS_CONFIGURATION", "release")
+    environment["LOGSEQ_IOS_RUNTIME_CHECK_BUNDLE_ID"] = "com.logseq.logseq.ColdStartLaunchCheck"
+    fixture_bundle = "com.logseq.logseq.ColdStartLaunchFixture"
+    environment["LOGSEQ_IOS_BENCHMARK_BUNDLE_ID"] = fixture_bundle
     simulator = environment.get("LOGSEQ_IOS_SIMULATOR", "booted")
     # Build with test visibility and validate the consuming UI before native checks.
     subprocess.run([sys.executable, str(ROOT / "scripts/test-swift-ui-suite.py")],
@@ -34,9 +37,9 @@ def main():
                 subprocess.run([sys.executable, str(RUNNER), str(ROOT / "apple/Tests/UI" / filename),
                                 "--benchmark", str(fixture)], cwd=ROOT, env=environment, check=True)
         finally:
-            subprocess.run(["xcrun", "simctl", "terminate", simulator, "com.logseq.logseq.PageBenchmark"],
+            subprocess.run(["xcrun", "simctl", "terminate", simulator, fixture_bundle],
                            capture_output=True)
-            subprocess.run(["xcrun", "simctl", "uninstall", simulator, "com.logseq.logseq.PageBenchmark"],
+            subprocess.run(["xcrun", "simctl", "uninstall", simulator, fixture_bundle],
                            capture_output=True)
 
 
