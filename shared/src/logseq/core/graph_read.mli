@@ -101,6 +101,12 @@ val blocks_for_page :
   Datascript.db ->
   string ->
   Cache_model.block list
+
+(** Hydrate direct outline children through the parent index, excluding metadata. *)
+val children_for_block :
+  (string -> (string, string) result) -> Datascript.db ->
+  Cache_model.block -> Cache_model.block list
+
 val references_for_node :
   (string -> (string, string) result) ->
   Datascript.db ->

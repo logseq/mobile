@@ -135,6 +135,22 @@ let saved_views_and_isolated_failures () =
   let block = List.find (fun block -> member "uuid" block = `String owner) (items "blocks" snapshot) in
   check_eq (List.length (items "views" (member "query" block))) 4
 
+let list_results_defer_cell_editor_data () =
+  let session, _ = make_session (fixture ()) in
+  let result = read session in
+  let list = find_view list_view result in
+  List.iter (fun row ->
+    check_eq ~msg:"list results load block content without unused table cell editors"
+      (items "properties" row) []) (items "rows" list);
+  List.iter (fun view ->
+    let view = find_view view result in
+    check ~msg:"switching to a grid retains typed cell values and editing"
+      (List.exists (fun row -> List.exists (fun cell ->
+        member "attr" cell = `String score && member "editable" cell = `Bool true)
+        (items "properties" row)) (items "rows" view));
+    check_eq ~msg:"view layout does not change result membership"
+      (List.sort compare (ids view)) (List.sort compare (ids list))) [table_view; gallery_view]
+
 let typed_filters_and_search () =
   let base = fixture () in
   let session, current = make_session base in
@@ -1034,6 +1050,38 @@ let virtual_result_response ?(count = 10_001) ?(input = "") ?(reverse = false) ?
       "block", (match Q.query_result_block owner "Large query" with
         | `Assoc fields -> `Assoc (("query", query) :: fields) | _ -> assert false)]]]])
 
+let hidden_filter_catalog_does_not_multiply_mount_allocations () =
+  let response catalog =
+    let rec decorate = function
+      | `Assoc fields as value when member "uuid" value = `String "virtual" ->
+        `Assoc (("properties", `List [`Assoc ["attr", `String summary;
+          "kind", `String "default"; "title", `String "Summary";
+          "filterValues", `List [`Assoc ["title", `String catalog]]]]) :: fields)
+      | `Assoc fields -> `Assoc (List.map (fun (key, value) -> key, decorate value) fields)
+      | `List values -> `List (List.map decorate values)
+      | value -> value in
+    Json.to_string (decorate (Json.from_string (virtual_result_response ~count:400 "list"))) in
+  let allocations catalog =
+    let projection = match Response_snapshot.decode_response (response catalog) with
+      | Ok value -> value | Error message -> fail message in
+    let app = App.create (App_test.ios_backend ()) in
+    Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose app)) (fun () ->
+      App_test.start app;
+      Gc.full_major ();
+      let before = Gc.allocated_bytes () in
+      App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app;
+      let allocated = Gc.allocated_bytes () -. before in
+      let runtime = Lui_app.runtime app in
+      check ~msg:"large metadata keeps the first result visible"
+        (App_test.descendant_with_identifier runtime (Lui_app.root_node app)
+          ("query.result." ^ owner ^ ".0") <> -1);
+      allocated) in
+  let small = allocations "short value" in
+  let catalog = String.make (512 * 1024) 'x' in
+  let large = allocations catalog in
+  check ~msg:(Printf.sprintf "hidden filter metadata must be parsed once, not copied for every row/count: %.0f -> %.0f bytes" small large)
+    (large -. small < float_of_int (String.length catalog * 16))
+
 let table_and_gallery_mount_bounded_windows () =
   List.iter (fun backend -> List.iter (fun typ ->
     Q.with_ui backend (virtual_result_response typ) (fun app ->
@@ -1108,6 +1156,8 @@ let virtual_result_windows_follow_search_sort_and_resize () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "list results defer cell data while grids retain typed editors" list_results_defer_cell_editor_data;
+  case "hidden filter catalogs do not multiply query mount allocations" hidden_filter_catalog_does_not_multiply_mount_allocations;
   case "table and gallery virtualize 10k results and retain distant cell editors" table_and_gallery_mount_bounded_windows;
   case "virtual result windows follow search sort empty results and gallery resize" virtual_result_windows_follow_search_sort_and_resize;
   case "table Name saves with stale-edit protection while timestamps stay read-only" table_name_is_editable_and_timestamps_are_read_only;
