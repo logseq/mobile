@@ -159,6 +159,9 @@ val blocks :
 
 val node_icon : Datascript.db -> string -> Yojson.Basic.t option
 
+val scope_closed_value_eids : Datascript.db -> owner:int -> int list -> int list
+val closed_value_eids : Datascript.db -> int -> int list
+
 val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list
 
 val display_title : (string -> (string, string) result) -> Datascript.db -> string -> string

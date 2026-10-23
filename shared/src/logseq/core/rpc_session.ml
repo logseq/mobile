@@ -422,7 +422,11 @@ let snapshot session context_blocks blocks =
          ; ( "taskStatuses"
            , Rpc.json_list
                (List.map Rpc.status_response_json
-                  (Model.all_statuses s.model)) )
+                  (match (host session).Types.graph_db with
+                   | Some load -> (match load () with
+                       | Some db -> Graph_read.property_choices (fun text -> Ok text) db "logseq.property/status"
+                       | None -> [])
+                   | None -> Model.all_statuses s.model)) )
          ; ("pendingSyncError", match Pump.pending_sync_error session with Some message -> `String message | None -> `Null)
          ; ("pendingSyncRequest", pending_request_json session)
          ; ("outlinerState", Rpc.outliner_state_json current)

@@ -5642,7 +5642,7 @@ let task_capture_has_a_stable_native_effect_payload () =
        (Model.SendTaskEffect (8, "Follow up", todo)))
     "{\"id\":8,\"kind\":\"send-task\",\"text\":\"Follow up\",\"metadata\":\"{\\\"uuid\\\":\\\"todo\\\",\\\"ident\\\":\\\"logseq.property/status.todo\\\",\\\"title\\\":\\\"Todo\\\",\\\"iconType\\\":\\\"tabler-icon\\\",\\\"iconId\\\":\\\"Todo\\\",\\\"iconColor\\\":null}\"}"
 
-let task_status_choices_preserve_main_built_in_fallbacks () =
+let task_status_choices_respect_configured_catalog_and_unloaded_fallback () =
   let custom =
     task_status "waiting" (Some "user.status/waiting") "Waiting"
       (Some "tabler-icon") (Some "clock") None
@@ -5663,8 +5663,12 @@ let task_status_choices_preserve_main_built_in_fallbacks () =
     [ "Backlog"; "Todo"; "Doing"; "In Review"; "Done"; "Canceled" ];
   check_eq ~msg:"graph-specific statuses remain first"
     (List.nth projected.task_statuses 0) custom;
-  check_eq ~msg:"built-in fallbacks are appended after custom statuses"
-    (List.length projected.task_statuses) 7
+  check_eq ~msg:"configured choices are not supplemented with unconfigured built-in statuses"
+    projected.task_statuses [custom];
+  let unloaded = Model.update projected
+    (Model.ApplyCoreSnapshot (empty_core_projection ())) in
+  check_eq ~msg:"unconfigured sessions retain the built-in fallback"
+    unloaded.task_statuses (Model.built_in_task_statuses ())
 
 let native_bridge_renders_restored_authentication_in_the_first_patch () =
   let patch = Native_bridge.initialize 3 1 1 in
@@ -10555,7 +10559,7 @@ let cases =
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;
     case "composer-task-status-menu-preserves-main-actions" composer_task_status_menu_preserves_main_actions;
     case "task-capture-has-a-stable-native-effect-payload" task_capture_has_a_stable_native_effect_payload;
-    case "task-status-choices-preserve-main-built-in-fallbacks" task_status_choices_preserve_main_built_in_fallbacks;
+    case "task-status-choices-respect-configured-catalog-and-unloaded-fallback" task_status_choices_respect_configured_catalog_and_unloaded_fallback;
     case "native-bridge-renders-restored-authentication-in-the-first-patch" native_bridge_renders_restored_authentication_in_the_first_patch;
     case "native-bridge-selects-the-kotlin-host-profile" native_bridge_selects_the_kotlin_host_profile;
     case "kotlin-search-presentation-owns-an-opaque-background" kotlin_search_presentation_owns_an_opaque_background;

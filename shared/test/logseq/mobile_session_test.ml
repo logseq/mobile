@@ -669,8 +669,89 @@ let editor_task_status_cycles_in_a_persisted_graph () =
     open_graph ();
     check_eq ~msg:"Task status survives graph reopen" (Option.map (fun (status : Cache_model.status) -> status.title) (read ()).status) (Some "Todo"))
 
+let configured_task_statuses_survive_snapshots_edits_and_reopen () =
+  with_host (fun host directory ->
+    let module Ds = Datascript in
+    let module U = Yojson.Basic.Util in
+    let active = Filename.concat directory "custom-status.sqlite" in
+    let checkpoint = Filename.concat directory "custom-status.checkpoint" in
+    let page = "00000000-0000-4000-8000-000000000201" in
+    let block = "00000000-0000-4000-8000-000000000202" in
+    let waiting = "00000000-0000-4000-8000-000000000203" in
+    Graph_sqlite.prepare_staging active;
+    let db = Graph_bootstrap.install_canonical_entities
+      (Ds.parse_tx_data_string Graph_bootstrap_data.transaction_edn
+       |> List.map Graph_bootstrap.normalize_scalar_maps) (Graph_store.storage active) in
+    let ident name = Option.get (Ds.entid db "db/ident" (Ds.Keyword name)) in
+    let property = ident "logseq.property/status" in
+    let todo = ident "logseq.property/status.todo" in
+    let doing = ident "logseq.property/status.doing" in
+    let icon = Ds.Map [Ds.Keyword "type", Ds.String "tabler-icon";
+      Ds.Keyword "id", Ds.String "clock"; Ds.Keyword "color", Ds.String "#7c3aed"] in
+    let remove_choices = Graph_read.property_choices (fun title -> Ok title) db "logseq.property/status"
+      |> List.map (fun (status : Cache_model.status) ->
+        let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid status.uuid)) in
+        Ds.Retract (Ds.Entity_id eid, "block/closed-value-property", Some (Ds.Ref property))) in
+    let db = Ds.db_with (remove_choices @ [
+      Ds.Add (Ds.Entity_id todo, "block/title", Ds.String "Next");
+      Ds.Add (Ds.Entity_id todo, "block/order", Ds.String "a1");
+      Ds.Add (Ds.Entity_id todo, "block/closed-value-property", Ds.Ref property);
+      Ds.Add (Ds.Entity_id doing, "block/title", Ds.String "Active");
+      Ds.Add (Ds.Entity_id doing, "block/order", Ds.String "a2");
+      Ds.Add (Ds.Entity_id doing, "block/closed-value-property", Ds.Ref property);
+      Ds.Add (Ds.Entity_id 10002, "block/uuid", Ds.Uuid waiting);
+      Ds.Add (Ds.Entity_id 10002, "block/title", Ds.String "Waiting");
+      Ds.Add (Ds.Entity_id 10002, "block/order", Ds.String "a0");
+      Ds.Add (Ds.Entity_id 10002, "block/closed-value-property", Ds.Ref property);
+      Ds.Add (Ds.Entity_id 10002, "logseq.property/icon", icon);
+      Ds.Add (Ds.Entity_id 10000, "block/uuid", Ds.Uuid page);
+      Ds.Add (Ds.Entity_id 10000, "block/title", Ds.String "Tasks");
+      Ds.Add (Ds.Entity_id 10000, "block/name", Ds.String "tasks");
+      Ds.Add (Ds.Entity_id 10001, "block/uuid", Ds.Uuid block);
+      Ds.Add (Ds.Entity_id 10001, "block/title", Ds.String "Custom status task");
+      Ds.Add (Ds.Entity_id 10001, "block/page", Ds.Ref 10000);
+      Ds.Add (Ds.Entity_id 10001, "block/parent", Ds.Ref 10000);
+      Ds.Add (Ds.Entity_id 10001, "block/order", Ds.String "a0");
+      Ds.Add (Ds.Entity_id 10001, "logseq.property/status", Ds.Ref 10002);
+    ]) db in
+    ignore (Ds.store db);
+    (match Sync_checkpoint.save_checkpoint_atomic checkpoint (Sync_checkpoint.create "custom-status" "1" 7) with
+     | Ok () -> () | Error message -> fail message);
+    let dispatch action fields =
+      let response = Rpc_session.dispatch !(host.Mobile_session.session) action
+        (Some (Yojson.Basic.to_string (`Assoc fields))) in
+      let json = Yojson.Basic.from_string response in
+      check_eq ~msg:response (U.member "ok" json) (`Bool true);
+      U.member "result" json in
+    ignore (dispatch "configure" ["graphId", `String "custom-status";
+      "baseUrl", `String "https://example.com"; "token", `String ""]);
+    let open_graph () = dispatch "openGraph" ["graphId", `String "custom-status";
+      "activePath", `String active; "checkpointPath", `String checkpoint; "isEncrypted", `Bool false] in
+    let assert_choices result expected =
+      let choices = U.member "taskStatuses" result |> U.to_list in
+      check_eq ~msg:"the graph's configured status order and labels are authoritative"
+        (List.map (fun choice -> U.member "title" choice |> U.to_string) choices) expected;
+      check_eq ~msg:"custom status color survives projection"
+        (U.member "color" (U.member "icon" (List.hd choices))) (`String "#7c3aed") in
+    assert_choices (open_graph ()) ["Waiting"; "Next"; "Active"];
+    let selected = dispatch "openNode" ["uuid", `String page; "reveal", `Bool false] in
+    let route = U.member "nodeRoutes" selected |> U.to_list |> List.hd in
+    let selected_status = U.member "blocks" route |> U.to_list |> List.hd |> U.member "status" in
+    check_eq ~msg:"a selected custom status preserves its configured icon"
+      (U.member "id" (U.member "icon" selected_status)) (`String "clock");
+    assert_choices (dispatch "loadSidebar" []) ["Waiting"; "Next"; "Active"];
+    ignore (dispatch "outlinerEvent" ["type", `String "setTaskStatus";
+      "uuid", `String block; "statusUuid", `String waiting]);
+    assert_choices (open_graph ()) ["Waiting"; "Next"; "Active"];
+    let opened = Option.get !(host.database.graph.Mobile_graph.current) in
+    ignore (Ds.transact_conn opened.conn [
+      Ds.Add (Ds.Entity_id 10002, "block/title", Ds.String "On hold")]);
+    Graph_runtime.rebase opened.read_runtime 7 [] [waiting];
+    assert_choices (dispatch "refresh" []) ["On hold"; "Next"; "Active"])
+
 let cases =
-  [ case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;
+  [ case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
+    case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;
     case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;
     case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;
     case "sync errors follow operations through other acceptances and lost replies" sync_errors_follow_their_operations_through_other_acceptances_and_lost_replies;

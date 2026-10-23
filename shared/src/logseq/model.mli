@@ -659,8 +659,6 @@ val snapshot_outliner_editing :
 val first_flashcard_id : flashcard list -> string option
 val graph_by_id : graph list -> string -> graph option
 val task_status_by_id : task_status list -> string -> task_status option
-val task_status_identity : task_status -> string
-val contains_task_status_identity_ : task_status list -> string -> bool
 val available_task_statuses : task_status list -> task_status list
 val string_vector_contains_ : string list -> string -> bool
 val graph_local_ : logseq_model -> string -> bool

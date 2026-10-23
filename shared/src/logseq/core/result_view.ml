@@ -39,17 +39,17 @@ let rec empty db value = match content db value with
   | _ -> false
 let contains value input = Outliner_state.includes_case_insensitive value input
 
-type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; choices : int list}
-let property db attr =
+type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; closed : bool; choices : int list}
+let property ?owner db attr =
   let id = attr_eid db attr in
   let typ = if attr = "block/tags" then "class" else
     match Option.map (fun id -> get db id "logseq.property/type") id with Some (Ds.Keyword typ) -> typ | _ -> "default" in
   let schema = List.assoc_opt attr db.Ds.schema in
-  let choices = match id with None -> [] | Some id ->
-    Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" id
-    |> Seq.map (fun (d : Ds.datom) -> d.e) |> List.of_seq
-    |> List.sort (fun a b -> compare (display (get db a "block/order"), a) (display (get db b "block/order"), b)) in
-  {attr; typ; choices;
+  let all_choices = Option.fold ~none:[] ~some:(G.closed_value_eids db) id in
+  let choices = match owner with
+    | Some owner -> G.scope_closed_value_eids db ~owner all_choices
+    | None -> all_choices in
+  {attr; typ; choices; closed = all_choices <> [];
    title = (if attr = "block/title" then "Name" else if attr = "block/created-at" then "Created" else
      match Option.map (fun id -> display (get db id "block/title")) id with Some title when title <> "" -> title | _ -> attr);
    many = Option.fold ~none:false ~some:(fun schema -> schema.Ds.cardinality = Ds.Many) schema;
@@ -144,7 +144,7 @@ let columns db view rows =
   if scalar_columns > 0 && List.for_all (function Query_block.Cells _ -> true | _ -> false) rows then
     List.init scalar_columns (fun index -> {attr = "query.result/" ^ string_of_int index;
       title = (if scalar_columns = 1 then "Value" else "Column " ^ string_of_int (index + 1));
-      typ = "string"; many = false; ref_ = false; choices = []})
+      typ = "string"; many = false; ref_ = false; closed = false; choices = []})
   else
   let ordered = match view with None -> [] | Some id -> get db id "logseq.property.table/ordered-columns" |> values
     |> List.filter_map (function Ds.Keyword attr -> Some attr | _ -> None) in
@@ -166,6 +166,9 @@ let editable p = p.attr = "block/title" || (public_attr p.attr
 let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
   && match attr_eid db p.attr with None -> false | Some id ->
     get db id "logseq.property/hide?" <> Ds.Bool true && get db id "logseq.property/public?" <> Ds.Bool false)
+let choices_json db choices =
+  `List (List.map (fun id -> `Assoc ["uuid", `String (uuid db id);
+    "title", `String (display (content db (Ds.Ref id)))]) choices)
 let column_json db rows p =
   let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @
@@ -188,18 +191,23 @@ let column_json db rows p =
        | "date" -> ["date-before"; "date-after"]
        | "number" -> ["number-gt"; "number-lt"; "number-gte"; "number-lte"; "between"]
        | _ -> [])));
-  "closed", `Bool (p.choices <> []);
-  "canCreate", `Bool (p.choices = [] && p.typ <> "checkbox" && p.typ <> "property");
+  "closed", `Bool p.closed;
+  "canCreate", `Bool (not p.closed && p.typ <> "checkbox" && p.typ <> "property");
   "filterValues", `List filter_values;
-  "choices", `List (List.map (fun id -> `Assoc ["uuid", `String (uuid db id); "title", `String (display (content db (Ds.Ref id)))]) p.choices)]
+  "choices", choices_json db p.choices]
 let row_json db encode properties = function
   | Query_block.Cells cells -> `Assoc ["cells", `List (List.map (fun cell -> `String cell) cells)]
   | Query_block.Block block -> let id = eid db block.uuid in
     `Assoc ["block", encode block; "properties", `List (List.map (fun p ->
-      `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
+      let editor = if p.closed then
+        let choices = G.scope_closed_value_eids db ~owner:id p.choices in
+        if choices = p.choices then [] else
+          ["choices", choices_json db choices; "closed", `Bool true; "canCreate", `Bool false]
+        else [] in
+      `Assoc (editor @ ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
         "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
         "editorValue", `String (match attr_values db id p.attr with value :: _ -> temporal_value db p value | [] -> "");
-        "raw", semantic_json db (raw db id p.attr)]) properties)]
+        "raw", semantic_json db (raw db id p.attr)])) properties)]
 let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
   let views = saved_views db owner feature in
   let views = if views = [] then [None] else List.map Option.some views in
@@ -312,7 +320,7 @@ let calendar_day text =
     Some day
 let resolve_reference db p value =
   let resolved id =
-    let valid = p.choices <> [] || match p.typ with
+    let valid = p.closed || match p.typ with
       | "number" | "datetime" -> Option.is_some (number (content db (Ds.Ref id)))
       | "date" -> get db id "block/journal-day" <> Ds.Nil
       | "page" -> get db id "block/name" <> Ds.Nil
@@ -322,7 +330,7 @@ let resolve_reference db p value =
     if not valid then invalid_arg "Choose a value of this property's type";
     semantic db (Ds.Ref id)
   in
-  let matching = if p.choices <> [] then p.choices else
+  let matching = if p.closed then p.choices else
     Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String value) ()
       |> Seq.map (fun (d : Ds.datom) -> d.e) |> List.of_seq in
   let matching = List.find_opt (fun id -> uuid db id = value || display (content db (Ds.Ref id)) = value) matching in
@@ -330,13 +338,13 @@ let resolve_reference db p value =
   | Some id -> resolved id
   | None when is_uuid value ->
     let id = eid db value in
-    if p.choices <> [] && not (List.mem id p.choices) then invalid_arg "Choose one of the property's values";
+    if p.closed && not (List.mem id p.choices) then invalid_arg "Choose one of the property's values";
     resolved id
   | None -> invalid_arg "Choose an existing object"
 let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_uuid json =
   let target = required "blockUuid" json and attr = required "attr" json in
   let target_id = eid db target in
-  let p = property db attr in
+  let p = property ~owner:target_id db attr in
   if not ((if allow_builtin then node_editable db else editable) p) then invalid_arg "This property is read-only";
   let expected = member "expected" json in
   if expected <> semantic_json db (raw db target_id attr) then invalid_arg "This cell changed. Reopen it to edit the latest value";
@@ -347,7 +355,7 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
   else
     let created = ref [] in
     let value text =
-      if p.choices <> [] then resolve_reference db p text
+      if p.closed then resolve_reference db p text
       else if p.typ = "checkbox" then (match String.lowercase_ascii text with
         | "true" -> Ops.Bool_value true | "false" -> Ops.Bool_value false
         | _ -> invalid_arg "Choose true or false")
@@ -375,7 +383,7 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
           created := (if p.typ = "class" then Ops.Create_tag page else Ops.Create_page page) :: !created;
           Ops.Ref_uuid uuid)
       else resolve_reference db p text in
-    let assigned = if text_value && p.many && List.mem p.typ ["default"; "url"] && p.choices = [] then (
+    let assigned = if text_value && p.many && List.mem p.typ ["default"; "url"] && not p.closed then (
       let previous = List.map (semantic db) (attr_values db target_id attr) in
       let replaced = match member "textValueUuid" json with
         | `Null -> None
@@ -412,10 +420,10 @@ let edit_cell db ~now ~fresh_uuid owner feature _view json =
   edit_property db ~now ~fresh_uuid json
 
 let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
-  let p = property db attr in
   let id = eid db owner in
+  let p = property ~owner:id db attr in
   let assigned = attr_values db id attr in
-  let text_layout = List.mem p.typ ["default"; "url"] && p.choices = [] in
+  let text_layout = List.mem p.typ ["default"; "url"] && not p.closed in
   let blocks = if not text_layout then [] else List.filter_map (fun value ->
     Option.bind (ref_id db value) (fun id -> Option.map encode_block
       (G.block (fun value -> Ok value) db id))) assigned in

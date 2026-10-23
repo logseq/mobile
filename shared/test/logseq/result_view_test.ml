@@ -97,9 +97,10 @@ let fixture () =
     @ view 8 broken_view "Broken" "table" "a3"
     @ [put broken_view "logseq.property.table/sorting" (Ds.String "invalid")]) db
 
-let make_session db =
+let make_session ?(configured = false) db =
   let current = ref db in
   let session = Session.create_session {Session.default_options with
+    load_graph_catalog = (if configured then Some (fun () -> Some Rpc_test.plain_graph_catalog) else None);
     graph_db = Some (fun () -> Some !current);
     graph_node_destination = Some (fun uuid -> Graph_read.node_destination (fun text -> Ok text) !current uuid);
     graph_node_is_tag = Some (fun uuid -> Option.fold ~none:false
@@ -110,6 +111,7 @@ let make_session db =
       (Ds.entid !current "block/uuid" (Ds.Uuid uuid)));
     graph_blocks = Some (fun () -> Some (Graph_read.blocks_for_page (fun x -> Ok x) !current Q.page));
     graph_page_blocks = Some (fun uuid -> Some (Graph_read.blocks_for_page (fun x -> Ok x) !current uuid))} in
+  if configured then ignore (Rpc_test.configure_plain_session session);
   session, current
 let read ?(owner = owner) ?(feature = "query-result") ?(input = "") session =
   let response = Rpc_test.dispatch_json session "resultViews" (Json.to_string (`Assoc ["ownerUuid", `String owner;
@@ -1155,7 +1157,100 @@ let virtual_result_windows_follow_search_sort_and_resize () =
       end)) ["table"; "gallery"])
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let closed_choices_follow_master_on_every_property_type () =
+  List.iter (fun typ ->
+    let db = Ds.db_with [
+      put score_property "logseq.property/type" (Ds.Keyword typ);
+      put value_a "block/title" (Ds.String "Later choice");
+      put value_b "block/title" (Ds.String "First choice");
+      put value_a "block/order" (Ds.String "a2");
+      put value_b "block/order" (Ds.String "a0");
+      put value_a "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+      put value_b "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+      put text_a "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+      put text_a "block/order" (Ds.String "a1");
+      put text_a "logseq.property/deleted-at" (Ds.Int64 1L);
+      put text_b "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+      put text_b "block/parent" (Ds.Ref_to (ref_uuid text_a));
+      put text_b "block/order" (Ds.String "a3");
+    ] (fixture ()) in
+    let session, _ = make_session ~configured:true db in
+    let metadata = Result_view.property_json db ~owner:alpha ~attr:score
+      ~encode_block:(fun _ -> `Null) in
+    check_eq ~msg:(typ ^ ": closed values preserve order and exclude recycled ancestors")
+      (List.map (member "uuid") (items "choices" metadata)) [`String value_b; `String value_a];
+    check_eq ~msg:(typ ^ ": a closed property never permits arbitrary creation")
+      (member "canCreate" metadata) (`Bool false);
+    List.iter (fun backend ->
+      Q.open_results session;
+      Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let click id = let node = find id in check ~msg:id (node <> -1);
+          App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+        click ("view.tab." ^ table_view);
+        click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score);
+        check ~msg:(typ ^ ": closed values use the shared chooser rather than a free-form or calendar editor")
+          (find ("view.edit.option." ^ table_view ^ "." ^ value_b) <> -1);
+        check_eq ~msg:(typ ^ ": deleted choices are absent from the chooser")
+          (find ("view.edit.option." ^ table_view ^ "." ^ text_a)) (-1);
+        click ("view.edit.option." ^ table_view ^ "." ^ value_b);
+        let pending = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
+        let _, body = Result.get_ok (Core_effect.request ~now:(fun () -> 1) ~fresh_id:(fun () -> "unused")
+          (Some (Native_bridge.encode_effect pending))) in
+        check_eq ~msg:(typ ^ ": selecting a closed value preserves its stable reference")
+          (member "selectedValues" (Json.from_string (Option.get body))) (`List [`String value_b])))
+      [App_test.ios_backend; App_test.kotlin_backend])
+    ["default"; "url"; "number"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"]
+
+let closed_choices_are_scoped_to_the_edited_object () =
+  let db = Ds.db_with [
+    put alpha "block/tags" (Ds.Ref_to (ref_uuid Q.project));
+    put value_a "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+    put value_b "block/closed-value-property" (Ds.Ref_to (ref_uuid score_property));
+    put value_a "logseq.property/choice-classes" (Ds.Ref_to (ref_uuid Q.project));
+    put Q.project "logseq.property/choice-exclusions" (Ds.Ref_to (ref_uuid value_b));
+  ] (fixture ()) in
+  let choice_ids owner db = Result_view.property_json db ~owner ~attr:score ~encode_block:(fun _ -> `Null)
+    |> items "choices" |> List.map (member "uuid") in
+  check_eq ~msg:"matching class choices are included and class exclusions hide global choices"
+    (choice_ids alpha db) [`String value_a];
+  check_eq ~msg:"objects outside a choice's class cannot pick that choice"
+    (choice_ids gamma db) [`String value_b];
+  let db = Ds.db_with [put value_b "logseq.property/choice-classes" (Ds.Ref_to (ref_uuid Q.project))] db in
+  check_eq ~msg:"an explicit matching scope takes precedence over a global exclusion, as on master"
+    (List.sort compare (choice_ids alpha db)) (List.sort compare [`String value_a; `String value_b]);
+  let empty = Result_view.property_json db ~owner:gamma ~attr:score ~encode_block:(fun _ -> `Null) in
+  check_eq (items "choices" empty) [];
+  check_eq ~msg:"an empty scoped set remains closed" (member "closed" empty) (`Bool true);
+  check_eq (member "canCreate" empty) (`Bool false);
+  let invalid = `Assoc ["blockUuid", `String gamma; "attr", `String score; "expected", `Null;
+    "value", `String value_a; "create", `Bool true] in
+  check ~msg:"direct edits cannot bypass the closed-value scope"
+    (try ignore (Result_view.edit_property db ~now:1 ~fresh_uuid:(fun () -> "unused") invalid); false
+     with Invalid_argument _ -> true);
+  List.iter (fun backend ->
+    let session, _ = make_session ~configured:true db in
+    Q.open_results session;
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id = let node = find id in check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      click ("view.tab." ^ table_view);
+      click ("view.cell." ^ table_view ^ "." ^ gamma ^ "." ^ score);
+      check_eq ~msg:"table cells use the edited row's scope, not the global filter catalog"
+        (find ("view.edit.option." ^ table_view ^ "." ^ value_a)) (-1);
+      check_eq ~msg:"historical used values do not repopulate an empty closed chooser"
+        (find ("view.edit.option." ^ table_view ^ "." ^ value_b)) (-1);
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.edit.value." ^ table_view), "new value"));
+      App_test.flush app;
+      check_eq (find ("view.edit.create." ^ table_view)) (-1)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "all closed property types use ordered live choices and typed selection" closed_choices_follow_master_on_every_property_type;
+  case "closed choices follow master class scopes and cannot be bypassed" closed_choices_are_scoped_to_the_edited_object;
   case "list results defer cell data while grids retain typed editors" list_results_defer_cell_editor_data;
   case "hidden filter catalogs do not multiply query mount allocations" hidden_filter_catalog_does_not_multiply_mount_allocations;
   case "table and gallery virtualize 10k results and retain distant cell editors" table_and_gallery_mount_bounded_windows;
