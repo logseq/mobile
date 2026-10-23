@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
@@ -91,6 +92,62 @@ class AndroidQueryResultViewsTest {
     }
 
     private var selectedView = "list"
+
+    private fun assertVirtualResults(type: String) {
+        var updatedSnapshot = JSONObject()
+        mount { result ->
+            val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
+            val view = query.getJSONArray("views").let { views ->
+                (0 until views.length()).map { views.getJSONObject(it) }.first { it.getString("uuid") == type }
+            }
+            val rows = JSONArray()
+            repeat(10_001) { index ->
+                val title = "Object %05d".format(index)
+                rows.put(JSONObject().put("block", JSONObject().put("uuid", "virtual-$index")
+                    .put("title", title).put("pageId", "page"))
+                    .put("properties", JSONArray().put(JSONObject().put("attr", "block/title")
+                        .put("text", title).put("editable", true)
+                        .put("raw", JSONObject().put("type", "string").put("value", title)))))
+            }
+            view.put("rows", rows)
+            query.put("views", JSONArray().put(view)).put("expanded", true)
+            updatedSnapshot = JSONObject().put("ok", true).put("result", result)
+        }
+        val first = if (type == "table") "view.cell.table.virtual-0.block/title" else "view.card.gallery.virtual-0"
+        val last = if (type == "table") "view.cell.table.virtual-10000.block/title" else "view.card.gallery.virtual-10000"
+        val viewport = if (type == "table") "view.table.viewport.table" else "view.gallery.gallery"
+        ui.onNodeWithTag(viewport).assertIsDisplayed()
+        ui.onNodeWithTag(first).assertIsDisplayed()
+        ui.onNodeWithTag(last).assertDoesNotExist()
+        ui.onNodeWithTag(viewport).performScrollToIndex(10_000)
+        ui.onNodeWithTag(last).assertIsDisplayed()
+        ui.onNodeWithTag(first).assertDoesNotExist()
+        capture("virtual-$type-last")
+        if (type == "table") {
+            ui.onNodeWithTag(last).performClick()
+            ui.onNodeWithTag("view.edit.value.table").assertIsDisplayed()
+            ui.onNodeWithTag("view.edit.cancel.table").performClick()
+        }
+        ui.runOnIdle {
+            val row = updatedSnapshot.getJSONObject("result").getJSONArray("outlinerRows").getJSONObject(0)
+                .getJSONObject("block").getJSONObject("query").getJSONArray("views").getJSONObject(0)
+                .getJSONArray("rows").getJSONObject(10_000)
+            val title = "Updated object 10000"
+            row.getJSONObject("block").put("title", title)
+            row.getJSONArray("properties").getJSONObject(0).put("text", title)
+                .getJSONObject("raw").put("value", title)
+            filter.applyJson(bridge.applySnapshot(updatedSnapshot.toString()))
+        }
+        ui.onNodeWithTag(last).assertIsDisplayed()
+        ui.onNodeWithText("Updated object 10000", useUnmergedTree = true).assertIsDisplayed()
+        ui.onNodeWithTag(viewport).performScrollToIndex(0)
+        ui.onNodeWithTag(first).assertIsDisplayed()
+        ui.onNodeWithTag(last).assertDoesNotExist()
+        ui.runOnIdle { assertNull(backend.lastError) }
+    }
+
+    @Test fun tableVirtualizesLargeResultsAndEditsDistantCells() = assertVirtualResults("table")
+    @Test fun galleryVirtualizesLargeResultsAndRestoresEarlierCards() = assertVirtualResults("gallery")
 
     @Test fun allViewSelectorAlignsLeadingAndKeepsAdaptiveWidth() {
         mount { result ->
