@@ -373,7 +373,40 @@ let create_attrs db uuid title created_at =
   | Some eid -> ("block/tags", Ds.Many_values [Ds.Ref eid]) :: attrs
   | None -> attrs
 
-let rec compile db (intent : Ops.pending_intent) =
+(* Resolve pasted and directly typed page refs at the transaction boundary, so
+   nested clipboard operations share the same creation and deduplication rules. *)
+let resolve_page_references literal_blocks db intent =
+  let created = ref [] and seen = Hashtbl.create 8 in
+  let title uuid text =
+    let literal = match Hashtbl.find_opt literal_blocks uuid with
+      | Some literal -> literal
+      | None -> Option.fold ~none:false ~some:(fun id ->
+          List.mem (Graph_read.display_type_for_eid db id) [Some "code"; Some "math"])
+          (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+    if literal then text else Ref_text.to_ids (fun name ->
+      match Graph_read.unique_named_uuid false db name with
+      | Some _ as uuid -> uuid
+      | None ->
+        let key = Node_title.name name in
+        match Hashtbl.find_opt seen key with
+        | Some uuid -> Some uuid
+        | None ->
+          let uuid = match Ds.squuid () with Ds.Uuid uuid -> uuid | _ -> assert false in
+          Hashtbl.add seen key uuid;
+          created := Ops.Create_page {uuid; title = name; created_at = int_of_float (Unix.gettimeofday () *. 1000.)} :: !created;
+          Some uuid) (Graph_read.unique_named_uuid true db) text in
+  let next = match intent with
+    | Ops.Save_title value -> Ops.Save_title {value with title = title value.uuid value.title}
+    | Ops.Insert_block value -> Ops.Insert_block {value with title = title value.uuid value.title}
+    | Ops.Split_block value -> Ops.Split_block {value with before = title value.uuid value.before; after = title value.uuid value.after}
+    | Ops.Merge_backward value -> Ops.Merge_backward {value with title = title value.uuid value.title}
+    | Ops.Create_journal value -> Ops.Create_journal {value with block_title = title value.block_uuid value.block_title}
+    | _ -> intent in
+  if !created = [] then next else Ops.Atomic (List.rev !created @ [next])
+
+let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
+  let resolved = resolve_page_references literal_blocks db intent in
+  if resolved <> intent then compile_with_literals literal_blocks db resolved else
   match intent with
   | Ops.Atomic intents ->
     if intents = [] then Error "atomic operation cannot be empty"
@@ -381,7 +414,7 @@ let rec compile db (intent : Ops.pending_intent) =
       let ( let* ) = Result.bind in
       let* _, reversed = List.fold_left (fun result intent ->
         let* projected, reversed = result in
-        let* tx = compile projected intent in
+        let* tx = compile_with_literals literal_blocks projected intent in
         try Ok (Ds.db_with tx projected, List.rev_append tx reversed)
         with error -> Error (Printexc.to_string error)) (Ok (db, [])) intents in
       Ok (List.rev reversed)
@@ -538,7 +571,7 @@ let rec compile db (intent : Ops.pending_intent) =
         match moves with
         | [] -> Ok tx
         | move :: rest ->
-          (match compile projected (Ops.Move_block move) with
+          (match compile_with_literals literal_blocks projected (Ops.Move_block move) with
            | Ok step ->
              loop (Ds.db_with step projected) (tx @ step) rest
            | Error _ as error -> error)
@@ -813,6 +846,21 @@ let rec compile db (intent : Ops.pending_intent) =
                 @ parent
                 @ order);
            ])
+
+let compile db intent =
+  let literal_blocks = Hashtbl.create 8 in
+  let display_type uuid attr value =
+    if attr = "logseq.property.node/display-type" then
+      Hashtbl.replace literal_blocks uuid (match value with
+        | Some (Ops.Keyword_value ("code" | "math")) -> true | _ -> false) in
+  let rec scan = function
+    | Ops.Atomic intents -> List.iter scan intents
+    | Ops.Set_property value -> display_type value.uuid value.attr value.value
+    | Ops.Set_properties value -> List.iter (fun (change : Ops.property_change) ->
+        display_type value.uuid change.attr change.value) value.changes
+    | _ -> () in
+  scan intent;
+  compile_with_literals literal_blocks db intent
 
 let block_location_matches db uuid page_uuid parent_uuid order =
   Ds.entid db "block/uuid" (Ds.Uuid uuid) <> None

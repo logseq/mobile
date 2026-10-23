@@ -52,7 +52,7 @@ val trace_stage : string -> float -> string -> unit
 val search_error : string -> exn -> unit
 val refresh_search : graph_runtime -> unit
 val refresh_search_affected :
-  graph_runtime -> Datascript.db -> Pending_ops.pending_intent -> unit
+  graph_runtime -> Datascript.db -> Pending_ops.pending_intent -> Datascript.tx_op list -> unit
 val refresh_search_after_rebase :
   graph_runtime ->
   Datascript.db ->

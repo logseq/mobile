@@ -147,7 +147,7 @@ let title_replay_updates_references_without_mutating_authoritative_db () =
       [ operation "title" (save_title "block" "Old" "New [[Project]]") ]
   in
   let projected = snapshot.db in
-  check_eq (title projected "block") "New [[Project]]";
+  check_eq (title projected "block") "New [[project]]";
   check (Projection.has_ref projected 10 "block/refs" 2);
   check (not (Projection.has_ref projected 10 "block/refs" 3));
   check_eq (title db "block") "Old";
@@ -257,7 +257,7 @@ let insertion_followed_by_move_uses_the_projected_database () =
       ]
   in
   let projected = snapshot.db in
-  check_eq (title projected "inserted") "Inserted [[Project]]";
+  check_eq (title projected "inserted") "Inserted [[project]]";
   check_eq (value projected "inserted" "block/parent") (Some (Ds.Ref 1));
   check_eq (value projected "inserted" "block/order") (Some (Ds.String "a2"));
   check

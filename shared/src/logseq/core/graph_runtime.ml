@@ -116,14 +116,19 @@ let refresh_search runtime =
          { !(runtime.state) with search_index_is_fresh = false })
   | None -> ()
 
-let refresh_search_affected runtime before intent =
+let refresh_search_affected runtime before intent operations =
   if (state runtime).search_index_is_fresh then
     match runtime.search_index with
     | Some search_index ->
       (try
          Graph_sqlite.set_search_version search_index.path None;
+         let created = List.filter_map (function
+           | Ds.Entity entity -> (match List.assoc_opt "block/uuid" entity.Ds.attrs with
+               | Some (Ds.One_value (Ds.Uuid uuid)) -> Some uuid | _ -> None)
+           | Ds.Add (_, "block/uuid", Ds.Uuid uuid) -> Some uuid
+           | _ -> None) operations in
          Index.refresh_uuids search_index before (db runtime)
-           (Ops.affected_uuids before intent);
+           (created @ Ops.affected_uuids before intent);
          Graph_sqlite.set_search_version search_index.path
            (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->
@@ -522,7 +527,7 @@ let stage runtime (operation : Ops.pending_operation) =
            { !(runtime.state) with snapshot =
                { s.snapshot with Projection.db = projected;
                  statuses = s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
-      refresh_search_affected runtime before operation.intent;
+      refresh_search_affected runtime before normalized.intent operations;
       (match previous with None -> refresh_split_page_cache runtime before normalized.intent | Some _ -> ());
       Ok ()
 

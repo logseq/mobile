@@ -260,7 +260,50 @@ let invalid_tree_and_failed_storage_are_atomic () = R.with_runtime (fun session 
   check_eq (Graph_runtime.pending_operations runtime) before;
   check_eq ~msg:"failed insertion keeps the target draft available" (Outliner_state.editing_title (Session_types.state failing).outliner_state) (Some "Gamma result"))
 
+let pasted_page_references_create_missing_pages () = R.with_runtime (fun session runtime _ ->
+  rename runtime target "";
+  success (paste session target "" "[[ABC]] and [[abc]]");
+  let db = Graph_runtime.db runtime in
+  let pages = D.Db.datoms db D.Avet ~a:"block/name" ~v:(D.String "abc") () |> List.of_seq in
+  check_eq ~msg:"pasted references create one ordinary page" (List.length pages) 1;
+  let page = (List.hd pages).D.e in
+  let uuid = Option.get (Graph_read.uuid_for_eid db page) in
+  check_eq (title runtime target) ("[[" ^ uuid ^ "]] and [[" ^ uuid ^ "]]");
+  check (Graph_read.entity_is_instance_of db page "logseq.class/Page");
+  List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime);
+  block_event session "cancelEditing" target;
+  rename runtime target "";
+  success (paste session target "" "`[[Literal]]` [[81000000-0000-4000-8000-000000000099]]");
+  check_eq ~msg:"literal references never create pages"
+    (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "Literal") None;
+  check_eq ~msg:"broken UUIDs never create UUID-named pages"
+    (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "81000000-0000-4000-8000-000000000099") None)
+
+let created_reference_pages_are_searchable_immediately () =
+  Graph_runtime_test.with_search_runtime (R.fixture ()) (fun _ _ runtime ->
+    ignore (Graph_runtime.search runtime "Searchable destination");
+    rename runtime target "[[Searchable destination]]";
+    let db = Graph_runtime.db runtime in
+    let uuid = Graph_read.unique_named_uuid false db "Searchable destination" |> Option.get in
+    let hits, _ = Graph_runtime.search_page runtime ~offset:0 ~limit:20 "Searchable destination" in
+    check ~msg:"reference-created pages enter search in the same local transaction"
+      (List.exists (fun (hit : Search_index.indexed_search_hit) -> hit.uuid = uuid) hits))
+
+let pasted_literal_blocks_do_not_create_reference_pages () =
+  List.iter (fun source -> R.with_runtime (fun session runtime _ ->
+    rename runtime target "";
+    success (paste session target "" source);
+    check_eq ~msg:"new code and math blocks keep wiki references literal"
+      (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "Literal destination") None))
+    ["```text\n[[Literal destination]]\n```";
+     "Before code\n\n```text\n[[Literal destination]]\n```";
+     "$$\n[[Literal destination]]\n$$";
+     "Before math\n\n$$\n[[Literal destination]]\n$$"]
+
 let cases = [
+  case "pasted code and math never create reference pages" pasted_literal_blocks_do_not_create_reference_pages;
+  case "reference-created pages are searchable immediately" created_reference_pages_are_searchable_immediately;
+  case "pasted wiki references create and deduplicate ordinary pages" pasted_page_references_create_missing_pages;
   case "nested copy is a snapshot and syncs without moving sources" copies_nested_snapshots_without_moving_sources;
   case "typed properties and copied references survive" preserves_typed_properties_and_references;
   case "paste preserves outliner order and focuses the last block" pasted_roots_keep_selection_order;

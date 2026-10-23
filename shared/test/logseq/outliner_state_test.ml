@@ -699,7 +699,7 @@ let autocomplete_candidates_combine_deduplicate_and_bound_results () =
   check_eq
     (State.autocomplete_candidates ctx (request State.Node "alpha"))
     [ candidate "Project Alpha" "Project Alpha";
-      candidate "Alpha block" "alpha" ];
+      candidate "Alpha block" "alpha"; candidate "New page: alpha" "alpha" ];
   let candidates =
     [ candidate "Project" "project"; candidate "Project duplicate" "project" ]
   in
@@ -1210,8 +1210,24 @@ let balanced_completion_and_collapse_preserve_unsaved_text () =
            commands))
     [ false; true ]
 
+let partial_matches_allow_page_creation () =
+  let ctx = {context with State.pages = [candidate "ABCDEF" "abcdef-id"]} in
+  check_eq ~msg:"a partial match must retain New page"
+    (State.autocomplete_candidates ctx (request State.Node "ABC"))
+    [candidate "ABCDEF" "abcdef-id"; candidate "New page: ABC" "ABC"];
+  let exact = {ctx with State.pages = candidate "ABC" "abc-id" :: ctx.pages} in
+  check ~msg:"an exact page suppresses duplicate creation"
+    (not (List.exists (fun (c : State.outliner_candidate) -> c.value = "abc")
+      (State.autocomplete_candidates exact (request State.Node "abc"))));
+  List.iter (fun (title, caret) ->
+    let next, commands = step ctx (start ctx "a" title caret) (State.Choose_autocomplete "ABC") in
+    check_eq (State.editing_title next) (Some "[[ABC]]");
+    check_eq commands [State.Create_linked_page "ABC"; State.Haptic State.Selection])
+    ["[[ABC", 5; "[[ABC]]", 5]
+
 let cases =
   [
+    case "partial page matches still offer page creation" partial_matches_allow_page_creation;
     case "markdown literals do not open or apply completion" markdown_literals_do_not_open_or_apply_completion;
     case "journal roots stay grouped newest first"
       journal_roots_stay_grouped_newest_first;
