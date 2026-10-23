@@ -28,6 +28,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.app.runtime.logseqIconResolver
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
@@ -133,6 +134,55 @@ class AndroidNativeSurfacesTest {
             popup.dispatchKeyEvent(android.view.KeyEvent(1, android.view.KeyEvent.KEYCODE_BACK))
         }
         ui.runOnIdle { assertEquals(listOf(LuiEvent.Dismiss(2)), events) }
+    }
+
+    private fun assertModalControlsExposeResourceIds(kind: String) {
+        render(kind)
+        ui.runOnIdle {
+            val ops = JSONArray()
+            listOf("text-field", "switch", "button").forEachIndexed { index, control ->
+                val id = index + 3
+                ops.put(op("create-node", "id" to id, "kind" to control))
+                    .put(op("set-prop", "id" to id, "property" to "accessibility-identifier", "value" to "modal.$control"))
+                    .put(op("set-prop", "id" to id, "property" to "text", "value" to control))
+                    .put(op("insert-child", "parent" to 2, "child" to id, "index" to index))
+            }
+            apply(ops)
+        }
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val originalInfo = automation.serviceInfo
+        automation.serviceInfo = android.accessibilityservice.AccessibilityServiceInfo().apply {
+            eventTypes = originalInfo.eventTypes
+            feedbackType = originalInfo.feedbackType
+            flags = originalInfo.flags or
+                android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+        fun resourceIds(): Set<String> {
+            val pending = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+            automation.windows.forEach { window -> window.root?.let { pending.add(it) } }
+            val ids = mutableSetOf<String>()
+            while (pending.isNotEmpty()) {
+                val node = pending.removeFirst()
+                node.viewIdResourceName?.let { ids.add(it) }
+                repeat(node.childCount) { index -> node.getChild(index)?.let { pending.add(it) } }
+            }
+            return ids
+        }
+        val expected = setOf("modal.text-field", "modal.switch", "modal.button")
+        try {
+            ui.waitUntil(5_000) { resourceIds().containsAll(expected) }
+        } finally {
+            automation.serviceInfo = originalInfo
+        }
+    }
+
+    @Test fun dialogControlsExposeResourceIdsInTheirOwnNativeWindow() {
+        assertModalControlsExposeResourceIds("dialog")
+    }
+
+    @Test fun sheetControlsExposeResourceIdsInTheirOwnNativeWindow() {
+        assertModalControlsExposeResourceIds("sheet")
     }
 
     @Test fun selectedListItemsExposeNativeSingleSelection() {

@@ -27,6 +27,7 @@ appId: com.logseq.app
 - assertVisible:
     id: "screen.search"
 - assertVisible: "E2E Page Target 20260816"
+- hideKeyboard
 - pressKey: BACK
 - assertVisible:
     id: "button.search"
