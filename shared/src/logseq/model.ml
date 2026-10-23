@@ -2308,6 +2308,9 @@ let rec update (current : logseq_model) action =
          in_flight_effects = remove_effect current.in_flight_effects id;
          outliner_selection_revision =
            (match succeeded, eff with
+            (* A boundary no-op or rejection must also release native buffered input. *)
+            | _, (BackspaceOutlinerEditorEffect _ | ReturnOutlinerEditorEffect _) ->
+              current.outliner_selection_revision + 1
             | _, EditorOutlinerEventEffect (_, payload)
               when (try match Yojson.Basic.from_string payload with `Assoc fields -> List.assoc_opt "type" fields = Some (`String "pasteContent") | _ -> false with _ -> false) -> current.outliner_selection_revision + 1
             | true, (ChooseOutlinerAutocompleteEffect _ | EditorOutlinerEventEffect _) -> current.outliner_selection_revision + 1

@@ -11,6 +11,7 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-interactions-") as tempor
     for filename, entry in [("native-menu-projection.swift", "NativeMenuProjectionCheck"),
                             ("outliner-caret-layout.swift", "OutlinerCaretLayoutCheck"),
                             ("outliner-return-handoff.swift", "ReturnHandoffCheck"),
+                            ("outliner-backspace-boundary.swift", "OutlinerBackspaceBoundaryCheck"),
                             ("outliner-autosave.swift", "Check")]:
         source = directory / filename
         source.write_text("@testable import Logseq\n" + (root / "apple/Tests/UI" / filename).read_text())
