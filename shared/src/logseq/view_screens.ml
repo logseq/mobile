@@ -531,19 +531,20 @@ let active_overflow_menu model_source send : t =
      Signal.map View_base.connection_settings_visible_ model_source
    in
    let own source = Signal.own_signal context.ui_scope source in
-   let rename_source = own (Signal.map (fun current ->
-     let raw = match View_base.active_node_projection current with
-       | Some route -> route.Model.node_properties_json
-       | None -> current.Model.properties_json in
-     View_property.rename_page raw) model_source) in
+   let raw_source = own (Signal.map (fun current -> match View_base.active_node_projection current with
+     | Some route -> route.Model.node_properties_json | None -> current.Model.properties_json) model_source) in
+   let rename_source = own (Signal.map View_property.rename_page raw_source) in
+   let tag_source = own (Signal.map View_property.tag_picker raw_source) in
    let editing = Signal.state context.ui_scheduler None in
    let finished = ref None in
    ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (current : Model.logseq_model) ->
      match Signal.sample (Signal.value editing) with
-     | Some (graph, owner, _) ->
-       if current.selected_graph_id <> graph || Option.map fst (Signal.sample rename_source) <> Some owner then
+     | Some (graph, owner, action, _) ->
+       let active_owner = match Signal.sample tag_source with Some (owner, _) -> Some owner
+         | None -> Option.map fst (Signal.sample rename_source) in
+       if current.selected_graph_id <> graph || active_owner <> Some owner then
          Signal.set editing None
-       else (match List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.result_view_feedback with
+       else (match List.find_opt (fun (key, _, _) -> key = "page." ^ action ^ "." ^ owner) current.result_view_feedback with
          | Some (_, revision, error) when !finished <> Some revision ->
            finished := Some revision; if error = None then Signal.set editing None
          | _ -> ())
@@ -583,7 +584,15 @@ let active_overflow_menu model_source send : t =
              | Some (owner, property) ->
                finished := Option.map (fun (_, revision, _) -> revision)
                  (List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.Model.result_view_feedback);
-               Signal.set editing (Some (current.selected_graph_id, owner, property))) []);
+               Signal.set editing (Some (current.selected_graph_id, owner, "rename", property))) []);
+       if_ ~test:(own (Signal.map Option.is_some tag_source))
+         (menu_item ~text:"Add tags" ~accessibility_identifier:"button.page.tags"
+           ~on_press:(fun _ -> match Signal.sample tag_source with
+             | None -> ()
+             | Some (owner, property) -> let current = Signal.sample model_source in
+               finished := Option.map (fun (_, revision, _) -> revision)
+                 (List.find_opt (fun (key, _, _) -> key = "page.tags." ^ owner) current.Model.result_view_feedback);
+               Signal.set editing (Some (current.selected_graph_id, owner, "tags", property))) []);
        if_ ~test:page_actions_source
          (menu_item ~text:"Share" ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
@@ -612,13 +621,14 @@ let active_overflow_menu model_source send : t =
            ~accessibility_identifier:"button.connection" entries ] in
    (stack [menu;
      if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-       (dyn (function None -> box [] | Some (graph, owner, property) ->
-         let column = match property with `Assoc fields ->
+       (dyn (function None -> box [] | Some (graph, owner, action, property) ->
+         let column = if action <> "rename" then property else match property with `Assoc fields ->
            `Assoc (("title", `String "Rename page") :: List.remove_assoc "title" fields) | value -> value in
-         View_query.property_editor ~id:("page.rename." ^ owner) ~column
-           ~submit:(fun fields -> ignore (send (Model.SubmitNodeProperty ("page.rename." ^ owner,
+         View_query.property_editor ~id:("page." ^ action ^ "." ^ owner) ~column
+           ~submit:(fun fields -> ignore (send (Model.SubmitNodeProperty ("page." ^ action ^ "." ^ owner,
              Yojson.Basic.to_string (`Assoc (("blockUuid", `String owner) ::
-               ("graphId", `String (Option.value ~default:"" graph)) :: fields))))))
+               ("graphId", `String (Option.value ~default:"" graph)) ::
+               (if action = "tags" then ("action", `String "addTags") :: fields else fields)))))))
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
    ]) context parent
 

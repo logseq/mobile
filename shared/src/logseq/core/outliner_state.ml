@@ -156,6 +156,7 @@ type outliner_command =
   | Set_task_priority_value of outliner_priority
   | Create_linked_page of string
   | Assign_tag of outliner_tag
+  | Assign_reference_tag of string * string
   | Pick_attachment of string
   | Take_photo of string
   | Record_audio of string
@@ -1295,13 +1296,19 @@ let choose_completion context (state : outliner_state) value =
         { context with pages; label_values; dup_labels = duplicated_of label_values }
       else context in
     if request.kind = Tag then
+      let caret = byte_index_of_utf16 editing.title editing.caret in
+      let target = match String.rindex_opt (String.sub editing.title 0 caret) '#' with
+        | None -> None
+        | Some hash -> Ref_text.references editing.title |> List.find_opt (fun reference ->
+            reference.Ref_text.kind = Ref_text.Page && reference.end_pos = hash)
+            |> Option.map (fun reference -> reference.Ref_text.name) in
       match remove_tag_token editing with
       | Some editing ->
         step
           { state with editing = Some editing; autocomplete = None }
           [
-            Assign_tag
-              { tag_target_uuid = editing.uuid; value };
+            (match target with Some name -> Assign_reference_tag (name, value)
+             | None -> Assign_tag {tag_target_uuid = editing.uuid; value});
             Haptic Selection;
           ]
       | None -> step state []

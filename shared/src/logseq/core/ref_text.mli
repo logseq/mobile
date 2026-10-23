@@ -1,6 +1,9 @@
 (** Rewrite Markdown page refs and tags without changing literal link/code text. *)
 
 val config : Mldoc.Conf.t
+type reference_kind = Page | Tag
+type reference = {kind : reference_kind; name : string; start_pos : int; end_pos : int}
+val references : string -> reference list
 val is_uuid : string -> bool
 val plain_tag_label : string -> bool
 val hashtag_boundaries : string -> int -> int -> bool

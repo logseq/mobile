@@ -224,6 +224,7 @@ let with_runtime f = Graph_runtime_test.with_store (fun path ->
       load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
       sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);
       graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      graph_tag_pages = Some (fun () -> Some (Graph_read.tag_pages (fun value -> Ok value) (Graph_runtime.db runtime)));
       stage_operation = Some (Graph_runtime.stage runtime);
       pending_operations = Some (fun () -> Graph_runtime.pending_operations runtime);
       prepare_operation = Some (Graph_runtime.prepare_sync runtime);

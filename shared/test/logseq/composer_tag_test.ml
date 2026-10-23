@@ -233,7 +233,37 @@ let failed_asset_captures_recover_only_in_their_graph () =
         check_eq ~msg:"removing a recovered chip removes it from the retry" (items "selectedValues" (member "tags" payload)) []
       end))) [false; true]) [App_test.ios_backend; App_test.kotlin_backend]
 
+let adjacent_reference_tags_target_the_page () =
+  List.iter (fun (reference, target_name) -> R.with_runtime (fun session runtime conn ->
+    let title = "[[" ^ reference ^ "]]#Pro" in
+    ignore (Node_property_test.result (Rpc_test.dispatch_json session "outlinerEvent" (J.to_string (`Assoc [
+      "type", `String "tapBlock"; "uuid", `String R.gamma]))));
+    ignore (Node_property_test.result (Rpc_test.dispatch_json session "outlinerEvent" (J.to_string (`Assoc [
+      "type", `String "textChanged"; "title", `String title;
+      "caretUTF16Offset", `Int (String_kit.utf16_length title)]))));
+    ignore (Node_property_test.result (Rpc_test.dispatch_json session "outlinerEvent" (J.to_string (`Assoc [
+      "type", `String "chooseAutocomplete"; "value", `String Q.project]))));
+    let db = Graph_runtime.db runtime in
+    let target = Option.get (Graph_read.unique_named_uuid false db target_name) in
+    check ~msg:"the adjacent wiki reference receives the selected tag"
+      (List.mem "Project" (tag_titles runtime target));
+    check ~msg:"the containing block does not receive the adjacent tag"
+      (not (List.mem "Project" (tag_titles runtime R.gamma)));
+    sync_all runtime conn))
+    ["Workspace", "Workspace"; "New destination", "New destination"]
+
+let rename_page_rejects_hashes_without_writes () = R.with_runtime (fun session runtime _ ->
+  let rename = member "rename" (member "nodeProperties" (Node_property_test.result (Node_property_test.read session Q.page))) in
+  let before = Graph_runtime.pending_operations runtime in
+  List.iter (fun title ->
+    check_eq ~msg:"Rename page accepts only a page name"
+      (member "ok" (Node_property_test.edit session Q.page rename title [])) (`Bool false);
+    check_eq ~msg:"rejected names do not create tags or enqueue writes"
+      (Graph_runtime.pending_operations runtime) before) ["Workspace #Project"; "Workspace#Mobile"])
+
 let cases = [
+  case "adjacent wiki reference tags apply to the referenced page" adjacent_reference_tags_target_the_page;
+  case "Rename page rejects hash syntax atomically" rename_page_rejects_hashes_without_writes;
   case "graph changes reset the tag picker" graph_changes_reset_the_tag_picker;
   case "asset failures recover in the capture graph" failed_asset_captures_recover_only_in_their_graph;
   case "fresh journal captures preserve note text" fresh_journal_captures_preserve_the_note;

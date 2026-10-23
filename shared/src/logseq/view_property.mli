@@ -3,3 +3,5 @@ val view : ?compact:bool -> render_block:(Model.outline_row Signal.signal -> (Mo
 val has_properties : string -> bool
 
 val rename_page : string -> (string * Yojson.Basic.t) option
+
+val tag_picker : string -> (string * Yojson.Basic.t) option
