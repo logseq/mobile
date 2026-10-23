@@ -1046,6 +1046,7 @@ let start_editing context (state : outliner_state) block caret =
 let merge_backward context (state : outliner_state) (editing : editor_draft) =
   match find_block context editing.uuid with
   | Some (block : Model.block) ->
+    let state = { state with editing = Some editing } in
     let rows =
       List.filter
         (fun (row : outliner_row) -> row.block.page_id = block.page_id)
@@ -1078,7 +1079,9 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
               expected_previous_title = previous.title;
             };
         ]
-    else if index + 1 < List.length rows then
+    else if String.trim editing.title = "" && block.journal = None
+            && not (List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid) context.blocks)
+            && index + 1 < List.length rows then
       step
         (start_editing context state (List.nth rows (index + 1)).block 0)
         [ Remove_blocks [ editing.uuid ] ]

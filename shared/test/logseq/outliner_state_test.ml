@@ -276,7 +276,7 @@ let backspace_merges_current_or_atomic_text () =
     (snd (step context editing (atomic_backspace "Changed" 0)))
     [ merge_command "Changed" ]
 
-let first_block_backspace_deletes_and_focuses_the_next_block () =
+let first_block_backspace_preserves_content_and_journal_boundaries () =
   let ctx =
     context_for
       [
@@ -299,15 +299,42 @@ let first_block_backspace_deletes_and_focuses_the_next_block () =
   let next, commands =
     step ctx editing (atomic_backspace "Second journal block" 0)
   in
-  check_eq (State.editing_uuid next) (Some "journal-two-next");
-  check_eq commands [ State.Remove_blocks [ "journal-two-block" ] ];
+  check_eq (State.editing_uuid next) (Some "journal-two-block");
+  check_eq commands [];
   let editing =
     advance context State.empty
       [ State.Tap_block "a"; State.Caret_moved 0 ]
   in
   let next, commands = step context editing (backspace 0) in
-  check_eq (State.editing_uuid next) (Some "b");
-  check_eq commands [ State.Remove_blocks [ "a" ] ]
+  check_eq (State.editing_uuid next) (Some "a");
+  check_eq commands [];
+  List.iter (fun title ->
+    let first = { (block "first" title) with journal = Some ("Today", 20261024) } in
+    let ctx = context_for [ first; { (block "next" "Next") with order = Some "a1" } ] in
+    let editing = start ctx "first" title 0 in
+    let next, commands = step ctx editing (atomic_backspace title 0) in
+    check_eq ~msg:"a journal's first block must survive even when empty" commands [];
+    check_eq (State.editing_uuid next) (Some "first");
+    check_eq (State.editing_title next) (Some title)) [""; "Hello"; "日本語 🙂"];
+  let ctx = context_for [ block "only" "" ] in
+  let editing = start ctx "only" "Unsaved text" 0 in
+  let next, commands = step ctx editing (atomic_backspace "Latest draft" 0) in
+  check_eq commands [];
+  check_eq ~msg:"a no-op still accepts the atomic native draft" (State.editing_title next) (Some "Latest draft")
+
+let first_empty_page_block_backspace_only_removes_a_leaf () =
+  let empty = block "empty" "" in
+  let next = { (block "next" "Next") with order = Some "a1" } in
+  let ctx = context_for [empty; next] in
+  let editing = start ctx "empty" "" 0 in
+  let after, commands = step ctx editing (atomic_backspace "" 0) in
+  check_eq commands [State.Remove_blocks ["empty"]];
+  check_eq (State.editing_uuid after) (Some "next");
+  let ctx = context_for [empty; row "child" "empty" "a0"; next] in
+  let editing = start ctx "empty" "" 0 in
+  let after, commands = step ctx editing (atomic_backspace "" 0) in
+  check_eq ~msg:"backspace cannot delete the first block's subtree" commands [];
+  check_eq (State.editing_uuid after) (Some "empty")
 
 let return_only_outdents_the_final_empty_child () =
   let ctx =
@@ -1205,8 +1232,10 @@ let cases =
       return_splits_the_current_or_atomic_native_text;
     case "backspace merges current or atomic text"
       backspace_merges_current_or_atomic_text;
-    case "first block backspace deletes and focuses the next block"
-      first_block_backspace_deletes_and_focuses_the_next_block;
+    case "first block backspace preserves content and journal boundaries"
+      first_block_backspace_preserves_content_and_journal_boundaries;
+    case "first empty page block backspace only removes a leaf"
+      first_empty_page_block_backspace_only_removes_a_leaf;
     case "return only outdents the final empty child"
       return_only_outdents_the_final_empty_child;
     case "selected indent and outdent stay atomic and preserve selection"

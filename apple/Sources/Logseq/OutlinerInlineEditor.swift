@@ -164,7 +164,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             guard let coordinator, let textView,
                   let paste = coordinator.parent.onPasteContent else { return false }
             coordinator.localText = textView.text
-            coordinator.pasteSelectionRevision = coordinator.parent.selectionRevision
+            coordinator.handoffSelectionRevision = coordinator.parent.selectionRevision
             coordinator.isAwaitingBlockHandoff = true
             paste(payload)
             return true
@@ -191,8 +191,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
         let isSameBlock = context.coordinator.activeBlockID == blockID
-        let pasteAcknowledged = context.coordinator.pasteSelectionRevision.map { $0 != selectionRevision } ?? false
-        let decision: InlineEditorTextReconciliationDecision = pasteAcknowledged ? .applyModel : InlineEditorTextReconciliationPolicy.decision(
+        // Boundary no-ops acknowledge the request without changing block identity.
+        let handoffAcknowledged = context.coordinator.handoffSelectionRevision.map { $0 != selectionRevision } ?? false
+        let decision: InlineEditorTextReconciliationDecision = handoffAcknowledged ? .applyModel : InlineEditorTextReconciliationPolicy.decision(
             modelText: text,
             localText: context.coordinator.localText,
             isSameBlock: isSameBlock,
@@ -206,7 +207,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         case .acknowledgeLocal:
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
-            context.coordinator.pasteSelectionRevision = nil
+            context.coordinator.handoffSelectionRevision = nil
         case .applyModel:
             context.coordinator.isApplyingModel = true
             defer { context.coordinator.isApplyingModel = false }
@@ -216,7 +217,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.pendingHandoffTyping = ""
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
-            context.coordinator.pasteSelectionRevision = nil
+            context.coordinator.handoffSelectionRevision = nil
             let selection = textView.selectedRange
             if wasAwaitingHandoff {
                 let merged = InlineEditorHandoffMerge.merged(
@@ -326,7 +327,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var parent: NativeOutlinerTextView
         var localText: String?
         var isAwaitingBlockHandoff = false
-        var pasteSelectionRevision: Int?
+        var handoffSelectionRevision: Int?
         var pendingHandoffTyping = ""
         var activeBlockID: String
         var isApplyingModel = false
@@ -426,12 +427,14 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 // makes the current block flash the caret suffix for a frame.
                 localText = textView.text
                 isAwaitingBlockHandoff = true
+                handoffSelectionRevision = parent.selectionRevision
                 parent.onReturn(submittedText, range.location)
                 return false
             }
             if replacement.isEmpty, range.location == 0, range.length == 0 {
                 LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.backspace")
                 isAwaitingBlockHandoff = true
+                handoffSelectionRevision = parent.selectionRevision
                 parent.onBackspace(textView.text, range.length)
                 return false
             }

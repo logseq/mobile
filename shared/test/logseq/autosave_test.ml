@@ -213,16 +213,30 @@ let an_old_noop_save_cannot_mark_newer_typing_synced () = with_editor (fun sessi
 
 let backspace_without_a_merge_target_still_saves_the_draft () = with_editor (fun session saved ->
   type_text session "Draft";
+  let revision = (App.model (Native_bridge.app ())).Model.outliner_selection_revision in
   send (Model.BackspaceOutlinerEditor ("editing", "Draft", 0));
   let backspace = take_ready () in
   check_eq (kind backspace) "backspace-outliner-editor";
   apply_effect session backspace ["type", `String "backspacePressed"; "uuid", `String "editing";
     "title", `String "Draft"; "selectionLength", `Int 0];
+  check_eq ~msg:"a no-op backspace acknowledges the native editor handoff"
+    (App.model (Native_bridge.app ())).Model.outliner_selection_revision (revision + 1);
   check ~msg:"a structural no-op cannot cancel the final save" (List.mem "save-outliner-editing" (pending_kinds ()));
   let save = take_ready () in
   check_eq (kind save) "save-outliner-editing";
   apply_effect session save ["type", `String "saveEditing"];
   check_eq (!saved).Cache_model.title "Draft")
+
+let failed_structural_input_releases_the_native_handoff () =
+  List.iter (fun action -> with_editor (fun _ _ ->
+    let revision = (App.model (Native_bridge.app ())).Model.outliner_selection_revision in
+    send action;
+    let dispatch = take_ready () in
+    ignore (Native_bridge.resolve_effect (effect_id dispatch) false "Operation rejected");
+    check_eq ~msg:"a failed structural request cannot leave native typing buffered forever"
+      (App.model (Native_bridge.app ())).Model.outliner_selection_revision (revision + 1)))
+    [Model.BackspaceOutlinerEditor ("editing", "Before", 0);
+     Model.ReturnOutlinerEditor ("editing", "Before", 0)]
 
 let deleting_text_replaces_the_save_with_the_latest_content () =
   List.iter (fun title -> with_editor (fun session saved ->
@@ -335,6 +349,7 @@ let rapid_editing_and_reparenting_settles_after_the_last_save () =
 
 let cases = [
   case "backspace without a merge target still saves the draft" backspace_without_a_merge_target_still_saves_the_draft;
+  case "failed structural input releases the native handoff" failed_structural_input_releases_the_native_handoff;
   case "deleting text saves the latest content" deleting_text_replaces_the_save_with_the_latest_content;
   case "an old no-op save cannot mark newer typing synced" an_old_noop_save_cannot_mark_newer_typing_synced;
   case "toolbar actions that keep editing preserve autosave" toolbar_actions_that_keep_editing_preserve_autosave;
