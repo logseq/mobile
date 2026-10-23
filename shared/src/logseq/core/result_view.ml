@@ -179,6 +179,12 @@ let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || edit
 let choices_json db choices =
   `List (List.map (fun id -> `Assoc ["uuid", `String (uuid db id);
     "title", `String (display (content db (Ds.Ref id)))]) choices)
+let title_editor_value db source =
+  let label tag uuid =
+    Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (fun id ->
+      Option.bind (G.entity_title (fun value -> Ok value) db id) (fun title ->
+        if G.unique_named_uuid tag db title = Some uuid then Some title else None)) in
+  Ref_text.to_text (label true) (label false) source
 let property_metadata db attr =
   let p = property db attr in
   `Assoc ["attr", `String attr; "title", `String p.title; "editable", `Bool (node_editable db p)]
@@ -219,7 +225,9 @@ let row_json db encode properties = function
         else [] in
       `Assoc (editor @ ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
         "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
-        "editorValue", `String (match attr_values db id p.attr with value :: _ -> temporal_value db p value | [] -> "");
+        "editorValue", `String (match attr_values db id p.attr with
+          | value :: _ when p.attr = "block/title" -> title_editor_value db (display value)
+          | value :: _ -> temporal_value db p value | [] -> "");
         "raw", semantic_json db (raw db id p.attr)])) properties)]
 let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
   let views = saved_views db owner feature in
@@ -453,7 +461,9 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   let filter_values = List.map (fun value -> `Assoc [
     "title", `String (property_display db p value); "value", plain value;
     "match", (match ref_id db value with Some id -> `List [`String (uuid db id)] | None -> `List [plain value])]) candidates in
-  `Assoc (("editorValue", `String (match assigned with value :: _ -> temporal_value db p value | [] -> "")) ::
+  `Assoc (("editorValue", `String (match assigned with
+      | value :: _ when attr = "block/title" -> title_editor_value db (display value)
+      | value :: _ -> temporal_value db p value | [] -> "")) ::
     ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
     ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
     ("references", `List references) ::
