@@ -55,6 +55,11 @@ let blocks (host : mobile_graph) =
   | Some opened -> Some (Runtime.blocks opened.read_runtime)
   | None -> None
 
+let empty_journals (host : mobile_graph) =
+  match !(host.current) with
+  | Some opened -> Runtime.empty_journals opened.read_runtime
+  | None -> []
+
 let authoritative_blocks (host : mobile_graph) =
   match !(host.current) with
   | Some opened ->

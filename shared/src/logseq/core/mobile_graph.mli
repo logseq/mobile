@@ -84,3 +84,5 @@ val search_page : mobile_graph -> offset:int -> limit:int -> string ->
   Search_index.indexed_search_hit list * bool
 
 val node_icon : mobile_graph -> string -> Yojson.Basic.t option
+
+val empty_journals : mobile_graph -> (Cache_model.entity_summary * int) list

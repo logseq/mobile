@@ -201,7 +201,11 @@ let ui_states_and_disclosure () =
       check_eq ~msg:"show more reveals the remaining results" (find app "more") (-1);
       let fold = find app "toggle" in
       check (fold <> -1);
+      check_eq ~msg:"expanded results use the block disclosure icon"
+        (App_test.property_string (Lui_app.runtime app) (find app "disclosure") Lui_protocol.IconName) "app:disclosure-down";
       App_test.dispatch app (Lui_protocol.Press fold); App_test.flush app;
+      check_eq ~msg:"collapsed results use the block disclosure icon"
+        (App_test.property_string (Lui_app.runtime app) (find app "disclosure") Lui_protocol.IconName) "app:disclosure-right";
       check_eq (find app "rows") (-1)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
@@ -333,7 +337,15 @@ let cross_page_result_actions () =
   ignore (event ["type", `String "longPressBlock"; "uuid", `String alpha]);
   let copied = event ["type", `String "toolbar"; "action", `String "copy"] in
   check ~msg:"select bar copies the actual result from another page"
-    (List.exists (fun command -> member "text" command = `String "Alpha **result**")
+    (List.exists (fun command ->
+      if member "type" command <> `String "setClipboardBlocks" then false else
+      match member "text" command with
+      | `String payload ->
+        let payload = Json.from_string payload in
+        let markdown = match member "plainText" payload with `String text -> text | _ -> "" in
+        String_kit.index_of ~sub:"- Alpha **result**" ~start:0 markdown <> None
+        && String_kit.index_of ~sub:"\t- Beta result" ~start:0 markdown <> None
+      | _ -> false)
       (items "outlinerCommands" copied));
   let edited = event ["type", `String "tapBlock"; "uuid", `String alpha] in
   check_eq ~msg:"result editing resolves blocks outside the visible page"

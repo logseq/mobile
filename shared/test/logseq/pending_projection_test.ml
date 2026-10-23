@@ -726,7 +726,7 @@ let journal_intent =
   Ops.Create_journal
     {
       Ops.page_uuid = "today-page";
-      block_uuid = "today-block";
+      block_uuid = "today-block"; block_title = "";
       title = "Aug 22nd, 2026";
       journal_day = 20260822;
       created_at = 99;

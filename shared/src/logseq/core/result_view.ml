@@ -42,7 +42,8 @@ let contains value input = Outliner_state.includes_case_insensitive value input
 type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; choices : int list}
 let property db attr =
   let id = attr_eid db attr in
-  let typ = match Option.map (fun id -> get db id "logseq.property/type") id with Some (Ds.Keyword typ) -> typ | _ -> "default" in
+  let typ = if attr = "block/tags" then "class" else
+    match Option.map (fun id -> get db id "logseq.property/type") id with Some (Ds.Keyword typ) -> typ | _ -> "default" in
   let schema = List.assoc_opt attr db.Ds.schema in
   let choices = match id with None -> [] | Some id ->
     Datascript_value.datoms_by_ref db Ds.Aevt "block/closed-value-property" id
@@ -65,13 +66,17 @@ let temporal_value db p value =
   else ""
 
 let property_display db p value =
-  if p.typ = "date" then temporal_value db p value
+  if p.typ = "date" then
+    (match Option.bind (ref_id db value) (fun id -> G.int_value (G.value db id "block/journal-day")) with
+     | Some day when Journal.valid_day day -> Journal.title db day
+     | _ -> "")
   else if p.typ = "datetime" || List.mem p.attr ["block/created-at"; "block/updated-at"] then
     match number (content db value) with
     | Some millis when abs_float millis <= 8640000000000000. ->
       let t = Unix.localtime (millis /. 1000.) in
       Printf.sprintf "%04d-%02d-%02d %02d:%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min
     | _ -> ""
+  else if p.attr = "block/title" then G.display_title (fun text -> Ok text) db (display (content db value))
   else display (content db value)
 
 let public_attr attr = attr = "block/title" || String.starts_with ~prefix:"user.property/" attr
@@ -155,10 +160,10 @@ let columns db view rows =
     (if ordered = [] then "block/title" :: List.filter (( <> ) "block/title") rest else ordered @ rest)
   |> List.map (property db)
 let editable_type p = List.mem p.typ ["default"; "url"; "number"; "checkbox"; "date"; "datetime"; "page"; "entity"; "node"; "class"; "property"]
-let editable p = p.attr = "block/title" ||
-  ((String.starts_with ~prefix:"user.property/" p.attr || List.mem p.attr ["logseq.property/status"; "logseq.property/priority"])
-    && editable_type p)
-let node_editable db p = editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
+let editable p = p.attr = "block/title" || (public_attr p.attr
+  && not (List.mem p.attr ["block/created-at"; "block/updated-at"])
+  && editable_type p)
+let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || editable p || (editable_type p && String.starts_with ~prefix:"logseq.property/" p.attr
   && match attr_eid db p.attr with None -> false | Some id ->
     get db id "logseq.property/hide?" <> Ds.Bool true && get db id "logseq.property/public?" <> Ds.Bool false)
 let column_json db rows p =
@@ -174,6 +179,15 @@ let column_json db rows p =
       "journalDay", (match ref_id db value with Some id -> plain (get db id "block/journal-day") | None -> `Null)]) values in
   `Assoc ["attr", `String p.attr; "title", `String p.title; "kind", `String p.typ;
   "many", `Bool p.many; "ref", `Bool p.ref_; "editable", `Bool (editable p);
+  "filterTimestamp", `Bool (List.mem p.attr ["block/created-at"; "block/updated-at"]);
+  "filterOperators", `List (List.map (fun op -> `String op)
+    (if List.mem p.attr ["block/created-at"; "block/updated-at"] then ["before"; "after"]
+     else ["is"; "is-not"] @ (match p.typ with
+       | "datetime" -> ["before"; "after"]
+       | "default" | "url" | "node" | "string" -> ["text-contains"; "text-not-contains"]
+       | "date" -> ["date-before"; "date-after"]
+       | "number" -> ["number-gt"; "number-lt"; "number-gte"; "number-lte"; "between"]
+       | _ -> [])));
   "closed", `Bool (p.choices <> []);
   "canCreate", `Bool (p.choices = [] && p.typ <> "checkbox" && p.typ <> "property");
   "filterValues", `List filter_values;
@@ -182,7 +196,7 @@ let row_json db encode properties = function
   | Query_block.Cells cells -> `Assoc ["cells", `List (List.map (fun cell -> `String cell) cells)]
   | Query_block.Block block -> let id = eid db block.uuid in
     `Assoc ["block", encode block; "properties", `List (List.map (fun p ->
-      `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p);
+      `Assoc ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
         "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
         "editorValue", `String (match attr_values db id p.attr with value :: _ -> temporal_value db p value | [] -> "");
         "raw", semantic_json db (raw db id p.attr)]) properties)]
@@ -326,8 +340,9 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
   let expected = member "expected" json in
   if expected <> semantic_json db (raw db target_id attr) then invalid_arg "This cell changed. Reopen it to edit the latest value";
   let text = match member "value" json with `String value -> value | _ -> invalid_arg "A cell value is required" in
-  if attr = "block/title" then
-    Ops.Save_title {uuid = target; expected_title = display (get db target_id attr); title = text}
+  if attr = "block/title" then (
+    (match Node_title.validate db target_id text with Ok () -> () | Error message -> invalid_arg message);
+    Ops.Save_title {uuid = target; expected_title = display (get db target_id attr); title = text})
   else
     let created = ref [] in
     let value text =
@@ -342,8 +357,8 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
            | Some (d, _) -> semantic db (Ds.Ref d.e)
            | None ->
              let uuid = Rpc_wire.journal_page_uuid day in
-             created := Ops.Create_journal {page_uuid = uuid; block_uuid = fresh_uuid ();
-               title = Rpc_wire.journal_day_title day; journal_day = day; created_at = now} :: !created;
+             created := Ops.Create_journal {page_uuid = uuid; block_uuid = fresh_uuid (); block_title = "";
+               title = Journal.title db day; journal_day = day; created_at = now} :: !created;
              Ops.Ref_uuid uuid))
       else if List.mem p.typ ["number"; "datetime"; "default"; "url"] then
         let content = if p.typ = "number" || p.typ = "datetime" then numeric text else Ops.String_value text in
@@ -395,7 +410,7 @@ let edit_cell db ~now ~fresh_uuid owner feature _view json =
   then invalid_arg "This object is no longer in the view";
   edit_property db ~now ~fresh_uuid json
 
-let property_json db ~owner ~attr ~encode_block =
+let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   let p = property db attr in
   let id = eid db owner in
   let assigned = attr_values db id attr in
@@ -405,7 +420,7 @@ let property_json db ~owner ~attr ~encode_block =
       (G.block (fun value -> Ok value) db id))) assigned in
   let metadata = match column_json db [] p with `Assoc fields -> fields | _ -> [] in
   let text = String.concat ", " (List.map (property_display db p) assigned) in
-  let candidates = if text_layout then [] else
+  let candidates = if text_layout || not include_candidates then [] else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
   let candidates = List.sort_uniq compare (assigned @ candidates) in
   let filter_values = List.map (fun value -> `Assoc [
@@ -415,7 +430,7 @@ let property_json db ~owner ~attr ~encode_block =
     ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
     ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
     ("markup", Markup.to_yojson (Markup.parse [] [] text)) ::
-    ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p)) ::
+    ("filterValues", `List filter_values) :: ("editable", `Bool (node_editable db p && (p.attr <> "block/title" || Node_title.can_edit db id))) ::
     List.remove_assoc "editable" (List.remove_assoc "filterValues" metadata))
 let mutation db ~now ~fresh_uuid json =
   try

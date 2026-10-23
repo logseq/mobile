@@ -33,7 +33,9 @@ val reference_entries : Model.logseq_model -> reference_entry list
 val reference_entry_identifier : reference_entry -> string
 val reference_entry_row : reference_entry -> Model.outline_row
 
+type placeholder = { parent_uuid : string; journal_heading : (string * int * bool) option }
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
+  | Placeholder_entry of placeholder
 val page_entries : retained_row list -> Model.logseq_model -> page_entry list
 val page_entry_identifier : page_entry -> string
 val page_entry_outline : page_entry -> retained_row
@@ -46,3 +48,5 @@ val unloaded_entry_id : page_entry -> string option
 val page_entry_ready : page_entry -> bool
 
 val page_entry_editor_ : page_entry -> bool
+
+val journal_section_titles : Model.logseq_model -> (int * string) list

@@ -22,9 +22,21 @@ enum OutlinerGuideGeometry {
 import UIKit
 
 struct OutlinerIndentGuides: UIViewRepresentable {
-    let row: OutlinerRowPayload
+    let identifier: String
+    let depth: Int
+    let expanded: Bool
+    init(row: OutlinerRowPayload) {
+        identifier = row.uuid
+        depth = max(0, row.depth)
+        expanded = row.hasChildren && !row.collapsed
+    }
+    init(identifier: String, guideCount: Int) {
+        self.identifier = identifier
+        depth = max(0, guideCount)
+        expanded = false
+    }
     func makeUIView(context: Context) -> OutlinerIndentGuideView { OutlinerIndentGuideView() }
-    func updateUIView(_ view: OutlinerIndentGuideView, context: Context) { view.update(row) }
+    func updateUIView(_ view: OutlinerIndentGuideView, context: Context) { view.update(identifier: identifier, depth: depth, expanded: expanded) }
 }
 
 @MainActor final class OutlinerIndentGuideView: UIView {
@@ -47,9 +59,12 @@ struct OutlinerIndentGuides: UIViewRepresentable {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     func update(_ row: OutlinerRowPayload) {
-        accessibilityIdentifier = "outliner.indent-guides." + row.uuid
-        depth = max(0, row.depth)
-        expanded = row.hasChildren && !row.collapsed
+        update(identifier: row.uuid, depth: max(0, row.depth), expanded: row.hasChildren && !row.collapsed)
+    }
+    func update(identifier: String, depth: Int, expanded: Bool) {
+        accessibilityIdentifier = "outliner.indent-guides." + identifier
+        self.depth = depth
+        self.expanded = expanded
         isHidden = depth == 0 && !expanded
         setNeedsLayout()
     }

@@ -23,6 +23,7 @@ let () =
       "markup", Markup_test.cases;
       "query_block", Query_block_test.cases;
       "result_view", Result_view_test.cases;
+      "view_filters", View_filter_test.cases;
       "node_property", Node_property_test.cases;
       "flashcards", Flashcards_test.cases;
       "mobile_session", Mobile_session_test.cases;
@@ -39,6 +40,11 @@ let () =
       "graph_read", Graph_read_test.cases;
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
+      "editor_commands", Editor_command_test.cases;
+      "composer_tags", Composer_tag_test.cases;
+      "block_clipboard", Block_clipboard_test.cases;
+      "journal_format", Journal_format_test.cases;
+    "editor_exit", Editor_exit_test.cases;
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;
       "rpc", Rpc_test.cases;

@@ -48,7 +48,7 @@ import Vision
                                         "error": queryError as Any? ?? NSNull()]
             if includeViews {
                 let columns: [[String: Any]] = [
-                    ["attr": "block/title", "title": "Name", "kind": "string", "editable": true],
+                    ["attr": "block/title", "title": "Name", "kind": "default", "editable": true, "filterOperators": ["is", "is-not", "text-contains", "text-not-contains"]],
                     ["attr": "user.property/Score", "title": "Score", "kind": "number", "editable": true, "ref": true,
                      "filterValues": (1...3).map { value in
                         ["title": "\(value)", "match": [String(format: "30000000-0000-4000-8000-%012d", value)]]
@@ -91,6 +91,10 @@ import Vision
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let backend = runtime.renderer.backend
+        var nativeFrames: [Int: CGRect] = [:]
+        backend.frameReportingEnabled = true
+        backend.onFramesReport = { nativeFrames = $0 }
+        func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         func descendants(_ id: Int) -> [Int] {
             [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
         }
@@ -118,6 +122,25 @@ import Vision
         try await wait("Query results must mount in the native outline") {
             find("query.result.query-owner.2") != nil
         }
+        func verifyDisclosure(expanded: Bool, screenshot: String) async throws {
+            guard let iconID = find("query.disclosure.query-owner"), let model = backend.model(id: iconID) else {
+                throw failure("Results must expose a disclosure icon")
+            }
+            let icon = model.iconName
+            guard model.iconWidth == 10 && model.iconHeight == 10 else {
+                throw failure("Query disclosure must match the block's 10pt glyph")
+            }
+            let symbol = expanded ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill"
+            guard backend.iconSource(for: icon) == .systemName(symbol), UIImage(systemName: symbol) != nil else {
+                throw failure("Results must resolve the same native triangle as blocks: \(icon), expanded=\(expanded)")
+            }
+            try await Task.sleep(for: .milliseconds(250))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(screenshot))
+        }
+        try await verifyDisclosure(expanded: true, screenshot: "query-disclosure-expanded.png")
         try await Task.sleep(for: .milliseconds(700))
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -154,6 +177,7 @@ import Vision
         try runtime.applyCoreResponse(snapshot())
         try backend.performPress(node: find("query.toggle.query-owner")!)
         try await wait("Folding must unmount query rows") { find("query.rows.query-owner") == nil }
+        try await verifyDisclosure(expanded: false, screenshot: "query-disclosure-collapsed.png")
         try backend.performPress(node: find("query.toggle.query-owner")!)
         try await wait("Unfolding must restore query rows") { find("query.result.query-owner.0") != nil }
         try backend.performExtensionEvent(node: nativeRow("result-0")!, name: "open-node", values: ["uuid": .string("result-0")])
@@ -190,10 +214,30 @@ import Vision
         _ = try await capture("query-multiple-list.png")
         try backend.performPress(node: find("view.tab.table")!)
         try await wait("Table must mount a horizontal scroll container") { find("view.table.scroll.table") != nil }
+        for attr in ["user.property/Score", "user.property/Ready"] {
+            for row in ["header", "result-0", "result-1", "result-2"] {
+                guard let divider = find("view.cell.separator.table.\(row).\(attr)"),
+                      backend.model(id: divider)?.property(.orientation)?.stringValue == "vertical" else {
+                    throw failure("Table columns must have native vertical separators")
+                }
+                try await wait("Column dividers must have visible native geometry") {
+                    nativeFrames[divider].map { $0.width > 0 && $0.width <= 1.1 && $0.height >= 48 } ?? false
+                }
+                let header = find("view.cell.separator.table.header.\(attr)")!
+                if let frame = nativeFrames[divider], let heading = nativeFrames[header], abs(frame.minX - heading.minX) > 0.5 {
+                    throw failure("Header and body column dividers must align")
+                }
+            }
+        }
         let tableText = try await capture("query-table.png")
         guard tableText.contains("Name") && tableText.contains("Project result 1") else {
             throw failure("Table cells must have visible native content: \(tableText)")
         }
+        try backend.performPress(node: find("view.cell.table.result-0.block/title")!)
+        try await wait("Name must open its native text editor") { find("view.edit.value.table") != nil }
+        guard find("view.edit.clear.table") == nil else { throw failure("Name must not offer Clear value") }
+        try backend.performPress(node: find("view.edit.cancel.table")!)
+        try await wait("Name dismissal must finish") { window.rootViewController?.presentedViewController == nil }
         try backend.performPress(node: find("view.cell.table.result-0.user.property/Score")!)
         try await wait("Table cell editor must present") { find("view.edit.value.table") != nil }
         _ = try await capture("query-cell-editor.png")
@@ -240,7 +284,7 @@ import Vision
         try backend.performPress(node: find("view.filter.add.table")!)
         try await verifySettingsSheet("query-filter-dark.png")
         let settingsText = try await capture("query-view-settings.png")
-        guard settingsText.contains("Filters") && settingsText.contains("Filter 1") else {
+        guard settingsText.contains("Filters") && settingsText.contains("Name") && settingsText.contains("Contains") else {
             throw failure("Filter and sort controls must render visibly: \(settingsText)")
         }
         try backend.performPress(node: find("view.settings.cancel.table")!)
@@ -264,9 +308,13 @@ import Vision
         func fields(in view: UIView) -> [UITextField] {
             ((view as? UITextField).map { [$0] } ?? []) + view.subviews.flatMap { fields(in: $0) }
         }
-        for style in [UIUserInterfaceStyle.light, .dark] {
+        for (mode, style, dark) in [
+            ("system", UIUserInterfaceStyle.light, false), ("system", .dark, true),
+            ("light", .dark, false), ("dark", .light, true)
+        ] {
+            try runtime.applyHostUpdate(kind: "settings", payload: "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"test\",\"revision\":\"test\"}")
             window.overrideUserInterfaceStyle = style
-            _ = try await capture(style == .dark ? "query-search-dark.png" : "query-search-light.png")
+            _ = try await capture("query-search-\(mode)-\(style == .dark ? "dark" : "light").png")
             guard let field = fields(in: window.rootViewController!.view).first(where: { $0.placeholder == "Search results" }) else {
                 throw failure("Search must display a native input")
             }
@@ -277,7 +325,27 @@ import Vision
             guard field.borderStyle == .none else {
                 throw failure("An inline search uses one native search surface, without a separate rounded black input")
             }
+            for focused in [false, true] {
+                if focused { field.becomeFirstResponder() } else { field.resignFirstResponder() }
+                try await Task.sleep(for: .milliseconds(200))
+                let frame = field.convert(field.bounds, to: window)
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                let pixel = CGPoint(x: frame.maxX - 12, y: frame.midY)
+                var rgba = [UInt8](repeating: 0, count: 4)
+                let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                context.translateBy(x: -pixel.x, y: pixel.y - window.bounds.height + 1)
+                context.draw(image.cgImage!, in: window.bounds)
+                let expected = dark ? [25, 57, 77] : [248, 248, 248]
+                guard zip(rgba.prefix(3), expected).allSatisfy({ abs(Int($0.0) - $0.1) <= 3 }) else {
+                    try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("query-search-wrong-color.png"))
+                    throw failure("Search must use the theme surface in \(mode)/\(style.rawValue), focused=\(focused): \(rgba), expected \(expected)")
+                }
+            }
         }
+        try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}"#)
         try backend.performPress(node: find("view.type.option.gallery.table")!)
         try await wait("The type icon must save the active view's type") {
             effects.viewEdits.contains { ($0["viewUuid"] as? String) == "gallery"
@@ -286,6 +354,11 @@ import Vision
         try await wait("Changing the current view's type must mount its new renderer") {
             find("view.table.scroll.gallery") != nil && find("view.gallery.gallery") == nil
         }
+        try await Task.sleep(for: .milliseconds(250))
+        guard let horizontal = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
+            $0.window != nil && $0.contentSize.width > $0.bounds.width + 100
+        }) else { throw failure("The changed table must remain horizontally scrollable") }
+        horizontal.setContentOffset(CGPoint(x: 100, y: 0), animated: false)
         let changedText = try await capture("query-type-changed-table.png")
         guard changedText.contains("Name") && changedText.contains("Score") else {
             throw failure("Changing view type must visibly replace the native gallery: \(changedText)")

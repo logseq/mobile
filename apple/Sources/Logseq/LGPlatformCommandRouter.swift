@@ -34,6 +34,8 @@ public final class LGPlatformCommandRouter: LGPlatformCommandHandling {
                 present(.confirmDelete(blockIDs: command.uuids ?? []))
             case "setClipboardText":
                 setClipboardText(command.text ?? "")
+            case "setClipboardBlocks":
+                _ = LGBlockClipboard.write(command.text ?? "")
             case "setClipboardReferences":
                 setClipboardText(Self.nodeReferences(command.uuids ?? []))
             case "setClipboardURLs":

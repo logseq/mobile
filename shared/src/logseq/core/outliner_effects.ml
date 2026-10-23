@@ -7,6 +7,7 @@ type outliner_platform_command =
   | Platform_haptic of State.outliner_haptic
   | Focus_block of string
   | Confirm_delete of string list
+  | Set_clipboard_blocks of string
   | Set_clipboard_text of string
   | Set_clipboard_references of string list
   | Set_clipboard_urls of string list
@@ -84,28 +85,42 @@ let append_result left right =
 let command base_t now fresh_uuid context cmd =
   let ( let* ) = Result.bind in
   match cmd with
+  | State.Editor_error message -> Error message
+  | State.Execute_editor operation_ ->
+    (match context.State.db with
+     | None -> Error "Open a graph before using this command"
+     | Some db ->
+       let* intents = Editor_command_effects.plan db ~now:(now ()) ~fresh_uuid operation_ in
+       Ok (result (List.map (operation base_t fresh_uuid) intents) []))
   | State.Haptic haptic -> Ok (result [] [ Platform_haptic haptic ])
   | State.Commit_title value ->
     Ok (result [ operation base_t fresh_uuid (Ops.Save_title value) ] [])
   | State.Split_at value ->
     (match find_block context value.State.split_uuid with
      | Some block ->
-       let* new_order =
-         Order.between block.order (next_order context block)
-       in
+       let parent_uuid = Option.value ~default:block.page_id block.parent_id in
+       let lower, upper, parent_uuid = match value.split_placement with
+         | State.Inside -> None, (match sorted_siblings context (Some block.uuid) with
+             | first :: _ -> first.order | [] -> None), block.uuid
+         | State.Before ->
+           let rec previous order = function
+             | [] -> order | (sibling : Cache_model.block) :: _ when sibling.uuid = block.uuid -> order
+             | sibling :: rest -> previous sibling.order rest in
+           previous None (sorted_siblings context (Some parent_uuid)), block.order, parent_uuid
+         | State.After -> block.order, next_order context block, parent_uuid in
+       let* new_order = Order.between lower upper in
        let operation_id = fresh_uuid () in
        let new_uuid = fresh_uuid () in
-       let intent =
-         Ops.Split_block
-           {
-             uuid = value.split_uuid;
-             expected_title = value.split_expected_title;
-             before = value.before;
-             after = value.after;
-             new_uuid;
-             new_order;
-             created_at = now ();
-           }
+       let intent = match value.split_placement with
+         | State.After -> Ops.Split_block {
+             uuid = value.split_uuid; expected_title = value.split_expected_title;
+             before = String_kit.trim value.before; after = value.after; new_uuid; new_order; created_at = now ()}
+         | State.Inside | State.Before ->
+           let title, inserted = if value.split_placement = State.Before then value.after, value.before
+             else value.before, value.after in
+           Ops.Atomic [Ops.Save_title {uuid = block.uuid; expected_title = value.split_expected_title; title = String_kit.trim title};
+             Ops.Insert_block {uuid = new_uuid; title = inserted; page_uuid = block.page_id;
+               parent_uuid; order = new_order; created_at = now ()}]
        in
        Ok
          (result
@@ -258,12 +273,15 @@ let command base_t now fresh_uuid context cmd =
     let* position = Order.between lower None in
     let operation_id = fresh_uuid () in
     let uuid = fresh_uuid () in
+    let page_uuid = match List.find_opt (fun (block : Cache_model.block) ->
+      block.uuid = value.page_uuid) context.State.blocks with
+      | Some block -> block.page_id | None -> value.page_uuid in
     let intent =
       Ops.Insert_block
         {
           uuid;
           title = "";
-          page_uuid = value.page_uuid;
+          page_uuid;
           parent_uuid = value.page_uuid;
           order = position;
           created_at = now ();
@@ -277,10 +295,32 @@ let command base_t now fresh_uuid context cmd =
     Ok (result [] [ Platform_pick_attachment uuid ])
   | State.Take_photo uuid -> Ok (result [] [ Platform_take_photo uuid ])
   | State.Record_audio uuid -> Ok (result [] [ Platform_record_audio uuid ])
+  | State.Copy_blocks uuids ->
+    (match context.State.db, context.graph_id with
+     | Some db, Some graph -> let* payload = Block_clipboard.copy db ~graph uuids in
+       Ok (result [] [Set_clipboard_blocks payload])
+     | _ -> Error "Select a graph before copying blocks")
+  | State.Paste_blocks content ->
+    (match context.State.db, context.graph_id with
+     | Some db, Some graph ->
+       let* pasted = Block_clipboard.paste db ~graph ~now:(now ()) ~fresh_uuid content in
+       Ok (result [operation base_t fresh_uuid pasted.intent]
+         (Option.fold ~none:[] ~some:(fun uuid -> [Focus_block uuid]) pasted.focus))
+     | _ -> Error "Select a graph before pasting blocks")
   | State.Copy_text text -> Ok (result [] [ Set_clipboard_text text ])
   | State.Copy_references uuids ->
     Ok (result [] [ Set_clipboard_references uuids ])
-  | State.Copy_urls uuids -> Ok (result [] [ Set_clipboard_urls uuids ])
+  | State.Copy_urls uuids ->
+    let encode value =
+      let buffer = Buffer.create (String.length value) in
+      String.iter (fun c -> match c with
+        | 'a'..'z' | 'A'..'Z' | '0'..'9' | '-' | '_' | '.' | '~' -> Buffer.add_char buffer c
+        | _ -> Buffer.add_string buffer (Printf.sprintf "%%%02X" (Char.code c))) value;
+      Buffer.contents buffer in
+    (match context.State.graph_id with
+     | Some graph -> Ok (result [] [Set_clipboard_text (String.concat "\n" (List.map (fun uuid ->
+         "logseq://graph/" ^ encode graph ^ "?block-id=" ^ encode uuid) uuids))])
+     | None -> Ok (result [] [Set_clipboard_urls uuids]))
 
 let interpret base_t now fresh_uuid context commands =
   let rec loop index operations platform =

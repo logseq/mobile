@@ -5,6 +5,11 @@ import UIKit
 
 @main struct SearchResultNavigationCheck {
     @MainActor static func main() async throws {
+        func phase(_ name: String) {
+            let line = "SEARCH_PHASE \(ProcessInfo.processInfo.systemUptime) \(name)\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
+        phase("start")
         var routes: [String] = []
         var query = ""
         let hits: [[String: Any]] = (0..<80).map { index in
@@ -78,7 +83,13 @@ import UIKit
         let window = UIWindow(windowScene: scene)
         window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
         window.makeKeyAndVisible()
-        defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
+        defer {
+            phase("teardown.begin")
+            window.isHidden = true
+            window.rootViewController = nil
+            runtime.stop()
+            phase("teardown.end")
+        }
         try await Task.sleep(for: .milliseconds(250))
         try backend.performPress(node: find("button.search")!)
         try await wait("Native search must accept input") {
@@ -86,6 +97,7 @@ import UIKit
         }
         let searchField = views(window).compactMap { $0 as? UISearchTextField }
             .first { $0.isFirstResponder }!
+        phase("search.presented")
         searchField.insertText("Search")
         try await wait("Search must return page and block results") {
             query == "Search" && find("search.result.result-0") != nil && find("search.result.result-40") != nil
@@ -102,8 +114,10 @@ import UIKit
             }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(name))
         }
+        phase("search.results")
         for cycle in 0..<12 {
             let uuid = "result-\(cycle.isMultiple(of: 2) ? 0 : 40)"
+            phase("push.request.\(cycle)")
             try backend.performPress(node: find("search.result.\(uuid)")!)
             try await wait("Result must push a visible destination") {
                 navigation.viewControllers.count == 2 && navigation.transitionCoordinator == nil
@@ -116,13 +130,16 @@ import UIKit
                   find("outliner.block.\(target)") != nil else {
                 throw failure("Opening a result must retain the search session and its loaded content")
             }
+            phase("push.ready.\(cycle)")
             window.layoutIfNeeded()
             if cycle == 11 { try screenshot("search-result-destination.png") }
+            phase("pop.request.\(cycle)")
             _ = navigation.popViewController(animated: true)
             try await wait("Back must restore the result list and settle the native route") {
                 navigation.viewControllers.count == 1 && navigation.transitionCoordinator == nil && routes.isEmpty
             }
             try await wait("Back must reactivate search input") { searchField.isFirstResponder }
+            phase("pop.ready.\(cycle)")
             if cycle == 11 {
                 try screenshot("search-result-navigation.png")
             }

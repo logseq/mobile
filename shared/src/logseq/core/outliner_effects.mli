@@ -4,6 +4,7 @@ type outliner_platform_command =
   | Platform_haptic of Outliner_state.outliner_haptic
   | Focus_block of string
   | Confirm_delete of string list
+  | Set_clipboard_blocks of string
   | Set_clipboard_text of string
   | Set_clipboard_references of string list
   | Set_clipboard_urls of string list

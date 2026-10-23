@@ -311,11 +311,6 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                     []);
             ];
           View_outliner.page_loading_view model_source;
-          if_
-            ~test:(Signal.map View_base.main_can_add_first_block_
-                     model_source)
-            (box ~padding_horizontal:8
-               [ View_outliner.add_first_block_button model_source send ]);
           box ~height:120 [];
           ]));
     ])
@@ -535,6 +530,24 @@ let active_overflow_menu model_source send : t =
    let settings_source =
      Signal.map View_base.connection_settings_visible_ model_source
    in
+   let own source = Signal.own_signal context.ui_scope source in
+   let rename_source = own (Signal.map (fun current ->
+     let raw = match View_base.active_node_projection current with
+       | Some route -> route.Model.node_properties_json
+       | None -> current.Model.properties_json in
+     View_property.rename_page raw) model_source) in
+   let editing = Signal.state context.ui_scheduler None in
+   let finished = ref None in
+   ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (current : Model.logseq_model) ->
+     match Signal.sample (Signal.value editing) with
+     | Some (graph, owner, _) ->
+       if current.selected_graph_id <> graph || Option.map fst (Signal.sample rename_source) <> Some owner then
+         Signal.set editing None
+       else (match List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.result_view_feedback with
+         | Some (_, revision, error) when !finished <> Some revision ->
+           finished := Some revision; if error = None then Signal.set editing None
+         | _ -> ())
+     | None -> ())));
    let kotlin_host = Lui_ui.host context = KotlinHost in
    (* iOS menu items carry no icons; the Kotlin popup did. *)
    let item_icon name = if kotlin_host then Some (`app name) else None in
@@ -561,12 +574,26 @@ let active_overflow_menu model_source send : t =
                 (Signal.map View_base.active_page_favorite_label model_source)
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []);
+       if_ ~test:(own (Signal.map (fun source -> Option.is_some source) rename_source))
+         (menu_item ~text:"Rename page" ~accessibility_identifier:"button.page.rename"
+           ~on_press:(fun _ ->
+             let current = Signal.sample model_source in
+             match Signal.sample rename_source with
+             | None -> ()
+             | Some (owner, property) ->
+               finished := Option.map (fun (_, revision, _) -> revision)
+                 (List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.Model.result_view_feedback);
+               Signal.set editing (Some (current.selected_graph_id, owner, property))) []);
        if_ ~test:page_actions_source
          (menu_item ~text:"Share" ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
             []);
-       if_ ~test:page_actions_source
+       if_ ~test:(Signal.map (fun current ->
+           match Model.active_page current with
+           | Some page -> Model.page_can_delete current page.uuid
+           | None -> false) model_source)
          (menu_item ~text:"Delete" ~variant:`destructive
+            ~accessibility_identifier:"button.page.delete"
             ?icon:(item_icon "toolbar-delete")
             ~on_press:(press send Model.RequestDeleteActivePage)
             []);
@@ -576,14 +603,24 @@ let active_overflow_menu model_source send : t =
             []);
      ]
    in
-   if kotlin_host then
+   let menu = if kotlin_host then
      menu ~icon:(`app "more-vert") ~label:"More"
-       ~accessibility_identifier:"button.overflow-menu" entries context parent
+       ~accessibility_identifier:"button.overflow-menu" entries
    else
      box ~width:44 ~height:44
        [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
-           ~accessibility_identifier:"button.connection" entries ]
-       context parent
+           ~accessibility_identifier:"button.connection" entries ] in
+   (stack [menu;
+     if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
+       (dyn (function None -> box [] | Some (graph, owner, property) ->
+         let column = match property with `Assoc fields ->
+           `Assoc (("title", `String "Rename page") :: List.remove_assoc "title" fields) | value -> value in
+         View_query.property_editor ~id:("page.rename." ^ owner) ~column
+           ~submit:(fun fields -> ignore (send (Model.SubmitNodeProperty ("page.rename." ^ owner,
+             Yojson.Basic.to_string (`Assoc (("blockUuid", `String owner) ::
+               ("graphId", `String (Option.value ~default:"" graph)) :: fields))))))
+           model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
+   ]) context parent
 
 let main_header_connection model_source send : t =
   stack
@@ -613,7 +650,8 @@ let native_node_destination ~source:title_source content : t =
 let native_node_screen (context : Lui_ui.ui_context) model_source
     ~source:route_source send : t =
   let route_model_source =
-    Signal.map2 View_base.node_route_model model_source route_source
+    Signal.map2 (fun current (route, active) ->
+      View_base.node_route_model ~active current route) model_source route_source
   in
   if Lui_ui.host context = KotlinHost then
     box ~grow:1.0 ~background:"background"
@@ -628,8 +666,8 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
            route_model_source)
       (column ~gap:0 [
         View_outliner.node_screen context route_model_source send;
-        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) (route : Model.node_projection) ->
-          route.node_outliner_selected_block_ids <> []
+        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) ((route : Model.node_projection), active) ->
+          active && route.node_outliner_selected_block_ids <> []
           && Option.fold ~none:false ~some:(fun (active : Model.node_projection) -> active.node_uuid = route.node_uuid)
             (Model.last_opt current.node_routes)) model_source route_source)
           (View_outliner.outliner_selection_toolbar context route_model_source send);
@@ -646,7 +684,8 @@ let native_node_stack context model_source ~source:routes_source send =
     ~cmp:compare
     ~mount:(fun visit_source ->
       native_node_screen context model_source
-        ~source:(reactive (fun (_, route) -> route) visit_source) send)
+        ~source:(Signal.map2 (fun routes (index, route) ->
+          (route, index = List.length routes - 1)) routes_source visit_source) send)
 
 let native_search_view (_context : Lui_ui.ui_context) model_source send :
     t =

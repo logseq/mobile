@@ -22,6 +22,30 @@ enum LGPropertyExtension {
             }.environment(\.lgPropertyValue, true))
         })
         try registry.register(LUIAppleExtension(
+            identifier: "outliner-continuation",
+            fingerprint: "lui-extension-v1|21:outliner-continuation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:identifier:string:required:none,11:guide-count:int:required:none,12:bullet-depth:int:required:none|events:",
+            acceptsStandardChildren: true,
+            properties: [.init(name: "bullet-depth", kind: .int, isRequired: true),
+                         .init(name: "guide-count", kind: .int, isRequired: true),
+                         .init(name: "identifier", kind: .string, isRequired: true)]
+        ) { context in
+            let count: Int = if case let .int(value) = context.property("guide-count") { value } else { 0 }
+            let identifier: String = if case let .string(value) = context.property("identifier") { value } else { "" }
+            return AnyView(VStack(alignment: .leading, spacing: 0) {
+                ForEach(context.childIDs, id: \.self) { context.content(for: $0) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    #if os(iOS)
+                    OutlinerIndentGuides(identifier: identifier, guideCount: count)
+                    #else
+                    Canvas { context, size in
+                        context.stroke(Path(OutlinerGuideGeometry.path(depth: count, expanded: false, size: size)),
+                            with: .color(.secondary.opacity(0.18)), lineWidth: 1)
+                    }.allowsHitTesting(false)
+                    #endif
+                })
+        })
+        try registry.register(LUIAppleExtension(
             identifier: "native-property-date",
             fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
             properties: [
@@ -38,8 +62,8 @@ private struct LGPropertyRowLayout: Layout {
     let stacked: Bool
 
     private func metrics(width: CGFloat, subviews: Subviews) -> (Bool, CGFloat, CGSize, CGSize) {
-        let keyWidth = min(148, width * 0.46)
         let intrinsic = subviews[0].sizeThatFits(.unspecified)
+        let keyWidth = intrinsic.width <= 24 ? intrinsic.width : min(144, width * 0.44)
         let vertical = stacked || intrinsic.width > keyWidth || width - keyWidth - 8 < 96
         let key = subviews[0].sizeThatFits(.init(width: vertical ? width : keyWidth, height: nil))
         let value = subviews[1].sizeThatFits(.init(width: vertical ? width : width - keyWidth - 8, height: nil))

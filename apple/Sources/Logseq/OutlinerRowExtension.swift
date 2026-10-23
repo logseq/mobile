@@ -55,6 +55,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let selected: Bool
     let opensAsPage: Bool
     let nodeIcon: NodeIconPayload?
+    let listNumber: Int?
     let journalBullet: Bool
     let syncFailed: Bool
     let priority: Status?
@@ -165,7 +166,10 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 } else {
                     Button { emit("open-node") } label: {
-                        if let icon = row.nodeIcon {
+                        if let number = row.listNumber {
+                            Text("\(number).").font(.subheadline).frame(width: 24, height: 24)
+                                .accessibilityIdentifier("outliner.number." + row.uuid)
+                        } else if let icon = row.nodeIcon {
                             NodeIconView(icon: icon, size: 18).frame(width: 24, height: 24)
                         } else {
                             IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
@@ -252,14 +256,23 @@ struct OutlinerRowPayload: Decodable, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if row.hasChildren {
-                Button { emit("collapse") } label: {
-                    Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                        .frame(width: 28, height: 24)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")
-                .accessibilityIdentifier("button.outliner.collapse." + row.uuid)
+                Color.clear.frame(width: 44, height: 24)
+                    .overlay(alignment: .topTrailing) {
+                        Button { emit("collapse") } label: {
+                            HStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                                Color.clear.frame(width: 6)
+                            }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .offset(y: -10)
+                        .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")
+                        .accessibilityIdentifier("button.outliner.collapse." + row.uuid)
+                    }
             }
         }
         .font(.body)

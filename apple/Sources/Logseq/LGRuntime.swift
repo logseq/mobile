@@ -283,6 +283,7 @@ public final class LGRuntime {
     }
 
     private func receive(_ event: LGRendererEvent) {
+        LGInteractionDiagnostics.event("ui.event", "kind=\(event.kind) node=\(event.nodeID) extension=\(event.extensionName ?? "") first=\(event.first ?? -1) last=\(event.last ?? -1)")
         let operation: LGNativeOperation
         switch event.kind {
         case .appear:
@@ -474,7 +475,9 @@ public final class LGRuntime {
             }
 
             Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
+            LGInteractionDiagnostics.event("effect.start", "id=\(effect.id) kind=\(effect.kind)")
             let resolution = await effectExecutor.execute(effect)
+            LGInteractionDiagnostics.event("effect.end", "id=\(effect.id) kind=\(effect.kind) success=\(resolution.succeeded)")
             guard epoch == patchApplyEpoch else { return }
             Self.log.notice("effect resolved id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) succeeded=\(resolution.succeeded, privacy: .public)")
             if !resolution.succeeded {
@@ -497,7 +500,7 @@ public final class LGRuntime {
                     break
                 }
             }
-            if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task") {
+            if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task" || effect.kind == "send-tagged") {
                 // A send may finish while backgrounded; do not restore already submitted drafts.
                 _ = await enqueueNative(.hostUpdate("save-ui-session", "null")).value
             }
@@ -527,6 +530,7 @@ public final class LGRuntime {
         guard !patch.isEmpty else { return }
         let decoded = try LUIAppleBackend.decode(patch)
         try renderer.apply(decoded: decoded)
+        LGInteractionDiagnostics.event("patch.apply", "generation=\(decoded.generation) bytes=\(patch.utf8.count)")
         #if DEBUG
         Task.detached { Self.dumpPatchIfRequested(patch, generation: decoded.generation) }
         #endif
@@ -558,7 +562,9 @@ public final class LGRuntime {
                     return
                 }
                 Self.log.notice("apply patch generation=\(decoded.generation, privacy: .public)")
+                let started = ProcessInfo.processInfo.systemUptime
                 try self.renderer.apply(decoded: decoded)
+                LGInteractionDiagnostics.event("patch.apply", "generation=\(decoded.generation) bytes=\(patch.utf8.count) ms=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000))")
             } catch {
                 guard epoch == self.patchApplyEpoch else { return }
                 self.lastError = String(describing: error)

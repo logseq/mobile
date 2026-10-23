@@ -6,32 +6,8 @@ module Outliner = Outliner_state
 module Cards = Flashcards
 module Api_ = Api
 
-let journal_page_uuid journal_day =
-  Printf.sprintf "00000001-%04d-%04d-0000-000000000000"
-    (journal_day / 10000) (journal_day mod 10000)
-
-let journal_day_title journal_day =
-  let months =
-    [|
-      "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"
-    ; "Oct"; "Nov"; "Dec"
-    |]
-  in
-  let year = journal_day / 10000 in
-  let month = journal_day / 100 mod 100 in
-  let day = journal_day mod 100 in
-  let suffix =
-    if day mod 100 >= 11 && day mod 100 <= 13 then "th"
-    else
-      match day mod 10 with
-      | 1 -> "st"
-      | 2 -> "nd"
-      | 3 -> "rd"
-      | _ -> "th"
-  in
-  if month >= 1 && month <= Array.length months then
-    Printf.sprintf "%s %d%s, %04d" months.(month - 1) day suffix year
-  else invalid_arg "invalid journal month"
+let journal_page_uuid = Journal.page_uuid
+let journal_day_title = Journal.day_title
 
 let fields_of entries =
   List.fold_left
@@ -215,11 +191,22 @@ let decode_outliner_event fields =
   | "longPressBlock" ->
     let* uuid = required_string fields "uuid" in
     Ok (Outliner.Long_press_block uuid)
+  | "pasteContent" ->
+    let* target_uuid = required_string fields "uuid" in
+    let* before_title = required_string fields "beforeTitle" in
+    let* selection_start = event_int fields "selectionStart" in
+    let* selection_length = event_int fields "selectionLength" in
+    let* plain_text = required_string fields "plainText" in
+    let blocks_edn = match List.assoc_opt "blocksEDN" fields with Some (`String value) -> value | _ -> "" in
+    Ok (Outliner.Paste_content {Block_clipboard.target_uuid; before_title;
+      selection_start; selection_length; plain_text; blocks_edn})
   | "textChanged" ->
     let* title = required_string fields "title" in
     let* caret = event_int fields "caretUTF16Offset" in
     Ok
-      (Outliner.Text_changed { Outliner.title; caret })
+      (if List.assoc_opt "inputOrigin" fields = Some (`String "paste") then
+         Outliner.Text_pasted { Outliner.title; caret }
+       else Outliner.Text_changed { Outliner.title; caret })
   | "caretMoved" ->
     let* caret = event_int fields "caretUTF16Offset" in
     Ok (Outliner.Caret_moved caret)
@@ -264,6 +251,9 @@ let decode_outliner_event fields =
   | "chooseAutocomplete" ->
     let* value = required_string fields "value" in
     Ok (Outliner.Choose_autocomplete value)
+  | "dismissAutocomplete" -> Ok Outliner.Dismiss_autocomplete
+  | "searchAutocomplete" -> let* query = required_string fields "query" in Ok (Outliner.Search_autocomplete query)
+  | "submitAutocomplete" -> let* value = required_string fields "value" in Ok (Outliner.Submit_autocomplete value)
   | "confirmDelete" -> Ok Outliner.Confirm_delete
   | "saveEditing" -> Ok Outliner.Save_editing
   | "cancelEditing" -> Ok Outliner.Cancel_editing

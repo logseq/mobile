@@ -69,6 +69,7 @@ enum LGIconPolicy {
     static var icons: [String: LUIAppleIconSource] {
         var result: [String: LUIAppleIconSource] = [
             "calendar": .assetName("calendar"),
+            "deadline": .assetName("deadline"),
             "add": .assetName("plus"),
             "composer-add": .systemName("plus"),
             "composer-file": .systemName("doc"),
@@ -77,8 +78,8 @@ enum LGIconPolicy {
             "chevron-down": .assetName("chevron_down"),
             "chevron-up": .assetName("chevron_up"),
             "document": .assetName("document"),
-            "disclosure-down": .assetName("disclosure_down"),
-            "disclosure-right": .assetName("disclosure_right"),
+            "disclosure-down": .systemName("arrowtriangle.down.fill"),
+            "disclosure-right": .systemName("arrowtriangle.right.fill"),
             "refresh": .systemName("arrow.clockwise"),
             "logo": .assetName("logo"),
             "graph-locked": .systemName("lock"),

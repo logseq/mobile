@@ -1,18 +1,22 @@
 import SwiftUI
 import UIKit
+import Vision
 @testable import LUIAppleBackend
 @testable import Logseq
 
 @MainActor private final class SettingsColorEffects: LGEffectExecuting {
+    var formats: [String] = []
     func execute(_ effect: LGEffect) async -> LGEffectResolution {
-        LGEffectResolution(succeeded: true, message: "", output: .discard)
+        if effect.kind == "set-journal-title-format" { formats.append(effect.text) }
+        return LGEffectResolution(succeeded: true, message: "", output: .discard)
     }
 }
 
 @main struct SettingsControlColorsCheck {
     @MainActor static func main() async throws {
-        let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: SettingsColorEffects())
-        try runtime.applyCoreResponse(#"{"ok":true,"result":{"selectedGraphId":"settings-colors","graphName":"Settings colors","blocks":[],"outlinerRows":[]}}"#)
+        let effects = SettingsColorEffects()
+        let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
+        try runtime.applyCoreResponse(#"{"ok":true,"result":{"selectedGraphId":"settings-colors","graphName":"Settings colors","journalTitleFormat":"yyyy-MM-dd","blocks":[],"outlinerRows":[]}}"#)
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         try runtime.applyHostUpdate(kind: "restore-ui-session", payload: #"{"graphId":"settings-colors","destination":"journals","assets":[],"composerExpanded":false,"searchOpen":false,"query":"","appPath":[],"searchPath":[],"selectedPageId":null,"settingsOpen":true,"recentGraphIds":[]}"#)
@@ -33,7 +37,6 @@ import UIKit
             return node
         }
         try await Task.sleep(for: .milliseconds(600))
-        await runtime.drainEffectsForTesting()
         try await Task.sleep(for: .milliseconds(500))
         window.rootViewController?.presentedViewController?.sheetPresentationController?.selectedDetentIdentifier = .large
         try await Task.sleep(for: .milliseconds(500))
@@ -53,12 +56,28 @@ import UIKit
             let id = try find(identifier)
             if backend.model(id: id)?.isChecked != true { try backend.performToggle(node: id, checked: true) }
         }
-        await runtime.drainEffectsForTesting()
         for (style, name) in [(UIUserInterfaceStyle.light, "settings-colors-light.png"), (.dark, "settings-colors-dark.png")] {
             window.overrideUserInterfaceStyle = style
             try await Task.sleep(for: .milliseconds(500))
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(name))
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([recognition])
+            func labelRect(_ text: String) throws -> CGRect {
+                guard let observation = recognition.results?.first(where: { $0.topCandidates(1).first?.string == text }) else {
+                    throw failure("Missing visible settings label: " + text)
+                }
+                return observation.boundingBox
+            }
+            guard recognition.results?.contains(where: { $0.topCandidates(1).first?.string == "Date format" }) != true else {
+                throw failure("Date format must not appear in settings")
+            }
+            let spell = try labelRect("Spell check")
+            let correction = try labelRect("Auto-correction")
+            guard abs(spell.minX - correction.minX) * window.bounds.width <= 3 else {
+                throw failure("Native editor settings must remain aligned")
+            }
             func coloredPixels(in rect: CGRect, green: Bool) -> Int {
                 let pixelRect = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
                     width: rect.width * image.scale, height: rect.height * image.scale)
@@ -86,7 +105,12 @@ import UIKit
                 guard coloredPixels(in: rect, green: false) == 0 else { throw failure("Picker value must use text color: " + identifier) }
             }
         }
-        print("PASS: native settings switches use Logseq teal and picker values use text color in light and dark appearances")
+        guard backend.rootIDs.flatMap(ids).allSatisfy({
+            backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue != "picker.settings.date-format"
+        }), effects.formats.isEmpty else {
+            throw failure("Hidden date format controls must not retain interactive nodes or emit mutations")
+        }
+        print("PASS: native settings retain theme colors and aligned editor controls without date format options")
     }
     static func failure(_ message: String) -> NSError {
         NSError(domain: "SettingsControlColors", code: 1, userInfo: [NSLocalizedDescriptionKey: message])

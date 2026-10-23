@@ -43,6 +43,7 @@ public struct LogseqRootView : View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @AppStorage("logseq.language") private var language = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     private let runtime = LogseqLogseqRuntime.shared
 
@@ -82,6 +83,13 @@ public struct LogseqRootView : View {
             .task {
                 for await available in NetworkAvailabilityStream.values() {
                     await runtime.setNetworkAvailable(available)
+                }
+            }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    await runtime.refreshLocalJournalDay()
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
             .onChange(of: runtime.authentication.state) { previousState, state in
@@ -150,6 +158,7 @@ public struct LogseqRootView : View {
     private var isLGApplicationReady = false
     private var isResumingLGApplication = false
     private var didResumeCurrentActivation = false
+    private var refreshedJournalDay: String?
     private let graphLifecycle: LGGraphLifecycle
     private let platformCommandRouter: LGPlatformCommandRouter
 
@@ -481,6 +490,21 @@ public struct LogseqRootView : View {
         } else {
             didResumeCurrentActivation = true
         }
+    }
+
+    func refreshLocalJournalDay() async {
+        guard isLGApplicationReady, let graphID = store.snapshot.selectedGraphId,
+              store.snapshot.isGraphUnlocked != false else { return }
+        let day = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        let key = graphID + ":" + String(day)
+        guard refreshedJournalDay != key else { return }
+        let response = await LogseqCore.callAsync(LogseqRPCRequest(method: "snapshot", params: LogseqRPCParams(action: nil)))
+        do {
+            let envelope = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any]
+            guard envelope?["ok"] as? Bool == true else { return }
+            try lgRuntime.applyCoreResponse(response)
+            refreshedJournalDay = key
+        } catch { logger.error("Could not refresh today's journal: " + String(describing: error)) }
     }
 
     public func pauseLGApplication() {

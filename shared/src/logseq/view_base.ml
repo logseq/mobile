@@ -3,13 +3,18 @@ open Lui_protocol
 let node_icon (current : Model.logseq_model) uuid =
   Option.value ~default:"" (String_map.find_opt uuid current.node_icons)
 
-let node_icon_view ~size source : Lui_elements.t =
+let outliner_node_icon current (row : Model.outline_row) =
+  if row.row_is_embed then {|{"type":"tabler-icon","id":"arrow-narrow-right"}|}
+  else node_icon current row.row_uuid
+
+let node_icon_view ?(muted = false) ~size source : Lui_elements.t =
   Lui_elements.if_ ~test:(Signal.map (fun value -> value <> "") source)
     (fun context parent ->
       let node = Lui_ui.extension context "node-icon" in
       Lui_elements.attach context parent node;
       Lui_ui.extension_property_signal context node "payload" (Signal.map (fun value -> StringValue value) source);
       Lui_ui.extension_property context node "size" (IntValue size);
+      Lui_ui.extension_property context node "muted" (BoolValue muted);
       node)
 
 let string_wire_value value = StringValue value
@@ -68,7 +73,11 @@ let handle_outliner_editor_event input_event block_id_source send =
   match input_event with
   | ExtensionEvent (_node, _identifier, name, values) ->
     let uuid = Signal.sample block_id_source in
-    if name = "text-change" then
+    if name = "paste-content" then
+      send (Model.PasteOutlinerContent (uuid, extension_string values "value"))
+    else if name = "paste" then
+      send (Model.PasteOutlinerText (uuid, extension_string values "title", extension_int values "caret-utf16-offset"))
+    else if name = "text-change" then
       send
         (Model.ChangeOutlinerText
            ( uuid
@@ -517,8 +526,7 @@ let outliner_autocomplete_active_ (current : Model.logseq_model) =
   outliner_editor_active_ current
   &&
   (match current.outliner_autocomplete with
-   | Some { autocomplete_kind = (Model.TagAutocomplete | Model.NodeAutocomplete); _ } -> true
-   | Some _ -> current.outliner_autocomplete_candidates <> []
+   | Some _ -> true
    | None -> false)
 
 let outliner_autocomplete_identifier
@@ -815,7 +823,7 @@ let node_outliner_visible_ (current : Model.logseq_model) =
   current.outliner_rows <> []
 
 let node_title_visible_ (current : Model.logseq_model) =
-  node_outliner_visible_ current
+  page_content_ready_ current
   && (not (current_content_is_tag_ current))
   && (not
         (active_node_uuid current <> active_node_page_uuid current))
@@ -1354,14 +1362,27 @@ let sync_error_message (current : Model.logseq_model) =
 let selected_page_content_title_visible_ (current : Model.logseq_model) =
   selected_page_present_ current
   && (not current.selected_page_is_tag)
-  && node_outliner_visible_ current
+  && page_content_ready_ current
 
 let selected_page_title (current : Model.logseq_model) =
   match current.selected_page with
   | Some page -> page.title
   | None -> ""
 
+let without_outliner_interaction (current : Model.logseq_model) =
+  { current with
+    outliner_selected_block_ids = [];
+    outliner_editing = None;
+    outliner_autocomplete = None;
+    outliner_autocomplete_candidates = [];
+  }
+
 let navigation_root_model (current : Model.logseq_model) =
+  (* Decide ownership before projecting away the active navigation path. *)
+  let current =
+    if journal_root_visible_ current then current
+    else without_outliner_interaction current
+  in
   { current with
     outliner_rows = (if current.node_routes = [] then current.outliner_rows else current.navigation_root_rows);
     node_routes = [];
@@ -1391,18 +1412,12 @@ let journal_navigation_model (current : Model.logseq_model) =
       outliner_section_markers = Model.journal_section_markers rows;
     }
   in
-  if current.node_routes = [] then root
-  else
-    {
-      root with
-      outliner_selected_block_ids = [];
-      outliner_editing = None;
-      outliner_autocomplete = None;
-      outliner_autocomplete_candidates = [];
-    }
+  if journal_home_visible_ current then root
+  else without_outliner_interaction root
 
-let node_route_model (current : Model.logseq_model)
+let node_route_model ~active (current : Model.logseq_model)
     (route : Model.node_projection) =
+  let projected =
   {
     current with
     node_routes = [ route ];
@@ -1414,6 +1429,14 @@ let node_route_model (current : Model.logseq_model)
     outliner_autocomplete_candidates =
       route.node_outliner_autocomplete_candidates;
   }
+  in
+  let visible = active
+    && (not current.search_open || current.search_navigation_path <> [])
+    && Option.fold ~none:false
+         ~some:(fun (last : Model.node_projection) -> last.node_uuid = route.node_uuid)
+         (Model.last_opt current.node_routes)
+  in
+  if visible then projected else without_outliner_interaction projected
 
 let app_navigation_depth (current : Model.logseq_model) =
   navigation_path_depth current.app_navigation_path

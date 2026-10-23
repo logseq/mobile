@@ -57,10 +57,10 @@ import dev.lui.LuiExtensionValueKind
 private const val EDITOR_FINGERPRINT =
     "lui-extension-v1|15:outliner-editor|profiles:android/kotlin," +
         "ios/swiftui|standard-children:0|children:|" +
-        "properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:" +
+        "properties:12:input-policy:string:required:none,13:focus-enabled:bool:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none|events:11:text-change[" +
         "18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[" +
-        "18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:" +
+        "18:caret-utf16-offset:int:required],13:paste-content[5:value:string:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:" +
         "required,5:title:string:required],9:backspace[16:selection-length:int:" +
         "required,5:title:string:required]"
 private const val RICH_FINGERPRINT =
@@ -105,10 +105,19 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("caret-utf16-offset", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("selection-revision", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("input-policy", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("focus-enabled", LuiExtensionValueKind.BOOLEAN, required = true),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING),
         ),
         events = listOf(
+            LuiExtensionEventSchema("paste-content", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true))),
+            LuiExtensionEventSchema(
+                "paste",
+                listOf(
+                    LuiExtensionProperty("caret-utf16-offset", LuiExtensionValueKind.INTEGER, required = true),
+                    LuiExtensionProperty("title", LuiExtensionValueKind.STRING, required = true),
+                ),
+            ),
             LuiExtensionEventSchema(
                 "text-change",
                 listOf(

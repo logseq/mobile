@@ -41,12 +41,12 @@ let deep_link fields =
       let* path = optional fields "path" in
       let graph = Option.map (fun path -> if String.starts_with ~prefix:"/" path then
         String.sub path 1 (String.length path - 1) else path) path in
-      (match graph with
-       | None | Some "" -> Error "A graph name or identifier is required"
-       | Some graph ->
-         let* page = optional values "page" in
-         let* block = optional values "block-id" in
-         Ok (`Graph (graph, page, block)))
+      let* explicit_graph = optional values "graph-id" in
+      let graph = Option.value ~default:(Option.value ~default:"" graph) explicit_graph in
+      let* page = optional values "page" in
+      let* block = optional values "block-id" in
+      if graph = "" && page = None && block = None then Error "A graph name or identifier is required"
+      else Ok (`Graph (graph, page, block))
     | Some "capture" -> (match text values with Ok value -> Ok (`Capture value) | Error _ -> Ok (`Quick_action "capture"))
     | Some ("audio" | "journal" as action) -> Ok (`Quick_action action)
     | _ -> Ok (`Ignore)

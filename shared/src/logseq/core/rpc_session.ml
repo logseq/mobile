@@ -92,7 +92,15 @@ let query_db session =
   | Some load -> load ()
   | None -> Some (state session).model.db
 
+let current_summary session (summary : Model.entity_summary) =
+  Option.value ~default:summary (Option.bind (query_db session) (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid))
+      (Graph_read.entity_summary (fun value -> Ok value) db)))
+
+let summary_json session summary = Rpc.summary_json (current_summary session summary)
+
 let result_block_encoder db =
+  let presentation = Node_presentation.decorate db in
   let pages = Hashtbl.create 4 in
   let encode_tree block =
     let children = match Hashtbl.find_opt pages block.Model.page_id with
@@ -112,7 +120,7 @@ let result_block_encoder db =
       let descendants = Option.value ~default:[] (Hashtbl.find_opt children block.uuid)
         |> List.filter (fun (child : Model.block) -> not (Outliner.Sset.mem child.uuid ancestors)) in
       let ancestors = Outliner.Sset.add block.uuid ancestors in
-      match Rpc.block_json block with
+      match presentation block.uuid (Rpc.block_json block) with
       | `Assoc fields -> `Assoc (("children", `List (List.map (encode ancestors (depth + 1)) descendants)) :: fields)
       | value -> value in
     encode Outliner.Sset.empty 0 block in
@@ -120,8 +128,8 @@ let result_block_encoder db =
 
 let query_for session db uuid =
   let current_page = match active_node_route session with
-    | Some route -> Some route.Types.page.title
-    | None -> Option.map (fun (page : Model.entity_summary) -> page.title)
+    | Some route -> Some (current_summary session route.Types.page).title
+    | None -> Option.map (fun (page : Model.entity_summary) -> (current_summary session page).title)
         (state session).selected_sidebar_page in
   let encode_tree = result_block_encoder db in
   Query_block.render ?current_page db uuid
@@ -164,6 +172,7 @@ let with_queries session result =
   | None -> result
   | Some db ->
     let cache = Hashtbl.create 8 in
+    let presentation = Node_presentation.decorate db in
     let query uuid = match Hashtbl.find_opt cache uuid with
       | Some value -> value
       | None -> let value = query_projection session db uuid in
@@ -176,7 +185,7 @@ let with_queries session result =
         (match List.assoc_opt "uuid" fields, List.assoc_opt "pageId" fields,
            List.assoc_opt "isShell" fields with
          | Some (`String uuid), Some _, shell when shell <> Some (`Bool true) ->
-           (match query uuid with
+           presentation uuid (match query uuid with
             | Some value -> `Assoc (("query", value) :: List.remove_assoc "query" fields)
             | None -> `Assoc fields)
          | _ -> `Assoc fields)
@@ -256,13 +265,13 @@ let node_routes_json session serialize serialize_plain =
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
-           ; ("breadcrumbs", Rpc.json_list (List.map Rpc.summary_json (route_breadcrumbs context route)))
+           ; ("breadcrumbs", Rpc.json_list (List.map (summary_json session) (route_breadcrumbs context route)))
            ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)
            ; ("isProperty", `Bool route.is_property)
            ; ("resultViews", object_views_for session route.uuid route.is_tag route.is_property)
            ; ("nodeProperties", node_properties_for session route.uuid)
-           ; ("page", Rpc.summary_json route.page)
+           ; ("page", summary_json session route.page)
            ; ( "blocks"
              , Rpc.json_list (List.map serialize (projection_blocks session
                   (if (host session).Types.outliner_projection_limit = None then context.Outliner.blocks else ordered)))
@@ -280,6 +289,13 @@ let node_routes_json session serialize serialize_plain =
              , Rpc.outliner_candidates_json context current )
            ])
        (state session).node_routes)
+
+let empty_journals_json session =
+  let pages = match (host session).Types.empty_journals with
+    | Some read -> read () | None -> [] in
+  `List (List.map (fun ((page : Model.entity_summary), day) ->
+    `Assoc ["uuid", `String page.uuid; "title", `String page.title;
+      "journalDay", `Int day]) pages)
 
 let snapshot session context_blocks blocks =
   let s = state session in
@@ -366,7 +382,8 @@ let snapshot session context_blocks blocks =
                 | Some name -> `String name
                 | None -> `Null)
              | None -> `Null )
-         ; ( "selectedGraphId"
+         ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
+       ; ( "selectedGraphId"
            , match config with
              | Some config ->
                if config.Api.graph_id = "" then `Null
@@ -376,14 +393,14 @@ let snapshot session context_blocks blocks =
            , Rpc.json_list (List.map Rpc.graph_json s.available_graphs) )
          ; ( "favorites"
            , Rpc.json_list
-               (List.map Rpc.summary_json sidebar.Graph_read.favorites) )
+               (List.map (summary_json session) sidebar.Graph_read.favorites) )
          ; ( "recentPages"
            , Rpc.json_list
-               (List.map Rpc.summary_json sidebar.Graph_read.recent_pages)
+               (List.map (summary_json session) sidebar.Graph_read.recent_pages)
            )
          ; ( "selectedPage"
            , match s.selected_sidebar_page with
-             | Some page -> Rpc.summary_json page
+             | Some page -> summary_json session page
              | None -> `Null )
          ; ( "isGraphEncrypted"
            , `Bool (selected_graph_is_encrypted session) )
@@ -416,6 +433,7 @@ let snapshot session context_blocks blocks =
                (List.map Rpc.outliner_command_json s.outliner_commands) )
          ; ( "hasPendingSemanticOperations"
            , `Bool (has_pending_operations session) )
+         ; ("emptyJournals", empty_journals_json session)
          ; ( "hasOlderJournals"
            , `Bool
                (match h.Types.has_older_journals with
@@ -451,6 +469,7 @@ let outliner_patch_result session context blocks deleted splices =
     blocks deleted splices in
   match Json.from_string encoded with
   | `Assoc fields -> (match List.assoc_opt "result" fields with
+      | Some (`Assoc result) -> success session (`Assoc (("emptyJournals", empty_journals_json session) :: result))
       | Some result -> success session result | None -> encoded)
   | _ -> encoded
 
@@ -532,6 +551,7 @@ let graph_catalog_snapshot session =
               | Some name -> `String name
               | None -> `Null)
            | None -> `Null )
+       ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
        ; ( "selectedGraphId"
          , match s.config with
            | Some config ->
@@ -708,6 +728,15 @@ let dispatch_outliner_event session payload =
                       (Outliner.Operation_staged operation.intent)))
                next_state operations
            in
+           let next_state = match message with
+             | Outliner.Paste_content _ ->
+               List.fold_left (fun current -> function
+                 | Effects.Focus_block uuid ->
+                   (match Outliner.find_block projected uuid with
+                    | Some block -> fst (Outliner.staged_editing projected current uuid block.title false)
+                    | None -> current)
+                 | _ -> current) next_state interpreted.platform
+             | _ -> next_state in
            session.Types.state :=
              {
                !(session.state) with
@@ -792,6 +821,26 @@ let with_object action payload missing handle =
             (action ^ " payload must be an object")))
   | None -> Rpc.failure "invalid_params" missing
 
+let search_page session ~offset ~limit query =
+  let h = host session in
+  match h.Types.graph_search_page with
+  | Some search -> search ~offset ~limit query
+  | None ->
+    let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+    let rec slice skip remaining acc = function
+      | [] -> List.rev acc, false
+      | _ when remaining = 0 && skip = 0 -> List.rev acc, true
+      | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
+      | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
+    slice offset limit [] all
+
+let refresh_retained_search session =
+  let current = state session in
+  if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
+    let found, has_more = search_page session ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
+    session.Types.state := {current with search_result_pages = [found];
+      search_result_count = List.length found; search_has_more = has_more})
+
 let stage_result session operation_id base_t intent =
   match
     enqueue_semantic session
@@ -802,7 +851,11 @@ let stage_result session operation_id base_t intent =
         intent;
       }
   with
-  | Ok () -> snapshot_visible session
+  | Ok () ->
+    let rec changes_title = function Ops.Save_title _ -> true
+      | Ops.Atomic intents -> List.exists changes_title intents | _ -> false in
+    if changes_title intent then refresh_retained_search session;
+    snapshot_visible session
   | Error message -> Rpc.failure "stage_operation_failed" message
 
 let editing_cursor session =
@@ -1053,16 +1106,9 @@ let graph_asset session fields downloaded =
 
 let ensure_journal session payload =
   let day = Option.bind payload int_of_string_opt in
-  let valid day =
-    let year = day / 10000 and month = day / 100 mod 100 and date = day mod 100 in
-    let leap = year mod 4 = 0 && (year mod 100 <> 0 || year mod 400 = 0) in
-    let days = [|31; (if leap then 29 else 28); 31; 30; 31; 30; 31; 31; 30; 31; 30; 31|] in
-    year >= 1 && year <= 9999 && month >= 1 && month <= 12
-    && date >= 1 && date <= days.(month - 1)
-  in
   match day with
   | None -> Rpc.failure "invalid_params" "A journal date is required"
-  | Some day when not (valid day) -> Rpc.failure "invalid_params" "The journal date is invalid"
+  | Some day when not (Journal.valid_day day) -> Rpc.failure "invalid_params" "The journal date is invalid"
   | Some day ->
     let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
     let result = match existing, projection_server_t session, (state session).config with
@@ -1071,14 +1117,42 @@ let ensure_journal session payload =
         let uuid = Rpc.journal_page_uuid day in
         let operation = { Ops.operation_id = fresh_squuid ();
           base_t; state = Ops.Queued;
-          intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid ();
-            title = Rpc.journal_day_title day; journal_day = day; created_at = now_ms () } } in
+          intent = Ops.Create_journal { Ops.page_uuid = uuid; block_uuid = fresh_squuid (); block_title = "";
+            title = (match query_db session with Some db -> Journal.title db day | None -> Rpc.journal_day_title day); journal_day = day; created_at = now_ms () } } in
         Result.map (fun () -> uuid) (enqueue_semantic session operation)
       | None, _, _ -> Error "Select a graph before creating a journal"
     in
     match result with
     | Ok uuid -> success session (Rpc.json_object ["uuid", `String uuid])
     | Error message -> Rpc.failure "journal_creation_failed" message
+
+let set_journal_title_format session fields =
+  let result =
+    let ( let* ) = Result.bind in
+    let* graph_id = Rpc.required_string fields "graphId" in
+    let* format = Rpc.required_string fields "format" in
+    let* () = match (state session).config with
+      | Some config when config.Api.graph_id = graph_id -> Ok ()
+      | _ -> Error "The active graph changed. Reopen settings to change its date format" in
+    let* () = if List.mem format Journal.built_in_journal_title_formatters then Ok ()
+      else Error "Choose a supported date format" in
+    let* db = Option.to_result ~none:"The graph is unavailable" (query_db session) in
+    let* eid = Option.to_result ~none:"The Journal class is missing"
+      (Datascript.entid db "db/ident" (Datascript.Keyword "logseq.class/Journal")) in
+    let* uuid = Option.to_result ~none:"The Journal class has no UUID" (Graph_read.uuid_for_eid db eid) in
+    let* base_t = match editing_cursor session with Ok value -> Ok value | Error (_, message) -> Error message in
+    let* expected = match Graph_read.value db eid Journal.format_attr with
+      | None -> Ok None
+      | Some (Datascript.String value) -> Ok (Some (Ops.String_value value))
+      | _ -> Error "The existing journal format is invalid" in
+    let value = Some (Ops.String_value format) in
+    if expected = value then Ok () else
+    enqueue_semantic session {Ops.operation_id = fresh_squuid (); base_t; state = Ops.Queued;
+      intent = Ops.Set_property {uuid; attr = Journal.format_attr; expected; value}}
+  in
+  match result with
+  | Ok () -> snapshot_visible session
+  | Error message -> Rpc.failure "date_format_failed" message
 
 let select_page session payload =
   match
@@ -1194,6 +1268,84 @@ let send_message session payload =
         snapshot_visible session
       end
     end
+
+let prepare_capture_tags session uuid tags (operation : Ops.pending_operation) now =
+  let ( let* ) = Result.bind in
+  let* db = match query_db session with Some db -> Ok db | None -> Error "The graph is unavailable" in
+  let* tx = Pending_projection.compile db operation.intent in
+  try
+    let db = Datascript.db_with tx db in
+    let field name = match tags with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
+      | _ -> invalid_arg "Invalid tags" in
+    let strings name = match field name with
+      | `Null -> []
+      | `List values -> List.map (function `String value -> value | _ -> invalid_arg "Choose a tag") values
+      | _ -> invalid_arg "Invalid tag selection" in
+    let catalog = Hashtbl.create 32 in
+    Graph_read.tag_pages (fun value -> Ok value) db |> List.iter (fun (tag : Model.entity_summary) ->
+      let key = Dev_query.Unicode.lowercase tag.title in
+      let previous = Option.value ~default:[] (Hashtbl.find_opt catalog key) in
+      Hashtbl.replace catalog key (tag.uuid :: previous));
+    let selected = ref (strings "selectedValues") and created = ref [] in
+    let seen = Hashtbl.create 8 in
+    List.iter (fun title ->
+      let title = String.trim title in
+      if title = "" then invalid_arg "Enter a tag name";
+      let key = Dev_query.Unicode.lowercase title in
+      if not (Hashtbl.mem seen key) then (
+        Hashtbl.add seen key ();
+        match Hashtbl.find_opt catalog key with
+        | Some [uuid] -> selected := uuid :: !selected
+        | Some _ -> invalid_arg "More than one tag has this name; choose the existing tag"
+        | None -> created := title :: !created)) (strings "newValues");
+    let property = Result_view.property_json ~include_candidates:false db ~owner:uuid ~attr:"block/tags" ~encode_block:(fun _ -> `Null) in
+    let expected = match property with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt "raw" fields) | _ -> `Null in
+    let id = match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with Some id -> id | None -> invalid_arg "Missing capture" in
+    let existing = Graph_read.entity_summaries (fun value -> Ok value) db id "block/tags"
+      |> List.map (fun (tag : Model.entity_summary) -> tag.uuid) in
+    let selected = List.sort_uniq String.compare (existing @ !selected) in
+    let intent = Result_view.edit_property ~allow_builtin:true db ~now ~fresh_uuid:fresh_squuid
+      (`Assoc ["blockUuid", `String uuid; "attr", `String "block/tags"; "expected", expected;
+        "value", `String ""; "create", `Bool true;
+        "selectedValues", `List (List.map (fun uuid -> `String uuid) selected);
+        "newValues", `List (List.map (fun title -> `String title) (List.rev !created))]) in
+    let* _ = Pending_projection.compile db intent in
+    Ok intent
+  with Invalid_argument message | Failure message -> Error message
+
+let send_tagged session input fields =
+  let ( let* ) = Result.bind in
+  let prepared =
+    let* text = Rpc.required_string fields "text" in
+    let* uuid = Rpc.required_string fields "uuid" in
+    let* now = Rpc.optional_int fields "now" in
+    let* status = Rpc.optional_status_payload input in
+    let now = Option.value ~default:(now_ms ()) now in
+    let text = String.trim text in
+    if text = "" then Error "Enter text to capture" else
+    let* operations = capture_operations session uuid text now status in
+    match operations with
+    | [] -> Error "The capture is unavailable"
+    | first :: _ ->
+      let operation = {first with Ops.operation_id = fresh_squuid ();
+        intent = Ops.Atomic (List.map (fun (op : Ops.pending_operation) -> op.intent) operations)} in
+      let tags = match input with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt "tags" fields) | _ -> `Null in
+      let* tag_intent = prepare_capture_tags session uuid tags operation now in
+      Ok {operation with Ops.intent = Ops.Atomic [operation.intent; tag_intent]}
+  in
+  match prepared with
+  | Error message -> Rpc.failure "capture_failed" message
+  | Ok operation -> (match enqueue_semantic session operation with
+      | Ok () -> snapshot_visible session
+      | Error message -> Rpc.failure "capture_failed" message)
+
+let composer_tags session =
+  let tags = match (host session).Types.graph_tag_pages with
+    | Some load -> Option.value ~default:[] (load ())
+    | None -> Option.fold ~none:[] ~some:(Graph_read.tag_pages (fun value -> Ok value)) (query_db session) in
+  Rpc.success (`Assoc ["selectedGraphId", (match (state session).config with Some config -> `String config.graph_id | None -> `Null);
+    "composerTagChoices", `List (List.map (fun (tag : Model.entity_summary) ->
+      `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) tags)])
 
 let send_task session input fields =
   match
@@ -1538,6 +1690,7 @@ let deep_link_response session extra =
 
 let graph_deep_link session graph page block =
   let current = state session in
+  let graph = if graph = "" then Option.fold ~none:"" ~some:(fun (c : Api.api_config) -> c.graph_id) current.config else graph in
   let matches (candidate : Api.api_graph) = candidate.id = graph || candidate.name = graph in
   let candidates = List.filter matches current.available_graphs in
   let candidates = if candidates <> [] then candidates else
@@ -1725,6 +1878,9 @@ let rec dispatch session action payload =
         snapshot_visible session)
   | "selectGraph" -> select_graph session payload
   | "ensureJournal" -> ensure_journal session payload
+  | "setJournalTitleFormat" ->
+    with_object "setJournalTitleFormat" payload "A date format is required"
+      (fun _ fields -> set_journal_title_format session fields)
   | "selectPage" -> select_page session payload
   | "hydrateOutlinerRows" -> hydrate_outliner_rows session payload
   | "queryBlock" ->
@@ -1742,9 +1898,17 @@ let rec dispatch session action payload =
   | "nodeProperty" ->
     (match payload, query_db session with
      | Some payload, Some db ->
-       (try match editing_cursor session with
+       (try
+         let input = Json.from_string payload in
+         let requested_graph = match input with `Assoc fields -> List.assoc_opt "graphId" fields | _ -> None in
+         let same_graph = match requested_graph, (state session).config with
+           | None, _ -> true
+           | Some (`String graph), Some config -> graph = config.Api.graph_id
+           | _ -> false in
+         if not same_graph then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
+         else match editing_cursor session with
          | Error (code, message) -> Rpc.failure code message
-         | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid (Json.from_string payload) with
+         | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input with
              | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
              | Error message -> Rpc.failure "invalid_property" message)
         with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
@@ -1919,16 +2083,7 @@ let rec dispatch session action payload =
     let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
     let found, has_more =
       if not valid || String_kit.is_blank query then [], false
-      else match h.Types.graph_search_page with
-      | Some search -> search ~offset ~limit:20 query
-      | None ->
-        let all = match h.Types.graph_search with Some search -> search query | None -> [] in
-        let rec slice skip remaining acc = function
-          | [] -> List.rev acc, false
-          | _ when remaining = 0 && skip = 0 -> List.rev acc, true
-          | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
-          | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
-        slice offset 20 [] all in
+      else search_page session ~offset ~limit:20 query in
     if valid then session.Types.state :=
       { !(session.state) with search_query = query; search_has_more = has_more;
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);
@@ -1938,6 +2093,8 @@ let rec dispatch session action payload =
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
       "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
       "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
+  | "composerTags" -> composer_tags session
+  | "sendTagged" -> object_action (send_tagged session)
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
   | "addAsset" ->
@@ -1957,9 +2114,19 @@ let rec dispatch session action payload =
         (base_outliner_context session).Outliner.blocks
     in
     let stage () =
-      if (state session).config <> None then
+      if (state session).config = None then None else
+      Option.map (fun stage operation ->
+        let tags = Option.bind payload (fun raw -> try match Json.from_string raw with
+          | `Assoc fields -> List.assoc_opt "tags" fields | _ -> None with _ -> None) in
+        match tags with
+        | None -> stage operation
+        | Some tags ->
+          let ( let* ) = Result.bind in
+          let uuid = match operation.Ops.intent with Ops.Create_asset asset -> asset.uuid | _ -> "" in
+          let* intent = prepare_capture_tags session uuid tags operation (now_ms ()) in
+          let* () = stage operation in
+          stage {operation with Ops.operation_id = fresh_squuid (); state = Ops.Queued; intent})
         (host session).Types.stage_operation
-      else None
     in
     Rpc.add_asset ~prepare_file:h.import_asset_file payload s.model now_ms target prepare_view
       (fun block -> asset_datoms_operation session block Ops.Applied)

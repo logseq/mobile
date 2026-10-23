@@ -49,7 +49,9 @@ let outliner_context_with_blocks session sidebar blocks =
        | Some (_, zoom) -> zoom
        | None -> List.exists (fun (block : Model.block) -> block.uuid = uuid) blocks)
     | None -> List.exists (fun (block : Model.block) -> block.uuid = uuid) blocks in
-  Outliner.context ~search_nodes ~is_block_reference blocks pages tags
+  let db = match (Types.host session).graph_db with
+    | Some load -> load () | None -> Some (Types.state session).model.db in
+  Outliner.context ?graph_id:(Option.map (fun (c : Api.api_config) -> c.graph_id) (Types.state session).config) ?db ~search_nodes ~is_block_reference blocks pages tags
 
 let sidebar_node_destination (session : Types.session) (node : Model.entity_summary) =
   match (Types.host session).graph_node_destination with

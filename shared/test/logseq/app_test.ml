@@ -331,8 +331,10 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
 
 let empty_core_projection () =
   {
-    Model.graph_name = None;
+    Model.tag_choices_update = None;
+    graph_name = None;
     selected_graph_id = None;
+    journal_title_format = None;
     graphs = [];
     is_graph_encrypted = false;
     is_graph_unlocked = false;
@@ -354,6 +356,7 @@ let empty_core_projection () =
     search_has_more = false;
     search_results = [];
     node_routes = [];
+    empty_journals = [];
     journal_outliner_rows = [];
     projection_outliner_editing = None;
     projection_outliner_autocomplete = None;
@@ -425,6 +428,10 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_cached = false;
+    row_task_dates_json = ""; row_list_number = None;
+    row_display_type = None;
+    row_is_embed = false;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -2035,7 +2042,7 @@ let authentication_screen_uses_the_product_name_on_every_host () =
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_editor_schema ()))
-    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:12:input-policy:string:required:none,13:focus-enabled:bool:required:none,18:caret-utf16-offset:int:required:none,18:selection-revision:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],13:paste-content[5:value:string:required],5:paste[18:caret-utf16-offset:int:required,5:title:string:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
@@ -2759,6 +2766,10 @@ let outline_row uuid title =
   {
     Model.row_uuid = uuid;
     row_loaded = true;
+    row_cached = false;
+    row_task_dates_json = ""; row_list_number = None;
+    row_display_type = None;
+    row_is_embed = false;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -3189,7 +3200,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
   in
   let add_first =
     descendant_with_identifier renderer outliner
-      "button.outliner.add-first-block"
+      "button.outliner.placeholder.page-a"
   in
   let content =
     descendant_with_identifier renderer outliner "outliner.block.content"
@@ -3220,8 +3231,8 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
     ~msg:"selected page titles preserve the combined main horizontal inset"
     (property_int renderer page_title_layout Lui_protocol.PaddingHorizontal)
     16;
-  check ~msg:"non-empty selected pages hide the add-first-block action"
-    (add_first = -1)
+  check ~msg:"non-empty selected pages retain a trailing placeholder"
+    (add_first <> -1)
 
 let flashcard_presentation_and_review_state_are_owned_by_lg () =
   let card =
@@ -4685,7 +4696,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
       "surface.composer.root"
   in
   let expanded =
-    parent_with_child_identifier renderer expanded_composer "field.composer"
+    parent_with_child_identifier renderer expanded_composer "row.composer.controls"
   in
   let field =
     descendant_with_identifier renderer expanded "field.composer"
@@ -4746,7 +4757,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     (property_int renderer controls Lui_protocol.HeightValue)
     44;
   check_eq ~msg:"main's controls include a flexible trailing spacer"
-    (List.length control_children) 4;
+    (List.length control_children) 5;
   check_eq ~msg:"the composer spacer remains directly testable"
     (property_string renderer control_spacer
        Lui_protocol.AccessibilityIdentifier)
@@ -4901,7 +4912,7 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
       (empty_core_projection ()) with
       Model.projection_outliner_editing = Some stale;
       projection_outliner_autocomplete_candidates = [
-        { Model.candidate_index = 0; candidate_label = "Old result";
+        { Model.candidate_index = 0; candidate_group = None; candidate_label = "Old result";
           candidate_value = "old-result" } ];
     }
   in
@@ -4935,7 +4946,7 @@ let reference_autocomplete_remains_mounted_while_typing () =
   let application = App.create (ios_backend ()) in
   start application;
   let editing = { Model.editing_uuid = "editing"; editing_title = before; caret_utf16_offset = caret } in
-  let candidate index label value = { Model.candidate_index = index; candidate_label = label; candidate_value = value } in
+  let candidate index label value = { Model.candidate_index = index; candidate_group = None; candidate_label = label; candidate_value = value } in
   let candidates = [candidate 0 "Project" "project"; candidate 1 "Progress" "progress"] in
   let projection = { (empty_core_projection ()) with
     selected_graph_id = Some "test-graph";
@@ -5034,7 +5045,7 @@ let outliner_typing_retains_reference_candidates () =
   in
   let candidate =
     {
-      Model.candidate_index = 0;
+      Model.candidate_index = 0; candidate_group = None;
       candidate_label = "Card";
       candidate_value = "tag-card";
     }
@@ -5069,7 +5080,7 @@ let completion_requests_native_caret_selection () =
   let projection = { (empty_core_projection ()) with selected_graph_id = Some "graph";
     projection_outliner_editing = Some editing;
     projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.NodeAutocomplete; autocomplete_query = "wow" };
-    projection_outliner_autocomplete_candidates = [{ Model.candidate_index = 0; candidate_label = "wow"; candidate_value = "page" }];
+    projection_outliner_autocomplete_candidates = [{ Model.candidate_index = 0; candidate_group = None; candidate_label = "wow"; candidate_value = "page" }];
     outliner_rows = [outline_row "editing" "[[wow]]"] } in
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
@@ -6418,6 +6429,67 @@ let kotlin_selected_pages_retain_the_hidden_journal_pane () =
   let list = descendant_with_identifier renderer journal "list.outliner" in
   check ~msg:"the retained journal is not placed or interactive" (not (property_bool renderer list Lui_protocol.Selected))
 
+let editor_pickers_own_focus_without_unmounting_the_block () =
+  List.iter (fun backend ->
+    let app = App.create backend in
+    start app;
+    let editing = {Model.editing_uuid = "focus-block"; editing_title = "/"; caret_utf16_offset = 1} in
+    let row = journal_outline_row "focus-block" "journal" "/" "Today" 20261023 0 in
+    List.iter (fun (kind, enabled) ->
+      send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        graph_name = Some "Work"; selected_graph_id = Some "test-graph";
+        outliner_rows = [row]; journal_outliner_rows = [row];
+        projection_outliner_editing = Some editing;
+        projection_outliner_autocomplete = Option.map (fun autocomplete_kind ->
+          {Model.autocomplete_kind; autocomplete_query = ""}) kind });
+      flush app;
+      let editor = extension_node app "outliner-editor" in
+      check ~msg:"opening a picker retains the underlying editor" (editor <> -1);
+      check_eq ~msg:"picker inputs own focus while inline suggestions keep block focus"
+        (extension_property app editor "focus-enabled") (Some (Lui_protocol.BoolValue enabled)))
+      ([None, true; Some Model.CommandAutocomplete, true; Some Model.NodeAutocomplete, true;
+        Some Model.TagAutocomplete, true; Some Model.PropertyAutocomplete, true]
+       @ List.map (fun kind -> Some (Model.PickerAutocomplete kind), false)
+         ["link"; "image"; "embed"; "template"; "date"; "deadline"; "scheduled"; "youtube"]))
+    [ios_backend (); kotlin_backend ()]
+
+let retained_panes_mount_only_the_visible_editor () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    let row = journal_outline_row "shared-block" "journal-page" "Hello world" "Today" 20261023 0 in
+    let editing = { Model.editing_uuid = "shared-block"; editing_title = "Hello world"; caret_utf16_offset = 5 } in
+    let projection sidebar routes =
+      { (empty_core_projection ()) with
+        graph_name = Some "Work"; selected_graph_id = Some "test-graph";
+        sidebar; outliner_rows = [row]; journal_outliner_rows = [row];
+        node_routes = routes; projection_outliner_editing = Some editing }
+    in
+    let editor_count () =
+      Hashtbl.fold (fun _ identifier count ->
+        if identifier = "outliner-editor" then count + 1 else count)
+        (Lui_app.runtime application).Lui_runtime.runtime_extension_nodes 0
+    in
+    start application;
+    send application (Model.ApplyCoreSnapshot (projection (empty_sidebar_projection ()) []));
+    flush application;
+    check_eq ~msg:"the visible journal owns exactly one native editor" (editor_count ()) 1;
+    let sidebar = { (empty_sidebar_projection ()) with Model.selected_page = Some { Model.uuid = "journal-page"; title = "Today" } } in
+    send application (Model.ApplyCoreSnapshot (projection sidebar []));
+    flush application;
+    check_eq ~msg:"opening a journal as a page must not focus a hidden duplicate editor" (editor_count ()) 1;
+    send application (Model.RequestAppNode "journal-page");
+    let route = { (node_projection "journal-page" "journal-page" "Today" [] []) with
+      Model.node_outliner_rows = [row]; node_outliner_editing = Some editing } in
+    send application (Model.ApplyCoreSnapshot (projection sidebar [route]));
+    flush application;
+    check_eq ~msg:"a pushed page owns the editor while its retained root is read-only" (editor_count ()) 1;
+    send application (Model.RequestAppNode "shared-block");
+    let child = {route with Model.node_uuid = "shared-block"} in
+    send application (Model.ApplyCoreSnapshot (projection sidebar [route; child]));
+    flush application;
+    check_eq ~msg:"only the active route may mount the shared block's editor" (editor_count ()) 1)
+    [ios_backend (); kotlin_backend ()]
+
 let kotlin_selected_page_navigation_renders_the_opened_node () =
   let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
@@ -6862,7 +6934,7 @@ let empty_node_routes_add_the_first_block_through_the_core () =
   in
   let add_button =
     descendant_with_identifier renderer screen
-      "button.outliner.add-first-block"
+      "button.outliner.placeholder.page-a"
   in
   dispatch application (Lui_protocol.Press add_button);
   flush application;
@@ -7323,7 +7395,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   let metadata = Lui_protocol.data_attrs_decode
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the native collection fills the viewport after the first journal"
-    (List.assoc "data-first-section-count" metadata) "1";
+    (List.assoc "data-first-section-count" metadata) "2";
   check_eq ~msg:"viewport retention leaves room for native chrome"
     (List.assoc "data-first-section-inset" metadata) "136";
   check_eq ~msg:"later journal blocks use their intrinsic height"
@@ -7437,9 +7509,9 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
   let metadata = Lui_protocol.data_attrs_decode
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
-    (List.assoc "data-first-section-count" metadata) "2";
+    (List.assoc "data-first-section-count" metadata) "3";
   check_eq ~msg:"journal dates remain available outside the mounted block window"
-    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-2" metadata)
+    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-3" metadata)
     (Some "August 27th", Some "August 28th");
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
@@ -8108,6 +8180,47 @@ let tagged_nodes_replace_the_linked_references_section () =
     ) ["main"; "node"; "search"]
   ) [ios_backend; kotlin_backend]
 
+let tag_and_property_pages_hide_blocks_but_keep_objects () =
+  List.iter (fun backend ->
+    List.iter (fun destination ->
+      List.iter (fun kind ->
+        List.iter (fun populated ->
+          let application = App.create (backend ()) in
+          Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose application)) (fun () ->
+            let rows = if populated then [{(outline_row "hidden-child" "Page child") with Model.page_id = "book"}] else [] in
+            let views = {|{"ownerUuid":"book","featureType":"tagged","views":[{"uuid":"objects-view","type":"list","name":"All","rows":[{"block":{"uuid":"object-result","title":"Object result","pageId":"elsewhere"}}]}]}|} in
+            let sidebar = {(empty_sidebar_projection ()) with
+              Model.selected_page = Some {uuid = "book"; title = "Book"};
+              selected_page_is_tag = kind = "tag"; selected_page_is_property = kind = "property";
+              result_views_json = views} in
+            let routes = if destination = "main" then [] else
+              [{(node_projection "book" "book" "Book" [] []) with
+                Model.node_is_tag = kind = "tag"; node_is_property = kind = "property";
+                node_outliner_rows = rows; node_result_views_json = views}] in
+            start application;
+            if destination = "node" then send application (Model.RequestAppNode "book")
+            else if destination = "search" then begin
+              send application Model.OpenSearch;
+              send application (Model.RequestSearchNode "book")
+            end;
+            send application (apply_core_snapshot None sidebar [] false "" [] routes
+              None None [] [] rows false []);
+            flush application;
+            let renderer = Lui_app.runtime application in
+            let root = if destination = "main" then main_root renderer application
+              else descendant_with_identifier renderer (Lui_app.root_node application) "screen.node" in
+            check ~msg:"the destination is mounted" (root <> -1);
+            let find id = descendant_with_identifier renderer root id in
+            check_eq ~msg:(kind ^ " page child visibility via " ^ destination)
+              (find "outliner.block.hidden-child" <> -1) (kind = "page" && populated);
+            check_eq ~msg:(kind ^ " page placeholder visibility via " ^ destination)
+              (find "button.outliner.placeholder.book" <> -1) (kind = "page");
+            check ~msg:"objects remain rendered without the page blocks area"
+              (find "outliner.block.object-result" <> -1))) [false; true]
+      ) ["tag"; "property"; "page"]
+    ) ["main"; "node"; "search"]
+  ) [ios_backend; kotlin_backend]
+
 let thousand_nested_rows () =
   List.init 1_000 (fun index ->
     { (outline_row ("large-" ^ string_of_int index) "Nested block") with
@@ -8252,6 +8365,32 @@ let ten_thousand_blocks_mount_only_the_requested_window () =
     check ~msg:"the window stays bounded after reverse scrolling" (count_rows () <= 32)
   ) ["root"; "node"; "tag"; "mixed"; "journals"]
 
+let scrolling_keeps_the_active_editor_outside_the_visible_window () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    let rows = List.init 10_000 (fun index ->
+      { (outline_row ("retained-" ^ string_of_int index) "Block") with Model.page_id = "page" }) in
+    let editing = { Model.editing_uuid = "retained-8"; editing_title = "Unsaved draft"; caret_utf16_offset = 4 } in
+    send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+      (Some editing) None [] [] rows false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = main_root renderer application in
+    let window = descendant_with_identifier renderer root "outliner.window" in
+    let editor = extension_node application "outliner-editor" in
+    check ~msg:"the fixture mounts a real editor" (editor <> -1);
+    List.iter (fun first ->
+      dispatch application (Lui_protocol.VisibleRange (window, first, first + 19));
+      flush application;
+      check_eq ~msg:"scrolling must not dispose and recreate the active editor"
+        (extension_node application "outliner-editor") editor;
+      check_eq ~msg:"the retained editor keeps its unsaved text"
+        (extension_property application editor "title") (Some (Lui_protocol.StringValue "Unsaved draft"));
+      check ~msg:"only the window and one pinned editor may stay mounted"
+        (List.length (children renderer window) <= 33)) [100; 9_980; 0]
+  ) [ios_backend; kotlin_backend]
+
 let kotlin_large_pages_mount_only_the_requested_window () =
   let application = App.create (kotlin_backend ()) in
   start application;
@@ -8320,6 +8459,25 @@ let distant_outline_contents_are_loaded_without_replacing_the_page () =
     check ~msg:"the final block renders after hydration"
       (descendant_with_identifier renderer (root ()) "outliner.block.content-9999" <> -1)
   ) [false; true]
+
+let empty_cached_rows_remain_renderable_during_hydration () =
+  let rows = List.init 96 (fun index -> outline_row ("empty-cache-" ^ string_of_int index)
+    (if index mod 2 = 0 then "" else "Block")) in
+  let projection = { (empty_core_projection ()) with
+    Model.graph_name = Some "Work"; selected_graph_id = Some "graph"; outliner_rows = rows } in
+  let current = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection) in
+  let shells = List.mapi (fun index row -> if index < 32 then row else
+    { row with Model.row_title = ""; row_loaded = false }) rows in
+  let refreshed = Model.update current (Model.ApplyCoreSnapshot { projection with Model.outliner_rows = shells }) in
+  let cached = List.nth (View_rows.retained_outliner_rows refreshed) 40 in
+  check ~msg:"an already loaded empty block must not become a loading skeleton"
+    (View_rows.page_entry_ready (View_rows.Outline_entry cached));
+  check ~msg:"cached empty blocks still request authoritative content"
+    (View_rows.unloaded_entry_id (View_rows.Outline_entry cached) = Some "empty-cache-40");
+  let fresh = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot { projection with Model.outliner_rows = shells }) in
+  let unavailable = List.nth (View_rows.retained_outliner_rows fresh) 40 in
+  check ~msg:"a genuinely unloaded block still uses a loading skeleton"
+    (not (View_rows.page_entry_ready (View_rows.Outline_entry unavailable)))
 
 let returning_to_a_scrolled_page_keeps_hydrated_rows_mounted () =
   let application = App.create (ios_backend ()) in
@@ -8398,17 +8556,17 @@ let selected_page_waits_for_blocks_before_showing_empty_state () =
     flush application;
     let renderer = Lui_app.runtime application in
     let root = main_root renderer application in
-    check_eq ~msg:"unresolved pages never pretend to be empty"
-      (descendant_with_identifier renderer root "button.outliner.add-first-block") (-1);
+    check_eq ~msg:"only loaded cached pages offer a trailing placeholder"
+      (descendant_with_identifier renderer root "button.outliner.placeholder.page-a" <> -1) cached;
     check_eq ~msg:"only uncached pages show their loading state"
       (descendant_with_identifier renderer root "status.page-loading" <> -1) (not cached);
     let selected = { sidebar with Model.selected_page = Some page } in
     send application (apply_core_snapshot None selected [] false "" [] [] None
       None [] [] [] false []);
     flush application;
-    check ~msg:"confirmed empty pages expose Add first block"
+    check ~msg:"confirmed empty pages expose an editable placeholder"
       (descendant_with_identifier renderer (main_root renderer application)
-         "button.outliner.add-first-block" <> -1);
+         "button.outliner.placeholder.page-a" <> -1);
     check_eq ~msg:"the authoritative empty response finishes loading"
       (descendant_with_identifier renderer (main_root renderer application)
          "status.page-loading") (-1)
@@ -9262,7 +9420,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   in
   let candidate =
     {
-      Model.candidate_index = 10;
+      Model.candidate_index = 10; candidate_group = None;
       candidate_label = "Project Alpha";
       candidate_value = "page-a";
     }
@@ -9287,9 +9445,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     descendant_extension_containing_identifier renderer application chrome
       "liquid-glass" "toolbar.outliner.autocomplete"
   in
-  let autocomplete_column =
-    List.nth (children renderer autocomplete_bar) 0
-  in
+  let autocomplete_column = autocomplete_bar in
   let candidate_button =
     descendant_with_identifier renderer autocomplete_column
       "button.outliner.autocomplete.0"
@@ -9317,9 +9473,9 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     (property_string renderer candidate_button
        Lui_protocol.AccessibilityIdentifier)
     "button.outliner.autocomplete.0";
-  check_eq ~msg:"autocomplete uses main's vertically scrolling surface"
+  check_eq ~msg:"autocomplete provides a shared header above its scrolling candidates"
     (node renderer autocomplete_bar)
-    (Some Lui_protocol.Scroll);
+    (Some Lui_protocol.Column);
   check_eq ~msg:"autocomplete keeps main's maximum height"
     (property_int renderer autocomplete_bar Lui_protocol.MaxHeight)
     220;
@@ -9444,7 +9600,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   in
   let candidate =
     {
-      Model.candidate_index = 0;
+      Model.candidate_index = 0; candidate_group = None;
       candidate_label = "Project";
       candidate_value = "tag-a";
     }
@@ -9466,9 +9622,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     descendant_with_identifier renderer editor_container
       "toolbar.outliner.autocomplete"
   in
-  let autocomplete_column =
-    List.nth (children renderer autocomplete_bar) 0
-  in
+  let autocomplete_column = autocomplete_bar in
   let candidate_button =
     descendant_with_identifier renderer autocomplete_column
       "button.outliner.autocomplete.0"
@@ -9484,7 +9638,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
        "toolbar.outliner.editor" <> -1);
   check
     ~msg:"the autocomplete surface shares the visible vertical editor container"
-    (child_with_identifier renderer editor_container
+    (descendant_with_identifier renderer editor_container
        "toolbar.outliner.autocomplete"
     <> -1);
   check_eq
@@ -9492,9 +9646,9 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
     (property_string renderer autocomplete_column
        Lui_protocol.CrossAlignment)
     "stretch";
-  check_eq ~msg:"short result lists align candidates with the bottom toolbar"
-    (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "end";
-  check_eq ~msg:"candidate buttons fill their bounded horizontal row"
+  check_eq ~msg:"suggestions start below their shared header"
+    (property_string renderer autocomplete_column Lui_protocol.MainAlignment) "start";
+  check_eq ~msg:"candidate buttons fill the bounded horizontal suggestion row"
     (property_float renderer candidate_button Lui_protocol.GrowValue) 1.0;
   check_eq
     ~msg:"Kotlin does not flex rows along an unbounded scroll axis"
@@ -10421,6 +10575,8 @@ let cases =
     case "kotlin-navigation-and-search-own-composed-standard-children" kotlin_navigation_and_search_own_composed_standard_children;
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
     case "kotlin-selected-pages-retain-the-hidden-journal-pane" kotlin_selected_pages_retain_the_hidden_journal_pane;
+    case "editor-pickers-own-focus-without-unmounting-the-block" editor_pickers_own_focus_without_unmounting_the_block;
+    case "retained-panes-mount-only-the-visible-editor" retained_panes_mount_only_the_visible_editor;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
@@ -10454,8 +10610,10 @@ let cases =
     case "core-snapshot-renders-keyed-outliner-rows" core_snapshot_renders_keyed_outliner_rows;
     case "saving-nested-block-preserves-native-row-indentation" saving_nested_block_preserves_native_row_indentation;
     case "reselecting-the-current-page-preserves-loaded-rows" reselecting_the_current_page_preserves_loaded_rows;
+    case "empty-cached-rows-remain-renderable-during-hydration" empty_cached_rows_remain_renderable_during_hydration;
     case "large-node-pages-virtualize-each-nested-block" large_node_pages_virtualize_each_nested_block;
     case "scrolling-prefetches-content-before-mounting-the-next-window" scrolling_prefetches_content_before_mounting_the_next_window;
+    case "scrolling-keeps-the-active-editor-outside-the-visible-window" scrolling_keeps_the_active_editor_outside_the_visible_window;
     case "kotlin-large-pages-mount-only-the-requested-window" kotlin_large_pages_mount_only_the_requested_window;
     case "ten-thousand-blocks-mount-only-the-requested-window" ten_thousand_blocks_mount_only_the_requested_window;
     case "distant-outline-contents-load-without-replacing-the-page" distant_outline_contents_are_loaded_without_replacing_the_page;
@@ -10463,6 +10621,7 @@ let cases =
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
     case "reference-breadcrumbs-keep-their-navigation-context" reference_breadcrumbs_keep_their_navigation_context;
     case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
+    case "tag-and-property-pages-hide-blocks-but-keep-objects" tag_and_property_pages_hide_blocks_but_keep_objects;
     case "switching-graphs-resets-the-journal-viewport" switching_graphs_resets_the_journal_viewport;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;
     case "selected-page-waits-for-blocks-before-showing-empty-state" selected_page_waits_for_blocks_before_showing_empty_state;

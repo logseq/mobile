@@ -72,26 +72,28 @@ enum NodeIconAssets {
 struct NodeIconView: View {
     let icon: NodeIconPayload
     let size: CGFloat
+    var muted: Bool = false
     var body: some View {
         let glyph = NodeIconAssets.glyph(icon)
         Text(verbatim: glyph.text)
             .font(glyph.family.map { .custom($0, size: size) } ?? .system(size: size))
-            .foregroundStyle(icon.foreground)
+            .foregroundStyle(muted ? .secondary : icon.foreground)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }
 
 @MainActor enum NodeIconExtension {
-    static let fingerprint = "lui-extension-v1|9:node-icon|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:4:size:int:required:none,7:payload:string:required:none|events:"
+    static let fingerprint = "lui-extension-v1|9:node-icon|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:4:size:int:required:none,5:muted:bool:required:none,7:payload:string:required:none|events:"
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(identifier: "node-icon", fingerprint: fingerprint,
             acceptsStandardChildren: false,
-            properties: [.init(name: "payload", kind: .string, isRequired: true), .init(name: "size", kind: .int, isRequired: true)], events: []) { context in
+            properties: [.init(name: "payload", kind: .string, isRequired: true), .init(name: "size", kind: .int, isRequired: true), .init(name: "muted", kind: .bool, isRequired: true)], events: []) { context in
             guard case let .string(encoded) = context.property("payload"),
                   let icon = try? JSONDecoder().decode(NodeIconPayload.self, from: Data(encoded.utf8)),
-                  case let .int(size) = context.property("size") else { return AnyView(EmptyView()) }
-            return AnyView(NodeIconView(icon: icon, size: CGFloat(size)))
+                  case let .int(size) = context.property("size"),
+                  case let .bool(muted) = context.property("muted") else { return AnyView(EmptyView()) }
+            return AnyView(NodeIconView(icon: icon, size: CGFloat(size), muted: muted))
         })
     }
 

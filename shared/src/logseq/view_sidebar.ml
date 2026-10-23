@@ -19,7 +19,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
         ~accessibility_identifier:(View_base.sidebar_page_identifier page)
         ~on_press:navigate
         (if custom then [row ~gap:10 ~cross:`center [
-          View_base.node_icon_view ~size:20 icon_source;
+          View_base.node_icon_view ~muted:true ~size:20 icon_source;
           text ~value:(reactive View_base.sidebar_page_title page_source) []]] else [])) in
   column ~gap:0 [
     if_ ~test:(Signal.map (fun icon -> icon <> "") icon_source) (item true);

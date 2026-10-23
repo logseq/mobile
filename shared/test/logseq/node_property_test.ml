@@ -248,7 +248,170 @@ let temporal_properties_display_and_edit () = R.with_runtime (fun session runtim
   check ~msg:"clearing removes the assigned date value" (not (List.exists (fun p -> member "attr" p = `String attr)
     (properties (result (read session Q.alpha))))))
 
+let page_rename_guards_follow_master () =
+  let named n uuid title tags parent = R.entity n uuid title @
+    [put uuid "block/name" (Ds.String (Dev_query.Unicode.lowercase title))] @
+    List.map (fun ident -> put uuid "block/tags" (Ds.Ref_to (Ds.Ident ident))) tags @
+    (match parent with None -> [] | Some parent -> [put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid parent))]) in
+  let target = "40000000-0000-4000-8000-000000000001" in
+  let other = "40000000-0000-4000-8000-000000000002" in
+  let base = Ds.db_with (named 100 target "Original" ["logseq.class/Page"] None) (R.fixture ()) in
+  let validate message db uuid title accepted =
+    let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+    let expected_title = Option.value ~default:"" (Graph_read.string_value (Graph_read.value db id "block/title")) in
+    let result = Pending_projection.compile db (Pending_ops.Save_title {uuid; expected_title; title}) in
+    check_eq ~msg:message (Result.is_ok result) accepted in
+  List.iter (fun title -> validate ("invalid page title: " ^ title) base target title false)
+    [""; " \t\n"; "　"; "Has #tag"; "Nested/Page"; "2026-10-23"; "10/23/2026"];
+  List.iter (fun (source, expected) ->
+    check_eq ~msg:("page lookup names match JavaScript lowercase and NFC: " ^ source) (Node_title.name source) expected)
+    ["ΟΣ", "ος"; "ΟΣΑ", "οσα"; "Σ", "σ"; "ΣΣ", "σς"; "AΣ'A", "aσ'a"; "AΣ'", "aς'"; "İ", "i̇"];
+  validate "ordinary blocks can still be empty" base Q.alpha "" true;
+  validate "ordinary block text can contain hashtags and slashes" base Q.alpha "A #tag / text" true;
+  validate "built-in flag protects title changes"
+    (Ds.db_with [put target "logseq.property/built-in?" (Ds.Bool true)] base) target "New" false;
+  validate "internal property identifiers are protected even without a built-in flag"
+    (Ds.db_with [put target "db/ident" (Ds.Keyword "logseq.property/internal-name")] base) target "New" false;
+  validate "file entities are protected"
+    (Ds.db_with [put target "file/path" (Ds.String "logseq/rename-test.edn")] base) target "New" false;
+  validate "journal title is not a rename target"
+    (Ds.db_with [put target "block/journal-day" (Ds.Int64 20261023L)] base) target "New" false;
+  let duplicate = Ds.db_with (named 101 other "Existing" ["logseq.class/Page"] None) base in
+  validate "ordinary page duplicates are case insensitive" duplicate target "EXISTING" false;
+  let unicode = Ds.db_with (named 101 other "Café" ["logseq.class/Page"] None) base in
+  validate "page name uniqueness uses Unicode NFC" unicode target "CAFÉ" false;
+  let parented = Ds.db_with [put other "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page))] duplicate in
+  validate "ordinary page names in another parent do not collide" parented target "Existing" true;
+  let matching_parent = Ds.db_with [put target "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page))] parented in
+  validate "ordinary page names within the same parent collide" matching_parent target "Existing" false;
+  let different_tags = Ds.db_with [put target "block/tags" (Ds.Ref_to (Q.ref_uuid Q.project));
+    put other "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"))] duplicate in
+  validate "Page-only overlap allows differently tagged objects" different_tags target "Existing" true;
+  validate "a shared additional tag still collides"
+    (Ds.db_with [put other "block/tags" (Ds.Ref_to (Q.ref_uuid Q.project))] different_tags) target "Existing" false;
+  let tag = Ds.db_with (named 101 other "Another tag" ["logseq.class/Tag"] None) base in
+  validate "tag names are exact-title unique" tag other "Project" false;
+  validate "tag names are case sensitive" tag other "project" true;
+  validate "property names cannot begin with page reference syntax" base R.summary_property "[[Bad]]" false;
+  validate "user property names are exact-title unique" base R.summary_property "Score" false;
+  validate "user property names are case sensitive" base R.summary_property "score" true;
+  validate "user properties may share a built-in property's name" base R.summary_property "Status" true
+
+let page_rename_updates_lookup_search_and_references () =
+  let db = Ds.db_with [put Q.page "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Page"));
+    put Q.alpha "block/title" (Ds.String ("See [[" ^ Q.page ^ "]]"));
+    put Q.alpha "block/refs" (Ds.Ref_to (Q.ref_uuid Q.page))] (R.fixture ()) in
+  Graph_runtime_test.with_search_runtime db (fun _ conn runtime ->
+    let session = Rpc_session.create_session {Rpc_session.default_options with
+      load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
+      graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);
+      stage_operation = Some (Graph_runtime.stage runtime); prepare_operation = Some (Graph_runtime.prepare_sync runtime);
+      graph_sidebar_pages = Some (fun () -> Some {Graph_read.favorites = [{uuid = Q.page; title = "Workspace"}];
+        recent_pages = [{uuid = Q.page; title = "Workspace"}]});
+      graph_node_destination = Some (fun uuid -> Graph_read.node_destination (fun value -> Ok value) (Graph_runtime.db runtime) uuid);
+      graph_page_blocks = Some (fun uuid -> Some (Graph_runtime.blocks_for_page runtime uuid));
+      graph_search_page = Some (Graph_runtime.search_page runtime)}
+      |> Rpc_test.configure_plain_session in
+    ignore (result (Rpc_test.dispatch_json session "selectPage" Q.page));
+    ignore (result (Rpc_test.dispatch_json session "openNode" (J.to_string (`Assoc ["uuid", `String Q.page]))));
+    let before = result (Rpc_test.dispatch_json session "searchNodes" "Workspace") in
+    check ~msg:"the original name is retained in an active search before renaming"
+      (List.exists (fun hit -> member "uuid" hit = `String Q.page) (items "searchResults" before));
+    let rename = member "rename" (member "nodeProperties" (result (read session Q.page))) in
+    check_eq ~msg:"an ordinary page exposes its shared rename editor capability" (member "attr" rename) (`String "block/title");
+    check_eq ~msg:"a rename cannot target a graph that is no longer active"
+      (member "ok" (edit session Q.page rename "Wrong graph" ["graphId", `String "other-graph"])) (`Bool false);
+    let after = result (edit session Q.page rename "Café Notes" []) in
+    check_eq ~msg:"the already selected page title updates in the actual RPC response"
+      (member "title" (member "selectedPage" after)) (`String "Café Notes");
+    check_eq ~msg:"an already pushed native destination updates in place"
+      (member "title" (member "page" (List.hd (items "nodeRoutes" after)))) (`String "Café Notes");
+    List.iter (fun key -> check_eq ~msg:(key ^ " use the current title")
+      (member "title" (List.hd (items key after))) (`String "Café Notes")) ["favorites"; "recentPages"];
+    check ~msg:"the retained old-name search drops renamed pages and references immediately"
+      (not (List.exists (fun hit -> List.mem (member "uuid" hit) [`String Q.page; `String Q.alpha]) (items "searchResults" after)));
+    let db = Graph_runtime.db runtime in
+    let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.page)) in
+    check_eq ~msg:"the page lookup key updates with its title" (Graph_read.value db id "block/name") (Some (Ds.String "café notes"));
+    let hits, _ = Graph_runtime.search_page runtime ~offset:0 ~limit:20 "Café" in
+    check ~msg:"renamed pages become searchable immediately"
+      (List.exists (fun (hit : Search_index.indexed_search_hit) -> hit.uuid = Q.page && hit.title = "Café Notes") hits);
+    check ~msg:"references are reindexed with the renamed display title"
+      (List.exists (fun (hit : Search_index.indexed_search_hit) -> hit.uuid = Q.alpha && String_kit.includes ~sub:"Café Notes" hit.title) hits);
+    check_eq ~msg:"stale rename submissions never overwrite a newer title" (member "ok" (edit session Q.page rename "Stale" [])) (`Bool false);
+    List.iter (fun operation -> check_ok ~msg:"page rename compiles for sync"
+      (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime);
+    let protected = Ds.db_with [put Q.page "logseq.property/built-in?" (Ds.Bool true)] (Graph_runtime.db runtime) in
+    let protected_session, _ = R.make_session protected in
+    check_eq ~msg:"built-in pages do not expose Rename page" (member "rename" (member "nodeProperties" (result (read protected_session Q.page)))) `Null)
+
+let builtin_pages_hide_delete_and_reject_deletion_requests () =
+  let base = R.fixture () in
+  List.iter (fun (label, additions, allowed) ->
+    let db = Ds.db_with additions base in
+    let session, _ = R.make_session db in
+    let properties = member "nodeProperties" (result (read session Q.page)) in
+    check_eq ~msg:(label ^ " projects delete capability") (member "canDelete" properties) (`Bool allowed);
+    List.iter (fun backend ->
+      let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+        "selectedGraphId", `String "plain-1";
+        "selectedPage", `Assoc ["uuid", `String Q.page; "title", `String "Workspace"];
+        "nodeProperties", properties; "outlinerRows", `List []]]) in
+      Q.with_ui backend response (fun app ->
+        let host = Lui_app.runtime app in
+        let item = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.page.delete" in
+        check_eq ~msg:(label ^ " menu delete visibility") (item <> -1) allowed;
+        let requested = Model.update (App.model app) Model.RequestDeleteActivePage in
+        check_eq ~msg:(label ^ " cannot open a protected delete confirmation")
+          (requested.pending_page_deletion <> None) allowed;
+        if not allowed then (
+          let stale = { requested with Model.pending_page_deletion = Some {Model.uuid = Q.page; title = "Workspace"} } in
+          let confirmed = Model.update stale Model.ConfirmDeleteActivePage in
+          check ~msg:"a stale confirmation cannot enqueue a protected deletion"
+            (not (List.exists (function Model.DeletePageEffect _ -> true | _ -> false) confirmed.pending_effects)))))
+      [App_test.ios_backend; App_test.kotlin_backend])
+    ["ordinary page", [], true;
+     "built-in page", [put Q.page "logseq.property/built-in?" (Ds.Bool true)], false;
+     "built-in property without flag", [put Q.page "db/ident" (Ds.Keyword "logseq.property/protected-test")], false;
+     "hidden system page", [put Q.page "logseq.property/hide?" (Ds.Bool true)], false]
+
+let native_page_rename_uses_shared_editor () =
+  R.with_runtime (fun session _ _ ->
+    let node_properties = member "nodeProperties" (result (read session Q.page)) in
+    List.iter (fun backend ->
+      let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+        "selectedGraphId", `String "plain-1";
+        "selectedPage", `Assoc ["uuid", `String Q.page; "title", `String "Workspace"];
+        "nodeProperties", node_properties; "outlinerRows", `List []]]) in
+      Q.with_ui backend response (fun app ->
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let click id = let node = find id in check ~msg:id (node <> -1);
+          App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+        click "button.page.rename";
+        let id = "page.rename." ^ Q.page in
+        let input = find ("view.edit.value." ^ id) in
+        check ~msg:"Rename page reuses the shared property text editor" (input <> -1);
+        check_eq (App_test.property_string host input Lui_protocol.TextValue) "Workspace";
+        check_eq ~msg:"Rename page has no Clear value action" (find ("view.edit.clear." ^ id)) (-1);
+        App_test.dispatch app (Lui_protocol.TextChanged (input, "Renamed page")); App_test.flush app;
+        click ("view.edit.save." ^ id);
+        let payload = List.find_map (function Model.NodePropertyEffect (_, key, body) when key = id -> Some (J.from_string body) | _ -> None)
+          (App.model app).pending_effects in
+        check ~msg:"Rename page sends one existing node-property mutation" (payload <> None);
+        let payload = Option.get payload in
+        check_eq (member "blockUuid" payload) (`String Q.page);
+        check_eq (member "graphId" payload) (`String "plain-1");
+        check_eq (member "attr" payload) (`String "block/title");
+        check_eq (member "value" payload) (`String "Renamed page")))
+      [App_test.ios_backend; App_test.kotlin_backend])
+
 let cases = [
+  case "built-in page menus hide Delete and reject stale requests" builtin_pages_hide_delete_and_reject_deletion_requests;
+  case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
+  case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;
+  case "page rename updates lookup, live search, references and sync" page_rename_updates_lookup_search_and_references;
   case "dates and datetimes display, edit and clear without epoch labels" temporal_properties_display_and_edit;
   case "properties follow node navigation without expanding ordinary blocks" projection_and_navigation;
   case "inherited empty properties, hidden metadata and closed values" inherited_empty_and_closed_values;

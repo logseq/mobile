@@ -5,6 +5,28 @@ let text = function `String value -> value | _ -> ""
 let list = function `List values -> values | _ -> []
 let decode raw = try J.from_string raw with _ -> `Null
 let has_properties raw = list (field "properties" (decode raw)) <> []
+let rename_page raw =
+  let source = decode raw in
+  let owner = text (field "ownerUuid" source) and property = field "rename" source in
+  if owner <> "" && field "editable" property = `Bool true then Some (owner, property) else None
+
+let display_value property =
+  let raw = text (field "text" property) in
+  if field "kind" property <> `String "datetime" then raw else
+  match float_of_string_opt (text (field "editorValue" property)) with
+  | Some millis when Float.is_finite millis && abs_float millis <= 8640000000000000. ->
+    let value = Unix.localtime (millis /. 1000.) in
+    let now = Unix.localtime (Unix.gettimeofday ()) in
+    let day t = t.Unix.tm_year, t.tm_mon, t.tm_mday in
+    let noon, _ = Unix.mktime {now with tm_hour = 12; tm_min = 0; tm_sec = 0} in
+    let date = if day value = day now then "Today"
+      else if day value = day (Unix.localtime (noon +. 86400.)) then "Tomorrow"
+      else if day value = day (Unix.localtime (noon -. 86400.)) then "Yesterday"
+      else let months = [|"Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"|] in
+        Printf.sprintf "%s %d%s" months.(value.tm_mon) value.tm_mday
+          (if value.tm_year = now.tm_year then "" else ", " ^ string_of_int (value.tm_year + 1900)) in
+    Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
+  | _ -> raw
 
 let adaptive_row stacked children : t = fun context parent ->
   let node = Lui_ui.extension context "native-property-row" in
@@ -13,7 +35,7 @@ let adaptive_row stacked children : t = fun context parent ->
   List.iter (fun child -> ignore (child context (Some node))) children;
   node
 
-let view ~render_block model_source raw_source send : t =
+let view ?(compact = false) ~render_block model_source raw_source send : t =
  fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
@@ -25,8 +47,12 @@ let view ~render_block model_source raw_source send : t =
     let all_properties = own (Signal.map (fun json -> list (field "properties" json)) source) in
     let properties = own (Signal.map2 (fun values expanded ->
       if expanded then values else List.filteri (fun index _ -> index < 3) values) all_properties (Signal.value expanded)) in
-    View_base.with_string_prop Lui_protocol.FontSize "16" (column ~gap:2 ~padding_horizontal:16 ~margin_bottom:12 ~cross:`stretch
-      ~accessibility_identifier:("properties." ^ owner) [
+    let layout children = if compact then
+      scroll ~orientation:`horizontal ~height:28 ~accessibility_identifier:("properties." ^ owner)
+        [row ~gap:16 ~cross:`center children]
+      else column ~gap:2 ~padding_horizontal:16 ~margin_bottom:12 ~cross:`stretch
+        ~accessibility_identifier:("properties." ^ owner) children in
+    View_base.with_string_prop Lui_protocol.FontSize (if compact then "14" else "16") (layout [
       keyed ~source:properties ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
         ~mount:(fun property_source -> fun context parent ->
           let own source = Signal.own_signal context.ui_scope source in
@@ -62,12 +88,18 @@ let view ~render_block model_source raw_source send : t =
           let send_block = function
             | Model.BeginOutlinerEdit uuid -> edit ~value_uuid:uuid (); true
             | action -> send action in
-          let label = Lui_elements.text ~value_signal:(own (Signal.map (fun p -> text (field "title" p)) property_source))
+          let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
+            | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
+          let label = match task_icon with
+            | Some name -> icon ~name:(`app name) ~width:20 ~height:20 ~foreground:"muted-foreground"
+                ~tooltip:(text (field "title" first))
+                ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) []
+            | None -> Lui_elements.text ~value_signal:(own (Signal.map (fun p -> text (field "title" p)) property_source))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
-            ~min_height:32 ~padding_horizontal:0 ~padding_vertical:0 ~grow:1.0
-            ~text_signal:(own (Signal.map (fun p -> let value = text (field "text" p) in if value = "" then "Empty" else value) property_source))
+            ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:(if compact then 0.0 else 1.0)
+            ~text_signal:(own (Signal.map (fun p -> let value = display_value p in if value = "" then "Empty" else value) property_source))
             ~label:(text (field "title" first)) ~disabled:(field "editable" first <> `Bool true)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
           let checkbox_value = checkbox ~foreground:"muted-foreground" ~width:32 ~height:32
@@ -79,8 +111,10 @@ let view ~render_block model_source raw_source send : t =
               Signal.set checked value;
               submit ["attr", `String attr; "expected", field "raw" (Signal.sample property_source);
                 "value", `String (string_of_bool value)] | _ -> ()) [] in
-          (column ~gap:2 ~cross:`stretch [
-            adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) [
+          let fields children = if compact then row ~gap:6 ~cross:`center children
+            else adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) children in
+          (column ~gap:2 ~cross:(if compact then `start else `stretch) [
+            fields [
               label;
               dyn (fun text_layout -> if text_layout then
                 dyn (fun empty -> if empty then row [value] else box ~opacity:0.72 [

@@ -30,6 +30,7 @@ import com.logseq.app.ui.LogseqTheme
 import com.logseq.app.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -41,6 +42,7 @@ import org.junit.runner.RunWith
 class AndroidComposerMenuTest {
     @get:Rule val ui = createComposeRule()
     private var bridge: LogseqNativeBridge? = null
+    private var patchFilter: LuiPatchFilter? = null
     private val events = mutableListOf<LuiEvent>()
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
@@ -53,6 +55,7 @@ class AndroidComposerMenuTest {
             icons = logseqIconResolver,
         )
         val filter = LuiPatchFilter(backend)
+        patchFilter = filter
         native = LogseqNativeBridge(onPatch = { filter.applyJson(it) })
         bridge = native
         val root = native.initialize(authenticationCode = 3)
@@ -142,6 +145,108 @@ class AndroidComposerMenuTest {
         ui.onNodeWithTag("field.composer").assertDoesNotExist()
         ui.onNodeWithTag("button.composer.expand").assertIsDisplayed().performClick()
         ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
+    }
+
+    private fun effect(kind: String): JSONObject {
+        var found: JSONObject? = null
+        ui.waitUntil(timeoutMillis = 5000) {
+            ui.runOnIdle {
+                repeat(24) {
+                    val raw = bridge!!.takeEffect()
+                    if (raw.isNotEmpty()) {
+                        val result = JSONObject(raw)
+                        result.optString("patch").takeIf { it.isNotEmpty() }?.let { patchFilter!!.applyJson(it) }
+                        result.optJSONObject("effect")?.let { if (it.optString("kind") == kind) found = it }
+                    }
+                }
+            }
+            found != null
+        }
+        return found!!
+    }
+
+    private fun resolve(effect: JSONObject, succeeded: Boolean = true) = ui.runOnIdle {
+        bridge!!.resolveEffect(effect.getLong("id"), succeeded, if (succeeded) "" else "Storage failed")
+            .takeIf { it.isNotEmpty() }?.let { patchFilter!!.applyJson(it) }
+    }
+
+    private fun tagCatalog(load: JSONObject, graph: String = "composer-test", tag: String = "project", title: String = "Project") {
+        ui.runOnIdle {
+            bridge!!.applySnapshot(JSONObject().put("ok", true).put("result", JSONObject()
+                .put("selectedGraphId", graph).put("composerTagChoices", org.json.JSONArray()
+                    .put(JSONObject().put("uuid", tag).put("title", title)))).toString())
+                .takeIf { it.isNotEmpty() }?.let { patchFilter!!.applyJson(it) }
+        }
+        resolve(load)
+    }
+
+    @Test fun tagsUseTheSharedNativePickerAndRecoverFailedCaptures() {
+        composer()
+        val attachment = ui.onNodeWithTag("button.attachment").fetchSemanticsNode().boundsInRoot
+        val status = ui.onNodeWithTag("button.task-status").fetchSemanticsNode().boundsInRoot
+        val tags = ui.onNodeWithTag("button.composer.tags").fetchSemanticsNode().boundsInRoot
+        assertTrue("Hashtag follows attachment and task status", attachment.left < status.left && status.left < tags.left)
+        fun openTags() {
+            ui.onNodeWithTag("button.composer.tags").performClick()
+            tagCatalog(effect("load-composer-tags"))
+            ui.onNodeWithTag("view.edit.value.composer.tags").assertIsDisplayed()
+        }
+        openTags()
+        ui.onNodeWithTag("view.edit.option.composer.tags.project").performClick()
+        ui.onNodeWithTag("view.edit.save.composer.tags").performClick()
+        ui.onNodeWithTag("button.composer.tag.remove.project").assertIsDisplayed()
+        openTags()
+        ui.onNodeWithTag("view.edit.value.composer.tags").performTextInput("Mobile")
+        ui.onNodeWithTag("view.edit.create.composer.tags").performClick()
+        ui.onNodeWithTag("view.edit.save.composer.tags").performClick()
+        ui.onNodeWithTag("button.composer.tag.remove.new:mobile").assertIsDisplayed()
+        ui.onNodeWithTag("button.composer.tag.remove.project").performClick()
+        openTags()
+        ui.onNodeWithTag("view.edit.value.composer.tags").performTextInput("Discard")
+        ui.onNodeWithTag("view.edit.create.composer.tags").performClick()
+        ui.onNodeWithTag("view.edit.cancel.composer.tags").performClick()
+        ui.onNodeWithTag("button.composer.tag.remove.new:discard").assertDoesNotExist()
+        ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
+        ui.onNodeWithTag("button.send").performClick()
+        val send = effect("send-tagged")
+        val payload = JSONObject(send.getString("text"))
+        assertEquals("Unsent draft 中文", payload.getString("text"))
+        assertEquals("Mobile", payload.getJSONObject("tags").getJSONArray("newValues").getString(0))
+        assertEquals(0, payload.getJSONObject("tags").getJSONArray("selectedValues").length())
+        resolve(send, succeeded = false)
+        ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
+        ui.onNodeWithTag("button.composer.tag.remove.new:mobile").assertIsDisplayed().performClick()
+        ui.onNodeWithTag("button.send").performClick()
+        val retry = effect("send-capture")
+        assertEquals("Unsent draft 中文", retry.getString("text"))
+        resolve(retry)
+        ui.onNodeWithTag("field.composer").assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("")))
+        ui.onNodeWithTag("button.composer.tag.remove.new:mobile").assertDoesNotExist()
+    }
+
+    @Test fun changingGraphsDismissesOldTagsAndIgnoresAnOldCatalogFailure() {
+        composer()
+        ui.onNodeWithTag("button.composer.tags").performClick()
+        tagCatalog(effect("load-composer-tags"))
+        ui.onNodeWithTag("view.edit.option.composer.tags.project").performClick()
+        ui.onNodeWithTag("view.edit.save.composer.tags").performClick()
+        ui.onNodeWithTag("button.composer.tags").performClick()
+        val old = effect("load-composer-tags")
+        ui.runOnIdle {
+            bridge!!.applySnapshot("""{"ok":true,"result":{"selectedGraphId":"other","graphName":"Other","isGraphUnlocked":true}}""")
+                .takeIf { it.isNotEmpty() }?.let { patchFilter!!.applyJson(it) }
+        }
+        ui.onNodeWithTag("button.composer.tag.remove.project").assertDoesNotExist()
+        ui.onNodeWithTag("view.edit.value.composer.tags").assertDoesNotExist()
+        ui.onNodeWithTag("button.composer.tags").performClick()
+        val current = effect("load-composer-tags")
+        resolve(old, succeeded = false)
+        tagCatalog(current, graph = "other", tag = "book", title = "Book")
+        ui.onNodeWithTag("view.edit.option.composer.tags.project").assertDoesNotExist()
+        ui.onNodeWithTag("view.edit.option.composer.tags.book").assertIsDisplayed().performClick()
+        ui.onNodeWithTag("view.edit.save.composer.tags").performClick()
+        ui.onNodeWithTag("button.composer.tag.remove.book").assertIsDisplayed()
     }
 
     private fun retainedMenu(enabled: Boolean = true) {

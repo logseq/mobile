@@ -49,6 +49,7 @@ let outliner_editor_schema () =
       Lui_extension.property "caret-utf16-offset" IntScalar true None;
       Lui_extension.property "selection-revision" IntScalar true None;
       Lui_extension.property "input-policy" StringScalar true None;
+      Lui_extension.property "focus-enabled" BoolScalar true None;
     ]
     [
       Lui_extension.event "text-change"
@@ -56,6 +57,10 @@ let outliner_editor_schema () =
           Lui_extension.event_field "title" StringScalar true;
           Lui_extension.event_field "caret-utf16-offset" IntScalar true;
         ];
+      Lui_extension.event "paste"
+        [Lui_extension.event_field "title" StringScalar true;
+         Lui_extension.event_field "caret-utf16-offset" IntScalar true];
+      Lui_extension.event "paste-content" [Lui_extension.event_field "value" StringScalar true];
       Lui_extension.event "return"
         [
           Lui_extension.event_field "title" StringScalar true;
@@ -104,7 +109,7 @@ let node_icon_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "node-icon" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] false []
-    [property "payload" StringScalar true None; property "size" IntScalar true None] []
+    [property "payload" StringScalar true None; property "size" IntScalar true None; property "muted" BoolScalar true None] []
 
 let outliner_block_row_schema () =
   let open Lui_protocol in
@@ -206,6 +211,13 @@ let property_row_schema () =
   component "native-property-row" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
     true [] [property "stacked" BoolScalar true None] []
 
+let outliner_continuation_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "outliner-continuation" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "guide-count" IntScalar true None; property "identifier" StringScalar true None;
+      property "bullet-depth" IntScalar true None] []
+
 let property_date_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -219,6 +231,7 @@ let extension_registry () =
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (property_date_schema ());
+  Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry (outliner_block_row_schema ());
   Lui_extension.register_component registry

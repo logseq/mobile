@@ -79,6 +79,7 @@ let block_json (block : Model.block) =
   Wire.json_object
     ([ ("uuid", `String block.uuid)
      ; ("title", `String block.title)
+     ; ("displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title)))
      ; ("pageId", `String block.page_id)
      ; ("createdAt", `Int block.created_at)
      ; ("updatedAt", `Int block.updated_at)
@@ -89,6 +90,7 @@ let block_json (block : Model.block) =
      ; ("breadcrumbs", `List (List.map summary_json block.breadcrumbs))
      ; ("markup", markup_json block)
      ]
+     @ (match block.display_type with Some typ -> ["displayType", `String typ] | None -> [])
      @ (match block.order with
         | Some order -> [ ("order", `String order) ]
         | None -> [])
@@ -313,13 +315,16 @@ let outliner_candidates_json context state =
   Wire.json_list
     (match Outliner.autocomplete state with
      | Some request ->
+       let groups = Hashtbl.create 9 in
        List.map
          (fun (candidate : Outliner.outliner_candidate) ->
+           let group = if request.kind <> Outliner.Command || String.trim request.query <> "" then None
+             else Option.bind (Editor_command.group candidate.value) (fun group ->
+               if Hashtbl.mem groups group then None
+               else (Hashtbl.add groups group (); Some group)) in
            Wire.json_object
-             [
-               ("label", `String candidate.label)
-             ; ("value", `String candidate.value)
-             ])
+             (["label", `String candidate.label; "value", `String candidate.value]
+              @ match group with Some group -> ["group", `String group] | None -> []))
          (Outliner.autocomplete_candidates context request)
      | None -> [])
 
@@ -328,6 +333,8 @@ let autocomplete_kind_json kind =
   | Outliner.Node -> "node"
   | Outliner.Tag -> "tag"
   | Outliner.Property -> "property"
+  | Outliner.Command -> "command"
+  | Outliner.Picker picker -> Editor_command.picker_name picker
 
 let outliner_state_json (state : Outliner.outliner_state) =
   Wire.json_object
@@ -373,6 +380,8 @@ let outliner_command_json (command : Effects.outliner_platform_command) =
       ("focusBlock", "uuid", `String uuid)
     | Effects.Confirm_delete uuids ->
       ("confirmDelete", "uuids", Wire.json_strings uuids)
+    | Effects.Set_clipboard_blocks text ->
+      ("setClipboardBlocks", "text", `String text)
     | Effects.Set_clipboard_text text ->
       ("setClipboardText", "text", `String text)
     | Effects.Set_clipboard_references uuids ->

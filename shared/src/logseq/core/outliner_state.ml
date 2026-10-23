@@ -7,7 +7,7 @@ module Order = Fractional_order
 module Ref_text = Ref_text
 module Search = Search_index
 
-type reducer_autocomplete_kind = Node | Tag | Property
+type reducer_autocomplete_kind = Node | Tag | Property | Command | Picker of Editor_command.picker
 
 type reducer_autocomplete =
   { kind : reducer_autocomplete_kind
@@ -31,6 +31,7 @@ type outliner_state =
   ; selected : Sset.t
   ; pending_deletion : string list
   ; autocomplete : reducer_autocomplete option
+  ; completion_dismissed : bool
   ; collapsed : Sset.t
   ; zoomed : string list
   }
@@ -87,6 +88,8 @@ type outliner_priority =
 type outliner_message =
   | Tap_block of string
   | Long_press_block of string
+  | Paste_content of Block_clipboard.content
+  | Text_pasted of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
   | Return_pressed
@@ -96,6 +99,9 @@ type outliner_message =
   | Toolbar of outliner_toolbar
   | Drop_blocks of outliner_drop
   | Choose_autocomplete of string
+  | Search_autocomplete of string
+  | Submit_autocomplete of string
+  | Dismiss_autocomplete
   | Confirm_delete
   | Save_editing
   | Cancel_editing
@@ -111,6 +117,7 @@ type outliner_haptic = Selection | Impact
 
 type outliner_split =
   { split_uuid : string
+  ; split_placement : outliner_placement
   ; split_expected_title : string
   ; before : string
   ; after : string
@@ -135,6 +142,8 @@ type outliner_root =
 
 type outliner_command =
   | Haptic of outliner_haptic
+  | Execute_editor of Editor_command.operation
+  | Editor_error of string
   | Commit_title of Ops.pending_title
   | Split_at of outliner_split
   | Merge_into_previous of outliner_merge
@@ -150,12 +159,16 @@ type outliner_command =
   | Take_photo of string
   | Record_audio of string
   | Insert_root_block of outliner_root
+  | Copy_blocks of string list
+  | Paste_blocks of Block_clipboard.content
   | Copy_text of string
   | Copy_references of string list
   | Copy_urls of string list
 
 type outliner_context =
-  { blocks : Model.block list
+  { graph_id : string option
+  ; db : Datascript.db option
+  ; blocks : Model.block list
   ; pages : outliner_candidate list
   ; tags : outliner_candidate list
   ; label_values : (string, Sset.t) Hashtbl.t
@@ -177,6 +190,7 @@ let empty =
     selected = Sset.empty;
     pending_deletion = [];
     autocomplete = None;
+    completion_dismissed = false;
     collapsed = Sset.empty;
     zoomed = [];
   }
@@ -217,13 +231,15 @@ let duplicated_of label_values =
 let duplicated_labels candidates =
   duplicated_of (candidate_label_values candidates)
 
-let context ?(search_nodes = fun _ -> []) ?is_block_reference blocks pages tags =
+let context ?graph_id ?db ?(search_nodes = fun _ -> []) ?is_block_reference blocks pages tags =
   let is_block_reference = match is_block_reference with
     | Some resolve -> resolve
     | None -> fun uuid -> List.exists (fun (block : Model.block) ->
         block.uuid = uuid && block.page_id <> uuid) blocks in
   let label_values = candidate_label_values (pages @ tags) in
   {
+    graph_id;
+    db;
     blocks;
     pages;
     tags;
@@ -271,36 +287,10 @@ let display_block_title (context : outliner_context) (block : Model.block) =
     (summary_title dup (block.references @ block.tags))
     block.title
 
-let utf8_sequence_length byte =
-  if byte land 128 = 0 then 1
-  else if byte land 224 = 192 then 2
-  else if byte land 240 = 224 then 3
-  else if byte land 248 = 240 then 4
-  else 1
-
-let utf16_units byte = if utf8_sequence_length byte = 4 then 2 else 1
-
-let byte_index_of_utf16 value offset =
-  let rec loop index units =
-    if index >= String.length value || units >= max 0 offset then index
-    else
-      let byte = Char.code value.[index] in
-      loop
-        (min (String.length value) (index + utf8_sequence_length byte))
-        (units + utf16_units byte)
-  in
-  loop 0 0
-
-let utf16_length value =
-  let rec loop index units =
-    if index >= String.length value then units
-    else
-      let byte = Char.code value.[index] in
-      loop
-        (min (String.length value) (index + utf8_sequence_length byte))
-        (units + utf16_units byte)
-  in
-  loop 0 0
+let utf8_sequence_length = String_kit.utf8_sequence_length
+let utf16_units = String_kit.utf16_units
+let byte_index_of_utf16 = String_kit.byte_index_of_utf16
+let utf16_length = String_kit.utf16_length
 
 let prefix_at value caret = String.sub value 0 (byte_index_of_utf16 value caret)
 
@@ -330,6 +320,31 @@ let rec take_n n xs =
   else match xs with [] -> [] | x :: rest -> x :: take_n (n - 1) rest
 
 let autocomplete_candidates (context : outliner_context) request =
+  match request.kind with
+  | Command -> List.map (fun (e : Editor_command.entry) -> {label = e.label; value = e.id})
+      (Editor_command.candidates context.db request.query)
+  | Picker Editor_command.Template ->
+    (match context.db with None -> [] | Some db ->
+      (match Datascript.entid db "db/ident" (Datascript.Keyword "logseq.class/Template") with
+       | None -> []
+       | Some root ->
+         Graph_read.class_descendants db root |> List.concat_map (fun cls ->
+           Datascript_value.datoms_by_ref db Datascript.Aevt "block/tags" cls |> List.of_seq)
+         |> List.filter_map (fun (d : Datascript.datom) ->
+           Option.bind (Graph_read.entity_summary (fun x -> Ok x) db d.e) (fun summary ->
+             if includes_normalized_query summary.title (String.lowercase_ascii request.query)
+             then Some {label = summary.title; value = summary.uuid} else None))
+         |> List.sort_uniq compare |> take_n 30))
+  | Picker Editor_command.Embed ->
+    let candidates = context.search_nodes request.query @ context.pages @ List.map
+      (fun (b : Model.block) -> {label = b.title; value = b.uuid}) context.blocks in
+    let seen = Hashtbl.create 32 in
+    List.filter (fun (c : outliner_candidate) ->
+      if Hashtbl.mem seen c.value || String.trim c.label = ""
+         || not (includes_normalized_query c.label (String.lowercase_ascii request.query)) then false
+      else (Hashtbl.add seen c.value (); true)) candidates |> take_n 30
+  | Picker _ -> []
+  | Node | Tag | Property ->
   let query = String_kit.trim request.query in
   let normalized = String.lowercase_ascii query in
   let raw =
@@ -345,6 +360,7 @@ let autocomplete_candidates (context : outliner_context) request =
       List.map
         (fun label -> { label; value = label })
         [ "status"; "tags"; "alias"; "priority" ]
+    | Command | Picker _ -> []
   in
   let fuzzy = request.kind = Tag && normalized <> "" in
   let seen = Hashtbl.create 32 in
@@ -422,7 +438,7 @@ let completion_prefix prefix =
       if code_width <> 0 then "" else Bytes.sub_string visible start (length - start)
     else if prefix.[index] = '\\' && code_width = 0 && index + 1 < length then begin
       (match prefix.[index + 1] with
-       | '#' | '[' | ':' -> Bytes.set visible (index + 1) ' '
+       | '#' | '[' | ':' | '/' -> Bytes.set visible (index + 1) ' '
        | _ -> ());
       scan (index + 2) code_width start
     end else if prefix.[index] = '`' then
@@ -438,7 +454,9 @@ let completion_prefix prefix =
 let autocomplete_for title caret =
   let prefix = completion_prefix
     (Ref_text.completion_prefix title (byte_index_of_utf16 title caret)) in
-  match last_substring prefix "[[" with
+  match token_request Command '/' prefix with
+  | Some request -> Some request
+  | None -> match last_substring prefix "[[" with
   | Some index ->
     if not (contains_from prefix (index + 2) "]]") then
       Some
@@ -533,6 +551,7 @@ let complete (context : outliner_context) (editing : editor_draft) kind value =
         | None -> 0
       in
       Some (start, value ^ ":: ")
+    | Command | Picker _ -> None
   in
   match completion with
   | Some (start, replacement) ->
@@ -585,7 +604,7 @@ let remove_tag_token (editing : editor_draft) =
       }
   | None -> None
 
-let commit_effect (context : outliner_context) editing =
+let commit_effect ?(trim = false) (context : outliner_context) editing =
   match editing with
   | Some (editing : editor_draft) ->
     let expected =
@@ -595,14 +614,15 @@ let commit_effect (context : outliner_context) editing =
           { block with title = editing.expected_title }
       | None -> editing.expected_title
     in
-    if expected = editing.title then []
+    let title = if trim then String_kit.trim editing.title else editing.title in
+    if expected = title then []
     else
       [
         Commit_title
           {
             uuid = editing.uuid;
             expected_title = editing.expected_title;
-            title = editing.title;
+            title;
           };
       ]
   | None -> []
@@ -965,9 +985,9 @@ let step (state : outliner_state) commands = (state, commands)
 let leave_interaction context (state : outliner_state) =
   step
     { state with editing = None; selected = Sset.empty; autocomplete = None }
-    (commit_effect context state.editing)
+    (commit_effect ~trim:true context state.editing)
 
-let split_editing (state : outliner_state) (editing : editor_draft) =
+let split_editing context (state : outliner_state) (editing : editor_draft) =
   let index = byte_index_of_utf16 editing.title editing.caret in
   step
     { state with editing = None; autocomplete = None }
@@ -975,6 +995,9 @@ let split_editing (state : outliner_state) (editing : editor_draft) =
       Split_at
         {
           split_uuid = editing.uuid;
+          split_placement = (if index = 0 && not (String_kit.is_blank editing.title) then Before
+            else if not (Sset.mem editing.uuid state.collapsed)
+              && sorted_siblings context (Some editing.uuid) <> [] then Inside else After);
           split_expected_title = editing.expected_title;
           before = String.sub editing.title 0 index;
           after =
@@ -1002,8 +1025,8 @@ let split_or_outdent (context : outliner_context) (state : outliner_state)
       step
         { state with editing = Some editing; autocomplete = None }
         (commit_effect context (Some editing) @ [ Reparent_blocks moves ])
-    | None -> split_editing state editing
-  else split_editing state editing
+    | None -> split_editing context state editing
+  else split_editing context state editing
 
 let start_editing context (state : outliner_state) block caret =
   {
@@ -1180,8 +1203,77 @@ let toolbar_reorder context (state : outliner_state) up_ =
   | Some moves -> step state [ Reparent_blocks moves; Haptic Impact ]
   | None -> step state [ Haptic Impact ]
 
+let replace_slash (editing : editor_draft) =
+  let finish = byte_index_of_utf16 editing.title editing.caret in
+  match String.rindex_opt (String.sub editing.title 0 finish) '/' with
+  | None -> editing
+  | Some start -> {editing with title = replace_range editing.title start finish "";
+      caret = utf16_length (String.sub editing.title 0 start)}
+
+let apply_editor_action context state editing action =
+  let open Editor_command in
+  let finish editing commands = step {state with editing = Some editing; autocomplete = None}
+    (commands @ [Haptic Selection]) in
+  match action with
+  | Insert (value, backward) -> finish (insert_at_caret editing value backward) []
+  | Time ->
+    let tm = Unix.localtime (Unix.gettimeofday ()) in
+    finish (insert_at_caret editing (Printf.sprintf "%02d:%02d" tm.tm_hour tm.tm_min) 0) []
+  | Journal offset ->
+    let tm = Unix.localtime (Unix.gettimeofday ()) in
+    let seconds, _ = Unix.mktime {tm with tm_mday = tm.tm_mday + offset} in
+    let ms = int_of_float (seconds *. 1000.) in
+    finish (insert_at_caret editing (journal_reference context.db ms) 0) [Execute_editor (Ensure_journal ms)]
+  | Pick picker ->
+    step {state with editing = Some editing; autocomplete = Some {kind = Picker picker; query = ""}} []
+  | Code language when String.trim editing.title <> ""
+      || Option.bind (find_block context editing.uuid) (fun block -> block.Model.display_type) <> None ->
+    step {state with editing = None; autocomplete = None}
+      (commit_effect ~trim:true context (Some editing) @ [Execute_editor (Insert_code (editing.uuid, language))])
+  | Properties _ | Choice _ | Code _ | Number _ ->
+    finish editing (commit_effect context (Some editing) @ [Execute_editor (Apply (editing.uuid, action))])
+
+let submit_completion context state value =
+  match state.editing, state.autocomplete with
+  | Some editing, Some {kind = Picker picker; _} ->
+    let open Editor_command in
+    let inserted result = match result with
+      | Ok value -> apply_editor_action context state editing (Insert (value, 0))
+      | Error message -> step state [Editor_error message] in
+    (match picker with
+     | Link | Image -> inserted (link ~image:(picker = Image) value)
+     | Date -> (match date_ms value with
+       | Error message -> step state [Editor_error message]
+       | Ok ms -> let next, commands = inserted (Ok (journal_reference context.db ms)) in
+         step next (commands @ [Execute_editor (Ensure_journal ms)]))
+     | Deadline | Scheduled ->
+       (match int_of_string_opt value with
+        | Some _ -> apply_editor_action context state editing
+            (Choice ((if picker = Deadline then "logseq.property/deadline" else "logseq.property/scheduled"), Some value))
+        | None -> step state [Editor_error "Choose a date and time"])
+     | Youtube -> inserted (Result.map (fun seconds -> "{{youtube-timestamp " ^ string_of_int seconds ^ "}}") (timestamp value))
+     | Embed | Template -> step state [])
+  | _ -> step state []
+
 let choose_completion context (state : outliner_state) value =
   match (state.editing, state.autocomplete) with
+  | Some editing, Some {kind = Command; _} ->
+    (match autocomplete_for editing.title editing.caret with
+     | Some {kind = Command; query} ->
+       (match List.find_opt (fun (entry : Editor_command.entry) -> entry.id = value)
+           (Editor_command.candidates context.db query) with
+        | Some entry -> apply_editor_action context state (replace_slash editing) entry.action
+        | None -> step state [])
+     | _ -> step state [])
+  | Some editing, Some ({kind = Picker (Editor_command.Embed | Editor_command.Template as picker); _} as request) ->
+    if not (List.exists (fun (c : outliner_candidate) -> c.value = value) (autocomplete_candidates context request))
+    then step state []
+    else if picker = Editor_command.Embed then
+      step {state with autocomplete = None; editing = None}
+        (commit_effect context (Some editing) @ [Execute_editor (Editor_command.Embed_node (editing.uuid, value, String.trim editing.title = "")); Haptic Selection])
+    else
+      step {state with autocomplete = None; editing = None}
+        [Execute_editor (Editor_command.Apply_template (editing.uuid, value, editing.title)); Haptic Selection]
   | Some editing, Some request
     when autocomplete_for editing.title editing.caret = Some request ->
     let context = if request.kind = Node && String_kit.trim request.query <> "" then
@@ -1249,6 +1341,21 @@ let rec take_while pred xs =
   | [] -> []
   | x :: rest -> if pred x then x :: take_while pred rest else []
 
+let enter context state editing =
+  match state.autocomplete with
+  | Some ({kind = (Command | Node | Tag | Property); _} as request) ->
+    (match autocomplete_candidates context request with
+     | first :: _ -> choose_completion context {state with editing = Some editing} first.value
+     | [] -> step state [])
+  | Some _ -> step state []
+  | None ->
+    if Option.fold ~none:false ~some:(fun block -> List.mem block.Model.display_type [Some "code"; Some "math"])
+      (find_block context editing.uuid) then
+      let index = byte_index_of_utf16 editing.title editing.caret in
+      step {state with editing = Some {editing with
+        title = replace_range editing.title index index "\n"; caret = editing.caret + 1}} []
+    else split_or_outdent context state editing
+
 let update context (state : outliner_state) message =
   let state =
     {
@@ -1273,7 +1380,8 @@ let update context (state : outliner_state) message =
              with
              selected = Sset.empty;
            }
-           (commit_effect context state.editing)
+           (commit_effect ~trim:(Option.fold ~none:false
+              ~some:(fun (editing : editor_draft) -> editing.uuid <> uuid) state.editing) context state.editing)
        | None -> step state [])
   | Long_press_block uuid ->
     step
@@ -1283,8 +1391,15 @@ let update context (state : outliner_state) message =
         selected = Sset.singleton uuid;
         autocomplete = None;
       }
-      (commit_effect context state.editing @ [ Haptic Selection ])
-  | Text_changed value ->
+      (commit_effect ~trim:true context state.editing @ [ Haptic Selection ])
+  | Paste_content content ->
+    (match state.editing with
+     | Some editing when editing.uuid = content.Block_clipboard.target_uuid ->
+       let title, caret = Block_clipboard.inline content in
+       step {state with editing = Some {editing with title; caret};
+         autocomplete = None; completion_dismissed = true} [Paste_blocks content]
+     | _ -> step state [Editor_error "Paste target is no longer being edited"])
+  | Text_pasted value | Text_changed value ->
     (match state.editing with
      | Some editing ->
        step
@@ -1292,7 +1407,15 @@ let update context (state : outliner_state) message =
            state with
            editing =
              Some { editing with title = value.title; caret = value.caret };
-           autocomplete = autocomplete_for value.title value.caret;
+           autocomplete = (match message with Text_pasted _ -> None | _ ->
+             let request = autocomplete_for value.title value.caret in
+             let prefix = prefix_at value.title value.caret in
+             let fresh = editing.title <> value.title &&
+               List.exists (fun suffix -> String_kit.ends_with ~suffix prefix) ["/"; "[["; "#"] in
+             if state.completion_dismissed && not fresh then None else request);
+           completion_dismissed = (match message with Text_pasted _ -> true | _ ->
+             state.completion_dismissed && not (editing.title <> value.title &&
+               List.exists (fun suffix -> String_kit.ends_with ~suffix (prefix_at value.title value.caret)) ["/"; "[["; "#"]));
          }
          []
      | None -> step state [])
@@ -1310,14 +1433,21 @@ let update context (state : outliner_state) message =
          []
      | None -> step state [])
   | Choose_autocomplete value -> choose_completion context state value
+  | Dismiss_autocomplete -> step {state with autocomplete = None; completion_dismissed = true} []
+  | Search_autocomplete query ->
+    (match state.autocomplete with
+     | Some ({kind = Picker (Editor_command.Embed | Editor_command.Template); _} as request) ->
+       step {state with autocomplete = Some {request with query}} []
+     | _ -> step state [])
+  | Submit_autocomplete value -> submit_completion context state value
   | Return_pressed ->
     (match state.editing with
-     | Some editing -> split_or_outdent context state editing
+     | Some editing -> enter context state editing
      | None -> step state [])
   | Return_pressed_with_text value ->
     (match state.editing with
      | Some editing ->
-       split_or_outdent context state
+       enter context state
          { editing with title = value.title; caret = value.caret }
      | None -> step state [])
   | Backspace_pressed value ->
@@ -1364,12 +1494,12 @@ let update context (state : outliner_state) message =
   | Toolbar Hide_keyboard ->
     step
       { state with editing = None; autocomplete = None }
-      (commit_effect context state.editing @ [ Haptic Impact ])
+      (commit_effect ~trim:true context state.editing @ [ Haptic Impact ])
   | Save_editing -> step state (commit_effect context state.editing)
   | Cancel_editing ->
     step
       { state with editing = None; autocomplete = None }
-      (commit_effect context state.editing)
+      (commit_effect ~trim:true context state.editing)
   | Toolbar Tag_action -> toolbar_insert state "#" 0
   | Toolbar Page_reference -> toolbar_insert state "[[]]" 2
   | Toolbar Camera ->
@@ -1388,16 +1518,9 @@ let update context (state : outliner_state) message =
        step state [ Pick_attachment editing.uuid; Haptic Impact ]
      | None -> step state [])
   | Toolbar Copy ->
-    let text =
-      String.concat "\n"
-        (List.filter_map
-           (fun (block : Model.block) ->
-             if Sset.mem block.uuid state.selected then Some block.title
-             else None)
-           context.blocks)
-    in
-    step { state with selected = Sset.empty }
-      [ Copy_text text; Haptic Impact ]
+    let uuids = List.filter_map (fun (block : Model.block) ->
+      if Sset.mem block.uuid state.selected then Some block.uuid else None) context.blocks in
+    step {state with selected = Sset.empty} [Copy_blocks uuids; Haptic Impact]
   | Toolbar Copy_reference ->
     step
       { state with selected = Sset.empty }
@@ -1425,7 +1548,7 @@ let update context (state : outliner_state) message =
         editing = None;
         autocomplete = None;
       }
-      (commit_effect context state.editing @ [ Haptic Impact ])
+      (commit_effect ~trim:true context state.editing @ [ Haptic Impact ])
   | Zoom_in uuid ->
     if Option.is_some (find_block context uuid) then
       let state, effects = leave_interaction context state in
@@ -1450,13 +1573,25 @@ let update context (state : outliner_state) message =
       (effects @ [ Insert_root_block { page_uuid }; Haptic Impact ])
   | Operation_staged intent ->
     (match intent with
+     | Ops.Atomic (Ops.Insert_block block :: rest) when List.exists (function
+         | Ops.Set_property property -> property.uuid = block.uuid
+           && property.attr = "logseq.property.node/display-type" && property.value = Some (Ops.Keyword_value "code")
+         | _ -> false) rest -> staged_editing context state block.uuid block.title false
+     | Ops.Atomic [Ops.Save_title _; Ops.Insert_block block] ->
+       staged_editing context state block.uuid block.title true
      | Ops.Split_block value ->
        staged_editing context state value.new_uuid value.after true
      | Ops.Insert_block value ->
        staged_editing context state value.uuid value.title false
      | Ops.Merge_backward value ->
        (match find_block context value.previous_uuid with
-        | Some block -> staged_editing context state block.uuid block.title false
+        | Some block ->
+          let previous = {block with title = value.expected_previous_title} in
+          let caret = utf16_length (display_block_title context previous) in
+          let next, commands = staged_editing context state block.uuid block.title false in
+          let editing = Option.map (fun (draft : editor_draft) ->
+            {draft with caret = min caret (utf16_length draft.title)}) next.editing in
+          ({next with editing}, commands)
         | None -> step state [])
      | Ops.Save_title value ->
        (match state.editing with

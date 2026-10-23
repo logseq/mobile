@@ -1931,7 +1931,8 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
   (match (List.nth !staged 0).Ops.intent with
    | Ops.Create_journal journal ->
      check_eq journal.block_uuid "encrypted-async";
-     check_eq journal.title "Secret task"
+     check_eq journal.block_title "Secret task";
+     check_eq journal.title (Rpc_wire.journal_day_title journal.journal_day)
    | _ -> check false);
   (match (List.nth !staged 1).Ops.intent with
    | Ops.Set_property property ->
@@ -3206,7 +3207,7 @@ let split_block_does_not_inherit_task_or_asset_metadata () =
     [ "tags"; "references"; "breadcrumbs" ];
   check_eq (member "isAsset" block) (`Bool false)
 
-let journal_split_reads_one_page_and_inserts_after_source_subtree () =
+let journal_split_reads_one_page_and_inserts_the_first_child () =
   let page : Model.entity_summary =
     { uuid = "journal-today"; title = "Today" }
   in
@@ -3296,6 +3297,12 @@ let journal_split_reads_one_page_and_inserts_after_source_subtree () =
                              updated_at = change.created_at;
                            };
                          ])
+                  | Ops.Atomic [Ops.Save_title change; Ops.Insert_block inserted] ->
+                    today_blocks := List.map (fun (block : Model.block) ->
+                      if block.uuid = change.uuid then {block with title = change.title} else block) !today_blocks
+                      @ [{source with uuid = inserted.uuid; title = inserted.title;
+                        parent_id = Some inserted.parent_uuid; page_id = inserted.page_uuid;
+                        order = Some inserted.order; created_at = inserted.created_at; updated_at = inserted.created_at}]
                   | _ -> ignore !today_blocks);
                  Ok ());
            prepare_operation = Some prepare_operation;
@@ -3313,7 +3320,7 @@ let journal_split_reads_one_page_and_inserts_after_source_subtree () =
   check_eq !page_reads 1;
   check_eq (List.length splices) 1;
   let splice = List.hd splices in
-  check_eq (member "afterBlockId" splice) (`String child.uuid);
+  check_eq (member "afterBlockId" splice) (`String source.uuid);
   check_eq (List.length (json_items "rows" splice)) 1
 
 let graph_switching_keeps_optimistic_models_isolated () =
@@ -6177,6 +6184,7 @@ let block_json_publishes_resolved_markup_and_omits_absent_fields () =
     [
       "uuid";
       "title";
+      "displayTitle";
       "pageId";
       "createdAt";
       "updatedAt";
@@ -6703,8 +6711,8 @@ let cases =
       editing_status_uses_live_properties_instead_of_stale_overlay;
     case "split block does not inherit task or asset metadata"
       split_block_does_not_inherit_task_or_asset_metadata;
-    case "journal split reads one page and inserts after source subtree"
-      journal_split_reads_one_page_and_inserts_after_source_subtree;
+    case "journal split reads one page and inserts the first child"
+      journal_split_reads_one_page_and_inserts_the_first_child;
     case "graph switching keeps optimistic models isolated"
       graph_switching_keeps_optimistic_models_isolated;
     case "collapse finishes editor and saves title exactly once"

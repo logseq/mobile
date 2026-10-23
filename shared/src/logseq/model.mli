@@ -24,10 +24,16 @@ type asset_preview =
   ; preview_path : string
   }
 
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
   ; assets : composer_asset list
+  ; composer_tags : sidebar_page list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string
@@ -36,11 +42,6 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
-  }
-
-type sidebar_page =
-  { uuid : string
-  ; title : string
   }
 
 type graph =
@@ -115,7 +116,12 @@ type search_hit =
 type outline_row =
   { row_uuid : string
   ; row_loaded : bool
+  ; row_cached : bool
   ; row_title : string
+  ; row_task_dates_json : string
+  ; row_list_number : int option
+  ; row_display_type : string option
+  ; row_is_embed : bool
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -168,6 +174,8 @@ type outliner_autocomplete_kind =
   | NodeAutocomplete
   | TagAutocomplete
   | PropertyAutocomplete
+  | CommandAutocomplete
+  | PickerAutocomplete of string
 
 type outliner_autocomplete =
   { autocomplete_kind : outliner_autocomplete_kind
@@ -176,6 +184,7 @@ type outliner_autocomplete =
 
 type outliner_autocomplete_candidate =
   { candidate_index : int
+  ; candidate_group : string option
   ; candidate_label : string
   ; candidate_value : string
   }
@@ -209,8 +218,10 @@ type outline_row_splice =
   }
 
 type core_projection =
-  { graph_name : string option
+  { tag_choices_update : sidebar_page list option
+  ; graph_name : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
@@ -234,6 +245,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
   ; projection_outliner_autocomplete : outliner_autocomplete option
@@ -249,11 +261,21 @@ type core_projection =
   ; outliner_row_splices : outline_row_splice list
   }
 
+type composer_submission =
+  { capture_text : string
+  ; capture_status : task_status option
+  ; capture_tags : sidebar_page list
+  ; capture_graph_id : string option
+  }
+
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | SetJournalTitleFormatEffect of int * string
+  | LoadComposerTagsEffect of int * string option
+  | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
-  | SendAssetEffect of int * composer_asset
+  | SendAssetEffect of int * composer_asset * sidebar_page list * string option
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
@@ -272,6 +294,8 @@ type logseq_effect =
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
+  | EditorOutlinerEventEffect of int * string
+  | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
@@ -311,6 +335,7 @@ type logseq_effect =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
   ; recent_graph_ids : string list
@@ -388,6 +413,7 @@ type logseq_model =
   ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -399,6 +425,10 @@ type logseq_model =
   ; has_older_journals : bool
   ; composer_expanded : bool
   ; composer_draft : string
+  ; composer_tags : sidebar_page list
+  ; composer_tag_choices : sidebar_page list
+  ; composer_tags_open : bool
+  ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
   ; capture_confirmation : int option
@@ -430,6 +460,9 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | EditorCompletion of string * string
+  | PasteOutlinerContent of string * string
+  | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int
@@ -445,6 +478,10 @@ type logseq_action =
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
+  | OpenComposerTags
+  | CloseComposerTags
+  | SetComposerTags of sidebar_page list
+  | RemoveComposerTag of string
   | ExpandComposer
   | FocusComposer
   | ApplyComposerDraft of string
@@ -528,6 +565,7 @@ type logseq_action =
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
+  | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
   | ToggleSidebarTab of string
@@ -639,6 +677,7 @@ val indexed_outliner_autocomplete_candidates :
 val valid_authentication_state_ : string -> bool
 val current_settings : logseq_model -> settings_projection
 val active_page : logseq_model -> sidebar_page option
+val page_can_delete : logseq_model -> string -> bool
 val page_is_favorite_ : logseq_model -> string -> bool
 val page_share_text : sidebar_page -> outline_row list -> string
 val page_share_asset_paths : outline_row list -> string list
@@ -674,3 +713,5 @@ val restore_ui_session : logseq_model -> ui_session -> logseq_model
 val graph_creation_password_invalid_ : logseq_model -> bool
 
 val wide_content_breakpoint : int
+
+val composer_tag_selection : sidebar_page list -> Yojson.Basic.t

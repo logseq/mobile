@@ -11,6 +11,7 @@ type host_ui_session =
   { graph_id : string option
   ; destination : string
   ; assets : host_composer_asset list
+  ; composer_tags : (string * string) list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string

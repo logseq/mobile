@@ -239,7 +239,12 @@ let outline_row_from_block youtube_target_url opens_as_page depth
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
     Some
-      { Model.row_uuid; row_title; row_loaded = not (bool_member "isShell" fields);
+      { Model.row_uuid; row_title;
+        row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
+        row_list_number = int_member "listNumber" fields;
+        row_is_embed = bool_member "isEmbed" fields;
+        row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
+        row_cached = false;
         query_json = (match List.assoc_opt "query" fields with
           | Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         markup_json =
@@ -311,6 +316,8 @@ let outliner_autocomplete input =
     | "node" -> Some Model.NodeAutocomplete
     | "tag" -> Some Model.TagAutocomplete
     | "property" -> Some Model.PropertyAutocomplete
+    | "command" -> Some Model.CommandAutocomplete
+    | ("embed" | "template" | "link" | "image" | "date" | "deadline" | "scheduled" | "youtube") as kind -> Some (Model.PickerAutocomplete kind)
     | _ -> None
   in
   match kind, string_member "query" fields with
@@ -322,7 +329,7 @@ let autocomplete_candidate input =
   let fields = object_fields input in
   match string_member "label" fields, string_member "value" fields with
   | Some candidate_label, Some candidate_value ->
-    Some { Model.candidate_index = 0; candidate_label; candidate_value }
+    Some { Model.candidate_index = 0; candidate_group = string_member "group" fields; candidate_label; candidate_value }
   | _ -> None
 
 let autocomplete_candidates_member fields =
@@ -439,8 +446,11 @@ let core_projection fields =
     | Some route -> get route
     | None -> fallback
   in
-  { Model.graph_name = string_member "graphName" fields;
+  { Model.tag_choices_update = (match List.assoc_opt "composerTagChoices" fields with
+      | Some (`List choices) -> Some (List.filter_map sidebar_page choices) | _ -> None);
+    graph_name = string_member "graphName" fields;
     selected_graph_id = string_member "selectedGraphId" fields;
+    journal_title_format = string_member "journalTitleFormat" fields;
     graphs = List.filter_map graph (list_member "graphs" fields);
     is_graph_encrypted = bool_member "isGraphEncrypted" fields;
     is_graph_unlocked = bool_member "isGraphUnlocked" fields;
@@ -456,6 +466,12 @@ let core_projection fields =
     search_results =
       List.filter_map search_hit (list_member "searchResults" fields);
     node_routes = routes;
+    empty_journals = List.filter_map (fun item -> match item with
+      | `Assoc fields -> (match string_member "uuid" fields, string_member "title" fields,
+          int_member "journalDay" fields with
+        | Some uuid, Some title, Some day -> Some ({Model.uuid; title}, day)
+        | _ -> None)
+      | _ -> None) (list_member "emptyJournals" fields);
     journal_outliner_rows = base_rows;
     outliner_rows =
       or_route

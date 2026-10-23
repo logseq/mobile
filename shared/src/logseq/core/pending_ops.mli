@@ -113,6 +113,7 @@ type pending_create =
 type pending_journal =
   { page_uuid : string
   ; block_uuid : string
+  ; block_title : string
   ; title : string
   ; journal_day : int
   ; created_at : int

@@ -128,11 +128,10 @@ import SwiftUI
             return
         try:
             output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
-                                     SIMULATOR, bundle], capture_output=True, text=True, timeout=180 if testing else (90 if benchmark else 30), env=launch_environment)
+                                     SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    timeout=180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30"))), env=launch_environment)
             print(output.stdout)
-            print(output.stderr)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
-                print(output.stderr, file=sys.stderr)
                 raise SystemExit("Simulator runtime check did not complete")
         finally:
             subprocess.run(["xcrun", "simctl", "terminate", SIMULATOR, bundle], capture_output=True)
@@ -144,6 +143,8 @@ import SwiftUI
                 destination.mkdir(parents=True, exist_ok=True)
                 for screenshot in (container / "Documents").glob("*.png"):
                     shutil.copy2(screenshot, destination / screenshot.name)
+                for diagnostic in (container / "Library/Caches").glob("interaction-debug*.log"):
+                    shutil.copy2(diagnostic, destination / diagnostic.name)
             if not benchmark:
                 run(["xcrun", "simctl", "uninstall", SIMULATOR, bundle])
 

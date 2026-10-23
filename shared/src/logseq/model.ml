@@ -27,10 +27,16 @@ type asset_preview =
   ; preview_path : string
   }
 
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
   ; assets : composer_asset list
+  ; composer_tags : sidebar_page list
   ; composer_expanded : bool
   ; search_open : bool
   ; query : string
@@ -39,11 +45,6 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
-  }
-
-type sidebar_page =
-  { uuid : string
-  ; title : string
   }
 
 type graph =
@@ -118,7 +119,12 @@ type search_hit =
 type outline_row =
   { row_uuid : string
   ; row_loaded : bool
+  ; row_cached : bool
   ; row_title : string
+  ; row_task_dates_json : string
+  ; row_list_number : int option
+  ; row_display_type : string option
+  ; row_is_embed : bool
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -171,6 +177,8 @@ type outliner_autocomplete_kind =
   | NodeAutocomplete
   | TagAutocomplete
   | PropertyAutocomplete
+  | CommandAutocomplete
+  | PickerAutocomplete of string
 
 type outliner_autocomplete =
   { autocomplete_kind : outliner_autocomplete_kind
@@ -179,6 +187,7 @@ type outliner_autocomplete =
 
 type outliner_autocomplete_candidate =
   { candidate_index : int
+  ; candidate_group : string option
   ; candidate_label : string
   ; candidate_value : string
   }
@@ -212,8 +221,10 @@ type outline_row_splice =
   }
 
 type core_projection =
-  { graph_name : string option
+  { tag_choices_update : sidebar_page list option
+  ; graph_name : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string option
   ; graphs : graph list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
@@ -237,6 +248,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
   ; projection_outliner_autocomplete : outliner_autocomplete option
@@ -252,11 +264,21 @@ type core_projection =
   ; outliner_row_splices : outline_row_splice list
   }
 
+type composer_submission =
+  { capture_text : string
+  ; capture_status : task_status option
+  ; capture_tags : sidebar_page list
+  ; capture_graph_id : string option
+  }
+
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | SetJournalTitleFormatEffect of int * string
+  | LoadComposerTagsEffect of int * string option
+  | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
-  | SendAssetEffect of int * composer_asset
+  | SendAssetEffect of int * composer_asset * sidebar_page list * string option
   | SendTaskEffect of int * string * task_status
   | PersistComposerDraftEffect of int * string
   | PersistUISessionEffect of int * ui_session
@@ -275,6 +297,8 @@ type logseq_effect =
   | LoadPageReferencesEffect of int * string
   | HydrateOutlinerRowsEffect of int * string list
   | TapOutlinerBlockEffect of int * string
+  | EditorOutlinerEventEffect of int * string
+  | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
@@ -314,6 +338,7 @@ type logseq_effect =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
   ; recent_graph_ids : string list
@@ -391,6 +416,7 @@ type logseq_model =
   ; search_has_more : bool
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
+  ; empty_journals : (sidebar_page * int) list
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
@@ -402,6 +428,10 @@ type logseq_model =
   ; has_older_journals : bool
   ; composer_expanded : bool
   ; composer_draft : string
+  ; composer_tags : sidebar_page list
+  ; composer_tag_choices : sidebar_page list
+  ; composer_tags_open : bool
+  ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
   ; capture_confirmation : int option
@@ -433,6 +463,9 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | EditorCompletion of string * string
+  | PasteOutlinerContent of string * string
+  | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int
@@ -448,6 +481,10 @@ type logseq_action =
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
+  | OpenComposerTags
+  | CloseComposerTags
+  | SetComposerTags of sidebar_page list
+  | RemoveComposerTag of string
   | ExpandComposer
   | FocusComposer
   | ApplyComposerDraft of string
@@ -531,6 +568,7 @@ type logseq_action =
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
+  | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
   | ToggleSidebarTab of string
@@ -646,6 +684,7 @@ let initial () =
   {
     selected_graph = None;
     selected_graph_id = None;
+    journal_title_format = Journal.default_format;
     graphs = [];
     local_graph_ids = [];
     recent_graph_ids = [];
@@ -723,6 +762,7 @@ let initial () =
     search_has_more = false;
     node_routes = [];
     navigation_root_rows = [];
+    empty_journals = [];
     journal_outliner_rows = [];
     outliner_rows = [];
     outliner_selected_block_ids = [];
@@ -734,6 +774,10 @@ let initial () =
     has_older_journals = false;
     composer_expanded = false;
     composer_draft = "";
+    composer_tags = [];
+    composer_tag_choices = [];
+    composer_tags_open = false;
+    composer_tags_loading = false;
     composer_assets = [];
     composer_autofocus = false;
     capture_confirmation = None;
@@ -783,9 +827,11 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
-  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) -> id
+  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
+  | LoadComposerTagsEffect (id, _) -> id
+  | SendTaggedCaptureEffect (id, _) -> id
   | SendCaptureEffect (id, _) -> id
-  | SendAssetEffect (id, _) -> id
+  | SendAssetEffect (id, _, _, _) -> id
   | SendTaskEffect (id, _, _) -> id
   | PersistComposerDraftEffect (id, _) -> id
   | PersistUISessionEffect (id, _) -> id
@@ -803,6 +849,8 @@ let effect_id eff =
   | LoadPageReferencesEffect (id, _) -> id
   | HydrateOutlinerRowsEffect (id, _) -> id
   | TapOutlinerBlockEffect (id, _) -> id
+  | PasteOutlinerTextEffect (id, _, _, _) -> id
+  | EditorOutlinerEventEffect (id, _) -> id
   | ChangeOutlinerTextEffect (id, _, _, _) -> id
   | ReturnOutlinerEditorEffect (id, _, _, _) -> id
   | BackspaceOutlinerEditorEffect (id, _, _, _) -> id
@@ -872,7 +920,7 @@ let contains_journal_refresh_effect_ effects =
     (fun eff ->
       match eff with
       | LoadOlderJournalsEffect _ -> true
-      | SendCaptureEffect _ -> true
+      | SendTaggedCaptureEffect _ | SendCaptureEffect _ -> true
       | SendTaskEffect _ -> true
       | _ -> false)
     effects
@@ -909,6 +957,7 @@ let sign_in_active_ (current : logseq_model) =
 
 let change_outliner_text_effect_for_ eff uuid =
   match eff with
+  | PasteOutlinerTextEffect (_, effect_uuid, _, _)
   | ChangeOutlinerTextEffect (_, effect_uuid, _, _) -> effect_uuid = uuid
   | _ -> false
 
@@ -1312,7 +1361,7 @@ let indexed_outliner_autocomplete_candidates candidates =
 
 let reference_autocomplete_candidates (current : logseq_model) =
   match current.outliner_autocomplete with
-  | Some { autocomplete_kind = (TagAutocomplete | NodeAutocomplete); _ } ->
+  | Some _ ->
     current.outliner_autocomplete_candidates
   | _ -> []
 
@@ -1361,6 +1410,16 @@ let active_page (current : logseq_model) =
        | None -> None)
   end
 
+let page_can_delete (current : logseq_model) uuid =
+  let raw = match List.find_opt (fun (route : node_projection) -> route.node_uuid = uuid) current.node_routes with
+    | Some route -> route.node_properties_json
+    | None -> if Option.fold ~none:false ~some:(fun (page : sidebar_page) -> page.uuid = uuid) current.selected_page
+      then current.properties_json else "" in
+  match (try Yojson.Basic.from_string raw with _ -> `Null) with
+  | `Assoc fields when List.assoc_opt "ownerUuid" fields = Some (`String uuid) ->
+    List.assoc_opt "canDelete" fields <> Some (`Bool false)
+  | _ -> true
+
 let page_is_favorite_ (current : logseq_model) uuid =
   List.exists (fun (page : sidebar_page) -> page.uuid = uuid)
     current.favorites
@@ -1392,6 +1451,7 @@ let cancels_outliner_autosave = function
   | OutlinerToolbarEffect (_, action) ->
     (* Movement and media actions retain the draft without committing it. *)
     List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
+  | PasteOutlinerTextEffect _ | EditorOutlinerEventEffect _
   | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
   | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
@@ -1547,6 +1607,11 @@ let rollback_navigation_effect (current : logseq_model) eff =
   | OpenGraphEffect _ -> { current with graph_loading = false }
   | _ -> current
 
+let composer_for_graph (current : logseq_model) graph_id =
+  if current.selected_graph_id = graph_id then current
+  else {current with composer_tags = []; composer_tag_choices = [];
+    composer_tags_open = false; composer_tags_loading = false}
+
 let resolve_failed_effect (current : logseq_model) eff message =
   match eff with
   | SignInEffect _ ->
@@ -1559,9 +1624,19 @@ let resolve_failed_effect (current : logseq_model) eff message =
     { current with sync_state = FailedState message }
   | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
     { current with new_graph_password_required = true }
+  | LoadComposerTagsEffect (_, graph_id) ->
+    if graph_id <> current.selected_graph_id then current
+    else {current with composer_tags_open = false; composer_tags_loading = false}
+  | SendTaggedCaptureEffect (_, capture) ->
+    if capture.capture_graph_id <> current.selected_graph_id then current
+    else {current with capture_confirmation = None;
+      composer_draft = (if current.composer_draft = "" then capture.capture_text else current.composer_draft);
+      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags)}
   | SendCaptureEffect _ | SendTaskEffect _ ->
     { current with capture_confirmation = None }
-  | SendAssetEffect (_, asset) ->
+  | SendAssetEffect (_, asset, tags, graph_id) ->
+    if graph_id <> current.selected_graph_id then current else
+    let current = { current with composer_tags = (if current.composer_tags = [] then tags else current.composer_tags) } in
     let current = { current with capture_confirmation = None } in
     if List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) current.composer_assets then current
     else { current with composer_assets = current.composer_assets @ [asset] }
@@ -1569,9 +1644,10 @@ let resolve_failed_effect (current : logseq_model) eff message =
 
 let resolve_successful_effect (current : logseq_model) eff _message =
   match eff with
-  | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
+  | SendTaggedCaptureEffect (id, _) | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
     { current with capture_confirmation = Some id }
-  | SendAssetEffect (id, asset) ->
+  | SendAssetEffect (id, asset, _, graph_id) ->
+    if graph_id <> current.selected_graph_id then current else
     {
       current with
       capture_confirmation = Some id;
@@ -1587,6 +1663,7 @@ let resolve_successful_effect (current : logseq_model) eff _message =
       authentication_error = None;
     }
   | OpenGraphEffect (_, graph_id) ->
+    let current = composer_for_graph current (Some graph_id) in
     (match graph_by_id current.graphs graph_id with
      | Some selected ->
        {
@@ -1750,6 +1827,11 @@ let editing_sync_state (current : logseq_model) =
   | FailedState reason -> FailedState reason
   | _ -> SyncingState
 
+let composer_tag_selection tags =
+  let existing, created = List.partition (fun (tag : sidebar_page) -> not (String.starts_with ~prefix:"new:" tag.uuid)) tags in
+  `Assoc ["selectedValues", `List (List.map (fun (tag : sidebar_page) -> `String tag.uuid) existing);
+    "newValues", `List (List.map (fun (tag : sidebar_page) -> `String tag.title) created)]
+
 let ui_session (current : logseq_model) =
   {
     graph_id = current.selected_graph_id;
@@ -1759,12 +1841,13 @@ let ui_session (current : logseq_model) =
       List.fold_left
         (fun assets eff ->
           match eff with
-          | SendAssetEffect (_, asset)
-            when not (List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) assets) ->
+          | SendAssetEffect (_, asset, _, graph_id)
+            when graph_id = current.selected_graph_id && not (List.exists (fun (candidate : composer_asset) -> candidate.uuid = asset.uuid) assets) ->
             assets @ [asset]
           | _ -> assets)
         current.composer_assets
         (current.in_flight_effects @ current.pending_effects);
+    composer_tags = current.composer_tags;
     composer_expanded = current.composer_expanded;
     search_open = current.search_open;
     query = current.search_query;
@@ -1799,6 +1882,7 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
         destination = session.destination;
         recent_graph_ids = session.recent_graph_ids;
         composer_assets = session.assets;
+        composer_tags = session.composer_tags;
         composer_expanded = session.composer_expanded;
         composer_autofocus = session.composer_expanded;
         search_open = session.search_open;
@@ -1850,7 +1934,8 @@ let retain_shell_contents previous rows =
     if row.row_loaded then row else
       match Hashtbl.find_opt by_id row.row_uuid with
       | None -> row
-      | Some cached -> { cached with row_loaded = false; depth = row.depth;
+      | Some cached -> { cached with row_loaded = false;
+          row_cached = cached.row_loaded || cached.row_cached; depth = row.depth;
           has_children = row.has_children; is_collapsed = row.is_collapsed;
           opens_as_page = row.opens_as_page; page_id = row.page_id;
           journal_title = row.journal_title; journal_day = row.journal_day }) rows
@@ -1950,6 +2035,27 @@ let rec update (current : logseq_model) action =
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
+  | EditorCompletion (kind, value) ->
+    let fields = if kind = "searchAutocomplete" then ["query", `String value]
+      else if kind = "submitAutocomplete" then ["value", `String value] else [] in
+    if not (List.mem kind ["searchAutocomplete"; "submitAutocomplete"; "dismissAutocomplete"]) then current
+    else enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc (("type", `String kind) :: fields))))
+  | PasteOutlinerContent (uuid, payload) ->
+    (try match Yojson.Basic.from_string payload with
+     | `Assoc fields ->
+       let updated = cancel_outliner_autosave current in
+       let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = []} in
+       let fields = ("type", `String "pasteContent") :: ("uuid", `String uuid)
+         :: List.remove_assoc "type" (List.remove_assoc "uuid" fields) in
+       enqueue_effect updated (EditorOutlinerEventEffect (updated.next_effect_id, Yojson.Basic.to_string (`Assoc fields)))
+     | _ -> current
+     with _ -> current)
+  | PasteOutlinerText (uuid, title, caret) ->
+    let updated = update_editing current uuid title caret in
+    let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = [];
+      sync_state = editing_sync_state current} in
+    enqueue_effect updated (PasteOutlinerTextEffect (updated.next_effect_id, uuid, title, caret))
   | ChangeOutlinerText (uuid, title, caret) ->
     let updated =
       {
@@ -2074,6 +2180,13 @@ let rec update (current : logseq_model) action =
       }
     in
     enqueue_close_search_effects closed path
+  | OpenComposerTags ->
+    enqueue_effect {current with composer_tags_open = true; composer_tags_loading = true; composer_autofocus = false}
+      (LoadComposerTagsEffect (current.next_effect_id, current.selected_graph_id))
+  | CloseComposerTags -> {current with composer_tags_open = false; composer_autofocus = true}
+  | SetComposerTags tags -> {current with composer_tags = tags; composer_tags_open = false; composer_autofocus = true}
+  | RemoveComposerTag uuid ->
+    {current with composer_tags = List.filter (fun (tag : sidebar_page) -> tag.uuid <> uuid) current.composer_tags}
   | ExpandComposer ->
     { current with composer_expanded = true; composer_autofocus = true }
   | FocusComposer ->
@@ -2113,9 +2226,18 @@ let rec update (current : logseq_model) action =
       }
   | SendComposer ->
     begin
-      let assets = current.composer_assets in
+      let tags = current.composer_tags in
+      let graph_id = current.selected_graph_id in
+      let assets = List.map (fun (asset : composer_asset) ->
+        let payload = try match Yojson.Basic.from_string asset.payload with
+          | `Assoc fields -> Yojson.Basic.to_string (`Assoc
+              (if tags = [] then List.remove_assoc "tags" fields
+               else ("tags", composer_tag_selection tags) :: List.remove_assoc "tags" fields))
+          | _ -> asset.payload with _ -> asset.payload in
+        {asset with payload}) current.composer_assets in
       let submission = String.trim current.composer_draft in
       let current = { current with composer_assets = [];
+        composer_tags = (if submission = "" && assets = [] then tags else []);
         capture_confirmation =
           (if submission = "" && assets = [] then current.capture_confirmation else None) } in
       let with_text =
@@ -2136,7 +2258,10 @@ let rec update (current : logseq_model) action =
               (PersistComposerDraftEffect (cleared.next_effect_id, ""))
           in
           enqueue_effect persisted
-            (match current.selected_task_status with
+            (if tags <> [] then SendTaggedCaptureEffect (persisted.next_effect_id,
+               {capture_text = submission; capture_status = current.selected_task_status;
+                capture_tags = tags; capture_graph_id = graph_id})
+             else match current.selected_task_status with
              | Some status ->
                SendTaskEffect (persisted.next_effect_id, submission, status)
              | None ->
@@ -2146,7 +2271,7 @@ let rec update (current : logseq_model) action =
       List.fold_left
         (fun updated asset ->
           enqueue_effect updated
-            (SendAssetEffect (updated.next_effect_id, asset)))
+            (SendAssetEffect (updated.next_effect_id, asset, tags, graph_id)))
         with_text assets
     end
   | DequeueEffect id ->
@@ -2177,7 +2302,9 @@ let rec update (current : logseq_model) action =
          in_flight_effects = remove_effect current.in_flight_effects id;
          outliner_selection_revision =
            (match succeeded, eff with
-            | true, ChooseOutlinerAutocompleteEffect _ -> current.outliner_selection_revision + 1
+            | _, EditorOutlinerEventEffect (_, payload)
+              when (try match Yojson.Basic.from_string payload with `Assoc fields -> List.assoc_opt "type" fields = Some (`String "pasteContent") | _ -> false with _ -> false) -> current.outliner_selection_revision + 1
+            | true, (ChooseOutlinerAutocompleteEffect _ | EditorOutlinerEventEffect _) -> current.outliner_selection_revision + 1
             | _ -> current.outliner_selection_revision);
          result_view_feedback = (match eff with
            | ResultViewEffect (_, uuid, _) | NodePropertyEffect (_, uuid, _) -> (uuid, id, (if succeeded then None else Some message))
@@ -2200,7 +2327,8 @@ let rec update (current : logseq_model) action =
            { resolved with sync_state = SyncedState }
          | _ -> resolved in
        let edited_uuid = match eff with
-         | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | PasteOutlinerTextEffect (_, uuid, _, _) | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
+         | EditorOutlinerEventEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | BackspaceOutlinerEditorEffect (_, uuid, _, _) -> Some uuid
          | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | _ -> None in
@@ -2309,8 +2437,10 @@ let rec update (current : logseq_model) action =
     }
   | BackSearchNavigation count -> back_search_navigation current count
   | AddRootBlock uuid ->
-    let id = current.next_effect_id in
-    enqueue_effect current (AddRootBlockEffect (id, uuid))
+    if List.exists (function AddRootBlockEffect (_, parent) -> parent = uuid | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) then current
+    else let id = current.next_effect_id in
+      enqueue_effect current (AddRootBlockEffect (id, uuid))
   | LoadOlderJournals ->
     if current.graph_loading || load_older_journals_active_ current then current
     else begin
@@ -2597,17 +2727,19 @@ let rec update (current : logseq_model) action =
      | None -> current)
   | RequestDeleteActivePage ->
     (match active_page current with
-     | Some page ->
+     | Some page when page_can_delete current page.uuid ->
        {
          current with
          connection_menu_open = false;
          pending_page_deletion = Some page;
        }
-     | None -> current)
+     | _ -> current)
   | CancelDeleteActivePage ->
     { current with pending_page_deletion = None }
   | ConfirmDeleteActivePage ->
     (match current.pending_page_deletion with
+     | Some page when not (page_can_delete current page.uuid) ->
+       { current with pending_page_deletion = None }
      | Some page ->
        let updated = { current with pending_page_deletion = None } in
        let delete_id = updated.next_effect_id in
@@ -2677,6 +2809,12 @@ let rec update (current : logseq_model) action =
            settings_language_menu_open = false;
          }
      | None -> { current with settings_language_menu_open = false })
+  | ChooseJournalTitleFormat format ->
+    (match current.selected_graph_id with
+     | Some graph_id when List.mem format Journal.built_in_journal_title_formatters ->
+       let payload = Yojson.Basic.to_string (`Assoc ["graphId", `String graph_id; "format", `String format]) in
+       enqueue_effect current (SetJournalTitleFormatEffect (current.next_effect_id, payload))
+     | _ -> current)
   | ToggleSpellCheck enabled ->
     persist_settings_change current { current with spell_check = enabled }
   | ToggleAutoCorrection enabled ->
@@ -2810,7 +2948,10 @@ let rec update (current : logseq_model) action =
 
 and apply_core_snapshot (current : logseq_model)
     (projection : core_projection) =
-  if Option.is_some projection.reference_update then
+  if Option.is_some projection.tag_choices_update then
+    if projection.selected_graph_id <> current.selected_graph_id then current
+    else {current with composer_tag_choices = Option.get projection.tag_choices_update; composer_tags_loading = false}
+  else if Option.is_some projection.reference_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else
       let uuid, rows = Option.get projection.reference_update in
@@ -2847,10 +2988,14 @@ and apply_core_snapshot (current : logseq_model)
             node_linked_reference_rows = hydrate route.node_linked_reference_rows }) current.node_routes }
   else
   if projection.is_graph_catalog_patch then
+    let current = composer_for_graph current projection.selected_graph_id in
     {
       current with
       selected_graph = projection.graph_name;
       selected_graph_id = projection.selected_graph_id;
+      journal_title_format = Option.value
+        ~default:(if current.selected_graph_id = projection.selected_graph_id then current.journal_title_format else Journal.default_format)
+        projection.journal_title_format;
       graphs = projection.graphs;
       is_graph_encrypted = projection.is_graph_encrypted;
       is_graph_unlocked = projection.is_graph_unlocked;
@@ -2901,6 +3046,7 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_sync_request = projection.has_pending_sync_request;
       pending_sync_error = projection.pending_sync_error;
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
+      empty_journals = projection.empty_journals;
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = snapshot_autocomplete current projection;
@@ -3003,10 +3149,16 @@ and apply_core_snapshot (current : logseq_model)
     in
     let updated =
       {
-        current with
+        (composer_for_graph current projection.selected_graph_id) with
         search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;
+        journal_title_format = Option.value
+          ~default:(if current.selected_graph_id = projection.selected_graph_id then current.journal_title_format else Journal.default_format)
+          projection.journal_title_format;
+        composer_tags = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tags else []);
+        composer_tag_choices = (if projection.selected_graph_id = current.selected_graph_id then current.composer_tag_choices else []);
+        composer_tags_open = current.composer_tags_open && projection.selected_graph_id = current.selected_graph_id;
         graphs = projection.graphs;
         local_graph_ids;
         is_graph_encrypted = projection.is_graph_encrypted;
@@ -3059,6 +3211,7 @@ and apply_core_snapshot (current : logseq_model)
         navigation_root_rows = (if projection.node_routes = [] then projected_rows
           else if selected_graph_changed then projection.journal_outliner_rows
           else retain_shell_contents current.navigation_root_rows projection.journal_outliner_rows);
+        empty_journals = projection.empty_journals;
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
         outliner_autocomplete = snapshot_autocomplete current projection;

@@ -190,6 +190,9 @@ let title_tx db uuid title =
     | None -> []
   in
   [ Ds.Add (reference, "block/title", Ds.String title) ]
+  @ (match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+     | Some id when Node_title.is_page db id -> [Ds.Add (reference, "block/name", Ds.String (Node_title.name title))]
+     | _ -> [])
   @ retractions
   @ List.map
       (fun eid -> Ds.Add (reference, "block/refs", Ds.Ref eid))
@@ -393,7 +396,8 @@ let rec compile db (intent : Ops.pending_intent) =
      with
      | Some current ->
        if current = value.expected_title then
-         Ok (title_tx db value.uuid value.title)
+         let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid value.uuid)) in
+         Result.map (fun () -> title_tx db value.uuid value.title) (Node_title.validate db id value.title)
        else Error "title changed on the server"
      | None -> Error "block no longer exists")
   | Ops.Set_property value ->
@@ -687,9 +691,9 @@ let rec compile db (intent : Ops.pending_intent) =
           @ [
               entity_tx
                 (Ds.Temp_id ("pending/" ^ value.block_uuid))
-                [
+                ([
                   ("block/uuid", Ds.One_value (Ds.Uuid value.block_uuid))
-                ; ("block/title", Ds.One_value (Ds.String ""))
+                ; ("block/title", Ds.One_value (Ds.String value.block_title))
                 ; ("block/page", Ds.One_value (Ds.Ref_to page_ref))
                 ; ("block/parent", Ds.One_value (Ds.Ref_to page_ref))
                 ; ("block/order", Ds.One_value (Ds.String "a0"))
@@ -697,8 +701,9 @@ let rec compile db (intent : Ops.pending_intent) =
                   , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                 ; ( "block/updated-at"
                   , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
-                ];
-            ]))
+                ] @ many_refs "block/refs" (refs_for_title db value.block_title)
+                  @ many_refs "block/tags" (tag_eids_for_title db value.block_title));
+            ] @ List.concat_map (tag_behavior_tx db value.block_uuid) (tag_eids_for_title db value.block_title)))
   | Ops.Add_tag value ->
     (match
        ( Ds.entid db "block/uuid" (Ds.Uuid value.uuid)
@@ -766,10 +771,7 @@ let rec compile db (intent : Ops.pending_intent) =
             = Some recycle_eid
        then Ok []
        else if
-         bool_value (one_value db reference "logseq.property/built-in?")
-         = Some true
-         || bool_value (one_value db reference "logseq.property/hide?")
-            = Some true
+         not (Node_title.can_delete db page_eid)
        then Error "Built-in page cannot be deleted"
        else
          let parent =

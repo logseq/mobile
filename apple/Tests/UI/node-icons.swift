@@ -91,6 +91,20 @@ import CoreText
         try runtime.applyCoreResponse(String(decoding: JSONSerialization.data(withJSONObject: journal), as: UTF8.self))
         try await Task.sleep(for: .milliseconds(500))
         try screenshot("journal-icon.png")
+        let embedded: [String: Any] = ["ok": true, "result": ["selectedGraphId": "icons", "graphName": "Existing graph icons",
+            "selectedPage": ["uuid": "page", "title": "Embedded objects"],
+            "outlinerRows": [["depth": 0, "block": ["uuid": "embed", "title": "Embedded object", "pageId": "page",
+                "isEmbed": true, "listType": "number", "listNumber": "3."]]]]]
+        try runtime.applyCoreResponse(String(decoding: JSONSerialization.data(withJSONObject: embedded), as: UTF8.self))
+        try await Task.sleep(for: .milliseconds(500))
+        let arrow = try JSONDecoder().decode(NodeIconPayload.self, from: Data(#"{"type":"tabler-icon","id":"arrow-narrow-right"}"#.utf8))
+        guard let bullet = views(window).compactMap({ $0 as? UIButton }).first(where: {
+            $0.accessibilityIdentifier == "button.outliner.zoom.embed.Embedded object"
+        }), let expected = NodeIconExtension.image(arrow, size: 18, traits: bullet.traitCollection),
+              bullet.image(for: .normal)?.pngData() == expected.pngData() else {
+            throw failure("Embedded objects must visibly use the master arrow glyph instead of a bullet or list number")
+        }
+        try screenshot("embedded-object-arrow.png")
         print("PASS: existing graph icons and colors render in page, favorites, recents, native text and rich rows; removing icons resets reused rows")
     }
     static func failure(_ message: String) -> NSError {

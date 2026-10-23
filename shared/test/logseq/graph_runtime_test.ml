@@ -287,6 +287,23 @@ let page_deletion_is_optimistic_durable_and_rejects_built_ins () =
          | _ -> false);
       check (not (is_ok (Runtime.delete_page current "recycle-page" "built-in" 101))))
 
+let protected_page_deletion_never_stages_mutations () =
+  List.iter (fun (label, protection) -> with_store (fun path ->
+    let database = Ds.db_with ([
+      add 20 "block/uuid" (Ds.Uuid "recycle-page");
+      add 20 "block/title" (Ds.String "Recycle");
+      add 20 "block/name" (Ds.String "recycle");
+      add 20 "logseq.property/built-in?" (Ds.Bool true)
+    ] @ protection) (base_db "Text") in
+    let current = Runtime.create path 42 (Ds.conn_from_db database) Runtime.default_options in
+    check ~msg:(label ^ " cannot be deleted") (not (is_ok (Runtime.delete_page current "page" "protected-delete" 100)));
+    check_eq ~msg:"rejected deletion does not enqueue a durable operation" (Runtime.pending_operations current) [];
+    check_eq ~msg:"rejected deletion leaves the page unchanged" (Graph_read.value (Runtime.db current) 1 "logseq.property/deleted-at") None))
+    ["built-in flag", [add 1 "logseq.property/built-in?" (Ds.Bool true)];
+     "hidden system page", [add 1 "logseq.property/hide?" (Ds.Bool true)];
+     "built-in class without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.class/Protected")];
+     "built-in property without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.property/protected-test")]]
+
 let flashcard_review_is_one_atomic_millisecond_operation () =
   with_store (fun path ->
       let now = 1776000000000 in
@@ -1202,7 +1219,27 @@ let authoritative_today_journal_is_not_recreated () =
           { Runtime.default_options with auto_create_today = true }
       in
       check_eq (Runtime.journal_page_uuid current day) (Some "existing-today");
-      check (Runtime.pending_operations current = []))
+      check_eq ~msg:"viewing an empty journal never creates persisted filler"
+        (Runtime.blocks_for_page current "existing-today") [];
+      ignore (Runtime.blocks current);
+      check_eq ~msg:"repeated reads preserve the authoritative empty page"
+        (Runtime.pending_operations current) [])
+
+let journal_reads_fill_a_missing_today_once () =
+  List.iter (fun auto_create_today -> with_store (fun path ->
+    let runtime = Runtime.create_base path 42 (Ds.conn_from_db (Ds.empty_db ~schema ()))
+      {Runtime.default_options with auto_create_today} in
+    check_eq (Runtime.journal_page_uuid runtime (today ())) None;
+    ignore (Runtime.blocks runtime);
+    if auto_create_today then begin
+      check ~msg:"a long-lived graph read creates the missing local day"
+        (Runtime.journal_page_uuid runtime (today ()) <> None);
+      let count = List.length (Runtime.pending_operations runtime) in
+      check_eq count 1;
+      ignore (Runtime.blocks runtime);
+      check_eq ~msg:"refresh and graph restoration do not duplicate the journal"
+        (List.length (Runtime.pending_operations runtime)) count
+    end else check_eq (Runtime.pending_operations runtime) [])) [true; false]
 
 let accepted_journal_discards_its_entire_overlay () =
   with_store (fun path ->
@@ -1274,6 +1311,9 @@ let persisted_offline_pages_reopen_for_every_transport_state () =
 
 let sidebar_cache_reuses_unchanged_reads_and_invalidates_on_rebase () =
   with_runtime (fun path conn current ->
+      (* Ordinary page renames invalidate labels; journal labels derive from the calendar day. *)
+      ignore (Ds.transact_conn conn [Ds.Retract (Ds.Entity_id 1, "block/journal-day", Some (Ds.Int64 20260816L))]);
+      Runtime.rebase current 42 [] [];
       let initial = Runtime.sidebar_pages current in
       Gc.full_major ();
       let before = Gc.allocated_bytes () in
@@ -1848,6 +1888,7 @@ let cases =
       projected_readers_share_offline_edits_without_changing_authoritative_data;
     case "favorites update sidebar and encode the link transaction"
       favorites_update_sidebar_and_encode_the_link_transaction;
+    case "protected deletions never stage mutations" protected_page_deletion_never_stages_mutations;
     case "page deletion is optimistic durable and rejects built-ins"
       page_deletion_is_optimistic_durable_and_rejects_built_ins;
     case "flashcard review is one atomic millisecond operation"
@@ -1916,6 +1957,7 @@ let cases =
       today_journal_is_canonical_atomic_and_not_duplicated_on_reopen;
     case "authoritative today journal is not recreated"
       authoritative_today_journal_is_not_recreated;
+    case "journal reads fill a missing today once" journal_reads_fill_a_missing_today_once;
     case "accepted journal discards its entire overlay"
       accepted_journal_discards_its_entire_overlay;
     case "persisted offline pages reopen for every transport state"

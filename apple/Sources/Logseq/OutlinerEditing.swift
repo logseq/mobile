@@ -22,7 +22,7 @@ enum OutlinerMarkupLink: Equatable {
 enum OutlinerRichMarkupPolicy {
     static func isRich(_ type: LogseqMarkupNodeType) -> Bool {
         switch type {
-        case .quote, .math, .codeBlock, .video, .iframe, .youtubeTimestamp, .cloze:
+        case .quote, .math, .codeBlock, .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
             return true
         default:
             return false
@@ -36,7 +36,7 @@ enum OutlinerRichMarkupPolicy {
     static func containsInteractive(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .video, .iframe, .youtubeTimestamp, .cloze:
+            case .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
                 return true
             default:
                 return containsInteractive(node.children)
@@ -136,6 +136,11 @@ enum NativeEditorInputPolicy {
     private struct Policy: Decodable {
         struct EmptyPair: Decodable { let text: String; let deleteOffset: Int }
         let emptyPairs: [EmptyPair]?
+        let multiline: Bool?
+    }
+
+    static func allowsLineBreak(_ inputPolicy: String) -> Bool {
+        (try? JSONDecoder().decode(Policy.self, from: Data(inputPolicy.utf8)))?.multiline == true
     }
 
     static func deletingEmptyPair(from text: String, range: NSRange, replacementText: String,

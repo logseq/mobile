@@ -54,6 +54,13 @@ import UIKit
               element("outliner.sync-failed.row") != nil else {
             throw NSError(domain: "OutlinerRowCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "Native row controls must actually render"])
         }
+        let disclosure = element("button.outliner.collapse.row") as! UIButton
+        precondition(disclosure.bounds.width >= 44 && disclosure.bounds.height >= 44,
+                     "Disclosure must have a full 44-point touch target")
+        let nearEdge = CGPoint(x: disclosure.bounds.minX + 2, y: disclosure.bounds.maxY - 2)
+        let pointInRow = disclosure.convert(nearEdge, to: disclosure.superview)
+        precondition(disclosure.superview?.hitTest(pointInRow, with: nil) === disclosure,
+                     "Tapping the edge of the disclosure target must not edit the title")
         var missing: [String] = []
         for identifier in ["button.outliner.zoom.row.Visible title", "button.block-task-status"] {
             guard let button = element(identifier) as? UIButton else { fatalError("Missing glyph control") }
@@ -109,6 +116,31 @@ import UIKit
             precondition(statusButton.image(for: .normal) != nil, "Every task status must have a visible glyph")
             precondition(guide.isHidden == (index % 2 == 0), "Reusing a row must clear stale ancestor guides")
         }
+        var compactPayload = payload
+        compactPayload["status"] = NSNull()
+        compactPayload["tags"] = []
+        compactPayload["syncFailed"] = false
+        compactPayload["depth"] = 0
+        compactPayload["hasChildren"] = false
+        let leaf = try JSONDecoder().decode(OutlinerRowPayload.self, from: JSONSerialization.data(withJSONObject: compactPayload))
+        native.update(leaf, emit: { _, _, _ in })
+        let leafHeight = native.sizeThatFits(CGSize(width: 390, height: CGFloat.greatestFiniteMagnitude)).height
+        compactPayload["hasChildren"] = true
+        let parent = try JSONDecoder().decode(OutlinerRowPayload.self, from: JSONSerialization.data(withJSONObject: compactPayload))
+        native.update(parent, emit: { _, _, _ in })
+        let parentHeight = native.sizeThatFits(CGSize(width: 390, height: CGFloat.greatestFiniteMagnitude)).height
+        native.frame = CGRect(x: 0, y: 0, width: 390, height: parentHeight)
+        native.layoutIfNeeded()
+        let arrow = disclosure.imageView!
+        let arrowFrame = arrow.convert(arrow.bounds, to: native)
+        print("DISCLOSURE leafHeight=\(leafHeight) parentHeight=\(parentHeight) arrow=\(arrowFrame)")
+        precondition(abs(parentHeight - leafHeight) <= 0.1,
+                     "The disclosure touch target must not add a blank line between a parent and its child")
+        precondition(native.bounds.maxX - arrowFrame.maxX <= 8,
+                     "The disclosure glyph must sit near the trailing edge")
+        let compactEdge = disclosure.convert(CGPoint(x: 2, y: 42), to: native)
+        precondition(native.hitTest(compactEdge, with: nil) === disclosure,
+                     "A compact parent must retain the full disclosure touch target")
         print("PASS: visible bullets, all task glyphs, continuous ancestor guides, compact tags, and row reuse")
     }
 }

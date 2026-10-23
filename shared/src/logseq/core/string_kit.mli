@@ -23,3 +23,8 @@ val hex_of_char : char -> string
 val of_bytes : bytes -> string
 val to_bytes : string -> bytes
 val is_ascii_whitespace : char -> bool
+
+val utf8_sequence_length : int -> int
+val utf16_units : int -> int
+val byte_index_of_utf16 : string -> int -> int
+val utf16_length : string -> int

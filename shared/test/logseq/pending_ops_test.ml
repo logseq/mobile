@@ -113,7 +113,7 @@ let page_intents : Ops.pending_intent list =
     Ops.Create_journal
       {
         page_uuid = "page";
-        block_uuid = "block";
+        block_uuid = "block"; block_title = "";
         title = "Journal";
         journal_day = 20260915;
         created_at = 43;

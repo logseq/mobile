@@ -1,5 +1,6 @@
 package com.logseq.app.ui.extensions
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DatePicker
@@ -16,6 +17,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
@@ -41,6 +45,27 @@ internal fun LuiExtensionRegistry.registerProperties() {
     ) {
         CompositionLocalProvider(LocalPropertyValue provides true) { PropertyRow(this) }
     }
+    register("outliner-continuation",
+        "lui-extension-v1|21:outliner-continuation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:identifier:string:required:none,11:guide-count:int:required:none,12:bullet-depth:int:required:none|events:",
+        acceptsStandardChildren = true,
+        properties = listOf(
+            LuiExtensionProperty("bullet-depth", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("guide-count", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("identifier", LuiExtensionValueKind.STRING, required = true),
+        ),
+    ) {
+        val count = int("guide-count") ?: 0
+        val bulletDepth = int("bullet-depth") ?: -1
+        val color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+        Box(Modifier.fillMaxWidth().testTag("outliner." + (string("identifier") ?: "").replace("metadata.", "metadata.guides."))
+            .drawBehind {
+                for (level in 0 until count) {
+                    val x = (12 + level * 22).dp.toPx()
+                    val top = if (level == bulletDepth) 17.5.dp.toPx() else 0f
+                    if (size.height > top) drawLine(color, Offset(x, top), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                }
+            }) { Children() }
+    }
     register("native-property-date",
         "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
         properties = listOf(
@@ -58,9 +83,10 @@ private fun PropertyRow(context: LuiExtensionContext) {
     Layout(content = { context.Children() }, modifier = Modifier.fillMaxWidth()) { children, constraints ->
         if (children.size != 2) return@Layout layout(0, 0) {}
         val width = constraints.maxWidth
-        val keyWidth = minOf(148.dp.roundToPx(), (width * 0.46f).toInt())
+        val intrinsic = children[0].maxIntrinsicWidth(Constraints.Infinity)
+        val keyWidth = if (intrinsic <= 24.dp.roundToPx()) intrinsic else minOf(144.dp.roundToPx(), (width * 0.44f).toInt())
         val gap = 8.dp.roundToPx()
-        val vertical = stacked || children[0].maxIntrinsicWidth(Constraints.Infinity) > keyWidth || width - keyWidth - gap < 96.dp.roundToPx()
+        val vertical = stacked || intrinsic > keyWidth || width - keyWidth - gap < 96.dp.roundToPx()
         val key = children[0].measure(Constraints(maxWidth = if (vertical) width else keyWidth))
         val value = children[1].measure(Constraints(maxWidth = if (vertical) width else width - keyWidth - gap))
         val rowGap = 2.dp.roundToPx()

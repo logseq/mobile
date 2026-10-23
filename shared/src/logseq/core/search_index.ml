@@ -149,14 +149,14 @@ let row_of_eid db eid =
   let title_for_uuid uuid =
     match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
     | Some eid ->
-      (match Graph.string_value (Graph.value db eid "block/title") with
+      (match Graph.entity_title (fun value -> Ok value) db eid with
        | Some title when String.trim title <> "" -> Some title
        | _ -> None)
     | None -> None
   in
   match Graph.uuid_value (Graph.value db eid "block/uuid") with
   | Some uuid ->
-    (match Graph.string_value (Graph.value db eid "block/title") with
+    (match Graph.entity_title (fun value -> Ok value) db eid with
      | Some title ->
        let hidden =
          Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
@@ -216,6 +216,12 @@ let referring_uuids db uuid =
   | None -> []
 
 let refresh_uuids index before after uuids =
+  let uuids =
+    if Journal.format before = Journal.format after then uuids
+    else
+      Seq.fold_left (fun uuids (datom : Ds.datom) ->
+        match Graph.uuid_for_eid after datom.e with Some uuid -> uuid :: uuids | None -> uuids)
+        uuids (Ds.Db.datoms after Ds.Aevt ~a:"block/journal-day" ()) in
   let seen = Hashtbl.create 32 in
   let affected =
     List.concat_map
@@ -445,7 +451,11 @@ let hydrate_hits db results =
       in
       {
         uuid = result.uuid;
-        title = result.title;
+        title = (match entity_eid result.uuid with
+          | Some eid when Option.fold ~none:false ~some:Journal.valid_day
+              (Graph.int_value (Graph.value db eid "block/journal-day")) ->
+            Option.value ~default:result.title (Graph.entity_title plain db eid)
+          | _ -> result.title);
         is_page = result.is_page;
         page;
         breadcrumbs;

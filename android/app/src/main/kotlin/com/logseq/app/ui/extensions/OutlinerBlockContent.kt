@@ -83,6 +83,9 @@ import dev.lui.luiThemeColor
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -314,7 +317,7 @@ private fun decodeMarkup(encoded: String): List<JSONObject> {
 }
 
 private fun isRichNode(node: JSONObject): Boolean = node.optString("type") in setOf(
-    "quote", "math", "codeBlock", "video", "iframe", "youtubeTimestamp", "cloze",
+    "quote", "math", "codeBlock", "video", "iframe", "html", "image", "youtubeTimestamp", "cloze",
 )
 
 private fun markupChunks(nodes: List<JSONObject>): List<List<JSONObject>> {
@@ -351,6 +354,10 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
         }
         "emphasis" -> {
             val style = when (node.optString("style")) {
+                "heading-1" -> SpanStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                "heading-2" -> SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                "heading-3" -> SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                "heading-4", "heading-5", "heading-6" -> SpanStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 "bold" -> SpanStyle(fontWeight = FontWeight.Bold)
                 "italic" -> SpanStyle(fontStyle = FontStyle.Italic)
                 "underline" -> SpanStyle(textDecoration = TextDecoration.Underline)
@@ -520,6 +527,8 @@ private fun MarkupRichNode(
             AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
         }
         "iframe" -> AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = false, headers = mediaHeaders(node))
+        "html" -> AndroidHtml(node.optString("text"))
+        "image" -> AndroidLinkedImage(node.optString("url"), node.optString("text"))
         "youtubeTimestamp" -> {
             val target = node.optString("url")
             val seconds = node.optInt("seconds", -1)
@@ -534,6 +543,52 @@ private fun MarkupRichNode(
 }
 
 // --- assets ---
+
+@Composable
+private fun AndroidHtml(html: String) {
+    val content = "<meta name='viewport' content='width=device-width,initial-scale=1'>" +
+        "<style>:root{color-scheme:light dark}body{background:transparent;font:17px sans-serif;margin:0}img{max-width:100%}</style>" + html
+    AndroidView(factory = { context -> WebView(context).apply {
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        webViewClient = WebViewClient()
+        tag = content
+        loadDataWithBaseURL(null, content, "text/html", "UTF-8", null)
+    } }, update = { view -> if (view.tag != content) {
+        view.tag = content
+        view.loadDataWithBaseURL(null, content, "text/html", "UTF-8", null)
+    } }, onRelease = { it.destroy() }, modifier = Modifier.fillMaxWidth().height(220.dp).testTag("block.rich.html"))
+}
+
+@Composable
+private fun AndroidLinkedImage(url: String, alt: String) {
+    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var failed by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(url) {
+        try {
+            val uri = androidEmbeddedMediaUri(url) ?: error("Invalid image URL")
+            bitmap = withContext(Dispatchers.IO) {
+                val connection = java.net.URL(uri.toString()).openConnection().apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                }
+                val bytes = connection.getInputStream().use { it.readNBytes(20_000_001) }
+                require(bytes.size <= 20_000_000) { "Image is too large" }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
+                var sample = 1
+                while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            }
+            failed = bitmap == null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { failed = true }
+    }
+    val image = bitmap
+    if (image != null) Image(image.asImageBitmap(), alt, contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).testTag("block.rich.image"))
+    else Text(if (failed) "Image unavailable" else "Loading image…", style = outlinerBodyStyle)
+}
 
 @Composable
 private fun ProjectedAsset(

@@ -29,6 +29,7 @@
   str
   re
   uucp
+  uunf
   unix
   threads.posix
   ctypes.foreign)

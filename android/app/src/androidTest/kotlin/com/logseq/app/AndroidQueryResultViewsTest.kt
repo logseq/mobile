@@ -92,6 +92,25 @@ class AndroidQueryResultViewsTest {
 
     private var selectedView = "list"
 
+    @Test fun allViewSelectorAlignsLeadingAndKeepsAdaptiveWidth() {
+        mount { result ->
+            result.put("selectedPage", JSONObject().put("uuid", "collection").put("title", "Collection"))
+            result.put("selectedPageIsTag", true)
+            result.put("resultViews", JSONObject().put("ownerUuid", "collection").put("featureType", "tagged")
+                .put("views", JSONArray().put(JSONObject().put("uuid", "all").put("name", "All")
+                    .put("type", "list").put("rows", JSONArray()))))
+        }
+        val selector = ui.onNodeWithTag("view.select.collection").assertIsDisplayed()
+        val label = ui.onNodeWithText("All", useUnmergedTree = true).assertIsDisplayed()
+        val controlBounds = selector.getUnclippedBoundsInRoot()
+        val textBounds = label.getUnclippedBoundsInRoot()
+        assertTrue("All must align with the native selector's leading edge",
+            kotlin.math.abs(controlBounds.left.value - textBounds.left.value) <= 1f)
+        assertTrue("The selector must retain an adaptive width", (controlBounds.right - controlBounds.left).value < 100f)
+        selector.performClick()
+        ui.onNodeWithTag("view.tab.all").assertIsDisplayed()
+    }
+
     private fun selectView(name: String) {
         ui.onNodeWithTag("view.type.$selectedView").performClick()
         ui.onNodeWithText("Saved views").performClick()
@@ -163,6 +182,22 @@ class AndroidQueryResultViewsTest {
         assertEquals("gallery", action.getJSONObject("config").getString("type"))
     }
 
+    private fun assertObjectPageHidesBlocks(property: Boolean) {
+        mount { result ->
+            val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
+            result.put("selectedPage", JSONObject().put("uuid", "collection").put("title", "Collection"))
+                .put("selectedPageIsTag", !property).put("selectedPageIsProperty", property)
+                .put("resultViews", query)
+        }
+        ui.onNodeWithTag("outliner.block.query-owner").assertDoesNotExist()
+        ui.onNodeWithTag("button.outliner.placeholder.collection").assertDoesNotExist()
+        ui.onNodeWithText("Project result 1").assertIsDisplayed()
+        capture(if (property) "property-objects" else "tag-objects")
+    }
+
+    @Test fun tagPageHidesBlocksAndPlaceholderButShowsObjects() = assertObjectPageHidesBlocks(false)
+    @Test fun propertyPageHidesBlocksAndPlaceholderButShowsObjects() = assertObjectPageHidesBlocks(true)
+
     @Test fun foldedQueryResultsLoadOnlyWhenTapped() {
         mount { result ->
             val query = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block").getJSONObject("query")
@@ -211,6 +246,22 @@ class AndroidQueryResultViewsTest {
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeLeft() }
         ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeRight() }
         ui.onNodeWithTag("sidebar.content").assertIsNotDisplayed()
+        ui.onNodeWithTag("view.cell.table.result-0.block/title").performClick()
+        ui.onNodeWithTag("view.edit.value.table").assertIsDisplayed()
+        ui.onNodeWithTag("view.edit.clear.table").assertDoesNotExist()
+        ui.onNodeWithTag("view.edit.cancel.table").performClick()
+        ui.onNodeWithTag("view.edit.sheet.table").assertDoesNotExist()
+        for (attr in listOf("user.property/Score")) {
+            val header = ui.onNodeWithTag("view.cell.separator.table.header.$attr", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            for (row in listOf("result-0", "result-1", "result-2")) {
+                val divider = ui.onNodeWithTag("view.cell.separator.table.$row.$attr", useUnmergedTree = true)
+                    .getUnclippedBoundsInRoot()
+                assertEquals("Column dividers stay one point wide", 1f, (divider.right - divider.left).value, 0.2f)
+                assertTrue("Column dividers span the cell height", (divider.bottom - divider.top).value >= 48f)
+                assertEquals("Header and body dividers align", header.left.value, divider.left.value, 0.5f)
+            }
+        }
         capture("table")
         ui.onNodeWithTag("view.cell.table.result-0.user.property/Score")
             .performScrollTo().performClick()

@@ -128,13 +128,17 @@ let prepare_pending_creation session (pump : Types.pending_sync) (block : Model.
      | Some page -> prepare_pending_create_request session pump block title (Some page)
      | None ->
        let page = Rpc.journal_page_uuid day in
-       let journal_title = Rpc.journal_day_title day in
+       let journal_title =
+         let db = match (Types.host session).graph_db with
+           | Some read -> read () | None -> Some (Types.state session).model.db in
+         Option.fold ~none:(Rpc.journal_day_title day) ~some:(fun db -> Journal.title db day) db in
+       let journal_name = String.lowercase_ascii journal_title in
        let* journal_title =
          encrypted_title session pump.config journal_title
        in
        let* journal_name =
          encrypted_title session pump.config
-           (String.lowercase_ascii (Rpc.journal_day_title day))
+           journal_name
        in
        set_pending_active session pump
          (Types.Json_request
