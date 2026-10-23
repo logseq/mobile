@@ -6087,7 +6087,7 @@ let outliner_candidate_json_preserves_filtering_and_no_request () =
     "[]";
   check_eq
     (Json.to_string (Rpc.outliner_candidates_json context state))
-    "[{\"label\":\"Alpha\",\"value\":\"page\"}]"
+    "[{\"label\":\"Alpha\",\"value\":\"page\"},{\"label\":\"New page: alp\",\"value\":\"alp\"}]"
 
 let json_field value key = Json.to_string (member key value)
 

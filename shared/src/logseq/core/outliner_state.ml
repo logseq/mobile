@@ -401,8 +401,17 @@ let autocomplete_candidates (context : outliner_context) request =
               String.lowercase_ascii candidate.label = normalized)
             matches)
   then matches @ [ { label = "New tag: " ^ query; value = query } ]
-  else if request.kind = Node && matches = [] && query <> "" then
-    [ { label = "New page: " ^ query; value = query } ]
+  else if request.kind = Node && query <> ""
+    && not (List.exists (fun (candidate : outliner_candidate) ->
+      Node_title.name candidate.label = Node_title.name query
+      && match context.db with
+         | None -> List.exists (fun (page : outliner_candidate) -> page.value = candidate.value) context.pages
+         | Some db -> Option.fold ~none:false ~some:(fun id ->
+             Graph_read.ref_eids db id "block/parent" = []
+             && (Graph_read.entity_is_instance_of db id "logseq.class/Page"
+                 || Graph_read.entity_is_instance_of db id "logseq.class/Journal"))
+             (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))) (indexed @ raw)) then
+    matches @ [ { label = "New page: " ^ query; value = query } ]
   else matches
 
 let contains_from value start needle =
