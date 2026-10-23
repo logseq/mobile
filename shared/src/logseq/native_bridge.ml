@@ -546,6 +546,8 @@ let extension_event node identifier name text value =
     | "outliner-block-row", "set-status" -> ["uuid", StringValue text; "count", IntValue value]
     | "outliner-block-row", "drop" -> ["uuid", StringValue text; "placement", StringValue
         (match value with 0 -> "before" | 1 -> "inside" | _ -> "after")]
+    | "outliner-block-row", "edit" when value >= 0 ->
+      ["uuid", StringValue text; "caret-utf16-offset", IntValue value]
     | "outliner-block-row", _ -> ["uuid", StringValue text]
     | "outliner-block-content", "open-node"
     | "outliner-block-content", "drag-start"

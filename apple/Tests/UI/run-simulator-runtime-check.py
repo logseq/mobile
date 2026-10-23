@@ -76,7 +76,9 @@ import SwiftUI
             "application-identifier": identifier,
             "keychain-access-groups": [identifier],
         }))
-        runtime = max(core.glob("native-link-inputs/*/logseq_runtime.o"), key=lambda path: path.stat().st_mtime)
+        runtime = Path((core / "native-link-inputs.txt").read_text().split(":", 1)[0])
+        if not runtime.is_file():
+            raise SystemExit("The app build's native core object is missing; rebuild the simulator app")
         toolchain = ROOT / "_build/apple-toolchains/ios"
         optimization = ["-O"] if CONFIGURATION == "release" else []
         runtime_exports = ["-Xlinker", "-export_dynamic"]

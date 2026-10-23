@@ -634,7 +634,7 @@ let outliner_action_context session context message =
   let current = (state session).outliner_state in
   let targets = Outliner.interaction_targets current |> Outliner.Sset.elements in
   let targets = match message with
-    | Outliner.Tap_block uuid | Long_press_block uuid | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
+    | Outliner.Tap_block uuid | Tap_block_at (uuid, _) | Long_press_block uuid | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
     | Drop_blocks value -> value.target_uuid :: targets
     | Set_task_status value -> value.status_uuid :: targets
     | Set_task_priority value -> value.priority_uuid :: targets
@@ -1940,7 +1940,13 @@ let rec dispatch session action payload =
              let current = state session in
              session.Types.state := {current with expanded_queries =
                (if expanded then Outliner.Sset.add else Outliner.Sset.remove) key current.expanded_queries};
-             snapshot_visible session
+             Rpc.success (Rpc.with_node_icons (node_icon session) (`Assoc [
+               "isQueryPatch", `Bool true; "queryOwnerUuid", `String uuid;
+               "selectedGraphId", (match current.config with
+                 | Some config -> `String config.Api.graph_id | None -> `Null);
+               "query", (match query_projection session db uuid with
+                 | Some (`Assoc fields) when expanded -> `Assoc (List.remove_assoc "rows" fields)
+                 | Some value -> value | None -> `Null)]))
            | _ -> Rpc.failure "invalid_query" "A query block and expansion state are required")
          else match editing_cursor session with
            | Error (code, message) -> Rpc.failure code message

@@ -87,6 +87,7 @@ type outliner_priority =
 
 type outliner_message =
   | Tap_block of string
+  | Tap_block_at of string * int
   | Long_press_block of string
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
@@ -1367,7 +1368,7 @@ let update context (state : outliner_state) message =
     }
   in
   match message with
-  | Tap_block uuid ->
+  | Tap_block uuid | Tap_block_at (uuid, _) ->
     if not (Sset.is_empty state.selected) then
       step { state with selected = toggle_member state.selected uuid } []
     else
@@ -1376,7 +1377,12 @@ let update context (state : outliner_state) message =
          step
            {
              (start_editing context state block
-                (utf16_length (display_block_title context block)))
+                (match message with
+                 | Tap_block_at (_, caret) ->
+                   (* Native taps use stored title offsets; editor text resolves UUID references. *)
+                   let caret = max 0 (min (utf16_length block.title) caret) in
+                   utf16_length (display_block_title context {block with title = prefix_at block.title caret})
+                 | _ -> utf16_length (display_block_title context block)))
              with
              selected = Sset.empty;
            }

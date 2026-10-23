@@ -187,7 +187,10 @@ let decode_outliner_event fields =
   match kind with
   | "tapBlock" ->
     let* uuid = required_string fields "uuid" in
-    Ok (Outliner.Tap_block uuid)
+    (match List.assoc_opt "caretUTF16Offset" fields with
+     | Some (`Int caret) -> Ok (Outliner.Tap_block_at (uuid, caret))
+     | None -> Ok (Outliner.Tap_block uuid)
+     | _ -> Error "invalid integer outliner event field: caretUTF16Offset")
   | "longPressBlock" ->
     let* uuid = required_string fields "uuid" in
     Ok (Outliner.Long_press_block uuid)

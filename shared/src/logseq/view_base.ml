@@ -139,7 +139,10 @@ let handle_outliner_block_content_event input_event model_source send =
            ( extension_string values "uuid"
            , extension_string values "placement" ))
     else if name = "edit" then
-      send (Model.BeginOutlinerEdit (extension_string values "uuid"))
+      let uuid = extension_string values "uuid" in
+      (match String_map.find_opt "caret-utf16-offset" values with
+       | Some (IntValue caret) -> send (Model.BeginOutlinerEditAt (uuid, caret))
+       | _ -> send (Model.BeginOutlinerEdit uuid))
     else true
   | _ -> true
 

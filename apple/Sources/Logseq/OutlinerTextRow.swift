@@ -314,8 +314,11 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
 
     func activateTitle(at point: CGPoint) {
-        guard title.accessibilityCustomActions?.isEmpty == false,
-              let attributed = title.attributedText, attributed.length > 0 else { edit(); return }
+        guard let row, !row.opensAsPage else { edit(); return }
+        guard let attributed = title.attributedText, attributed.length > 0 else {
+            emit?("edit", nil, ["caret-utf16-offset": .int(0)])
+            return
+        }
         let text = NSMutableAttributedString(attributedString: attributed)
         text.addAttribute(.font, value: title.font ?? .preferredFont(forTextStyle: .body),
                           range: NSRange(location: 0, length: text.length))
@@ -338,7 +341,8 @@ struct OutlinerTextRow: UIViewRepresentable {
                 return
             }
         }
-        edit()
+        let offset = OutlinerTapCaret.position(at: location, manager: manager, container: container, text: text.string as NSString)
+        emit?("edit", nil, ["caret-utf16-offset": .int(OutlinerTapCaret.sourceOffset(offset, title: row.title, nodes: row.markup))])
     }
     @objc private func edit() { emit?(row?.opensAsPage == true ? "open-node" : "edit", nil, [:]) }
     @objc private func open() { emit?("open-node", nil, [:]) }

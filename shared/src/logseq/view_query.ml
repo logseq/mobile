@@ -75,7 +75,8 @@ let legacy_view ~render_block _model_source row_source send : t =
   let owner = (Signal.sample row_source).Model.row_uuid in
   let identifier name = "query." ^ name ^ "." ^ owner in
   let own source = Signal.own_signal context.Lui_ui.ui_scope source in
-  let query = own (Signal.map (fun row -> decode row.Model.query_json) row_source) in
+  let raw = own (Signal.cutoff String.equal (own (Signal.map (fun row -> row.Model.query_json) row_source))) in
+  let query = own (Signal.map decode raw) in
   let expanded = Signal.state context.ui_scheduler true in
   let limit = Signal.state context.ui_scheduler 20 in
   let entries = own (Signal.map2 (fun query count ->
@@ -553,10 +554,9 @@ let value_sheet owner feature view model_source send item property close =
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close
 
-let collection ~render_block model_source raw_source send : t =
+let collection_json ~render_block model_source parsed send : t =
  fun context parent ->
   let own value = Signal.own_signal context.ui_scope value in
-  let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw_source) in
   let initial = Signal.sample parsed in
   let owner = jtext (jfield "ownerUuid" initial) and feature = jtext (jfield "featureType" initial) in
   let views = own (Signal.map saved_views_json parsed) in
@@ -767,8 +767,8 @@ let collection ~render_block model_source raw_source send : t =
           value_sheet owner feature view model_source send item property (fun () -> Signal.set editing None)) (Signal.value editing));
     ]) context parent in
   (column ~gap:8 ~cross:`stretch ~accessibility_identifier:("query.block." ^ owner) [
-    if_ ~test:(own (Signal.map2 (fun raw expanded -> expanded && (decode raw).error <> None) raw_source (Signal.value expanded)))
-      (text ~value_signal:(own (Signal.map (fun raw -> Option.value ~default:"" (decode raw).error) raw_source))
+    if_ ~test:(own (Signal.map2 (fun json expanded -> expanded && jtext (jfield "error" json) <> "") parsed (Signal.value expanded)))
+      (text ~value_signal:(own (Signal.map (fun json -> jtext (jfield "error" json)) parsed))
         ~foreground:"destructive" ~accessibility_identifier:("query.error." ^ owner) []);
     (if feature = "query-result" then
       if_ ~test:(own (Signal.map not (Signal.value expanded)))
@@ -780,10 +780,20 @@ let collection ~render_block model_source raw_source send : t =
       box ~height:24 ~accessibility_identifier:("view.results-gap." ^ owner) [];
     ])]) context parent
 
-let view ~render_block model_source row_source send : t =
-  let raw_source = Signal.map (fun (row : Model.outline_row) -> row.query_json) row_source in
-  dyn (fun has_views ->
+let collection ~render_block model_source raw_source send : t = fun context parent ->
+  let own value = Signal.own_signal context.Lui_ui.ui_scope value in
+  let raw = own (Signal.cutoff String.equal raw_source) in
+  let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw) in
+  collection_json ~render_block model_source parsed send context parent
+
+let view ~render_block model_source row_source send : t = fun context parent ->
+  let own value = Signal.own_signal context.Lui_ui.ui_scope value in
+  let raw_source = own (Signal.cutoff String.equal
+    (own (Signal.map (fun (row : Model.outline_row) -> row.query_json) row_source))) in
+  let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw_source) in
+  (dyn (fun has_views ->
     if has_views then if_ ~test:(Signal.map (fun (row : Model.outline_row) -> not row.is_collapsed) row_source)
-        (collection ~render_block model_source raw_source send)
+        (collection_json ~render_block model_source parsed send)
     else legacy_view ~render_block model_source row_source send)
-    (Signal.map (fun raw -> saved_views raw <> [] || (try member "expanded" (Json.from_string raw) <> None with _ -> false)) raw_source)
+    (own (Signal.cutoff Bool.equal (own (Signal.map (fun json -> saved_views_json json <> [] ||
+      member "expanded" json <> None) parsed))))) context parent

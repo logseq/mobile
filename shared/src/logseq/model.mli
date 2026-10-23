@@ -243,6 +243,7 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
   ; empty_journals : (sidebar_page * int) list
@@ -460,6 +461,7 @@ type logseq_action =
   | ApplySearchResults of string * search_hit list
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
+  | BeginOutlinerEditAt of string * int
   | EditorCompletion of string * string
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
