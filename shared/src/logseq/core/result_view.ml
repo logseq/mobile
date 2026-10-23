@@ -179,6 +179,9 @@ let node_editable db p = p.attr = "block/title" || p.attr = "block/tags" || edit
 let choices_json db choices =
   `List (List.map (fun id -> `Assoc ["uuid", `String (uuid db id);
     "title", `String (display (content db (Ds.Ref id)))]) choices)
+let property_metadata db attr =
+  let p = property db attr in
+  `Assoc ["attr", `String attr; "title", `String p.title; "editable", `Bool (node_editable db p)]
 let column_json db rows p =
   let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @

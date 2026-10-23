@@ -34,6 +34,16 @@ let render db ~owner ~encode_block =
     let rename = if Node_title.can_rename_page db id then
       Result_view.property_json ~include_candidates:false db ~owner ~attr:"block/title" ~encode_block
       else `Null in
+    let class_ = Node_title.is_class db id in
+    let schema_attrs = G.ref_eids db id "logseq.property.class/properties" |> List.filter_map (ident db) in
+    let property attr = Result_view.property_json ~include_candidates:false db ~owner ~attr ~encode_block in
+    let catalog = Ds.Db.datoms db Ds.Aevt ~a:"db/ident" () |> Seq.filter_map (fun (d : Ds.datom) ->
+      match d.v with Ds.Keyword attr when visible db attr && Node_title.is_property db d.e
+        && not (List.mem attr (if class_ then schema_attrs else attrs)) ->
+        let p = Result_view.property_metadata db attr in
+        if member "editable" p = `Bool true then Some p else None
+      | _ -> None) |> List.of_seq |> List.sort (fun a b ->
+        compare (member "title" a) (member "title" b)) in
     let tag_picker = if not (Node_title.can_edit db id) then `Null else
       let assigned = Hashtbl.create 8 in
       List.iter (fun id -> Option.iter (fun uuid -> Hashtbl.replace assigned uuid ()) (G.uuid_for_eid db id))
@@ -45,8 +55,34 @@ let render db ~owner ~encode_block =
       | `Assoc fields -> `Assoc (["title", `String "Add tags"; "raw", `Null; "text", `String ""; "filterValues", `List choices] @
           List.filter (fun (name, _) -> not (List.mem name ["title"; "raw"; "text"; "filterValues"])) fields)
       | _ -> `Null in
-    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id); "tagPicker", tag_picker; "rename", rename; "properties", `List (List.map (fun attr ->
-      Result_view.property_json db ~owner ~attr ~encode_block) attrs)])
+    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id);
+      "tagPicker", tag_picker; "canAdd", `Bool (Node_title.can_edit db id); "classSchema", `Bool class_;
+      "availableProperties", `List catalog; "schemaProperties", `List (List.map property schema_attrs);
+      "rename", rename; "properties", `List (List.map (fun attr ->
+        Result_view.property_json db ~owner ~attr ~encode_block) attrs)])
+
+let attach db owner attr =
+  let id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in
+  if not (Node_title.can_edit db id && visible db attr) then invalid_arg "This property is read-only";
+  let definition = match Ds.entid db "db/ident" (Ds.Keyword attr) with
+    | Some id when Node_title.is_property db id -> id | _ -> invalid_arg "Property no longer exists" in
+  let json = Result_view.property_json ~include_candidates:false db ~owner ~attr ~encode_block:(fun _ -> `Null) in
+  if member "editable" json <> `Bool true then invalid_arg "This property is read-only";
+  let target_attr, value = if Node_title.is_class db id then
+      "logseq.property.class/properties", Pending_ops.Ref_ident attr
+    else attr, (match List.assoc_opt attr db.Ds.schema with
+      | Some schema when schema.Ds.value_type = Some Ds.RefType -> Pending_ops.Ref_ident "logseq.property/empty-placeholder"
+      | _ when get db definition "logseq.property/type" = Ds.Keyword "checkbox" -> Pending_ops.Bool_value false
+      | _ -> Pending_ops.String_value "") in
+  let raw = Result_view.property_json ~include_candidates:false db ~owner ~attr:target_attr ~encode_block:(fun _ -> `Null)
+    |> member "raw" in
+  let expected = match raw with `Null -> None | value -> Some (Pending_ops.semantic_value_of_json value) in
+  let many = match List.assoc_opt target_attr db.Ds.schema with Some schema -> schema.Ds.cardinality = Ds.Many | None -> false in
+  let value = match expected with
+    | Some value when not (Node_title.is_class db id) -> value
+    | Some (Pending_ops.Set_value values) -> Pending_ops.Set_value (List.sort_uniq compare (value :: values))
+    | _ -> if many then Pending_ops.Set_value [value] else value in
+  Pending_ops.Set_property {uuid = owner; attr = target_attr; expected; value = Some value}
 
 let mutation db ~now ~fresh_uuid input =
   try
@@ -73,6 +109,30 @@ let mutation db ~now ~fresh_uuid input =
         (List.sort_uniq String.compare (values "newValues")) in
       if selected = [] && created = [] then invalid_arg "Choose at least one tag";
       Ok (Pending_ops.Atomic (selected @ created)))
+    else     if action = `String "add" then
+      Ok (attach db (required "blockUuid" input) (required "attr" input))
+    else if action = `String "create" then (
+      let owner = required "blockUuid" input in
+      let title = String.trim (required "title" input) in
+      let existing = Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String title) () |> Seq.find_map (fun (d : Ds.datom) ->
+        if Node_title.is_property db d.e then ident db d.e else None) in
+      match existing with Some attr -> Ok (attach db owner attr)
+      | None ->
+        let pages = Ds.Db.datoms db Ds.Avet ~a:"block/name" ~v:(Ds.String (Node_title.name title)) ()
+          |> Seq.filter_map (fun (d : Ds.datom) ->
+            if Node_title.is_page db d.e && not (Node_title.is_property db d.e || Node_title.is_class db d.e)
+            then Some d.e else None) |> List.of_seq in
+        let uuid, title = match pages with
+          | [] -> fresh_uuid (), title
+          | [id] ->
+            if G.ref_eids db id "block/parent" <> [] then invalid_arg "Namespaced pages cannot become properties";
+            (match G.uuid_for_eid db id with Some uuid -> uuid | None -> invalid_arg "Page has no UUID"),
+            (match get db id "block/title" with Ds.String title -> title | _ -> title)
+          | _ -> invalid_arg "Multiple pages share this name. Choose a unique property name" in
+        let create = Pending_ops.Create_property {uuid; title; created_at = now} in
+        let projected = match Pending_projection.compile db create with
+          | Ok tx -> Ds.db_with tx db | Error message -> invalid_arg message in
+        Ok (Pending_ops.Atomic [create; attach projected owner ("user.property/property-" ^ uuid)]))
     else
     let attr = match input with `Assoc fields -> (match List.assoc_opt "attr" fields with Some (`String attr) -> attr | _ -> "") | _ -> "" in
     let rename = attr = "block/title" && (match input with

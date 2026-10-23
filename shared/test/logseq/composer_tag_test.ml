@@ -261,7 +261,19 @@ let rename_page_rejects_hashes_without_writes () = R.with_runtime (fun session r
     check_eq ~msg:"rejected names do not create tags or enqueue writes"
       (Graph_runtime.pending_operations runtime) before) ["Workspace #Project"; "Workspace#Mobile"])
 
+let new_property_definitions_roundtrip_through_sync () = R.with_runtime (fun session runtime conn ->
+  List.iter (fun owner -> ignore (Node_property_test.result
+    (Node_property_test.create_named_property session owner (if owner = Q.page then "Page notes" else "Tag notes"))))
+    [Q.page; Q.project];
+  sync_all runtime conn;
+  List.iter (fun title ->
+    let db = Graph_runtime.db runtime in
+    let uuid = Graph_read.unique_named_uuid false db title |> Option.get in
+    let id = Datascript.entid db "block/uuid" (Datascript.Uuid uuid) |> Option.get in
+    check ~msg:"confirmed properties retain their type and schema" (Node_title.is_property db id)) ["Page notes"; "Tag notes"])
+
 let cases = [
+  case "new page and tag properties survive confirmed sync" new_property_definitions_roundtrip_through_sync;
   case "adjacent wiki reference tags apply to the referenced page" adjacent_reference_tags_target_the_page;
   case "Rename page rejects hash syntax atomically" rename_page_rejects_hashes_without_writes;
   case "graph changes reset the tag picker" graph_changes_reset_the_tag_picker;

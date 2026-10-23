@@ -593,6 +593,129 @@ let wrapped_node_values_resolve_only_the_owning_property () =
   check_eq ~msg:"value blocks owned by another property keep their content" (member "text" p) (`String Q.page);
   check_eq (member "uuid" (List.hd (items "references" p))) (`String R.text_a)
 
+let add_property session owner attr = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+  "blockUuid", `String owner; "attr", `String attr; "action", `String "add"]))
+
+let pages_and_tags_accept_existing_properties () = R.with_runtime (fun session runtime conn ->
+  ignore (result (add_property session Q.page R.summary));
+  let p = property R.summary (result (read session Q.page)) in
+  check_eq ~msg:"adding a page property exposes an editable empty value" (member "text" p) (`String "");
+  ignore (result (edit session Q.page p "Page notes" []));
+  check_eq (member "text" (property R.summary (result (read session Q.page)))) (`String "Page notes");
+  let before = Graph_runtime.pending_operations runtime in
+  ignore (result (add_property session Q.page R.summary));
+  check_eq ~msg:"adding an existing property keeps its value" (member "text" (property R.summary (result (read session Q.page)))) (`String "Page notes");
+  ignore (result (add_property session Q.project R.summary));
+  let db = Graph_runtime.db runtime in
+  let tag_id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.project)) in
+  let prop_id = Option.get (Ds.entid db "db/ident" (Ds.Keyword R.summary)) in
+  check ~msg:"tag properties belong to the class schema" (List.mem prop_id (Graph_read.ref_eids db tag_id "logseq.property.class/properties"));
+  let before_invalid = Graph_runtime.pending_operations runtime in
+  check_eq (member "ok" (add_property session Q.page "logseq.property/hide?")) (`Bool false);
+  check_eq ~msg:"private properties never enqueue writes" (Graph_runtime.pending_operations runtime) before_invalid;
+  check ~msg:"adding definitions enqueues durable mutations" (List.length before > 0);
+  let restored = Graph_runtime.create runtime.path 42 conn {Graph_runtime.default_options with auto_create_today = false} in
+  let db = Graph_runtime.db restored in
+  check (List.mem prop_id (Graph_read.ref_eids db tag_id "logseq.property.class/properties"));
+  List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime))
+
+let create_properties_on_pages_and_tags () =
+  List.iter (fun owner -> R.with_runtime (fun session runtime _ ->
+    ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+      "blockUuid", `String owner; "action", `String "create"; "title", `String "Reading notes"]))));
+    let db = Graph_runtime.db runtime in
+    let id = Option.get (Graph_read.unique_named_uuid false db "Reading notes") in
+    let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid id)) in
+    check ~msg:"new properties have real schema definitions" (Graph_read.entity_is_instance_of db eid "logseq.class/Property");
+    let attr = match Graph_read.value db eid "db/ident" with Some (Ds.Keyword attr) -> attr | _ -> fail "Missing ident" in
+    check (List.mem_assoc attr db.schema);
+    let rendered = member "nodeProperties" (result (read session owner)) in
+    check ~msg:"new property is attached to its owner" (List.exists (fun p -> member "attr" p = `String attr)
+      (items (if owner = Q.project then "schemaProperties" else "properties") rendered));
+    if owner = Q.project then check_eq ~msg:"tag objects inherit the newly added property"
+      (member "text" (property attr (result (read session Q.alpha)))) (`String "");
+    List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation)) (Graph_runtime.pending_operations runtime)))
+    [Q.page; Q.project]
+
+let empty_pages_expose_the_add_property_flow () =
+  List.iter (fun backend -> List.iter (fun owner -> R.with_runtime (fun session _ _ ->
+    ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String owner])));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app (Model.RequestAppNode owner);
+      let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+        | Ok value -> value | Error message -> fail message in
+      App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id = let node = find id in check ~msg:id (node <> -1); App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      let overflow = match find "button.connection" with -1 -> find "button.overflow-menu" | node -> node in
+      check ~msg:"Add property belongs to the top overflow menu"
+        (App_test.descendant_with_identifier host overflow ("property.add." ^ owner) <> -1);
+      check ~msg:"empty pages have no property controls in their reading content"
+        (find ("properties." ^ owner) = -1);
+      click ("property.add." ^ owner);
+      let search value =
+        App_test.dispatch app (Lui_protocol.TextChanged (find ("property.add." ^ owner ^ ".search"), value));
+        App_test.flush app in
+      search "Summary";
+      check ~msg:"exact existing property names never offer duplicate creation"
+        (find ("property.add." ^ owner ^ ".create") = -1);
+      search "Reading notes";
+      check ~msg:"new names offer explicit creation" (find ("property.add." ^ owner ^ ".create") <> -1);
+      search "Summary";
+      click ("property.add.option." ^ owner ^ "." ^ R.summary);
+      let body = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (J.from_string body) | _ -> None)
+        (List.rev (App.model app).pending_effects) |> Option.get in
+      check_eq ~msg:"property creation stays bound to its graph" (member "graphId" body)
+        (match (App.model app).selected_graph_id with Some graph -> `String graph | None -> `String "");
+      check_eq (member "action" body) (`String "add");
+      check_eq (member "blockUuid" body) (`String owner);
+      check_eq (member "attr" body) (`String R.summary)))) [Q.page; Q.project])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let create_named_property session owner title = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+  "blockUuid", `String owner; "action", `String "create"; "title", `String title]))
+
+let property_creation_rejects_unsafe_names_and_preserves_definitions () = R.with_runtime (fun session runtime _ ->
+  let before = Graph_runtime.pending_operations runtime in
+  List.iter (fun title ->
+    check_eq ~msg:("reject invalid property name " ^ title) (member "ok" (create_named_property session Q.page title)) (`Bool false);
+    check_eq (Graph_runtime.pending_operations runtime) before)
+    [""; "  "; "#Unsafe"; "Notes #Unsafe"; "[[Unsafe]]"; "Bad/name"; "Property type"];
+  let db = Graph_runtime.db runtime in
+  let schema = List.assoc R.summary db.schema in
+  ignore (result (create_named_property session Q.page "Summary"));
+  let db = Graph_runtime.db runtime in
+  check_eq ~msg:"choosing an existing property never changes its schema" (List.assoc R.summary db.schema) schema;
+  check_eq ~msg:"existing property identity is reused"
+    (Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String "Summary") () |> List.of_seq |> List.length) 1;
+  ignore (result (create_named_property session Q.page "summary"));
+  let db = Graph_runtime.db runtime in
+  check_eq ~msg:"property names remain case sensitive like master"
+    (Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String "summary") () |> List.of_seq |> List.length) 1)
+
+let ordinary_page_conversion_preserves_identity_and_children () = R.with_runtime (fun session runtime _ ->
+  let before = Graph_runtime.db runtime in
+  let children = Graph_read.blocks_for_page (fun value -> Ok value) before Q.page in
+  ignore (result (create_named_property session Q.alpha "Workspace"));
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.page)) in
+  check ~msg:"the existing page becomes the property without changing UUID" (Node_title.is_property db id);
+  check ~msg:"conversion retracts the Page type" (not (Graph_read.entity_is_instance_of db id "logseq.class/Page"));
+  check_eq ~msg:"conversion preserves existing children"
+    (List.map (fun (block : Cache_model.block) -> block.uuid) (Graph_read.blocks_for_page (fun value -> Ok value) db Q.page))
+    (List.map (fun (block : Cache_model.block) -> block.uuid) children))
+
+let namespaced_page_conversion_is_rejected_without_writes () = R.with_runtime (fun session runtime conn ->
+  ignore (Ds.transact_conn conn [put Q.page "block/parent" (Ds.Ref_to (Q.ref_uuid Q.project))]);
+  Graph_runtime.rebase runtime 42 [] [Q.page];
+  let before = Graph_runtime.pending_operations runtime in
+  check_eq (member "ok" (create_named_property session Q.alpha "Workspace")) (`Bool false);
+  check_eq ~msg:"rejected conversion leaves no property or partial attachment" (Graph_runtime.pending_operations runtime) before;
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.page)) in
+  check (not (Node_title.is_property db id)))
+
 let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session runtime _ ->
   ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.page])));
   Q.with_ui App_test.ios_backend (Rpc_session.snapshot_visible session) (fun app ->
@@ -630,6 +753,12 @@ let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session ru
 let cases = [
   case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;
   case "wrapped node values navigate to their actual target safely" wrapped_node_values_resolve_only_the_owning_property;
+  case "property creation validates names and reuses definitions safely" property_creation_rejects_unsafe_names_and_preserves_definitions;
+  case "page conversion preserves UUID and children like master" ordinary_page_conversion_preserves_identity_and_children;
+  case "namespaced page conversion is rejected atomically" namespaced_page_conversion_is_rejected_without_writes;
+  case "page and tag property additions persist and preserve values" pages_and_tags_accept_existing_properties;
+  case "new properties create real definitions on pages and tags" create_properties_on_pages_and_tags;
+  case "empty pages and tags expose the native add property flow" empty_pages_expose_the_add_property_flow;
   case "Text and URL blocks edit inline with stable identity and sibling values" text_and_url_values_edit_inline_as_blocks;
   case "node property taps open select with navigation" node_property_values_open_select_and_navigate;
   case "built-in page menus hide Delete and reject stale requests" builtin_pages_hide_delete_and_reject_deletion_requests;
