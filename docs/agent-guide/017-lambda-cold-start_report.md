@@ -6,9 +6,26 @@ The target remains **at most 300 ms from process creation to the first visible j
 
 Measurements use the Mac VM's iPhone 17 Pro simulator, iOS 26, a fresh process, and an isolated copy of Lambda RTC containing 11 populated journal blocks on today. Five nonempty native outliner title labels must intersect the window at the first commit. The original graph is never modified. OS file caches and graph state remain warm between process launches.
 
-The harness restores the local graph and authenticated renderer directly. Authentication restoration and networking are excluded: this is a lower bound, not a whole-app readiness result. The endpoint is a conservative display callback after the committed content's estimated presentation time. A Core Animation commit or logo does not count as success.
+The original harness restores the local graph and authenticated renderer directly, excluding authentication restoration and networking. It remains available as a renderer-only lower bound. The new `--app-entry` mode compiles the actual production `AppMain`, delegate, quick-action declarations, and `LogseqRootView`; only the `@main` trampoline is replaced to observe the key window. It restores synthetic unexpired credentials from its own keychain and uses an offline API address. The endpoint is a conservative display callback after real nonempty titles commit with no opaque launch cover. A Core Animation commit or logo does not count as success.
 
-The uninstrumented production Release build, with the OCaml core rebuilt from mobile main revision `aed77e1f8ff14d677a9fa992818e57e584901971` and no Swift testability, measured **707.4 ms median over five launches**, maximum 769.3 ms. See [production samples](017-lambda-cold-start/production-visible.json). Diagnostic builds below contain temporary controls and are compared only against their own same-binary baseline.
+On the rebuilt current-main core, the reproducible actual-entry mode measured **763.5 ms median, 817.7 ms maximum over five launches**. Each launch displayed five real native titles and reported `signedIn` at the endpoint. The goal remains unmet. This includes local stored-session authentication restoration but does not measure expired-token refresh or successful server synchronization. See [actual-entry samples and stage timings](017-lambda-cold-start/app-entry.json).
+
+The earlier renderer-only uninstrumented production Release build, with the OCaml core rebuilt from mobile main revision `aed77e1f8ff14d677a9fa992818e57e584901971` and no Swift testability, measured **707.4 ms median over five launches**, maximum 769.3 ms. See [production samples](017-lambda-cold-start/production-visible.json). Diagnostic builds below contain temporary controls and are compared only against their own same-binary baseline.
+
+## Actual application-entry phases
+
+These are medians of each phase in the latest five actual-entry launches; medians are not additive.
+
+| Phase | Median |
+| --- | ---: |
+| Process creation to `main` | 279.1 ms |
+| `main` to delegate initialization | 25.1 ms |
+| Delegate initialization, including local graph/renderer startup | 50.7 ms |
+| Initialization complete to key window | 127.7 ms |
+| Key window to committed visible content | 266.8 ms |
+| Commit to observed display callback | 16.1 ms |
+
+The first preliminary actual-entry control measured 818.4 ms median / 953.9 ms maximum. The reproducible driver is not treated as a further speed improvement: VM variation and executable differences prevent that inference. Both establish the same broad priority: loading before `main`, then window and first-content construction. The window-to-commit interval can also contain authentication/session application; it is not attributed entirely to text drawing or SwiftUI without profiling.
 
 ## Proven launch-path fixes
 
@@ -102,19 +119,21 @@ The benchmark now optionally records process and main-thread CPU counters at eac
 1. Attribute pre-main loading remaining after QuickLook. It is still approximately 280 ms in the stable diagnostic runs. SDK controls already implicate AuthenticationServices as another loader cost, but that control is not proof of an equally large removable cost in the complete app.
 2. Resolve which concrete navigation/control view types drive the approximately 100 ms of main-thread conformance scanning. Preserve navigation, native menus, focus, accessibility, gestures, and visual behavior while testing any smaller representation. Do not repeat the ineffective blanket type-erasure changes.
 3. Investigate the icon catalog and first bitmap rendering after the larger launch costs. Preserve emoji skin variants, colored icons, font variants, appearance, and display-scale cache keys.
-4. Run full authentication-restoration and actual app-root startup before claiming the 300 ms goal. The local renderer lower bound alone cannot satisfy it.
+4. Profile the actual-entry window-to-content interval, distinguishing view creation/layout from authentication/session updates. The new actual-entry baseline includes stored-token restoration; a renderer-only lower bound cannot satisfy the 300 ms goal.
 
 ## Validation and reproduction
 
 After rebasing onto mobile main revision `d0f1dc98343daf6369675f6e26cf3b337a07b51d` (including PRs 78 and 79), the retained fixes passed 1,071 native core tests, 104 Swift UI tests using a direct Swift Testing app host, and native launch-cover, once-only first-frame observer, first-reveal drawer, deferred file-preview, real-graph deferred-sidebar, and host-metadata rendering checks. No XCTest or `swift test` was run. The simulator core was rebuilt from this source; its native link-input fingerprint is `724324f7030b2a07bfea700021613b72b31ceada2d36c4f77bf63022e8e80ff2`. These functional checks use dedicated cold-start bundles so unrelated simulator checks cannot replace them.
+
+The first-frame measurement regression was observed failing when the old probe accepted the initial blank commit (`nonempty_rows=0`). It now waits through blank and covered commits, then passes only after the test's real title is revealed. Run it with `python3 scripts/test-ios-cold-start-measurement.py`. The actual-entry driver also verifies production module flags, exact FFI exports, unchanged binary identity, synthetic-session preparation, real visible titles, and actual authentication state.
 
 Build the production simulator app with `LOGSEQ_IOS_CONFIGURATION=release scripts/build-mobile-ios-simulator.sh`, then measure an isolated fixture:
 
 ```sh
 python3 scripts/benchmark-ios-cold-start.py /path/to/isolated-documents \
   --graph-id lambda-latency --simulator SIMULATOR_UDID \
-  --iterations 5 --maximum-ms 300 --minimum-rows 1 \
+  --iterations 5 --maximum-ms 300 --minimum-rows 1 --app-entry \
   --output /tmp/logseq-cold-start-results
 ```
 
-The command deliberately exits nonzero while the threshold is missed. Run without concurrent builds, Instruments recording, or other simulator tests. Functional launch checks are available through `python3 scripts/test-ios-launch.py`; these build with testability, so rebuild production modules before timing.
+The command deliberately exits nonzero while the threshold is missed. Omit `--app-entry` only for the explicitly narrower renderer control. The actual-entry bundle rejects capture directories outside its own sandbox and never uses the production app's keychain access group. Run without concurrent builds, Instruments recording, or other simulator tests. Functional launch checks are available through `python3 scripts/test-ios-launch.py`; these build with testability, so rebuild production modules before timing.

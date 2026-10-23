@@ -6,8 +6,8 @@ import os
 import LogseqModel
 import Logseq
 
-// This measures the local, authenticated journal renderer. Authentication restore
-// and networking are excluded; this lower bound cannot prove whole-app readiness.
+// Shared first-frame probe. The default entry below measures only the local
+// renderer; the application-entry driver also runs the real app lifecycle.
 @MainActor private enum Clock {
     static let appInit = CACurrentMediaTime()
     static let measuresCPU = ProcessInfo.processInfo.environment["LOGSEQ_BENCH_CPU"] == "1"
@@ -55,9 +55,6 @@ import Logseq
         link.addAction(to: .afterCATransactionCommit) { [weak self] link, info in
             guard let self else { return }
             let committedAt = CACurrentMediaTime()
-            firstCommitTime = committedAt
-            link.isEnabled = false
-            Clock.end("FirstLayout")
             func countVisibleTitles(_ view: UIView) -> Int {
                 guard !view.isHidden, view.alpha > 0.01 else { return 0 }
                 let own: Int
@@ -69,10 +66,25 @@ import Logseq
                 } else { own = 0 }
                 return own + view.subviews.reduce(0) { $0 + countVisibleTitles($1) }
             }
-            committedRows = countVisibleTitles(window)
+            func hasOpaqueLaunchCover(_ view: UIView) -> Bool {
+                guard !view.isHidden, view.alpha > 0.01 else { return false }
+                if view.accessibilityIdentifier == "launch.transition",
+                   (view.backgroundColor?.cgColor.alpha ?? 0) > 0.01 {
+                    return true
+                }
+                return view.subviews.contains(where: hasOpaqueLaunchCover)
+            }
+            let rows = countVisibleTitles(window)
+            guard rows > 0, !hasOpaqueLaunchCover(window) else { return }
+            firstCommitTime = committedAt
+            link.isEnabled = false
+            Clock.end("FirstLayout")
+            committedRows = rows
             presentationTime = max(committedAt, info.estimatedPresentationTime)
             Clock.mark("first_commit")
+            #if !LOGSEQ_BENCH_EXTERNAL_ENTRY
             Task { await LogseqLogseqRuntime.shared.store.completeLaunchPresentation() }
+            #endif
             print("COLD_START estimated_presentation_ms=\(Clock.milliseconds(at: info.estimatedPresentationTime)) nonempty_rows=\(committedRows)")
         }
         updates = link
@@ -90,11 +102,15 @@ import Logseq
         let cpu = Clock.measuresCPU
             ? ",\"process_cpu_ms\":\(Clock.cpuMilliseconds(CLOCK_PROCESS_CPUTIME_ID)),\"main_cpu_ms\":\(Clock.cpuMilliseconds(CLOCK_THREAD_CPUTIME_ID))" : ""
         print("COLD_START_RESULT {\"process_ms\":\(Clock.milliseconds()),\"first_commit_ms\":\(Clock.milliseconds(at: firstCommitTime)),\"nonempty_rows\":\(committedRows)\(cpu)}")
+        #if LOGSEQ_BENCH_APP_ENTRY
+        print("COLD_START_AUTH state=\(LogseqLogseqRuntime.shared.authentication.state.rawValue)")
+        #endif
         print("RUNTIME_CHECK_COMPLETE")
         exit(0)
     }
 }
 
+#if !LOGSEQ_BENCH_EXTERNAL_ENTRY
 struct ColdStartBenchmark: App {
     init() {
         setbuf(stdout, nil)
@@ -135,3 +151,4 @@ struct ColdStartBenchmark: App {
         ColdStartBenchmark.main()
     }
 }
+#endif

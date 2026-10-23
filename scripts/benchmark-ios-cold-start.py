@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--maximum-ms", type=float, default=300)
     parser.add_argument("--minimum-rows", type=int, default=1)
     parser.add_argument("--cpu-times", action="store_true", help="Record diagnostic process and main-thread CPU counters at every stage")
+    parser.add_argument("--app-entry", action="store_true", help="Run the actual AppMain and authentication restoration with an isolated synthetic stored session")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.iterations < 1 or args.minimum_rows < 1:
@@ -45,23 +46,36 @@ def main():
     if any(os.environ.get(name) for name in ("DYLD_INSERT_LIBRARIES", "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES")):
         raise SystemExit("Remove injected profiling libraries before production timing")
     args.output.mkdir(parents=True, exist_ok=True)
+    bundle = "com.logseq.logseq.ColdStartAppEntry" if args.app_entry else BUNDLE
+    entry = "app-entry-cold-start-benchmark.swift" if args.app_entry else "cold-start-benchmark.swift"
     env = os.environ.copy()
     env.update(LOGSEQ_IOS_CONFIGURATION="release", LOGSEQ_IOS_SIMULATOR=args.simulator,
-               LOGSEQ_BENCH_GRAPH_ID=args.graph_id, LOGSEQ_IOS_BENCHMARK_BUNDLE_ID=BUNDLE)
+               LOGSEQ_BENCH_GRAPH_ID=args.graph_id, LOGSEQ_IOS_BENCHMARK_BUNDLE_ID=bundle)
     subprocess.run(["python3", str(ROOT / "apple/Tests/UI/run-simulator-runtime-check.py"),
-                    str(ROOT / "apple/Tests/UI/cold-start-benchmark.swift"),
+                    str(ROOT / "apple/Tests/UI" / entry),
                     "--prepare-benchmark", str(args.fixture.resolve())], cwd=ROOT, env=env, check=True)
     env["SIMCTL_CHILD_LOGSEQ_BENCH_GRAPH_ID"] = args.graph_id
     env["SIMCTL_CHILD_LOGSEQ_BENCH_CPU"] = "1" if args.cpu_times else "0"
+    env.pop("SIMCTL_CHILD_LOGSEQ_BENCH_PREPARE_SESSION", None)
+    if args.app_entry:
+        # Seed once outside timed launches. This bundle has its own keychain
+        # entitlement and rejects shared-capture directories outside its home.
+        preparation = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
+                                      args.simulator, bundle],
+                                     env={**env, "SIMCTL_CHILD_LOGSEQ_BENCH_PREPARE_SESSION": "1"},
+                                     capture_output=True, text=True, timeout=30)
+        (args.output / "session-preparation.log").write_text(preparation.stdout + preparation.stderr)
+        if preparation.returncode or "COLD_START_SESSION_READY" not in preparation.stdout:
+            raise SystemExit("Isolated session preparation failed; inspect session-preparation.log")
     installed = Path(subprocess.check_output(
-        ["xcrun", "simctl", "get_app_container", args.simulator, BUNDLE, "app"], text=True).strip())
+        ["xcrun", "simctl", "get_app_container", args.simulator, bundle, "app"], text=True).strip())
     executable = installed / plistlib.loads((installed / "Info.plist").read_bytes())["CFBundleExecutable"]
     binary_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
     binary_stat = executable.stat()
     results = []
     for iteration in range(args.iterations):
         run = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
-                              args.simulator, BUNDLE], env=env, capture_output=True, text=True, timeout=30)
+                              args.simulator, bundle], env=env, capture_output=True, text=True, timeout=30)
         output = run.stdout + run.stderr
         (args.output / f"launch-{iteration + 1}.log").write_text(output)
         current_stat = executable.stat()
@@ -73,6 +87,11 @@ def main():
         if run.returncode or len(rows) != 1:
             raise SystemExit(f"Launch {iteration + 1} failed; inspect its saved log")
         result = rows[0]
+        if args.app_entry:
+            authentication = re.findall(r"COLD_START_AUTH state=(\w+)", output)
+            if len(authentication) != 1:
+                raise SystemExit(f"Launch {iteration + 1} did not report the real authentication state")
+            result["authentication_state"] = authentication[0]
         if args.cpu_times and (result.get("process_cpu_ms", 0) <= 0 or result.get("main_cpu_ms", 0) <= 0):
             raise SystemExit(f"Launch {iteration + 1} did not report valid diagnostic CPU counters")
         callbacks = re.findall(r"stage=first_display_after_commit process_ms=([\d.]+)", output)
@@ -85,8 +104,10 @@ def main():
         results.append(result)
         print(f"Launch {iteration + 1}: {result}", flush=True)
     times = [result["process_ms"] for result in results]
-    summary = {"scope": "authenticated local journal renderer; authentication restoration/networking excluded",
-               "bundle_id": BUNDLE, "binary_sha256": binary_hash,
+    scope = ("actual AppMain, LogseqRootView and stored-session authentication restoration; synthetic unexpired credentials and offline API"
+             if args.app_entry else "authenticated local journal renderer; authentication restoration/networking excluded")
+    summary = {"scope": scope,
+               "bundle_id": bundle, "binary_sha256": binary_hash,
                "diagnostic_cpu_counters": args.cpu_times,
                "cache": "fresh process; OS file cache and graph state retained between launches",
                "configuration": "Release without testability; exact shipping FFI exports; installed once",
