@@ -101,30 +101,32 @@ let summary_json session summary = Rpc.summary_json (current_summary session sum
 
 let result_block_encoder db =
   let presentation = Node_presentation.decorate db in
-  let pages = Hashtbl.create 4 in
+  let children = Hashtbl.create 32 in
+  let encoded = Hashtbl.create 32 in
   let encode_tree block =
-    let children = match Hashtbl.find_opt pages block.Model.page_id with
+    let child_blocks (block : Model.block) = match Hashtbl.find_opt children block.uuid with
       | Some children -> children
       | None ->
-        let children = Hashtbl.create 16 in
-        List.iter (fun (block : Model.block) -> Option.iter (fun parent ->
-          let siblings = Option.value ~default:[] (Hashtbl.find_opt children parent) in
-          Hashtbl.replace children parent (block :: siblings)) block.parent_id)
-          (Graph_read.blocks_for_page (fun text -> Ok text) db block.page_id);
-        Hashtbl.iter (fun parent blocks -> Hashtbl.replace children parent
-          (List.sort Outliner.compare_blocks blocks)) children;
-        Hashtbl.replace pages block.page_id children;
-        children in
+        let blocks = Graph_read.children_for_block (fun text -> Ok text) db block
+          |> List.sort Outliner.compare_blocks in
+        Hashtbl.add children block.uuid blocks;
+        blocks in
     let rec encode ancestors depth (block : Model.block) =
       if depth > 128 then invalid_arg "Result block nesting is too deep";
-      let descendants = Option.value ~default:[] (Hashtbl.find_opt children block.uuid)
+      let descendants = child_blocks block
         |> List.filter (fun (child : Model.block) -> not (Outliner.Sset.mem child.uuid ancestors)) in
       let ancestors = Outliner.Sset.add block.uuid ancestors in
       match presentation block.uuid (Rpc.block_json block) with
       | `Assoc fields -> `Assoc (("children", `List (List.map (encode ancestors (depth + 1)) descendants)) :: fields)
       | value -> value in
     encode Outliner.Sset.empty 0 block in
-  encode_tree
+  fun (block : Model.block) ->
+    match Hashtbl.find_opt encoded block.uuid with
+    | Some value -> value
+    | None ->
+      let value = encode_tree block in
+      Hashtbl.add encoded block.uuid value;
+      value
 
 let query_for session db uuid =
   let current_page = match active_node_route session with
