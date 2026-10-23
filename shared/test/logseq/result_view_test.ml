@@ -1250,7 +1250,51 @@ let closed_choices_are_scoped_to_the_edited_object () =
       check_eq (find ("view.edit.create." ^ table_view)) (-1)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let table_name_editors_resolve_page_names_and_offer_navigation () =
+  List.iter (fun backend -> with_runtime (fun session runtime conn ->
+    let stored = "See [[" ^ Q.page ^ "]] **notes**" in
+    ignore (Ds.transact_conn conn [put alpha "block/title" (Ds.String stored)]);
+    Graph_runtime.rebase runtime 42 [] [alpha];
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id = let node = find id in check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      click ("view.tab." ^ table_view);
+      click ("view.cell." ^ table_view ^ "." ^ alpha ^ ".block/title");
+      let input = find ("view.edit.value." ^ table_view) in
+      check_eq ~msg:"Name editors resolve UUID references while preserving markup"
+        (App_test.property_string host input Lui_protocol.TextValue) "See [[Workspace]] **notes**";
+      click ("view.edit.open." ^ table_view);
+      check ~msg:"Name sheets can navigate to their corresponding node"
+        (List.exists (function Model.OpenAppNodeEffect (_, uuid) -> uuid = alpha | _ -> false) (App.model app).pending_effects);
+      check_eq ~msg:"navigation dismisses the editor" (find ("view.edit.sheet." ^ table_view)) (-1))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let readable_names_roundtrip_without_retargeting_references () = with_runtime (fun session runtime conn ->
+  let stored = "See [[" ^ Q.page ^ "]] **notes**" in
+  ignore (Ds.transact_conn conn [put alpha "block/title" (Ds.String stored)]);
+  Graph_runtime.rebase runtime 42 [] [alpha];
+  let cell () =
+    let row = List.find (fun row -> member "uuid" (member "block" row) = `String alpha) (items "rows" (find_view table_view (read session))) in
+    List.find (fun p -> member "attr" p = `String "block/title") (items "properties" row) in
+  let p = cell () in
+  check_eq (member "editorValue" p) (`String "See [[Workspace]] **notes**");
+  let response = action session (base_action "editCell" table_view @ ["blockUuid", `String alpha;
+    "attr", `String "block/title"; "expected", member "raw" p; "value", member "editorValue" p]) in
+  check_eq (member "ok" response) (`Bool true);
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid alpha)) in
+  check_eq ~msg:"saving readable reference names preserves stored UUIDs" (Graph_read.value db id "block/title") (Some (Ds.String stored));
+  ignore (Ds.transact_conn conn (entity 101 "92000000-0000-4000-8000-000000000001" "Workspace" @ [
+    put "92000000-0000-4000-8000-000000000001" "block/name" (Ds.String "workspace")]));
+  Graph_runtime.rebase runtime 42 [] [alpha];
+  let name = Result_view.property_json (Graph_runtime.db runtime) ~owner:alpha ~attr:"block/title" ~encode_block:(fun _ -> `Null) in
+  check_eq ~msg:"ambiguous display names keep identity-preserving syntax" (member "editorValue" name) (`String stored))
+
 let cases = [
+  case "table Name editors show readable refs and provide navigation" table_name_editors_resolve_page_names_and_offer_navigation;
+  case "readable Name references roundtrip without retargeting" readable_names_roundtrip_without_retargeting_references;
   case "all closed property types use ordered live choices and typed selection" closed_choices_follow_master_on_every_property_type;
   case "closed choices follow master class scopes and cannot be bypassed" closed_choices_are_scoped_to_the_edited_object;
   case "list results defer cell data while grids retain typed editors" list_results_defer_cell_editor_data;

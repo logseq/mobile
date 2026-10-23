@@ -438,7 +438,7 @@ let rec raw_selection_values raw =
   | "" -> []
   | _ -> [text_value (jfield "value" raw)]
 
-let property_editor ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
+let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
  fun context parent ->
   let view = {id; name = ""; typ = ""; data = `Null} in
   let own value = Signal.own_signal context.ui_scope value in
@@ -452,6 +452,7 @@ let property_editor ?(open_nodes = []) ~id ~column:col ~submit:save model_source
   let closed = jlist (jfield "choices" col) <> [] || jbool (jfield "closed" col) in
   let temporal = not closed && List.mem kind ["date"; "datetime"] in
   let query = state (if temporal then (match jtext (jfield "editorValue" property) with "" -> temporal_default kind | value -> value)
+    else if attr = "block/title" && jtext (jfield "editorValue" property) <> "" then jtext (jfield "editorValue" property)
     else if attr = "block/title" then (match jfield "raw" property with
       | `Assoc fields when List.assoc_opt "type" fields = Some (`String "string") ->
         jtext (Option.value ~default:`Null (List.assoc_opt "value" fields))
@@ -507,7 +508,10 @@ let property_editor ?(open_nodes = []) ~id ~column:col ~submit:save model_source
   (sheet ~text:(jtext (jfield "title" col)) ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view.edit.list." ^ view.id)
-      ((if open_nodes = [] then [] else [list_section (List.map (fun (uuid, label, open_) ->
+      ((match open_node with None -> [] | Some (label, open_) -> [list_section [list_item [
+          menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id)
+            ~on_press:(fun _ -> close (); open_ ()) []]]]) @
+       (if open_nodes = [] then [] else [list_section (List.map (fun (uuid, label, open_) ->
           list_item [menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id ^ "." ^ uuid)
             ~on_press:(fun _ -> close (); open_ ()) []]) open_nodes)]) @
        (if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
@@ -558,7 +562,10 @@ let value_sheet owner feature view model_source send item property close =
       let overrides = List.filter (fun (key, _) -> List.mem key ["choices"; "closed"; "canCreate"]) editor in
       `Assoc (overrides @ List.filter (fun (key, _) -> not (List.mem_assoc key overrides)) fields)
     | _ -> column in
-  property_editor ~id:view.id ~column
+  let open_node = if jfield "attr" property <> `String "block/title" then None else Option.map (fun uuid ->
+    (if Option.fold ~none:false ~some:(fun block -> block.row.Model.opens_as_page) item.block then "Open page" else "Open node"),
+    (fun () -> ignore (send (Model.RequestAppNode uuid)))) item.uuid in
+  property_editor ?open_node ~id:view.id ~column
     ~submit:(fun fields -> ignore (send (Model.SubmitResultView (view.id,
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close
@@ -644,6 +651,11 @@ let collection_json ~render_block model_source parsed send : t =
           button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
             ~width ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
             ~accessibility_identifier:identifier ~on_press:(fun _ -> edit item property) []
+        else if attr = "block/title" && item.uuid <> None then
+          button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
+            ~width ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
+            ~accessibility_identifier:identifier ~on_press:(fun _ -> Option.iter (fun uuid ->
+              ignore (send (Model.RequestAppNode uuid))) item.uuid) []
         else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
           ~accessibility_identifier:identifier []) (choices view))))
         (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) row_context parent in
