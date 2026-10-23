@@ -613,7 +613,8 @@ let collection ~render_block model_source raw_source send : t =
             ~accessibility_identifier:("view.cell.separator." ^ view_id ^ "." ^ row_id ^ "." ^ next_attr) [] :: separated rest
       in separated cells in
     let table_row item_source : t =
-      dyn (fun (view, item) -> row ~gap:0 ~cross:`stretch (table_cells view.id
+     fun row_context parent ->
+      (dyn (fun (view, item) -> row ~gap:0 ~cross:`stretch (table_cells view.id
         (Option.value ~default:(string_of_int item.index) item.uuid)
         (List.map (fun col -> let attr = jtext (jfield "attr" col) in attr,
         if String.starts_with ~prefix:"query.result/" attr then
@@ -632,17 +633,51 @@ let collection ~render_block model_source raw_source send : t =
             ~width ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
             ~accessibility_identifier:identifier ~on_press:(fun _ -> edit item property) []
         else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
-          ~accessibility_identifier:identifier []) (choices view)))) (own (Signal.map2 (fun view item -> view, item) view_source item_source)) in
+          ~accessibility_identifier:identifier []) (choices view))))
+        (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) row_context parent in
     let gallery_card item_source : t =
-      dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
+     fun card_context parent ->
+      (dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
         ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid) [
         button ~text:item.title ~text_alignment:`start ~variant:`ghost ~min_height:44
           ~on_press:(fun _ -> Option.iter (fun uuid -> ignore (send (Model.RequestAppNode uuid))) item.uuid) [];
         column ~gap:8 (choices view |> List.filter (fun col -> jfield "attr" col <> `String "block/title")
           |> List.map (fun col -> let property = cell view item (jtext (jfield "attr" col)) in
             row ~gap:12 ~main:`space_between [text ~value:(jtext (jfield "title" col)) ~foreground:"muted-foreground" ~style_class:"caption" [];
-              text ~value:(jtext (jfield "text" property)) ~style_class:"caption" []]))]) (own (Signal.map2 (fun view item -> view, item) view_source item_source)) in
+              text ~value:(jtext (jfield "text" property)) ~style_class:"caption" []]))])
+        (Signal.own_signal card_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) card_context parent in
+    let item_key item = match item.uuid with
+      | Some uuid -> "block:" ^ uuid | None -> "tuple:" ^ string_of_int item.index in
+    let result_window ?width ?(gap = 0) ~identifier ~extent ~source ~key ~mount () : t =
+     fun window_context parent ->
+      let own signal = Signal.own_signal window_context.Lui_ui.ui_scope signal in
+      let searches = own (Signal.map (fun input -> [input]) (Signal.value search)) in
+      (dyn (fun large ->
+        if large then
+          (* Search owns a fresh viewport; ordinary value refreshes retain it. *)
+          keyed ~source:searches
+            ~key:Fun.id ~cmp:String.compare ~mount:(fun _ ->
+              virtual_list ?width ~height:480 ~gap ~accessibility_identifier:identifier [
+                View_rows.windowed_keyed ~identifier:("view.window." ^ view.id)
+                  ~item_extent:extent ~source ~key ~cmp:String.compare ~mount])
+        else column ?width ~gap ~accessibility_identifier:identifier [
+          keyed ~source ~key ~cmp:String.compare ~mount])
+        (own (Signal.map (fun rows -> List.length rows > 20) source))) window_context parent in
+    let gallery_columns = own (Signal.map (fun (model : Model.logseq_model) ->
+      if model.viewport_width >= 700 then 2 else 1) model_source) in
+    let gallery_rows = own (Signal.map2 (fun columns items ->
+      let rec collect current size groups = function
+        | [] -> List.rev (if current = [] then groups else List.rev current :: groups)
+        | item :: rest ->
+          if size + 1 = columns then collect [] 0 (List.rev (item :: current) :: groups) rest
+          else collect (item :: current) (size + 1) groups rest in
+      collect [] 0 [] items) gallery_columns rows) in
     let error = own (Signal.map (fun view -> jtext (jfield "error" view.data)) view_source) in
+    let layout = own (Signal.cutoff (fun (typ, columns, sorting, filters) (next_typ, next_columns, next_sorting, next_filters) ->
+      typ = next_typ && Json.equal (`List columns) (`List next_columns)
+      && Json.equal sorting next_sorting && Json.equal filters next_filters)
+      (own (Signal.map (fun view -> view.typ, choices view,
+        jfield "sorting" view.data, jfield "filters" view.data) view_source))) in
     (column ~gap:8 ~cross:`stretch [
       row ~gap:0 ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [
         (if feature = "query-result" then results_toggle () else
@@ -693,19 +728,33 @@ let collection ~render_block model_source raw_source send : t =
       if_ ~test:(own (Signal.map ((=) "") error))
         (column ~gap:8 [
           if_ ~test:(own (Signal.map ((=) []) rows)) (text ~value:"No results" ~foreground:"muted-foreground" ~accessibility_identifier:("query.empty." ^ owner) []);
-          (dyn (fun current -> match current.typ with
+          (dyn (fun (typ, columns, _, _) -> match typ with
           | "table" -> scroll ~orientation:`horizontal ~accessibility_identifier:("view.table.scroll." ^ view.id) [
               column ~gap:0 ~cross:`stretch ~border_color:"border" ~border_width:1 ~corner_radius:10 [
                 row ~gap:0 ~cross:`stretch (table_cells view.id "header" (List.map (fun col -> jtext (jfield "attr" col),
                   text ~value:(jtext (jfield "title" col)) ~style_class:"subheadline single-line"
-                  ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~min_height:48 ~padding:12 ~background:"secondary" []) (choices current)));
-                separator []; keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(fun source -> column ~gap:0 [table_row source; separator []])]]
-          | "gallery" -> dyn (fun columns -> grid ~columns ~gap:12 ~accessibility_identifier:("view.gallery." ^ view.id) [
-              keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:gallery_card])
-              (own (Signal.map (fun (model : Model.logseq_model) -> if model.viewport_width >= 700 then 2 else 1) model_source))
+                  ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~min_height:48 ~padding:12 ~background:"secondary" []) columns));
+                separator [];
+                result_window ~identifier:("view.table.viewport." ^ view.id) ~extent:49
+                  ~width:(List.fold_left (fun width col -> width +
+                    (if jfield "attr" col = `String "block/title" then 260 else 170))
+                    (max 0 (List.length columns - 1)) columns)
+                  ~source:rows ~key:item_key
+                  ~mount:(fun source -> column ~gap:0 [table_row source; separator []]) ()]]
+          | "gallery" -> dyn (fun count ->
+              result_window ~identifier:("view.gallery." ^ view.id) ~gap:12
+                ~extent:(96 + 24 * max 0 (List.length columns - 1))
+                ~source:gallery_rows ~key:(fun items -> item_key (List.hd items))
+                ~mount:(fun source grid_context parent -> (grid ~columns:count ~gap:12 [
+                  keyed ~source ~key:item_key ~cmp:String.compare ~mount:gallery_card;
+                  if_ ~test:(Signal.own_signal grid_context.Lui_ui.ui_scope
+                    (Signal.map (fun items -> List.length items < count) source)) (box [])]) grid_context parent) ())
+              gallery_columns
           | _ -> column ~gap:4 ~accessibility_identifier:("query.rows." ^ owner) [
-              keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(result_item owner render_block send)]) view_source);
-          if_ ~test:(own (Signal.map2 (fun rows limit -> List.length rows > limit) rows (Signal.value limit)))
+              keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(result_item owner render_block send)]) layout);
+          if_ ~test:(own (Signal.map2 (fun (view, rows) limit ->
+              view.typ <> "table" && view.typ <> "gallery" && List.length rows > limit)
+              (own (Signal.map2 (fun view rows -> view, rows) view_source rows)) (Signal.value limit)))
             (button ~text:"Show more" ~variant:`ghost ~accessibility_identifier:("query.more." ^ owner)
               ~on_press:(fun _ -> Signal.set limit (Signal.sample (Signal.value limit) + 20)) [])]);
       if_ ~test:(own (Signal.map ((<>) "") (Signal.value settings)))

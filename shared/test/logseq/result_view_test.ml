@@ -1010,7 +1010,106 @@ let table_cells_have_column_dividers_on_both_hosts () =
       check ~msg:"Tags opens the shared native selector" (find ("view.edit.sheet." ^ table_view) <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let virtual_result_response ?(count = 10_001) ?(input = "") ?(reverse = false) ?(ready_value = true) typ =
+  let rows = List.init count (fun index ->
+    let index = if reverse then count - index - 1 else index in
+    let uuid = "virtual-" ^ string_of_int index in
+    `Assoc ["block", Q.query_result_block uuid (Printf.sprintf "Object %05d" index);
+      "properties", `List [
+        `Assoc ["attr", `String "block/title"; "text", `String (Printf.sprintf "Object %05d" index); "editable", `Bool true;
+          "raw", `Assoc ["type", `String "string"; "value", `String (Printf.sprintf "Object %05d" index)]];
+        `Assoc ["attr", `String ready; "text", `String (string_of_bool ready_value); "editable", `Bool true;
+          "raw", `Assoc ["type", `String "bool"; "value", `Bool ready_value]]]]) in
+  let column fields = `Assoc (if ready_value then fields else List.rev fields) in
+  let view = `Assoc ["uuid", `String "virtual"; "name", `String "All"; "type", `String typ;
+    "sorting", `String input; "columns", `List [
+      column ["attr", `String "block/title"; "title", `String "Name"; "editable", `Bool true];
+      column ["attr", `String ready; "title", `String "Ready"; "kind", `String "checkbox"; "editable", `Bool true]];
+    "rows", `List rows] in
+  let query = `Assoc ["ownerUuid", `String owner; "featureType", `String "query-result";
+    "expanded", `Bool true; "views", `List [view]] in
+  Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+    "selectedGraphId", `String "virtual-results"; "graphName", `String "Virtual results";
+    "outlinerRows", `List [`Assoc ["depth", `Int 0; "hasChildren", `Bool false; "isCollapsed", `Bool false;
+      "block", (match Q.query_result_block owner "Large query" with
+        | `Assoc fields -> `Assoc (("query", query) :: fields) | _ -> assert false)]]]])
+
+let table_and_gallery_mount_bounded_windows () =
+  List.iter (fun backend -> List.iter (fun typ ->
+    Q.with_ui backend (virtual_result_response typ) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let window () = find "view.window.virtual" in
+      check ~msg:(typ ^ " exposes a virtual collection") (window () <> -1);
+      let mounted () = List.length (App_test.children host (window ())) in
+      check ~msg:"10k results mount at most one bounded window" (mounted () <= 32);
+      check_eq ~msg:"virtual result views need no Show more button" (find ("query.more." ^ owner)) (-1);
+      let item index = if typ = "table" then "view.cell.virtual.virtual-" ^ string_of_int index ^ ".block/title"
+        else "view.card.virtual.virtual-" ^ string_of_int index in
+      check (find (item 0) <> -1);
+      check_eq ~msg:"distant results do not own protocol nodes before scrolling" (find (item 10_000)) (-1);
+      App_test.dispatch app (Lui_protocol.VisibleRange (window (), 9_990, 10_000)); App_test.flush app;
+      check ~msg:"scrolling reaches the final odd result without pagination" (find (item 10_000) <> -1);
+      check_eq ~msg:"scrolled-away result scopes are evicted" (find (item 0)) (-1);
+      check (mounted () <= 32);
+      if typ = "table" then begin
+        App_test.dispatch app (Lui_protocol.Press (find ("view.cell.virtual.virtual-10000." ^ ready))); App_test.flush app;
+        check ~msg:"distant table cells retain typed editors" (find "view.edit.sheet.virtual" <> -1);
+        App_test.dispatch app (Lui_protocol.VisibleRange (window (), 0, 9)); App_test.flush app;
+        check ~msg:"evicting a table row does not dismiss its editor" (find "view.edit.sheet.virtual" <> -1);
+        App_test.dispatch app (Lui_protocol.Press (find "view.edit.cancel.virtual")); App_test.flush app
+      end;
+      App_test.dispatch app (Lui_protocol.VisibleRange (window (), 0, 9)); App_test.flush app;
+      check ~msg:"returning to the start remounts the original values" (find (item 0) <> -1);
+      App_test.dispatch app (Lui_protocol.VisibleRange (window (), -1, -1)); App_test.flush app;
+      check (find (item 0) <> -1))) ["table"; "gallery"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let virtual_result_windows_follow_search_sort_and_resize () =
+  List.iter (fun backend -> List.iter (fun typ ->
+    Q.with_ui backend (virtual_result_response ~count:101 typ) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let window () = find "view.window.virtual" in
+      check ~msg:"result viewport supports native range events" (window () <> -1);
+      let metadata key = Lui_protocol.data_attrs_decode (App_test.property_string host (window ()) Lui_protocol.DataAttrs)
+        |> List.assoc key |> int_of_string in
+      App_test.dispatch app (Lui_protocol.VisibleRange (window (), 90, 100)); App_test.flush app;
+      let retained_window = window () in
+      (match Response_snapshot.decode_response (virtual_result_response ~count:101 ~ready_value:false typ) with
+        | Error message -> fail message | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection));
+      App_test.flush app;
+      check_eq ~msg:"value refreshes preserve the native result window" (window ()) retained_window;
+      check ~msg:"editing or remote value changes do not jump back to the first row" (metadata "data-virtual-start" > 0);
+      if typ = "table" then check_eq ~msg:"distant values update in the retained window"
+        (App_test.property_string host (find ("view.cell.virtual.virtual-100." ^ ready)) Lui_protocol.TextValue) "false";
+      let click id = App_test.dispatch app (Lui_protocol.Press (find id)); App_test.flush app in
+      click ("view.search.toggle." ^ owner);
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.search." ^ owner), "Object 000")); App_test.flush app;
+      check_eq ~msg:"search begins at the first matching row" (metadata "data-virtual-start") 0;
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.search." ^ owner), "missing")); App_test.flush app;
+      check ~msg:"empty search removes the scrolling result surface" (window () = -1);
+      check (find ("query.empty." ^ owner) <> -1);
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.search." ^ owner), "")); App_test.flush app;
+      check_eq (metadata "data-virtual-count") 101;
+      App_test.dispatch app (Lui_protocol.VisibleRange (window (), 90, 100)); App_test.flush app;
+      let response = virtual_result_response ~count:101 ~input:"descending" ~reverse:true typ in
+      (match Response_snapshot.decode_response response with Error message -> fail message
+        | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection)); App_test.flush app;
+      check_eq ~msg:"a changed master sort starts from the first sorted row" (metadata "data-virtual-start") 0;
+      if typ = "gallery" then begin
+        App_test.send app (Model.ApplyViewportWidth 800); App_test.flush app;
+        check_eq ~msg:"wide gallery windows count rows of two cards" (metadata "data-virtual-count") 51;
+        App_test.dispatch app (Lui_protocol.VisibleRange (window (), 45, 50)); App_test.flush app;
+        check ~msg:"the final unpaired card is reachable" (find "view.card.virtual.virtual-0" <> -1);
+        App_test.send app (Model.ApplyViewportWidth 390); App_test.flush app;
+        check_eq ~msg:"narrow layouts restore one card per row" (metadata "data-virtual-count") 101
+      end)) ["table"; "gallery"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "table and gallery virtualize 10k results and retain distant cell editors" table_and_gallery_mount_bounded_windows;
+  case "virtual result windows follow search sort empty results and gallery resize" virtual_result_windows_follow_search_sort_and_resize;
   case "table Name saves with stale-edit protection while timestamps stay read-only" table_name_is_editable_and_timestamps_are_read_only;
   case "table tags edit typed references and create tag objects" table_tags_are_editable_and_keep_typed_references;
   case "table cells have column dividers and typed editors on both hosts" table_cells_have_column_dividers_on_both_hosts;
