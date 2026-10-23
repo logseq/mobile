@@ -1,0 +1,23 @@
+{
+  "scope": "actual application entry; asynchronous local graph load overlapping UIKit startup, ready-content cover handoff; full Lambda journal and native UI",
+  "control": "separate immutable production binaries; same core and source base; randomized paired rounds; no CPU counters, injected library, Instruments or loader diagnostics",
+  "manifests": {"baseline":{"bundle":"com.logseq.logseq.ColdStartAppEntry","sha256":"12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324"},"candidate":{"bundle":"com.logseq.logseq.ColdStartAsyncLocal","sha256":"a732f5891c961d6c4e5443d8493987d66832ee9384240784b4712ff86f56bea7"}},
+  "samples": [
+    {"round":1,"mode":"candidate","result":{"process_ms":788.09931257274,"first_commit_ms":756.9896875647828,"nonempty_rows":5},"stages":{}},
+    {"round":1,"mode":"baseline","result":{"process_ms":869.4566750200465,"first_commit_ms":803.8311749696732,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"candidate","result":{"process_ms":708.1601459067315,"first_commit_ms":699.997145915404,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"baseline","result":{"process_ms":801.1824925197288,"first_commit_ms":789.4963675644249,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"baseline","result":{"process_ms":801.3321892358363,"first_commit_ms":796.4891475858167,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"candidate","result":{"process_ms":812.7679041353986,"first_commit_ms":778.9425707887858,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"baseline","result":{"process_ms":835.2786744944751,"first_commit_ms":831.1396328499541,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"candidate","result":{"process_ms":772.4860702874139,"first_commit_ms":738.3921951986849,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"baseline","result":{"process_ms":826.2347565032542,"first_commit_ms":803.7746731424704,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"candidate","result":{"process_ms":791.448762291111,"first_commit_ms":760.9365956159309,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"baseline","result":{"process_ms":863.2871570298448,"first_commit_ms":851.0311569552869,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"candidate","result":{"process_ms":782.4158355360851,"first_commit_ms":752.1027937764302,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"baseline","result":{"process_ms":899.9654911458492,"first_commit_ms":883.5087828338146,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"candidate","result":{"process_ms":837.4058428453282,"first_commit_ms":828.2452177954838,"nonempty_rows":5},"stages":{}}
+  ],
+  "paired_improvements": {"process_ms":[81.35736244730651,93.02234661299735,-11.4357148995623,62.79260420706123,34.78599421214312,80.87132149375975,62.559648300521076]},
+  "median_paired_improvements": {"process_ms":62.79260420706123}
+}

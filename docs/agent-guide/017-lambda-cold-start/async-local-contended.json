@@ -1,0 +1,24 @@
+{
+  "scope": "actual application entry; asynchronous core RPC graph loading overlapping UIKit startup, ready-content cover handoff, preserved authentication progress; full Lambda journal and native UI",
+  "control": "separate immutable production binaries; same core and source base; randomized paired rounds; no CPU counters, injected library, Instruments or loader diagnostics",
+  "manifests": {"baseline":{"bundle":"com.logseq.logseq.ColdStartAppEntry","sha256":"12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324"},"candidate":{"bundle":"com.logseq.logseq.ColdStartAsyncLocal","sha256":"3215014ea5dd9cf1d93c59b3f62f6dbba4e336be2ee64287b30dd89af82ecde7"}},
+  "samples": [
+    {"round":1,"mode":"candidate","result":{"process_ms":2825.2330084796995,"first_commit_ms":2810.766091803089,"nonempty_rows":5},"stages":{}},
+    {"round":1,"mode":"baseline","result":{"process_ms":2392.784798052162,"first_commit_ms":2370.5836730077863,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"baseline","result":{"process_ms":2262.566999066621,"first_commit_ms":2238.6987906647846,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"candidate","result":{"process_ms":1954.1887388331816,"first_commit_ms":1931.1568222474307,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"baseline","result":{"process_ms":2082.09401066415,"first_commit_ms":2072.4557189969346,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"candidate","result":{"process_ms":1905.6627202080563,"first_commit_ms":1897.8836784372106,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"candidate","result":{"process_ms":1854.8667196882889,"first_commit_ms":1849.908928037621,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"baseline","result":{"process_ms":1893.8215505331755,"first_commit_ms":1875.2254254650325,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"baseline","result":{"process_ms":1913.0933925043792,"first_commit_ms":1886.078225914389,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"candidate","result":{"process_ms":1720.1207387261093,"first_commit_ms":1706.4665720099583,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"candidate","result":{"process_ms":1698.6819920130074,"first_commit_ms":1689.6818253444508,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"baseline","result":{"process_ms":1832.9649622319266,"first_commit_ms":1824.340712162666,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"baseline","result":{"process_ms":1750.80196862109,"first_commit_ms":1734.337760368362,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"candidate","result":{"process_ms":1590.6081044813618,"first_commit_ms":1569.2003543954343,"nonempty_rows":5},"stages":{}}
+  ],
+  "paired_improvements": {"process_ms":[-432.44821042753756,308.3782602334395,176.43129045609385,38.9548308448866,192.9726537782699,134.28297021891922,160.19386413972825]},
+  "median_paired_improvements": {"process_ms":160.19386413972825},
+  "host_contention": "Android emulator 254.5% CPU, Node 103.4%, WindowServer 51% immediately after the batch. Not a stable production saving."
+}
