@@ -229,9 +229,10 @@ let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
           | Ds.Keyword attr when public_attr attr -> Some attr | _ -> None) |> List.of_seq in
       let catalog = List.sort_uniq String.compare (known @ List.map (fun p -> p.attr) available)
         |> List.map (property db) in
+      let cell_properties = if typ = "list" then [] else properties in
       `Assoc (fields @ ["error", `Null; "columns", `List (List.map (column_json db original_rows) properties);
         "properties", `List (List.map (column_json db original_rows) catalog);
-        "rows", `List (List.map (row_json db encode_block properties) rows)])
+        "rows", `List (List.map (row_json db encode_block cell_properties) rows)])
     with error -> `Assoc (fields @ ["error", `String (match error with Invalid_argument message -> message | _ -> Printexc.to_string error);
       "rows", `List []; "columns", `List []]) in
   `Assoc ["ownerUuid", `String owner; "featureType", `String feature; "views", `List (List.map view_json views)]

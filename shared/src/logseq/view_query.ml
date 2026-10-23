@@ -17,9 +17,9 @@ let rec decode_block depth json =
       | _ -> [] in
     {row = {row with Model.query_json = ""; has_children = children <> [];
       is_collapsed = children <> []}; children}
-let decode raw =
+let invalid_query = {rows = []; error = Some "Unable to display query results"; source = ""}
+let decode_json json =
   try
-    let json = Yojson.Basic.from_string raw in
     let rows = match member "rows" json with Some (`List rows) -> rows | _ -> [] in
     {source = string (member "source" json);
      error = (match member "error" json with Some (`String text) -> Some text | _ -> None);
@@ -31,7 +31,8 @@ let decode raw =
        | None -> let cells = match member "cells" json with Some (`List xs) -> xs | _ -> [] in
          {index; uuid = None; title = String.concat "  ·  " (List.map (fun value -> string (Some value)) cells);
           block = None; json}) rows}
-  with _ -> {rows = []; error = Some "Unable to display query results"; source = ""}
+  with _ -> invalid_query
+let decode raw = try decode_json (Yojson.Basic.from_string raw) with _ -> invalid_query
 
 let result_item owner render_block send source : t =
  fun context parent ->
@@ -112,8 +113,8 @@ let legacy_view ~render_block _model_source row_source send : t =
 let block_values ~render_block owner source send =
   let render_block source send =
     render_block (Signal.map (fun row -> {row with Model.row_breadcrumb = ""; row_breadcrumbs = []}) source) send in
-  let rows = Signal.map (fun json -> (decode (Yojson.Basic.to_string (`Assoc [
-    "rows", `List (match json with `List blocks -> List.map (fun block -> `Assoc ["block", block]) blocks | _ -> [])]))).rows) source in
+  let rows = Signal.map (fun json -> (decode_json (`Assoc [
+    "rows", `List (match json with `List blocks -> List.map (fun block -> `Assoc ["block", block]) blocks | _ -> [])])).rows) source in
   keyed ~source:rows ~key:(fun item -> Option.value ~default:"" item.uuid) ~cmp:String.compare
     ~mount:(result_item owner render_block send)
 
@@ -123,7 +124,7 @@ let jfield name json = Option.value ~default:`Null (member name json)
 let jtext json = string (Some json)
 let jlist = function `List values -> values | _ -> []
 let jbool = function `Bool value -> value | _ -> false
-let items json = (decode (Json.to_string json)).rows
+let items json = (decode_json json).rows
 let text_value = function
   | `String value -> value | `Int value -> string_of_int value | `Float value -> string_of_float value
   | `Bool value -> string_of_bool value | `Null -> "" | value -> Json.to_string value
@@ -138,12 +139,13 @@ let local_input set = function Lui_protocol.TextChanged (_, value) -> set value 
 let list_take count values = List.filteri (fun index _ -> index < count) values
 
 type saved_view = {id : string; name : string; typ : string; data : Json.t}
-let saved_views raw =
-  try Json.from_string raw |> jfield "views" |> jlist |> List.mapi (fun index data ->
+let saved_views_json json =
+  try json |> jfield "views" |> jlist |> List.mapi (fun index data ->
     let id = jtext (jfield "uuid" data) in
     {id = (if id = "" then "invalid." ^ string_of_int index else id);
      name = jtext (jfield "name" data); typ = jtext (jfield "type" data); data})
   with _ -> []
+let saved_views raw = try saved_views_json (Json.from_string raw) with _ -> []
 let operator_title = function
   | "is" -> "Is" | "is-not" -> "Is not" | "text-contains" -> "Contains"
   | "text-not-contains" -> "Does not contain" | "number-gt" -> "Greater than"
@@ -554,15 +556,16 @@ let value_sheet owner feature view model_source send item property close =
 let collection ~render_block model_source raw_source send : t =
  fun context parent ->
   let own value = Signal.own_signal context.ui_scope value in
-  let initial = try Json.from_string (Signal.sample raw_source) with _ -> `Null in
+  let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw_source) in
+  let initial = Signal.sample parsed in
   let owner = jtext (jfield "ownerUuid" initial) and feature = jtext (jfield "featureType" initial) in
-  let views = own (Signal.map saved_views raw_source) in
+  let views = own (Signal.map saved_views_json parsed) in
   let active = Signal.state context.ui_scheduler "" and search = Signal.state context.ui_scheduler "" in
-  let is_query_expansion raw = try member "expanded" (Json.from_string raw) <> None with _ -> false in
-  let source_expanded raw = try match member "expanded" (Json.from_string raw) with Some (`Bool value) -> value | _ -> true with _ -> true in
-  let expanded = Signal.state context.ui_scheduler (source_expanded (Signal.sample raw_source)) in
-  ignore (Signal.own context.ui_scope (Signal.observe raw_source (fun raw ->
-    if is_query_expansion raw then Signal.set expanded (source_expanded raw))));
+  let is_query_expansion json = member "expanded" json <> None in
+  let source_expanded json = match member "expanded" json with Some (`Bool value) -> value | _ -> true in
+  let expanded = Signal.state context.ui_scheduler (source_expanded initial) in
+  ignore (Signal.own context.ui_scope (Signal.observe parsed (fun json ->
+    if is_query_expansion json then Signal.set expanded (source_expanded json))));
   let search_open = Signal.state context.ui_scheduler false in
   let chosen = own (Signal.map2 (fun views id ->
     match List.find_opt (fun view -> view.id = id) views with Some view -> [view]
@@ -570,7 +573,7 @@ let collection ~render_block model_source raw_source send : t =
   let results_toggle () =
     let label = own (Signal.map2 (fun views expanded ->
       if not expanded then "Results" else
-      string_of_int (List.fold_left (fun count view -> max count (List.length (items view.data))) 0 views) ^ " results")
+      string_of_int (List.fold_left (fun count view -> max count (List.length (jlist (jfield "rows" view.data)))) 0 views) ^ " results")
       views (Signal.value expanded)) in
     View_base.with_label_signal label
       (button ~variant:`ghost ~text_alignment:`start ~grow:1.0
@@ -578,7 +581,7 @@ let collection ~render_block model_source raw_source send : t =
         ~disabled_signal:(waiting model_source owner)
         ~on_press:(fun _ ->
           let next = not (Signal.sample (Signal.value expanded)) in
-          if is_query_expansion (Signal.sample raw_source) then
+          if is_query_expansion (Signal.sample parsed) then
             ignore (send (Model.SubmitResultView (owner, payload owner feature "" "setExpanded" ["expanded", `Bool next])))
           else Signal.set expanded next)
         [results_disclosure context ("query.disclosure." ^ owner) (Signal.value expanded) label]) in

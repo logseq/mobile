@@ -1012,6 +1012,18 @@ let blocks_for_page decrypt_title db uuid =
        read_block ~with_breadcrumbs:false ~page_info decrypt_title db row.entity_id)
   |> List.of_seq
 
+let children_for_block decrypt_title db (parent : Model.block) =
+  match Ds.entid db "block/uuid" (Ds.Uuid parent.uuid) with
+  | None -> []
+  | Some eid ->
+    let reader = page_reader db parent.page_id in
+    let page_info = lazy (parent.page_id, parent.journal) in
+    ordered_page_children reader.tree eid
+    |> List.filter_map (fun child ->
+      if page_entity_visible reader.tree child then
+        read_block ~with_breadcrumbs:false ~page_info decrypt_title db child
+      else None)
+
 let node_destination decrypt_title db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
   | Some eid ->

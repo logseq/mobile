@@ -138,7 +138,7 @@ let execute ?current_page db owner definition source =
               | Some rows -> rows | None -> invalid_arg "Invalid query DSL") in
         rows, field "result-transform" config, field "remove-block-children?" config <> Some (Ds.QueryFormBool false)
       | None ->
-        (match Dev.Db_query_dsl.execute_query db source opts with
+        (match Dev.Db_query_dsl.execute_query db source {opts with opt_block_attrs = Some "[:db/id]"} with
          | Some rows -> rows, None, true
          | None -> invalid_arg "Invalid query DSL") in
     let rows = filter_rows db owner definition remove_children query_rows in

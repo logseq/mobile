@@ -506,7 +506,35 @@ let results_disclosure_executes_real_session () =
       ["#Project"; "{:query [:find (pull ?b [*]) :where [?b :user.property/score ?s] [(> ?s 1)]]}"])
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let result_encoding_reads_subtrees_without_hydrating_page_siblings () =
+  let db = fixture "#Project" in
+  let siblings = List.init 5_000 Fun.id |> List.concat_map (fun index ->
+    let id = Ds.Entity_id (1_000_000 + index) in
+    [Ds.Add (id, "block/uuid", Ds.Uuid (Printf.sprintf "30000000-0000-4000-8000-%012d" index));
+     Ds.Add (id, "block/title", Ds.String ("Unrelated sibling " ^ string_of_int index));
+     Ds.Add (id, "block/page", Ds.Ref_to (ref_uuid page));
+     Ds.Add (id, "block/parent", Ds.Ref_to (ref_uuid page))]) in
+  let db = Ds.db_with (put beta "block/parent" (Ds.Ref_to (ref_uuid alpha)) :: siblings) db in
+  let storage = Ds.memory_storage () in
+  let snapshot = match Graph_bootstrap.snapshot_rows db with Ok rows -> rows | Error error -> fail error in
+  storage.Ds.storage_store (List.map (fun (row : Snapshot.snapshot_row) ->
+    string_of_int row.addr, Storage_codec.decode row.addresses row.content) snapshot);
+  let reads = ref 0 in
+  let counted = {storage with Ds.storage_restore = (fun address ->
+    incr reads; storage.storage_restore address)} in
+  let db = match Ds.restore counted with Some db -> db | None -> fail "missing restored query db" in
+  let session = Session.create_session {Session.default_options with graph_db = Some (fun () -> Some db)} in
+  reads := 0;
+  let result = query session in
+  check_eq (row_ids result) [alpha];
+  let block = member "block" (List.hd (items "rows" result)) in
+  check_eq ~msg:"nonmatching children remain available under the result"
+    (List.map (member "uuid") (items "children" block)) [`String beta];
+  check ~msg:(Printf.sprintf "encoding one result must not hydrate 5k unrelated siblings (%d storage reads)" !reads)
+    (!reads < 300)
+
 let cases = [
+  case "result encoding reads only the requested subtree on large pages" result_encoding_reads_subtrees_without_hydrating_page_siblings;
   case "results disclosure executes and folds real simple and advanced queries" results_disclosure_executes_real_session;
   case "queries stay unevaluated until expanded and refresh when reopened" collapsed_queries_do_not_evaluate_until_opened;
   case "result lists render breadcrumbs and independently folded children" result_list_breadcrumbs_and_local_children;
