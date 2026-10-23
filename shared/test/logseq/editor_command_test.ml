@@ -524,6 +524,28 @@ let backspace_at_start_keeps_the_caret_at_the_merge_boundary () =
       (List.find (fun (b : Cache_model.block) -> b.uuid = descendant) blocks).parent_id (Some Q.alpha)))
     ["World", false, false; "中文🙂", false, true; "Parent", true, false]
 
+let unrelated_edit_does_not_create_issue_number_tags () = R.with_runtime (fun session runtime conn ->
+  let source = {|Design question (reporter asks A vs B), not auto-fixed: A = text export writes the deprecated macro as text ("- Groceries {{embed [[Shopping]]}}") so export→paste round-trips (3 export-test assertions change); B = keep expanding as now. Reporter offers the PR for A. Related umbrella db-test#1442 (reporter withdrew symptom patches incl. #13730/#[[13732)]]. Needs Tienson decision before a code PR.|} in
+  rebase runtime conn [put Q.alpha "block/title" (Ds.String source)];
+  let session = Rpc_session.create_session { (Rpc_session.host session) with
+    graph_normalize_titles = Some (Graph_runtime.normalize_titles runtime) } in
+  ignore (Rpc_test.configure_plain_session session);
+  Q.open_results session;
+  let before = Graph_runtime.db runtime in
+  let tags () = List.of_seq (Ds.Db.datoms (Graph_runtime.db runtime) Ds.Aevt ~a:"block/tags" ()) in
+  let original_tags = tags () in
+  ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+  let updated = source ^ " 1" in
+  ignore (type_at session updated (Outliner_state.utf16_length updated));
+  save session;
+  check_eq ~msg:"appending 1 cannot rewrite existing issue references"
+    (value runtime Q.alpha "block/title") (Some (Ds.String updated));
+  check_eq ~msg:"the edit cannot create or assign accidental tag entities" (tags ()) original_tags;
+  List.iter (fun name ->
+    check_eq ~msg:("no accidental tag: " ^ name)
+      (Ds.entid (Graph_runtime.db runtime) "block/name" (Ds.String name))
+      (Ds.entid before "block/name" (Ds.String name))) ["1442"; "13730/"; "13732)"])
+
 let task_dates_are_visible_and_editable_in_the_outline () =
   List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
     List.iter (fun label -> ignore (run session label); ignore (submit session "1792719000000"); save session)
@@ -576,6 +598,7 @@ let cases = [
   case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;
   case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
+  case "unrelated edits do not create issue number tags" unrelated_edit_does_not_create_issue_number_tags;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;
   case "task dates are visible and editable in the outline" task_dates_are_visible_and_editable_in_the_outline;
   case "command groups follow master order" command_groups_follow_master_order;

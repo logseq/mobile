@@ -73,6 +73,26 @@ let unbracket value =
     String.sub value 2 (length - 4)
   else value
 
+let whitespace_at source index =
+  index < String.length source &&
+  let code = Uchar.to_int (Uchar.utf_decode_uchar (String.get_utf_8_uchar source index)) in
+  (code >= 0x09 && code <= 0x0D) || (code >= 0x2000 && code <= 0x200A)
+  || match code with
+  | 0x20 | 0xA0 | 0x1680 | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF -> true
+  | _ -> false
+
+let hashtag_boundaries source first last =
+  (* Match master's replace-tag-ref boundaries, including JavaScript whitespace. *)
+  let rec previous index =
+    if index > 0 && Char.code source.[index] land 0xC0 = 0x80 then previous (index - 1)
+    else index in
+  let rec after index =
+    index = String.length source || whitespace_at source index || source.[index] = ')'
+    || ((source.[index] = ',' || source.[index] = '.') && after (index + 1)) in
+  first >= 0 && last >= first && last <= String.length source
+  && (first = 0 || source.[first - 1] = '(' || whitespace_at source (previous (first - 1)))
+  && after last
+
 let references title =
   let add kind name start_pos end_pos acc =
     let name = String.trim (unbracket name) in
@@ -94,6 +114,8 @@ let references title =
             let name = Inline.hash_tag_value_string node in
             if String_kit.starts_with ~prefix:"[[" name
                && not (String_kit.ends_with ~suffix:"]]" name) then acc
+            else if not (is_uuid (unbracket name))
+                    && not (hashtag_boundaries title start_pos end_pos) then acc
             else add Tag name start_pos end_pos acc
           | Inline.Nested_link link ->
             add Page link.content start_pos end_pos acc

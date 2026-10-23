@@ -342,7 +342,10 @@ and convert_node source references tags node position =
      | None -> [ Markup_text (node_name link) ])
   | Inline.Tag children ->
     let value = S.trim (String.concat "" (List.map tag_part children)) in
-    (match find_summary tags value with
+    let valid = Ref_text.is_uuid value || match position with
+      | None -> true
+      | Some (pos : Mldoc.Pos.pos_meta) -> Ref_text.hashtag_boundaries source pos.start_pos pos.end_pos in
+    if not valid then raw else (match find_summary tags value with
      | Some summary ->
        [ Markup_tag_ref (summary.Cache_model.uuid, summary.Cache_model.title) ]
      | None -> [ Markup_text ("#" ^ value) ])

@@ -762,6 +762,26 @@ let title_normalization_does_not_create_tags_from_markdown_literals () =
   check_eq titles [ source; "`#code` #[[fresh-tag]]"; "~~~md\n#fenced\n~~~" ];
   check_eq created [ ("fresh-tag", "real") ]
 
+let title_normalization_respects_master_hashtag_boundaries () =
+  List.iter (fun source ->
+    let titles, created = Read.normalize_titles_creating_tags (Ds.empty_db ())
+      (fun () -> "fresh-tag") "note" [source] in
+    check_eq ~msg:("literal title stays unchanged: " ^ source) titles [source];
+    check_eq ~msg:("literal hashes do not create tags: " ^ source) created [])
+    ["db-test#1442"; "#13730/#13732"; "#13730/#[[13732)]]";
+     "word#project"; "path/#project"; "普通#标签"; "##project";
+     "#project#other"; "#project!"; "#project;"; "#project:next"];
+  List.iter (fun source ->
+    let _, created = Read.normalize_titles_creating_tags (Ds.empty_db ())
+      (fun () -> "fresh-tag") "note" [source] in
+    check_eq ~msg:("standalone tags still work: " ^ source) created [("fresh-tag", "project")])
+    ["#project"; "Text #project."; "Text\t#project"; "Text\n#project";
+     "Text\xC2\xA0#project"; "Text\xE3\x80\x80#project"];
+  let _, created = Read.normalize_titles_creating_tags (Ds.empty_db ())
+    (fun () -> "fresh-tag") "note" ["#123"] in
+  check_eq ~msg:"numeric names are valid when intentionally written as standalone tags"
+    created [("fresh-tag", "123")]
+
 let recent_page eid title attributes =
   entity_input (Ds.Entity_id eid)
     (field "block/uuid" (Ds.Uuid (Printf.sprintf "recent-%d" eid))
@@ -1181,6 +1201,8 @@ let cases =
       title_normalization_resolves_unique_names_and_shares_new_tags_across_titles;
     case "title normalization does not create tags from Markdown literals"
       title_normalization_does_not_create_tags_from_markdown_literals;
+    case "title normalization respects master hashtag boundaries"
+      title_normalization_respects_master_hashtag_boundaries;
     case
       "recent window fills past hidden and blank pages without decrypting older pages"
       recent_window_fills_past_hidden_and_blank_pages_without_decrypting_older_pages;

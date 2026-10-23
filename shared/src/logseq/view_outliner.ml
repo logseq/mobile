@@ -453,7 +453,7 @@ let native_outliner_row model_source retained_source row_source send : t =
       "localPath", `String (View_base.outliner_row_local_path row);
       "youtubeURL", `String (View_base.outliner_row_youtube_target row);
       "completed", `Bool (View_base.outliner_row_completed_ row);
-      "selected", `Bool (View_base.row_selected_ current row);
+      "selected", `Bool retained.is_selected;
       "opensAsPage", `Bool row.opens_as_page;
       "journalBullet", `Bool false;
       "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
@@ -487,18 +487,15 @@ let native_outliner_row model_source retained_source row_source send : t =
     | input -> ignore (View_base.handle_outliner_block_content_event input model_source send));
   node
 
+let selected_row ~selected_signal content =
+  View_base.with_bool_prop_signal Selected selected_signal content
+
 let outliner_row_body (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
-  let selected_source =
-    Signal.map2
-      (fun (current : Model.logseq_model) (r : Model.outline_row) ->
-        View_base.row_selected_ current r)
-      model_source row_source
-  in
   if Lui_ui.host context = SwiftUIHost then
-    View_base.with_bool_prop_signal Selected selected_source
+    selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (box ~padding:0 ~accessibility_identifier:(reactive View_base.outliner_row_identifier row_source)
         [native_outliner_row model_source retained_row_source row_source send])
   else
@@ -506,7 +503,7 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
     View_base.outliner_row_list_item_press_enabled_
       (Lui_ui.host context) current_row
   then
-    View_base.with_bool_prop_signal Selected selected_source
+    selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (box
          ~accessibility_identifier_signal:
            (Signal.map View_base.outliner_row_identifier row_source)
@@ -519,7 +516,7 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
             outliner_zoom_control context model_source row_source send
               search_open;
             box ~width:2 [];
-            View_base.with_bool_prop_signal Selected selected_source
+            selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
               (View_base.with_label_signal
                  (Signal.map2
                     (fun (current : Model.logseq_model)
@@ -564,7 +561,7 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
            ];
          ])
   else
-    View_base.with_bool_prop_signal Selected selected_source
+    selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (View_base.with_label_signal
          (Signal.map2
             (fun (current : Model.logseq_model) (r : Model.outline_row) ->

@@ -79,6 +79,12 @@ let external_link_protocols_preserve_source_separators () =
       ("[Email](mailto:person@example.com)", "mailto:person@example.com", "Email");
     ]
 
+let issue_hashes_stay_literal_even_when_matching_tags_exist () =
+  let source = "db-test#1442 (patches incl. #13730/#[[13732)]]." in
+  let tags = [summary "tag-1442" "1442"; summary "tag-13730" "13730/";
+    summary "tag-13732" "13732)"] in
+  check_eq [Markup_text source] (parse [] tags source)
+
 let stable_native_json_contract () =
   check_eq
     (Yojson.Basic.from_string
@@ -194,6 +200,8 @@ let cases =
     case "reference resolution and raw source" reference_resolution_and_raw_source;
     case "external links keep hashtags and references as label text"
       external_links_keep_hashtags_and_references_as_label_text;
+    case "issue hashes stay literal even when matching tags exist"
+      issue_hashes_stay_literal_even_when_matching_tags_exist;
     case "external link protocols preserve source separators"
       external_link_protocols_preserve_source_separators;
     case "stable native json contract" stable_native_json_contract;
