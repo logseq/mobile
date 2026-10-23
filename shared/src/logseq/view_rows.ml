@@ -1,12 +1,15 @@
+module Selection = Set.Make (String)
+
 type retained_row =
   { render_key : string
   ; value : Model.outline_row
   ; is_editing : bool
+  ; is_selected : bool
   ; editing_title : string
   ; editing_caret : int
   }
 
-let make_retained_outline_row (current : Model.logseq_model)
+let make_retained_outline_row_with_selection is_selected (current : Model.logseq_model)
     (row : Model.outline_row) =
   match current.outliner_editing with
   | Some editing ->
@@ -15,6 +18,7 @@ let make_retained_outline_row (current : Model.logseq_model)
         render_key = "active-outliner-editor";
         value = row;
         is_editing = true;
+        is_selected;
         editing_title = editing.editing_title;
         editing_caret = editing.caret_utf16_offset;
       }
@@ -23,6 +27,7 @@ let make_retained_outline_row (current : Model.logseq_model)
         render_key = row.row_uuid;
         value = row;
         is_editing = false;
+        is_selected;
         editing_title = "";
         editing_caret = 0;
       }
@@ -31,13 +36,27 @@ let make_retained_outline_row (current : Model.logseq_model)
       render_key = row.row_uuid;
       value = row;
       is_editing = false;
+      is_selected;
       editing_title = "";
       editing_caret = 0;
     }
 
+let make_retained_outline_row current row =
+  make_retained_outline_row_with_selection (View_base.row_selected_ current row) current row
+
 let retained_outliner_rows (current : Model.logseq_model) =
-  List.map (fun row -> make_retained_outline_row current row)
-    current.outliner_rows
+  let selected = Selection.of_list current.outliner_selected_block_ids in
+  let rec loop ancestor acc = function
+    | [] -> List.rev acc
+    | (row : Model.outline_row) :: rest ->
+      let inherited = match ancestor with
+        | Some (depth, page) -> row.depth > depth && row.page_id = page
+        | None -> false in
+      let is_selected = inherited || Selection.mem row.row_uuid selected in
+      let ancestor = if inherited then ancestor else
+        if is_selected then Some (row.depth, row.page_id) else None in
+      loop ancestor (make_retained_outline_row_with_selection is_selected current row :: acc) rest in
+  loop None [] current.outliner_rows
 
 let first_journal_section_visible_ (current : Model.logseq_model) =
   View_base.journal_root_visible_ current
@@ -48,6 +67,7 @@ let first_journal_section_visible_ (current : Model.logseq_model) =
 let retained_row_value (retained : retained_row) = retained.value
 let retained_row_identifier (retained : retained_row) = retained.render_key
 let retained_row_editing_ (retained : retained_row) = retained.is_editing
+let retained_row_selected_ (retained : retained_row) = retained.is_selected
 let retained_row_editing_title (retained : retained_row) =
   retained.editing_title
 

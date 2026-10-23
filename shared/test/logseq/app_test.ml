@@ -662,8 +662,7 @@ let ref_text_respects_markdown_context () =
     [
       ("😀 #project, [[Roadmap]]!", "😀 #[[" ^ uuid ^ "]], [[" ^ uuid ^ "]]!");
       ("#project! #project? #project; #project:",
-       String.concat " " (List.map (fun suffix -> "#[[" ^ uuid ^ "]]" ^ suffix)
-         ["!"; "?"; ";"; ":"]));
+       "#project! #project? #project; #project:");
       ("**[[Roadmap]]**", "**[[" ^ uuid ^ "]]**");
       ("[alias]([[Roadmap]])", "[alias]([[" ^ uuid ^ "]])");
       ("[[nested [[Roadmap]]]]", "[[" ^ uuid ^ "]]");
@@ -9262,6 +9261,45 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
 
+let parent_selection_highlights_visible_descendants () =
+  List.iter (fun (ios, backend) ->
+    let application = App.create (backend ()) in
+    start application;
+    let base uuid depth = {(outline_row uuid uuid) with Model.depth; page_id = "page"} in
+    let rows = [
+      {(base "parent" 0) with has_children = true};
+      {(base "child" 1) with has_children = true};
+      base "grandchild" 2; base "child-two" 1;
+      base "sibling" 0;
+      {(base "next-journal" 0) with page_id = "other-page"};
+      {(base "other-child" 1) with page_id = "other-page"}] in
+    let apply rows selected =
+      send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+        None None [] selected rows false []);
+      flush application;
+      check_eq ~msg:"visual descendants must not become independent action targets"
+        (App.model application).Model.outliner_selected_block_ids selected in
+    let assert_selected uuid expected =
+      let renderer = Lui_app.runtime application in
+      let row = descendant_with_identifier renderer (main_root renderer application) ("outliner.block." ^ uuid) in
+      check ~msg:("row must be mounted: " ^ uuid) (row <> -1);
+      check_eq ~msg:("selection highlight: " ^ uuid) (property_bool renderer row Lui_protocol.Selected) expected;
+      if ios then
+        check_eq ~msg:("native payload agrees with shared selection: " ^ uuid)
+          (Yojson.Basic.Util.member "selected" (native_row_payload application row)) (`Bool expected) in
+    apply rows ["parent"];
+    List.iter (fun uuid -> assert_selected uuid true) ["parent"; "child"; "grandchild"; "child-two"];
+    List.iter (fun uuid -> assert_selected uuid false) ["sibling"; "next-journal"; "other-child"];
+    apply rows ["child"];
+    List.iter (fun uuid -> assert_selected uuid true) ["child"; "grandchild"];
+    List.iter (fun uuid -> assert_selected uuid false) ["parent"; "child-two"; "sibling"];
+    apply rows [];
+    List.iter (fun row -> assert_selected row.Model.row_uuid false) rows;
+    apply [{(base "parent" 0) with has_children = true; is_collapsed = true}; base "sibling" 0] ["parent"];
+    apply rows ["parent"];
+    assert_selected "grandchild" true)
+    [true, ios_backend; false, kotlin_backend]
+
 let pushed_node_selection_has_a_destination_toolbar () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -10642,6 +10680,7 @@ let cases =
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
+    case "parent selection highlights visible descendants" parent_selection_highlights_visible_descendants;
     case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;
