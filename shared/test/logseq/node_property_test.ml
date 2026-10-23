@@ -407,7 +407,42 @@ let native_page_rename_uses_shared_editor () =
         check_eq (member "value" payload) (`String "Renamed page")))
       [App_test.ios_backend; App_test.kotlin_backend])
 
+let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session runtime _ ->
+  ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.page])));
+  Q.with_ui App_test.ios_backend (Rpc_session.snapshot_visible session) (fun app ->
+    App_test.send app (Model.RequestAppNode Q.page);
+    let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+      | Ok value -> value | Error message -> fail message in
+    App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+    let host = Lui_app.runtime app in
+    let root = Lui_app.root_node app in
+    let menu = App_test.descendant_with_identifier host root "button.connection" in
+    let tags = App_test.descendant_with_identifier host menu "button.page.tags" in
+    check ~msg:"page tags have a separate top-menu action" (tags <> -1);
+    App_test.dispatch app (Lui_protocol.Press tags); App_test.flush app;
+    check (App_test.descendant_with_identifier host root ("view.edit.sheet.page.tags." ^ Q.page) <> -1));
+  let before = Graph_read.ref_eids (Graph_runtime.db runtime)
+    (Option.get (Ds.entid (Graph_runtime.db runtime) "block/uuid" (Ds.Uuid Q.page))) "block/tags" in
+  ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "blockUuid", `String Q.page; "action", `String "addTags";
+    "selectedValues", `List [`String Q.project]; "newValues", `List [`String "Mobile"]]))));
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.page)) in
+  let after = Graph_read.ref_eids db id "block/tags" in
+  check ~msg:"adding tags preserves every existing class" (List.for_all (fun id -> List.mem id after) before);
+  check_eq ~msg:"tagging leaves the page name alone" (Graph_read.value db id "block/title") (Some (Ds.String "Workspace"));
+  List.iter (fun name ->
+    let tag = Graph_read.unique_named_uuid true db name |> Option.get in
+    let tag = Ds.entid db "block/uuid" (Ds.Uuid tag) |> Option.get in
+    check (List.mem tag after)) ["Project"; "Mobile"];
+  let pending = Graph_runtime.pending_operations runtime in
+  check_eq (member "ok" (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "blockUuid", `String Q.page; "action", `String "addTags"; "newValues", `List [`String "#Invalid"]])))) (`Bool false);
+  check_eq ~msg:"invalid tags do not partially write" (Graph_runtime.pending_operations runtime) pending;
+  List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation)) pending)
+
 let cases = [
+  case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;
   case "built-in page menus hide Delete and reject stale requests" builtin_pages_hide_delete_and_reject_deletion_requests;
   case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
   case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;

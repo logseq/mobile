@@ -264,6 +264,24 @@ let command base_t now fresh_uuid context cmd =
           in
           Ok (result [ create; add ] [])
     else Error "tag target block no longer exists"
+  | State.Assign_reference_tag (name, value) ->
+    (match context.State.db with
+     | None -> Error "Open a graph before tagging a reference"
+     | Some db ->
+       let target, created =
+         let existing = if Ref_text.is_uuid name then
+             Option.map (fun _ -> name) (Datascript.entid db "block/uuid" (Datascript.Uuid name))
+           else Graph_read.unique_named_uuid false db name in
+         match existing with
+         | Some uuid -> uuid, []
+         | None when Ref_text.is_uuid name -> "", []
+         | None -> let uuid = fresh_uuid () in uuid, [Ops.Create_page {uuid; title = name; created_at = now ()}] in
+       if target = "" then Error "The referenced node no longer exists" else
+       let tag, created = match List.find_opt (fun (tag : State.outliner_candidate) -> tag.value = value) context.tags with
+         | Some tag -> tag.value, created
+         | None -> let uuid = fresh_uuid () in uuid,
+             created @ [Ops.Create_tag {uuid; title = String.trim value; created_at = now ()}] in
+       Ok (result [operation base_t fresh_uuid (Ops.Atomic (created @ [Ops.Add_tag {uuid = target; tag_uuid = tag}]))] []))
   | State.Insert_root_block value ->
     let lower =
       match List.rev (sorted_siblings context (Some value.State.page_uuid)) with

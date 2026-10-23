@@ -10,6 +10,11 @@ let rename_page raw =
   let owner = text (field "ownerUuid" source) and property = field "rename" source in
   if owner <> "" && field "editable" property = `Bool true then Some (owner, property) else None
 
+let tag_picker raw =
+  let source = decode raw in
+  let owner = text (field "ownerUuid" source) and property = field "tagPicker" source in
+  if owner <> "" && property <> `Null then Some (owner, property) else None
+
 let display_value property =
   let raw = text (field "text" property) in
   if field "kind" property <> `String "datetime" then raw else

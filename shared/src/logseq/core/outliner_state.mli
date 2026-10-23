@@ -153,6 +153,7 @@ type outliner_command =
   | Set_task_priority_value of outliner_priority
   | Create_linked_page of string
   | Assign_tag of outliner_tag
+  | Assign_reference_tag of string * string
   | Pick_attachment of string
   | Take_photo of string
   | Record_audio of string
