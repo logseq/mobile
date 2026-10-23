@@ -59,6 +59,9 @@ appId: com.logseq.app
 - assertVisible:
     id: "screen.search"
 - assertVisible: "Android E2E capture"
+# Returning to search restores focus to its field. Back first dismisses the
+# Android IME; close the keyboard explicitly before testing route dismissal.
+- hideKeyboard
 - pressKey: BACK
 - assertVisible:
     id: "button.composer.expand"

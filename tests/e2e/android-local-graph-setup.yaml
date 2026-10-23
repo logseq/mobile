@@ -15,28 +15,34 @@ appId: com.logseq.app
             - tapOn: "Use without an account"
       - extendedWaitUntil:
           visible:
-            id: "signInFormUsername"
+            id: "signInFormUsername|screen.graph-picker|button.composer.expand"
           timeout: 30000
-      - tapOn:
-          id: "signInFormUsername"
-      - inputText: ${USERNAME}
+      # A retained browser session can complete sign-in without the form.
       - runFlow:
           when:
-            visible: "Try out your stylus"
+            visible:
+              id: "signInFormUsername"
           commands:
-            - tapOn: "Cancel"
-      - tapOn:
-          id: "signInFormPassword"
-      - inputText: ${PASSWORD}
-      - hideKeyboard
-      - extendedWaitUntil:
-          visible: "submit"
-          timeout: 10000
-      - tapOn: "submit"
-      - extendedWaitUntil:
-          visible:
-            id: "screen.graph-picker"
-          timeout: 60000
+            - tapOn:
+                id: "signInFormUsername"
+            - inputText: ${USERNAME}
+            - runFlow:
+                when:
+                  visible: "Try out your stylus"
+                commands:
+                  - tapOn: "Cancel"
+            - tapOn:
+                id: "signInFormPassword"
+            - inputText: ${PASSWORD}
+            - hideKeyboard
+            - extendedWaitUntil:
+                visible: "submit"
+                timeout: 10000
+            - tapOn: "submit"
+            - extendedWaitUntil:
+                visible:
+                  id: "screen.graph-picker|button.composer.expand"
+                timeout: 60000
 - runFlow:
     when:
       visible:
@@ -46,8 +52,15 @@ appId: com.logseq.app
           id: "button.graph-add"
       - extendedWaitUntil:
           visible:
-            id: "field.graph-name"
+            # Login can finish opening the bootstrap graph after the picker
+            # was observed. Wait for either stable outcome of that transition.
+            id: "field.graph-name|button.composer.expand"
           timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: "field.graph-name"
+    commands:
       - tapOn:
           id: "field.graph-name"
       - inputText: "android-e2e-smoke"
@@ -65,5 +78,5 @@ appId: com.logseq.app
           timeout: 60000
 - extendedWaitUntil:
     visible:
-      id: "button.sidebar"
+      id: "button.composer.expand"
     timeout: 60000
