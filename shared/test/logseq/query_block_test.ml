@@ -464,7 +464,50 @@ let collapsed_queries_do_not_evaluate_until_opened () =
           member "action" (Json.from_string payload) = `String "setExpanded" | _ -> false)
           (App.model app).pending_effects))) [App_test.ios_backend; App_test.kotlin_backend]
 
+let results_disclosure_executes_real_session () =
+  List.iter (fun backend ->
+    List.iter (fun source ->
+      let session, _ = make_session (fixture source) in
+      ignore (Rpc_test.configure_plain_session session);
+      List.iter (fun zoom ->
+        ignore (dispatch session "resultView" (Json.to_string (`Assoc ["ownerUuid", `String owner;
+          "featureType", `String "query-result"; "action", `String "setExpanded"; "expanded", `Bool false])));
+        if zoom then ignore (dispatch session "openNode" (Json.to_string (`Assoc ["uuid", `String owner])));
+        with_ui backend (Session.snapshot_visible session) (fun app ->
+          let runtime = Lui_app.runtime app in
+          let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+          let toggle () =
+            let button = find ("query.toggle." ^ owner) in
+            check ~msg:"the query disclosure remains reachable" (button <> -1);
+            App_test.dispatch app (Lui_protocol.Press button);
+            App_test.flush app;
+            let eff = List.find (function Model.ResultViewEffect _ -> true | _ -> false)
+              (App.model app).pending_effects in
+            let id = Model.effect_id eff in
+            App_test.send app (Model.DequeueEffect id);
+            let response = Core_effect_test.execute session "result-view"
+              ["text", (match eff with Model.ResultViewEffect (_, _, payload) -> `String payload | _ -> assert false)] in
+            check_eq ~msg:(Json.to_string response) (member "ok" response) (`Bool true);
+            App_test.send app (Model.ResolveEffect (id, true, Json.to_string response));
+            (match Response_snapshot.decode_response (Json.to_string response) with
+             | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection)
+             | Error message -> fail message);
+            App_test.flush app in
+          check_eq (find ("query.result." ^ owner ^ ".0")) (-1);
+          toggle ();
+          check ~msg:("real query results must mount after expansion: " ^ source)
+            (find ("query.result." ^ owner ^ ".0") <> -1);
+          toggle ();
+          check_eq ~msg:"folded results unmount after a real core response"
+            (find ("query.result." ^ owner ^ ".0")) (-1);
+          toggle ();
+          check ~msg:"queries can run again after folding"
+            (find ("query.result." ^ owner ^ ".0") <> -1))) [false; true])
+      ["#Project"; "{:query [:find (pull ?b [*]) :where [?b :user.property/score ?s] [(> ?s 1)]]}"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "results disclosure executes and folds real simple and advanced queries" results_disclosure_executes_real_session;
   case "queries stay unevaluated until expanded and refresh when reopened" collapsed_queries_do_not_evaluate_until_opened;
   case "result lists render breadcrumbs and independently folded children" result_list_breadcrumbs_and_local_children;
   case "cross-page results retain editing and select bar actions" cross_page_result_actions;
