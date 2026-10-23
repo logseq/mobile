@@ -31,11 +31,8 @@ import UIKit
         if reduceMotion {
             cover.removeFromSuperview()
         } else {
-            // Readiness reveals content promptly; the faint logo can finish independently.
-            let options: UIView.AnimationOptions = [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]
-            UIView.animate(withDuration: 0.12, delay: 0, options: options) {
-                cover.backgroundColor = .clear
-            }
+            // Reveal the ready frame immediately; only the faint logo keeps fading.
+            cover.backgroundColor = .clear
             UIView.animate(withDuration: 0.45, delay: 0,
                 options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState]) {
                 for logo in cover.subviews { logo.alpha = 0 }

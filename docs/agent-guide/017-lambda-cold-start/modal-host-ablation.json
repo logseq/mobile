@@ -1,0 +1,46 @@
+{
+  "binary_sha256": "3ea51c2c97e79ad61ece545845d51621a0246a66b9db1e6da3e628650d93faea",
+  "scope": "diagnostic omissions; real Lambda journal titles remain visible; same binary, randomized interleaved fresh processes",
+  "modes": {
+    "full": {
+      "median_ms": 2218.529607867822,
+      "samples": [
+        {"process_ms":2812.744128983468,"first_commit_ms":2765.2709207031876,"nonempty_rows":5,"stages":{"main_entry":784.7422539489344,"app_init":785.0210457108915,"runtime_initialized":832.2423789650202,"local_graph_loaded":1272.8133789496496,"renderer_started":1443.9216706668958,"root_appeared":2372.457712306641,"first_commit":2765.720045659691,"first_display_after_commit":2812.701212358661},"components":{}},
+        {"process_ms":2218.529607867822,"first_commit_ms":2127.6129411999136,"nonempty_rows":5,"stages":{"main_entry":828.060649568215,"app_init":828.2180245732889,"runtime_initialized":855.1238995278254,"local_graph_loaded":969.257399556227,"renderer_started":1020.1986079337075,"root_appeared":1675.0818996224552,"first_commit":2127.9621912399307,"first_display_after_commit":2218.492649612017},"components":{}},
+        {"process_ms":2339.781048009172,"first_commit_ms":2237.842256319709,"nonempty_rows":5,"stages":{"main_entry":869.5039229933172,"app_init":869.6553814224899,"runtime_initialized":894.0344647271559,"local_graph_loaded":1005.4360480280593,"renderer_started":1057.647756417282,"root_appeared":1740.0372147094458,"first_commit":2238.161339657381,"first_display_after_commit":2339.6932147443295},"components":{}},
+        {"process_ms":2033.7101287441328,"first_commit_ms":1943.007378722541,"nonempty_rows":5,"stages":{"main_entry":775.1881286967546,"app_init":775.3622953314334,"runtime_initialized":798.8126704003662,"local_graph_loaded":913.0915036657825,"renderer_started":962.8136703977361,"root_appeared":1538.063628715463,"first_commit":1943.3780453400686,"first_display_after_commit":2033.6099204141647},"components":{}},
+        {"process_ms":1538.4460831992328,"first_commit_ms":1474.0924998186529,"nonempty_rows":5,"stages":{"main_entry":659.1479581547901,"app_init":659.2599998693913,"runtime_initialized":674.4618332013488,"local_graph_loaded":745.3692498384044,"renderer_started":780.0030831713229,"root_appeared":1173.2124165864661,"first_commit":1474.3992498843,"first_display_after_commit":1538.4107498684898},"components":{}}
+      ]
+    },
+    "no-backend": {
+      "median_ms": 2097.226800513454,
+      "samples": [
+        {"process_ms":2148.987180320546,"first_commit_ms":1982.5967636425048,"nonempty_rows":5,"stages":{"main_entry":834.504346945323,"app_init":834.6687220036983,"runtime_initialized":858.3150135818869,"local_graph_loaded":976.634138613008,"renderer_started":1021.1845969315618,"root_appeared":1546.9179719220847,"first_commit":1982.8423886792734,"first_display_after_commit":2148.9445553161204},"components":{}},
+        {"process_ms":2097.226800513454,"first_commit_ms":2005.9703837614506,"nonempty_rows":5,"stages":{"main_entry":776.7852171091363,"app_init":776.9240504130721,"runtime_initialized":803.392133791931,"local_graph_loaded":920.184092130512,"renderer_started":965.0584254413843,"root_appeared":1565.1440505171195,"first_commit":2006.213258835487,"first_display_after_commit":2097.1782171400264},"components":{}},
+        {"process_ms":2122.404032968916,"first_commit_ms":2055.4482829757035,"nonempty_rows":5,"stages":{"main_entry":760.4463245952502,"app_init":760.595241212286,"runtime_initialized":781.9137829355896,"local_graph_loaded":894.3473246181384,"renderer_started":938.5703662410378,"root_appeared":1560.0600745528936,"first_commit":2055.731241242029,"first_display_after_commit":2122.3515745950863},"components":{}},
+        {"process_ms":2088.6010341346264,"first_commit_ms":2002.8380758594722,"nonempty_rows":5,"stages":{"main_entry":780.9067008784041,"app_init":781.0416591819376,"runtime_initialized":804.4013258768246,"local_graph_loaded":940.7723258482292,"renderer_started":988.2684925105423,"root_appeared":1580.620075808838,"first_commit":2003.1329091871157,"first_display_after_commit":2088.5564091149718},"components":{}},
+        {"process_ms":2074.1239488124847,"first_commit_ms":2069.7889904258773,"nonempty_rows":5,"stages":{"main_entry":764.8541987873614,"app_init":764.9889905005693,"runtime_initialized":789.7563654696569,"local_graph_loaded":905.7006154907867,"renderer_started":948.7524487776682,"root_appeared":1520.7036570645869,"first_commit":2070.1309071155265,"first_display_after_commit":2074.05586540699},"components":{}}
+      ]
+    },
+    "no-image": {
+      "median_ms": 2022.4910182878375,
+      "samples": [
+        {"process_ms":2434.184161014855,"first_commit_ms":2319.5362859405577,"nonempty_rows":5,"stages":{"main_entry":574.0663276519626,"app_init":574.2593276081607,"runtime_initialized":602.3218693444505,"local_graph_loaded":901.0756609495729,"renderer_started":954.5395360328257,"root_appeared":1740.4495360096917,"first_commit":2319.868119317107,"first_display_after_commit":2434.115285985172},"components":{}},
+        {"process_ms":2022.4910182878375,"first_commit_ms":1940.783018246293,"nonempty_rows":5,"stages":{"main_entry":770.0631849002093,"app_init":770.1992682414129,"runtime_initialized":794.4622265640646,"local_graph_loaded":903.9126432035118,"renderer_started":946.4828931959346,"root_appeared":1540.7746431883425,"first_commit":1941.1281849024817,"first_display_after_commit":2022.4293099017814},"components":{}},
+        {"process_ms":1926.0428104316816,"first_commit_ms":1843.7786437571049,"nonempty_rows":5,"stages":{"main_entry":686.3651438616216,"app_init":686.4921437809244,"runtime_initialized":708.1856437725946,"local_graph_loaded":829.4781438307837,"renderer_started":879.0362271247432,"root_appeared":1433.7314354488626,"first_commit":1844.1442687762901,"first_display_after_commit":1926.0081854881719},"components":{}},
+        {"process_ms":2035.7681578025222,"first_commit_ms":2032.7511160867289,"nonempty_rows":5,"stages":{"main_entry":761.1570328008384,"app_init":761.3141577458009,"runtime_initialized":784.2831577872857,"local_graph_loaded":886.2942410632968,"renderer_started":930.4822410922498,"root_appeared":1466.8978661065921,"first_commit":2033.0618660664186,"first_display_after_commit":2035.7427827548236},"components":{}},
+        {"process_ms":1466.2985204486176,"first_commit_ms":1328.6292287521064,"nonempty_rows":5,"stages":{"main_entry":547.3268954083323,"app_init":547.4333120509982,"runtime_initialized":562.7571037039161,"local_graph_loaded":626.6673537902534,"renderer_started":655.4087287513539,"root_appeared":1036.1138537991792,"first_commit":1328.855228726752,"first_display_after_commit":1466.2472704658285},"components":{}}
+      ]
+    },
+    "no-all": {
+      "median_ms": 2003.9927224861458,
+      "samples": [
+        {"process_ms":928.0195558676496,"first_commit_ms":871.3462641462684,"nonempty_rows":5,"stages":{"main_entry":309.83784748241305,"app_init":309.92509750649333,"runtime_initialized":321.99055585078895,"local_graph_loaded":389.0663058264181,"renderer_started":409.33001413941383,"root_appeared":641.2279724609107,"first_commit":871.6270974837244,"first_display_after_commit":927.9885975411162},"components":{}},
+        {"process_ms":2003.9927224861458,"first_commit_ms":1923.9909308962524,"nonempty_rows":5,"stages":{"main_entry":769.4758474826813,"app_init":769.6164725348353,"runtime_initialized":791.1481391638517,"local_graph_loaded":899.0983475232497,"renderer_started":944.3660558899865,"root_appeared":1510.1872225059196,"first_commit":1924.3757225340232,"first_display_after_commit":2003.9546391926706},"components":{}},
+        {"process_ms":2146.595212398097,"first_commit_ms":2088.1820457288995,"nonempty_rows":5,"stages":{"main_entry":788.9159207697958,"app_init":789.0520457876846,"runtime_initialized":817.4411706859246,"local_graph_loaded":951.0083374334499,"renderer_started":998.0139207327738,"root_appeared":1603.0502123758197,"first_commit":2088.4818374179304,"first_display_after_commit":2146.5353791136295},"components":{}},
+        {"process_ms":2335.165513330139,"first_commit_ms":2105.964471702464,"nonempty_rows":5,"stages":{"main_entry":776.1666383594275,"app_init":776.2940133688971,"runtime_initialized":802.6058049872518,"local_graph_loaded":915.854680002667,"renderer_started":967.3420550534502,"root_appeared":1584.4709717202932,"first_commit":2106.6277633653954,"first_display_after_commit":2335.113805020228},"components":{}},
+        {"process_ms":1512.0508110849187,"first_commit_ms":1428.4961860394105,"nonempty_rows":5,"stages":{"main_entry":527.9856027336791,"app_init":528.0856444733217,"runtime_initialized":543.3398943860084,"local_graph_loaded":612.7146027283743,"renderer_started":646.9021860975772,"root_appeared":1053.4507693955675,"first_commit":1428.7969360593706,"first_display_after_commit":1511.9656027527526},"components":{}}
+      ]
+    }
+  }
+}

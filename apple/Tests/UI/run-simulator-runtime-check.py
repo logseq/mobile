@@ -27,9 +27,11 @@ def main():
     print(f"RUNTIME_CHECK_CONFIGURATION={CONFIGURATION}", flush=True)
     entry, check_type = sys.argv[1:3]
     interactive = check_type == "--interactive"
-    benchmark = check_type in ("--benchmark", "--interactive")
+    benchmark = check_type in ("--benchmark", "--interactive", "--prepare-benchmark")
+    prepare = check_type == "--prepare-benchmark"
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
-    bundle = "com.logseq.logseq.PageBenchmark" if benchmark else BUNDLE
+    bundle = os.environ.get("LOGSEQ_IOS_BENCHMARK_BUNDLE_ID", "com.logseq.logseq.PageBenchmark") if benchmark else BUNDLE
+    app_name = bundle.rsplit(".", 1)[-1] if benchmark and bundle.startswith("com.logseq.logseq.ColdStart") else "RuntimeCheck"
     with tempfile.TemporaryDirectory(prefix="logseq-runtime-check-") as temporary:
         directory = Path(temporary)
         source = directory / "check.swift"
@@ -52,7 +54,7 @@ import SwiftUI
     }}
 }}
 """)
-        app = directory / "RuntimeCheck.app"
+        app = directory / f"{app_name}.app"
         app.mkdir()
         fixture_json = Path(entry).with_suffix(".json")
         if fixture_json.exists():
@@ -81,9 +83,12 @@ import SwiftUI
             raise SystemExit("The app build's native core object is missing; rebuild the simulator app")
         toolchain = ROOT / "_build/apple-toolchains/ios"
         optimization = ["-O"] if CONFIGURATION == "release" else []
-        runtime_exports = ["-Xlinker", "-export_dynamic"]
+        production_exports = CONFIGURATION == "release" and not testing
+        runtime_exports = [] if production_exports else ["-Xlinker", "-export_dynamic"]
         for symbol in ("_logseq_https_send", "_logseq_https_upload_file", "_logseq_crypto_call", "_logseq_metric_log", "_logseq_graph_import_progress"):
             runtime_exports += ["-Xlinker", "-u", "-Xlinker", symbol]
+            if production_exports:
+                runtime_exports += ["-Xlinker", "-exported_symbol", "-Xlinker", symbol]
         if CONFIGURATION == "release":
             runtime_exports += ["-Xlinker", "-dead_strip"]
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
@@ -94,13 +99,17 @@ import SwiftUI
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),
              "-lffi", "-lsqlite3", "-lz", "-framework", "Security", *runtime_exports,
              "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__entitlements",
-             "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
+             "-Xlinker", str(entitlements), "-o", str(app / app_name)])
+        if production_exports:
+            run(["python3", str(ROOT / "scripts/check-ios-release-runtime-exports.py"),
+                 str(app / app_name)])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
         (app / "Info.plist").write_bytes(plistlib.dumps({
             **privacy,
-            "CFBundleIdentifier": bundle, "CFBundleExecutable": "RuntimeCheck",
-            "CFBundleName": "Runtime check", "CFBundlePackageType": "APPL",
+            "CFBundleIdentifier": bundle, "CFBundleExecutable": app_name,
+            "CFBundleName": "Runtime check" if app_name == "RuntimeCheck" else app_name,
+            "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "MinimumOSVersion": "17.0",
             "UIDeviceFamily": [1], "UILaunchScreen": {},
         }))
@@ -124,6 +133,9 @@ import SwiftUI
                     launch_environment["SIMCTL_CHILD_" + name] = value
             if not interactive:
                 launch_environment["SIMCTL_CHILD_LOGSEQ_BENCH_EXIT"] = "1"
+        if prepare:
+            print(f"BENCHMARK_READY bundle={bundle}", flush=True)
+            return
         if interactive:
             run(["xcrun", "simctl", "launch", "--terminate-running-process", SIMULATOR, bundle], env=launch_environment)
             print(f"INTERACTIVE_CHECK_READY bundle={bundle}", flush=True)

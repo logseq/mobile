@@ -5,7 +5,6 @@ import LogseqModel
 import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
-import QuickLook
 import UIKit
 #endif
 

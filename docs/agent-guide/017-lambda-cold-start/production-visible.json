@@ -1,0 +1,18 @@
+{
+  "scope": "authenticated local journal renderer; authentication restoration/networking excluded",
+  "cache": "fresh process; OS file cache and graph state retained between launches",
+  "configuration": "Release; exact shipping FFI exports; installed once",
+  "endpoint": "display callback after a committed visible nonempty native outliner title",
+  "rows": "visible native title labels at first frame commit",
+  "samples": [
+    {"process_ms":769.3436454283074,"first_commit_ms":709.1541037661955,"nonempty_rows":5},
+    {"process_ms":722.1848311601207,"first_commit_ms":657.8638311475515,"nonempty_rows":5},
+    {"process_ms":683.364964555949,"first_commit_ms":640.1767978677526,"nonempty_rows":5},
+    {"process_ms":702.7707817032933,"first_commit_ms":647.118823369965,"nonempty_rows":5},
+    {"process_ms":707.4089094530791,"first_commit_ms":657.6582427369431,"nonempty_rows":5}
+  ],
+  "median_ms": 707.4089094530791,
+  "maximum_ms": 769.3436454283074,
+  "threshold_ms": 300.0,
+  "passed": false
+}
