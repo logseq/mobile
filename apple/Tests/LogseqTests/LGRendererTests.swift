@@ -429,7 +429,7 @@ struct LGRendererTests {
         #expect(runtime.isStarted)
     }
 
-    @Test("graph catalog effects reuse the existing core graph lifecycle")
+    @Test("graph effects prepare catalog transport and preserve graph lifecycle")
     func graphEffectsUseCoreLifecycle() async throws {
         var capturedRequests: [LogseqRPCRequest] = []
         var deletedGraphID: String?
@@ -461,8 +461,9 @@ struct LGRendererTests {
         )
 
         #expect(capturedRequests.map(\.params.action) == [
-            "executeEffect", "executeEffect", "executeEffect",
+            "prepareGraphCatalog", "executeEffect", "executeEffect",
         ])
+        #expect(capturedRequests[0].params.payload == "{}")
         #expect(capturedRequests[1].params.payload?.contains("graph-a") == true)
         let createPayload = try #require(capturedRequests[2].params.payload)
         #expect(createPayload.contains("New graph"))

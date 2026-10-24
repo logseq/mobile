@@ -66,13 +66,7 @@ internal class GraphCatalogAutoRefresh(
 
     private suspend fun run() {
         trace("refresh.start")
-        val response = callCore(
-            JSONObject()
-                .put("apiVersion", 1)
-                .put("method", "dispatch")
-                .put("params", JSONObject().put("action", "refreshGraphCatalog"))
-                .toString()
-        )
+        val response = GraphCatalogClient(callCore).refresh()
         val decoded = try {
             JSONObject(response)
         } catch (_: Throwable) {
