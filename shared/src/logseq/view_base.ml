@@ -684,7 +684,8 @@ let search_query_present_ (current : Model.logseq_model) =
   current.search_query <> ""
 
 let bottom_chrome_presentation (current : Model.logseq_model) =
-  if outliner_selection_active_ current then "outliner-selection"
+  if current.search_open && current.search_navigation_path = [] then "hidden"
+  else if outliner_selection_active_ current then "outliner-selection"
   else if outliner_editor_active_ current then "outliner-editor"
   else if
     journals_destination_ current

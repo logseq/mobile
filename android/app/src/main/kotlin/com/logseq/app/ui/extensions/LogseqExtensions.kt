@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -337,6 +338,7 @@ private fun NavigationContent(context: LuiExtensionContext, contentId: Long, dis
 }
 
 // Search owns the content area and bottom controls while retaining the app below it.
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchPresentation(context: LuiExtensionContext) {
     if (!context.flag("presented")) {
@@ -354,74 +356,50 @@ private fun SearchPresentation(context: LuiExtensionContext) {
             keyboard?.show()
         } else keyboard?.hide()
     }
-    DisposableEffect(Unit) {
-        onDispose { keyboard?.hide() }
-    }
+    DisposableEffect(Unit) { onDispose { keyboard?.hide() } }
     BackHandler {
         if (depth > 0) context.emit("back", "count" to 1) else context.emit("dismiss")
     }
-    val border = BorderStroke(1.dp, dev.lui.luiThemeColor("border") ?: MaterialTheme.colorScheme.outlineVariant)
-    val glass = dev.lui.luiThemeColor("glass") ?: MaterialTheme.colorScheme.surface
-    Surface(
-        modifier = Modifier.fillMaxSize().testTag("native-search-presentation"),
-        color = MaterialTheme.colorScheme.background,
-    ) {
+    Surface(modifier = Modifier.fillMaxSize().testTag("native-search-presentation"),
+        color = MaterialTheme.colorScheme.background) {
         Column {
-            Box(Modifier.weight(1f)) { context.Children() }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp, top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Surface(
-                    modifier = Modifier.weight(1f).height(58.dp),
-                    shape = RoundedCornerShape(29.dp),
-                    border = border,
-                    color = glass,
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Filled.Search, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        var fieldValue by remember(query) { mutableStateOf(query) }
-                        TextField(
-                            value = fieldValue,
-                            onValueChange = {
-                                fieldValue = it
-                                context.emit("query-changed", "query" to it)
-                            },
-                            modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("field.search"),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
-                            placeholder = { Text(title) },
-                            singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                            ),
-                        )
-                        if (fieldValue.isNotEmpty()) {
-                            IconButton(onClick = {
-                                fieldValue = ""
-                                context.emit("query-changed", "query" to "")
-                            }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
-                            }
+            if (depth > 0) {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(title, maxLines = 1) },
+                    navigationIcon = {
+                        IconButton(onClick = { context.emit("back", "count" to 1) },
+                            modifier = Modifier.testTag("button.search.back")) {
+                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
-                    }
-                }
-                Surface(shape = CircleShape, color = glass, border = border) {
-                    IconButton(
-                        onClick = { context.emit("dismiss") },
-                        modifier = Modifier.size(58.dp).testTag("button.search.close"),
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close search", modifier = Modifier.size(24.dp))
+                    },
+                    actions = { IconButton(onClick = { context.emit("dismiss") }) {
+                        Icon(Icons.Filled.Close, "Close search")
+                    } },
+                )
+            }
+            Box(Modifier.weight(1f)) { context.Children() }
+            if (depth == 0) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    var fieldValue by remember(query) { mutableStateOf(query) }
+                    androidx.compose.material3.OutlinedTextField(
+                        value = fieldValue,
+                        onValueChange = { fieldValue = it; context.emit("query-changed", "query" to it) },
+                        modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("field.search"),
+                        shape = MaterialTheme.shapes.small,
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        placeholder = { Text(title) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = if (fieldValue.isEmpty()) null else ({
+                            IconButton(onClick = { fieldValue = ""; context.emit("query-changed", "query" to "") }) {
+                                Icon(Icons.Filled.Close, "Clear")
+                            }
+                        }),
+                        singleLine = true,
+                    )
+                    IconButton(onClick = { context.emit("dismiss") },
+                        modifier = Modifier.size(48.dp).testTag("button.search.close")) {
+                        Icon(Icons.Filled.Close, "Close search")
                     }
                 }
             }
