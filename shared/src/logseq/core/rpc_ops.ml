@@ -170,6 +170,11 @@ let asset_destination context (block : Model.block) journal_page_id =
   | Some parent_uuid ->
     (match Outliner.find_block context parent_uuid with
      | Some parent -> Some (parent.Model.page_id, parent_uuid)
+     | None when parent_uuid = block.page_id && Option.fold ~none:false ~some:(fun db ->
+         match Datascript.entid db "block/uuid" (Datascript.Uuid parent_uuid) with
+         | Some eid -> Graph_read.value db eid "block/name" <> None
+           && Graph_read.value db eid "logseq.property/deleted-at" = None
+         | None -> false) context.Outliner.db -> Some (parent_uuid, parent_uuid)
      | None -> None)
   | None ->
     (match journal_page_id with
@@ -199,7 +204,10 @@ let asset_datoms_operation cursor state (block : Model.block) load_context
             |> List.sort compare
             |> List.fold_left (fun _ order -> Some order) None
           in
-          let* position = Order.between last_order None in
+          let* position = match block.order with
+            | Some order when Option.fold ~none:false ~some:(fun db ->
+                Datascript.entid db "block/uuid" (Datascript.Uuid block.uuid) <> None) context.Outliner.db -> Ok order
+            | _ -> Order.between last_order None in
           Ok
             {
               Ops.operation_id = "asset:" ^ block.uuid;
@@ -526,7 +534,7 @@ let asset_metadata fields =
     Ok (uuid, title, now, asset_type, asset_size, checksum, local_path, target)
   | _ -> Error ("invalid_params", "addAsset requires complete file metadata")
 
-let add_asset ?(prepare_file = (fun _ path -> Ok path)) payload cache clock load_target prepare_view prepare_operation
+let add_asset ?(prepare_file = (fun _ path -> Ok path)) ?(can_replace_target = fun _ -> true) payload cache clock load_target prepare_view prepare_operation
     load_stage =
   match payload with
   | Some payload ->
@@ -565,6 +573,16 @@ let add_asset ?(prepare_file = (fun _ path -> Ok path)) payload cache clock load
            | Some block -> Model.upsert_blocks cache [ block ] now
            | None -> ())
         | _ -> ());
+       let image = List.mem asset_type ["png"; "jpg"; "jpeg"; "gif"; "webp"; "heic"; "heif"; "avif"] in
+       let uuid = match Option.bind target (Model.read_block cache) with
+         | Some block when image &&
+             ((block.is_asset && block.local_path = Some local_path)
+              || (String_kit.is_blank block.title && not block.is_asset && block.tags = []
+                && block.status = None && block.priority = None && block.display_type = None
+                && can_replace_target block.uuid
+                && not (List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid)
+                  (Model.all_blocks cache)))) -> block.uuid
+         | _ -> uuid in
        Model.cache_local_asset cache uuid title asset_type asset_size
          checksum local_path now target;
        let cache_transcript submitted = match transcript with

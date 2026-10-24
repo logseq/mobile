@@ -2231,7 +2231,14 @@ let rec dispatch session action payload =
           stage {operation with Ops.operation_id = fresh_squuid (); state = Ops.Queued; intent})
         (host session).Types.stage_operation
     in
-    Rpc.add_asset ~prepare_file:h.import_asset_file payload s.model now_ms target prepare_view
+    let can_replace_target uuid = match Option.bind h.graph_db (fun load -> load ()) with
+      | None -> true
+      | Some db -> (match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with
+        | None -> false
+        | Some eid -> Seq.is_empty (Datascript_value.datoms_by_ref db Datascript.Aevt "block/parent" eid)
+          && Graph_read.value db eid "block/name" = None
+          && Graph_read.value db eid "logseq.property/deleted-at" = None) in
+    Rpc.add_asset ~prepare_file:h.import_asset_file ~can_replace_target payload s.model now_ms target prepare_view
       (fun block -> asset_datoms_operation session block Ops.Applied)
       stage
   | "addChildBlock" ->
