@@ -1908,6 +1908,30 @@ let rec dispatch session action payload =
              "Unlock the encrypted graph first"
        else snapshot_visible session
      | None -> snapshot_visible session)
+  | "prepareGraphCatalog" ->
+    (match s.config with
+     | None -> graph_catalog_snapshot session
+     | Some config -> success session (Rpc.json_object [
+         "baseUrl", `String config.Api.base_url; "token", `String config.token;
+         "request", Rpc.request_json 0 (Api.graphs_request config) None "application/json" []]))
+  | "completeGraphCatalog" -> object_action (fun _ fields ->
+    let string name = match List.assoc_opt name fields with Some (`String value) -> value | _ -> "" in
+    match (state session).config with
+    | Some config when string "baseUrl" = config.Api.base_url && string "token" = config.token ->
+      let status = match List.assoc_opt "status" fields with Some (`Int value) -> value | _ -> 0 in
+      if status < 200 || status >= 300 then Rpc.failure "graph_discovery_failed"
+        (if string "error" <> "" then string "error" else "Logseq graphs API returned HTTP " ^ string_of_int status)
+      else (try
+        let body = string "body" in
+        let graphs = Api.graphs_from_graphs_body body in
+        let name = List.find_opt (fun (graph : Api.api_graph) -> graph.id = config.graph_id) graphs
+          |> Option.map (fun (graph : Api.api_graph) -> graph.name) in
+        session.Types.state := { !(session.state) with available_graphs = graphs;
+          config = Some {config with Api.graph_name = name} };
+        Option.iter (fun save -> save body) (host session).save_graph_catalog;
+        graph_catalog_snapshot session
+      with error -> Rpc.failure "graph_discovery_failed" (Printexc.to_string error))
+    | _ -> Rpc.failure "stale_graph_catalog" "Graph catalog belongs to a previous account or server")
   | "refreshGraphCatalog" ->
     (match s.config with
      | Some config ->

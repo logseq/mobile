@@ -448,6 +448,9 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             break
         }
         do {
+            if effect.kind == "refresh-graphs" {
+                return await Self.resolution(from: try await refreshGraphCatalog())
+            }
             let payload = String(decoding: try JSONEncoder().encode(effect), as: UTF8.self)
             let request = LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
                 action: "executeEffect", payload: payload
@@ -456,6 +459,31 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         } catch {
             return LGEffectResolution(succeeded: false, message: String(describing: error))
         }
+    }
+
+    private func refreshGraphCatalog() async throws -> String {
+        func call(_ action: String, _ payload: [String: Any]) async throws -> String {
+            let encoded = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+            return await callCore(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: action, payload: encoded)))
+        }
+        let prepared = try await call("prepareGraphCatalog", [:])
+        guard let envelope = try JSONSerialization.jsonObject(with: Data(prepared.utf8)) as? [String: Any],
+              envelope["ok"] as? Bool == true,
+              let result = envelope["result"] as? [String: Any],
+              let request = result["request"] as? [String: Any],
+              let url = (request["url"] as? String).flatMap(URL.init(string:)) else { return prepared }
+        var completion: [String: Any] = ["baseUrl": result["baseUrl"] ?? "", "token": result["token"] ?? ""]
+        do {
+            var pending = URLRequest(url: url)
+            pending.httpMethod = "GET"
+            pending.timeoutInterval = 30
+            pending.setValue("Bearer " + (request["token"] as? String ?? ""), forHTTPHeaderField: "Authorization")
+            let (body, response) = try await URLSession.shared.data(for: pending)
+            completion["status"] = (response as? HTTPURLResponse)?.statusCode ?? 0
+            completion["body"] = String(decoding: body, as: UTF8.self)
+        } catch is CancellationError { throw CancellationError() }
+        catch { completion["error"] = error.localizedDescription }
+        return try await call("completeGraphCatalog", completion)
     }
 
     private static func resolution(from responseJSON: String) async -> LGEffectResolution {

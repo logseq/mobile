@@ -22,6 +22,7 @@ internal class CoreEffectExecutor(
             return executeGraphEffect.execute(effect)
         }
         return try {
+            if (effect.kind == "refresh-graphs") return resolution(GraphCatalogClient(callCore).refresh())
             val request = request(effect)
             val response = callCore(request.toString())
             resolution(response)
