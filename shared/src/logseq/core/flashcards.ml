@@ -271,14 +271,16 @@ let card_for_uuid db now uuid =
   | None -> None
 
 let due_card_for_eid page_blocks_cache db now eid =
-  match Graph.uuid_for_eid db eid with
+  if Option.fold ~none:false ~some:(fun due -> due > now)
+    (Graph.int_value (Graph.value db eid "logseq.property.fsrs/due")) then None
+  else match Graph.uuid_for_eid db eid with
   | Some uuid ->
     (match card_for_eid page_blocks_cache db now uuid eid with
      | Some card when card.card.due <= now -> Some card
      | _ -> None)
   | None -> None
 
-let due_cards db now =
+let due_cards ?(include_eid = fun _ -> true) db now =
   match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Card") with
   | None -> []
   | Some card_class_eid ->
@@ -295,7 +297,8 @@ let due_cards db now =
       List.sort_uniq compare
         (List.map (fun (datom : Ds.datom) -> datom.e) tagged_datoms)
     in
-    List.filter_map (due_card_for_eid page_blocks_cache db now) unique_eids
+    List.filter include_eid unique_eids
+    |> List.filter_map (due_card_for_eid page_blocks_cache db now)
     |> List.sort
          (fun left right ->
            compare

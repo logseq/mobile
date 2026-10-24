@@ -281,6 +281,8 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted uuid ^ "}"
   | ResultViewEffect (id, _, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "result-view"; "text", `String payload])
+  | FlashcardDeckEffect (id, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "flashcard-deck"; "text", `String payload])
   | SetJournalTitleFormatEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "set-journal-title-format"; "text", `String payload])
   | NodePropertyEffect (id, _, payload) ->

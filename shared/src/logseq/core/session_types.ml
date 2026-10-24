@@ -149,6 +149,7 @@ type session_state =
   ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Cards.due_card list
+  ; flashcard_decks : Flashcard_decks.state
   ; search_has_more : bool
   ; search_result_pages : Search.indexed_search_hit list list
   ; search_result_count : int
@@ -307,6 +308,7 @@ let create_session options =
           active_graph_id = None;
           accepted_server_t = None;
           flashcards = [];
+          flashcard_decks = Flashcard_decks.empty;
           search_result_pages = [];
           search_result_count = 0;
           search_has_more = false;

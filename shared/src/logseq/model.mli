@@ -229,6 +229,7 @@ type core_projection =
   ; task_statuses : task_status list
   ; task_priorities : task_status list
   ; flashcards : flashcard list
+  ; flashcard_decks_json : string
   ; sync_connected : bool
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
@@ -318,6 +319,7 @@ type logseq_effect =
   | SelectSidebarPageEffect of int * string
   | ClearSelectedPageEffect of int
   | LoadOlderJournalsEffect of int
+  | FlashcardDeckEffect of int * string
   | LoadFlashcardsEffect of int
   | ReviewFlashcardEffect of int * string * string
   | RefreshGraphsEffect of int
@@ -373,6 +375,7 @@ type logseq_model =
   ; task_priorities : task_status list
   ; selected_task_status : task_status option
   ; flashcards : flashcard list
+  ; flashcard_decks_json : string
   ; flashcard_cloze_revealed : bool
   ; flashcard_answer_revealed : bool
   ; create_graph_open : bool
@@ -523,6 +526,7 @@ type logseq_action =
   | OpenQuickAction of string
   | ShowJournals
   | ShowFlashcards
+  | FlashcardDeckAction of string
   | ShowGraphs
   | ApplyLocalGraphIds of string list
   | ApplyGraphLoading of bool

@@ -1,0 +1,67 @@
+# Run against the standard E2e_seed_data.seed_fixture graph.
+appId: com.logseq.logseq
+---
+- launchApp
+- tapOn:
+    id: button.sidebar
+- tapOn:
+    id: link.sidebar.flashcards
+- assertVisible:
+    id: menu.flashcards.deck
+- tapOn:
+    id: button.flashcards.deck.add
+- tapOn:
+    id: field.flashcards.deck.name
+- inputText: Project tag cards
+- tapOn: Tag
+- tapOn: Search pages or tags
+- inputText: E2E Project
+- tapOn:
+    id: flashcards.deck.target.e2e00000-0000-4000-8000-000000000001
+# Search must leave the native sheet actions reachable while the keyboard is up.
+- takeScreenshot: flashcard-decks-search-actions
+- assertVisible:
+    id: button.flashcards.deck.create
+- tapOn:
+    id: button.flashcards.deck.create
+- assertVisible: No cards due
+- assertVisible:
+    id: menu.flashcards.deck
+- tapOn:
+    id: button.flashcards.deck.add
+- tapOn:
+    id: field.flashcards.deck.name
+- inputText: Project reference cards
+- tapOn: Search pages or tags
+- inputText: E2E Project
+- tapOn:
+    id: flashcards.deck.target.e2e00000-0000-4000-8000-000000000001
+- assertVisible:
+    id: button.flashcards.deck.create
+- tapOn:
+    id: button.flashcards.deck.create
+- assertVisible: No cards due
+- tapOn:
+    id: menu.flashcards.deck
+- tapOn: All cards
+- assertVisible:
+    id: flashcard.question
+- tapOn:
+    id: button.flashcards.deck.add
+- tapOn:
+    id: button.flashcards.deck.cancel
+- assertNotVisible:
+    id: field.flashcards.deck.name
+- assertVisible:
+    id: flashcard.question
+- stopApp
+- launchApp
+- tapOn:
+    id: button.sidebar
+- tapOn:
+    id: link.sidebar.flashcards
+- tapOn:
+    id: menu.flashcards.deck
+- assertVisible: Project reference cards
+- tapOn: Project tag cards
+- assertVisible: No cards due

@@ -459,6 +459,7 @@ let core_projection fields =
     task_statuses =
       List.filter_map task_status (list_member "taskStatuses" fields);
     flashcards = List.filter_map flashcard (list_member "flashcards" fields);
+    flashcard_decks_json = (match List.assoc_opt "flashcardDecks" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
     search_offset = Option.value ~default:0 (int_member "searchOffset" fields);
     search_has_more = bool_member "searchHasMore" fields;
     projection_search_query =

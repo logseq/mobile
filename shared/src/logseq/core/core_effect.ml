@@ -38,6 +38,7 @@ let request ~now ~fresh_id payload =
       json "sendTask" (["text", `String value; "status", status] @ identity ())
     | "send-asset" -> raw "addAsset"
     | "result-view" -> raw "resultView"
+    | "flashcard-deck" -> raw "flashcardDeck"
     | "node-property" -> raw "nodeProperty"
     | "set-journal-title-format" -> raw "setJournalTitleFormat"
     | "recording-transcribed" -> let* uuid = string fields "uuid" in let* text = text () in

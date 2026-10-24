@@ -232,6 +232,7 @@ type core_projection =
   ; task_statuses : task_status list
   ; task_priorities : task_status list
   ; flashcards : flashcard list
+  ; flashcard_decks_json : string
   ; sync_connected : bool
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
@@ -321,6 +322,7 @@ type logseq_effect =
   | SelectSidebarPageEffect of int * string
   | ClearSelectedPageEffect of int
   | LoadOlderJournalsEffect of int
+  | FlashcardDeckEffect of int * string
   | LoadFlashcardsEffect of int
   | ReviewFlashcardEffect of int * string * string
   | RefreshGraphsEffect of int
@@ -376,6 +378,7 @@ type logseq_model =
   ; task_priorities : task_status list
   ; selected_task_status : task_status option
   ; flashcards : flashcard list
+  ; flashcard_decks_json : string
   ; flashcard_cloze_revealed : bool
   ; flashcard_answer_revealed : bool
   ; create_graph_open : bool
@@ -526,6 +529,7 @@ type logseq_action =
   | OpenQuickAction of string
   | ShowJournals
   | ShowFlashcards
+  | FlashcardDeckAction of string
   | ShowGraphs
   | ApplyLocalGraphIds of string list
   | ApplyGraphLoading of bool
@@ -723,6 +727,7 @@ let initial () =
     task_priorities = [];
     selected_task_status = None;
     flashcards = [];
+    flashcard_decks_json = "";
     flashcard_cloze_revealed = false;
     flashcard_answer_revealed = false;
     create_graph_open = false;
@@ -874,7 +879,7 @@ let effect_id eff =
   | SelectSidebarPageEffect (id, _) -> id
   | ClearSelectedPageEffect id -> id
   | LoadOlderJournalsEffect id -> id
-  | LoadFlashcardsEffect id -> id
+  | LoadFlashcardsEffect id | FlashcardDeckEffect (id, _) -> id
   | ReviewFlashcardEffect (id, _, _) -> id
   | RefreshGraphsEffect id -> id
   | OpenGraphEffect (id, _) -> id
@@ -1935,6 +1940,8 @@ let sidebar_after_navigation current =
 
 let rec update (current : logseq_model) action =
   match action with
+  | FlashcardDeckAction payload ->
+    enqueue_effect current (FlashcardDeckEffect (current.next_effect_id, payload))
   | SubmitNodeProperty (uuid, payload) ->
     enqueue_effect {current with result_view_feedback = List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback}
       (NodePropertyEffect (current.next_effect_id, uuid, payload))
@@ -3137,8 +3144,13 @@ and apply_core_snapshot (current : logseq_model)
       else projection.has_older_journals
     in
     let card_changed =
+      let selected_group raw =
+        try Yojson.Basic.Util.member "selectedUuid" (Yojson.Basic.from_string raw)
+        with _ -> `Null in
       first_flashcard_id current.flashcards
       <> first_flashcard_id projection.flashcards
+      || selected_group current.flashcard_decks_json
+         <> selected_group projection.flashcard_decks_json
     in
     let local_graph_ids =
       match projection.selected_graph_id with
@@ -3201,6 +3213,7 @@ and apply_core_snapshot (current : logseq_model)
         task_statuses = available_task_statuses projection.task_statuses;
         task_priorities = projection.task_priorities;
         flashcards = projection.flashcards;
+        flashcard_decks_json = projection.flashcard_decks_json;
         flashcard_cloze_revealed =
           (if card_changed then false else current.flashcard_cloze_revealed);
         flashcard_answer_revealed =

@@ -342,6 +342,7 @@ let empty_core_projection () =
     task_statuses = [];
     task_priorities = [];
     flashcards = [];
+    flashcard_decks_json = "";
     sync_connected = false;
     applied_server_t = None;
     has_pending_semantic_operations = false;
@@ -3791,8 +3792,9 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     (property_int renderer screen Lui_protocol.Gap)
     0;
   check_eq ~msg:"hidden review content does not leave a layout sibling"
-    (List.length (children renderer screen))
-    1;
+    (descendant_with_identifier renderer screen "layout.flashcards.review") (-1);
+  check ~msg:"card group controls remain available above the empty state"
+    (descendant_with_identifier renderer screen "menu.flashcards.deck" <> -1);
   check_eq ~msg:"the empty state fills the page before centering"
     (property_float renderer empty_state Lui_protocol.GrowValue)
     1.0;

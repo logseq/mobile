@@ -22,6 +22,7 @@
 "Edn"
 "Fractional_order"
 "Flashcards"
+"Flashcard_decks"
 "Graph_bootstrap_data"
 "Graph_import_progress"
 "Graph_read"

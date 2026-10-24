@@ -35,7 +35,7 @@ case ${flow##*/} in
   ios-outliner-fixture-edit-baseline.yaml|ios-invalid-order-bounds-regression.yaml|\
   ios-sidebar-page-empty-block-delete.yaml|ios-node-tag-navigation.yaml|\
   ios-sidebar-node-navigation.yaml|ios-page-share.yaml|ios-page-favorite.yaml|\
-  ios-rich-block-rendering.yaml)
+  ios-rich-block-rendering.yaml|ios-flashcard-decks.yaml|ios-flashcards-regression.yaml)
     graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-fixtures-$run_id}
     fixture_seed_mode=--fixture
     ;;
