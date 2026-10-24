@@ -22,6 +22,7 @@ def main():
                    cwd=ROOT, env=environment, check=True)
     for filename, entry in [
         ("launch-transition.swift", "LaunchTransitionCheck"),
+        ("first-commit-launch-reveal.swift", "FirstCommitLaunchRevealCheck"),
         ("first-content-frame.swift", "FirstContentFrameCheck"),
         ("drawer-first-reveal.swift", "DrawerFirstRevealCheck"),
         ("file-preview-launch.swift", "FilePreviewLaunchCheck"),

@@ -73,9 +73,9 @@ public struct LogseqRootView : View {
                     runtime.observeFirstContentFrame(in: window)
                     LogseqLaunchTransition.shared.show(in: window)
                 }
-                DispatchQueue.main.async {
-                    LogseqLaunchTransition.shared.finish()
-                }
+                // Reveal in this layer transaction; another main-queue turn can
+                // leave an already constructed frame behind the opaque cover.
+                LogseqLaunchTransition.shared.finish()
             }
             .task {
                 await runtime.runLGApplication()

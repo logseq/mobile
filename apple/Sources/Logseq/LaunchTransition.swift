@@ -5,6 +5,11 @@ import UIKit
     private var cover: UIView?
     private var finished = false
 
+    func isCoveringContent(in window: UIWindow) -> Bool {
+        guard let cover, cover.window === window, !cover.isHidden else { return false }
+        return cover.alpha > 0.01 && (cover.backgroundColor?.cgColor.alpha ?? 0) > 0.01
+    }
+
     func show(in window: UIWindow) {
         guard !finished, cover == nil, let image = UIImage(named: "LaunchLogo") else { return }
         let cover = UIView(frame: window.bounds)
