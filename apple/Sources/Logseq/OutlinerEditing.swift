@@ -30,7 +30,7 @@ enum OutlinerRichMarkupPolicy {
     }
 
     static func containsRich(_ nodes: [LogseqMarkupNode]) -> Bool {
-        nodes.contains { isRich($0.type) }
+        nodes.contains { isRich($0.type) || containsRich($0.children) }
     }
 
     static func containsInteractive(_ nodes: [LogseqMarkupNode]) -> Bool {
@@ -55,7 +55,7 @@ enum OutlinerRichMarkupPolicy {
         }
 
         for node in nodes {
-            if isRich(node.type) {
+            if isRich(node.type) && !(node.type == .math && node.style == "inline") {
                 flushInline()
                 result.append([node])
             } else {

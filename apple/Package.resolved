@@ -1,5 +1,5 @@
 {
-  "originHash" : "e910d668a814a436da29dd70789a53823656a4fb23e40e895a01072d53222b37",
+  "originHash" : "b67a3fe765ec5bf2effeca95b840cba8f93c7c5743316b92adb292a7786c3d6e",
   "pins" : [
     {
       "identity" : "highlightswift",
@@ -16,15 +16,6 @@
       "location" : "ssh://git@github.com/logseq/lui.git",
       "state" : {
         "revision" : "5bfad989d75500e6932b824c67847528c0cc8301"
-      }
-    },
-    {
-      "identity" : "swiftui-math",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gonzalezreal/swiftui-math",
-      "state" : {
-        "revision" : "0b5c2cfaaec8d6193db206f675048eeb5ce95f71",
-        "version" : "0.1.0"
       }
     }
   ],

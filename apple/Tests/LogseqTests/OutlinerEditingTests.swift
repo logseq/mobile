@@ -301,13 +301,12 @@ import Testing
             LogseqMarkupNode(type: .math, text: "x^2", style: "inline")
         ])
 
-        #expect(chunks.count == 4)
+        #expect(chunks.count == 3)
         #expect(chunks[0].map(\.type) == [
             LogseqMarkupNodeType.text, LogseqMarkupNodeType.emphasis
         ])
         #expect(chunks[1].map(\.type) == [LogseqMarkupNodeType.video])
-        #expect(chunks[2].map(\.type) == [LogseqMarkupNodeType.text])
-        #expect(chunks[3].map(\.type) == [LogseqMarkupNodeType.math])
+        #expect(chunks[2].map(\.type) == [LogseqMarkupNodeType.text, LogseqMarkupNodeType.math])
         #expect(OutlinerRichMarkupPolicy.containsInteractive([
             LogseqMarkupNode(type: .youtubeTimestamp, text: "01:23", style: "83")
         ]))

@@ -63,15 +63,19 @@ private fun renderFormula(context: Context, key: FormulaKey): Bitmap? {
 }
 
 @Composable
-internal fun AndroidMath(expression: String) {
+internal fun rememberFormulaBitmap(expression: String, size: Float): Bitmap? {
     val context = LocalContext.current.applicationContext
-    val density = LocalDensity.current
-    val size = with(density) { MaterialTheme.typography.bodyLarge.fontSize.toPx() }
     val key = FormulaKey(expression, size, MaterialTheme.colorScheme.onSurface.toArgb())
     var bitmap by remember(key) { mutableStateOf(formulaCache.get(key)) }
-    LaunchedEffect(key) {
-        bitmap = withContext(formulaDispatcher) { renderFormula(context, key) }
-    }
+    LaunchedEffect(key) { bitmap = withContext(formulaDispatcher) { renderFormula(context, key) } }
+    return bitmap
+}
+
+@Composable
+internal fun AndroidMath(expression: String) {
+    val density = LocalDensity.current
+    val size = with(density) { MaterialTheme.typography.bodyLarge.fontSize.toPx() }
+    val bitmap = rememberFormulaBitmap(expression, size)
     Box(Modifier.padding(vertical = 4.dp).horizontalScroll(rememberScrollState())) {
         val rendered = bitmap
         if (rendered == null) {
