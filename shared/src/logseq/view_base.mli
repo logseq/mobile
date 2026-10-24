@@ -366,6 +366,7 @@ val active_search_node_routes :
   Model.logseq_model -> Model.node_projection list
 val kotlin_app_root_visible_ : Model.logseq_model -> bool
 val kotlin_search_root_visible_ : Model.logseq_model -> bool
+val authentication_required_ : Model.logseq_model -> bool
 val authentication_screen_visible_ : Model.logseq_model -> bool
 val graph_picker_screen_visible_ : Model.logseq_model -> bool
 val authentication_signing_in_ : Model.logseq_model -> bool

@@ -256,15 +256,13 @@ public struct LogseqRootView : View {
                 return message
             },
             signOut: {
+                await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
                 await authentication.signOut()
-                let defaults = UserDefaults.standard
-                defaults.set("", forKey: "logseq.selectedGraphId")
-                defaults.removeObject(forKey: "logseq.uiSession")
-                store.configure(
-                    baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
+                await store.configureAndSelectGraph(
+                    baseURL: LogseqSettingsPolicy.storedBaseURL(),
                     token: "",
-                    refreshAfterApply: false
+                    selectedGraphID: store.snapshot.selectedGraphId
                 )
             },
             openExternalURL: { url in
@@ -523,6 +521,9 @@ public struct LogseqRootView : View {
     }
 
     public func publishAuthenticationState() {
+        if authentication.state == .signedOut {
+            didResumeCurrentActivation = false
+        }
         do {
             try lgRuntime.applyHostUpdate(
                 kind: "authentication",

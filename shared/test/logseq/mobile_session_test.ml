@@ -438,6 +438,78 @@ let collapsed_nodes_survive_navigation_restart_and_graph_switches () =
     let session = reopen () in
     expect (configure session "graph-a") [])
 
+let offline_edits_survive_logout_restart_and_sync_with_new_credentials () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module J = Yojson.Basic in
+    let module U = Yojson.Basic.Util in
+    let module Ops = Pending_ops in
+    cache "graph-a";
+    let configure token = call "configure" ["baseUrl", `String "https://example.com";
+      "graphId", `String "graph-a"; "token", `String token] in
+    ignore (configure "old-account-token");
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    let stage id intent =
+      match Mobile_graph.stage graph { Ops.operation_id = id;
+        base_t = Option.get (Mobile_graph.sync_cursor graph); state = Ops.Queued; intent } with
+      | Ok () -> () | Error message -> fail message in
+    let session () = !(host.Mobile_session.session) in
+    let begin_sync () = Rpc_test.dispatch_json (session ()) "beginPendingSync" "" in
+    let uuid = "00000000-0000-4000-8000-000000000041" in
+    stage "before-logout" (Ops.Create_page {uuid; title = "Created before logout"; created_at = 7});
+    let old_request = Rpc_test.required_pending (Rpc_test.response_result (begin_sync ())) in
+    let signed_out = configure "" in
+    check_eq ~msg:"logout keeps the open local graph" (U.member "selectedGraphId" signed_out) (`String "graph-a");
+    check_eq ~msg:"the old token cannot continue an in-flight request"
+      (U.member "pendingSyncRequest" signed_out) `Null;
+    ignore (Rpc_test.pending_completion (session ()) old_request (`Int 200) (`String "{}") `Null);
+    stage "while-offline" (Ops.Save_title {uuid;
+      expected_title = "Created before logout"; title = "Edited while logged out"});
+    check_eq ~msg:"logged-out editing never initiates a network request"
+      (Rpc_test.pending_request (begin_sync ())) None;
+    let directory = List.assoc "activePath" (fields "graph-a") |> U.to_string |> Filename.dirname in
+    ignore (Mobile_session.call host (open_request (Filename.concat directory "catalog.sqlite")));
+    ignore (configure "");
+    ignore (call "bootstrapGraph" (("allowSnapshotDownload", `Bool false) :: fields "graph-a"));
+    let pending_ids () = List.map (fun (op : Ops.pending_operation) -> op.operation_id)
+      (Mobile_graph.pending_operations graph) in
+    List.iter (fun id -> check ~msg:"both pre-logout and offline edits survive a process restart"
+      (List.mem id (pending_ids ()))) ["before-logout"; "while-offline"];
+    ignore (configure "new-account-token");
+    let rec accept_pending attempts =
+      check ~msg:"pending operations finish within a bounded number of batches" (attempts > 0);
+      match Rpc_test.pending_request (begin_sync ()) with
+      | None -> ()
+      | Some request ->
+        check_eq ~msg:"resumed uploads use the freshly signed-in credentials"
+          (U.member "token" request) (`String "new-account-token");
+        let txs = U.member "bodyObject" request |> U.member "txs" |> U.to_list in
+        let before = Option.get (Mobile_graph.sync_cursor graph) in
+        let accepted = List.mapi (fun index tx -> `Assoc ["t", `Int (before + index + 1);
+          "tx-id", U.member "tx-id" tx; "tx", U.member "tx" tx]) txs in
+        let body = J.to_string (`Assoc ["type", `String "tx/batch/ok"; "graphId", `String "graph-a";
+          "t-before", `Int before; "t", `Int (before + List.length txs); "txs", `List accepted]) in
+        let completion = Rpc_test.dispatch_json (session ()) "completePendingSync"
+          (J.to_string (`Assoc ["id", U.member "id" request; "status", `Int 200;
+            "body", `String body; "error", `Null])) in
+        check_eq ~msg:("server acceptance succeeds: " ^ J.to_string completion)
+          (U.member "ok" completion) (`Bool true);
+        accept_pending (attempts - 1) in
+    accept_pending 10;
+    check_eq ~msg:"server acknowledgements drain the durable local edits" (pending_ids ()) [];
+    let db = Graph_runtime.db (Option.get !(graph.Mobile_graph.current)).read_runtime in
+    let title uuid = match Datascript.entity db (Datascript.Lookup_ref ("block/uuid", Datascript.Uuid uuid)) with
+      | Some entity -> Datascript.Entity.entity_attr_raw entity "block/title"
+      | None -> None in
+    check_eq ~msg:"the pre-logout creation is in the confirmed graph"
+      (Option.is_some (title uuid)) true;
+    check_eq ~msg:"the offline edit is in the confirmed graph"
+      (title uuid) (Some (Datascript.One_value (Datascript.String "Edited while logged out")));
+    ignore (Mobile_session.call host (open_request (Filename.concat directory "catalog.sqlite")));
+    ignore (configure "new-account-token");
+    ignore (call "bootstrapGraph" (fields "graph-a"));
+    check_eq ~msg:"accepted edits are not uploaded again after another restart" (pending_ids ()) [])
+
 let server_rejections_survive_restart_and_remain_scoped_to_the_graph () =
   with_favorite_graphs (fun host call fields cache _ ->
     let module J = Yojson.Basic in
@@ -750,7 +822,8 @@ let configured_task_statuses_survive_snapshots_edits_and_reopen () =
     assert_choices (dispatch "refresh" []) ["On hold"; "Next"; "Active"])
 
 let cases =
-  [ case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
+  [ case "offline edits survive logout restart and sync with new credentials" offline_edits_survive_logout_restart_and_sync_with_new_credentials;
+    case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
     case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;
     case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;
     case "existing graph icons reach favorites headers and hydrated nodes" existing_graph_icons_reach_favorites_headers_and_hydrated_nodes;

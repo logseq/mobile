@@ -52,6 +52,7 @@ val settings_export_row :
   Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_runtime_log_row :
   Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val sign_in_label : Model.logseq_model Signal.signal -> Lui_elements.t
 val settings_sign_out_row :
   Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_screen :

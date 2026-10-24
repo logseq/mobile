@@ -654,13 +654,19 @@ let outliner_journal_accessibility_label current row =
 let node_screen_visible_ (current : Model.logseq_model) =
   journals_destination_ current && node_navigation_active_ current
 
+let authentication_required_ (current : Model.logseq_model) =
+  current.authentication_state = "signedOut"
+  || current.authentication_state = "signingIn"
+
+let authentication_screen_visible_ (current : Model.logseq_model) =
+  authentication_required_ current && current.local_graph_ids = []
+
 let primary_sidebar_button_visible_ (current : Model.logseq_model) =
   (not (node_screen_visible_ current))
   && (not (graph_loading_visible_ current))
   && (not (graph_picker_visible_ current))
   && (not current.search_open)
-  && current.authentication_state <> "signedOut"
-  && current.authentication_state <> "signingIn"
+  && not (authentication_screen_visible_ current)
 
 let sidebar_drag_disabled_ (current : Model.logseq_model) =
   (not current.sidebar_open)
@@ -672,8 +678,7 @@ let sidebar_drag_disabled_ (current : Model.logseq_model) =
 let connection_control_visible_ (current : Model.logseq_model) =
   (not current.search_open)
   && (not (graph_picker_visible_ current))
-  && current.authentication_state <> "signedOut"
-  && current.authentication_state <> "signingIn"
+  && not (authentication_screen_visible_ current)
 
 let search_query_present_ (current : Model.logseq_model) =
   current.search_query <> ""
@@ -1150,8 +1155,7 @@ let graph_unlock_error_message (current : Model.logseq_model) =
 let global_effect_error_present_ (current : Model.logseq_model) =
   effect_error_present_ current
   && (not current.graph_password_open)
-  && current.authentication_state <> "signedOut"
-  && current.authentication_state <> "signingIn"
+  && not (authentication_screen_visible_ current)
   &&
   (match current.sync_state with
    | FailedState _ -> false
@@ -1484,10 +1488,6 @@ let kotlin_app_root_visible_ (current : Model.logseq_model) =
 
 let kotlin_search_root_visible_ (current : Model.logseq_model) =
   current.search_open && active_search_node_routes current = []
-
-let authentication_screen_visible_ (current : Model.logseq_model) =
-  current.authentication_state = "signedOut"
-  || current.authentication_state = "signingIn"
 
 let graph_picker_screen_visible_ (current : Model.logseq_model) =
   graph_picker_visible_ current

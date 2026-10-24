@@ -683,6 +683,30 @@ let settings_sign_out_row (context : Lui_ui.ui_context) send : t =
       ~on_press:(press send Model.RequestSignOut)
       ~text:"Sign Out" []
 
+let sign_in_label model_source : t =
+  row ~gap:8 ~cross:`center [
+    if_ ~test:(Signal.map View_base.authentication_signing_in_ model_source)
+      (spinner ~width:16 ~height:16 ~accessibility_identifier:"sign-in.loading" []);
+    text ~value_signal:(Signal.map (fun current ->
+      if View_base.authentication_signing_in_ current then "Signing in…" else "Sign in") model_source) [];
+  ]
+
+let settings_account_row context model_source send : t =
+  let signed_out = Signal.map View_base.authentication_required_ model_source in
+  column ~gap:8 [
+    if_ ~test:signed_out
+      (list_item ~accessibility_identifier:"button.hosted-sign-in"
+         ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
+         ~on_press:(press send Model.SignIn) ~text:"Sign in" [sign_in_label model_source]);
+    if_ ~test:(Signal.map not signed_out) (settings_sign_out_row context send);
+    if_ ~test:(Signal.map (fun current ->
+        View_base.authentication_required_ current
+        && View_base.authentication_error_present_ current) model_source)
+      (text ~foreground:"destructive"
+         ~value_signal:(Signal.map View_base.authentication_error_message model_source)
+         ~accessibility_identifier:"text.authentication-error" []);
+  ]
+
 let sign_out_dialog (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     dialog ~text:"Sign out?" ~height:280
@@ -693,8 +717,7 @@ let sign_out_dialog (context : Lui_ui.ui_context) send : t =
           [
             text
               ~value:
-                "You will be signed out of the sync server on this \
-                 device."
+                "Sync will pause. Downloaded graphs remain available on this device."
               ~grow:1.0 [];
             spacer ~grow:1.0 [];
             row ~main:`end_
@@ -726,7 +749,7 @@ let sign_out_dialog (context : Lui_ui.ui_context) send : t =
       [
         text
           ~value:
-            "You will be signed out of the sync server on this device."
+            "Sync will pause. Downloaded graphs remain available on this device."
           [];
         button ~accessibility_identifier:"button.sign-out.cancel"
           ~on_press:(press send Model.CancelSignOut)
@@ -840,7 +863,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             ];
         ];
       column ~padding:16 ~background:card_bg
-        [ settings_sign_out_row context send ];
+        [ settings_account_row context model_source send ];
     ]
 
 (* Native grouped-settings form: a `form`-styled content column whose
@@ -952,10 +975,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
             []);
       heading ~value:"Account"
         ~accessibility_identifier:"label.settings.account" [];
-      list_item ~foreground:"destructive"
-        ~accessibility_identifier:"button.sign-out"
-        ~on_press:(press send Model.RequestSignOut)
-        ~text:"Sign Out" [];
+      settings_account_row context model_source send;
     ]
 
 let settings_screen (context : Lui_ui.ui_context) model_source send : t =

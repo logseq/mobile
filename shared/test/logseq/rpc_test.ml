@@ -1155,6 +1155,20 @@ let shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events () =
   let next = begin_sync_transport session in
   check_eq (member "url" (List.hd (sync_commands next))) (`String "wss://example.com/sync/plain-1")
 
+let clearing_authentication_invalidates_old_sync_transport () =
+  let session, _, applied, _ = sync_driver_session () in
+  let generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session generation "opened" []);
+  let configured = response_result (dispatch_json session "configure"
+    {|{"baseUrl":"http://127.0.0.1:8787","graphId":"plain-1","token":""}|}) in
+  check_eq ~msg:"signing out disconnects sync without changing graphs"
+    (member "syncConnected" configured) (`Bool false);
+  check_eq (member "selectedGraphId" configured) (`String "plain-1");
+  check_eq ~msg:"late frames from the previous account are ignored"
+    (sync_commands (sync_event session generation "frame"
+      ["body", `String {|{"type":"pull/ok","t":99}|}])) [];
+  check_eq !applied []
+
 let shared_sync_driver_handles_missing_cursor_and_network_changes () =
   let session = configure_plain_session (Session.create_session Session.default_options) in
   let initial = begin_sync_transport session in
@@ -1279,6 +1293,18 @@ let shared_pending_retry_graph_changes_discard_old_transport () =
   check_eq !cleaned ["/tmp/encrypted-retry-asset"];
   ignore (pending_completion session upload (`Int 200) (`String "{}") `Null);
   check_eq (List.length !staged) 1
+
+let clearing_authentication_cancels_requests_without_dropping_local_edits () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let changed = response_result (dispatch_json session "configure"
+    {|{"baseUrl":"http://127.0.0.1:8787","graphId":"encrypted-1","token":""}|}) in
+  check_eq ~msg:"logout cancels a request carrying the previous token"
+    (member "pendingSyncRequest" changed) `Null;
+  check_eq ~msg:"temporary encrypted upload data is cleaned" !cleaned ["/tmp/encrypted-retry-asset"];
+  check_eq ~msg:"local changes stay queued for a future login" (List.length !staged) 1;
+  ignore (pending_completion session upload (`Int 200) (`String "{}") `Null);
+  check_eq ~msg:"late upload completion cannot consume local edits" (List.length !staged) 1
 
 let websocket_lifecycle_applies_events_exactly_once () =
   let applied = ref [] in
@@ -6740,6 +6766,8 @@ let cases =
       targeted_asset_upload_uses_stable_block_uuid;
     case "shared images insert bounded row patches and normalize upload type"
       shared_images_insert_bounded_row_patches_and_normalize_upload_type;
+    case "clearing authentication invalidates old sync transport" clearing_authentication_invalidates_old_sync_transport;
+    case "clearing authentication cancels requests without dropping local edits" clearing_authentication_cancels_requests_without_dropping_local_edits;
     case "pending assets wait for authentication and resume after configuration"
       pending_assets_wait_for_authentication_and_resume_after_configuration;
     case "asset payload errors do not create local blocks"
