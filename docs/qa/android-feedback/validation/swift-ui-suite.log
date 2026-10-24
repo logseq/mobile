@@ -1,0 +1,295 @@
+RUNTIME_CHECK_CONFIGURATION=debug
+/var/folders/px/1mjyhcq93ms002hkwzlxkgjm0000gn/T/logseq-runtime-check-e110adgl/RuntimeCheck.app: replacing existing signature
+◇ Test run started.
+↳ Testing Library Version: 1085
+↳ Target Platform: arm64-apple-ios13.0-simulator
+◇ Suite AssetPresentationTests started.
+◇ Test recognizesImageAndAudioTypes() started.
+✔ Test recognizesImageAndAudioTypes() passed after 0.002 seconds.
+◇ Test nodeShareIncludesTextAndEveryUniqueLocalAsset() started.
+✔ Test nodeShareIncludesTextAndEveryUniqueLocalAsset() passed after 0.003 seconds.
+✔ Suite AssetPresentationTests passed after 0.011 seconds.
+◇ Suite CognitoOAuthTests started.
+◇ Test authorizationUsesCodeFlowPKCEAndState() started.
+✔ Test authorizationUsesCodeFlowPKCEAndState() passed after 0.007 seconds.
+◇ Test pkceMatchesTheRFC7636S256Vector() started.
+✔ Test pkceMatchesTheRFC7636S256Vector() passed after 0.006 seconds.
+◇ Test callbackRequiresMatchingStateAndAuthorizationCode() started.
+✔ Test callbackRequiresMatchingStateAndAuthorizationCode() passed after 0.018 seconds.
+◇ Test tokenFormsContainOnlyPublicClientParameters() started.
+✔ Test tokenFormsContainOnlyPublicClientParameters() passed after 0.002 seconds.
+◇ Test tokenExpiryRefreshesEarlyAndPreservesIDToken() started.
+✔ Test tokenExpiryRefreshesEarlyAndPreservesIDToken() passed after 0.020 seconds.
+✔ Suite CognitoOAuthTests passed after 0.055 seconds.
+◇ Suite GraphDatabaseActivationTests started.
+◇ Test reopeningCatalogForAuthenticationCannotLeaveGraphSnapshotOnCatalogRuntime() started.
+LOGSEQ_DB_ROUTE request=open_and_wait route=catalog:/Users/tiensonqin/Library/Developer/CoreSimulator/Devices/DA997B55-0A2D-4E46-BCC5-EE330C2262B3/data/Containers/Data/Application/76005BBE-C769-45D8-82CF-756A107B930D/tmp/graph-activation-B8620E02-1576-4F7A-B8B3-070AE309A004/catalog.sqlite
+Logseq debug: async core action started open
+Logseq debug: async core action returned open coreMs=41.71 requestBytes=329 responseBytes=136
+Logseq debug: core action applied open revision=1 blocks=0 journals=0 graphs=0 patch=false applyMs=9.01
+Logseq debug: async core action started bootstrapGraph
+Logseq debug: async core action returned bootstrapGraph coreMs=0.28 requestBytes=899 responseBytes=218
+Logseq debug: core action applied bootstrapGraph revision=2 blocks=0 journals=0 graphs=0 patch=false applyMs=7.47
+LOGSEQ_DB_ROUTE request=open route=catalog:/Users/tiensonqin/Library/Developer/CoreSimulator/Devices/DA997B55-0A2D-4E46-BCC5-EE330C2262B3/data/Containers/Data/Application/76005BBE-C769-45D8-82CF-756A107B930D/tmp/graph-activation-B8620E02-1576-4F7A-B8B3-070AE309A004/catalog.sqlite
+Logseq debug: async core action started bootstrapGraph
+Logseq debug: async core action started open
+Logseq debug: async core action returned bootstrapGraph coreMs=0.19 requestBytes=898 responseBytes=218
+Logseq debug: core action applied bootstrapGraph revision=2 blocks=0 journals=0 graphs=0 patch=false applyMs=0.12
+Logseq debug: async core action returned open coreMs=1.77 requestBytes=329 responseBytes=136
+Logseq debug: core action applied open revision=1 blocks=0 journals=0 graphs=0 patch=false applyMs=0.06
+✔ Test reopeningCatalogForAuthenticationCannotLeaveGraphSnapshotOnCatalogRuntime() passed after 0.085 seconds.
+✔ Suite GraphDatabaseActivationTests passed after 0.085 seconds.
+◇ Suite GraphSyncCoordinatorTests started.
+◇ Test replacingForegroundWaitsForThePreviousStreamToStop() started.
+✔ Test replacingForegroundWaitsForThePreviousStreamToStop() passed after 0.002 seconds.
+◇ Test backgroundCatchUpStartsOnlyAfterForegroundStops() started.
+✔ Test backgroundCatchUpStartsOnlyAfterForegroundStops() passed after 0.002 seconds.
+◇ Test foregroundWaitsForActiveBackgroundCatchUp() started.
+✔ Test foregroundWaitsForActiveBackgroundCatchUp() passed after 0.002 seconds.
+◇ Test concurrentBackgroundCatchUpsShareOneExecution() started.
+✔ Test concurrentBackgroundCatchUpsShareOneExecution() passed after 0.026 seconds.
+◇ Test explicitStopWaitsForForegroundCleanup() started.
+✔ Test explicitStopWaitsForForegroundCleanup() passed after 0.002 seconds.
+◇ Test stoppingWithoutForegroundWorkIsANoOp() started.
+✔ Test stoppingWithoutForegroundWorkIsANoOp() passed after 0.001 seconds.
+◇ Test foregroundCanceledWhileWaitingForBackgroundDoesNotStart() started.
+✔ Test foregroundCanceledWhileWaitingForBackgroundDoesNotStart() passed after 0.001 seconds.
+◇ Test cancelingBackgroundWaitsForCleanup() started.
+✔ Test cancelingBackgroundWaitsForCleanup() passed after 0.002 seconds.
+◇ Test cancelingWithoutBackgroundWorkIsANoOp() started.
+✔ Test cancelingWithoutBackgroundWorkIsANoOp() passed after 0.001 seconds.
+◇ Test networkLossPausesForegroundAndRecoveryRestartsIt() started.
+✔ Test networkLossPausesForegroundAndRecoveryRestartsIt() passed after 0.004 seconds.
+◇ Test foregroundWaitsUntilNetworkIsAvailable() started.
+✔ Test foregroundWaitsUntilNetworkIsAvailable() passed after 0.002 seconds.
+◇ Test backgroundCanceledWhileWaitingForForegroundDoesNotStart() started.
+✔ Test backgroundCanceledWhileWaitingForForegroundDoesNotStart() passed after 0.002 seconds.
+◇ Test backgroundTaskCompletionOnlyFinishesOnce() started.
+✔ Test backgroundTaskCompletionOnlyFinishesOnce() passed after 0.001 seconds.
+✔ Suite GraphSyncCoordinatorTests passed after 0.051 seconds.
+◇ Suite "LG renderer" started.
+◇ Test "sidebar icons use the same native symbols as main on Apple platforms" started.
+✔ Test "sidebar icons use the same native symbols as main on Apple platforms" passed after 0.001 seconds.
+◇ Test "native List routes use the platform grouped page surface" started.
+✔ Test "native List routes use the platform grouped page surface" passed after 0.001 seconds.
+◇ Test "audio assets use the inline player when a local file is available" started.
+✔ Test "audio assets use the inline player when a local file is available" passed after 0.001 seconds.
+◇ Test "applies retained patches and exposes the stable runtime root" started.
+✔ Test "applies retained patches and exposes the stable runtime root" passed after 0.019 seconds.
+◇ Test "registers the native rich block renderer with the LG fingerprint" started.
+✔ Test "registers the native rich block renderer with the LG fingerprint" passed after 0.001 seconds.
+◇ Test "registers native navigation with standard retained children" started.
+✔ Test "registers native navigation with standard retained children" passed after 0.001 seconds.
+◇ Test "registers native full-screen search navigation" started.
+✔ Test "registers native full-screen search navigation" passed after 0.001 seconds.
+◇ Test "forwards renderer events without owning application state" started.
+✔ Test "forwards renderer events without owning application state" passed after 0.001 seconds.
+◇ Test "routes renderer events through the LG native runtime" started.
+✔ Test "routes renderer events through the LG native runtime" passed after 0.012 seconds.
+◇ Test "rejects an empty initialization patch" started.
+✔ Test "rejects an empty initialization patch" passed after 0.007 seconds.
+◇ Test "routes native extension events through one LG bridge" started.
+✔ Test "routes native extension events through one LG bridge" passed after 0.001 seconds.
+◇ Test "executes and resolves typed LG effects" started.
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":7,"kind":"send-capture","text":"Project note"}
+✔ Test "executes and resolves typed LG effects" passed after 0.009 seconds.
+◇ Test "applies core snapshots before completing their originating effect" started.
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":9,"kind":"load-older-journals","text":""}
+✔ Test "applies core snapshots before completing their originating effect" passed after 0.001 seconds.
+◇ Test "applies the dequeue patch before the effect resolution patch" started.
+LOGSEQ_LG_EFFECT dispatch patch_generation=1 kind=refresh-graphs
+✔ Test "applies the dequeue patch before the effect resolution patch" passed after 0.004 seconds.
+◇ Test "native core effects forward opaque metadata to the shared executor" started.
+✔ Test "native core effects forward opaque metadata to the shared executor" passed after 0.006 seconds.
+◇ Test "applies a launch snapshot that arrives before the renderer starts" started.
+✔ Test "applies a launch snapshot that arrives before the renderer starts" passed after 0.001 seconds.
+◇ Test "graph effects prepare catalog transport and preserve graph lifecycle" started.
+✔ Test "graph effects prepare catalog transport and preserve graph lifecycle" passed after 0.001 seconds.
+◇ Test "graph catalog failures preserve the core error code and message" started.
+✔ Test "graph catalog failures preserve the core error code and message" passed after 0.001 seconds.
+◇ Test "settings and diagnostics effects stay on the platform boundary" started.
+✔ Test "settings and diagnostics effects stay on the platform boundary" passed after 0.001 seconds.
+◇ Test "Hosted sign-in stays on the platform authentication boundary" started.
+✔ Test "Hosted sign-in stays on the platform authentication boundary" passed after 0.001 seconds.
+◇ Test "attachment effects preserve the selected system service" started.
+✔ Test "attachment effects preserve the selected system service" passed after 0.001 seconds.
+◇ Test "asset presentation effects preserve the local asset descriptor" started.
+✔ Test "asset presentation effects preserve the local asset descriptor" passed after 0.005 seconds.
+◇ Test "page sharing stays on the platform presentation boundary" started.
+✔ Test "page sharing stays on the platform presentation boundary" passed after 0.002 seconds.
+◇ Test "graph database export stays on the platform presentation boundary" started.
+✔ Test "graph database export stays on the platform presentation boundary" passed after 0.001 seconds.
+◇ Test "external URLs stay on the platform presentation boundary" started.
+✔ Test "external URLs stay on the platform presentation boundary" passed after 0.001 seconds.
+◇ Test "external URL effects reject non-web schemes" started.
+✔ Test "external URL effects reject non-web schemes" passed after 0.001 seconds.
+◇ Test "sync now reuses the platform sync pump" started.
+✔ Test "sync now reuses the platform sync pump" passed after 0.001 seconds.
+◇ Test "automatic sync reaches the pending pump through the platform boundary" started.
+✔ Test "automatic sync reaches the pending pump through the platform boundary" passed after 0.001 seconds.
+◇ Test "automatic upload requests never invoke manual reconnect" started.
+✔ Test "automatic upload requests never invoke manual reconnect" passed after 0.001 seconds.
+◇ Test "composer draft effects persist through the platform boundary" started.
+✔ Test "composer draft effects persist through the platform boundary" passed after 0.001 seconds.
+◇ Test "platform settings handler preserves persisted values and multiline logs" started.
+✔ Test "platform settings handler preserves persisted values and multiline logs" passed after 0.033 seconds.
+◇ Test "graph lifecycle effects stay on the platform service boundary" started.
+✔ Test "graph lifecycle effects stay on the platform service boundary" passed after 0.001 seconds.
+◇ Test "successful graph lifecycle effects publish the authoritative graph snapshot" started.
+✔ Test "successful graph lifecycle effects publish the authoritative graph snapshot" passed after 0.044 seconds.
+◇ Test "creating a graph persists the authoritative selected graph" started.
+Logseq debug: async core action started createSyncGraph
+Logseq debug: async core action returned createSyncGraph coreMs=0.21 requestBytes=156 responseBytes=265
+Logseq debug: core action applied createSyncGraph revision=3 blocks=0 journals=0 graphs=1 patch=false applyMs=0.09
+✔ Test "creating a graph persists the authoritative selected graph" passed after 0.013 seconds.
+Logseq debug: async core action started createSyncGraph
+◇ Test "failed graph creation preserves the previous selected graph" started.
+Logseq debug: async core action returned createSyncGraph coreMs=0.15 requestBytes=157 responseBytes=101
+Logseq debug: core action failed createSyncGraph code=graph_create_failed message=Could not create graph
+✔ Test "failed graph creation preserves the previous selected graph" passed after 0.003 seconds.
+◇ Test "runtime routes platform output to host updates instead of core snapshots" started.
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":44,"kind":"refresh-runtime-log","text":"ui","value":0}
+✔ Test "runtime routes platform output to host updates instead of core snapshots" passed after 0.001 seconds.
+◇ Test "host updates wait for renderer initialization" started.
+✔ Test "host updates wait for renderer initialization" passed after 0.001 seconds.
+◇ Test "successful outliner autosave starts the sync pump" started.
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":19,"kind":"change-outliner-text","text":"Updated"}
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":20,"kind":"save-outliner-editing","text":"editing"}
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":21,"kind":"sync-pending","text":""}
+✔ Test "successful outliner autosave starts the sync pump" passed after 0.012 seconds.
+◇ Test "pending outliner mutation starts the sync pump" started.
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":20,"kind":"outliner-toolbar","text":"task"}
+LOGSEQ_LG_EFFECT legacy-without-patch payload={"id":21,"kind":"sync-pending","text":""}
+✔ Test "pending outliner mutation starts the sync pump" passed after 0.001 seconds.
+◇ Test "delivers each core platform command revision exactly once" started.
+✔ Test "delivers each core platform command revision exactly once" passed after 0.004 seconds.
+◇ Test "skips unchanged core snapshots without hiding later sync changes" started.
+✔ Test "skips unchanged core snapshots without hiding later sync changes" passed after 0.005 seconds.
+◇ Test "routes core commands into platform services and presentation intents" started.
+✔ Test "routes core commands into platform services and presentation intents" passed after 0.001 seconds.
+✔ Suite "LG renderer" passed after 0.213 seconds.
+◇ Suite "Drawer interaction policy" started.
+◇ Test "content controls stay enabled while the drawer is idle" started.
+✔ Test "content controls stay enabled while the drawer is idle" passed after 0.001 seconds.
+◇ Test "content controls are disabled for every active drawer interaction" started.
+◇ Test case passing 1 argument state → (isDragging: true, isAnimating: false, isGestureActive: false) to "content controls are disabled for every active drawer interaction" started.
+◇ Test case passing 1 argument state → (isDragging: false, isAnimating: true, isGestureActive: false) to "content controls are disabled for every active drawer interaction" started.
+◇ Test case passing 1 argument state → (isDragging: false, isAnimating: false, isGestureActive: true) to "content controls are disabled for every active drawer interaction" started.
+◇ Test case passing 1 argument state → (isDragging: true, isAnimating: true, isGestureActive: true) to "content controls are disabled for every active drawer interaction" started.
+✔ Test "content controls are disabled for every active drawer interaction" with 4 test cases passed after 0.001 seconds.
+✔ Suite "Drawer interaction policy" passed after 0.003 seconds.
+◇ Suite LatexMarkupTests started.
+◇ Test keepsInlineMathInsideTheSentenceAndDisplayMathSeparate() started.
+✔ Test keepsInlineMathInsideTheSentenceAndDisplayMathSeparate() passed after 0.009 seconds.
+◇ Test escapesUserContentAndBundlesOfflineMathSupport() started.
+✔ Test escapesUserContentAndBundlesOfflineMathSupport() passed after 0.172 seconds.
+◇ Test preservesReferencesButRejectsExecutableLinks() started.
+✔ Test preservesReferencesButRejectsExecutableLinks() passed after 0.001 seconds.
+✔ Suite LatexMarkupTests passed after 0.183 seconds.
+◇ Suite LogseqThemeSettingsTests started.
+◇ Test classicPaletteMatchesTheOfficialLogseqThemeTokens() started.
+✔ Test classicPaletteMatchesTheOfficialLogseqThemeTokens() passed after 0.001 seconds.
+◇ Test appearanceModesResolveWithoutDuplicatingSystemState() started.
+✔ Test appearanceModesResolveWithoutDuplicatingSystemState() passed after 0.001 seconds.
+◇ Test languageChoicesCoverEveryShippedLocalization() started.
+✔ Test languageChoicesCoverEveryShippedLocalization() passed after 0.001 seconds.
+◇ Test customSyncServerAcceptsOnlyHttpURLsAndNormalizesWhitespace() started.
+✔ Test customSyncServerAcceptsOnlyHttpURLsAndNormalizesWhitespace() passed after 0.001 seconds.
+◇ Test communityAndSupportDestinationsMatchLogseqMobile() started.
+✔ Test communityAndSupportDestinationsMatchLogseqMobile() passed after 0.001 seconds.
+✔ Suite LogseqThemeSettingsTests passed after 0.002 seconds.
+◇ Suite NativeInputPolicyTests started.
+◇ Test appliesOnlyCoreDeclaredEmptyPairRulesAtUTF16Ranges() started.
+✔ Test appliesOnlyCoreDeclaredEmptyPairRulesAtUTF16Ranges() passed after 0.009 seconds.
+✔ Suite NativeInputPolicyTests passed after 0.009 seconds.
+◇ Suite OutlinerEditingTests started.
+◇ Test keyboardHideDiagnosticsSpanInlineEditorHandoffs() started.
+✔ Test keyboardHideDiagnosticsSpanInlineEditorHandoffs() passed after 0.001 seconds.
+◇ Test keyboardHideDiagnosticsCountHidesDuringPendingHandoffs() started.
+✔ Test keyboardHideDiagnosticsCountHidesDuringPendingHandoffs() passed after 0.001 seconds.
+◇ Test typedMarkupLinksUseOneNodeRouteForPagesAndBlocks() started.
+✔ Test typedMarkupLinksUseOneNodeRouteForPagesAndBlocks() passed after 0.001 seconds.
+◇ Test typedMarkupLinksRejectIncompleteOrUnsupportedRoutes() started.
+✔ Test typedMarkupLinksRejectIncompleteOrUnsupportedRoutes() passed after 0.001 seconds.
+◇ Test outlineDepthGridAlignsGuidesWithAncestorBullets() started.
+✔ Test outlineDepthGridAlignsGuidesWithAncestorBullets() passed after 0.001 seconds.
+◇ Test blockTitleAndBulletShareOneStableFirstLineHeight() started.
+✔ Test blockTitleAndBulletShareOneStableFirstLineHeight() passed after 0.001 seconds.
+◇ Test nativeEditorCentersEmptyAndNonEmptyTextInsideTheSharedFirstLineHeight() started.
+✔ Test nativeEditorCentersEmptyAndNonEmptyTextInsideTheSharedFirstLineHeight() passed after 0.001 seconds.
+◇ Test audioRecordingMatchesLogseqMobileLimitsAndFormatting() started.
+✔ Test audioRecordingMatchesLogseqMobileLimitsAndFormatting() passed after 0.001 seconds.
+◇ Test dropZoneMapsOnlyPointerGeometry() started.
+✔ Test dropZoneMapsOnlyPointerGeometry() passed after 0.001 seconds.
+◇ Test inlineEditorDoesNotReplaceUnacknowledgedLocalTyping() started.
+✔ Test inlineEditorDoesNotReplaceUnacknowledgedLocalTyping() passed after 0.001 seconds.
+◇ Test inlineEditorDoesNotEchoProgrammaticCaretChanges() started.
+✔ Test inlineEditorDoesNotEchoProgrammaticCaretChanges() passed after 0.001 seconds.
+◇ Test inlineEditorKeepsAFocusRequestPendingUntilAttachment() started.
+✔ Test inlineEditorKeepsAFocusRequestPendingUntilAttachment() passed after 0.001 seconds.
+◇ Test richBlockPayloadsDecodeForNativeRenderingAndEmbeds() started.
+✔ Test richBlockPayloadsDecodeForNativeRenderingAndEmbeds() passed after 0.001 seconds.
+◇ Test androidMarkupKeepsPlainTextOnTheNonInteractiveRenderPath() started.
+✔ Test androidMarkupKeepsPlainTextOnTheNonInteractiveRenderPath() passed after 0.001 seconds.
+◇ Test androidMarkupEscapesMarkdownLabelsWithoutBreakingNodeRoutes() started.
+✔ Test androidMarkupEscapesMarkdownLabelsWithoutBreakingNodeRoutes() passed after 0.001 seconds.
+◇ Test androidRichContentOnlyInterceptsTouchesForInteractiveNodes() started.
+✔ Test androidRichContentOnlyInterceptsTouchesForInteractiveNodes() passed after 0.001 seconds.
+◇ Test inlineEditorAppliesTheNewBlockDuringResponderHandoff() started.
+✔ Test inlineEditorAppliesTheNewBlockDuringResponderHandoff() passed after 0.001 seconds.
+◇ Test inlineEditorKeepsThePreSplitTextVisibleUntilTheHandoffArrives() started.
+✔ Test inlineEditorKeepsThePreSplitTextVisibleUntilTheHandoffArrives() passed after 0.001 seconds.
+◇ Test typingBufferedDuringReturnHandoffLandsAtTheNewBlockCaret() started.
+✔ Test typingBufferedDuringReturnHandoffLandsAtTheNewBlockCaret() passed after 0.001 seconds.
+◇ Test richMarkupKeepsInlineRunsAroundEmbeddedNodes() started.
+✔ Test richMarkupKeepsInlineRunsAroundEmbeddedNodes() passed after 0.001 seconds.
+✔ Suite OutlinerEditingTests passed after 0.005 seconds.
+◇ Suite PendingAssetSyncTests started.
+◇ Test authenticatedConfigurationStartsPendingSyncAfterConfigureApplies() started.
+Logseq debug: async core action started configure
+Logseq debug: async core action returned configure coreMs=0.19 requestBytes=209 responseBytes=278
+Logseq debug: core action applied configure revision=1 blocks=0 journals=0 graphs=1 patch=false applyMs=0.14
+Logseq debug: async core action started refreshGraphCatalog
+Logseq debug: async core action returned refreshGraphCatalog coreMs=0.09 requestBytes=102 responseBytes=278
+Logseq debug: core action applied refreshGraphCatalog revision=1 blocks=0 journals=0 graphs=1 patch=false applyMs=0.05
+Logseq debug: async core action started beginPendingSync
+Logseq debug: async core action returned beginPendingSync coreMs=0.09 requestBytes=99 responseBytes=278
+Logseq debug: core action applied beginPendingSync revision=1 blocks=0 journals=0 graphs=1 patch=false applyMs=3.85
+✔ Test authenticatedConfigurationStartsPendingSyncAfterConfigureApplies() passed after 0.016 seconds.
+◇ Test inaccessibleCachedGraphDoesNotStartPendingSync() started.
+Logseq debug: async core action started configure
+Logseq debug: async core action returned configure coreMs=0.24 requestBytes=209 responseBytes=278
+Logseq debug: core action applied configure revision=1 blocks=0 journals=0 graphs=1 patch=false applyMs=0.10
+Logseq debug: async core action started refreshGraphCatalog
+Logseq debug: async core action returned refreshGraphCatalog coreMs=0.15 requestBytes=102 responseBytes=278
+Logseq debug: core action applied refreshGraphCatalog revision=1 blocks=0 journals=0 graphs=1 patch=false applyMs=0.07
+✔ Test inaccessibleCachedGraphDoesNotStartPendingSync() passed after 0.055 seconds.
+◇ Test pendingAssetUploadResolvesStoredPathAgainstDocumentsDirectory() started.
+✔ Test pendingAssetUploadResolvesStoredPathAgainstDocumentsDirectory() passed after 0.002 seconds.
+◇ Test pendingAssetUploadRejectsMissingStoredPath() started.
+✔ Test pendingAssetUploadRejectsMissingStoredPath() passed after 0.001 seconds.
+✔ Suite PendingAssetSyncTests passed after 0.075 seconds.
+◇ Suite SharedCaptureTests started.
+◇ Test rawSharePayloadSurvivesQueueingWithoutNativeNoteFormatting() started.
+✔ Test rawSharePayloadSurvivesQueueingWithoutNativeNoteFormatting() passed after 0.022 seconds.
+◇ Test deepLinksPreserveDecodedQueryItemsForTheCore() started.
+✔ Test deepLinksPreserveDecodedQueryItemsForTheCore() passed after 0.001 seconds.
+◇ Test durableInboxDrainsEachCaptureExactlyOnce() started.
+✔ Test durableInboxDrainsEachCaptureExactlyOnce() passed after 0.009 seconds.
+◇ Test durableInboxPreservesSharedAssetMetadata() started.
+✔ Test durableInboxPreservesSharedAssetMetadata() passed after 0.014 seconds.
+◇ Test appGroupFileInboxIsVisibleAcrossProcesses() started.
+✔ Test appGroupFileInboxIsVisibleAcrossProcesses() passed after 0.002 seconds.
+◇ Test shortcutCaptureQueuesTrimmedTextForTheJournal() started.
+✔ Test shortcutCaptureQueuesTrimmedTextForTheJournal() passed after 0.004 seconds.
+◇ Test processorStopsAtFailureAndRetriesWithoutReordering() started.
+✔ Test processorStopsAtFailureAndRetriesWithoutReordering() passed after 0.007 seconds.
+◇ Test stagesBinaryAssetsWithStableMetadataAndImportsThemIntoDocuments() started.
+✔ Test stagesBinaryAssetsWithStableMetadataAndImportsThemIntoDocuments() passed after 0.029 seconds.
+◇ Test missingStagedAssetFailsWithoutInventingAFile() started.
+✔ Test missingStagedAssetFailsWithoutInventingAFile() passed after 0.011 seconds.
+✔ Suite SharedCaptureTests passed after 0.103 seconds.
+✔ Test run with 107 tests in 12 suites passed after 0.802 seconds.
+RUNTIME_CHECK_COMPLETE
+com.logseq.logseq.RuntimeCheck: 93983
+

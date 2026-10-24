@@ -1,0 +1,4 @@
+RUNTIME_CHECK_CONFIGURATION=debug
+/var/folders/px/1mjyhcq93ms002hkwzlxkgjm0000gn/T/logseq-runtime-check-4ux8o8y2/RuntimeCheck.app: replacing existing signature
+com.logseq.logseq.PageBenchmark: 91978
+INTERACTIVE_CHECK_READY bundle=com.logseq.logseq.PageBenchmark

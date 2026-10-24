@@ -1,0 +1,71 @@
+{
+  "diagnostics": [
+    {
+      "scroll": 69,
+      "text": "For each mouse, let \nh\nw\ne\na\nn\ne\na\nr\nh \nwean\near\n\u200b\t\n  be ear heteroplasmy at weaning, and \nh\nt\nc\nu\nl\nl\nh \nt\ncull\n\u200b\t\n  be heteroplasmy in tissue t at culling.",
+      "annotations": false,
+      "errors": 0,
+      "height": 69,
+      "bottom": 48.40625,
+      "displays": [],
+      "count": 2,
+      "body": 69
+    },
+    {
+      "displays": [
+        {
+          "clips": false,
+          "client": 22,
+          "scroll": 25
+        }
+      ],
+      "bottom": 32.953125,
+      "annotations": false,
+      "scroll": 39,
+      "body": 39.046875,
+      "errors": 0,
+      "text": "\u0394\nt\n=\nh\nt\nc\nu\nl\nl\n\u2212\nh\nw\ne\na\nn\ne\na\nr\n\u0394 \nt\n\u200b\t\n =h \nt\ncull\n\u200b\t\n \u2212h \nwean\near\n\u200b\t\n ",
+      "height": 40,
+      "count": 1
+    },
+    {
+      "errors": 0,
+      "text": "a\n\u2212\nb\n\u23df\near\u00a0drift\n+\nc\n\u2212\na\n\u23df\norgan\u00a0divergence\near\u00a0drift\na\u2212b\n\u200b\t\n \n\u200b\t\n + \norgan\u00a0divergence\nc\u2212a\n\u200b\t\n \n\u200b\t\n ",
+      "displays": [
+        {
+          "clips": false,
+          "client": 44,
+          "scroll": 46
+        }
+      ],
+      "annotations": true,
+      "body": 60.71875,
+      "scroll": 61,
+      "height": 61,
+      "bottom": 53.8125,
+      "count": 1
+    },
+    {
+      "count": 1,
+      "body": 57.171875,
+      "text": "1\nx\n2\n+\n1\nx \n2\n +1\n\u200b\t\n \n1\n\u200b\t\n ",
+      "displays": [
+        {
+          "clips": false,
+          "client": 40,
+          "scroll": 45
+        }
+      ],
+      "scroll": 57,
+      "errors": 0,
+      "bottom": 52.71875,
+      "annotations": false,
+      "height": 58
+    }
+  ],
+  "observations": {
+    "five-formulas-rendered": true,
+    "no-vertical-clipping": true,
+    "underbrace-annotations": true
+  }
+}

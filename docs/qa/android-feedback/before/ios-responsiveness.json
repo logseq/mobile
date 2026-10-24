@@ -1,0 +1,13 @@
+{
+  "error": "",
+  "scenario": "responsiveness",
+  "observations": {
+    "controls-responsive": false
+  },
+  "measurements": {
+    "settings-open-ms": 6306.604624958709
+  },
+  "catalog-requests": [
+    "/graphs"
+  ]
+}

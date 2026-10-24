@@ -1,0 +1,12 @@
+{
+  "error": "",
+  "measurements": {},
+  "scenario": "image-parent",
+  "observations": {
+    "no-empty-parent": false,
+    "offline-local-preview": false,
+    "editor-dismissed": false,
+    "no-network-download": false,
+    "import": true
+  }
+}
