@@ -368,7 +368,13 @@ and convert_node source references tags node position =
              convert_nodes source references tags
                (List.map (fun child -> (child, None)) label)))
      | _ ->
-       [
+       let url = (match link.url with
+         | Inline.Complex { protocol; link = value }
+           when S.includes ~sub:(protocol ^ "://") link.full_text -> protocol ^ "://" ^ value
+         | url -> Inline.string_of_url url) in
+       if Media.youtube_id url <> None && (link.full_text = url || link.full_text = "<" ^ url ^ ">") then
+         [Markup_video url]
+       else [
          Markup_link
            ( (match link.url with
               | Inline.Complex { protocol; link = value }
