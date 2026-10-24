@@ -87,7 +87,20 @@ let attach db owner attr =
 let mutation db ~now ~fresh_uuid input =
   try
     let action = member "action" input in
-    if action = `String "addTags" then (
+    if action = `String "setCodeLanguage" then (
+      let uuid = required "blockUuid" input in
+      let id = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+        | Some id when Node_title.can_edit db id && G.display_type_for_eid db id = Some "code" -> id
+        | _ -> invalid_arg "Choose an editable code block" in
+      let language = match member "value" input with `String language -> String.trim language
+        | _ -> invalid_arg "Choose a code language" in
+      if String.length language > 80 || String.exists (fun c -> Char.code c < 32) language then
+        invalid_arg "Invalid code language";
+      let expected = match G.value db id "logseq.property.code/lang" with
+        | Some (Ds.String value) -> Some (Pending_ops.String_value value) | _ -> None in
+      Ok (Pending_ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected;
+        value = if language = "" then None else Some (Pending_ops.String_value language)}))
+    else if action = `String "addTags" then (
       let owner = required "blockUuid" input in
       let owner_id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in
       if not (Node_title.can_edit db owner_id) then invalid_arg "This object is read-only";

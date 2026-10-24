@@ -603,6 +603,29 @@ let outliner_task_dates context model_source row_source send =
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
+let code_language_control row_source send : t =
+  let row = Signal.sample row_source in
+  let language row =
+    try match Yojson.Basic.from_string row.Model.markup_json with
+      | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
+      | _ -> "" with _ -> "" in
+  if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
+    (box ~padding_horizontal:32 [
+      menu_trigger ~text_signal:(Signal.map (fun row -> let value = language row in if value = "" then "Plain text" else value) row_source)
+        ~label:"Code language"
+        ~accessibility_identifier:("button.outliner.code-language." ^ row.row_uuid)
+        [dropdown_menu (List.map (fun (value, label) ->
+          menu_item ~text:label ~accessibility_identifier:("button.outliner.code-language.option." ^ value)
+            ~on_press:(fun _ ->
+              let row = Signal.sample row_source in
+              ignore (send (Model.SubmitNodeProperty (row.row_uuid, Yojson.Basic.to_string (`Assoc [
+                "action", `String "setCodeLanguage"; "blockUuid", `String row.row_uuid; "value", `String value]))))) [])
+          ["", "Plain text"; "bash", "Bash"; "c", "C"; "cpp", "C++"; "clojure", "Clojure";
+           "css", "CSS"; "go", "Go"; "html", "HTML"; "java", "Java"; "javascript", "JavaScript";
+           "json", "JSON"; "kotlin", "Kotlin"; "markdown", "Markdown"; "ocaml", "OCaml";
+           "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
+           "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ])
+
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
     column ~gap:0 [
@@ -622,6 +645,7 @@ let node_properties ?(root = false) context model_source send =
 
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
+  let body = column ~gap:0 [code_language_control row_source send; body] in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
