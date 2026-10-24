@@ -9536,7 +9536,11 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.editor"
   in
-  let buttons = children renderer toolbar in
+  let buttons =
+    let rec actions id =
+      if property_int renderer id Lui_protocol.WidthValue = 48 then [id]
+      else List.concat_map actions (children renderer id) in
+    actions toolbar in
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
     (List.length buttons) 11;
   List.iter

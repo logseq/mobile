@@ -987,9 +987,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     box
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
-        toolbar ~orientation:`horizontal ~label:"Outliner editor"
+        row ~gap:0 ~cross:`center ~background:"surface-container-low"
           ~accessibility_identifier:"toolbar.outliner.editor"
-          ~style_class:"scroll-leading" ~toolbar_gap:4
+          [ scroll ~orientation:`horizontal ~height:48 ~grow:1.0
+              [ row ~gap:4 ~cross:`center
           [
             View_base.with_label_signal
               (Signal.map View_base.outliner_editor_task_label model_source)
@@ -1028,6 +1029,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                   (send
                      (Model.PerformOutlinerToolbarAction "pageReference")))
               ~text:"[[]]" [];
+              ] ];
             toolbar_button (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];

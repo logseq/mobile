@@ -281,7 +281,7 @@ let composer_surface ?key ?accessibility_identifier ?attachments ?tag_strip
 let collapsed_composer (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     row ~grow:1.0 ~gap:8 ~cross:`center ~padding:8
-      ~background:"surface-container-low" ~corner_radius:28
+      ~background:"surface-container-low" ~corner_radius:12
       [ button ~icon:(`app "toolbar-camera") ~variant:`secondary ~label:"Camera"
           ~accessibility_identifier:"button.composer.camera"
           ~on_press:(press send (Model.ChooseAttachment "camera")) [];
