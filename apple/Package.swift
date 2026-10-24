@@ -45,7 +45,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "ssh://git@github.com/logseq/lui.git", revision: "5bfad989d75500e6932b824c67847528c0cc8301"),
-        .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
     targets: [
@@ -58,11 +57,6 @@ let package = Package(
         .target(name: "Logseq", dependencies: [
             "LogseqModel",
             .product(name: "LUIAppleBackendStatic", package: "lui"),
-            .product(
-                name: "SwiftUIMath",
-                package: "swiftui-math",
-                condition: .when(platforms: [.iOS])
-            ),
             .product(
                 name: "HighlightSwift",
                 package: "highlightswift",

@@ -2,7 +2,6 @@ import SwiftUI
 import LogseqModel
 
 import HighlightSwift
-import SwiftUIMath
 #if os(iOS)
 import AVKit
 import UIKit
@@ -35,7 +34,10 @@ struct OutlinerMixedRichMarkupContent: View {
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(0..<chunks.count, id: \.self) { index in
                 let chunk = chunks[index]
-                if chunk.count == 1,
+                if LatexMarkupDocument.containsMath(chunk) {
+                    NativeLatexMarkupContent(nodes: chunk, allowsLinkInteraction: allowsLinkInteraction,
+                        onOpenMarkupLink: onOpenMarkupLink)
+                } else if chunk.count == 1,
                    let node = chunk.first,
                    OutlinerRichMarkupPolicy.isRich(node.type) {
                     OutlinerRichBlockContent(
@@ -240,10 +242,8 @@ struct OutlinerRichBlockContent: View {
                         .foregroundStyle(.secondary)
                 }
             case .math:
-                NativeLatexView(
-                    expression: node.text ?? "",
-                    isDisplay: node.style != "inline"
-                )
+                NativeLatexMarkupContent(nodes: [node], allowsLinkInteraction: allowsLinkInteraction,
+                    onOpenMarkupLink: onOpenMarkupLink)
             case .codeBlock:
                 SyntaxHighlightedCodeBlock(
                     code: node.text ?? "",
@@ -393,17 +393,6 @@ private struct SyntaxHighlightedCodeBlock: View {
         .padding(10)
         .background(Color.secondary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-private struct NativeLatexView: View {
-    let expression: String
-    let isDisplay: Bool
-
-    var body: some View {
-        SwiftUIMath.Math(expression)
-            .mathTypesettingStyle(isDisplay ? .display : .text)
-            .frame(maxWidth: .infinity, minHeight: isDisplay ? 56 : 30, alignment: .leading)
     }
 }
 

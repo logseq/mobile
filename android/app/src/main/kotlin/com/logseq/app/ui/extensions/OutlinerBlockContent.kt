@@ -7,6 +7,8 @@ import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -66,6 +69,8 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -300,6 +305,7 @@ private fun MarkupChunk(
         MarkupInlineText(
             annotated = annotated,
             modifier = Modifier.fillMaxWidth().testTag("block.rich.inline.$index"),
+            inlineContent = inlineMathContent(chunk),
             onOpenNode = onOpenNode,
             onTapFallback = onTapFallback,
         )
@@ -316,7 +322,8 @@ private fun decodeMarkup(encoded: String): List<JSONObject> {
     }
 }
 
-private fun isRichNode(node: JSONObject): Boolean = node.optString("type") in setOf(
+private fun isRichNode(node: JSONObject): Boolean =
+    !(node.optString("type") == "math" && node.optString("style") == "inline") && node.optString("type") in setOf(
     "quote", "math", "codeBlock", "video", "iframe", "html", "image", "youtubeTimestamp", "cloze",
 )
 
@@ -416,7 +423,11 @@ private fun AnnotatedString.Builder.appendNode(node: JSONObject, decoration: Tex
             }
             pop()
         }
-        "math" -> append(node.optString("text"))
+        "math" -> {
+            val source = node.optString("text")
+            if (node.optString("style") == "inline") appendInlineContent("math:" + source, source.ifEmpty { " " })
+            else append(source)
+        }
         else -> appendChildren(node, decoration)
     }
 }
@@ -432,6 +443,33 @@ private fun AnnotatedString.Builder.appendChildren(node: JSONObject, decoration:
     }
 }
 
+private fun inlineMathSources(nodes: List<JSONObject>, result: MutableSet<String> = linkedSetOf()): Set<String> {
+    for (node in nodes) {
+        if (node.optString("type") == "math" && node.optString("style") == "inline") result += node.optString("text")
+        node.optJSONArray("children")?.let { children ->
+            inlineMathSources((0 until children.length()).mapNotNull { children.optJSONObject(it) }, result)
+        }
+    }
+    return result
+}
+
+@Composable
+private fun inlineMathContent(nodes: List<JSONObject>): Map<String, InlineTextContent> {
+    val density = LocalDensity.current
+    val size = with(density) { outlinerBodyStyle.fontSize.toPx() }
+    val content = linkedMapOf<String, InlineTextContent>()
+    for (source in inlineMathSources(nodes)) {
+        val bitmap = rememberFormulaBitmap(source, size)
+        val width = with(density) { (bitmap?.width?.toFloat() ?: (size * maxOf(1, source.length) * .55f)).toSp() }
+        val height = with(density) { (bitmap?.height?.toFloat() ?: size).toSp() }
+        content["math:" + source] = InlineTextContent(Placeholder(width, height, PlaceholderVerticalAlign.TextCenter)) {
+            if (bitmap == null) Text(source, style = outlinerBodyStyle)
+            else Image(bitmap.asImageBitmap(), contentDescription = source, modifier = Modifier.fillMaxSize())
+        }
+    }
+    return content
+}
+
 @Composable
 private fun MarkupInlineText(
     annotated: AnnotatedString,
@@ -439,6 +477,7 @@ private fun MarkupInlineText(
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
     textStyle: TextStyle? = null,
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
 ) {
     val context = LocalContext.current
     val openNode by rememberUpdatedState(onOpenNode)
@@ -446,6 +485,7 @@ private fun MarkupInlineText(
     val linkColor = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary
     val linked = remember(annotated, context, linkColor) {
         val links = annotated.getStringAnnotations(0, annotated.length)
+            .filter { it.tag in setOf(TAG_NODE, TAG_URL, TAG_TIMESTAMP) }
         if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
             for (link in links) {
                 addStyle(SpanStyle(color = linkColor), link.start, link.end)
@@ -463,6 +503,7 @@ private fun MarkupInlineText(
     // every newly composed row, and expose link/edit actions to accessibility.
     Text(
         text = linked,
+        inlineContent = inlineContent,
         style = textStyle ?: outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
@@ -497,6 +538,7 @@ private fun MarkupRichNode(
             ) {
                 MarkupInlineText(
                     annotated = annotated,
+                    inlineContent = inlineMathContent(listOf(node)),
                     modifier = Modifier.padding(start = 13.dp),
                     onOpenNode = onOpenNode,
                     onTapFallback = onTapFallback,
