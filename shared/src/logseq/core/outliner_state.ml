@@ -1606,17 +1606,20 @@ let update context (state : outliner_state) message =
   | Toolbar Camera ->
     (match state.editing with
      | Some editing ->
-       step state [ Take_photo editing.uuid; Haptic Impact ]
+       step { state with editing = None; autocomplete = None }
+         (commit_effect ~trim:false context state.editing @ [ Take_photo editing.uuid; Haptic Impact ])
      | None -> step state [])
   | Toolbar Audio ->
     (match state.editing with
      | Some editing ->
-       step state [ Record_audio editing.uuid; Haptic Impact ]
+       step { state with editing = None; autocomplete = None }
+         (commit_effect ~trim:false context state.editing @ [ Record_audio editing.uuid; Haptic Impact ])
      | None -> step state [])
   | Toolbar Attachment ->
     (match state.editing with
      | Some editing ->
-       step state [ Pick_attachment editing.uuid; Haptic Impact ]
+       step { state with editing = None; autocomplete = None }
+         (commit_effect ~trim:false context state.editing @ [ Pick_attachment editing.uuid; Haptic Impact ])
      | None -> step state [])
   | Toolbar Copy ->
     let uuids = List.filter_map (fun (block : Model.block) ->

@@ -552,7 +552,7 @@ let structural_toolbar_keeps_the_editing_block_focused () =
         "page" );
     ]
 
-let toolbar_inserts_at_caret_and_targets_media_without_leaving_editor () =
+let toolbar_inserts_at_caret_and_finishes_editing_for_media () =
   List.iter
     (fun (action, title, caret, kind) ->
       let next, commands =
@@ -576,8 +576,8 @@ let toolbar_inserts_at_caret_and_targets_media_without_leaving_editor () =
   List.iter
     (fun (action, expected) ->
       let same, commands = step context current (State.Toolbar action) in
-      check_eq same current;
-      check_eq commands [ expected; State.Haptic State.Impact ])
+      check_eq same.editing None;
+      check_eq commands [expected; State.Haptic State.Impact])
     [
       (State.Camera, State.Take_photo "a");
       (State.Audio, State.Record_audio "a");
@@ -1269,7 +1269,7 @@ let cases =
       structural_toolbar_keeps_the_editing_block_focused;
     case
       "toolbar inserts at caret and targets media without leaving editor"
-      toolbar_inserts_at_caret_and_targets_media_without_leaving_editor;
+      toolbar_inserts_at_caret_and_finishes_editing_for_media;
     case "selection copy and unselect close selection"
       selection_copy_and_unselect_close_selection;
     case "nested zoom and deleted destinations maintain valid paths"
