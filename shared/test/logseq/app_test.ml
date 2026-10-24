@@ -2060,6 +2060,15 @@ let local_graphs_remain_accessible_without_authentication () =
     let sign_in = descendant_with_identifier renderer root "button.hosted-sign-in" in
     check ~msg:"offline settings offer sign-in instead of sign-out" (sign_in <> -1);
     check_eq (descendant_with_identifier renderer root "button.sign-out") (-1);
+    let check_label expected =
+      let sign_in = descendant_with_identifier renderer root "button.hosted-sign-in" in
+      List.iter (fun label ->
+        check_eq ~msg:("the account action renders one current label: " ^ label)
+          (descendant_count_with_property_string renderer sign_in Lui_protocol.TextValue label)
+          (if label = expected then 1 else 0))
+        ["Sign in"; "Signing in…"]
+    in
+    check_label "Sign in";
     dispatch application (Lui_protocol.Press sign_in);
     flush application;
     let id = List.find_map (function Model.SignInEffect id -> Some id | _ -> None)
@@ -2068,12 +2077,14 @@ let local_graphs_remain_accessible_without_authentication () =
     check ~msg:"settings show progress until the authentication callback arrives"
       (descendant_with_identifier renderer root "sign-in.loading" <> -1);
     check_eq (descendant_enabled renderer root "button.hosted-sign-in") (Some false);
+    check_label "Signing in…";
     send application (Model.DequeueEffect (Option.get id));
     send application (Model.ResolveEffect (Option.get id, false, "Authorization was cancelled"));
     flush application;
     check_eq (descendant_with_identifier renderer root "sign-in.loading") (-1);
     check_eq ~msg:"a cancelled sign-in re-enables the settings button"
-      (descendant_enabled renderer root "button.hosted-sign-in") (Some true))
+      (descendant_enabled renderer root "button.hosted-sign-in") (Some true);
+    check_label "Sign in")
     [ios_backend (); kotlin_backend ()]
 
 let signed_out_users_can_choose_downloaded_graphs () =
