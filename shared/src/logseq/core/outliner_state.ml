@@ -307,7 +307,11 @@ let content_block (context : outliner_context) uuid =
   | Some block -> Some block
   | None -> Option.bind context.db (fun db ->
     Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
-      (fun eid -> Graph_read.block (fun text -> Ok text) db eid))
+      (fun eid -> match Graph_read.block (fun text -> Ok text) db eid with
+       | Some _ as block -> block
+       | None when Node_title.can_rename_page db eid ->
+         Graph_read.page_block (fun text -> Ok text) db eid
+       | None -> None))
 
 let editing_content (context : outliner_context) (block : Model.block) =
   match context.db with
@@ -360,6 +364,10 @@ let rec take_n n xs =
   else match xs with [] -> [] | x :: rest -> x :: take_n (n - 1) rest
 
 let autocomplete_candidates (context : outliner_context) request =
+  let resolve (candidate : outliner_candidate) = match context.db with
+    | Some db when List.exists Ref_text.is_uuid (Ref_text.page_names candidate.label) ->
+      {candidate with label = Graph_read.display_title (fun text -> Ok text) db candidate.label}
+    | _ -> candidate in
   match request.kind with
   | Command -> List.map (fun (e : Editor_command.entry) -> {label = e.label; value = e.id})
       (Editor_command.candidates context.db request.query)
@@ -377,7 +385,8 @@ let autocomplete_candidates (context : outliner_context) request =
          |> List.sort_uniq compare |> take_n 30))
   | Picker Editor_command.Embed ->
     let candidates = context.search_nodes request.query @ context.pages @ List.map
-      (fun (b : Model.block) -> {label = b.title; value = b.uuid}) context.blocks in
+      (fun (b : Model.block) -> {label = b.title; value = b.uuid}) context.blocks
+      |> List.map resolve in
     let seen = Hashtbl.create 32 in
     List.filter (fun (c : outliner_candidate) ->
       if Hashtbl.mem seen c.value || String.trim c.label = ""
@@ -387,7 +396,7 @@ let autocomplete_candidates (context : outliner_context) request =
   | Node | Tag | Property ->
   let query = String_kit.trim request.query in
   let normalized = String.lowercase_ascii query in
-  let raw =
+  let raw = List.map resolve (
     match request.kind with
     | Node ->
       context.pages
@@ -400,11 +409,10 @@ let autocomplete_candidates (context : outliner_context) request =
       List.map
         (fun label -> { label; value = label })
         [ "status"; "tags"; "alias"; "priority" ]
-    | Command | Picker _ -> []
-  in
+    | Command | Picker _ -> []) in
   let fuzzy = request.kind = Tag && normalized <> "" in
   let seen = Hashtbl.create 32 in
-  let indexed = if request.kind = Node && query <> "" then context.search_nodes query else [] in
+  let indexed = if request.kind = Node && query <> "" then List.map resolve (context.search_nodes query) else [] in
   let matches = indexed @
     List.filter
       (fun (candidate : outliner_candidate) ->

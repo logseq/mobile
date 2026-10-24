@@ -318,12 +318,19 @@ let outliner_candidates_json context state =
        let groups = Hashtbl.create 9 in
        List.map
          (fun (candidate : Outliner.outliner_candidate) ->
+           let markup = match context.Outliner.db with
+             | Some db when Ref_text.is_uuid candidate.value ->
+               let title = Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))
+                 (Graph_read.entity_title (fun text -> Ok text) db)
+                 |> Option.value ~default:candidate.label in
+               ["markup", Markup.to_yojson (Graph_read.title_markup (fun text -> Ok text) db title)]
+             | _ -> [] in
            let group = if request.kind <> Outliner.Command || String.trim request.query <> "" then None
              else Option.bind (Editor_command.group candidate.value) (fun group ->
                if Hashtbl.mem groups group then None
                else (Hashtbl.add groups group (); Some group)) in
            Wire.json_object
-             (["label", `String candidate.label; "value", `String candidate.value]
+             (["label", `String candidate.label; "value", `String candidate.value] @ markup
               @ match group with Some group -> ["group", `String group] | None -> []))
          (Outliner.autocomplete_candidates context request)
      | None -> [])

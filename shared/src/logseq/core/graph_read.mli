@@ -164,6 +164,7 @@ val closed_value_eids : Datascript.db -> int -> int list
 
 val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list
 
+val title_markup : (string -> (string, string) result) -> Datascript.db -> string -> Markup.markup_node list
 val display_title : (string -> (string, string) result) -> Datascript.db -> string -> string
 
 val entity_title : (string -> (string, string) result) -> Datascript.db -> int -> string option

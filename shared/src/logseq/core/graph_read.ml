@@ -130,7 +130,7 @@ let default_task_status_eid db =
   | Some _ -> configured
   | None -> Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status.todo")
 
-let display_title decrypt_title db title =
+let title_markup decrypt_title db title =
   let rec resolve seen depth title =
     let summaries = Ref_text.page_names title |> List.sort_uniq String.compare
       |> List.filter_map (fun uuid ->
@@ -139,10 +139,13 @@ let display_title decrypt_title db title =
         | None -> None
         | Some eid -> Option.map (fun source ->
           let title = if depth >= 16 || List.mem uuid seen then "…"
-            else resolve (uuid :: seen) (depth + 1) source in
+            else Markup.plain_text (resolve (uuid :: seen) (depth + 1) source) in
           {Model.uuid; title}) (entity_title decrypt_title db eid)) in
-    Markup.plain_text (Markup.parse summaries summaries title)
+    Markup.parse summaries summaries title
   in resolve [] 0 title
+
+let display_title decrypt_title db title =
+  Markup.plain_text (title_markup decrypt_title db title)
 
 let entity_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in

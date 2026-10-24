@@ -789,8 +789,26 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
       ]
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
-    candidate_source send : t =
+    ~node_labels candidate_source send : t =
   let candidate = Signal.sample candidate_source in
+  let choose () = ignore (send (Model.ChooseOutlinerAutocomplete
+    (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)) in
+  let reference_label context parent =
+    let node = Lui_ui.extension context "outliner-block-content" in
+    attach context parent node;
+    List.iter (fun (key, value) -> Lui_ui.extension_property context node key (StringValue value))
+      ["youtube-target-url", ""; "asset-type", ""; "local-path", ""];
+    List.iter (fun key -> Lui_ui.extension_property context node key (BoolValue false)) ["is-asset"; "is-completed"];
+    Lui_ui.extension_property_signal context node "block-id"
+      (Signal.map (fun (c : Model.outliner_autocomplete_candidate) -> StringValue c.candidate_value) candidate_source);
+    Lui_ui.extension_property_signal context node "title"
+      (Signal.map (fun (c : Model.outliner_autocomplete_candidate) -> StringValue c.candidate_label) candidate_source);
+    Lui_ui.extension_property_signal context node "markup-json"
+      (Signal.map (fun (c : Model.outliner_autocomplete_candidate) -> StringValue c.candidate_markup_json) candidate_source);
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, ("open-node" | "edit"), _) -> choose ()
+      | _ -> ());
+    node in
   column ~gap:0 ~grow:0.0 ~cross:`stretch [
   dyn (fun (candidate : Model.outliner_autocomplete_candidate) -> match candidate.candidate_group with
     | None -> box []
@@ -802,8 +820,8 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
     (View_base.with_string_prop_signal AccessibilityIdentifier
       (Signal.map View_base.outliner_autocomplete_identifier candidate_source)
     (button
-       ~text_signal:
-         (Signal.map View_base.outliner_autocomplete_label candidate_source)
+       ?text_signal:(if node_labels then None else Some
+         (Signal.map View_base.outliner_autocomplete_label candidate_source))
        ~variant:`ghost
        ~grow:1.0
        ~height:44 ~padding_horizontal:10
@@ -811,12 +829,8 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
        ~corner_radius:8 ~text_alignment:`start
        ~accessibility_identifier:
          (View_base.outliner_autocomplete_identifier candidate)
-       ~on_press:(fun _ ->
-         ignore
-           (send
-              (Model.ChooseOutlinerAutocomplete
-                 (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
-       []))]]
+       ~on_press:(fun _ -> choose ())
+       (if node_labels then [reference_label] else [])))]]
 
 let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : t =
   let kind = function
@@ -880,7 +894,8 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
           column ~gap:2 ~cross:`stretch [
             keyed ~source:(Signal.map View_base.model_outliner_autocomplete_candidates model_source)
               ~key:(fun (c : Model.outliner_autocomplete_candidate) -> c.candidate_value) ~cmp:String.compare
-              ~mount:(fun source -> outliner_autocomplete_row context source send);
+              ~mount:(fun source -> outliner_autocomplete_row context
+                ~node_labels:(List.mem kind ["node"; "tag"; "embed"; "template"]) source send);
             if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_autocomplete_candidates = []) model_source)
               (text ~value:"No results" ~foreground:"muted-foreground" ~padding:16 []);
           ]];

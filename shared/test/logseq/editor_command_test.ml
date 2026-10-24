@@ -217,6 +217,61 @@ let linked_blocks_edit_source_contents () =
     check_eq ~msg:"Editing retains the live block link"
       (value runtime Q.alpha "block/link") (Some (Ds.Ref target)))) [false; true]
 
+let linked_pages_edit_the_unrendered_source () = R.with_runtime (fun session runtime conn ->
+  rebase runtime conn [
+    put Q.alpha "block/title" (Ds.String "");
+    put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put Q.beta "block/name" (Ds.String "beta result");
+    put Q.beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Page"))];
+  let before = snapshot session in
+  check ~msg:"The source page is not rendered alongside its link"
+    (not (List.exists (fun row -> member "uuid" (member "block" row) = `String Q.beta)
+      (items "outlinerRows" before)));
+  let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+  check_eq ~msg:"A link to a source page enters editing in the current row"
+    (member "uuid" (draft response)) (`String Q.alpha);
+  check_eq ~msg:"A source page loads its title without being rendered first"
+    (member "title" (draft response)) (`String "Beta result");
+  ignore (type_at session "Renamed source page" 19);
+  save session;
+  check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Renamed source page"));
+  check_eq ~msg:"Source page edits preserve the shared page naming rules"
+    (value runtime Q.beta "block/name") (Some (Ds.String "renamed source page"));
+  check_eq ~msg:"The link wrapper remains an empty live link"
+    (value runtime Q.alpha "block/title") (Some (Ds.String ""));
+  ignore (event session "cancelEditing" []);
+  let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+  check_eq (member "title" (draft response)) (`String "Renamed source page"))
+
+let linked_pages_validate_saved_names () =
+  List.iter (fun invalid -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn [
+      put Q.alpha "block/title" (Ds.String "");
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+      put Q.beta "block/name" (Ds.String "beta result")];
+    let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+    check_eq ~msg:"The page link must open before testing name validation"
+      (member "title" (draft response)) (`String "Beta result");
+    ignore (type_at session invalid (Outliner_state.utf16_length invalid));
+    let response = Rpc_test.dispatch_json session "outlinerEvent" {|{"type":"saveEditing"}|} in
+    check_eq ~msg:"Linked page edits must retain shared name validation" (member "ok" response) (`Bool false);
+    check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Beta result"));
+    check_eq (value runtime Q.beta "block/name") (Some (Ds.String "beta result"))))
+    [""; "invalid#page"; "invalid/page"]
+
+let linked_pages_keep_name_protections () =
+  List.iter (fun protected -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn ([
+      put Q.alpha "block/title" (Ds.String "");
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+      put Q.beta "block/name" (Ds.String "beta result")] @ protected);
+    let pending = List.length (Graph_runtime.pending_operations runtime) in
+    let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+    check_eq ~msg:"Protected page names cannot be edited through a link" (draft response) `Null;
+    check_eq (List.length (Graph_runtime.pending_operations runtime)) pending))
+    [[put Q.beta "logseq.property/built-in?" (Ds.Bool true)];
+     [put Q.beta "block/journal-day" (Ds.Int64 20261024L)]]
+
 let linked_content_changes_refresh_visible_wrappers () = R.with_runtime (fun session runtime conn ->
   rebase runtime conn [
     put Q.alpha "block/title" (Ds.String "");
@@ -230,14 +285,60 @@ let linked_content_changes_refresh_visible_wrappers () = R.with_runtime (fun ses
     match List.find_opt (fun block -> member "uuid" block = `String uuid) (items "blocks" response) with
     | None -> fail "A source title change must patch every visible linked wrapper"
     | Some block ->
-      let quote children = `List [`Assoc ["type", `String "quote"; "children", children]] in
-      let content = quote (`List [`Assoc ["type", `String "text"; "text", `String "Updated source"]]) in
-      check_eq ~msg:"A patched wrapper renders the saved source content"
-        (member "markup" block) (if uuid = Q.alpha then content else quote content))
+      let content = `List [`Assoc ["type", `String "text"; "text", `String "Updated source"]] in
+      check_eq ~msg:"A patched link renders normal source markup without an added quote"
+        (member "markup" block) content)
     [Q.alpha; R.gamma];
   let response = event session "tapBlock" ["uuid", `String R.gamma] in
   check_eq ~msg:"Chained links edit the final source content"
     (member "title" (draft response)) (`String "Updated source"))
+
+let node_completion_renders_resolved_references () =
+  List.iter (fun embed -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn [
+      put Q.beta "block/title" (Ds.String "Referenced node");
+      put R.gamma "block/title" (Ds.String ("Hello [[" ^ Q.beta ^ "]]"));
+      put R.gamma "block/refs" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+    let response = if embed then begin
+      ignore (run session "Node embed");
+      event session "searchAutocomplete" ["query", `String "Hello"]
+    end else start session "[[Hello" in
+    let index, candidate = List.mapi (fun i c -> i, c) (choices response)
+      |> List.find (fun (_, c) -> member "value" c = `String R.gamma) in
+    check_eq ~msg:"Both node and embed completion resolve referenced labels"
+      (member "label" candidate) (`String "Hello Referenced node");
+    let markup = items "markup" candidate in
+    check ~msg:"Node completion carries the shared node-reference markup"
+      (List.exists (fun node -> member "type" node = `String "nodeReference"
+        && member "uuid" node = `String Q.beta && member "title" node = `String "Referenced node") markup);
+    List.iter (fun backend -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let button = App_test.descendant_with_identifier host (Lui_app.root_node app)
+        ("button.outliner.autocomplete." ^ string_of_int index) in
+      check ~msg:"Resolved completion has a native selection action" (button <> -1);
+      let renderer = App_test.descendant_with_extension host app button "outliner-block-content" in
+      check ~msg:"Completion reuses the existing block/reference renderer" (renderer <> -1);
+      App_test.dispatch app (Lui_protocol.Press button); App_test.flush app;
+      check ~msg:"Tapping a reference-containing candidate chooses the original node"
+        (List.exists (function Model.ChooseOutlinerAutocompleteEffect (_, value) -> value = R.gamma | _ -> false)
+          ((App.model app).Model.pending_effects @ (App.model app).Model.in_flight_effects))))
+      [App_test.ios_backend; App_test.kotlin_backend])) [false; true]
+
+let linked_blocks_preserve_source_formatting () =
+  List.iter (fun quoted -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn ([
+      put Q.alpha "block/title" (Ds.String "");
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))] @
+      if quoted then [put Q.beta "logseq.property.node/display-type" (Ds.Keyword "quote")] else []);
+    let response = snapshot session in
+    let markup uuid = member "markup" (List.find (fun row -> member "uuid" row = `String uuid) (items "blocks" response)) in
+    check_eq ~msg:"Link presentation preserves the source markup without wrapping it in another quote"
+      (markup Q.alpha) (markup Q.beta);
+    let projection = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+      | Ok value -> value | Error message -> fail message in
+    let linked = List.find (fun (row : Model.outline_row) -> row.row_uuid = Q.alpha) projection.outliner_rows in
+    check_eq ~msg:"Native caret hit testing uses the source title, not the empty wrapper title"
+      linked.row_title "Beta result")) [false; true]
 
 let linked_content_keeps_outline_boundaries () =
   List.iter (fun (kind, caret) -> R.with_runtime (fun session runtime conn ->
@@ -750,10 +851,15 @@ let cases = [
   case "links and dates use shared prompts" links_and_dates_use_shared_prompts;
   case "embeds delete only the wrapper" embeds_delete_only_the_wrapper;
   case "linked blocks edit source contents" linked_blocks_edit_source_contents;
+  case "linked pages edit the unrendered source" linked_pages_edit_the_unrendered_source;
+  case "linked pages validate saved names" linked_pages_validate_saved_names;
+  case "linked pages keep name protections" linked_pages_keep_name_protections;
   case "linked editing tracks the captured source" linked_editing_tracks_the_captured_source;
   case "cyclic links do not open an empty editor" cyclic_links_do_not_open_an_empty_editor;
   case "switching linked rows preserves unsaved content" switching_linked_rows_preserves_unsaved_content;
   case "linked content changes refresh visible wrappers" linked_content_changes_refresh_visible_wrappers;
+  case "node completion renders resolved references" node_completion_renders_resolved_references;
+  case "linked blocks preserve source formatting" linked_blocks_preserve_source_formatting;
   case "linked content keeps outline boundaries" linked_content_keeps_outline_boundaries;
   case "templates clone without mutating the source" templates_clone_without_mutating_the_source;
   case "numbered lists toggle" numbered_lists_toggle_without_changing_source_text;
