@@ -28,7 +28,7 @@ let flashcard_review_content model_source send : t =
           row ~accessibility_identifier:"row.flashcards.status"
             [
               text ~style_class:"footnote" ~foreground:"muted-foreground"
-                ~value:"Due now" [];
+                ~value:(View_base.tr (Signal.sample model_source) "Due now") [];
               spacer ~grow:1.0 [];
               text ~style_class:"footnote" ~foreground:"muted-foreground"
                 ~value_signal:
@@ -79,7 +79,7 @@ let flashcard_review_content model_source send : t =
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-cloze"
                    ~on_press:(press send Model.RevealFlashcardCloze)
-                   ~text:"Show cloze" [];
+                   ~text:(View_base.tr (Signal.sample model_source) "Show cloze") [];
                ]);
           if_
             ~test:(Signal.map View_base.flashcard_show_answer_ model_source)
@@ -91,7 +91,7 @@ let flashcard_review_content model_source send : t =
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-answer"
                    ~on_press:(press send Model.RevealFlashcardAnswer)
-                   ~text:"Show answer" [];
+                   ~text:(View_base.tr (Signal.sample model_source) "Show answer") [];
                ]);
           if_
             ~test:(Signal.map View_base.flashcard_show_ratings_ model_source)
@@ -148,8 +148,8 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             (json_items (json_field "items" json)) with
           | Some item -> json_text (json_field "title" item)
           | None -> "Unavailable group") metadata))
-          ~label:"Card group" ~accessibility_identifier:"menu.flashcards.deck" [
-          menu_item ~text:"All cards" ~selected_signal:(own (Signal.map ((=) `Null) selected))
+          ~label:(View_base.tr (Signal.sample model_source) "Card group") ~accessibility_identifier:"menu.flashcards.deck" [
+          menu_item ~text:(View_base.tr (Signal.sample model_source) "All cards") ~selected_signal:(own (Signal.map ((=) `Null) selected))
             ~accessibility_identifier:"flashcards.deck.select.all"
             ~on_press:(fun _ -> emit ["action", `String "select"; "uuid", `Null]) [];
           keyed ~source:choices ~key:(fun item -> json_text (json_field "uuid" item)) ~cmp:String.compare
@@ -161,7 +161,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
                 ~on_press:(fun _ -> emit ["action", `String "select"; "uuid", uuid]) []);
         ]);
       spacer ~grow:1.0 [];
-      button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44 ~label:"New card group"
+      button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "New card group")
         ~accessibility_identifier:"button.flashcards.deck.add"
         ~on_press:(fun _ -> Signal.set adding true) [];
     ] in
@@ -191,10 +191,10 @@ let flashcard_group_controls model_source send : t = fun context parent ->
         String.trim name = "" || target = None || submitting)
         (own (Signal.map2 (fun name target -> name, target) (Signal.value name) (Signal.value target)))
         (Signal.value submitting)) in
-      let cancel = button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+      let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:"button.flashcards.deck.cancel"
         ~disabled_signal:(Signal.value submitting) ~on_press:(fun _ -> Signal.set adding false) [] in
-      let create = button ~text:"Create" ~variant:`ghost ~style_class:"confirmation-action"
+      let create = button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:"button.flashcards.deck.create" ~disabled_signal:invalid
         ~on_press:(fun _ ->
           if not (Signal.sample invalid) then match Signal.sample (Signal.value target) with
@@ -204,15 +204,15 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             emit ["action", `String "create"; "kind", `String (Signal.sample (Signal.value kind));
               "targetUuid", `String uuid; "title", `String (Signal.sample (Signal.value name))]) [] in
       request_search "page" "";
-      (sheet ~text:"New card group" ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+      (sheet ~text:(View_base.tr (Signal.sample model_source) "New card group") ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.flashcards.deck.create" ~on_dismiss:(fun _ -> Signal.set adding false) [
         list ~grow:1.0 ~style:`inset_grouped [
           list_section [
-            list_item [text_field ~label:"Name" ~placeholder:"Card group name" ~text_signal:(Signal.value name)
+            list_item [text_field ~label:(View_base.tr (Signal.sample model_source) "Name") ~placeholder:(View_base.tr (Signal.sample model_source) "Card group name") ~text_signal:(Signal.value name)
               ~accessibility_identifier:"field.flashcards.deck.name"
               ~disabled_signal:(Signal.value submitting)
               ~on_input:(function TextChanged (_, value) -> custom_name := true; Signal.set name value | _ -> ()) []];
-            list_item [tabs ~label:"Filter by" ~grow:1.0 ~accessibility_identifier:"picker.flashcards.deck.kind"
+            list_item [tabs ~label:(View_base.tr (Signal.sample model_source) "Filter by") ~grow:1.0 ~accessibility_identifier:"picker.flashcards.deck.kind"
               (List.map (fun (value, label) ->
                 View_base.with_selected_signal (own (Signal.map ((=) value) (Signal.value kind)))
                   (button ~text:label ~grow:1.0 ~disabled_signal:(Signal.value submitting)
@@ -222,7 +222,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
                       request_search value "") [])) ["page", "Page reference"; "tag", "Tag"])];
           ];
           list_section [
-            list_item [search_field ~label:"Find a page or tag" ~placeholder:"Search pages or tags"
+            list_item [search_field ~label:(View_base.tr (Signal.sample model_source) "Find a page or tag") ~placeholder:(View_base.tr (Signal.sample model_source) "Search pages or tags")
               ~text_signal:(Signal.value query) ~accessibility_identifier:"field.flashcards.deck.search"
               ~disabled_signal:(Signal.value submitting)
               ~on_input:(function TextChanged (_, value) -> Signal.set query value;
@@ -238,7 +238,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
                   ~on_press:(fun _ -> Signal.set target (Some uuid);
                     if not !custom_name then Signal.set name (json_text (json_field "title" (Signal.sample source)))) []]);
             if_ ~test:(own (Signal.map ((=) []) targets))
-              (list_item [text ~value:"No matching pages or tags" ~foreground:"muted-foreground" []]);
+              (list_item [text ~value:(View_base.tr (Signal.sample model_source) "No matching pages or tags") ~foreground:"muted-foreground" []]);
           ];
           if_ ~test:(own (Signal.map (fun (model : Model.logseq_model) -> model.effect_error <> None) model_source))
             (list_section [list_item [text ~foreground:"destructive" ~accessibility_identifier:"error.flashcards.deck"
@@ -246,7 +246,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
                 Option.value ~default:"" model.effect_error |> String.split_on_char '\n' |> List.rev |> List.hd) model_source)) []]]);
         ];
         (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; create]
-         else toolbar ~label:"Card group actions" ~style_class:"navigation-actions" [cancel; create]);
+         else toolbar ~label:(View_base.tr (Signal.sample model_source) "Card group actions") ~style_class:"navigation-actions" [cancel; create]);
       ]) context parent) in
     (column ~gap:0 [controls;
       if_ ~test:(own (Signal.map (fun json -> json_field "error" json <> `Null) metadata))
@@ -266,10 +266,10 @@ let flashcard_screen model_source send : t =
            [
              icon ~name:(`app "flashcards") ~width:48 ~height:48
                ~foreground:"muted-foreground" [];
-             heading ~level:3 ~value:"No cards due"
+             heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "No cards due")
                ~accessibility_identifier:"flashcards.empty" [];
              text ~text_alignment:`center ~foreground:"muted-foreground"
-               ~value:"Tag any block with #Card to review it here." [];
+               ~value:(View_base.tr (Signal.sample model_source) "Tag any block with #Card to review it here.") [];
            ]);
       if_
         ~test:(Signal.map View_base.flashcards_present_ model_source)

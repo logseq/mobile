@@ -1,3 +1,6 @@
+let tr (current : Model.logseq_model) value =
+  Localization.translate ~language:current.language ~system_language:current.system_language value
+
 open Lui_protocol
 
 let node_icon (current : Model.logseq_model) uuid =
@@ -752,8 +755,8 @@ let outliner_scroll_identity (current : Model.logseq_model) =
   graph ^ ":" ^ destination
 
 let main_title (current : Model.logseq_model) =
-  if current.destination = FlashcardsDestination then "Flashcards"
-  else if current.destination = GraphsDestination then "Graphs"
+  if current.destination = FlashcardsDestination then tr current "Flashcards"
+  else if current.destination = GraphsDestination then tr current "Graphs"
   else
     match Model.active_page current with
     | Some page -> page.title
@@ -1232,14 +1235,14 @@ let settings_language_title (current : Model.logseq_model) =
   match
     Model.settings_language_by_id current.language_choices current.language
   with
-  | Some choice -> choice.title
-  | None -> "System"
+  | Some choice -> tr current choice.title
+  | None -> tr current "System"
 
 let settings_appearance_title (current : Model.logseq_model) =
   match current.appearance with
-  | "light" -> "Light"
-  | "dark" -> "Dark"
-  | _ -> "System"
+  | "light" -> tr current "Light"
+  | "dark" -> tr current "Dark"
+  | _ -> tr current "System"
 
 let settings_language_choice_title (choice : Model.settings_language_choice) =
   choice.title

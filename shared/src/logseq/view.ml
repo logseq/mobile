@@ -35,7 +35,8 @@ let logseq_theme_mode (model : Model.logseq_model) : Lui_ui.theme_mode =
 let logseq_view (context : Lui_ui.ui_context) model_source send =
   Lui_elements.themed ~tokens:logseq_theme_tokens
     ~mode_signal:(Signal.map logseq_theme_mode model_source)
-    (View_screens.logseq_view context model_source send)
+    (Lui_elements.dyn (fun _ -> View_screens.logseq_view context model_source send)
+      (Signal.map (fun (model : Model.logseq_model) -> Localization.resolve model.language model.system_language) model_source))
 
 let outliner_editor_schema () =
   let open Lui_protocol in

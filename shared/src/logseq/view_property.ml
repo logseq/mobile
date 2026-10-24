@@ -70,13 +70,13 @@ let with_add_property_picker model_source raw_source send render : t =
       title <> "" && not (List.exists (fun name -> List.exists (fun property -> text (field "title" property) = title)
         (list (field name json))) ["availableProperties"; "properties"; "schemaProperties"])) source (Signal.value search)) in
     let action = if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
-      (menu_item ~text:"Add property" ~accessibility_identifier:add_id
+      (menu_item ~text:(View_base.tr (Signal.sample model_source) "Add property") ~accessibility_identifier:add_id
         ~on_press:(fun _ -> Signal.set search ""; Signal.set adding true) []) in
     let picker = if_ ~test:(Signal.value adding)
-      (sheet ~text:"Add property" ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+      (sheet ~text:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
         Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
-          search_field ~text_signal:(Signal.value search) ~placeholder:"Search or create a property" ~label:"Search properties"
+          search_field ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Search or create a property") ~label:(View_base.tr (Signal.sample model_source) "Search properties")
             ~accessibility_identifier:(add_id ^ ".search") ~on_input:(local_input (Signal.set search)) [];
           list_section [keyed ~source:available ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
             ~mount:(fun property_source -> let property = Signal.sample property_source in
@@ -86,11 +86,11 @@ let with_add_property_picker model_source raw_source send render : t =
                 ~disabled_signal:(View_query.waiting model_source add_id)
                 ~on_press:(fun _ -> add ["action", `String "add"; "attr", `String attr]) []])];
           if_ ~test:can_create
-            (list_section [list_item [button ~text:"Create text property" ~variant:`ghost ~min_height:44
+            (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Create text property") ~variant:`ghost ~min_height:44
               ~accessibility_identifier:(add_id ^ ".create") ~disabled_signal:(View_query.waiting model_source add_id)
               ~on_press:(fun _ -> add ["action", `String "create"; "title", `String (String.trim (Signal.sample (Signal.value search)))]) []]]);
           View_query.action_error model_source add_id];
-        toolbar ~label:"Property actions" ~style_class:"navigation-actions" [button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+        toolbar ~label:(View_base.tr (Signal.sample model_source) "Property actions") ~style_class:"navigation-actions" [button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
           ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
     (render action picker) context parent)) context parent
 
@@ -215,7 +215,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
       (if compact then box [] else
         if_ ~test:(own (Signal.map (fun json -> list (field "schemaProperties" json) <> []) source))
           (column ~gap:2 ~cross:`stretch [
-            Lui_elements.text ~value:"Tag properties" ~foreground:"muted-foreground" ~style_class:"callout" [];
+            Lui_elements.text ~value:(View_base.tr (Signal.sample model_source) "Tag properties") ~foreground:"muted-foreground" ~style_class:"callout" [];
             keyed ~source:(own (Signal.map (fun json -> list (field "schemaProperties" json)) source))
               ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare ~mount:(fun property_source ->
                 Lui_elements.text ~value_signal:(own (Signal.map (fun property -> text (field "title" property)) property_source))

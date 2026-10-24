@@ -327,7 +327,7 @@ let outliner_priority_control model_source row_source send : t =
                     Option.fold ~none:false ~some:(fun (selected : Model.task_status) -> selected.uuid = p.uuid) row.row_priority) row_source choice_source)
                   ~accessibility_identifier:("button.block-task-priority-option." ^ choice.uuid)
                   ~on_press:(fun _ -> choose (Signal.sample choice_source).uuid) []);
-            menu_item ~text:"Clear priority"
+            menu_item ~text:(View_base.tr (Signal.sample model_source) "Clear priority")
               ~accessibility_identifier:"button.block-task-priority-clear" ~on_press:(fun _ -> choose "") []
           ]]))]
 
@@ -411,7 +411,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
                ~accessibility_identifier:
                  ("outliner.sync-failed."
                   ^ View_base.outliner_row_uuid current_row)
-               ~value:"Sync failed" []);
+               ~value:(View_base.tr (Signal.sample model_source) "Sync failed") []);
         ];
       if_ ~test:has_children_source
         (column ~cross:`start
@@ -609,7 +609,7 @@ let row_metadata (row : Model.outline_row) =
 let metadata_member key row =
   match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
 
-let code_language_control row_source send : t =
+let code_language_control model_source row_source send : t =
   let row = Signal.sample row_source in
   let language row =
     try match Yojson.Basic.from_string row.Model.markup_json with
@@ -617,11 +617,11 @@ let code_language_control row_source send : t =
       | _ -> "" with _ -> "" in
   if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
     (box ~padding_horizontal:32 [
-      menu_trigger ~text_signal:(Signal.map (fun row -> let value = language row in if value = "" then "Plain text" else value) row_source)
-        ~label:"Code language"
+      menu_trigger ~text_signal:(Signal.map (fun row -> let value = language row in if value = "" then View_base.tr (Signal.sample model_source) "Plain text" else value) row_source)
+        ~label:(View_base.tr (Signal.sample model_source) "Code language")
         ~accessibility_identifier:("button.outliner.code-language." ^ row.row_uuid)
         [dropdown_menu (List.map (fun (value, label) ->
-          menu_item ~text:label ~accessibility_identifier:("button.outliner.code-language.option." ^ value)
+          menu_item ~text:(View_base.tr (Signal.sample model_source) label) ~accessibility_identifier:("button.outliner.code-language.option." ^ value)
             ~on_press:(fun _ ->
               let row = Signal.sample row_source in
               ignore (send (Model.SubmitNodeProperty (row.row_uuid, Yojson.Basic.to_string (`Assoc [
@@ -632,14 +632,14 @@ let code_language_control row_source send : t =
            "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
            "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ])
 
-let discussion_body row_source body : t =
+let discussion_body model_source row_source body : t =
   let row = Signal.sample row_source in
   dyn (fun kind ->
     if kind = "thread" || kind = "comment" then
       column ~gap:4 ~padding_vertical:6 ~padding_horizontal:8 ~corner_radius:6
         ~background:"surface-container-low" ~border_width:1 ~border_color:"border"
         ~accessibility_identifier:("outliner.comment." ^ row.Model.row_uuid)
-        [text ~value:(if kind = "thread" then "Comments" else "Comment")
+        [text ~value:(View_base.tr (Signal.sample model_source) (if kind = "thread" then "Comments" else "Comment"))
            ~style_class:"caption" ~foreground:"muted-foreground" []; body]
     else body)
     (Signal.map (fun row -> match metadata_member "discussionKind" row with `String value -> value | _ -> "") row_source)
@@ -659,8 +659,8 @@ let reaction_strip row_source : t =
             ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:8
             ~background:"muted" ~style_class:"caption" [])])
 
-let decorate_row row_source send body =
-  column ~gap:0 [code_language_control row_source send; discussion_body row_source body; reaction_strip row_source]
+let decorate_row model_source row_source send body =
+  column ~gap:0 [code_language_control model_source row_source send; discussion_body model_source row_source body; reaction_strip row_source]
 
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
@@ -670,7 +670,7 @@ let render_result_block context model_source row_source send =
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value_signal:(Signal.map View_base.outliner_row_breadcrumb row_source)
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      (let body = decorate_row row_source send (outliner_row_body context model_source retained row_source send) in
+      (let body = decorate_row model_source row_source send (outliner_row_body context model_source retained row_source send) in
        if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
       outliner_continuation row_source (outliner_task_dates context model_source row_source send)]
 
@@ -681,7 +681,7 @@ let node_properties ?(root = false) context model_source send =
 
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
-  let body = decorate_row row_source send body in
+  let body = decorate_row model_source row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
@@ -777,7 +777,7 @@ let outliner_entry context model_source retained_row_source row_source
     ]
 
 
-let toolbar_button icon label identifier action send : t =
+let toolbar_button model_source icon label identifier action send : t =
   button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
     ~label ~accessibility_identifier:identifier
     ~on_press:(fun _ ->
@@ -789,24 +789,24 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
     box
       ~accessibility_identifier:"surface.outliner.selection-toolbar"
       [
-        toolbar ~orientation:`horizontal ~label:"Outliner selection"
+        toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
           ~accessibility_identifier:"toolbar.outliner.selection"
           ~style_class:"scroll-leading" ~toolbar_gap:4
           [
-            toolbar_button (`app "toolbar-copy") "Copy"
+            toolbar_button model_source (`app "toolbar-copy") "Copy"
               "button.outliner.selection.copy" "copy" send;
-            toolbar_button (`app "toolbar-outdent") "Outdent"
+            toolbar_button model_source (`app "toolbar-outdent") "Outdent"
               "button.outliner.selection.outdent" "outdent" send;
-            toolbar_button (`app "toolbar-indent") "Indent"
+            toolbar_button model_source (`app "toolbar-indent") "Indent"
               "button.outliner.selection.indent" "indent" send;
-            toolbar_button (`app "toolbar-delete") "Delete"
+            toolbar_button model_source (`app "toolbar-delete") "Delete"
               "button.outliner.selection.delete" "delete" send;
-            toolbar_button (`app "toolbar-copy-reference") "Copy reference"
+            toolbar_button model_source (`app "toolbar-copy-reference") "Copy reference"
               "button.outliner.selection.copyReference" "copyReference"
               send;
-            toolbar_button (`app "toolbar-copy-url") "Copy URL"
+            toolbar_button model_source (`app "toolbar-copy-url") "Copy URL"
               "button.outliner.selection.copyURL" "copyURL" send;
-            toolbar_button (`app "toolbar-unselect") "Unselect"
+            toolbar_button model_source (`app "toolbar-unselect") "Unselect"
               "button.outliner.selection.unselect" "unselect" send;
           ];
       ]
@@ -823,7 +823,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
           ignore (send (Model.PerformOutlinerToolbarAction action)))
         ~text:label [])
     in
-    toolbar ~orientation:`horizontal ~label:"Outliner selection"
+    toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
          ~accessibility_identifier:"toolbar.outliner.selection"
          ~style_class:"scroll-leading"
          ~toolbar_gap:2 ~placement:"bottom"
@@ -841,12 +841,12 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
         apple_button (`app "toolbar-copy-url") "Copy URL"
           "button.outliner.selection.copyURL" "copyURL";
         button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:52
-          ~height:46 ~icon_placement:`top ~label:"Unselect"
+          ~height:46 ~icon_placement:`top ~label:(View_base.tr (Signal.sample model_source) "Unselect")
           ~accessibility_identifier:"button.outliner.selection.unselect"
           ~on_press:(fun _ ->
             ignore
               (send (Model.PerformOutlinerToolbarAction "unselect")))
-          ~text:"Unselect" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Unselect") [];
       ]
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
@@ -919,9 +919,9 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         let value = if kind = "link" || kind = "image" then Yojson.Basic.to_string (`Assoc
           ["url", `String value; "label", `String (Signal.sample (Signal.value label))]) else value in
         emit "submitAutocomplete" value in
-      let cancel = button ~text:"Cancel" ~variant:`ghost ~style_class:"cancellation-action"
+      let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) [] in
-      let done_ = button ~text:"Insert" ~variant:`ghost ~style_class:"confirmation-action"
+      let done_ = button ~text:(View_base.tr (Signal.sample model_source) "Insert") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:"button.outliner.autocomplete.submit" ~on_press:confirm [] in
       (sheet ~text:(title kind) ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
@@ -933,19 +933,19 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
             ~label:(if kind = "youtube" then "Timestamp" else "URL")
             ~accessibility_identifier:"field.outliner.autocomplete.value" ~on_input:(input value) []]]
           @ (if kind = "link" || kind = "image" then [list_item [text_field ~text_signal:(Signal.value label)
-            ~placeholder:"Label (optional)" ~label:"Label" ~accessibility_identifier:"field.outliner.autocomplete.label"
+            ~placeholder:(View_base.tr (Signal.sample model_source) "Label (optional)") ~label:(View_base.tr (Signal.sample model_source) "Label") ~accessibility_identifier:"field.outliner.autocomplete.label"
             ~on_input:(input label) []]] else []))];
         (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; done_]
-         else toolbar ~label:"Insert content" ~style_class:"navigation-actions" [cancel; done_]);
+         else toolbar ~label:(View_base.tr (Signal.sample model_source) "Insert content") ~style_class:"navigation-actions" [cancel; done_]);
       ]) context parent)
     else
       column ~gap:2 ~padding:8 ~height:220 ~max_height:220 ~cross:`stretch ~main:`start ~accessibility_identifier:"toolbar.outliner.autocomplete" [
         row ~grow:0.0 ~main:`space_between ~cross:`center [
           text ~value:(title kind) ~font_size:"13" ~foreground:"muted-foreground" ~padding_horizontal:8 [];
-          button ~text:"Close" ~variant:`ghost ~height:36 ~label:"Close suggestions"
+          button ~text:(View_base.tr (Signal.sample model_source) "Close") ~variant:`ghost ~height:36 ~label:(View_base.tr (Signal.sample model_source) "Close suggestions")
             ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) []];
         (if kind = "embed" || kind = "template" then
-          search_field ~placeholder:"Search" ~label:(title kind) ~autofocus:true
+          search_field ~placeholder:(View_base.tr (Signal.sample model_source) "Search") ~label:(title kind) ~autofocus:true
             ~text_signal:(Signal.map (fun (current : Model.logseq_model) ->
               Option.fold ~none:"" ~some:(fun request -> request.Model.autocomplete_query) current.outliner_autocomplete) model_source)
             ~accessibility_identifier:"field.outliner.autocomplete.search"
@@ -958,7 +958,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
               ~mount:(fun source -> outliner_autocomplete_row context
                 ~node_labels:(List.mem kind ["node"; "tag"; "embed"; "template"]) source send);
             if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_autocomplete_candidates = []) model_source)
-              (text ~value:"No results" ~foreground:"muted-foreground" ~padding:16 []);
+              (text ~value:(View_base.tr (Signal.sample model_source) "No results") ~foreground:"muted-foreground" ~padding:16 []);
           ]];
       ])
 
@@ -1004,33 +1004,33 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                      (send
                         (Model.PerformOutlinerToolbarAction "task")))
                  []);
-            toolbar_button (`app "toolbar-outdent") "Outdent"
+            toolbar_button model_source (`app "toolbar-outdent") "Outdent"
               "button.outliner.editor.outdent" "outdent" send;
-            toolbar_button (`app "toolbar-indent") "Indent"
+            toolbar_button model_source (`app "toolbar-indent") "Indent"
               "button.outliner.editor.indent" "indent" send;
-            toolbar_button (`app "toolbar-move-up") "Move up"
+            toolbar_button model_source (`app "toolbar-move-up") "Move up"
               "button.outliner.editor.moveUp" "moveUp" send;
-            toolbar_button (`app "toolbar-move-down") "Move down"
+            toolbar_button model_source (`app "toolbar-move-down") "Move down"
               "button.outliner.editor.moveDown" "moveDown" send;
-            toolbar_button (`app "toolbar-tag") "Tag"
+            toolbar_button model_source (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
-            toolbar_button (`app "toolbar-camera") "Photo"
+            toolbar_button model_source (`app "toolbar-camera") "Photo"
               "button.outliner.editor.camera" "camera" send;
-            toolbar_button (`app "toolbar-audio") "Record audio"
+            toolbar_button model_source (`app "toolbar-audio") "Record audio"
               "button.outliner.editor.audio" "audio" send;
-            toolbar_button (`app "toolbar-attachment") "Upload asset"
+            toolbar_button model_source (`app "toolbar-attachment") "Upload asset"
               "button.outliner.editor.attachment" "attachment" send;
             button ~variant:`ghost ~size:`icon ~width:48 ~height:48
-              ~label:"Page reference"
+              ~label:(View_base.tr (Signal.sample model_source) "Page reference")
               ~accessibility_identifier:
                 "button.outliner.editor.pageReference"
               ~on_press:(fun _ ->
                 ignore
                   (send
                      (Model.PerformOutlinerToolbarAction "pageReference")))
-              ~text:"[[]]" [];
+              ~text:(View_base.tr (Signal.sample model_source) "[[]]") [];
               ] ];
-            toolbar_button (`app "toolbar-hide-keyboard") "Hide keyboard"
+            toolbar_button model_source (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];
       ]
@@ -1042,7 +1042,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           ignore (send (Model.PerformOutlinerToolbarAction action)))
         []
     in
-    toolbar ~orientation:`horizontal ~label:"Outliner editor"
+    toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner editor")
       ~accessibility_identifier:"toolbar.outliner.editor"
       ~style_class:"scroll-leading leading-inset-8"
       ~toolbar_gap:4
@@ -1066,15 +1066,15 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
         apple_icon_button (`app "toolbar-audio") "Record audio"
           "button.outliner.editor.audio" "audio";
         button ~variant:`ghost ~width:38 ~height:42
-          ~label:"Page reference"
+          ~label:(View_base.tr (Signal.sample model_source) "Page reference")
           ~accessibility_identifier:"button.outliner.editor.pageReference"
           ~on_press:(fun _ ->
             ignore
               (send
                  (Model.PerformOutlinerToolbarAction "pageReference")))
-          ~text:"[[]]" [];
+          ~text:(View_base.tr (Signal.sample model_source) "[[]]") [];
         button ~icon:(`app "toolbar-hide-keyboard") ~variant:`ghost
-          ~width:42 ~height:42 ~label:"Hide keyboard"
+          ~width:42 ~height:42 ~label:(View_base.tr (Signal.sample model_source) "Hide keyboard")
           ~accessibility_identifier:"button.outliner.editor.hideKeyboard"
           ~on_press:(fun _ ->
             ignore
@@ -1134,10 +1134,10 @@ let reference_entry context model_source entry_source send : t =
         in
         column ~gap:0 ~padding_horizontal:8
           ~accessibility_identifier:identifier
-          [ box ~height:26 []; related_section_heading title; box ~height:8 [] ]
+          [ box ~height:26 []; related_section_heading (View_base.tr (Signal.sample model_source) title); box ~height:8 [] ]
       | View_rows.Empty_tag ->
         box ~padding_horizontal:16
-          [ text ~foreground:"muted-foreground" ~value:"No tagged nodes" [] ]
+          [ text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "No tagged nodes") [] ]
       | View_rows.Reference_row _ ->
         box ~padding_horizontal:8
           [ node_related_row context model_source
@@ -1148,7 +1148,7 @@ let page_loading_view model_source : t =
     (row ~gap:8 ~cross:`center ~padding:16
        ~accessibility_identifier:"status.page-loading"
        [ spinner ~width:16 ~height:16 [];
-         text ~foreground:"muted-foreground" ~value:"Loading blocks…" [] ])
+         text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "Loading blocks…") [] ])
 
 let placeholder_block context model_source (value : View_rows.placeholder) send : t =
   let placeholder : t = fun mount_context parent ->

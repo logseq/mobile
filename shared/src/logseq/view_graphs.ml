@@ -44,7 +44,7 @@ let graph_row (_context : Lui_ui.ui_context) model_source graph_source
                ~disabled_signal:
                  (Signal.map2 View_base.graph_delete_active_ model_source
                     graph_source)
-               ~text:"Delete local graph"
+               ~text:(View_base.tr (Signal.sample model_source) "Delete local graph")
                ~on_press:(fun _ ->
                  ignore (send (Model.RequestDeleteGraph graph_id)))
                []));
@@ -90,7 +90,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
              if_ ~test:(reactive View_base.graph_delete_active_ model_source graph_source)
                (row ~gap:8 ~cross:`center
                  [ spinner ~accessibility_identifier:"graph-delete.loading" [];
-                   text ~value:"Deleting graph…" ~style_class:"caption"
+                   text ~value:(View_base.tr (Signal.sample model_source) "Deleting graph…") ~style_class:"caption"
                      ~foreground:"muted-foreground" [] ]);
              if_
                ~test:
@@ -98,7 +98,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
                (text ~style_class:"caption" ~foreground:"muted-foreground"
                   ~accessibility_identifier:
                     (View_base.graph_status_identifier graph)
-                  ~value:"Preparing" []);
+                  ~value:(View_base.tr (Signal.sample model_source) "Preparing") []);
              if_
                ~test:
                  (Signal.map
@@ -107,7 +107,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
                       && current_graph.is_encrypted)
                     graph_source)
                (text ~style_class:"caption"
-                  ~foreground:"muted-foreground" ~value:"Encrypted" []);
+                  ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "Encrypted") []);
            ];
          context_menu
            ~accessibility_identifier:
@@ -122,7 +122,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
                   ~disabled_signal:
                     (Signal.map2 View_base.graph_delete_active_
                        model_source graph_source)
-                  ~text:"Delete local graph"
+                  ~text:(View_base.tr (Signal.sample model_source) "Delete local graph")
                   ~on_press:(fun _ ->
                     ignore (send (Model.RequestDeleteGraph graph_id)))
                   []));
@@ -134,12 +134,12 @@ let graph_encryption_setup_fields model_source send =
     current.new_graph_encrypted && current.new_graph_password_required) model_source)
     (column ~gap:12 [
       text ~style_class:"footnote" ~foreground:"muted-foreground"
-        ~value:"Choose an E2EE password for your encrypted graphs. Keep it safe; you will need it on other devices." [];
-      secure_field ~label:"E2EE password" ~placeholder:"E2EE password"
+        ~value:(View_base.tr (Signal.sample model_source) "Choose an E2EE password for your encrypted graphs. Keep it safe; you will need it on other devices.") [];
+      secure_field ~label:(View_base.tr (Signal.sample model_source) "E2EE password") ~placeholder:(View_base.tr (Signal.sample model_source) "E2EE password")
         ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.new_graph_password) model_source)
         ~accessibility_identifier:"field.graph-create.password"
         ~on_input:(on_input send (fun value -> Model.ChangeNewGraphPassword value)) [];
-      secure_field ~label:"Confirm E2EE password" ~placeholder:"Confirm E2EE password"
+      secure_field ~label:(View_base.tr (Signal.sample model_source) "Confirm E2EE password") ~placeholder:(View_base.tr (Signal.sample model_source) "Confirm E2EE password")
         ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.new_graph_password_confirmation) model_source)
         ~accessibility_identifier:"field.graph-create.password-confirmation"
         ~on_input:(on_input send (fun value -> Model.ChangeNewGraphPasswordConfirmation value)) [];
@@ -149,14 +149,14 @@ let graph_creation_progress model_source : t =
   if_ ~test:(reactive Model.graph_create_active_ model_source)
     (row ~gap:8 ~cross:`center
       [ spinner ~accessibility_identifier:"graph-create.loading" [];
-        text ~value:"Creating graph…" ~foreground:"muted-foreground" [] ])
+        text ~value:(View_base.tr (Signal.sample model_source) "Creating graph…") ~foreground:"muted-foreground" [] ])
 
 let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_int_prop_signal HeightValue
       (Signal.map (fun (current : Model.logseq_model) ->
         if current.new_graph_encrypted && current.new_graph_password_required then 640 else 480) model_source)
-    (sheet ~text:"Add sync graph" ~height:480
+    (sheet ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") ~height:480
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
@@ -171,7 +171,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~text_signal:
                     (Signal.map View_base.model_new_graph_name
                        model_source)
-                  ~placeholder:"Graph name" ~label:"Graph name"
+                  ~placeholder:(View_base.tr (Signal.sample model_source) "Graph name") ~label:(View_base.tr (Signal.sample model_source) "Graph name")
                   ~accessibility_identifier:"field.graph-name"
                   ~on_input:
                     (on_input send (fun text ->
@@ -183,7 +183,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~checked_signal:
                     (Signal.map View_base.model_new_graph_encrypted_
                        model_source)
-                  ~label:"End-to-end encryption"
+                  ~label:(View_base.tr (Signal.sample model_source) "End-to-end encryption")
                   ~accessibility_identifier:"toggle.graph-encryption"
                   ~on_toggle:(fun event ->
                     match event with
@@ -191,7 +191,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                       ignore
                         (send (Model.ToggleNewGraphEncrypted enabled))
                     | _ -> ())
-                  ~text:"End-to-end encryption" [];
+                  ~text:(View_base.tr (Signal.sample model_source) "End-to-end encryption") [];
                 text ~style_class:"footnote" ~foreground:"muted-foreground"
                   ~value:
                     "Encryption cannot be changed after the sync graph \
@@ -212,27 +212,27 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
             row ~main:`end_ ~cross:`center ~padding_horizontal:24 ~padding_vertical:16
               [
                 toolbar ~orientation:`horizontal ~toolbar_gap:12
-                  ~label:"Graph creation actions"
+                  ~label:(View_base.tr (Signal.sample model_source) "Graph creation actions")
                   ~accessibility_identifier:"toolbar.graph-create"
                   [
                     button ~variant:`ghost
                       ~accessibility_identifier:"button.graph-add.cancel"
                       ~disabled:(reactive Model.graph_create_active_ model_source)
                       ~on_press:(press send Model.DismissCreateGraph)
-                      ~text:"Cancel" [];
+                      ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
                     button ~variant:`primary
                       ~accessibility_identifier:"button.graph-add.confirm"
                       ~disabled_signal:
                         (Signal.map View_base.graph_create_disabled_
                            model_source)
                       ~on_press:(press send Model.SubmitCreateGraph)
-                      ~text:"Add" [];
+                      ~text:(View_base.tr (Signal.sample model_source) "Add") [];
                   ];
               ];
           ];
       ])
   else
-    sheet ~text:"Add sync graph" ~style_class:"navigation-form"
+    sheet ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
@@ -242,7 +242,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
             text_field
               ~text_signal:
                 (Signal.map View_base.model_new_graph_name model_source)
-              ~placeholder:"Graph name" ~label:"Graph name"
+              ~placeholder:(View_base.tr (Signal.sample model_source) "Graph name") ~label:(View_base.tr (Signal.sample model_source) "Graph name")
               ~accessibility_identifier:"field.graph-name"
               ~on_input:
                 (on_input send (fun text -> Model.ChangeNewGraphName text))
@@ -264,7 +264,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~checked_signal:
                     (Signal.map View_base.model_new_graph_encrypted_
                        model_source)
-                  ~label:"End-to-end encryption"
+                  ~label:(View_base.tr (Signal.sample model_source) "End-to-end encryption")
                   ~accessibility_identifier:"toggle.graph-encryption"
                   ~on_toggle:(fun event ->
                     match event with
@@ -272,7 +272,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                       ignore
                         (send (Model.ToggleNewGraphEncrypted enabled))
                     | _ -> ())
-                  ~text:"End-to-end encryption" [];
+                  ~text:(View_base.tr (Signal.sample model_source) "End-to-end encryption") [];
               ];
             text ~style_class:"footnote" ~foreground:"muted-foreground"
               ~value:
@@ -290,7 +290,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                  ~accessibility_identifier:"text.graph-create.error" []);
             graph_creation_progress model_source;
           ];
-        toolbar ~orientation:`horizontal ~label:"Graph creation actions"
+        toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Graph creation actions")
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.graph-create"
           [
@@ -298,20 +298,20 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
               ~accessibility_identifier:"button.graph-add.cancel"
               ~disabled:(reactive Model.graph_create_active_ model_source)
               ~on_press:(press send Model.DismissCreateGraph)
-              ~text:"Cancel" [];
+              ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
             button ~style_class:"confirmation-action"
               ~accessibility_identifier:"button.graph-add.confirm"
               ~disabled_signal:
                 (Signal.map View_base.graph_create_disabled_ model_source)
               ~on_press:(press send Model.SubmitCreateGraph)
-              ~text:"Add" [];
+              ~text:(View_base.tr (Signal.sample model_source) "Add") [];
           ];
       ]
 
 let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
     =
   if Lui_ui.host context = KotlinHost then
-    dialog ~text:"Delete local graph" ~height:320
+    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph") ~height:320
       ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
       [
@@ -339,19 +339,19 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
             row ~main:`end_
               [
                 toolbar ~orientation:`horizontal ~toolbar_gap:12
-                  ~label:"Graph deletion actions"
+                  ~label:(View_base.tr (Signal.sample model_source) "Graph deletion actions")
                   ~accessibility_identifier:"toolbar.graph-delete"
                   [
                     button ~variant:`ghost
                       ~accessibility_identifier:
                         "button.graph-delete.cancel"
                       ~on_press:(press send Model.CancelDeleteGraph)
-                      ~text:"Cancel" [];
+                      ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
                     button ~variant:`destructive
                       ~accessibility_identifier:
                         "button.graph-delete.confirm"
                       ~on_press:(press send Model.ConfirmDeleteGraph)
-                      ~text:"Delete" [];
+                      ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
                   ];
               ];
           ];
@@ -359,7 +359,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
   else
     (* Text-and-buttons-only children keep the dialog on the native alert
        path (rich children fall back to a custom sheet). *)
-    dialog ~text:"Delete local graph" ~style_class:"alert"
+    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph") ~style_class:"alert"
       ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
       [
@@ -374,31 +374,31 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
           [];
         button ~accessibility_identifier:"button.graph-delete.cancel"
           ~on_press:(press send Model.CancelDeleteGraph)
-          ~text:"Cancel" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
         button ~variant:`destructive
           ~accessibility_identifier:"button.graph-delete.confirm"
           ~on_press:(press send Model.ConfirmDeleteGraph)
-          ~text:"Delete" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
       ]
 
-let graph_picker_overflow_menu send : t =
+let graph_picker_overflow_menu model_source send : t =
  fun context parent ->
    let kotlin_host = Lui_ui.host context = KotlinHost in
    let entries =
-     [ menu_item ~text:"Settings"
+     [ menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings")
          ?icon:(if kotlin_host then Some (`app "settings") else None)
          ~on_press:(press send Model.OpenSettings)
          []
      ]
    in
    if kotlin_host then
-     menu ~icon:(`app "more-vert") ~label:"More"
+     menu ~icon:(`app "more-vert") ~label:(View_base.tr (Signal.sample model_source) "More")
        ~accessibility_identifier:"button.overflow-menu" entries context parent
    else
      stack ~width:44 ~height:44
        [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
            ~border_color:"foreground" [];
-         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
            ~accessibility_identifier:"button.connection" entries ]
        context parent
 
@@ -423,7 +423,7 @@ let graph_picker_error_banner model_source : t =
 let graph_password_sheet (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:"Unlock encrypted graphs" ~height:360
+    sheet ~text:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~height:360
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
       [
@@ -433,14 +433,14 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
             secure_field
               ~text_signal:
                 (Signal.map View_base.model_graph_password model_source)
-              ~placeholder:"E2EE password" ~label:"E2EE password"
+              ~placeholder:(View_base.tr (Signal.sample model_source) "E2EE password") ~label:(View_base.tr (Signal.sample model_source) "E2EE password")
               ~accessibility_identifier:"field.graph-password"
               ~on_input:
                 (on_input send (fun text ->
                      Model.ChangeGraphPassword text))
               [];
             text ~style_class:"footnote" ~foreground:"muted-foreground"
-              ~value:"Enter your E2EE password to unlock this graph." [];
+              ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
             if_
               ~test:
                 (Signal.map View_base.graph_unlock_error_present_
@@ -452,26 +452,26 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
                  ~style_class:"footnote" ~foreground:"destructive"
                  ~accessibility_identifier:"text.graph-unlock-error" []);
             spacer ~grow:1.0 [];
-            toolbar ~orientation:`horizontal ~label:"Graph unlock actions"
+            toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Graph unlock actions")
               ~accessibility_identifier:"toolbar.graph-unlock"
               [
                 spacer ~grow:1.0 [];
                 button ~variant:`ghost
                   ~accessibility_identifier:"button.graph-unlock.cancel"
                   ~on_press:(press send Model.CancelGraphUnlock)
-                  ~text:"Cancel" [];
+                  ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
                 button ~variant:`primary
                   ~accessibility_identifier:"button.graph-unlock"
                   ~disabled_signal:
                     (Signal.map View_base.graph_unlock_disabled_
                        model_source)
                   ~on_press:(press send Model.SubmitGraphPassword)
-                  ~text:"Unlock" [];
+                  ~text:(View_base.tr (Signal.sample model_source) "Unlock") [];
               ];
           ];
       ]
   else
-    sheet ~text:"Unlock encrypted graphs" ~style_class:"navigation-form"
+    sheet ~text:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
       [
@@ -481,13 +481,13 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
           secure_field
             ~text_signal:
               (Signal.map View_base.model_graph_password model_source)
-            ~placeholder:"E2EE password" ~label:"E2EE password"
+            ~placeholder:(View_base.tr (Signal.sample model_source) "E2EE password") ~label:(View_base.tr (Signal.sample model_source) "E2EE password")
             ~accessibility_identifier:"field.graph-password"
             ~on_input:
               (on_input send (fun text -> Model.ChangeGraphPassword text))
             [];
           text ~style_class:"footnote" ~foreground:"muted-foreground"
-            ~value:"Enter your E2EE password to unlock this graph." [];
+            ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
           if_
             ~test:
               (Signal.map View_base.graph_unlock_error_present_
@@ -499,20 +499,20 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
                ~style_class:"footnote" ~foreground:"destructive"
                ~accessibility_identifier:"text.graph-unlock-error" []);
         ];
-      toolbar ~orientation:`horizontal ~label:"Graph unlock actions"
+      toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Graph unlock actions")
         ~style_class:"navigation-actions"
         ~accessibility_identifier:"toolbar.graph-unlock"
         [
           button ~style_class:"cancellation-action"
             ~accessibility_identifier:"button.graph-unlock.cancel"
             ~on_press:(press send Model.CancelGraphUnlock)
-            ~text:"Cancel" [];
+            ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
           button ~style_class:"confirmation-action"
             ~accessibility_identifier:"button.graph-unlock"
             ~disabled_signal:
               (Signal.map View_base.graph_unlock_disabled_ model_source)
             ~on_press:(press send Model.SubmitGraphPassword)
-            ~text:"Unlock" [];
+            ~text:(View_base.tr (Signal.sample model_source) "Unlock") [];
         ];
     ]
 
@@ -528,11 +528,11 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
               ~disabled_signal:
                 (Signal.map Model.graph_refresh_active_ model_source)
               ~on_press:(press send Model.RefreshGraphs)
-              ~text:"Refresh" [];
+              ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
             button ~icon:(`app "add") ~variant:`primary ~grow:1.0
               ~accessibility_identifier:"button.graph-add"
               ~on_press:(press send Model.OpenCreateGraph)
-              ~text:"Add graph" [];
+              ~text:(View_base.tr (Signal.sample model_source) "Add graph") [];
           ];
         if_
           ~test:
@@ -545,13 +545,13 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           (box ~padding:16
              [ spinner ~accessibility_identifier:"graphs.loading" [] ]);
         box ~padding:16
-          [ heading ~level:5 ~value:"Local graphs" [] ];
+          [ heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Local graphs") [] ];
         if_
           ~test:(Signal.map View_base.local_graphs_empty_ model_source)
           (box ~padding:16
              [
                text ~foreground:"muted-foreground"
-                 ~value:"No local graphs" [];
+                 ~value:(View_base.tr (Signal.sample model_source) "No local graphs") [];
              ]);
         keyed
           ~source:(Signal.map View_base.local_graphs model_source)
@@ -561,7 +561,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
         if_
           ~test:(Signal.map View_base.remote_graphs_present_ model_source)
           (box ~padding:16
-             [ heading ~level:5 ~value:"Remote graphs" [] ]);
+             [ heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Remote graphs") [] ]);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
@@ -570,7 +570,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
         if_
           ~test:(Signal.map View_base.shared_graphs_present_ model_source)
           (box ~padding:16
-             [ heading ~level:5 ~value:"Shared by others" [] ]);
+             [ heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Shared by others") [] ]);
         keyed
           ~source:(Signal.map View_base.shared_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
@@ -585,14 +585,14 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~disabled_signal:
             (Signal.map Model.graph_refresh_active_ model_source)
           ~on_press:(press send Model.RefreshGraphs)
-          ~text:"Refresh" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
         if_
           ~test:(Signal.map Model.graph_refresh_active_ model_source)
           (spinner ~accessibility_identifier:"graphs.loading" []);
         list_item ~min_height:44
           ~accessibility_identifier:"button.graph-add"
           ~on_press:(press send Model.OpenCreateGraph)
-          ~text:"Add sync graph" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
         if_
           ~test:
             (Signal.map View_base.graphs_screen_error_visible_
@@ -600,10 +600,10 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           (graph_picker_error_banner model_source);
         heading ~level:5
           ~accessibility_identifier:"heading.graphs.local"
-          ~value:"Local graphs" [];
+          ~value:(View_base.tr (Signal.sample model_source) "Local graphs") [];
         if_
           ~test:(Signal.map View_base.local_graphs_empty_ model_source)
-          (text ~foreground:"secondary" ~value:"No local graphs" []);
+          (text ~foreground:"secondary" ~value:(View_base.tr (Signal.sample model_source) "No local graphs") []);
         keyed
           ~source:(Signal.map View_base.local_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
@@ -613,7 +613,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~test:(Signal.map View_base.remote_graphs_present_ model_source)
           (heading ~level:5
              ~accessibility_identifier:"heading.graphs.remote"
-             ~value:"Remote graphs" []);
+             ~value:(View_base.tr (Signal.sample model_source) "Remote graphs") []);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
@@ -623,7 +623,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~test:(Signal.map View_base.shared_graphs_present_ model_source)
           (heading ~level:5
              ~accessibility_identifier:"heading.graphs.shared"
-             ~value:"Shared by others" []);
+             ~value:(View_base.tr (Signal.sample model_source) "Shared by others") []);
         keyed
           ~source:(Signal.map View_base.shared_graphs model_source)
           ~key:View_base.graph_identifier ~cmp:compare
@@ -631,7 +631,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
             graph_list_row context model_source graph_source false send);
       ]
 
-let kotlin_graph_picker_loading_state () : t =
+let kotlin_graph_picker_loading_state model_source () : t =
   column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
     ~accessibility_identifier:"loading.graph-picker"
     [
@@ -640,7 +640,7 @@ let kotlin_graph_picker_loading_state () : t =
         ~value:"Loading sync graphs\xE2\x80\xA6" [];
     ]
 
-let kotlin_graph_picker_empty_state send : t =
+let kotlin_graph_picker_empty_state model_source send : t =
   column ~grow:1.0 ~main:`center ~cross:`stretch
     [
       column ~cross:`center ~gap:16
@@ -648,7 +648,7 @@ let kotlin_graph_picker_empty_state send : t =
         [
           icon ~name:(`app "graph-remote") ~width:48 ~height:48
             ~foreground:"primary" [];
-          heading ~level:3 ~value:"No sync graphs yet" [];
+          heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "No sync graphs yet") [];
           text ~foreground:"muted-foreground" ~text_alignment:`center
             ~value:
               "Create a graph to start capturing and syncing notes on \
@@ -657,12 +657,12 @@ let kotlin_graph_picker_empty_state send : t =
           button ~icon:(`app "add") ~variant:`primary
             ~accessibility_identifier:"button.graph-add"
             ~on_press:(press send Model.OpenCreateGraph)
-            ~text:"Add sync graph" [];
+            ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
           button ~icon:(`app "sync-status") ~variant:`ghost
             ~foreground:"foreground"
             ~accessibility_identifier:"button.graphs.refresh"
             ~on_press:(press send Model.RefreshGraphs)
-            ~text:"Refresh" [];
+            ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
         ];
     ]
 
@@ -673,7 +673,7 @@ let kotlin_graph_picker_catalog (context : Lui_ui.ui_context) model_source
       button ~icon:(`app "add") ~variant:`primary
         ~accessibility_identifier:"button.graph-add"
         ~on_press:(press send Model.OpenCreateGraph)
-        ~text:"Add sync graph" [];
+        ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
       scroll ~grow:1.0
         [
           column ~gap:12
@@ -695,9 +695,9 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
       [
         row ~main:`space_between ~cross:`center
           [
-            heading ~level:3 ~value:"Choose a graph"
+            heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "Choose a graph")
               ~accessibility_identifier:"title.graph-picker" [];
-            graph_picker_overflow_menu send;
+            graph_picker_overflow_menu model_source send;
           ];
         text ~foreground:"muted-foreground"
           ~value:
@@ -709,11 +709,11 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
           (graph_picker_error_banner model_source);
         if_
           ~test:(Signal.map View_base.empty_graphs_loading_ model_source)
-          (kotlin_graph_picker_loading_state ());
+          (kotlin_graph_picker_loading_state model_source ());
         if_
           ~test:
             (Signal.map View_base.empty_graphs_refreshable_ model_source)
-          (kotlin_graph_picker_empty_state send);
+          (kotlin_graph_picker_empty_state model_source send);
         if_
           ~test:(Signal.map View_base.graphs_present_ model_source)
           (kotlin_graph_picker_catalog context model_source send);
@@ -724,8 +724,8 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
       [
         row ~main:`space_between ~cross:`center
           [
-            heading ~level:3 ~value:"Choose a graph" [];
-            graph_picker_overflow_menu send;
+            heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "Choose a graph") [];
+            graph_picker_overflow_menu model_source send;
           ];
         text ~foreground:"muted-foreground"
           ~value:
@@ -734,7 +734,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
         button ~variant:`ghost ~foreground:"foreground"
           ~accessibility_identifier:"button.graph-add"
           ~on_press:(press send Model.OpenCreateGraph)
-          ~text:"Add sync graph" [];
+          ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
         if_
           ~test:
             (Signal.map View_base.graph_picker_error_present_ model_source)
@@ -748,7 +748,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
           (button ~variant:`ghost ~foreground:"foreground"
              ~accessibility_identifier:"button.graphs.refresh"
              ~on_press:(press send Model.RefreshGraphs)
-             ~text:"Refresh graphs" []);
+             ~text:(View_base.tr (Signal.sample model_source) "Refresh graphs") []);
         scroll ~grow:1.0
           [
             column ~gap:12

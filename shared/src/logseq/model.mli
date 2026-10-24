@@ -64,6 +64,7 @@ type task_status =
 type settings_projection =
   { appearance : string
   ; language : string
+  ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
@@ -396,6 +397,7 @@ type logseq_model =
   ; appearance : string
   ; settings_appearance_menu_open : bool
   ; language : string
+  ; system_language : string
   ; language_choices : settings_language_choice list
   ; settings_language_menu_open : bool
   ; community_links : settings_community_link list

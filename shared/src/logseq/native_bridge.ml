@@ -93,6 +93,7 @@ let host_action (update : Host_update.host_update) =
     Model.ApplySettingsSnapshot
       { Model.appearance = settings.appearance;
         language = settings.language;
+        system_language = settings.system_language;
         spell_check = settings.spell_check;
         auto_correction = settings.auto_correction;
         sidebar_tabs = settings.sidebar_tabs;

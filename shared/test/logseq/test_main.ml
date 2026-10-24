@@ -59,6 +59,7 @@ let () =
       "code_language", Code_language_test.cases;
       "discussion_presentation", Discussion_presentation_test.cases;
       "special_block_continuation", Special_block_continuation_test.cases;
+      "localization", Localization_test.cases;
       "autosave", Autosave_test.cases;
       "drive", Drive_scenario_test.cases;
       "repro", Repro_wedge_test.cases;

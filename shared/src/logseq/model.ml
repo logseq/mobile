@@ -67,6 +67,7 @@ type task_status =
 type settings_projection =
   { appearance : string
   ; language : string
+  ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
@@ -399,6 +400,7 @@ type logseq_model =
   ; appearance : string
   ; settings_appearance_menu_open : bool
   ; language : string
+  ; system_language : string
   ; language_choices : settings_language_choice list
   ; settings_language_menu_open : bool
   ; community_links : settings_community_link list
@@ -748,6 +750,7 @@ let initial () =
     appearance = "system";
     settings_appearance_menu_open = false;
     language = "system";
+    system_language = "en";
     language_choices = settings_language_choices ();
     settings_language_menu_open = false;
     community_links = settings_community_links ();
@@ -1384,6 +1387,7 @@ let current_settings (current : logseq_model) =
   {
     appearance = current.appearance;
     language = current.language;
+    system_language = Some current.system_language;
     spell_check = current.spell_check;
     auto_correction = current.auto_correction;
     sidebar_tabs = current.sidebar_tabs;
@@ -2676,6 +2680,7 @@ let rec update (current : logseq_model) action =
       current with
       appearance = settings.appearance;
       language = settings.language;
+      system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
       sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
