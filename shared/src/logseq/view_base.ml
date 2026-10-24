@@ -1570,6 +1570,13 @@ let with_int_prop_signal prop signal_ (elem : Lui_elements.t)
    Lui_ui.int_property_signal context node prop signal_;
    node
 
+let with_float_prop_signal prop signal_ (elem : Lui_elements.t)
+    : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.float_property_signal context node prop signal_;
+   node
+
 let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
  fun context parent ->
    match Lui_ui.profile context with
