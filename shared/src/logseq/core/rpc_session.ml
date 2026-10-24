@@ -942,10 +942,12 @@ let configure session _input fields =
     let changed = match (state session).config with
       | Some previous -> previous.Api.graph_id <> config.graph_id || previous.base_url <> config.base_url
       | None -> false in
-    if changed then begin
-      cancel_pending_sync session;
-      session.state := { !(session.state) with semantic_queue = [] }
-    end;
+    let authentication_changed = match (state session).config with
+      | Some previous -> previous.Api.token <> config.token
+      | None -> false in
+    if changed || authentication_changed then cancel_pending_sync session;
+    if changed then
+      session.state := { !(session.state) with semantic_queue = [] };
     session.Types.state :=
       {
         !(session.state) with
@@ -954,12 +956,12 @@ let configure session _input fields =
         sync_connected =
           (match (state session).config with
            | Some previous when previous.Api.graph_id = config.graph_id
-               && previous.base_url = config.base_url -> (state session).sync_connected
+               && previous.base_url = config.base_url && not authentication_changed -> (state session).sync_connected
            | _ -> false);
         sync_transport =
           (match (state session).config with
            | Some previous when previous.Api.graph_id = config.graph_id
-               && previous.base_url = config.base_url -> (state session).sync_transport
+               && previous.base_url = config.base_url && not authentication_changed -> (state session).sync_transport
            | _ -> Sync_driver.invalidate (state session).sync_transport);
       };
     So.restore_collapsed_nodes session;

@@ -2009,6 +2009,8 @@ let authentication_screen_renders_from_lg_state () =
   check_eq ~msg:"the button disables while Hosted UI is active"
     (descendant_enabled renderer root "button.hosted-sign-in")
     (Some false);
+  check ~msg:"the entry button shows progress while waiting for the auth callback"
+    (descendant_with_identifier renderer root "sign-in.loading" <> -1);
   send application (Model.DequeueEffect 1);
   send application
     (Model.ResolveEffect (1, false, "Authorization was cancelled"));
@@ -2019,11 +2021,87 @@ let authentication_screen_renders_from_lg_state () =
   check_eq ~msg:"authentication errors render inside the LG screen"
     (property_string renderer error Lui_protocol.TextValue)
     "Authorization was cancelled";
+  check_eq ~msg:"a failed callback removes progress and allows retry"
+    (descendant_with_identifier renderer root "sign-in.loading") (-1);
   send application (Model.ApplyAuthentication ("signedIn", None));
   flush application;
   check_eq ~msg:"signed-in authentication dismisses the LG entry screen"
     (descendant_with_identifier renderer root "screen.authentication")
     (-1)
+
+let local_graphs_remain_accessible_without_authentication () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    send application (Model.ApplyCoreSnapshot {
+      (empty_core_projection ()) with
+      graphs = [graph "local" "Local" false true];
+      selected_graph_id = Some "local"; graph_name = Some "Local";
+    });
+    send application (Model.ApplyLocalGraphIds ["local"]);
+    List.iter (fun state ->
+      send application (Model.ApplyAuthentication (state, Some "Network unavailable"));
+      flush application;
+      let renderer = Lui_app.runtime application in
+      let root = Lui_app.root_node application in
+      check_eq ~msg:"local graphs never disappear behind authentication"
+        (descendant_with_identifier renderer root "screen.authentication") (-1);
+      check ~msg:"local journals remain mounted while signed out or signing in"
+        (descendant_with_identifier renderer root "pane.journals" <> -1);
+      check ~msg:"offline navigation remains available"
+        (View_base.primary_sidebar_button_visible_ (Lui_app.model application));
+      check ~msg:"offline users can open sync/account controls"
+        (View_base.connection_control_visible_ (Lui_app.model application)))
+      ["signedOut"; "signingIn"; "signedOut"];
+    send application Model.OpenSettings;
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = Lui_app.root_node application in
+    let sign_in = descendant_with_identifier renderer root "button.hosted-sign-in" in
+    check ~msg:"offline settings offer sign-in instead of sign-out" (sign_in <> -1);
+    check_eq (descendant_with_identifier renderer root "button.sign-out") (-1);
+    dispatch application (Lui_protocol.Press sign_in);
+    flush application;
+    let id = List.find_map (function Model.SignInEffect id -> Some id | _ -> None)
+      (Lui_app.model application).pending_effects in
+    check ~msg:"sign-in remains reachable from an offline graph" (id <> None);
+    check ~msg:"settings show progress until the authentication callback arrives"
+      (descendant_with_identifier renderer root "sign-in.loading" <> -1);
+    check_eq (descendant_enabled renderer root "button.hosted-sign-in") (Some false);
+    send application (Model.DequeueEffect (Option.get id));
+    send application (Model.ResolveEffect (Option.get id, false, "Authorization was cancelled"));
+    flush application;
+    check_eq (descendant_with_identifier renderer root "sign-in.loading") (-1);
+    check_eq ~msg:"a cancelled sign-in re-enables the settings button"
+      (descendant_enabled renderer root "button.hosted-sign-in") (Some true))
+    [ios_backend (); kotlin_backend ()]
+
+let signed_out_users_can_choose_downloaded_graphs () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    send application (Model.ApplyCoreSnapshot {
+      (empty_core_projection ()) with graphs = [graph "local" "Local" false true];
+    });
+    send application (Model.ApplyLocalGraphIds ["local"]);
+    send application (Model.ApplyAuthentication ("signedOut", None));
+    send application (Model.ApplyGraphLoading false);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = Lui_app.root_node application in
+    check ~msg:"downloaded graph picker is available without a selected graph"
+      (descendant_with_identifier renderer root "screen.graph-picker" <> -1);
+    check_eq (descendant_with_identifier renderer root "screen.authentication") (-1);
+    send application (Model.RequestOpenGraph "local");
+    flush application;
+    check ~msg:"opening a downloaded graph does not require login"
+      (List.exists (function Model.OpenGraphEffect (_, "local") -> true | _ -> false)
+        (Lui_app.model application).pending_effects);
+    send application (Model.ApplyLocalGraphIds []);
+    flush application;
+    check ~msg:"removing the last local graph restores the sign-in entry"
+      (descendant_with_identifier renderer root "screen.authentication" <> -1))
+    [ios_backend (); kotlin_backend ()]
 
 let authentication_screen_uses_the_product_name_on_every_host () =
   List.iter
@@ -10517,6 +10595,8 @@ let cases =
     case "settings-tabs-render-saved-order-and-separate-available-tabs" settings_tabs_render_saved_order_and_separate_available_tabs;
     case "settings-language-picker-exposes-and-validates-all-main-choices" settings_language_picker_exposes_and_validates_all_main_choices;
     case "settings-community-links-use-a-typed-platform-boundary" settings_community_links_use_a_typed_platform_boundary;
+    case "local-graphs-remain-accessible-without-authentication" local_graphs_remain_accessible_without_authentication;
+    case "signed-out-users-can-choose-downloaded-graphs" signed_out_users_can_choose_downloaded_graphs;
     case "authentication-entry-is-lg-owned-and-idempotent" authentication_entry_is_lg_owned_and_idempotent;
     case "authentication-screen-renders-from-lg-state" authentication_screen_renders_from_lg_state;
     case "authentication-screen-uses-the-product-name-on-every-host" authentication_screen_uses_the_product_name_on_every_host;

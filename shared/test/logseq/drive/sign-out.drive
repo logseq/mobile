@@ -1,14 +1,18 @@
 # Create a graph, open Settings, start sign-out, confirm the dialog, and land
-# back on the authentication screen.
+# back on the local graph with sync signed out.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
+toggle prop:accessibility-identifier=toggle.graph-encryption false
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-press kind:menu-item&text:"Settings"
+press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
 press prop:accessibility-identifier=button.sign-out
 wait prop:accessibility-identifier=dialog.sign-out
 press prop:accessibility-identifier=button.sign-out.confirm
-wait prop:accessibility-identifier=screen.authentication
+wait prop:accessibility-identifier=application.shell
+expect-absent prop:accessibility-identifier=screen.authentication
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
 expect prop:accessibility-identifier=button.hosted-sign-in

@@ -910,7 +910,7 @@ let authentication_content (context : Lui_ui.ui_context) model_source
         ~disabled_signal:
           (Signal.map View_base.authentication_signing_in_ model_source)
         ~on_press:(press send Model.SignIn)
-        ~text:"Sign in" [];
+        ~text:"Sign in" [View_settings.sign_in_label model_source];
       if_
         ~test:
           (Signal.map View_base.authentication_error_present_

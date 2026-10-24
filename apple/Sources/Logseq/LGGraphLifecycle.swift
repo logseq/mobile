@@ -126,9 +126,7 @@ final class LGGraphLifecycle {
         let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
         let storedGraphID = defaults.string(forKey: "logseq.selectedGraphId") ?? ""
         let graphID = storedGraphID.isEmpty ? nil : storedGraphID
-        guard let accessToken = try? await authentication.apiToken() else {
-            return false
-        }
+        let accessToken = (try? await authentication.apiToken()) ?? ""
         await store.configureAndSelectGraph(
             baseURL: baseURL,
             token: accessToken,
@@ -140,7 +138,8 @@ final class LGGraphLifecycle {
         guard await store.bootstrapSelectedGraph(
             graphID: graphID,
             baseURL: baseURL,
-            accessToken: accessToken
+            accessToken: accessToken,
+            allowSnapshotDownload: !accessToken.isEmpty
         ) else { return false }
         if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
         return true

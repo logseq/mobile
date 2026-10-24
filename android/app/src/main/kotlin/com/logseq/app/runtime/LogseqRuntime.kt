@@ -300,7 +300,7 @@ internal class LogseqRuntime(
                 "base=$storageBaseUrl cursor=$appliedServerT " +
                 "job=${graphEventsJob?.isActive} jobGraph=$graphEventsGraphId",
         )
-        if (!hasOpenGraph || selectedGraphId.isEmpty() || storageBaseUrl.isEmpty()) return
+        if (!hasAuthenticatedSession || !hasOpenGraph || selectedGraphId.isEmpty() || storageBaseUrl.isEmpty()) return
         if (graphEventsJob?.isActive == true && graphEventsGraphId == selectedGraphId) return
         graphEventsJob?.cancel()
         graphEventsGraphId = selectedGraphId
@@ -352,6 +352,7 @@ internal class LogseqRuntime(
     // --- Pending sync pump (port of iOS runPendingSyncPump) ---
 
     fun requestSyncNow(): Boolean {
+        if (!hasAuthenticatedSession || !hasOpenGraph) return false
         pendingSyncRequested = true
         if (pendingSyncJob?.isActive != true) {
             pendingSyncJob = scope.launch {
@@ -451,8 +452,25 @@ internal class LogseqRuntime(
         }
         if (effect.kind == "sign-out" && resolution.succeeded) {
             hasAuthenticatedSession = false
-            hasOpenGraph = false
             graphCatalogAutoRefresh?.stopPeriodic()
+            graphEventsJob?.cancel()
+            pendingSyncJob?.cancel()
+            graphEventsJob?.join()
+            pendingSyncJob?.join()
+            graphEventsJob = null
+            graphEventsGraphId = null
+            pendingSyncJob = null
+            pendingSyncRequested = false
+            val payload = JSONObject()
+                .put("baseUrl", storageBaseUrl)
+                .put("graphId", selectedGraphId)
+                .put("token", "")
+                .toString()
+            val cleared = bridge.callCore(JSONObject()
+                .put("apiVersion", 1).put("method", "dispatch")
+                .put("params", JSONObject().put("action", "configure").put("payload", payload))
+                .toString())
+            applyCoreResponse(cleared)
         }
         if (resolution.succeeded &&
             effect.kind in setOf("open-graph", "unlock-graph", "create-graph")
