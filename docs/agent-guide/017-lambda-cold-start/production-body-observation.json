@@ -1,0 +1,10 @@
+{
+  "scope": "Observation only: unchanged immutable production actual AppMain bundle, existing LOGSEQ_PERF logging; timings excluded",
+  "completed": true,
+  "runs": [
+    {"log": "launch.log", "node_body_evaluations": 58, "distinct_nodes": 58, "repeated_nodes": {}, "patch_batches_before_first_node_body": ["PERF apply-split gen=1 applying=1ms commit=0ms modal=0ms touched=49 dropped=0", "PERF apply-split gen=2 applying=0ms commit=0ms modal=0ms touched=119 dropped=13"], "first_extension": "PERF extview id=50 model=true ok=true ident=native-navigation-stack"},
+    {"log": "launch-2.log", "node_body_evaluations": 58, "distinct_nodes": 58, "repeated_nodes": {}, "patch_batches_before_first_node_body": ["PERF apply-split gen=1 applying=1ms commit=0ms modal=0ms touched=49 dropped=0", "PERF apply-split gen=2 applying=0ms commit=0ms modal=0ms touched=119 dropped=13"], "first_extension": "PERF extview id=50 model=true ok=true ident=native-navigation-stack"},
+    {"log": "launch-3.log", "node_body_evaluations": 58, "distinct_nodes": 58, "repeated_nodes": {}, "patch_batches_before_first_node_body": ["PERF apply-split gen=1 applying=1ms commit=0ms modal=0ms touched=49 dropped=0", "PERF apply-split gen=2 applying=0ms commit=0ms modal=0ms touched=119 dropped=13"], "first_extension": "PERF extview id=50 model=true ok=true ident=native-navigation-stack"}
+  ],
+  "conclusion": "Both initial patch batches finish before the first LUI node-body evaluation in these three launches. The first extension is native navigation; all node-body identities are evaluated once. This does not support two rendered authentication/journal LUI trees, but does not establish that every internal SwiftUI body/layout executes once."
+}
