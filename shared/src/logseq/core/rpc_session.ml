@@ -194,8 +194,32 @@ let with_queries session result =
       | value -> value in
     decorate result
 
+let local_asset_path session uuid checksum =
+  match Model.read_block (state session).model uuid with
+  | Some block when block.is_asset && block.asset_checksum = checksum ->
+    Option.map (host session).resolve_asset_path block.local_path
+  | _ -> None
+
+let with_local_assets session result =
+  let rec decorate = function
+    | `List values -> `List (List.map decorate values)
+    | `Assoc fields ->
+      let fields = List.map (fun (key, value) -> key, decorate value) fields in
+      let checksum = match List.assoc_opt "assetChecksum" fields with
+        | Some (`String value) -> Some value | _ -> None in
+      (match List.assoc_opt "isAsset" fields, List.assoc_opt "uuid" fields,
+         List.assoc_opt "localPath" fields with
+       | Some (`Bool true), Some (`String uuid), None ->
+         (match local_asset_path session uuid checksum with
+          | Some path -> `Assoc (("localPath", `String path) :: fields)
+          | None -> `Assoc fields)
+       | _ -> `Assoc fields)
+    | value -> value in
+  decorate result
+
 let success session result =
-  Rpc.success (Rpc.with_node_icons (node_icon session) (with_queries session result))
+  Rpc.success (Rpc.with_node_icons (node_icon session)
+    (with_local_assets session (with_queries session result)))
 
 let take count values =
   let rec loop count result = function
@@ -1093,7 +1117,13 @@ let graph_asset session fields downloaded =
     match (state session).config with
     | Some config when config.Api.graph_id = graph_id ->
       let kind = Api.normalize_asset_type asset_type in
-      let path = asset_cache_path session uuid kind in
+      let imported = Option.bind (Model.read_block (state session).model uuid)
+        (fun (block : Model.block) ->
+          if block.is_asset && Option.map Api.normalize_asset_type block.asset_type = Some kind
+          then local_asset_path session uuid block.asset_checksum else None) in
+      let path = match imported with
+        | Some path when Sys.file_exists path -> path
+        | _ -> asset_cache_path session uuid kind in
       let response () = Rpc.json_object ["graphId", `String graph_id; "localPath", `String path] in
       if Sys.file_exists path then Ok (response ())
       else if not downloaded then

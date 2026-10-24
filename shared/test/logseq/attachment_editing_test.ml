@@ -65,6 +65,10 @@ let importing_twice_keeps_one_asset_in_the_live_projection () =
       Q.put uuid "block/page" (Datascript.Ref_to (Q.ref_uuid Q.page));
       Q.put uuid "block/parent" (Datascript.Ref_to (Q.ref_uuid Q.page));
       Q.put uuid "block/order" (Datascript.String "a9") ];
+    let session = {session with Session_types.host = {session.host with
+      graph_sidebar_pages = Some (fun () -> Some {Graph_read.favorites = [{uuid = Q.page; title = "Workspace"}]; recent_pages = []})}} in
+    let selected = Rpc_test.dispatch_json session "selectPage" Q.page in
+    check_eq (U.member "ok" selected) (`Bool true);
     let payload = Yojson.Basic.to_string (`Assoc [
       "uuid", `String "f1000000-0000-4000-8000-000000000002";
       "title", `String "Photo.png"; "assetType", `String "png"; "assetSize", `Int 42;
@@ -73,13 +77,46 @@ let importing_twice_keeps_one_asset_in_the_live_projection () =
     List.iter (fun _ ->
       let response = Rpc_test.dispatch_json session "addAsset" payload in
       check_eq ~msg:(Yojson.Basic.to_string response) (U.member "ok" response) (`Bool true);
+      let snapshot = Rpc_session.snapshot_visible session |> Yojson.Basic.from_string in
+      let rows = U.member "result" snapshot |> U.member "outlinerRows" |> U.to_list in
+      let image = List.find (fun row -> U.member "block" row |> U.member "uuid" = `String uuid) rows |> U.member "block" in
+      check_eq ~msg:"A newly imported image must expose its local preview without any network request"
+        (U.member "localPath" image) (`String "Assets/photo.png");
       let db = Graph_runtime.db runtime in
       let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
       check_eq (Graph_read.value db eid "logseq.property.asset/type") (Some (Ds.String "png"));
       check_eq (Ds.entid db "block/uuid" (Ds.Uuid "f1000000-0000-4000-8000-000000000002")) None
     ) [1;2])
 
+let imported_asset_preview_is_local_even_when_the_block_uuid_is_reused () =
+  Asset_files_test.with_directory (fun dir ->
+    let path = Filename.concat dir "imported-file.png" in
+    ignore (Asset_files_test.expect_ok (Asset_files.write_file path "local image bytes"));
+    let requests = ref 0 in
+    let session = Rpc_session.create_session {Rpc_session.default_options with
+      send = (fun _ -> incr requests; Error "Offline");
+      upload_file = (fun _ -> incr requests; Error "Offline")} in
+    ignore (Rpc_test.configure_plain_session session);
+    let cache = (Rpc_session.state session).Session_types.model in
+    Cache.upsert_blocks cache [Cache.local_block "empty" "" "page" (Some "parent") 10] 10;
+    let imported = Rpc_test.dispatch_json session "addAsset" (Yojson.Basic.to_string (`Assoc [
+      "uuid", `String "new-file"; "title", `String "Photo.png"; "assetType", `String "png";
+      "assetSize", `Int 17; "assetChecksum", `String "checksum";
+      "localPath", `String path; "targetBlockId", `String "empty"; "now", `Int 20])) in
+    check_eq (U.member "ok" imported) (`Bool true);
+    let preview () = Rpc_test.dispatch_json session "prepareAssetDownload"
+      {|{"uuid":"empty","assetType":"png"}|} |> U.member "result" in
+    let result = preview () in
+    check_eq ~msg:"Preview must use the imported file, rather than request the reused block UUID from the server"
+      (U.member "localPath" result) (`String path);
+    check_eq (U.member "request" result) `Null;
+    check_eq !requests 0;
+    Sys.remove path;
+    check ~msg:"A missing local file must remain downloadable"
+      (U.member "request" (preview ()) <> `Null))
+
 let cases = [
+  case "imported asset previews stay local while offline" imported_asset_preview_is_local_even_when_the_block_uuid_is_reused;
   case "retrying image import keeps one live asset" importing_twice_keeps_one_asset_in_the_live_projection;
   case "empty image target projection preserves existing identity" empty_image_target_is_projected_without_losing_its_identity;
   case "attachment presenters commit and release the editor" attachment_presenters_commit_and_release_the_editor;
