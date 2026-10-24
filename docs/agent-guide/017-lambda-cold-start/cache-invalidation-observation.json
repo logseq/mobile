@@ -1,0 +1,38 @@
+{
+  "diagnostic_only": true,
+  "stages": {
+    "main_entry": 422.280068625696,
+    "delegate_init_begin": 512.5876936363056,
+    "delegate_init_end": 615.2854020474479,
+    "delegate_launch_begin": 616.1253603640944,
+    "delegate_launch_end": 616.1324853310362,
+    "window_became_key": 892.1088603092358,
+    "first_commit": 1348.2734019635245,
+    "first_display_after_commit": 1406.8448602920398
+  },
+  "late_protocol_batches": [
+    {"start_ms": 499.24261009693146, "end_ms": 499.2555681467056, "images": 12, "protocols": 4737},
+    {"start_ms": 692.425693154335, "end_ms": 692.4469851255417, "images": 44, "protocols": 18991}
+  ],
+  "repeated_slow_negative_queries": [
+    {"type": "SwiftUI.AppSceneDelegate", "protocol": "UIHostingSceneDelegate", "duration_ms": 7.535833333333333, "calls": [[658.69, 0.376], [720.5, 7.16]], "image_loads_between": [44]},
+    {"type": "LogseqModel.LogseqHostResponse", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.7124583333333333, "calls": [[543.38, 0.234], [1356.18, 0.478]], "image_loads_between": [44]},
+    {"type": "LogseqModel.LogseqHostResponse.Snapshot", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.5904583333333333, "calls": [[544.11, 0.193], [1356.67, 0.397]], "image_loads_between": [44]},
+    {"type": "Swift.Optional<SwiftUI.Text>", "protocol": "DynamicProperty", "duration_ms": 0.5485, "calls": [[445.99, 0.345], [806.32, 0.204]], "image_loads_between": [56]},
+    {"type": "LogseqModel.LogseqGraph", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.47720833333333335, "calls": [[544.72, 0.2], [1357.38, 0.277]], "image_loads_between": [44]},
+    {"type": "Swift.Array<LogseqModel.LogseqGraph>", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.47233333333333327, "calls": [[544.54, 0.175], [1357.08, 0.298]], "image_loads_between": [44]},
+    {"type": "Swift.Array<Swift.String>", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.45658333333333334, "calls": [[519.24, 0.219], [1109.57, 0.237]], "image_loads_between": [44]},
+    {"type": "Swift.String", "protocol": "_JSONStringDictionaryDecodableMarker", "duration_ms": 0.4168333333333333, "calls": [[519.47, 0.201], [1109.8, 0.215]], "image_loads_between": [44]},
+    {"type": "Swift.Optional<Swift.String>", "protocol": "DynamicProperty", "duration_ms": 0.39479166666666665, "calls": [[446.84, 0.18], [827.61, 0.215]], "image_loads_between": [56]}
+  ],
+  "scope": "Observation-only actual AppMain; interposable outer main-thread conformance calls; slow calls >=0.1ms; no production timing claim",
+  "completed": true,
+  "visible_nonempty_titles": 5,
+  "authentication": "signedIn",
+  "raw_conformance_calls": 14376,
+  "capacity": 20000,
+  "image_events": 738,
+  "image_capacity": 4096,
+  "protocol_images_during_first_layout": 0,
+  "conclusion": "Repeated slow negative exact (metadata,protocol) pairs occur across earlier protocol-bearing image additions; no protocol-bearing image additions occur inside first layout. Cache invalidation cannot explain repeated scans during that layout interval."
+}

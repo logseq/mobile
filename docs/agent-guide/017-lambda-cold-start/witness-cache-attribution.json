@@ -1,0 +1,9 @@
+{
+  "scope": "Diagnostic actual AppMain, main-thread outer calls through interposable swift_getWitnessTable and swift_getWitnessTableRelative only. Nested/runtime-internal calls can bypass these boundaries; no inference that all conformance cost has been captured. Never production timing.",
+  "completed": true,
+  "total_calls": 33848,
+  "calls_at_least_50_microseconds": 0,
+  "total_duration_ms": 2.879,
+  "maximum_call_duration_ms": 0.012042,
+  "interpretation": "Many public cached witness-table retrievals are individually cheap. Their 2.9 ms aggregate across the complete launch does not explain the 95 ms inclusive conformance sampling category. Earlier fixed-buffer probes filled before layout and are rejected."
+}

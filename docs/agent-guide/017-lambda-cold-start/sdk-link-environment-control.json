@@ -1,0 +1,13 @@
+{
+  "mac-env": {
+    "sha256": "3ad0ee941ee3495e606d1dae0880f85788cf7c8ccd7b00e2b105e05e706310f5",
+    "bytes": 28018920,
+    "warnings": ["clang: warning: using sysroot for 'MacOSX' but targeting 'iPhone' [-Wincompatible-sysroot]"]
+  },
+  "ios-env": {
+    "sha256": "3ad0ee941ee3495e606d1dae0880f85788cf7c8ccd7b00e2b105e05e706310f5",
+    "bytes": 28018920,
+    "warnings": []
+  },
+  "byte_identical": true
+}

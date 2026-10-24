@@ -70,11 +70,12 @@ public struct LogseqRootView : View {
                 if let window = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
                     .first(where: { $0.isKeyWindow }) {
+                    runtime.observeFirstContentFrame(in: window)
                     LogseqLaunchTransition.shared.show(in: window)
                 }
-                DispatchQueue.main.async {
-                    LogseqLaunchTransition.shared.finish()
-                }
+                // Reveal in this layer transaction; another main-queue turn can
+                // leave an already constructed frame behind the opaque cover.
+                LogseqLaunchTransition.shared.finish()
             }
             .task {
                 await runtime.runLGApplication()
@@ -150,6 +151,7 @@ public struct LogseqRootView : View {
         let isEncrypted: Bool?
     }
     private var localLaunchResult: LocalLaunchResult?
+    private let firstContentFrame = LogseqFirstContentFrame()
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
     private var authenticationRestoreTask: Task<Void, Never>?
@@ -195,7 +197,8 @@ public struct LogseqRootView : View {
         let responseRelay = LGCoreResponseRelay()
         let store = LogseqStore(
             call: { request in LogseqCore.shared.logseq_call(request) },
-            responseObserver: responseRelay.send
+            responseObserver: responseRelay.send,
+            projection: .hostMetadata
         )
         let configuration = LogseqCognitoConfiguration.load()
         let authentication = LogseqAuthenticationStore(
@@ -388,6 +391,12 @@ public struct LogseqRootView : View {
         URL.documentsDirectory
             .appendingPathComponent("logseq.sqlite")
             .path
+    }
+
+    func observeFirstContentFrame(in window: UIWindow) {
+        firstContentFrame.observe(in: window) { [weak self] in
+            Task { await self?.store.completeLaunchPresentation() }
+        }
     }
 
     public func startLGRenderer() {
@@ -637,7 +646,7 @@ public struct LogseqRootView : View {
             guard !graphID.isEmpty,
                   let catalogData = catalogResponse.data(using: .utf8),
                   let catalog = try? JSONDecoder().decode(
-                    LogseqRPCResponse.self,
+                    LogseqHostResponse.self,
                     from: catalogData
                   ) else {
                 return LocalLaunchResult(
@@ -699,7 +708,7 @@ public struct LogseqRootView : View {
 
     private func applyLocalGraphIDsToLG(from catalogResponse: String) {
         guard let data = catalogResponse.data(using: .utf8),
-              let response = try? JSONDecoder().decode(LogseqRPCResponse.self, from: data)
+              let response = try? JSONDecoder().decode(LogseqHostResponse.self, from: data)
         else { return }
         let graphIDs = (response.result?.graphs ?? []).compactMap { graph in
             LogseqGraphLocalStorage.isDownloaded(

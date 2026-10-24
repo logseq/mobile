@@ -2,7 +2,7 @@
 import Foundation
 import LogseqModel
 
-import AuthenticationServices
+import LogseqAuthenticationUI
 import Security
 #if os(iOS)
 import UIKit
@@ -87,40 +87,13 @@ private struct CognitoTokenStore: Sendable {
     }
 }
 
-@MainActor private final class CognitoWebAuthenticationSession:
-    NSObject, ASWebAuthenticationPresentationContextProviding
-{
-    private var session: ASWebAuthenticationSession?
+@MainActor private final class CognitoWebAuthenticationSession {
+    private let session = LogseqWebAuthenticationSession()
 
     func authenticate(at url: URL, callbackURLScheme: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url,
-                callbackURLScheme: callbackURLScheme
-            ) { [weak self] callbackURL, error in
-                self?.session = nil
-                if let callbackURL {
-                    continuation.resume(returning: callbackURL)
-                } else if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(throwing: CognitoAuthProviderError.webAuthenticationUnavailable)
-                }
-            }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = true
-            self.session = session
-            guard session.start() else {
-                self.session = nil
-                continuation.resume(throwing: CognitoAuthProviderError.webAuthenticationUnavailable)
-                return
-            }
-        }
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        let anchor = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? UIWindow()
+        return try await session.authenticate(url, callbackScheme: callbackURLScheme, anchor: anchor)
     }
 }
 

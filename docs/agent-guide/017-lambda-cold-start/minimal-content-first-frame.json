@@ -1,0 +1,92 @@
+{
+  "scope": "Architecture attribution: actual application entry versus standalone five drawn native UILabel controls. Minimal controls have no graph, app feature tree, toolbar or authentication and cannot satisfy the application goal.",
+  "control": "Seven randomized interleaved fresh-process rounds; immutable binaries, no CPU timing, Instruments, loader logging or injected library; conservative display callback after a visible content commit.",
+  "environment": "Other Android simulator process was active; interpret absolute durations only in this batch.",
+  "manifests": {
+    "uikit": {
+      "bundle": "com.logseq.logseq.ColdStartMinimalFrame.uikit",
+      "sha256": "d892258b30a36e77441f86ad72ad1e573edb18bc211aa8f55e3b21dbfb0aecc4"
+    },
+    "hosted": {
+      "bundle": "com.logseq.logseq.ColdStartMinimalFrame.hosted",
+      "sha256": "9b4ef7403396c244f6e8f73414494e65dd06641dc45c615c7cb970a72ea2d8ea"
+    },
+    "swiftui": {
+      "bundle": "com.logseq.logseq.ColdStartMinimalFrame.swiftui",
+      "sha256": "b04f09e95b9045d0c698aa75f086bdc29a102185899258a89fbb8bfd2c1a440d"
+    },
+    "actual": {
+      "bundle": "com.logseq.logseq.ColdStartAppEntry",
+      "sha256": "12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324"
+    }
+  },
+  "samples": [
+    {"round": 1, "mode": "hosted", "total_ms": 352.0978413289413, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 233.80521638318896, "first_commit": 332.1400913409889, "first_display_after_commit": 352.0978413289413, "main_entry": 198.7395080504939, "scene_connect": 286.13642475102097, "window_became_key": 308.6672996869311}}},
+    {"round": 1, "mode": "actual", "total_ms": 1115.6800626777112, "result": {"process_ms": 1115.6800626777112, "first_commit_ms": 1106.3944376073778, "nonempty_rows": 5}, "stages_ms": {"main_entry": 227.08227101247758, "delegate_init_begin": 270.8861459977925, "delegate_init_end": 356.0050626983866, "delegate_launch_begin": 356.5740210469812, "delegate_launch_end": 356.5853959880769, "window_became_key": 560.6267292750999, "first_commit": 1106.5506043378264, "first_display_after_commit": 1115.6558126676828}},
+    {"round": 1, "mode": "swiftui", "total_ms": 401.1865578358993, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 365.4097660910338, "first_display_after_commit": 401.1865578358993, "main_entry": 213.33934948779643, "window_became_key": 352.8986411402002}}},
+    {"round": 1, "mode": "uikit", "total_ms": 355.5014494340867, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 234.3679910991341, "first_commit": 314.4374911207706, "first_display_after_commit": 355.5014494340867, "main_entry": 195.68753277417272, "native_content_created": 303.23686613701284, "scene_connect": 293.9767410280183, "window_became_key": 308.92019940074533}}},
+    {"round": 2, "mode": "uikit", "total_ms": 368.16133419051766, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 235.40145915467292, "first_commit": 320.777042536065, "first_display_after_commit": 368.16133419051766, "main_entry": 191.88475084956735, "native_content_created": 309.611500822939, "scene_connect": 300.4285008646548, "window_became_key": 315.94112585298717}}},
+    {"round": 2, "mode": "swiftui", "total_ms": 393.28253583516926, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 345.1967441942543, "first_display_after_commit": 393.28253583516926, "main_entry": 193.73970257584006, "window_became_key": 332.6807025587186}}},
+    {"round": 2, "mode": "hosted", "total_ms": 376.3877940364182, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 239.22296066302806, "first_commit": 328.6842523375526, "first_display_after_commit": 376.3877940364182, "main_entry": 200.17137739341706, "scene_connect": 297.58783569559455, "window_became_key": 317.38387735094875}}},
+    {"round": 2, "mode": "actual", "total_ms": 782.885724445805, "result": {"process_ms": 782.885724445805, "first_commit_ms": 757.449516095221, "nonempty_rows": 5}, "stages_ms": {"main_entry": 227.34947444405407, "delegate_init_begin": 261.78251614328474, "delegate_init_end": 334.70905770082027, "delegate_launch_begin": 335.15255770180374, "delegate_launch_end": 335.1598493754864, "window_became_key": 488.6863494757563, "first_commit": 757.6232244027779, "first_display_after_commit": 782.8588493866846}},
+    {"round": 3, "mode": "uikit", "total_ms": 355.8152543846518, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 229.48296274989843, "first_commit": 309.7240043571219, "first_display_after_commit": 355.8152543846518, "main_entry": 191.29367102868855, "native_content_created": 298.50937938317657, "scene_connect": 289.24517100676894, "window_became_key": 304.7954626381397}}},
+    {"round": 3, "mode": "actual", "total_ms": 745.9134503733367, "result": {"process_ms": 745.9134503733367, "first_commit_ms": 738.6827419977635, "nonempty_rows": 5}, "stages_ms": {"main_entry": 233.02820033859462, "delegate_init_begin": 268.8852420542389, "delegate_init_end": 325.7800337160006, "delegate_launch_begin": 326.24970038887113, "delegate_launch_end": 326.25599205493927, "window_became_key": 470.9232420427725, "first_commit": 738.8426170218736, "first_display_after_commit": 745.889617013745}},
+    {"round": 3, "mode": "hosted", "total_ms": 371.08974263537675, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 228.78661763388664, "first_commit": 321.6167009668425, "first_display_after_commit": 371.08974263537675, "main_entry": 192.60307599324733, "scene_connect": 289.01332593522966, "window_became_key": 309.1465343022719}}},
+    {"round": 3, "mode": "swiftui", "total_ms": 369.98442618642, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 361.405884497799, "first_display_after_commit": 369.98442618642, "main_entry": 203.14075949136168, "window_became_key": 333.8149262126535}}},
+    {"round": 4, "mode": "uikit", "total_ms": 352.90144744794816, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 233.00715570803732, "first_commit": 313.21965577080846, "first_display_after_commit": 352.90144744794816, "main_entry": 193.9472807571292, "native_content_created": 302.18432238325477, "scene_connect": 292.78707248158753, "window_became_key": 307.8557808184996}}},
+    {"round": 4, "mode": "swiftui", "total_ms": 391.11340104136616, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 344.08048435579985, "first_display_after_commit": 391.11340104136616, "main_entry": 193.16590100061148, "window_became_key": 331.96156763006}}},
+    {"round": 4, "mode": "hosted", "total_ms": 360.91184918768704, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 235.5903908610344, "first_commit": 324.7501408914104, "first_display_after_commit": 360.91184918768704, "main_entry": 197.7133909240365, "scene_connect": 294.0491408808157, "window_became_key": 313.78022429998964}}},
+    {"round": 4, "mode": "actual", "total_ms": 768.3191521791741, "result": {"process_ms": 768.3191521791741, "first_commit_ms": 759.0616521192715, "nonempty_rows": 5}, "stages_ms": {"main_entry": 228.4948187880218, "delegate_init_begin": 263.69198551401496, "delegate_init_end": 326.9707355648279, "delegate_launch_begin": 327.37156888470054, "delegate_launch_end": 327.3783605545759, "window_became_key": 482.56319388747215, "first_commit": 759.2552772257477, "first_display_after_commit": 768.2852771831676}},
+    {"round": 5, "mode": "hosted", "total_ms": 350.49951262772083, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 220.3065543435514, "first_commit": 313.6123459553346, "first_display_after_commit": 350.49951262772083, "main_entry": 185.06517936475575, "scene_connect": 281.28080430906266, "window_became_key": 301.27413768786937}}},
+    {"round": 5, "mode": "uikit", "total_ms": 358.981738332659, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 232.05444659106433, "first_commit": 313.11465497128665, "first_display_after_commit": 358.981738332659, "main_entry": 194.91669663693756, "native_content_created": 302.2731966339052, "scene_connect": 292.8835299098864, "window_became_key": 308.3357382565737}}},
+    {"round": 5, "mode": "swiftui", "total_ms": 397.90779596660286, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 354.11146259866655, "first_display_after_commit": 397.90779596660286, "main_entry": 205.88929601944983, "window_became_key": 341.6547126835212}}},
+    {"round": 5, "mode": "actual", "total_ms": 758.2307033007964, "result": {"process_ms": 758.2307033007964, "first_commit_ms": 744.9755782727152, "nonempty_rows": 5}, "stages_ms": {"main_entry": 228.31486992072314, "delegate_init_begin": 262.70828663837165, "delegate_init_end": 310.80074491910636, "delegate_launch_begin": 311.36966159101576, "delegate_launch_end": 311.3780366256833, "window_became_key": 465.943161631003, "first_commit": 745.2554116025567, "first_display_after_commit": 758.2098699640483}},
+    {"round": 6, "mode": "actual", "total_ms": 752.7896374231204, "result": {"process_ms": 752.7896374231204, "first_commit_ms": 749.4250540621579, "nonempty_rows": 5}, "stages_ms": {"main_entry": 233.48934575915337, "delegate_init_begin": 267.0646373881027, "delegate_init_end": 330.8039290132001, "delegate_launch_begin": 331.2207206618041, "delegate_launch_end": 331.22738741803914, "window_became_key": 475.177304004319, "first_commit": 749.5728874346241, "first_display_after_commit": 752.7744290418923}},
+    {"round": 6, "mode": "swiftui", "total_ms": 386.3313206238672, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 346.30877897143364, "first_display_after_commit": 386.3313206238672, "main_entry": 198.53040389716625, "window_became_key": 334.0117789339274}}},
+    {"round": 6, "mode": "hosted", "total_ms": 343.8547143014148, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 214.24679760821164, "first_commit": 307.12296429555863, "first_display_after_commit": 343.8547143014148, "main_entry": 177.23088094498962, "scene_connect": 275.2833809936419, "window_became_key": 294.97950593940914}}},
+    {"round": 6, "mode": "uikit", "total_ms": 367.50831513199955, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 235.41448172181845, "first_commit": 318.42256512027234, "first_display_after_commit": 367.50831513199955, "main_entry": 196.82427344378084, "native_content_created": 304.6543567907065, "scene_connect": 295.25373177602887, "window_became_key": 311.1254817340523}}},
+    {"round": 7, "mode": "uikit", "total_ms": 367.55460139829665, "result": {"mode": "uikit", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 228.52097637951374, "first_commit": 317.8753514075652, "first_display_after_commit": 367.55460139829665, "main_entry": 188.7057680869475, "native_content_created": 302.72530973888934, "scene_connect": 292.8630181122571, "window_became_key": 310.10855978820473}}},
+    {"round": 7, "mode": "hosted", "total_ms": 372.67277215141803, "result": {"mode": "hosted", "nonempty_drawn_titles": 5, "stages_ms": {"delegate_launch": 231.30181385204196, "first_commit": 331.53114712331444, "first_display_after_commit": 372.67277215141803, "main_entry": 193.57510551344603, "scene_connect": 291.97710542939603, "window_became_key": 317.9484804859385}}},
+    {"round": 7, "mode": "actual", "total_ms": 829.4144837418571, "result": {"process_ms": 829.4144837418571, "first_commit_ms": 816.6486086556688, "nonempty_rows": 5}, "stages_ms": {"main_entry": 226.87135869637132, "delegate_init_begin": 262.7948169829324, "delegate_init_end": 333.07423372752964, "delegate_launch_begin": 333.5439837537706, "delegate_launch_end": 333.55181699153036, "window_became_key": 509.1971920337528, "first_commit": 816.884983680211, "first_display_after_commit": 829.3926920741796}},
+    {"round": 7, "mode": "swiftui", "total_ms": 406.21449367608875, "result": {"mode": "swiftui", "nonempty_drawn_titles": 5, "stages_ms": {"first_commit": 362.8255353542045, "first_display_after_commit": 406.21449367608875, "main_entry": 190.5879103578627, "window_became_key": 341.22832701541483}}}
+  ],
+  "median_ms": {
+    "uikit": 358.981738332659,
+    "hosted": 360.91184918768704,
+    "swiftui": 393.28253583516926,
+    "actual": 768.3191521791741
+  },
+  "maximum_ms": {
+    "uikit": 368.16133419051766,
+    "hosted": 376.3877940364182,
+    "swiftui": 406.21449367608875,
+    "actual": 1115.6800626777112
+  },
+  "limitations": ["The minimal controls display five plain drawn UILabels, rather than Lambda outliner rows. They have no graph, app actions, authentication restoration, native navigation toolbar or composer. This is attribution evidence, not a proposed app or a proven universal platform floor.", "Both probes wait for a conservative display callback following a content commit. The minimal control additionally requires UILabel.drawText to have run; its commit-to-display interval is longer in this batch. Endpoint subphases must not be treated as identical work.", "OS caches and fixture graph state are warm between process launches. The first actual-app sample is an outlier; all raw samples remain included."],
+  "median_phase_ms": {
+    "uikit": {
+      "process_to_main": 193.9472807571292,
+      "main_to_window": 113.90850006137043,
+      "window_to_commit": 5.363874952308834,
+      "commit_to_display": 46.091250027529895
+    },
+    "hosted": {
+      "process_to_main": 193.57510551344603,
+      "main_to_window": 116.54345830902457,
+      "window_to_commit": 12.338208267465234,
+      "commit_to_display": 36.88716667238623
+    },
+    "swiftui": {
+      "process_to_main": 198.53040389716625,
+      "main_to_window": 138.79566662944853,
+      "window_to_commit": 12.511124950833619,
+      "commit_to_display": 43.388958321884274
+    },
+    "actual": {
+      "process_to_main": 228.31486992072314,
+      "main_to_window": 254.06837509945035,
+      "window_to_commit": 276.69208333827555,
+      "commit_to_display": 9.105208329856396
+    }
+  }
+}

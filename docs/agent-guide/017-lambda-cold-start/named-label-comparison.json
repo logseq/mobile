@@ -1,0 +1,34 @@
+{
+  "scope": "two immutable production Release binaries; real Lambda journal content; randomized interleaved fresh processes",
+  "binary_sha256": {
+    "baseline": "59cc45eef254a68b94cbcde6bb86bc7713015eeb984d8c689b9fff2c60ec82d8",
+    "named-label": "2529d992f8f1686782591d7bd5162494fbd7b9084a66f28540a2282cf2896f47"
+  },
+  "variants": {
+    "baseline": {
+      "median_ms": 2540.6824961537495,
+      "samples": [
+        {"process_ms":1875.6811913335696,"first_commit_ms":1756.1078997096047,"nonempty_rows":5},
+        {"process_ms":2579.123238567263,"first_commit_ms":2564.356613554992,"nonempty_rows":5},
+        {"process_ms":2600.3506294218823,"first_commit_ms":2502.298046136275,"nonempty_rows":5},
+        {"process_ms":2540.6824961537495,"first_commit_ms":2484.284121193923,"nonempty_rows":5},
+        {"process_ms":2612.757825292647,"first_commit_ms":2593.25524198357,"nonempty_rows":5},
+        {"process_ms":2098.007944296114,"first_commit_ms":2086.69073600322,"nonempty_rows":5},
+        {"process_ms":1754.468584083952,"first_commit_ms":1716.6882090969011,"nonempty_rows":5}
+      ]
+    },
+    "named-label": {
+      "median_ms": 2447.4427150562406,
+      "samples": [
+        {"process_ms":1911.8488285457715,"first_commit_ms":1840.4484951170161,"nonempty_rows":5},
+        {"process_ms":2447.4427150562406,"first_commit_ms":2397.3081316798925,"nonempty_rows":5},
+        {"process_ms":2641.0219341050833,"first_commit_ms":2514.7867675404996,"nonempty_rows":5},
+        {"process_ms":2598.341191187501,"first_commit_ms":2492.6479829009622,"nonempty_rows":5},
+        {"process_ms":2564.980876049958,"first_commit_ms":2484.122834401205,"nonempty_rows":5},
+        {"process_ms":2229.4993108371273,"first_commit_ms":2185.8488941797987,"nonempty_rows":5},
+        {"process_ms":1248.4370041638613,"first_commit_ms":1201.6185874817893,"nonempty_rows":5}
+      ]
+    }
+  },
+  "paired_delta_ms": [-36.16763721220195,131.68052351102233,-40.671304683201015,-57.65869503375143,47.776949242688715,-131.49136654101312,506.03157992009073]
+}

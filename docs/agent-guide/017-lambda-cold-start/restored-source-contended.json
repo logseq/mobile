@@ -1,0 +1,16 @@
+{
+  "scope": "authenticated local journal renderer; authentication restoration/networking excluded",
+  "bundle_id": "com.logseq.logseq.ColdStartBenchmark",
+  "binary_sha256": "61428f384e96d871179d5cb368e3459f7b99b6376b5d4d9d786d70dbc5d713a3",
+  "cache": "fresh process; OS file cache and graph state retained between launches",
+  "configuration": "Release without testability; exact shipping FFI exports; installed once",
+  "endpoint": "display callback after a committed visible nonempty native outliner title",
+  "rows": "visible native title labels at first frame commit",
+  "samples": [
+    {"process_ms":1859.9212331464514,"first_commit_ms":1820.6279830774292,"nonempty_rows":5}
+  ],
+  "median_ms": 1859.9212331464514,
+  "maximum_ms": 1859.9212331464514,
+  "threshold_ms": 300.0,
+  "passed": false
+}

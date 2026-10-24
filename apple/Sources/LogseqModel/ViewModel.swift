@@ -421,6 +421,11 @@ private struct CreateSyncGraphPayload: Encodable {
     let password: String?
 }
 
+public enum LogseqStoreProjection: Sendable {
+    case full
+    case hostMetadata
+}
+
 @MainActor @Observable public final class LogseqStore {
     public private(set) var snapshot = LogseqSnapshot(
         revision: 0,
@@ -450,9 +455,11 @@ private struct CreateSyncGraphPayload: Encodable {
     }
 
     private let callCore: @Sendable (String) -> String
+    private let projection: LogseqStoreProjection
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
     private let responseObserver: @MainActor (String) -> Void
     private var openedDatabasePath: String?
+    private var deferredLaunchSidebarGraphID: String?
     public private(set) var graphSyncAllowed = false
     private var bootstrapPlan: LogseqBootstrapPlan?
     private var debugDatabaseRoute = "unopened"
@@ -465,23 +472,27 @@ private struct CreateSyncGraphPayload: Encodable {
 
     public convenience init(
         call: @escaping @Sendable (String) -> String,
-        responseObserver: @escaping @MainActor (String) -> Void
+        responseObserver: @escaping @MainActor (String) -> Void,
+        projection: LogseqStoreProjection = .full
     ) {
         self.init(
             call: call,
             pendingTransport: { request in
                 await LogseqPendingSyncHTTPTransport.send(request)
             },
-            responseObserver: responseObserver
+            responseObserver: responseObserver,
+            projection: projection
         )
     }
 
     public init(
         call: @escaping @Sendable (String) -> String,
         pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult,
-        responseObserver: @escaping @MainActor (String) -> Void = { _ in }
+        responseObserver: @escaping @MainActor (String) -> Void = { _ in },
+        projection: LogseqStoreProjection = .full
     ) {
         self.callCore = call
+        self.projection = projection
         self.pendingTransport = pendingTransport
         self.responseObserver = responseObserver
     }
@@ -517,6 +528,13 @@ private struct CreateSyncGraphPayload: Encodable {
         return LogseqCore.shared.logseq_call(requestJSON)
     }
 
+    public func completeLaunchPresentation() async {
+        guard let graphID = deferredLaunchSidebarGraphID else { return }
+        deferredLaunchSidebarGraphID = nil
+        guard snapshot.selectedGraphId == graphID else { return }
+        await dispatchRawAndWait("loadSidebar")
+    }
+
     public func applyLaunchResponse(
         _ responseJSON: String,
         actionName: String,
@@ -529,12 +547,9 @@ private struct CreateSyncGraphPayload: Encodable {
             #if DEBUG
             print("LOGSEQ_DB_ROUTE launch_applied route=\(debugDatabaseRoute)")
             #endif
-            // The first snapshot after openGraph ships an empty sidebar so
-            // it stays off the launch critical path; fetch it right after
-            // the journal renders.
-            Task { [weak self] in
-                await self?.dispatchRawAndWait("loadSidebar")
-            }
+            // View construction and onAppear can precede the first layer commit.
+            // The native presentation observer releases this work after that commit.
+            deferredLaunchSidebarGraphID = graphID
         }
     }
 
@@ -1165,7 +1180,13 @@ private struct CreateSyncGraphPayload: Encodable {
                     syncError = nil
                 }
             }
-            let response = try JSONDecoder().decode(LogseqRPCResponse.self, from: responseData)
+            let response: LogseqRPCResponse
+            switch projection {
+            case .full:
+                response = try JSONDecoder().decode(LogseqRPCResponse.self, from: responseData)
+            case .hostMetadata:
+                response = try JSONDecoder().decode(LogseqHostResponse.self, from: responseData).hostResponse
+            }
             if response.ok, let result = response.result {
                 #if DEBUG
                 let applyMilliseconds = Date().timeIntervalSince(applyStartedAt) * 1_000
@@ -1179,7 +1200,7 @@ private struct CreateSyncGraphPayload: Encodable {
                 )
                 #endif
                 logger.info(
-                    "Core action applied: \(actionName), revision: \(result.revision), blocks: \(result.blocks.count), graph: \(result.graphName ?? "none")"
+                    "Core action applied: \(actionName), revision: \(result.revision), graph: \(result.graphName ?? "none")"
                 )
                 snapshot = result
                 lastError = nil
