@@ -711,13 +711,16 @@ let cache_local_asset model uuid title asset_type asset_size asset_checksum
     | Some target -> target.page_id
     | None -> local_journal model now
   in
-  let parent_id =
-    match target with Some target -> Some target.uuid | None -> None
-  in
+  let parent_id = match target with
+    | Some target when target.uuid = uuid -> target.parent_id
+    | Some target -> Some target.uuid | None -> None in
+  let base = match target with
+    | Some target when target.uuid = uuid -> {target with title; updated_at = now; sync_status = "pending"}
+    | _ -> local_block uuid title page_id parent_id now in
   upsert_blocks model
     [
       {
-        (local_block uuid title page_id parent_id now) with
+        base with
         is_asset = true;
         asset_type = Some asset_type;
         asset_size = Some asset_size;

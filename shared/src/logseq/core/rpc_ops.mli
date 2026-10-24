@@ -107,6 +107,7 @@ val asset_metadata :
 
 val add_asset :
   ?prepare_file:(string -> string -> (string, string) result) ->
+  ?can_replace_target:(string -> bool) ->
   string option ->
   Cache_model.model ->
   (unit -> int) ->

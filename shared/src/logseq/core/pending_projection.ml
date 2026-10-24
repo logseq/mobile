@@ -517,7 +517,15 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
            }
            value.created_at)
   | Ops.Create_asset value ->
-    if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then
+    let existing = Ds.entid db "block/uuid" (Ds.Uuid value.uuid) in
+    let reusable = match existing with
+      | None -> false
+      | Some eid -> Graph_read.string_value (Graph_read.value db eid "block/title") = Some ""
+        && Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" eid)
+        && List.for_all (fun attr -> Graph_read.value db eid attr = None)
+          ["block/name"; "logseq.property/deleted-at"; "block/tags"; "logseq.property/status"; "logseq.property/priority";
+           "logseq.property.asset/type"; "logseq.property.node/display-type"] in
+    if existing <> None && not reusable then
       Error "asset block UUID already exists"
     else if
       Ds.entid db "block/uuid" (Ds.Uuid value.page_uuid) = None
@@ -536,7 +544,7 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
       Ok
         ([
           entity_tx
-            (Ds.Temp_id ("pending/" ^ value.uuid))
+            (match existing with Some _ -> lookup value.uuid | None -> Ds.Temp_id ("pending/" ^ value.uuid))
             [ ("block/uuid", Ds.One_value (Ds.Uuid value.uuid))
             ; ("block/title", Ds.One_value (Ds.String value.title))
             ; ( "block/page"
