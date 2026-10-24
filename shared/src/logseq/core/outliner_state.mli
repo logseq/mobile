@@ -18,6 +18,8 @@ type outliner_candidate =
 
 type editor_draft =
   { uuid : string
+    (* Retain the displayed row identity while edits target the linked content. *)
+  ; content_uuid : string
   ; expected_title : string
   ; title : string
   ; caret : int

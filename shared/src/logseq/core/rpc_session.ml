@@ -768,7 +768,7 @@ let dispatch_outliner_event session payload =
            if external_results || (state session).node_routes <> [] then
              snapshot_visible session
            else
-             (match event_patch_plan message operations with
+             (match event_patch_plan ?db:context.Outliner.db message operations with
               | So.Patch_blocks changed ->
                 outliner_patch session projected changed
               | So.Structural_diff ->

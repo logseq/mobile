@@ -167,6 +167,134 @@ let embeds_delete_only_the_wrapper () = R.with_runtime (fun session runtime conn
   List.iter (fun operation -> match Graph_runtime.prepare_sync runtime operation with
     | Ok _ -> () | Error message -> fail message) (Graph_runtime.pending_operations runtime))
 
+let linked_blocks_edit_source_contents () =
+  List.iter (fun outside_page -> R.with_runtime (fun session runtime conn ->
+    ignore (run session "Node embed");
+    ignore (choose session Q.beta);
+    save session;
+    if outside_page then begin
+      let page = "30000000-0000-4000-8000-000000000021" in
+      rebase runtime conn (R.entity 121 page "Source page" @ [
+        put page "block/name" (Ds.String "source page");
+        put Q.beta "block/page" (Ds.Ref_to (Q.ref_uuid page));
+        put Q.beta "block/parent" (Ds.Ref_to (Q.ref_uuid page))])
+    end;
+    let target = Option.get (Ds.entid (Graph_runtime.db runtime) "block/uuid" (Ds.Uuid Q.beta)) in
+    check_eq ~msg:"The fixture must contain a link to the source block"
+      (value runtime Q.alpha "block/link") (Some (Ds.Ref target));
+    let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+    check_eq ~msg:"The editor stays mounted at the linked row"
+      (member "uuid" (draft response)) (`String Q.alpha);
+    check_eq ~msg:"Editing a linked block loads its source content instead of the empty wrapper"
+      (member "title" (draft response)) (`String "Beta result");
+    List.iter (fun backend ->
+      Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+        let editor = App_test.extension_node app "outliner-editor" in
+        check ~msg:"The linked row mounts a native editor" (editor <> -1);
+        check_eq ~msg:"Both native hosts receive the linked source text"
+          (App_test.extension_property app editor "title")
+          (Some (Lui_protocol.StringValue "Beta result"));
+        check_eq ~msg:"Native editor events retain the displayed row identity"
+          (App_test.extension_property app editor "block-id")
+          (Some (Lui_protocol.StringValue Q.alpha))))
+      [App_test.ios_backend; App_test.kotlin_backend];
+    let pending = List.length (Graph_runtime.pending_operations runtime) in
+    save session;
+    check_eq ~msg:"Opening and saving an unchanged linked block adds no write"
+      (List.length (Graph_runtime.pending_operations runtime)) pending;
+    List.iter (fun title ->
+      ignore (type_at session title (Outliner_state.utf16_length title));
+      save session;
+      check_eq ~msg:"Edits are saved to the source block"
+        (value runtime Q.beta "block/title") (Some (Ds.String title));
+      check_eq ~msg:"Editing must not put a duplicate title on the link wrapper"
+        (value runtime Q.alpha "block/title") (Some (Ds.String "")))
+      ["Edited linked content"; "Edited linked content again"];
+    ignore (event session "cancelEditing" []);
+    let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+    check_eq ~msg:"Reopening a linked editor reads the saved source"
+      (member "title" (draft response)) (`String "Edited linked content again");
+    check_eq ~msg:"Editing retains the live block link"
+      (value runtime Q.alpha "block/link") (Some (Ds.Ref target)))) [false; true]
+
+let linked_content_changes_refresh_visible_wrappers () = R.with_runtime (fun session runtime conn ->
+  rebase runtime conn [
+    put Q.alpha "block/title" (Ds.String "");
+    put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put R.gamma "block/title" (Ds.String "");
+    put R.gamma "block/link" (Ds.Ref_to (Q.ref_uuid Q.alpha))];
+  ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+  ignore (type_at session "Updated source" 14);
+  let response = event session "saveEditing" [] in
+  List.iter (fun uuid ->
+    match List.find_opt (fun block -> member "uuid" block = `String uuid) (items "blocks" response) with
+    | None -> fail "A source title change must patch every visible linked wrapper"
+    | Some block ->
+      let quote children = `List [`Assoc ["type", `String "quote"; "children", children]] in
+      let content = quote (`List [`Assoc ["type", `String "text"; "text", `String "Updated source"]]) in
+      check_eq ~msg:"A patched wrapper renders the saved source content"
+        (member "markup" block) (if uuid = Q.alpha then content else quote content))
+    [Q.alpha; R.gamma];
+  let response = event session "tapBlock" ["uuid", `String R.gamma] in
+  check_eq ~msg:"Chained links edit the final source content"
+    (member "title" (draft response)) (`String "Updated source"))
+
+let linked_content_keeps_outline_boundaries () =
+  List.iter (fun (kind, caret) -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn [
+      put Q.alpha "block/title" (Ds.String "");
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+    ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+    ignore (type_at session "Edited source" caret);
+    ignore (event session kind (if kind = "backspacePressed" then ["selectionLength", `Int 0] else []));
+    check_eq ~msg:"Outline boundary editing keeps the linked source alive"
+      (value runtime Q.beta "block/title")
+      (Some (Ds.String (if kind = "returnPressed" && caret = 6 then "Edited" else "Edited source")));
+    if kind = "returnPressed" then
+      check_eq ~msg:"Splitting a linked row retains its empty wrapper title"
+        (value runtime Q.alpha "block/title") (Some (Ds.String ""))
+    else check_eq ~msg:"Backspace removes the wrapper, not the linked source"
+      (value runtime Q.alpha "block/title") None))
+    ["returnPressed", 13; "returnPressed", 6; "returnPressed", 0; "backspacePressed", 0]
+
+let linked_editing_tracks_the_captured_source () = R.with_runtime (fun session runtime conn ->
+  rebase runtime conn [
+    put Q.alpha "block/title" (Ds.String "");
+    put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+  ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+  rebase runtime conn [put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid R.gamma))];
+  ignore (type_at session "Captured source" 15);
+  save session;
+  check_eq ~msg:"A retargeted wrapper cannot redirect an existing edit to another source"
+    (value runtime Q.beta "block/title") (Some (Ds.String "Captured source"));
+  check_eq (value runtime R.gamma "block/title") (Some (Ds.String "Gamma result")))
+
+let cyclic_links_do_not_open_an_empty_editor () = R.with_runtime (fun session runtime conn ->
+  rebase runtime conn [
+    put Q.alpha "block/title" (Ds.String "");
+    put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put Q.beta "block/link" (Ds.Ref_to (Q.ref_uuid Q.alpha))];
+  let pending = List.length (Graph_runtime.pending_operations runtime) in
+  let response = event session "tapBlock" ["uuid", `String Q.alpha] in
+  check_eq ~msg:"Cyclic links have no editable source" (draft response) `Null;
+  check_eq ~msg:"Tapping an invalid link does not create a write"
+    (List.length (Graph_runtime.pending_operations runtime)) pending)
+
+let switching_linked_rows_preserves_unsaved_content () = R.with_runtime (fun session runtime conn ->
+  rebase runtime conn [
+    put Q.alpha "block/title" (Ds.String "");
+    put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put R.gamma "block/title" (Ds.String "");
+    put R.gamma "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+  ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+  ignore (type_at session "Unsaved source" 14);
+  let response = event session "tapBlock" ["uuid", `String R.gamma] in
+  check_eq ~msg:"Switching between linked rows cannot restore stale source text"
+    (member "title" (draft response)) (`String "Unsaved source");
+  ignore (type_at session "Unsaved source continued" 24);
+  save session;
+  check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Unsaved source continued")))
+
 let templates_clone_without_mutating_the_source () = R.with_runtime (fun session runtime conn ->
   let child = "30000000-0000-4000-8000-000000000004" in
   let grandchild = "30000000-0000-4000-8000-000000000005" in
@@ -621,6 +749,12 @@ let cases = [
   case "graph choices headings and block types" graph_choices_headings_and_block_types;
   case "links and dates use shared prompts" links_and_dates_use_shared_prompts;
   case "embeds delete only the wrapper" embeds_delete_only_the_wrapper;
+  case "linked blocks edit source contents" linked_blocks_edit_source_contents;
+  case "linked editing tracks the captured source" linked_editing_tracks_the_captured_source;
+  case "cyclic links do not open an empty editor" cyclic_links_do_not_open_an_empty_editor;
+  case "switching linked rows preserves unsaved content" switching_linked_rows_preserves_unsaved_content;
+  case "linked content changes refresh visible wrappers" linked_content_changes_refresh_visible_wrappers;
+  case "linked content keeps outline boundaries" linked_content_keeps_outline_boundaries;
   case "templates clone without mutating the source" templates_clone_without_mutating_the_source;
   case "numbered lists toggle" numbered_lists_toggle_without_changing_source_text;
   case "shared panel for commands pages and tags" shared_panel_for_commands_pages_and_tags;

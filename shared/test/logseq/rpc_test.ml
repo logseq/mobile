@@ -6279,6 +6279,7 @@ let outliner_state_serializes_drafts_and_orders_identifiers () =
             Some
               {
                 uuid = "block";
+                content_uuid = "block";
                 expected_title = "Old";
                 title = "New";
                 caret = 2;

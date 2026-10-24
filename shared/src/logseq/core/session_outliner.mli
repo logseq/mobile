@@ -121,6 +121,7 @@ type outliner_patch_plan =
   | Structural_diff
 
 val event_patch_plan :
+  ?db:Datascript.db ->
   Outliner_state.outliner_message ->
   Pending_ops.pending_operation list ->
   outliner_patch_plan
