@@ -697,7 +697,7 @@ let settings_account_row context model_source send : t =
     if_ ~test:signed_out
       (list_item ~accessibility_identifier:"button.hosted-sign-in"
          ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
-         ~on_press:(press send Model.SignIn) ~text:"Sign in" [sign_in_label model_source]);
+         ~on_press:(press send Model.SignIn) [sign_in_label model_source]);
     if_ ~test:(Signal.map not signed_out) (settings_sign_out_row context send);
     if_ ~test:(Signal.map (fun current ->
         View_base.authentication_required_ current
