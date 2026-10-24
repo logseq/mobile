@@ -431,7 +431,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_cached = false;
-    row_task_dates_json = ""; row_list_number = None;
+    row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
     row_title = title;
@@ -2857,7 +2857,7 @@ let outline_row uuid title =
     Model.row_uuid = uuid;
     row_loaded = true;
     row_cached = false;
-    row_task_dates_json = ""; row_list_number = None;
+    row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
     row_title = title;
@@ -7459,10 +7459,10 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     descendant_with_identifier renderer outliner "outliner.window"
   in
   let first_entry =
-    parent_with_child_identifier renderer outliner "outliner.block.day-a"
+    descendant_with_identifier renderer outliner "outliner.entry.day-a"
   in
   let second_entry =
-    parent_with_child_identifier renderer outliner "outliner.block.day-b"
+    descendant_with_identifier renderer outliner "outliner.entry.day-b"
   in
   let first_entry_children = children renderer first_entry in
   let first_block =
@@ -7514,7 +7514,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check_eq ~msg:"the first block entry owns the journal heading"
     (List.nth first_entry_children 0) first_heading;
   check_eq ~msg:"the journal block follows its heading in one lazy item"
-    (List.nth first_entry_children 1) first_block;
+    (descendant_with_identifier renderer (List.nth first_entry_children 1) "outliner.block.day-a") first_block;
   let metadata = Lui_protocol.data_attrs_decode
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the native collection fills the viewport after the first journal"
@@ -7606,14 +7606,14 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     descendant_with_identifier renderer outliner "outliner.window"
   in
   let first_entry =
-    parent_with_child_identifier renderer outliner "outliner.block.day-a-root"
+    descendant_with_identifier renderer outliner "outliner.entry.day-a-root"
   in
   let child_entry =
-    parent_with_child_identifier renderer outliner
-      "outliner.block.day-a-child"
+    descendant_with_identifier renderer outliner
+      "outliner.entry.day-a-child"
   in
   let next_entry =
-    parent_with_child_identifier renderer outliner "outliner.block.day-b"
+    descendant_with_identifier renderer outliner "outliner.entry.day-b"
   in
   check ~msg:"blocks from one large journal remain independent lazy items"
     (first_entry <> child_entry);

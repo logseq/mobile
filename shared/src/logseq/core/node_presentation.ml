@@ -47,6 +47,14 @@ let calculator source =
       line ^ "  = " ^ Printf.sprintf "%.10g" n
     with _ -> line ^ "  = Error") |> String.concat "\n"
 
+let discussion_kind db eid =
+  let tagged eid ident = List.exists (fun tag ->
+    Read.value db tag "db/ident" = Some (Ds.Keyword ident)) (Read.ref_eids db eid "block/tags") in
+  if tagged eid "logseq.class/Comments" then "thread"
+  else if tagged eid "logseq.class/Comment" || List.exists (fun parent -> tagged parent "logseq.class/Comments")
+    (Read.ref_eids db eid "block/parent") then "comment"
+  else ""
+
 let decorate db =
   let numbers = Hashtbl.create 8 in
   let dates = Hashtbl.create 16 in
@@ -119,5 +127,6 @@ let decorate db =
         | Some title -> ("sourceTitle", `String title) :: fields
         | None -> fields
         else fields in
-      `Assoc (("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
+      `Assoc (("discussionKind", `String (discussion_kind db eid))
+        :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded
