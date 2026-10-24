@@ -55,6 +55,27 @@ let discussion_kind db eid =
     (Read.ref_eids db eid "block/parent") then "comment"
   else ""
 
+let reaction_emoji id =
+  match String.lowercase_ascii id with
+  | "+1" | "thumbsup" | "thumbs_up" -> "👍"
+  | "-1" | "thumbsdown" | "thumbs_down" -> "👎"
+  | "heart" -> "❤️" | "tada" -> "🎉" | "smile" -> "😄"
+  | "laughing" | "satisfied" -> "😆" | "joy" -> "😂" | "eyes" -> "👀"
+  | "rocket" -> "🚀" | "fire" -> "🔥" | "thinking_face" -> "🤔"
+  | "white_check_mark" -> "✅" | "clap" -> "👏"
+  | _ -> id
+
+let reactions db eid =
+  let counts = Hashtbl.create 8 in
+  Seq.iter (fun (datom : Ds.datom) ->
+    if Read.value db datom.e "logseq.property/deleted-at" = None then
+      match Read.string_value (Read.value db datom.e "logseq.property.reaction/emoji-id") with
+      | Some id -> Hashtbl.replace counts id (1 + Option.value ~default:0 (Hashtbl.find_opt counts id))
+      | None -> ()) (Datascript_value.datoms_by_ref db Ds.Aevt "logseq.property.reaction/target" eid);
+  Hashtbl.fold (fun id count acc -> (id, count) :: acc) counts []
+  |> List.sort (fun (a, x) (b, y) -> let order = compare y x in if order = 0 then String.compare a b else order)
+  |> List.map (fun (id, count) -> `Assoc ["id", `String id; "emoji", `String (reaction_emoji id); "count", `Int count])
+
 let decorate db =
   let numbers = Hashtbl.create 8 in
   let dates = Hashtbl.create 16 in
@@ -128,5 +149,6 @@ let decorate db =
         | None -> fields
         else fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
+        :: ("reactions", `List (reactions db eid))
         :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded

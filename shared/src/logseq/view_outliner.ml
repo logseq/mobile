@@ -644,8 +644,23 @@ let discussion_body row_source body : t =
     else body)
     (Signal.map (fun row -> match metadata_member "discussionKind" row with `String value -> value | _ -> "") row_source)
 
+let reaction_strip row_source : t =
+  let reactions = Signal.map (fun row -> match metadata_member "reactions" row with
+    | `List values -> values | _ -> []) row_source in
+  if_ ~test:(Signal.map (fun values -> values <> []) reactions)
+    (row ~gap:6 ~padding_horizontal:32 ~padding_vertical:4
+      [keyed ~source:reactions ~key:(fun value -> Yojson.Basic.Util.member "emoji" value) ~cmp:compare
+        ~mount:(fun source ->
+          text ~value_signal:(Signal.map (fun value ->
+            let open Yojson.Basic.Util in
+            let emoji = try value |> member "emoji" |> to_string with _ -> "" in
+            let count = try value |> member "count" |> to_int with _ -> 0 in
+            emoji ^ " " ^ string_of_int count) source)
+            ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:8
+            ~background:"muted" ~style_class:"caption" [])])
+
 let decorate_row row_source send body =
-  column ~gap:0 [code_language_control row_source send; discussion_body row_source body]
+  column ~gap:0 [code_language_control row_source send; discussion_body row_source body; reaction_strip row_source]
 
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
