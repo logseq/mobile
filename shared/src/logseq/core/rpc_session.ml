@@ -372,6 +372,8 @@ let snapshot session context_blocks blocks =
            )
          ; ( "flashcards"
            , Rpc.json_list (List.map Rpc.flashcard_json s.flashcards) )
+         ; ("flashcardDecks", Flashcard_decks.to_yojson
+             (Flashcard_decks.for_graph (Option.map (fun c -> c.Api.graph_id) config) s.flashcard_decks))
          ; ("nodeRoutes", node_routes_json session serialize serialize_plain)
          ; ( "lastRefreshAt"
            , match s.model.last_refresh_at with
@@ -1619,15 +1621,74 @@ let delete_block session fields =
       (fun () ->
         Ok (Ops.Delete_blocks { Ops.uuids = [ uuid ] }))
 
+let flashcard_deck_state session =
+  Flashcard_decks.for_graph (Option.map (fun c -> c.Api.graph_id) (state session).config)
+    (state session).flashcard_decks
+
+let flashcards_in_scope session now = function
+  | None -> Ok (match (host session).graph_due_flashcards with Some load -> load now | None -> [])
+  | Some uuid -> (match query_db session with
+      | Some db -> Flashcard_decks.due_cards db now uuid
+      | None -> Error "Open a graph before selecting a card group")
+
+let publish_flashcards session (decks : Flashcard_decks.state) cards error =
+  let choices = Option.fold ~none:[] ~some:Flashcard_decks.choices (query_db session) in
+  session.Types.state := {(state session) with flashcards = cards;
+    flashcard_decks = {decks with choices; error}}
+
 let reload_flashcards session now =
-  session.Types.state :=
-    {
-      !(session.state) with
-      flashcards =
-        (match (host session).graph_due_flashcards with
-         | Some load -> load now
-         | None -> []);
-    }
+  let decks = flashcard_deck_state session in
+  match flashcards_in_scope session now decks.selected with
+  | Ok cards -> publish_flashcards session decks cards None
+  | Error message -> publish_flashcards session decks [] (Some message)
+
+let flashcard_deck_action session fields =
+  let string key = match List.assoc_opt key fields with Some (`String s) -> Some s | _ -> None in
+  let decks = flashcard_deck_state session in
+  let now = match List.assoc_opt "now" fields with Some (`Int now) -> now | _ -> now_ms () in
+  let failure message = Rpc.failure "invalid_card_group" message in
+  match (state session).config, query_db session with
+  | None, _ | _, None -> failure "Open a graph before choosing card groups"
+  | Some config, Some db when Option.fold ~none:false ~some:((<>) config.Api.graph_id) (string "graphId") ->
+    failure "The selected graph has changed"
+  | Some _, Some db ->
+    match string "action" with
+    | Some "select" ->
+      (match List.assoc_opt "uuid" fields with
+       | Some (`String _) | Some `Null ->
+         let selected = string "uuid" in
+         (match flashcards_in_scope session now selected with
+          | Error message -> failure message
+          | Ok cards ->
+            publish_flashcards session {decks with selected} cards None;
+            snapshot_visible session)
+       | _ -> failure "Choose a card group or All cards")
+    | Some "search" ->
+      let kind = Option.value ~default:"page" (string "kind") in
+      if not (List.mem kind ["page"; "tag"]) then failure "Choose a page reference or tag"
+      else
+        let query = Option.value ~default:"" (string "query") in
+        let search query = fst (search_page session ~offset:0 ~limit:100 query) in
+        let targets = Flashcard_decks.search_targets db ~kind ~query ~search in
+        session.Types.state := {(state session) with flashcard_decks =
+          {decks with target_kind = kind; target_query = query; targets}};
+        snapshot_visible session
+    | Some "create" ->
+      (match string "kind", string "targetUuid", string "title", editing_cursor session with
+       | Some kind, Some target, Some title, Ok base_t ->
+         (match Flashcard_decks.create db ~now ~kind ~target ~title ~fresh_uuid:fresh_squuid with
+          | Error message -> failure message
+          | Ok (uuid, intent) ->
+            (match enqueue_semantic session {Ops.operation_id = fresh_squuid (); base_t; state = Ops.Queued; intent} with
+             | Error message -> failure message
+             | Ok () ->
+               session.Types.state := {(state session) with flashcard_decks =
+                 {decks with selected = Some uuid; created = Some uuid}};
+               reload_flashcards session now;
+               snapshot_visible session))
+       | _, _, _, Error (_, message) -> failure message
+       | _ -> failure "Choose a page reference or tag and enter a card group name")
+    | _ -> failure "Unknown card group action"
 
 let sync_transport_editing session =
   let s = state session in
@@ -2015,6 +2076,7 @@ let rec dispatch session action payload =
        ^ string_of_int (List.length (state session).flashcards)
        ^ " now=" ^ string_of_int now);
     snapshot_visible session
+  | "flashcardDeck" -> object_action (fun _ fields -> flashcard_deck_action session fields)
   | "reviewFlashcard" ->
     Rpc.review_flashcard payload h.Types.graph_review_flashcard now_ms
       (fun now ->

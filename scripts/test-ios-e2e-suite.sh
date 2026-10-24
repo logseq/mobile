@@ -30,6 +30,8 @@ all_flows=(
   tests/e2e/ios-settings-tabs.yaml
   tests/e2e/ios-sidebar-page-empty-block-delete.yaml
   tests/e2e/ios-rich-block-rendering.yaml
+  tests/e2e/ios-flashcard-decks.yaml
+  tests/e2e/ios-flashcards-regression.yaml
   tests/e2e/ios-outliner-drag.yaml
   tests/e2e/ios-graphs.yaml
   tests/e2e/ios-graphs-lifecycle.yaml
@@ -91,6 +93,12 @@ case $selector in
   content)
     flows=(tests/e2e/ios-rich-block-rendering.yaml)
     ;;
+  flashcards)
+    flows=(
+      tests/e2e/ios-flashcard-decks.yaml
+      tests/e2e/ios-flashcards-regression.yaml
+    )
+    ;;
   graphs)
     flows=(
       tests/e2e/ios-graphs.yaml
@@ -99,7 +107,7 @@ case $selector in
     )
     ;;
   --list)
-    echo "Modules: all smoke composer outliner navigation settings content graphs"
+    echo "Modules: all smoke composer outliner navigation settings content flashcards graphs"
     printf '%s\n' "${all_flows[@]}"
     exit 0
     ;;
@@ -156,6 +164,8 @@ for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
      || $flow == tests/e2e/ios-page-favorite.yaml \
      || $flow == tests/e2e/ios-sidebar-page-empty-block-delete.yaml \
      || $flow == tests/e2e/ios-rich-block-rendering.yaml \
+     || $flow == tests/e2e/ios-flashcard-decks.yaml \
+     || $flow == tests/e2e/ios-flashcards-regression.yaml \
      || $flow == tests/e2e/ios-capture-responsive.yaml \
      || $flow == tests/e2e/ios-cold-start-composer.yaml \
      || $flow == tests/e2e/ios-search-status-regression.yaml \

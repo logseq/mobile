@@ -41,6 +41,7 @@ let () =
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
       "editor_commands", Editor_command_test.cases;
+      "flashcard_decks", Flashcard_decks_test.cases;
       "composer_tags", Composer_tag_test.cases;
       "block_clipboard", Block_clipboard_test.cases;
       "journal_format", Journal_format_test.cases;
