@@ -111,3 +111,8 @@
  (modules logseq_asset_e2e)
  (flags (:standard -w -27-32-37-39-69))
  (libraries logseq_core yojson unix))
+
+(executable
+ (name logseq_feedback_fixture)
+ (modules logseq_feedback_fixture)
+ (libraries logseq_core))
