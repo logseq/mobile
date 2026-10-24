@@ -384,6 +384,7 @@ private struct SyntaxHighlightedCodeBlock: View {
             }
             ScrollView(.horizontal, showsIndicators: true) {
                 CodeText(code)
+                    .highlightMode(.languageAliasIgnoreIllegal(language ?? "plaintext"))
                     .codeTextColors(.theme(.github))
                     .font(.callout.monospaced())
                     .textSelection(.enabled)
