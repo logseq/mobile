@@ -603,6 +603,12 @@ let outliner_task_dates context model_source row_source send =
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
+let row_metadata (row : Model.outline_row) =
+  try Yojson.Basic.from_string row.row_metadata_json with _ -> `Null
+
+let metadata_member key row =
+  match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
+
 let code_language_control row_source send : t =
   let row = Signal.sample row_source in
   let language row =
@@ -626,6 +632,21 @@ let code_language_control row_source send : t =
            "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
            "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ])
 
+let discussion_body row_source body : t =
+  let row = Signal.sample row_source in
+  dyn (fun kind ->
+    if kind = "thread" || kind = "comment" then
+      column ~gap:4 ~padding_vertical:6 ~padding_horizontal:8 ~corner_radius:6
+        ~background:"surface-container-low" ~border_width:1 ~border_color:"border"
+        ~accessibility_identifier:("outliner.comment." ^ row.Model.row_uuid)
+        [text ~value:(if kind = "thread" then "Comments" else "Comment")
+           ~style_class:"caption" ~foreground:"muted-foreground" []; body]
+    else body)
+    (Signal.map (fun row -> match metadata_member "discussionKind" row with `String value -> value | _ -> "") row_source)
+
+let decorate_row row_source send body =
+  column ~gap:0 [code_language_control row_source send; discussion_body row_source body]
+
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
     column ~gap:0 [
@@ -634,7 +655,7 @@ let render_result_block context model_source row_source send =
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value_signal:(Signal.map View_base.outliner_row_breadcrumb row_source)
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      (let body = outliner_row_body context model_source retained row_source send in
+      (let body = decorate_row row_source send (outliner_row_body context model_source retained row_source send) in
        if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
       outliner_continuation row_source (outliner_task_dates context model_source row_source send)]
 
@@ -645,7 +666,7 @@ let node_properties ?(root = false) context model_source send =
 
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
-  let body = column ~gap:0 [code_language_control row_source send; body] in
+  let body = decorate_row row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
@@ -691,6 +712,7 @@ let journal_heading model_source row_source send children : t =
 let outliner_entry context model_source retained_row_source row_source
     send : t =
   column ~padding_horizontal:8
+    ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "outliner.entry." ^ row.row_uuid) row_source)
     [
       if_
         ~test:
