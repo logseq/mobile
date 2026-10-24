@@ -159,7 +159,8 @@ let row_of_eid db eid =
     (match Graph.entity_title (fun value -> Ok value) db eid with
      | Some title ->
        let hidden =
-         Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
+         (Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
+          && not (Graph.entity_is_instance_of db eid "logseq.class/Tag"))
          || Option.is_some (Graph.value db eid "block/closed-value-property")
          || Graph.page_is_hidden db eid
        in

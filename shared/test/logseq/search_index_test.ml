@@ -234,8 +234,23 @@ let sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred () =
     check_eq ([], false) (Search.search_hits_page ~offset:0 ~limit:0 index db "movies");
     check_eq ([], false) (Search.search_hits_page ~offset:200 ~limit:20 index db "Paged needle"))
 
+let builtin_content_tags_are_searchable () =
+  with_index (fun index ->
+    let db = match Graph_bootstrap.database "test" false (fun x -> Ok x) with
+      | Ok db -> db | Error message -> fail message in
+    Search.refresh index db;
+    List.iter (fun query ->
+      let hits = Search.search_hits 100 index db ("#" ^ query) in
+      check ~msg:("Built-in content tag missing: " ^ query)
+        (List.exists (fun (hit : Search.indexed_search_hit) -> String.lowercase_ascii hit.title = query) hits)
+    ) ["code"; "math"; "quote"];
+    check ~msg:"Internal property definitions must remain hidden"
+      (not (List.exists (fun (hit : Search.indexed_search_hit) -> hit.title = "Node title")
+        (Search.search_hits 100 index db "Node title"))))
+
 let cases =
   [
+    case "built-in content tags are searchable" builtin_content_tags_are_searchable;
     case "incomplete queries do not break search or later valid queries"
       incomplete_queries_do_not_break_search_or_later_valid_queries;
     case "sqlite pages are stable bounded and not capped at one hundred" sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred;
