@@ -1,0 +1,81 @@
+{
+  "scope": "SDK loader attribution only; identical C entry immediately records process-birth-to-main, no UIKit app lifecycle or journal UI",
+  "control": "immutable standalone apps, randomized interleaved fresh-process rounds; no Instruments, injected library or loader logging",
+  "limitation": "No graph, scene, or app is started. Marginal pre-main framework costs may shift later if UIKit independently loads them during scene creation; this is not a complete-frame speedup.",
+  "samples": [
+    {"round": 1, "mode": "baseline", "wall_ms": 188.683, "cpu_ms": 181.784},
+    {"round": 1, "mode": "photos", "wall_ms": 204.718, "cpu_ms": 198.916},
+    {"round": 1, "mode": "photos-swiftui", "wall_ms": 220.365, "cpu_ms": 215.093},
+    {"round": 1, "mode": "photos-ui", "wall_ms": 212.724, "cpu_ms": 206.962},
+    {"round": 2, "mode": "baseline", "wall_ms": 199.281, "cpu_ms": 194.633},
+    {"round": 2, "mode": "photos-swiftui", "wall_ms": 221.103, "cpu_ms": 217.224},
+    {"round": 2, "mode": "photos-ui", "wall_ms": 219.717, "cpu_ms": 215.086},
+    {"round": 2, "mode": "photos", "wall_ms": 209.048, "cpu_ms": 205.008},
+    {"round": 3, "mode": "baseline", "wall_ms": 205.334, "cpu_ms": 199.926},
+    {"round": 3, "mode": "photos-ui", "wall_ms": 210.566, "cpu_ms": 205.522},
+    {"round": 3, "mode": "photos-swiftui", "wall_ms": 222.987, "cpu_ms": 217.309},
+    {"round": 3, "mode": "photos", "wall_ms": 203.564, "cpu_ms": 199.842},
+    {"round": 4, "mode": "photos-swiftui", "wall_ms": 222.289, "cpu_ms": 217.274},
+    {"round": 4, "mode": "photos", "wall_ms": 205.836, "cpu_ms": 202.609},
+    {"round": 4, "mode": "baseline", "wall_ms": 184.61, "cpu_ms": 179.116},
+    {"round": 4, "mode": "photos-ui", "wall_ms": 210.136, "cpu_ms": 205.466},
+    {"round": 5, "mode": "photos-ui", "wall_ms": 210.902, "cpu_ms": 207.249},
+    {"round": 5, "mode": "photos", "wall_ms": 203.737, "cpu_ms": 199.042},
+    {"round": 5, "mode": "photos-swiftui", "wall_ms": 220.276, "cpu_ms": 215.926},
+    {"round": 5, "mode": "baseline", "wall_ms": 199.496, "cpu_ms": 194.11},
+    {"round": 6, "mode": "photos", "wall_ms": 205.501, "cpu_ms": 201.901},
+    {"round": 6, "mode": "photos-swiftui", "wall_ms": 224.381, "cpu_ms": 217.969},
+    {"round": 6, "mode": "baseline", "wall_ms": 183.104, "cpu_ms": 179.156},
+    {"round": 6, "mode": "photos-ui", "wall_ms": 206.286, "cpu_ms": 202.948},
+    {"round": 7, "mode": "baseline", "wall_ms": 199.452, "cpu_ms": 195.224},
+    {"round": 7, "mode": "photos-swiftui", "wall_ms": 222.503, "cpu_ms": 218.118},
+    {"round": 7, "mode": "photos", "wall_ms": 205.642, "cpu_ms": 201.16},
+    {"round": 7, "mode": "photos-ui", "wall_ms": 210.587, "cpu_ms": 206.665}
+  ],
+  "medians": {
+    "baseline": {"wall_ms": 199.281, "cpu_ms": 194.11},
+    "photos": {"wall_ms": 205.501, "cpu_ms": 201.16},
+    "photos-ui": {"wall_ms": 210.587, "cpu_ms": 206.665},
+    "photos-swiftui": {"wall_ms": 222.289, "cpu_ms": 217.274}
+  },
+  "manifests": {
+    "baseline": {
+      "bundle": "com.logseq.logseq.ColdStartPhotoLayer.baseline",
+      "sha256": "ec851b97cd30ef6a1f30b2b8c56e3b9e880fb7c4b7cc9210e5f9ad260f72a9b2",
+      "frameworks": ["SwiftUI", "UIKit"]
+    },
+    "photos": {
+      "bundle": "com.logseq.logseq.ColdStartPhotoLayer.photos",
+      "sha256": "bc503d3c94028ad3aed0319e349145e5a429cc84ccef3ed190ba40e6bf0d8bad",
+      "frameworks": ["SwiftUI", "UIKit", "Photos"]
+    },
+    "photos-ui": {
+      "bundle": "com.logseq.logseq.ColdStartPhotoLayer.photos-ui",
+      "sha256": "e1f911894843d4bbfa7383dff3ab2c95ed6b0084268d179b3ddd441b6c8aa514",
+      "frameworks": ["SwiftUI", "UIKit", "Photos", "PhotosUI"]
+    },
+    "photos-swiftui": {
+      "bundle": "com.logseq.logseq.ColdStartPhotoLayer.photos-swiftui",
+      "sha256": "31383c72d4a053bcbf4684e2dcd22ad94a3c62d6c6823d89e4552f6900e5b46d",
+      "frameworks": ["SwiftUI", "UIKit", "Photos", "PhotosUI", "_PhotosUI_SwiftUI"]
+    }
+  },
+  "marginal_costs": {
+    "photos minus baseline": {
+      "paired_differences_ms": [16.034999999999997, 9.766999999999996, -1.7700000000000102, 21.226, 4.2409999999999854, 22.39699999999999, 6.189999999999998],
+      "median_ms": 9.766999999999996
+    },
+    "photos-ui minus photos": {
+      "paired_differences_ms": [8.006, 10.669000000000011, 7.0020000000000095, 4.299999999999983, 7.164999999999992, 0.7849999999999966, 4.944999999999993],
+      "median_ms": 7.0020000000000095
+    },
+    "photos-swiftui minus photos-ui": {
+      "paired_differences_ms": [7.6410000000000196, 1.3859999999999957, 12.420999999999992, 12.152999999999992, 9.374000000000024, 18.095, 11.915999999999997],
+      "median_ms": 11.915999999999997
+    },
+    "photos-swiftui minus baseline": {
+      "paired_differences_ms": [31.682000000000016, 21.822000000000003, 17.65299999999999, 37.678999999999974, 20.78, 41.27699999999999, 23.050999999999988],
+      "median_ms": 23.050999999999988
+    }
+  }
+}

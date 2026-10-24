@@ -1,0 +1,1 @@
+{"scope":"diagnostic actual app entry; loader tracing is not production timing evidence","authentication_ui_loaded_by_stage":{"main_entry":false,"delegate_init_begin":false,"delegate_init_end":false,"delegate_launch_begin":false,"delegate_launch_end":false,"window_became_key":false,"first_commit":false,"first_display_after_commit":false},"authentication_ui_image_added":false}

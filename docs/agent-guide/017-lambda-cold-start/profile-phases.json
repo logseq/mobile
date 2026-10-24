@@ -1,0 +1,29 @@
+{
+  "trace": "/tmp/logseq-startup-component-full.trace",
+  "scope": "Time Profiler attribution only; instrumentation affects wall time; inclusive categories overlap",
+  "phases": {
+    "creation": {
+      "start_ms": 1571.563,
+      "end_ms": 1796.602,
+      "wall_ms": 225.038,
+      "main_cpu_samples_ms": 183,
+      "protocol_conformance_inclusive_ms": 75,
+      "type_metadata_inclusive_ms": 44,
+      "dynamic_fields_inclusive_ms": 26
+    },
+    "layout": {
+      "start_ms": 1796.603,
+      "end_ms": 1971.372,
+      "wall_ms": 174.769,
+      "main_cpu_samples_ms": 157,
+      "protocol_conformance_inclusive_ms": 25,
+      "type_metadata_inclusive_ms": 13,
+      "dynamic_fields_inclusive_ms": 3
+    }
+  },
+  "icon_inclusive_cpu_samples_ms": {
+    "NodeIconExtension.image": 16,
+    "NodeIconAssets.Catalog": 5,
+    "UIGraphicsImageRenderer": 9
+  }
+}

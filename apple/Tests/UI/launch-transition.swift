@@ -86,6 +86,9 @@ import UIKit
             guard cover.backgroundColor?.cgColor.alpha == 0, logo.alpha == 0 else {
                 throw failure("Readiness must begin fading both the background and logo immediately")
             }
+            guard cover.layer.animation(forKey: "backgroundColor") == nil else {
+                throw failure("The launch background must reveal the ready frame immediately, without an additional fade delay")
+            }
             let point = button.convert(CGPoint(x: 100, y: 20), to: window)
             guard window.hitTest(point, with: nil) === button else { throw failure("Content must remain interactive during the fade") }
             button.sendActions(for: .touchUpInside)

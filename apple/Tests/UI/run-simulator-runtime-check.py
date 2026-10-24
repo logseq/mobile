@@ -13,7 +13,7 @@ if CONFIGURATION not in ("debug", "release"):
     raise SystemExit("LOGSEQ_IOS_CONFIGURATION must be debug or release")
 BUILD = ROOT / "apple/.build/arm64-apple-ios-simulator" / CONFIGURATION
 SIMULATOR = os.environ.get("LOGSEQ_IOS_SIMULATOR", "booted")
-BUNDLE = "com.logseq.logseq.RuntimeCheck"
+BUNDLE = os.environ.get("LOGSEQ_IOS_RUNTIME_CHECK_BUNDLE_ID", "com.logseq.logseq.RuntimeCheck")
 
 
 def run(arguments, **kwargs):
@@ -27,13 +27,32 @@ def main():
     print(f"RUNTIME_CHECK_CONFIGURATION={CONFIGURATION}", flush=True)
     entry, check_type = sys.argv[1:3]
     interactive = check_type == "--interactive"
-    benchmark = check_type in ("--benchmark", "--interactive")
+    benchmark = check_type in ("--benchmark", "--interactive", "--prepare-benchmark")
+    prepare = check_type == "--prepare-benchmark"
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
-    bundle = "com.logseq.logseq.PageBenchmark" if benchmark else BUNDLE
+    external_entry = Path(entry).name in ("app-entry-cold-start-benchmark.swift", "cold-start-visible-content.swift")
+    app_entry = Path(entry).name == "app-entry-cold-start-benchmark.swift"
+    common_source = (ROOT / "apple/Tests/UI/cold-start-benchmark.swift").read_text() if external_entry else ""
+    if app_entry:
+        # Retain the actual production App and delegate, replacing only @main
+        # with the measurement trampoline in the benchmark entry.
+        production_entry = (ROOT / "apple/App/Sources/Main.swift").read_text()
+        if production_entry.count("@main struct AppMain") != 1:
+            raise SystemExit("The production app entry changed; update the startup measurement trampoline")
+        production_entry = production_entry.replace("@main struct AppMain", "struct AppMain", 1)
+        for method, stage in (("onInit", "init"), ("onLaunch", "launch")):
+            call = f"AppDelegate.shared.{method}()"
+            if production_entry.count(call) != 1:
+                raise SystemExit(f"The production {method} delegate changed; update startup stage observation")
+            production_entry = production_entry.replace(call,
+                f'Clock.mark("delegate_{stage}_begin"); {call}; Clock.mark("delegate_{stage}_end")')
+        common_source += "\n" + production_entry + "\n" + (ROOT / "apple/App/Sources/QuickActions.swift").read_text()
+    bundle = os.environ.get("LOGSEQ_IOS_BENCHMARK_BUNDLE_ID", "com.logseq.logseq.PageBenchmark") if benchmark else BUNDLE
+    app_name = bundle.rsplit(".", 1)[-1] if bundle.startswith("com.logseq.logseq.ColdStart") else "RuntimeCheck"
     with tempfile.TemporaryDirectory(prefix="logseq-runtime-check-") as temporary:
         directory = Path(temporary)
         source = directory / "check.swift"
-        source.write_text(Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
+        source.write_text(common_source + (Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
 import SwiftUI
 @main struct RuntimeCheckApplication: App {{
     var body: some Scene {{
@@ -51,8 +70,8 @@ import SwiftUI
         }}
     }}
 }}
-""")
-        app = directory / "RuntimeCheck.app"
+"""))
+        app = directory / f"{app_name}.app"
         app.mkdir()
         fixture_json = Path(entry).with_suffix(".json")
         if fixture_json.exists():
@@ -81,28 +100,45 @@ import SwiftUI
             raise SystemExit("The app build's native core object is missing; rebuild the simulator app")
         toolchain = ROOT / "_build/apple-toolchains/ios"
         optimization = ["-O"] if CONFIGURATION == "release" else []
-        runtime_exports = ["-Xlinker", "-export_dynamic"]
+        production_exports = CONFIGURATION == "release" and not testing
+        runtime_exports = [] if production_exports else ["-Xlinker", "-export_dynamic"]
         for symbol in ("_logseq_https_send", "_logseq_https_upload_file", "_logseq_crypto_call", "_logseq_metric_log", "_logseq_graph_import_progress"):
             runtime_exports += ["-Xlinker", "-u", "-Xlinker", symbol]
+            if production_exports:
+                runtime_exports += ["-Xlinker", "-exported_symbol", "-Xlinker", symbol]
         if CONFIGURATION == "release":
             runtime_exports += ["-Xlinker", "-dead_strip"]
-        run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
+        entry_flags = ["-DLOGSEQ_BENCH_EXTERNAL_ENTRY"] if external_entry else []
+        clang_modules = [argument for path in sorted(BUILD.glob("*.build/module.modulemap"))
+                         for argument in ("-I", str(path.parent))]
+        if app_entry:
+            entry_flags += ["-DLOGSEQ_BENCH_APP_ENTRY"]
+        run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, *entry_flags, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
-             "-I", str(BUILD / "LogseqCoreABI.build"), str(source), *objects, *testing_args, str(runtime),
+             *clang_modules, str(source), *objects, *testing_args, str(runtime),
              str(core / "logseq_https_darwin.o"), str(core / "logseq_crypto_darwin.o"),
              str(toolchain / "arm64-apple-ios17.0-simulator-5.5.0/lib/ocaml/libthreadsnat.a"),
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),
              "-lffi", "-lsqlite3", "-lz", "-framework", "Security", *runtime_exports,
              "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__entitlements",
-             "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
+             "-Xlinker", str(entitlements), "-o", str(app / app_name)])
+        if production_exports:
+            run(["python3", str(ROOT / "scripts/check-ios-release-runtime-exports.py"),
+                 str(app / app_name)])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
+        shipping_info = plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes())
+        launch_metadata = {key: shipping_info[key] for key in (
+            "UILaunchScreen", "BGTaskSchedulerPermittedIdentifiers", "UIBackgroundModes", "UIApplicationShortcutItems"
+        ) if key in shipping_info} if app_entry else {"UILaunchScreen": {}}
         (app / "Info.plist").write_bytes(plistlib.dumps({
             **privacy,
-            "CFBundleIdentifier": bundle, "CFBundleExecutable": "RuntimeCheck",
-            "CFBundleName": "Runtime check", "CFBundlePackageType": "APPL",
+            **launch_metadata,
+            "CFBundleIdentifier": bundle, "CFBundleExecutable": app_name,
+            "CFBundleName": "Runtime check" if app_name == "RuntimeCheck" else app_name,
+            "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "MinimumOSVersion": "17.0",
-            "UIDeviceFamily": [1], "UILaunchScreen": {},
+            "UIDeviceFamily": [1],
         }))
         for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)
@@ -124,6 +160,9 @@ import SwiftUI
                     launch_environment["SIMCTL_CHILD_" + name] = value
             if not interactive:
                 launch_environment["SIMCTL_CHILD_LOGSEQ_BENCH_EXIT"] = "1"
+        if prepare:
+            print(f"BENCHMARK_READY bundle={bundle}", flush=True)
+            return
         if interactive:
             run(["xcrun", "simctl", "launch", "--terminate-running-process", SIMULATOR, bundle], env=launch_environment)
             print(f"INTERACTIVE_CHECK_READY bundle={bundle}", flush=True)

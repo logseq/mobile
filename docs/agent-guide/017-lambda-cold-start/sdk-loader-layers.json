@@ -1,0 +1,91 @@
+{
+  "scope": "SDK loader attribution only; identical C entry immediately records process-birth-to-main, no UIKit app lifecycle or journal UI",
+  "control": "immutable standalone apps, randomized interleaved fresh-process rounds; no Instruments, injected library or loader logging",
+  "limitation": "the app-frameworks control links the framework list, not the full application executable or every Swift overlay",
+  "samples": [
+    {"round": 1, "mode": "system", "wall_ms": 179.164, "cpu_ms": 169.554},
+    {"round": 1, "mode": "foundation", "wall_ms": 179.739, "cpu_ms": 172.903},
+    {"round": 1, "mode": "uikit", "wall_ms": 211.052, "cpu_ms": 188.415},
+    {"round": 1, "mode": "app-frameworks", "wall_ms": 262.604, "cpu_ms": 225.522},
+    {"round": 1, "mode": "swiftui", "wall_ms": 193.718, "cpu_ms": 188.929},
+    {"round": 2, "mode": "swiftui", "wall_ms": 195.596, "cpu_ms": 190.484},
+    {"round": 2, "mode": "app-frameworks", "wall_ms": 231.486, "cpu_ms": 222.508},
+    {"round": 2, "mode": "foundation", "wall_ms": 195.891, "cpu_ms": 184.174},
+    {"round": 2, "mode": "system", "wall_ms": 182.906, "cpu_ms": 179.638},
+    {"round": 2, "mode": "uikit", "wall_ms": 188.15, "cpu_ms": 186.217},
+    {"round": 3, "mode": "swiftui", "wall_ms": 192.238, "cpu_ms": 188.24},
+    {"round": 3, "mode": "uikit", "wall_ms": 194.767, "cpu_ms": 190.128},
+    {"round": 3, "mode": "system", "wall_ms": 181.593, "cpu_ms": 178.122},
+    {"round": 3, "mode": "foundation", "wall_ms": 185.517, "cpu_ms": 181.117},
+    {"round": 3, "mode": "app-frameworks", "wall_ms": 225.255, "cpu_ms": 218.004},
+    {"round": 4, "mode": "uikit", "wall_ms": 194.853, "cpu_ms": 189.894},
+    {"round": 4, "mode": "app-frameworks", "wall_ms": 227.903, "cpu_ms": 223.71},
+    {"round": 4, "mode": "swiftui", "wall_ms": 194.125, "cpu_ms": 189.203},
+    {"round": 4, "mode": "foundation", "wall_ms": 188.489, "cpu_ms": 182.763},
+    {"round": 4, "mode": "system", "wall_ms": 182.861, "cpu_ms": 176.713},
+    {"round": 5, "mode": "foundation", "wall_ms": 187.464, "cpu_ms": 183.515},
+    {"round": 5, "mode": "system", "wall_ms": 182.283, "cpu_ms": 177.363},
+    {"round": 5, "mode": "swiftui", "wall_ms": 194.117, "cpu_ms": 189.505},
+    {"round": 5, "mode": "app-frameworks", "wall_ms": 232.25, "cpu_ms": 226.782},
+    {"round": 5, "mode": "uikit", "wall_ms": 194.302, "cpu_ms": 189.848},
+    {"round": 6, "mode": "uikit", "wall_ms": 183.638, "cpu_ms": 180.673},
+    {"round": 6, "mode": "app-frameworks", "wall_ms": 224.094, "cpu_ms": 219.602},
+    {"round": 6, "mode": "swiftui", "wall_ms": 193.926, "cpu_ms": 189.335},
+    {"round": 6, "mode": "system", "wall_ms": 183.709, "cpu_ms": 179.419},
+    {"round": 6, "mode": "foundation", "wall_ms": 185.94, "cpu_ms": 179.508},
+    {"round": 7, "mode": "uikit", "wall_ms": 178.834, "cpu_ms": 175.828},
+    {"round": 7, "mode": "foundation", "wall_ms": 186.623, "cpu_ms": 180.608},
+    {"round": 7, "mode": "app-frameworks", "wall_ms": 223.109, "cpu_ms": 219.207},
+    {"round": 7, "mode": "swiftui", "wall_ms": 189.276, "cpu_ms": 184.889},
+    {"round": 7, "mode": "system", "wall_ms": 183.197, "cpu_ms": 177.721}
+  ],
+  "medians": {
+    "system": {
+      "wall_ms": 182.861,
+      "cpu_ms": 177.721
+    },
+    "foundation": {
+      "wall_ms": 186.623,
+      "cpu_ms": 181.117
+    },
+    "uikit": {
+      "wall_ms": 194.302,
+      "cpu_ms": 188.415
+    },
+    "swiftui": {
+      "wall_ms": 193.926,
+      "cpu_ms": 189.203
+    },
+    "app-frameworks": {
+      "wall_ms": 227.903,
+      "cpu_ms": 222.508
+    }
+  },
+  "manifests": {
+    "system": {
+      "bundle": "com.logseq.logseq.ColdStartPremainLayer.system",
+      "sha256": "0a0f2dcf0d981721fd9f1673fdf9b8becfda607484a7840cd2f6ae04266b2258",
+      "frameworks": []
+    },
+    "foundation": {
+      "bundle": "com.logseq.logseq.ColdStartPremainLayer.foundation",
+      "sha256": "fe435828dce0c146c92e5b1c1c6b323fe3857173974752cc549828f8a880268e",
+      "frameworks": ["Foundation"]
+    },
+    "uikit": {
+      "bundle": "com.logseq.logseq.ColdStartPremainLayer.uikit",
+      "sha256": "2d901ca1c3fb9dc805a6c3fe817d8354744d70ff0d708a17c8621ce30f5619c7",
+      "frameworks": ["UIKit"]
+    },
+    "swiftui": {
+      "bundle": "com.logseq.logseq.ColdStartPremainLayer.swiftui",
+      "sha256": "be847c6c9e51e0b54936c1c8aaa6dbdcddb56c145ef4f8f5031b1aea0f3903d2",
+      "frameworks": ["SwiftUI"]
+    },
+    "app-frameworks": {
+      "bundle": "com.logseq.logseq.ColdStartPremainLayer.app-frameworks",
+      "sha256": "e906e57bdc83c42fd26449d284eb05f53cbe99ba23ce73311473931c90f07db2",
+      "frameworks": ["Security", "AVFAudio", "AVFoundation", "AppIntents", "BackgroundTasks", "CFNetwork", "Combine", "CoreFoundation", "CoreGraphics", "CoreText", "CoreTransferable", "CryptoKit", "Foundation", "ImageIO", "JavaScriptCore", "Network", "Photos", "PhotosUI", "QuartzCore", "Speech", "SwiftUI", "UIKit", "WebKit", "_AVKit_SwiftUI", "_PhotosUI_SwiftUI"]
+    }
+  }
+}

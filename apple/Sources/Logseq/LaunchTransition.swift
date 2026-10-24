@@ -5,6 +5,11 @@ import UIKit
     private var cover: UIView?
     private var finished = false
 
+    func isCoveringContent(in window: UIWindow) -> Bool {
+        guard let cover, cover.window === window, !cover.isHidden else { return false }
+        return cover.alpha > 0.01 && (cover.backgroundColor?.cgColor.alpha ?? 0) > 0.01
+    }
+
     func show(in window: UIWindow) {
         guard !finished, cover == nil, let image = UIImage(named: "LaunchLogo") else { return }
         let cover = UIView(frame: window.bounds)
@@ -31,11 +36,8 @@ import UIKit
         if reduceMotion {
             cover.removeFromSuperview()
         } else {
-            // Readiness reveals content promptly; the faint logo can finish independently.
-            let options: UIView.AnimationOptions = [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]
-            UIView.animate(withDuration: 0.12, delay: 0, options: options) {
-                cover.backgroundColor = .clear
-            }
+            // Reveal the ready frame immediately; only the faint logo keeps fading.
+            cover.backgroundColor = .clear
             UIView.animate(withDuration: 0.45, delay: 0,
                 options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState]) {
                 for logo in cover.subviews { logo.alpha = 0 }

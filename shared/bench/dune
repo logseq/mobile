@@ -17,3 +17,13 @@
  (name search_pages)
  (modules search_pages)
  (libraries logseq_core unix yojson))
+
+(executable
+ (name cold_start)
+ (modules cold_start)
+ (libraries logseq_core logseq_app unix yojson))
+
+(executable
+ (name cold_start_fixture)
+ (modules cold_start_fixture)
+ (libraries logseq_core unix yojson))

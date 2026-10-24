@@ -1,0 +1,23 @@
+{
+  "scope": "actual application entry; opaque surface dispatch for immutable wire-node kinds; identical Lambda journal, node modifiers and native UI",
+  "control": "separate immutable production binaries; same core and source base; randomized paired rounds; no CPU counters, injected library, Instruments or loader diagnostics",
+  "manifests": {"baseline":{"bundle":"com.logseq.logseq.ColdStartAppEntry","sha256":"12b6d9c5e69ac2e1f18e467bac4f0537bb02159e3c6e571433b622a9775b7324"},"candidate":{"bundle":"com.logseq.logseq.ColdStartNodeSurface","sha256":"81d48c93f40d5af47fb2077cc545170f38ff9655c263536f746e3128cda3cf84"}},
+  "samples": [
+    {"round":1,"mode":"candidate","result":{"process_ms":1765.576392179355,"first_commit_ms":1758.8867255253717,"nonempty_rows":5},"stages":{}},
+    {"round":1,"mode":"baseline","result":{"process_ms":1209.090392338112,"first_commit_ms":1195.5794340465218,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"baseline","result":{"process_ms":1099.8975632246584,"first_commit_ms":1082.6116466196254,"nonempty_rows":5},"stages":{}},
+    {"round":2,"mode":"candidate","result":{"process_ms":1233.0707336077467,"first_commit_ms":1223.3068586792797,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"candidate","result":{"process_ms":1031.4935854403302,"first_commit_ms":952.6787103386596,"nonempty_rows":5},"stages":{}},
+    {"round":3,"mode":"baseline","result":{"process_ms":1155.7280644774437,"first_commit_ms":1141.2384394789115,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"candidate","result":{"process_ms":1084.214792237617,"first_commit_ms":1060.032958863303,"nonempty_rows":5},"stages":{}},
+    {"round":4,"mode":"baseline","result":{"process_ms":1078.7100883899257,"first_commit_ms":1068.72971332632,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"candidate","result":{"process_ms":1043.468832038343,"first_commit_ms":1029.3183319736272,"nonempty_rows":5},"stages":{}},
+    {"round":5,"mode":"baseline","result":{"process_ms":1119.3106436403468,"first_commit_ms":1113.11768530868,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"candidate","result":{"process_ms":988.6803441913798,"first_commit_ms":909.7304275492206,"nonempty_rows":5},"stages":{}},
+    {"round":6,"mode":"baseline","result":{"process_ms":914.0551289310679,"first_commit_ms":901.8537956289947,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"candidate","result":{"process_ms":830.9827364282683,"first_commit_ms":825.6311115110293,"nonempty_rows":5},"stages":{}},
+    {"round":7,"mode":"baseline","result":{"process_ms":903.3433354925364,"first_commit_ms":893.8137521035969,"nonempty_rows":5},"stages":{}}
+  ],
+  "paired_improvements": {"process_ms":[-556.485999841243,-133.1731703830883,124.23447903711349,-5.504703847691417,75.84181160200387,-74.62521526031196,72.36059906426817]},
+  "median_paired_improvements": {"process_ms":-5.504703847691417}
+}
