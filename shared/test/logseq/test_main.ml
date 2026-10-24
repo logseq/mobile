@@ -54,6 +54,7 @@ let () =
       "shared_capture", Shared_capture_test.cases;
       "native_media", Native_media_test.cases;
       "app", App_test.cases;
+      "special_block_continuation", Special_block_continuation_test.cases;
       "autosave", Autosave_test.cases;
       "drive", Drive_scenario_test.cases;
       "repro", Repro_wedge_test.cases;

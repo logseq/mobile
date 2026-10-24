@@ -1100,7 +1100,12 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
   let placeholder = box ~height:28 [
-    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.outliner_editing = None) model_source) placeholder] in
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+      match current.outliner_editing with
+      | None -> true
+      | Some editing -> List.exists (fun (row : Model.outline_row) ->
+          row.row_uuid = editing.editing_uuid && List.mem row.row_display_type [Some "math"; Some "code"])
+          current.outliner_rows) model_source) placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, _, divider) ->
