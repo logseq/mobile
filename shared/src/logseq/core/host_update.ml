@@ -25,6 +25,7 @@ type host_ui_session =
 type host_settings =
   { appearance : string
   ; language : string
+  ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
@@ -71,6 +72,7 @@ let settings value =
     {
       appearance = string_field "appearance" value;
       language = string_field "language" value;
+      system_language = (match Util.member "systemLanguage" value with `String value -> Some value | _ -> None);
       spell_check = bool_field "spellCheck" value;
       auto_correction = bool_field "autoCorrection" value;
       sidebar_tabs = string_vector (Util.member "sidebarTabs" value);

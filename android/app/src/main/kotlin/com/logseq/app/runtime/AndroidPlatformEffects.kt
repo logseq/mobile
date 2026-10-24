@@ -84,6 +84,7 @@ internal data class AndroidHostSettings(
         get() = mapOf(
             "appearance" to appearance,
             "language" to language,
+            "systemLanguage" to java.util.Locale.getDefault().toLanguageTag(),
             "spellCheck" to spellCheck,
             "autoCorrection" to autoCorrection,
             "sidebarTabs" to sidebarTabs,

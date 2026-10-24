@@ -44,17 +44,13 @@ val settings_general_card :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val settings_editor_card :
-  Lui_ui.ui_context ->
+val settings_editor_card : Model.logseq_model Signal.signal -> Lui_ui.ui_context ->
   bool Signal.signal ->
   bool Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
-val settings_export_row :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
-val settings_runtime_log_row :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val settings_export_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val settings_runtime_log_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val sign_in_label : Model.logseq_model Signal.signal -> Lui_elements.t
-val settings_sign_out_row :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val settings_sign_out_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
@@ -63,8 +59,7 @@ val settings_tabs_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val runtime_log_actions :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val runtime_log_actions : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val runtime_log_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
@@ -77,10 +72,8 @@ val settings_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val page_delete_dialog :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
-val sign_out_dialog :
-  Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val page_delete_dialog : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
+val sign_out_dialog : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val sync_status_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

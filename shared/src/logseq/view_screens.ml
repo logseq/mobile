@@ -132,7 +132,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       [
         View_composer.composer_view context model_source send;
         button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:58
-          ~height:58 ~background:"surface-container-low" ~corner_radius:12 ~label:"Search"
+          ~height:58 ~background:"surface-container-low" ~corner_radius:12 ~label:(View_base.tr (Signal.sample model_source) "Search")
           ~border_width:1 ~border_color:"border"
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
@@ -145,7 +145,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
         View_composer.composer_view context model_source send;
         View_base.with_liquid_glass "circle"
           (button ~icon:(`app "search") ~variant:`ghost ~size:`icon
-             ~width:58 ~height:58 ~foreground:"foreground" ~label:"Search"
+             ~width:58 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
              ~accessibility_identifier:"button.search"
              ~on_press:(press send Model.OpenSearch)
              []);
@@ -463,7 +463,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
                && View_base.node_screen_visible_ current)
              model_source)
         (button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
-           ~label:"Back"
+           ~label:(View_base.tr (Signal.sample model_source) "Back")
            ~accessibility_identifier:"button.navigation.back"
            ~on_press:(fun _ ->
              ignore (send (Model.BackAppNavigation 1)))
@@ -474,7 +474,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
              model_source)
         (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
            ~width:44 ~height:44
-           ~label:"Toggle sidebar"
+           ~label:(View_base.tr (Signal.sample model_source) "Toggle sidebar")
            ~style_class:"drawer-toggle"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
@@ -577,7 +577,7 @@ let active_overflow_menu model_source send : t =
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []);
        if_ ~test:(own (Signal.map (fun source -> Option.is_some source) rename_source))
-         (menu_item ~text:"Rename page" ~accessibility_identifier:"button.page.rename"
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Rename page") ~accessibility_identifier:"button.page.rename"
            ~on_press:(fun _ ->
              let current = Signal.sample model_source in
              match Signal.sample rename_source with
@@ -587,7 +587,7 @@ let active_overflow_menu model_source send : t =
                  (List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "rename", property))) []);
        if_ ~test:(own (Signal.map Option.is_some tag_source))
-         (menu_item ~text:"Add tags" ~accessibility_identifier:"button.page.tags"
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.page.tags"
            ~on_press:(fun _ -> match Signal.sample tag_source with
              | None -> ()
              | Some (owner, property) -> let current = Signal.sample model_source in
@@ -596,30 +596,30 @@ let active_overflow_menu model_source send : t =
                Signal.set editing (Some (current.selected_graph_id, owner, "tags", property))) []);
        add_property;
        if_ ~test:page_actions_source
-         (menu_item ~text:"Share" ?icon:(item_icon "share")
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Share") ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
             []);
        if_ ~test:(Signal.map (fun current ->
            match Model.active_page current with
            | Some page -> Model.page_can_delete current page.uuid
            | None -> false) model_source)
-         (menu_item ~text:"Delete" ~variant:`destructive
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete") ~variant:`destructive
             ~accessibility_identifier:"button.page.delete"
             ?icon:(item_icon "toolbar-delete")
             ~on_press:(press send Model.RequestDeleteActivePage)
             []);
        if_ ~test:settings_source
-         (menu_item ~text:"Settings" ?icon:(item_icon "settings")
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings") ?icon:(item_icon "settings")
             ~on_press:(press send Model.OpenSettings)
             []);
      ]
    in
    let menu = if kotlin_host then
-     menu ~icon:(`app "more-vert") ~label:"More"
+     menu ~icon:(`app "more-vert") ~label:(View_base.tr (Signal.sample model_source) "More")
        ~accessibility_identifier:"button.overflow-menu" entries
    else
      box ~width:44 ~height:44
-       [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+       [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
            ~accessibility_identifier:"button.connection" entries ] in
    stack [menu; add_picker;
      if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
@@ -643,7 +643,7 @@ let main_header_connection model_source send : t =
         (fun context parent ->
           (stack [
                if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
-                 (button ~icon:(`app "calendar") ~label:"Go to journal"
+                 (button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
                     ~variant:`ghost ~size:`icon ~width:44 ~height:44
                     ~accessibility_identifier:"button.journal-calendar"
                     ~on_press:(press send Model.OpenJournalCalendar) []);
@@ -723,7 +723,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      (Signal.map View_base.string_wire_value query_source);
    Lui_ui.extension_property_signal context node "title"
      (Signal.map (fun (current : Model.logseq_model) -> StringValue
-       (if Lui_ui.host context = SwiftUIHost || current.search_navigation_path = [] then "Search"
+       (if Lui_ui.host context = SwiftUIHost || current.search_navigation_path = [] then View_base.tr current "Search"
         else View_base.active_node_title current)) model_source);
    Lui_ui.extension_property_signal context node "bottom-occupies-layout-space"
      (Signal.map (fun current -> BoolValue (View_base.search_editor_active_ current)) model_source);
@@ -907,17 +907,17 @@ let authentication_content (context : Lui_ui.ui_context) model_source
              icon ~name:(`app "logo") ~width:96 ~height:96 []);
         ];
       box ~height:28 [];
-      heading ~level:1 ~value:"Logseq" [];
+      heading ~level:1 ~value:(View_base.tr (Signal.sample model_source) "Logseq") [];
       box ~height:10 [];
       text ~foreground:"muted-foreground" ~text_alignment:`center
-        ~value:"Capture, sync, and review your notes anywhere." [];
+        ~value:(View_base.tr (Signal.sample model_source) "Capture, sync, and review your notes anywhere.") [];
       box ~height:36 [];
       button ~accessibility_identifier:"button.hosted-sign-in"
         ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
         ~disabled_signal:
           (Signal.map View_base.authentication_signing_in_ model_source)
         ~on_press:(press send Model.SignIn)
-        ~text:"Sign in" [View_settings.sign_in_label model_source];
+        ~text:(View_base.tr (Signal.sample model_source) "Sign in") [View_settings.sign_in_label model_source];
       if_
         ~test:
           (Signal.map View_base.authentication_error_present_
@@ -977,10 +977,10 @@ let application_main_content (context : Lui_ui.ui_context) model_source
           (View_graphs.graph_password_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
-          (View_settings.page_delete_dialog context send);
+          (View_settings.page_delete_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.sign_out_pending_ model_source)
-          (View_settings.sign_out_dialog context send);
+          (View_settings.sign_out_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
@@ -1018,10 +1018,10 @@ let application_main_content (context : Lui_ui.ui_context) model_source
           (View_graphs.graph_password_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
-          (View_settings.page_delete_dialog context send);
+          (View_settings.page_delete_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.sign_out_pending_ model_source)
-          (View_settings.sign_out_dialog context send);
+          (View_settings.sign_out_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
@@ -1035,10 +1035,10 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       ~key:string_of_int ~cmp:compare
       ~mount:(fun id_source ->
         let duration = if Lui_ui.platform context = IOS then 1500 else 2500 in
-        let notification = toast ~duration ~label:"Added to today" ~margin_top:8
+        let notification = toast ~duration ~label:(View_base.tr (Signal.sample model_source) "Added to today") ~margin_top:8
           ~on_dismiss:(press send (Model.DismissCaptureConfirmation (Signal.sample id_source)))
-          [text ~value:"✅" ~accessibility_identifier:"capture.confirmation.icon" [];
-           text ~value:"Added to today" ~accessibility_identifier:"capture.confirmation" []] in
+          [text ~value:(View_base.tr (Signal.sample model_source) "✅") ~accessibility_identifier:"capture.confirmation.icon" [];
+           text ~value:(View_base.tr (Signal.sample model_source) "Added to today") ~accessibility_identifier:"capture.confirmation" []] in
         if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
           box [(fun context parent ->
             let node = Lui_ui.extension context "native-top-notification" in
@@ -1077,7 +1077,7 @@ let logseq_view (context : Lui_ui.ui_context) model_source send : t =
                  (Signal.map View_base.drawer_selected_ model_source)
                ~disabled_signal:
                  (Signal.map View_base.drawer_disabled_ model_source)
-               ~width:320 ~label:"Navigation"
+               ~width:320 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
                ~accessibility_identifier:"application.shell"
                ~on_toggle:(fun input_event ->
                  match input_event with
@@ -1106,7 +1106,7 @@ let logseq_view (context : Lui_ui.ui_context) model_source send : t =
                  (Signal.map View_base.drawer_selected_ model_source)
                ~disabled_signal:
                  (Signal.map View_base.drawer_disabled_ model_source)
-               ~width:360 ~label:"Navigation"
+               ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
                ~accessibility_identifier:"application.shell"
                ~on_toggle:(fun input_event ->
                  match input_event with
@@ -1124,7 +1124,7 @@ let logseq_view (context : Lui_ui.ui_context) model_source send : t =
         (Signal.map View_base.drawer_selected_ model_source)
       ~disabled_signal:
         (Signal.map View_base.drawer_disabled_ model_source)
-      ~width:360 ~label:"Navigation"
+      ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
       ~accessibility_identifier:"application.shell"
       ~on_toggle:(fun input_event ->
         match input_event with

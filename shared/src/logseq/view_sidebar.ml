@@ -49,7 +49,7 @@ let sidebar_graph_menu_items model_source send =
       ~mount:(fun graph_source ->
         sidebar_graph_menu_item model_source graph_source send) ]
 
-let sidebar_section_heading title icon : t =
+let sidebar_section_heading model_source title icon : t =
   column ~gap:0
     [
       box ~height:16 [];
@@ -58,18 +58,18 @@ let sidebar_section_heading title icon : t =
           Lui_elements.icon ~name:icon ~width:14 ~height:14
             ~foreground:"muted-foreground" [];
           text ~style_class:"caption semibold" ~foreground:"muted-foreground"
-            ~value:title [];
+            ~value:(View_base.tr (Signal.sample model_source) title) [];
         ];
       box ~height:6 [];
     ]
 
-let sidebar_empty_section_label title : t =
+let sidebar_empty_section_label model_source title : t =
   column ~gap:0
     [
       row ~padding_horizontal:12
         [
           text ~style_class:"caption" ~foreground:"muted-foreground"
-            ~value:title [];
+            ~value:(View_base.tr (Signal.sample model_source) title) [];
         ];
       box ~height:6 [];
     ]
@@ -106,14 +106,14 @@ let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
-      ~text:"Journals" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Journals") [])
   else
     View_base.with_label "Journals"
       (list_item ~role:`navigation ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
-      ~text:"Journals" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Journals") [])
 
 let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
@@ -122,14 +122,14 @@ let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
-      ~text:"Flashcards" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Flashcards") [])
   else
     View_base.with_label "Flashcards"
       (list_item ~role:`navigation ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
-      ~text:"Flashcards" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Flashcards") [])
 
 let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
@@ -138,20 +138,20 @@ let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
-      ~text:"Graphs" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
   else
     View_base.with_label "Graphs"
       (list_item ~role:`navigation ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
-      ~text:"Graphs" [])
+      ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
   let native_toolbar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
   let settings =
     button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
-      ~width:44 ~height:44 ~label:"Settings"
+      ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
       ~accessibility_identifier:"button.sidebar.settings"
       ~on_press:(press send Model.OpenSettings) [] in
   let header =
@@ -191,10 +191,10 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               column ~accessibility_identifier:"section.sidebar.favorites"
                 ~gap:2
                 [
-                  sidebar_section_heading "Favorites" (`app "star");
+                  sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Favorites") (`app "star");
                   if_
                     ~test:(Signal.map View_base.favorites_empty_ model_source)
-                    (sidebar_empty_section_label "No favorites yet");
+                    (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No favorites yet"));
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_favorites model_source)
@@ -206,11 +206,11 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               column ~accessibility_identifier:"section.sidebar.recent"
                 ~gap:2
                 [
-                  sidebar_section_heading "Recent" (`app "history");
+                  sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Recent") (`app "history");
                   if_
                     ~test:
                       (Signal.map View_base.recent_pages_empty_ model_source)
-                    (sidebar_empty_section_label "No recent pages");
+                    (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No recent pages"));
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_recent_pages model_source)

@@ -165,6 +165,7 @@ public struct LogseqRootView : View {
     private struct SettingsHostPayload: Encodable {
         let appearance: String
         let language: String
+        let systemLanguage: String
         let spellCheck: Bool
         let autoCorrection: Bool
         let sidebarTabs: [String]
@@ -553,6 +554,7 @@ public struct LogseqRootView : View {
             language: LogseqSettingsPolicy.normalizedLanguageID(
                 defaults.string(forKey: "logseq.language") ?? "system"
             ),
+            systemLanguage: Locale.preferredLanguages.first ?? "en",
             spellCheck: defaults.object(forKey: "logseq.editor.spellCheck") as? Bool ?? true,
             autoCorrection: defaults.object(forKey: "logseq.editor.autoCorrection") as? Bool
                 ?? true,

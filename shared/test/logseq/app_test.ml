@@ -469,6 +469,7 @@ let settings tabs =
   {
     Model.appearance = "system";
     language = "system";
+    system_language = None;
     spell_check = true;
     auto_correction = true;
     sidebar_tabs = tabs;

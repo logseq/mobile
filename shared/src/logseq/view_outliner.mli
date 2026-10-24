@@ -75,8 +75,7 @@ val outliner_entries :
   Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
   source:View_rows.retained_row list Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val toolbar_button :
-  Lui_elements.icon ->
+val toolbar_button : Model.logseq_model Signal.signal -> Lui_elements.icon ->
   string -> string -> string -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_selection_toolbar :
   Lui_ui.ui_context -> Model.logseq_model Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
