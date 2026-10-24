@@ -844,6 +844,7 @@ let autocomplete_token_parsing_preserves_current_line_rules () =
 let editing title : State.editor_draft =
   {
     uuid = "a";
+    content_uuid = "a";
     expected_title = title;
     title;
     caret = State.utf16_length title;

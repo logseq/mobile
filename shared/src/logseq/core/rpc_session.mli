@@ -84,6 +84,7 @@ val refresh_reference_metadata :
   Pending_ops.pending_operation list ->
   Outliner_state.outliner_context
 val event_patch_plan :
+  ?db:Datascript.db ->
   Outliner_state.outliner_message ->
   Pending_ops.pending_operation list ->
   Session_outliner.outliner_patch_plan

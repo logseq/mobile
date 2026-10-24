@@ -525,14 +525,34 @@ type outliner_patch_plan =
   | Patch_blocks of string list
   | Structural_diff
 
-let event_patch_plan (message : Outliner.outliner_message) operations =
+let linked_dependents db uuid =
+  let pending = Queue.create () and seen = Hashtbl.create 8 in
+  let result = ref [] in
+  Option.iter (fun eid -> Queue.add eid pending)
+    (Datascript.entid db "block/uuid" (Datascript.Uuid uuid));
+  while not (Queue.is_empty pending) do
+    let eid = Queue.take pending in
+    if not (Hashtbl.mem seen eid) then begin
+      Hashtbl.add seen eid ();
+      Option.iter (fun uuid -> result := uuid :: !result) (Graph_read.uuid_for_eid db eid);
+      Seq.iter (fun (datom : Datascript.datom) -> Queue.add datom.e pending)
+        (Datascript_value.datoms_by_ref db Datascript.Aevt "block/link" eid)
+    end
+  done;
+  match List.rev !result with
+  | [] -> [uuid]
+  | uuids -> uuids
+
+let event_patch_plan ?db (message : Outliner.outliner_message) operations =
   match message with
   | Outliner.Toggle_collapsed _ -> Structural_diff
   | _ ->
     (match operations with
      | [ operation ] ->
        (match operation.Ops.intent with
-        | Ops.Save_title title -> Patch_blocks [ title.uuid ]
+        | Ops.Save_title title -> Patch_blocks (match db with
+            | Some db -> linked_dependents db title.uuid
+            | None -> [title.uuid])
         | Ops.Set_property property -> Patch_blocks [ property.uuid ]
         | _ -> Structural_diff)
      | [] ->

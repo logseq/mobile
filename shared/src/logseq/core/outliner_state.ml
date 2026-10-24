@@ -21,6 +21,7 @@ type outliner_candidate =
 
 type editor_draft =
   { uuid : string
+  ; content_uuid : string
   ; expected_title : string
   ; title : string
   ; caret : int
@@ -300,6 +301,31 @@ let display_block_title (context : outliner_context) (block : Model.block) =
     (summary_title dup (block.tags @ block.references))
     (summary_title dup (block.references @ block.tags))
     block.title
+
+let content_block (context : outliner_context) uuid =
+  match find_block context uuid with
+  | Some block -> Some block
+  | None -> Option.bind context.db (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+      (fun eid -> Graph_read.block (fun text -> Ok text) db eid))
+
+let editing_content (context : outliner_context) (block : Model.block) =
+  match context.db with
+  | None -> Some block
+  | Some db ->
+    let rec resolve seen (block : Model.block) =
+      if Sset.mem block.uuid seen then None
+      else match Datascript.entid db "block/uuid" (Datascript.Uuid block.uuid) with
+        | None -> Some block
+        | Some eid ->
+          (match Graph_read.ref_eids db eid "block/link" with
+           | [] -> Some block
+           | source :: _ ->
+             Option.bind (Graph_read.uuid_for_eid db source) (fun uuid ->
+               Option.bind (content_block context uuid)
+                 (resolve (Sset.add block.uuid seen))))
+    in
+    resolve Sset.empty block
 
 let utf8_sequence_length = String_kit.utf8_sequence_length
 let utf16_units = String_kit.utf16_units
@@ -631,7 +657,7 @@ let commit_effect ?(trim = false) (context : outliner_context) editing =
   match editing with
   | Some (editing : editor_draft) ->
     let expected =
-      match find_block context editing.uuid with
+      match content_block context editing.content_uuid with
       | Some block ->
         display_block_title context
           { block with title = editing.expected_title }
@@ -643,7 +669,7 @@ let commit_effect ?(trim = false) (context : outliner_context) editing =
       [
         Commit_title
           {
-            uuid = editing.uuid;
+            uuid = editing.content_uuid;
             expected_title = editing.expected_title;
             title;
           };
@@ -1012,22 +1038,32 @@ let leave_interaction context (state : outliner_state) =
 
 let split_editing context (state : outliner_state) (editing : editor_draft) =
   let index = byte_index_of_utf16 editing.title editing.caret in
+  let before = String.sub editing.title 0 index in
+  let after = String.sub editing.title index (String.length editing.title - index) in
+  let linked = editing.content_uuid <> editing.uuid in
+  let at_start = index = 0 && not (String_kit.is_blank editing.title) in
+  let expected, row_before, row_after, save_content =
+    if not linked then editing.expected_title, before, after, []
+    else
+      let raw = Option.fold ~none:"" ~some:(fun (block : Model.block) -> block.title)
+        (find_block context editing.uuid) in
+      if at_start then raw, "", raw, commit_effect context (Some editing)
+      else raw, raw, after, commit_effect ~trim:true context (Some {editing with title = before})
+  in
   step
     { state with editing = None; autocomplete = None }
-    [
+    (save_content @ [
       Split_at
         {
           split_uuid = editing.uuid;
-          split_placement = (if index = 0 && not (String_kit.is_blank editing.title) then Before
+          split_placement = (if at_start then Before
             else if not (Sset.mem editing.uuid state.collapsed)
               && sorted_siblings context (Some editing.uuid) <> [] then Inside else After);
-          split_expected_title = editing.expected_title;
-          before = String.sub editing.title 0 index;
-          after =
-            String.sub editing.title index
-              (String.length editing.title - index);
+          split_expected_title = expected;
+          before = row_before;
+          after = row_after;
         };
-    ]
+    ])
 
 let split_or_outdent (context : outliner_context) (state : outliner_state)
     (editing : editor_draft) =
@@ -1051,19 +1087,30 @@ let split_or_outdent (context : outliner_context) (state : outliner_state)
     | None -> split_editing context state editing
   else split_editing context state editing
 
-let start_editing context (state : outliner_state) block caret =
+let start_editing_content context (state : outliner_state)
+    (block : Model.block) (content : Model.block) caret =
+  let editing =
+    match state.editing with
+    | Some editing when editing.content_uuid = content.uuid ->
+      { editing with uuid = block.uuid; caret = max 0 (min (utf16_length editing.title) caret) }
+    | _ ->
+      { uuid = block.uuid
+      ; content_uuid = content.uuid
+      ; expected_title = content.title
+      ; title = display_block_title context content
+      ; caret
+      }
+  in
   {
     state with
-    editing =
-      Some
-        {
-          uuid = (block : Model.block).uuid;
-          expected_title = block.title;
-          title = display_block_title context block;
-          caret;
-        };
+    editing = Some editing;
     autocomplete = None;
   }
+
+let start_editing context state block caret =
+  match editing_content context block with
+  | Some content -> start_editing_content context state block content caret
+  | None -> state
 
 let merge_backward context (state : outliner_state) (editing : editor_draft) =
   match find_block context editing.uuid with
@@ -1091,16 +1138,18 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
     if index > 0 then
       let previous = (List.nth rows (index - 1)).block in
       step state
-        [
+        ((if editing.content_uuid <> editing.uuid then
+            commit_effect context (Some editing) else []) @ [
           Merge_into_previous
             {
               merge_uuid = editing.uuid;
-              merge_expected_title = editing.expected_title;
+              merge_expected_title = (if editing.content_uuid <> editing.uuid then block.title
+                else editing.expected_title);
               merge_title = editing.title;
               previous_uuid = previous.uuid;
               expected_previous_title = previous.title;
             };
-        ]
+        ])
     else if String.trim editing.title = "" && block.journal = None
             && not (List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid) context.blocks)
             && index + 1 < List.length rows then
@@ -1347,10 +1396,10 @@ let choose_completion context (state : outliner_state) value =
   | _ -> step state []
 
 let staged_editing context (state : outliner_state) uuid fallback at_start =
-  let expected, display =
-    match find_block context uuid with
-    | Some block -> (block.title, display_block_title context block)
-    | None -> (fallback, fallback)
+  let content_uuid, expected, display =
+    match Option.bind (find_block context uuid) (editing_content context) with
+    | Some block -> (block.uuid, block.title, display_block_title context block)
+    | None -> (uuid, fallback, fallback)
   in
   step
     {
@@ -1359,6 +1408,7 @@ let staged_editing context (state : outliner_state) uuid fallback at_start =
         Some
           {
             uuid;
+            content_uuid;
             expected_title = expected;
             title = display;
             caret = (if at_start then 0 else utf16_length display);
@@ -1408,20 +1458,23 @@ let update context (state : outliner_state) message =
     else
       (match find_block context uuid with
        | Some block ->
-         step
-           {
-             (start_editing context state block
-                (match message with
-                 | Tap_block_at (_, caret) ->
-                   (* Native taps use stored title offsets; editor text resolves UUID references. *)
-                   let caret = max 0 (min (utf16_length block.title) caret) in
-                   utf16_length (display_block_title context {block with title = prefix_at block.title caret})
-                 | _ -> utf16_length (display_block_title context block)))
-             with
-             selected = Sset.empty;
-           }
-           (commit_effect ~trim:(Option.fold ~none:false
-              ~some:(fun (editing : editor_draft) -> editing.uuid <> uuid) state.editing) context state.editing)
+         (match editing_content context block with
+          | None -> step state []
+          | Some content ->
+            step
+              {
+                (start_editing_content context state block content
+                   (match message with
+                    | Tap_block_at (_, caret) ->
+                      (* Native taps use stored title offsets; editor text resolves UUID references. *)
+                      let caret = max 0 (min (utf16_length content.title) caret) in
+                      utf16_length (display_block_title context {content with title = prefix_at content.title caret})
+                    | _ -> utf16_length (display_block_title context content)))
+                with
+                selected = Sset.empty;
+              }
+              (commit_effect ~trim:(Option.fold ~none:false
+                 ~some:(fun (editing : editor_draft) -> editing.uuid <> uuid) state.editing) context state.editing))
        | None -> step state [])
   | Long_press_block uuid ->
     step
@@ -1636,7 +1689,7 @@ let update context (state : outliner_state) message =
      | Ops.Save_title value ->
        (match state.editing with
         | Some editing ->
-          if editing.uuid = value.uuid then
+          if editing.content_uuid = value.uuid then
             step
               {
                 state with
