@@ -1,0 +1,7 @@
+{
+  "error": "",
+  "scenario": "search-toolbar",
+  "observations": {
+    "editor-toolbar": true
+  }
+}

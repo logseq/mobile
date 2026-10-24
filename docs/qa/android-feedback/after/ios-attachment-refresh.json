@@ -1,0 +1,12 @@
+{
+  "observations": {
+    "offline-local-preview": true,
+    "editor-dismissed": true,
+    "import": true,
+    "no-empty-parent": true,
+    "no-network-download": true
+  },
+  "scenario": "attachment-refresh",
+  "measurements": {},
+  "error": ""
+}
