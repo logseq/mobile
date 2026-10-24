@@ -1,0 +1,17 @@
+{
+  "baselineRevision": "e2c2317773ee659b7e748ef3f953b50b52584e89",
+  "baselineBuild": "2.0.2 (26)",
+  "simulator": "B5C472E1-25F4-4541-A20F-174DD2B2F74A",
+  "fixture": "A journal containing a live link to a separate page named wow; source is not rendered in the journal.",
+  "interaction": "Tap linked wow; type updated; leave the row; restart; reopen the same linked row.",
+  "result": "The editor owns focus at the wrapper, loads wow updated after restarting, and the persisted save-title intent targets source UUID 93000000-0000-4000-8000-000000000002, not wrapper UUID 93000000-0000-4000-8000-000000000003.",
+  "video": "Actual native touch recordings, side by side. Idle lead-in trimmed; baseline tail held to match length. Not a latency comparison.",
+  "beforeCoreSHA256": "aec7855c59d9df17cb494dc375e7d9003dcb633bcd2da3d60178e2139d86139a",
+  "afterCoreSHA256": "badadbbdd0e8983b78f4a36cd74bb5c9a960e344967c6301e24f55d79011b96a",
+  "verification": [
+    "dune build @shared/native/runtest: 1101 passing tests",
+    "40 editor command tests after the plain-title parsing fast path",
+    "Actual native taps, inline editor focus, source save and reload",
+    "Autocomplete screenshot uses existing reference renderer with resolved names"
+  ]
+}

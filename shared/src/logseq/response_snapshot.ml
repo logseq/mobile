@@ -238,6 +238,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
     has_children is_collapsed fields =
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
+    let row_title = Option.value ~default:row_title (string_member "sourceTitle" fields) in
     Some
       { Model.row_uuid; row_title;
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
@@ -329,7 +330,8 @@ let autocomplete_candidate input =
   let fields = object_fields input in
   match string_member "label" fields, string_member "value" fields with
   | Some candidate_label, Some candidate_value ->
-    Some { Model.candidate_index = 0; candidate_group = string_member "group" fields; candidate_label; candidate_value }
+    Some { Model.candidate_index = 0; candidate_group = string_member "group" fields; candidate_label; candidate_value;
+      candidate_markup_json = (match List.assoc_opt "markup" fields with Some (`List _ as markup) -> Yojson.Basic.to_string markup | _ -> "[]") }
   | _ -> None
 
 let autocomplete_candidates_member fields =

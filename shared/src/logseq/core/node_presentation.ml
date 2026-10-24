@@ -91,8 +91,8 @@ let decorate db =
           |> List.map (fun (d : Ds.datom) -> d.e)
           |> List.sort (fun a b -> compare (Read.string_value (Read.value db a "block/order"), a)
             (Read.string_value (Read.value db b "block/order"), b)) in
-        [M.Markup_quote (markup (eid :: seen) (budget - 1) source @
-          List.concat_map (fun child -> M.Markup_text "\n" :: markup (eid :: seen) (budget - 1) child) children)]
+        markup (eid :: seen) (budget - 1) source @
+          List.concat_map (fun child -> M.Markup_text "\n" :: markup (eid :: seen) (budget - 1) child) children
       | [] -> (match Read.display_type_for_eid db eid with
         | Some "code" ->
           let language = Read.string_value (Read.value db eid "logseq.property.code/lang") in
@@ -103,6 +103,11 @@ let decorate db =
     match Read.int_value (Read.value db eid "logseq.property/heading") with
     | Some level when level >= 1 && level <= 6 -> [M.Markup_emphasis ("heading-" ^ string_of_int level, parsed)]
     | _ -> parsed in
+  let rec source_title seen budget eid =
+    if budget <= 0 || List.mem eid seen then None
+    else match Read.ref_eids db eid "block/link" with
+      | source :: _ -> source_title (eid :: seen) (budget - 1) source
+      | [] -> Read.string_value (Read.value db eid "block/title") in
   fun uuid encoded -> match Ds.entid db "block/uuid" (Ds.Uuid uuid), encoded with
     | Some eid, `Assoc fields ->
       let embedded = Read.ref_eids db eid "block/link" <> [] in
@@ -110,5 +115,9 @@ let decorate db =
         || Read.value db eid "logseq.property/heading" <> None
         || Read.value db eid "logseq.property.code/lang" <> None in
       let fields = if decorated then ("markup", M.to_yojson (markup [] 16 eid)) :: List.remove_assoc "markup" fields else fields in
+      let fields = if embedded then match source_title [] 16 eid with
+        | Some title -> ("sourceTitle", `String title) :: fields
+        | None -> fields
+        else fields in
       `Assoc (("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded
