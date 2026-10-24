@@ -6485,6 +6485,34 @@ let kotlin_navigation_renders_each_active_node_row_once () =
   check_eq ~msg:"the visible Android back action pops exactly one route"
     (App.model application).app_navigation_path []
 
+let kotlin_navigation_places_only_the_latest_page () =
+  List.iter (fun search ->
+  let app = App.create (kotlin_backend ()) in
+  start app;
+  let route uuid = { (node_projection uuid uuid uuid [] []) with
+    Model.node_outliner_rows = [journal_outline_row (uuid ^ "-child") uuid uuid "" 0 0] } in
+  let renderer = Lui_app.runtime app in
+  let rec visible_screens id =
+    if property_string renderer id Lui_protocol.DisplayValue = "none" then begin
+      if node renderer id = Some Lui_protocol.Box
+         && descendant_with_identifier renderer id "screen.node" <> -1 then
+        check_eq ~msg:"Hidden navigation pages must not reserve a flex slot"
+          (property_float renderer id Lui_protocol.GrowValue) 0.0;
+      0
+    end else (if property_string renderer id Lui_protocol.AccessibilityIdentifier = "screen.node" then 1 else 0)
+      + List.fold_left (fun n child -> n + visible_screens child) 0 (children renderer id) in
+    if search then send app Model.OpenSearch;
+    List.iter (fun path ->
+      List.iter (fun uuid -> send app (if search then Model.RequestSearchNode uuid else Model.RequestAppNode uuid)) path;
+      send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        graph_name = Some "Work"; selected_graph_id = Some "test-graph";
+        node_routes = List.map route path });
+      flush app;
+      check_eq ~msg:"Android must place one page instead of concatenating its navigation history"
+        (visible_screens (extension_node app "native-search-presentation")) 1
+    ) [["date"; "formula"]; ["date"; "formula"; "date"]]
+  ) [false; true]
+
 let kotlin_selected_pages_retain_the_hidden_journal_pane () =
   let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
@@ -10709,6 +10737,7 @@ let cases =
     case "active-node-route-renders-a-core-backed-navigation-screen" active_node_route_renders_a_core_backed_navigation_screen;
     case "ios-node-navigation-is-owned-by-the-native-stack" ios_node_navigation_is_owned_by_the_native_stack;
     case "kotlin-navigation-and-search-own-composed-standard-children" kotlin_navigation_and_search_own_composed_standard_children;
+    case "kotlin-navigation-places-only-the-latest-page" kotlin_navigation_places_only_the_latest_page;
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
     case "kotlin-selected-pages-retain-the-hidden-journal-pane" kotlin_selected_pages_retain_the_hidden_journal_pane;
     case "editor-pickers-own-focus-without-unmounting-the-block" editor_pickers_own_focus_without_unmounting_the_block;

@@ -666,8 +666,12 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
       View_base.node_route_model ~active current route) model_source route_source
   in
   if Lui_ui.host context = KotlinHost then
-    box ~grow:1.0 ~background:"background"
-      [ View_outliner.node_screen context route_model_source send ]
+    View_base.with_string_prop_signal DisplayValue
+      (Signal.map (fun (_, active) -> if active then "contents" else "none") route_source)
+      (View_base.with_float_prop_signal GrowValue
+         (Signal.map (fun (_, active) -> if active then 1.0 else 0.0) route_source)
+         (box ~background:"background"
+            [ View_outliner.node_screen context route_model_source send ]))
   else
     native_node_destination
       ~source:
