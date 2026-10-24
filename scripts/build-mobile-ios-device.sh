@@ -188,10 +188,15 @@ if [[ -d $logseq_resource_bundle ]]; then
 fi
 
 # SwiftPM does not run Xcode's App Intents metadata build phase.
+clang_module_args=()
+for module_map in "$swift_build_dir/"*.build/module.modulemap; do
+  [[ -f $module_map ]] && clang_module_args+=(-Xcc "-fmodule-map-file=$module_map")
+done
+
 "$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
   "$deployment_target" "$app_dir" \
   -I "$swift_build_dir/Modules" \
-  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqCoreABI.build/module.modulemap" \
+  "${clang_module_args[@]}" \
   -I "$repo_root/apple/Sources/LogseqCoreABI/include" \
   "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
