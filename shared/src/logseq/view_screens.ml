@@ -721,7 +721,10 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node "query"
      (Signal.map View_base.string_wire_value query_source);
-   Lui_ui.extension_property context node "title" (StringValue "Search");
+   Lui_ui.extension_property_signal context node "title"
+     (Signal.map (fun (current : Model.logseq_model) -> StringValue
+       (if Lui_ui.host context = SwiftUIHost || current.search_navigation_path = [] then "Search"
+        else View_base.active_node_title current)) model_source);
    Lui_ui.extension_property_signal context node "bottom-occupies-layout-space"
      (Signal.map (fun current -> BoolValue (View_base.search_editor_active_ current)) model_source);
    Lui_ui.on_event context node (fun input_event ->
