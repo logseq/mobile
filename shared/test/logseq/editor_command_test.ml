@@ -421,6 +421,35 @@ let templates_clone_without_mutating_the_source () = R.with_runtime (fun session
   check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Beta result"));
   check_eq ~msg:"template application does not create a live link" (value runtime Q.alpha "block/link") None)
 
+let code_commands_update_the_active_editor_style () =
+  List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session _ _ ->
+    ignore (run session label);
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let editor = App_test.extension_node app "outliner-editor" in
+      check ~msg:"code conversion keeps the editor mounted" (editor <> -1);
+      let policy = match App_test.extension_property app editor "input-policy" with
+        | Some (Lui_protocol.StringValue value) -> J.from_string value | _ -> `Null in
+      check_eq ~msg:"Code and Calculator commands immediately select code editor presentation"
+        (member "code" policy) (`Bool true);
+      check_eq ~msg:"the active code editor keeps multiline input" (member "multiline" policy) (`Bool true))))
+    ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
+
+let calculator_last_tracks_successful_lines () = R.with_runtime (fun session _ _ ->
+  ignore (run session "Calculator");
+  List.iter (fun (source, expected) ->
+    ignore (type_at session source (Outliner_state.utf16_length source)); save session;
+    let response = snapshot session in
+    let block = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" response) in
+    let rendered = J.to_string (member "markup" block) in
+    check ~msg:("calculator last follows the previous successful expression: " ^ source)
+      (String_kit.includes ~sub:expected rendered);
+    ignore (event session "tapBlock" ["uuid", `String Q.alpha])) [
+    "6*7\nlast*3", "last*3  = 126";
+    "3^2+4^2\nsqrt(last)", "sqrt(last)  = 5";
+    "2*3\n# a comment\n\n   \nlast*2", "last*2  = 12";
+    "2*3\ninvalid(2)\nlast*2", "last*2  = Error";
+    "last+1", "last+1  = Error"])
+
 let command_output_has_native_presentation () = R.with_runtime (fun session runtime _ ->
   let block () = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" (snapshot session)) in
   ignore (run session "Heading 2"); save session;
@@ -824,6 +853,8 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
+  case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;
   case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;
   case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;

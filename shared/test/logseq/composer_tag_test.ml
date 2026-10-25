@@ -275,7 +275,51 @@ let new_property_definitions_roundtrip_through_sync () = R.with_runtime (fun ses
     let id = Datascript.entid db "block/uuid" (Datascript.Uuid uuid) |> Option.get in
     check ~msg:"confirmed properties retain their type and schema" (Node_title.is_property db id)) ["Page notes"; "Tag notes"])
 
+let shortcut_text_preserves_readable_tags_and_page_references () = R.with_runtime (fun session runtime conn ->
+  let capture uuid text = succeed (Rpc_test.dispatch_json session "send" (J.to_string (`Assoc [
+    "uuid", `String uuid; "text", `String text; "now", `Int 1792719000000]))) in
+  capture captured "Buy milk #task [[Workspace]] [[快捷记录/子页面]]";
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Datascript.entid db "block/uuid" (Datascript.Uuid captured)) in
+  let block = Option.get (Graph_read.block (fun x -> Ok x) db id) in
+  let rendered = Node_presentation.decorate db captured (Rpc.block_json block) in
+  let markup = items "markup" rendered in
+  let tag = List.find_opt (fun value -> member "type" value = `String "tagReference") markup in
+  check ~msg:"shortcut hashtags render as a named tag, never a raw UUID" (Option.is_some tag);
+  check_eq (member "title" (Option.get tag)) (`String "Task");
+  let pages = List.filter (fun value -> member "type" value = `String "nodeReference") markup in
+  check ~msg:"shortcut references to existing pages remain tappable"
+    (List.exists (fun value -> member "uuid" value = `String Q.page) pages);
+  let child = Graph_read.unique_named_uuid false db "快捷记录/子页面" in
+  check ~msg:"shortcut references create missing pages" (Option.is_some child);
+  let child = Option.get child in
+  check ~msg:"new shortcut references render as named links"
+    (List.exists (fun value -> member "uuid" value = `String child) pages);
+  let parent = Graph_read.unique_named_uuid false db "快捷记录" in
+  check ~msg:"shortcut page creation preserves namespace hierarchy" (Option.is_some parent);
+  capture "80000000-0000-4000-8000-000000000099" "Again [[快捷记录/子页面]]";
+  check_eq ~msg:"repeated shortcut references reuse the same page"
+    (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "快捷记录/子页面") (Some child);
+  ignore (Rpc_test.dispatch_json session "openNode" (J.to_string (`Assoc ["uuid", `String captured])));
+  let editing = Editor_command_test.event session "tapBlock" ["uuid", `String captured] in
+  let route = items "nodeRoutes" editing |> List.rev |> List.hd in
+  let title = R.text (member "title" (member "editing" (member "outlinerState" route))) in
+  let references = Ref_text.references title in
+  check ~msg:"editing shortcut captures uses readable page and tag names"
+    (List.exists (fun (reference : Ref_text.reference) -> reference.kind = Ref_text.Tag && reference.name = "Task") references
+     && List.exists (fun (reference : Ref_text.reference) -> reference.kind = Ref_text.Page && reference.name = "子页面") references);
+  ignore (Editor_command_test.type_at session (title ^ " revised") (Outliner_state.utf16_length (title ^ " revised")));
+  Editor_command_test.save session;
+  let saved = Option.get (Graph_read.block (fun x -> Ok x) (Graph_runtime.db runtime) id) in
+  check ~msg:"editing a shortcut reference preserves its original target"
+    (List.exists (fun (reference : Cache_model.entity_summary) -> reference.uuid = child) saved.references);
+  capture "80000000-0000-4000-8000-000000000098" "Literal `#task [[Code literal]]`";
+  check_eq ~msg:"shortcut code spans keep reference markers literal"
+    (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "Code literal") None;
+  sync_all runtime conn)
+
 let cases = [
+  case "shortcut text renders tags and creates reusable page references" shortcut_text_preserves_readable_tags_and_page_references;
   case "new page and tag properties survive confirmed sync" new_property_definitions_roundtrip_through_sync;
   case "adjacent wiki reference tags apply to the referenced page" adjacent_reference_tags_target_the_page;
   case "Rename page rejects hash syntax atomically" rename_page_rejects_hashes_without_writes;
