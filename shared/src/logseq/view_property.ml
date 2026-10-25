@@ -201,17 +201,21 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
           let node_value = dyn (fun property -> match list (field "references" property) with
             | [] -> value
-            | references -> column ~gap:2 ~grow:1.0
-                ~accessibility_identifier:("property.reference." ^ owner ^ "." ^ attr)
-                (List.mapi (fun index reference ->
+            | references ->
+                let values = List.mapi (fun index reference ->
                   let uuid = text (field "uuid" reference) in
-                  button ~text:(text (field "title" reference)) ~variant:`ghost ~text_alignment:`start
-                    ~padding_horizontal:0 ~padding_vertical:0 ~foreground:"primary" ~min_width:44
+                  button ~text:(text (field "title" reference)) ~variant:`ghost
+                    ~padding_horizontal:0 ~padding_vertical:0 ~foreground:"primary"
                     ~min_height:(if compact then 28 else 44)
                     ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr ^ (if index = 0 then "" else "." ^ uuid))
                     ~on_press:(fun _ -> if field "editable" property = `Bool true then edit ()
                       else ignore (send (View_base.request_node_action (Signal.sample model_source) uuid)))
-                    ~on_long_press:(fun _ -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) []) references)) property_source in
+                    ~on_long_press:(fun _ -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) []) references in
+                row ~gap:0 ~cross:`center ~grow:1.0
+                  ~accessibility_identifier:("property.reference." ^ owner ^ "." ^ attr)
+                  (List.fold_right (fun value rest -> match rest with
+                    | [] -> [value]
+                    | _ -> value :: Lui_elements.text ~value:", " [] :: rest) values [])) property_source in
           let checkbox_value = checkbox ~foreground:"muted-foreground" ~width:32 ~height:32
             ~checked_signal:(Signal.value checked)
             ~disabled_signal:(own (Signal.map2 (fun property model -> field "editable" property <> `Bool true || List.exists (function

@@ -88,22 +88,49 @@
         {
           "attr": "user.property/Assignee",
           "title": "Assignee(legacy)",
-          "kind": "page",
-          "text": "Tienson",
+          "kind": "node",
+          "text": "zhiyuan, megayu, Tienson",
           "raw": {
-            "type": "ref-uuid",
-            "value": "Assignee-value"
+            "type": "set",
+            "value": [
+              {
+                "type": "ref-uuid",
+                "value": "zhiyuan"
+              },
+              {
+                "type": "ref-uuid",
+                "value": "megayu"
+              },
+              {
+                "type": "ref-uuid",
+                "value": "tienson"
+              }
+            ]
           },
           "editable": true,
           "ref": true,
-          "many": false,
+          "many": true,
           "closed": false,
           "canCreate": true,
           "textLayout": false,
           "choices": [],
           "filterValues": [],
           "blocks": [],
-          "editorValue": "Tienson"
+          "editorValue": "",
+          "references": [
+            {
+              "uuid": "zhiyuan",
+              "title": "zhiyuan"
+            },
+            {
+              "uuid": "megayu",
+              "title": "megayu"
+            },
+            {
+              "uuid": "tienson",
+              "title": "Tienson"
+            }
+          ]
         },
         {
           "attr": "user.property/Reproducible",

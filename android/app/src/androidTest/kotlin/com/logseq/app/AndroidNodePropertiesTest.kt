@@ -12,6 +12,8 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -73,6 +75,19 @@ class AndroidNodePropertiesTest {
             val value = ui.onNodeWithTag("property.value.page.user.property/$attr").fetchSemanticsNode().boundsInRoot
             assertTrue("Short labels remain on one line", label.height < value.height + 1)
             assertTrue("Short labels remain inline", kotlin.math.abs(label.center.y - value.center.y) < 16)
+        }
+        val referenceTags = listOf("property.value.page.user.property/Assignee",
+            "property.value.page.user.property/Assignee.megayu", "property.value.page.user.property/Assignee.tienson")
+        val references = referenceTags.map { ui.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
+        for ((left, right) in references.zipWithNext()) {
+            assertTrue("Node values share a row", kotlin.math.abs(left.center.y - right.center.y) < 1)
+            assertTrue("Node values retain their order", right.left >= left.right)
+        }
+        ui.onAllNodesWithText(", ").assertCountEquals(2)
+        for (tag in referenceTags) {
+            ui.onNodeWithTag(tag).performClick()
+            ui.onNodeWithTag("view.edit.sheet.property.page.user.property/Assignee").assertIsDisplayed()
+            ui.onNodeWithTag("view.edit.cancel.property.page.user.property/Assignee").performClick()
         }
         val longLabel = ui.onNodeWithTag("property.label.page.user.property/Long").fetchSemanticsNode().boundsInRoot
         val longValue = ui.onNodeWithTag("property.value.page.user.property/Long").fetchSemanticsNode().boundsInRoot
