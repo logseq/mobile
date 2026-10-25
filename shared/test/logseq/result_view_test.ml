@@ -143,9 +143,15 @@ let list_results_defer_cell_editor_data () =
   let list = find_view list_view result in
   List.iter (fun row ->
     check_eq ~msg:"list results load block content without unused table cell editors"
-      (items "properties" row) []) (items "rows" list);
+      (items "properties" row) [];
+    check ~msg:"list results retain rich block content" (items "markup" (member "block" row) <> [])) (items "rows" list);
   List.iter (fun view ->
     let view = find_view view result in
+    List.iter (fun row ->
+      let block = member "block" row in
+      check ~msg:"grid identity retains the readable title" (text (member "displayTitle" block) <> "");
+      List.iter (fun attr -> check_eq ~msg:("grids do not duplicate unused block " ^ attr)
+        (member attr block) `Null) ["markup"; "references"; "children"]) (items "rows" view);
     check ~msg:"switching to a grid retains typed cell values and editing"
       (List.exists (fun row -> List.exists (fun cell ->
         member "attr" cell = `String score && member "editable" cell = `Bool true)
@@ -216,14 +222,16 @@ let scopes_and_references () =
     "ownerUuid", `String Q.project; "featureType", `String "linked-references"])) in
   check_eq ~msg:"references do not acquire configurable views" (member "ok" unsupported) (`Bool false)
 
-let with_runtime f = Graph_runtime_test.with_store (fun path ->
+let with_runtime ?projection_limit f = Graph_runtime_test.with_store (fun path ->
   Fun.protect ~finally:(fun () -> Graph_runtime_test.cleanup_store path) (fun () ->
     let conn = Ds.conn_from_db (fixture ()) in
     let runtime = Graph_runtime.create path 42 conn {Graph_runtime.default_options with auto_create_today = false} in
     let session = Session.create_session {Session.default_options with
+      outliner_projection_limit = projection_limit;
       load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
       sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);
       graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      graph_node_icon = Some (fun uuid -> Graph_read.node_icon (Graph_runtime.db runtime) uuid);
       graph_tag_pages = Some (fun () -> Some (Graph_read.tag_pages (fun value -> Ok value) (Graph_runtime.db runtime)));
       graph_node_is_tag = Some (Graph_runtime.node_is_tag runtime);
       graph_node_is_property = Some (Graph_runtime.node_is_property runtime);
@@ -381,16 +389,87 @@ let editable_cells_use_owner_values_and_conflicts () = with_runtime (fun session
   List.iter (fun operation -> check_ok ~msg:"typed cell edits compile into sync transactions" (Graph_runtime.prepare_sync runtime operation))
     (Graph_runtime.pending_operations runtime))
 
+let load_property_values session app =
+    List.iter (function
+      | Model.LoadPropertyValuesEffect (id, _, payload) ->
+        App_test.send app (Model.DequeueEffect id);
+        let response = Core_effect_test.execute session "load-property-values" ["text", `String payload] in
+        check_eq ~msg:("editor values load through the real core: " ^ Json.to_string response) (member "ok" response) (`Bool true);
+        let loaded = member "propertyValues" (member "result" response) in
+        App_test.send app (Model.ReceivePropertyValues (text (member "key" loaded), Json.to_string (member "column" loaded)));
+        App_test.send app (Model.ResolveEffect (id, true, Json.to_string response));
+        App_test.flush app
+      | _ -> ()) (App.model app).pending_effects
+
+let rec load_result_rows session app =
+  let pending = List.filter (function Model.LoadResultRowsEffect _ -> true | _ -> false) (App.model app).pending_effects in
+  List.iter (function
+    | Model.LoadResultRowsEffect (id, _, payload) ->
+      App_test.send app (Model.DequeueEffect id);
+      let response = Core_effect_test.execute session "load-result-rows" ["text", `String payload] in
+      check_eq ~msg:(Json.to_string response) (member "ok" response) (`Bool true);
+      let loaded = member "resultRows" (member "result" response) in
+      let icons = match Response_snapshot.decode_json_response response with Ok projection -> projection.Model.node_icons | Error message -> fail message in
+      App_test.send app (Model.ReceiveResultRows (text (member "key" loaded), Json.to_string (member "view" loaded), icons));
+      App_test.send app (Model.ResolveEffect (id, true, Json.to_string response)); App_test.flush app
+    | _ -> ()) pending;
+  if pending <> [] then load_result_rows session app
+
+let find_visible session app identifier =
+  let host = Lui_app.runtime app in
+  load_result_rows session app;
+  load_property_values session app;
+  let find () = App_test.descendant_with_identifier host (Lui_app.root_node app) identifier in
+  if find () <> -1 then find () else
+  let model = App.model app in
+  let rec view uuid = function
+    | `Assoc fields as value when member "uuid" value = `String uuid && List.mem_assoc "columns" fields -> Some value
+    | `Assoc fields -> List.find_map (fun (_, value) -> view uuid value) fields
+    | `List values -> List.find_map (view uuid) values | _ -> None in
+  let row_json rows = List.filter_map (fun (row : Model.outline_row) ->
+    try Some (Json.from_string row.query_json) with _ -> None) rows in
+  let projections = row_json model.outliner_rows @ List.concat_map (fun (route : Model.node_projection) ->
+    row_json route.node_outliner_rows) model.node_routes in
+  let target = match String.split_on_char '.' identifier with
+    | "view" :: "cell" :: "separator" :: uuid :: _row :: attr
+    | "view" :: "cell" :: uuid :: _row :: attr -> Some (uuid, String.concat "." attr)
+    | _ -> None in
+  (match target with
+   | None -> ()
+   | Some (uuid, attr) ->
+     (match List.find_map (view uuid) projections with
+      | None -> ()
+      | Some value ->
+        let rec position offset = function
+          | [] -> None
+          | col :: _ when member "attr" col = `String attr -> Some offset
+          | col :: rest -> position (offset + (if member "attr" col = `String "block/title" then 261 else 171)) rest in
+        Option.iter (fun offset ->
+          Hashtbl.iter (fun node extension ->
+            if extension = "native-table-viewport" && App_test.extension_property app node "identifier"
+              = Some (Lui_protocol.StringValue ("view.table.scroll." ^ uuid)) then (
+              let fields = Lui_protocol.String_map.empty
+                |> Lui_protocol.String_map.add "offset" (Lui_protocol.IntValue (max 0 (offset - 100)))
+                |> Lui_protocol.String_map.add "width" (Lui_protocol.IntValue 390) in
+              App_test.dispatch app (Lui_protocol.ExtensionEvent (node, extension, "viewport-changed", fields));
+              App_test.flush app)) host.Lui_runtime.runtime_extension_nodes) (position 0 (items "columns" value))));
+  let found = find () in
+  if found <> -1 then found else
+    Hashtbl.fold (fun node extension found ->
+      if extension = "native-table-viewport" && App_test.extension_property app node "identifier"
+        = Some (Lui_protocol.StringValue identifier) then node else found)
+      host.Lui_runtime.runtime_extension_nodes (-1)
+
 let native_view_tabs_search_table_and_gallery () =
   List.iter (fun backend -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let runtime = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let tab uuid = find ("view.tab." ^ uuid) in
       check ~msg:"saved view tabs mount on both native hosts" (tab table_view <> -1);
       App_test.dispatch app (Lui_protocol.Press (tab table_view)); App_test.flush app;
       let scroll = find ("view.table.scroll." ^ table_view) in
-      check ~msg:"table scrolling is horizontal" (App_test.property_string runtime scroll Lui_protocol.OrientationValue = "horizontal");
+      check ~msg:"table scrolling uses a native viewport" (scroll <> -1 && App_test.extension_node app "native-table-viewport" <> -1);
       let cell = find ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score) in
       check (cell <> -1);
       App_test.dispatch app (Lui_protocol.Press cell); App_test.flush app;
@@ -421,7 +500,7 @@ let native_view_settings_and_local_errors () =
   List.iter (fun backend -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let runtime = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
@@ -462,7 +541,7 @@ let native_cells_refresh_and_object_collections_mount () =
     with_runtime (fun session _ _ ->
       Q.with_ui backend (Session.snapshot_visible session) (fun app ->
         let runtime = Lui_app.runtime app in
-        let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+        let find id = find_visible session app id in
         App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
         let view = find_view table_view (read session) in
         let row = List.find (fun row -> member "uuid" (member "block" row) = `String alpha) (items "rows" view) in
@@ -502,8 +581,8 @@ let tuple_table_and_query_errors () =
     let view = find_view table_view (read session) in
     check_eq ~msg:"tuple tables expose one column for each query value" (List.length (items "columns" view)) 2;
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
-      let runtime = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+      let _runtime = Lui_app.runtime app in
+      let find id = find_visible session app id in
       App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
       check ~msg:"tuple values render in read-only table cells" (find ("view.scalar." ^ table_view ^ ".0.0") <> -1);
       current := Ds.db_with [put Q.definition "block/title" (Ds.String "(and")] db;
@@ -583,7 +662,7 @@ let native_boolean_editor_uses_the_real_effect_pipeline () =
   List.iter (fun backend -> with_runtime (fun session runtime _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
@@ -622,7 +701,7 @@ let native_toolbar_alignment_and_search_expansion () =
   List.iter (fun (backend, leading) -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       check_eq ~msg:"query results use a single results and actions header"
@@ -667,7 +746,7 @@ let native_direct_value_selection_and_creation () =
       Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [value_a; value_b];
       Q.with_ui backend (Session.snapshot_visible session) (fun app ->
         let host = Lui_app.runtime app in
-        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let find id = find_visible session app id in
         let click id = let node = find id in check ~msg:id (node <> -1);
           App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
         click ("view.tab." ^ table_view);
@@ -744,7 +823,7 @@ let native_filter_choices_preserve_master_sets () =
   List.iter (fun backend -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let press node = check (node <> -1); App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       let rec choice node title =
         if App_test.node host node = Some Lui_protocol.MenuItem
@@ -781,7 +860,7 @@ let native_many_selector_stages_choices_until_done () =
   List.iter (fun backend -> with_runtime (fun session runtime _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
@@ -853,7 +932,7 @@ let type_icons_switch_saved_views_and_default_all () =
     let run view_id expected_name typ =
       Q.with_ui backend (Session.snapshot_visible session) (fun app ->
         let renderer = Lui_app.runtime app in
-        let find id = App_test.descendant_with_identifier renderer (Lui_app.root_node app) id in
+        let find id = find_visible session app id in
         let tab = find ("view.tab." ^ view_id) in
         check ~msg:"the left tabs retain saved view names" (tab <> -1);
         check_eq (App_test.property_string renderer tab Lui_protocol.TextValue) expected_name;
@@ -888,8 +967,8 @@ let type_icons_switch_saved_views_and_default_all () =
     check_eq (member "name" all) (`String "All");
     check_eq (member "type" all) (`String "list");
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
-      let renderer = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier renderer (Lui_app.root_node app) id in
+      let _renderer = Lui_app.runtime app in
+      let find id = find_visible session app id in
       check ~msg:"an unsaved collection exposes the All tab" (find ("view.tab." ^ owner ^ ":default") <> -1);
       check ~msg:"an unsaved collection also exposes a type icon" (find ("view.type." ^ owner ^ ":default") <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
@@ -907,7 +986,7 @@ let pushed_query_type_changes_refresh_the_visible_renderer () =
       let rec descendants id = id :: List.concat_map descendants (App_test.children host id) in
       let find identifier = descendants (Lui_app.root_node app) |> List.filter (fun id ->
         App_test.property_string host id Lui_protocol.AccessibilityIdentifier = identifier) |> List.rev
-        |> function id :: _ -> id | [] -> -1 in
+        |> function id :: _ -> id | [] -> find_visible session app identifier in
       List.iter (fun typ ->
         Gc.full_major ();
         let option = find ("view.type.option." ^ list_view ^ "." ^ typ) in
@@ -933,7 +1012,7 @@ let empty_table_cells_have_accessible_names () =
     Q.open_results session;
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
       let cell = find ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ summary) in
       check_eq ~msg:"missing properties remain empty cells" (App_test.property_string host cell Lui_protocol.TextValue) "";
@@ -1014,7 +1093,7 @@ let table_cells_have_column_dividers_on_both_hosts () =
   List.iter (fun backend -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       App_test.dispatch app (Lui_protocol.Press (find ("view.tab." ^ table_view))); App_test.flush app;
       let view = find_view table_view (read session) in
       let attrs = List.map (fun column -> text (member "attr" column)) (items "columns" view) in
@@ -1088,6 +1167,77 @@ let hidden_filter_catalog_does_not_multiply_mount_allocations () =
   let large = allocations catalog in
   check ~msg:(Printf.sprintf "hidden filter metadata must be parsed once, not copied for every row/count: %.0f -> %.0f bytes" small large)
     (large -. small < float_of_int (String.length catalog * 16))
+
+let deferred_cell_editor_loads_without_replacing_the_page () =
+  let rec defer = function
+    | `Assoc fields as value when member "attr" value = `String ready ->
+      `Assoc (("kind", `String "node") :: ("ref", `Bool true) :: ("valuesDeferred", `Bool true) ::
+        List.remove_assoc "kind" fields)
+    | `Assoc fields -> `Assoc (List.map (fun (key, value) -> key, defer value) fields)
+    | `List values -> `List (List.map defer values) | value -> value in
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.apply_response (Json.to_string (defer (Json.from_string (virtual_result_response ~count:1 "table")))));
+    let app = Native_bridge.app () in
+    let host = Lui_app.runtime app in
+    let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+    let cell = find ("view.cell.virtual.virtual-0." ^ ready) in
+    check (cell <> -1);
+    ignore (Native_bridge.press cell);
+    check ~msg:"the editor opens before its candidates load" (find "view.edit.sheet.virtual" <> -1);
+    let load = (App.model app).pending_effects |> List.map (fun eff -> Json.from_string (Native_bridge.encode_effect eff))
+      |> List.find_opt (fun eff -> member "kind" eff = `String "load-property-values") in
+    check ~msg:"only opening an editor requests its candidate values" (Option.is_some load);
+    let request = Json.from_string (text (member "text" (Option.get load))) in
+    check_eq (member "ownerUuid" request) (`String "virtual-0");
+    let before = (App.model app).outliner_rows in
+    let column = `Assoc ["attr", `String ready; "kind", `String "node";
+      "filterValues", `List [`Assoc ["title", `String "Available node"; "match", `List [`String "available"]]]] in
+    ignore (Native_bridge.apply_response (Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+      "propertyValues", `Assoc ["key", member "key" request; "column", column]]])));
+    check_eq ~msg:"editor-only replies preserve the page and its result views" (App.model app).outliner_rows before;
+    check ~msg:"the loaded candidate is selectable in the existing sheet"
+      (find "view.edit.option.virtual.available" <> -1);
+    for index = 1 to 9 do
+      ignore (Native_bridge.apply_response (Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+        "propertyValues", `Assoc ["key", `String ("another-editor-" ^ string_of_int index); "column", column]]])))
+    done;
+    check ~msg:"an open editor retains its candidates when older shared replies are evicted"
+      (find "view.edit.option.virtual.available" <> -1);
+    ignore (Native_bridge.press (find "view.edit.cancel.virtual"));
+    check ~msg:"cancel still closes a lazily loaded editor" (find "view.edit.sheet.virtual" = -1))
+
+let wide_tables_mount_only_visible_cells () =
+  let extra = List.init 60 (fun index -> `Assoc ["attr", `String ("user.property/Wide" ^ string_of_int index);
+    "title", `String ("Column " ^ string_of_int index); "kind", `String "default"]) in
+  let rec widen = function
+    | `Assoc fields -> `Assoc (List.map (fun (key, value) -> key,
+        if key = "columns" then (match value with `List cols -> `List (cols @ extra) | _ -> value)
+        else widen value) fields)
+    | `List values -> `List (List.map widen values) | value -> value in
+  let response = Json.to_string (widen (Json.from_string (virtual_result_response ~count:101 "table"))) in
+  List.iter (fun backend -> Q.with_ui backend response (fun app ->
+    let host = Lui_app.runtime app in
+    let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+    let first = "view.cell.virtual.virtual-0.block/title" in
+    let last = "view.cell.virtual.virtual-0.user.property/Wide59" in
+    check ~msg:"the first visible cell is mounted" (find first <> -1);
+    check_eq ~msg:"offscreen columns own no native cell nodes" (find last) (-1);
+    let viewport = App_test.extension_node app "native-table-viewport" in
+    check ~msg:"table scrolling reports the horizontal viewport" (viewport <> -1);
+    let fields = Lui_protocol.String_map.empty
+      |> Lui_protocol.String_map.add "offset" (Lui_protocol.IntValue 10_500)
+      |> Lui_protocol.String_map.add "width" (Lui_protocol.IntValue 390) in
+    App_test.dispatch app (Lui_protocol.ExtensionEvent (viewport, "native-table-viewport", "viewport-changed", fields));
+    App_test.flush app;
+    check ~msg:"horizontal scrolling mounts the last column" (find last <> -1);
+    check_eq ~msg:"columns outside the viewport are evicted" (find first) (-1);
+    let window = find "view.window.virtual" in
+    App_test.dispatch app (Lui_protocol.VisibleRange (window, 95, 100)); App_test.flush app;
+    check ~msg:"vertical scrolling preserves the horizontal cell window"
+      (find "view.cell.virtual.virtual-100.user.property/Wide59" <> -1);
+    check_eq ~msg:"offscreen rows are evicted" (find last) (-1)))
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let table_and_gallery_mount_bounded_windows () =
   List.iter (fun backend -> List.iter (fun typ ->
@@ -1189,8 +1339,8 @@ let closed_choices_follow_master_on_every_property_type () =
     List.iter (fun backend ->
       Q.open_results session;
       Q.with_ui backend (Session.snapshot_visible session) (fun app ->
-        let host = Lui_app.runtime app in
-        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let _host = Lui_app.runtime app in
+        let find id = find_visible session app id in
         let click id = let node = find id in check ~msg:id (node <> -1);
           App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
         click ("view.tab." ^ table_view);
@@ -1238,8 +1388,8 @@ let closed_choices_are_scoped_to_the_edited_object () =
     let session, _ = make_session ~configured:true db in
     Q.open_results session;
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
-      let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let _host = Lui_app.runtime app in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
@@ -1260,7 +1410,7 @@ let table_name_editors_resolve_page_names_and_offer_navigation () =
     Graph_runtime.rebase runtime 42 [] [alpha];
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
       let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let find id = find_visible session app id in
       let click id = let node = find id in check ~msg:id (node <> -1);
         App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       click ("view.tab." ^ table_view);
@@ -1296,6 +1446,8 @@ let readable_names_roundtrip_without_retargeting_references () = with_runtime (f
   check_eq ~msg:"ambiguous display names keep identity-preserving syntax" (member "editorValue" name) (`String stored))
 
 let cases = [
+  case "deferred cell editors load candidates without replacing the page" deferred_cell_editor_loads_without_replacing_the_page;
+  case "wide tables mount only cells intersecting the viewport" wide_tables_mount_only_visible_cells;
   case "table Name editors show readable refs and provide navigation" table_name_editors_resolve_page_names_and_offer_navigation;
   case "readable Name references roundtrip without retargeting" readable_names_roundtrip_without_retargeting_references;
   case "all closed property types use ordered live choices and typed selection" closed_choices_follow_master_on_every_property_type;

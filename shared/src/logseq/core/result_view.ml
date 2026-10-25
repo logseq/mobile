@@ -230,8 +230,8 @@ let scoped_reference_values db p values =
   else
     let accepts = reference_predicate db p in
     List.filter (fun value -> Option.fold ~none:false ~some:accepts (node_target_id db p value)) values
-let column_json ?(include_candidates = true) db rows p =
-  let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
+let column_json ?(include_candidates = true) ?(include_values = true) db rows p =
+  let values = if not include_values then [] else (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @
     (if include_candidates then reference_candidates db p else []) @
     List.concat_map (function Query_block.Cells _ -> [] | Query_block.Block block ->
@@ -256,11 +256,16 @@ let column_json ?(include_candidates = true) db rows p =
   "closed", `Bool p.closed;
   "canCreate", `Bool (not p.closed && p.typ <> "checkbox" && p.typ <> "property");
   "filterValues", `List filter_values;
+  "valuesDeferred", `Bool (not include_values);
   "choices", choices_json db p.choices]
-let row_json db encode properties = function
+let row_json ~compact_block db encode properties = function
   | Query_block.Cells cells -> `Assoc ["cells", `List (List.map (fun cell -> `String cell) cells)]
   | Query_block.Block block -> let id = eid db block.uuid in
-    `Assoc ["block", encode block; "properties", `List (List.map (fun p ->
+    let encoded = if compact_block then `Assoc [
+      "uuid", `String block.uuid; "title", `String block.title; "pageId", `String block.page_id;
+      "displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title))]
+      else encode block in
+    `Assoc ["block", encoded; "properties", `List (List.map (fun p ->
       let editor = if p.closed then
         let choices = G.scope_closed_value_eids db ~owner:id p.choices in
         if choices = p.choices then [] else
@@ -273,12 +278,34 @@ let row_json db encode properties = function
           | value :: _ -> temporal_value db p value | [] -> "");
         "references", `List (property_references db p (attr_values db id p.attr));
         "raw", semantic_json db (raw db id p.attr)])) properties)]
-let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
+type row_window = {view_uuid : string option; offset : int; limit : int}
+let initial_window = {view_uuid = None; offset = 0; limit = 12}
+let slice offset limit rows =
+  let rec drop offset rows = if offset <= 0 then rows else match rows with [] -> [] | _ :: rest -> drop (offset - 1) rest in
+  let rec take limit acc = function
+    | _ when limit <= 0 -> List.rev acc | [] -> List.rev acc
+    | row :: rest -> take (limit - 1) (row :: acc) rest in
+  take limit [] (drop offset rows)
+let render_rows ?(input = "") ?(include_values = true) ?window db ~owner ~feature ~encode_block rows =
   let views = saved_views db owner feature in
   let views = if views = [] then [None] else List.map Option.some views in
+  let view_id view = Option.fold ~none:(owner ^ ":default") ~some:(uuid db) view in
+  let selected = match window with Some {view_uuid = Some id; _} -> id | _ -> view_id (List.hd views) in
+  let views = match window with
+    | Some {view_uuid = Some _; _} ->
+      let selected = List.filter (fun view -> view_id view = selected) views in
+      if selected = [] then invalid_arg "This view is unavailable"; selected
+    | _ -> views in
   let original_rows = rows in
+  let column_cache = Hashtbl.create 32 in
+  let column candidates p =
+    let key = p.attr, candidates in
+    match Hashtbl.find_opt column_cache key with
+    | Some value -> value
+    | None -> let value = column_json ~include_candidates:candidates ~include_values db original_rows p in
+      Hashtbl.add column_cache key value; value in
   let view_json view =
-    let id = Option.fold ~none:(owner ^ ":default") ~some:(uuid db) view in
+    let id = view_id view in
     let setting attr = Option.fold ~none:Ds.Nil ~some:(fun id -> get db id attr) view in
     let name = Option.fold ~none:"All" ~some:(fun id -> display (get db id "block/title")) view in
     let typ = match Option.bind (ref_id db (setting "logseq.property.view/type")) (fun id -> Some (ident db id)) with
@@ -291,6 +318,12 @@ let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
       if typ = "invalid" then invalid_arg "Unsupported view type";
       let rows = apply_view db feature (setting "logseq.property.table/sorting")
           (setting "logseq.property.table/filters") input rows in
+      let row_count = List.length rows in
+      let offset, rows = match window with
+        | None -> 0, rows
+        | Some window when id = selected -> let offset = min row_count (max 0 window.offset) in
+          offset, slice offset (min 64 (max 1 window.limit)) rows
+        | Some _ -> 0, [] in
       let properties = columns db view original_rows in
       let properties = if typ <> "table" then properties else
         let visible = List.filter (fun p -> p.attr <> "block/updated-at") properties in
@@ -303,9 +336,11 @@ let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
       let catalog = List.sort_uniq String.compare (known @ List.map (fun p -> p.attr) available)
         |> List.map (property db) in
       let cell_properties = if typ = "list" then [] else properties in
-      `Assoc (fields @ ["error", `Null; "columns", `List (List.map (column_json ~include_candidates:(typ <> "list") db original_rows) properties);
-        "properties", `List (List.map (column_json ~include_candidates:(typ <> "list") db original_rows) catalog);
-        "rows", `List (List.map (row_json db encode_block cell_properties) rows)])
+      `Assoc (fields @ ["error", `Null; "revision", `Int db.max_tx; "rowCount", `Int row_count; "rowOffset", `Int offset;
+        "rowsDeferred", `Bool (window <> None); "input", `String input;
+        "columns", `List (List.map (column (typ <> "list")) properties);
+        "properties", `List (List.map (column (typ <> "list")) catalog);
+        "rows", `List (List.map (row_json ~compact_block:(typ <> "list") db encode_block cell_properties) rows)])
     with error -> `Assoc (fields @ ["error", `String (match error with Invalid_argument message -> message | _ -> Printexc.to_string error);
       "rows", `List []; "columns", `List []]) in
   `Assoc ["ownerUuid", `String owner; "featureType", `String feature; "views", `List (List.map view_json views)]
@@ -323,9 +358,13 @@ let scope db owner feature = match feature with
         (match G.page_block (fun text -> Ok text) db id with Some _ as block -> block
          | None -> G.block ~with_breadcrumbs:true (fun text -> Ok text) db id))
   | _ -> invalid_arg "Views are only available for queries, tag objects, and property objects"
-let render ?input db ~owner ~feature ~encode_block =
-  try Ok (render_rows ?input db ~owner ~feature ~encode_block (scope db owner feature))
+let render ?input ?include_values ?window db ~owner ~feature ~encode_block =
+  try Ok (render_rows ?input ?include_values ?window db ~owner ~feature ~encode_block (scope db owner feature))
   with error -> Error (match error with Invalid_argument message -> message | _ -> Printexc.to_string error)
+
+let filter_values db ~owner ~feature ~attr =
+  if not (public_attr attr) then invalid_arg "This property is unavailable";
+  column_json ~include_candidates:false db (scope db owner feature) (property db attr)
 
 let is_uuid value = String.length value = 36 && value.[8] = '-' && value.[13] = '-'
   && value.[18] = '-' && value.[23] = '-'

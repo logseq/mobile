@@ -127,7 +127,8 @@ let tag_properties model_source raw_source send close : t =
                     ~on_press:(fun _ -> ignore (send (Model.SubmitNodeProperty (id, J.to_string (`Assoc [
                       "blockUuid", `String owner; "graphId", `String graph; "action", `String "remove"; "attr", `String attr]))))) []])];
               View_query.action_error model_source id])];
-        list_section [list_item [add]]];
+        if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
+          (list_section [list_item [add]])];
       picker;
       toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [
         button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
@@ -249,7 +250,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                   uuid, View_base.tr_named (Signal.sample model_source) "Open {1}" (text (field "title" reference)),
                   (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
                   (list (field "references" property)) in
-                View_query.property_editor ~open_nodes ~id ~column:property
+                View_query.property_editor ~owner ~send ~open_nodes ~id ~column:property
                 ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
                 model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
             if_ ~test:(own (Signal.map Option.is_none (Signal.value editing))) (View_query.action_error model_source id);

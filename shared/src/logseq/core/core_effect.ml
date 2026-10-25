@@ -40,6 +40,8 @@ let request ~now ~fresh_id payload =
     | "result-view" -> raw "resultView"
     | "flashcard-deck" -> raw "flashcardDeck"
     | "node-property" -> raw "nodeProperty"
+    | "load-property-values" -> raw "propertyValues"
+    | "load-result-rows" -> raw "resultRows"
     | "set-journal-title-format" -> raw "setJournalTitleFormat"
     | "recording-transcribed" -> let* uuid = string fields "uuid" in let* text = text () in
       json "completeAssetTranscription" ["parentId", `String uuid; "text", `String text]

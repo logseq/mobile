@@ -358,7 +358,38 @@ let large_tag_pickers_mount_in_pages_without_losing_candidates () = R.with_runti
     App_test.flush app;
     check ~msg:"scrolling loads the next page of candidates" (find (option 80) <> -1)))
 
+let tag_snapshots_defer_editor_values () = R.with_runtime (fun session runtime conn ->
+  configure_nodes runtime conn;
+  update runtime conn [
+    put R.table_view "logseq.property/view-for" (D.Ref_to (ref_uuid Q.project));
+    put R.table_view "logseq.property.view/feature-type" (D.Keyword "class-objects")];
+  open_node session Q.project;
+  let snapshot = N.result (J.from_string (Rpc_session.snapshot_visible session)) in
+  let route = List.hd (items "nodeRoutes" snapshot) in
+  let views = member "resultViews" route in
+  let table = List.find (fun v -> member "uuid" v = `String R.table_view) (items "views" views) in
+  check ~msg:"opening a tag preserves its result rows" (items "rows" table <> []);
+  List.iter (fun column ->
+    check_eq ~msg:"page snapshots defer editor candidates and filter values"
+      (member "valuesDeferred" column) (`Bool true);
+    check_eq ~msg:"hidden candidate catalogs are absent from the first page response"
+      (items "filterValues" column) []) (items "columns" table @ items "properties" table);
+  let before = Graph_runtime.pending_operations runtime in
+  let request = J.to_string (`Assoc ["key", `String "scoped-editor"; "mode", `String "property";
+    "ownerUuid", `String Q.page; "attr", `String node_property]) in
+  let response = N.result (Core_effect_test.execute session "load-property-values" ["text", `String request]) in
+  let loaded = member "propertyValues" response in
+  check_eq (member "key" loaded) (`String "scoped-editor");
+  let values = items "filterValues" (member "column" loaded) in
+  check ~msg:"lazy Node editors still include previously unused descendant-tag instances"
+    (List.exists (fun value -> member "match" value = `List [`String person]) values);
+  check ~msg:"lazy Node editors preserve the configured tag restriction"
+    (not (List.exists (fun value -> member "match" value = `List [`String Q.page]) values));
+  check_eq ~msg:"loading editor values never stages a graph operation"
+    (Graph_runtime.pending_operations runtime) before)
+
 let cases = [
+  case "tag snapshots defer values while lazy editors retain scoped candidates" tag_snapshots_defer_editor_values;
   case "large tag pickers mount incrementally and search the complete catalog" large_tag_pickers_mount_in_pages_without_losing_candidates;
   case "node picker scopes exclude previously assigned values" node_pickers_exclude_values_outside_configured_tags;
   case "tag properties are managed from the overflow menu" tag_properties_are_managed_from_the_overflow_menu;

@@ -7,9 +7,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -59,13 +64,13 @@ class AndroidTagSearchRegressionTest {
                         .put("type", "ref-uuid").put("value", "tag-0")))))))
     }
 
-    private fun render(language: String = "en") {
+    private fun render(language: String = "en", response: JSONObject = snapshot()) {
         val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
         filter = LuiPatchFilter(backend)
         bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
         val root = bridge.initialize(authenticationCode = 3)
-        filter.applyJson(bridge.applySnapshot(snapshot().toString()))
+        filter.applyJson(bridge.applySnapshot(response.toString()))
         bridge.applyHostUpdate("settings", """{"appearance":"light","language":"$language","systemLanguage":"en","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}""")
             .takeIf { it.isNotEmpty() }?.let(filter::applyJson)
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
@@ -85,6 +90,54 @@ class AndroidTagSearchRegressionTest {
             }
         }
         return result
+    }
+
+    @Test fun wideTagTablesMountVisibleCellsAndKeepThePageMenuResponsive() {
+        val columns = JSONArray().put(JSONObject().put("attr", "block/title").put("title", "Name"))
+        repeat(24) { columns.put(JSONObject().put("attr", "user.property/Column$it").put("title", "Column $it")) }
+        val rows = JSONArray()
+        repeat(12) { index -> rows.put(JSONObject().put("block", JSONObject().put("uuid", "object-$index")
+            .put("title", "Object $index").put("pageId", "owner"))) }
+        val response = snapshot()
+        response.getJSONObject("result").put("selectedPageIsTag", true).put("outlinerRows", JSONArray())
+            .put("resultViews", JSONObject().put("ownerUuid", "owner").put("featureType", "class-objects")
+                .put("views", JSONArray().put(JSONObject().put("uuid", "table").put("name", "All").put("type", "table")
+                    .put("columns", columns).put("properties", columns).put("rows", rows)
+                    .put("rowCount", 1000).put("rowOffset", 0).put("rowsDeferred", true).put("input", "").put("revision", 1))))
+        response.getJSONObject("result").getJSONObject("nodeProperties").put("canAdd", false)
+        render(response = response)
+        ui.onNodeWithTag("view.cell.table.object-0.block/title").assertIsDisplayed()
+        ui.onNodeWithTag("view.cell.table.object-0.user.property/Column23").assertDoesNotExist()
+        ui.onNodeWithTag("view.table.scroll.table").performTouchInput { swipeLeft() }
+        assertTrue(ui.onNodeWithTag("view.table.scroll.table").fetchSemanticsNode()
+            .config[SemanticsProperties.HorizontalScrollAxisRange].value() > 0)
+        ui.onNodeWithTag("view.table.scroll.table").performSemanticsAction(SemanticsActions.ScrollBy) { it(100000f, 0f) }
+        ui.onNodeWithTag("view.cell.table.object-0.user.property/Column23").assertIsDisplayed()
+        ui.onNodeWithTag("view.cell.table.object-0.block/title").assertDoesNotExist()
+        ui.onNodeWithTag("view.table.viewport.table").performScrollToIndex(999)
+        var reads = emptyList<JSONObject>()
+        ui.waitUntil(5000) { reads = effects().filter { it.optString("kind") == "load-result-rows" }; reads.isNotEmpty() }
+        val eff = reads.single()
+        val request = JSONObject(eff.getString("text"))
+        val offset = request.getInt("offset")
+        val limit = request.getInt("limit")
+        assertTrue(offset > 900 && limit <= 64)
+        val loaded = JSONObject(response.getJSONObject("result").getJSONObject("resultViews").getJSONArray("views").getJSONObject(0).toString())
+            .put("rowOffset", offset).put("rows", JSONArray().apply {
+                for (index in offset until minOf(1000, offset + limit)) put(JSONObject().put("block", JSONObject()
+                    .put("uuid", "object-$index").put("title", "Object $index").put("pageId", "owner")))
+            })
+        val reply = JSONObject().put("ok", true).put("result", JSONObject().put("isQueryPatch", true)
+            .put("resultRows", JSONObject().put("key", request.getString("key")).put("view", loaded))).toString()
+        ui.runOnIdle {
+            bridge.applySnapshot(reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+            bridge.resolveEffect(eff.getLong("id"), true, reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        }
+        ui.onNodeWithTag("view.cell.table.object-999.user.property/Column23").assertIsDisplayed()
+        ui.onNodeWithTag("button.overflow-menu").performClick()
+        ui.onNodeWithTag("button.page.tag-properties").performClick()
+        ui.onNodeWithTag("property.schema.owner.user.property/Notes", useUnmergedTree = true).assertIsDisplayed()
+        ui.onNodeWithTag("property.add.owner").assertDoesNotExist()
     }
 
     @Test fun existingBlockTagsOfferRemovalAndTagPropertiesUseTheirOwnSheet() {

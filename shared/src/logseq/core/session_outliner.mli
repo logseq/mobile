@@ -1,6 +1,7 @@
 (** Outliner context/state helpers layered over session state. *)
 
 val sidebar_pages : Session_types.session -> Graph_read.sidebar_pages
+val uses_paged_tag_objects : Session_types.session -> bool
 
 val outliner_context_with_blocks :
   Session_types.session ->

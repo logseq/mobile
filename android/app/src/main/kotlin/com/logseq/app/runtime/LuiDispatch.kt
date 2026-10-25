@@ -49,7 +49,7 @@ internal fun extensionText(values: Map<String, Any?>): String {
     for (key in listOf("uuid", "title", "query", "value")) {
         (values[key] as? String)?.let { return it }
     }
-    return ""
+    return (values["offset"] as? Number)?.toLong()?.toString() ?: ""
 }
 
 internal fun extensionValue(values: Map<String, Any?>): Long {

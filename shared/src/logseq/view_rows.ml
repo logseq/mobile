@@ -76,8 +76,20 @@ let retained_row_editing_caret (retained : retained_row) =
 
 (* Only the native-visible window owns UI scopes and protocol nodes. The
    lightweight collection metadata keeps the entire outline scrollable. *)
+let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~source ~key ~cmp ~mount : Lui_elements.t =
+ fun context parent ->
+  let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+  let metadata = own (Signal.map2 (fun (count, offset) rows ->
+    ["data-virtual-count", string_of_int count; "data-virtual-start", string_of_int offset;
+     "data-virtual-length", string_of_int (List.length rows); "data-item-extent", string_of_int item_extent;
+     "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
+    (own (Signal.map2 (fun count offset -> count, offset) count offset)) source) in
+  (Lui_elements.list ~accessibility_identifier:identifier ~data_attrs_signal:metadata ~track_visible_range:true
+    ~on_visible_range:(function Lui_protocol.VisibleRange (_, first, last) -> on_visible_range first last | _ -> ())
+    [Lui_elements.keyed ~source ~key ~cmp ~mount]) context parent
+
 let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
-    ?(identifier = "outliner.window") ?(item_extent = 32)
+    ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
     ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
@@ -86,7 +98,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
   else
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
-    let range = Signal.state context.ui_scheduler (0, 32) in
+    let range = Signal.state context.ui_scheduler (0, window_size) in
     let pinned = own (Signal.map (fun items ->
       match Array.find_index is_pinned items with Some index -> index | None -> -1) items) in
     Option.iter (fun reset ->
@@ -95,7 +107,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
         (Signal.observe reset (fun key ->
           if key <> !previous_key then begin
             previous_key := key;
-            Signal.set range (0, 32)
+            Signal.set range (0, window_size)
           end)))) reset_key;
     let target = match scroll_target with Some source -> source
       | None -> Signal.constant context.ui_scheduler None in
@@ -108,7 +120,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     ignore (Signal.own context.ui_scope (Signal.observe request (function
       | Some (uuid, index) when !applied_target <> Some uuid ->
         applied_target := Some uuid;
-        Signal.set range (max 0 (index - 8), 32)
+        Signal.set range (max 0 (index - min 8 (window_size / 2)), window_size)
       | _ -> ())));
     let window = own (Signal.map2 (fun items (start, length) ->
       let count = Array.length items in
@@ -161,9 +173,9 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
             let last = min last (count - 1) in
             if (first < start + 2 && start > 0)
                || (last >= start + length - 2 && start + length < count) then
-              let next_start = min (max 0 (first - max 0 ((32 - (last - first + 1)) / 2))) (max 0 (count - 32)) in
-              if next_start <> start || length < min 32 count then
-                Signal.set range (next_start, 32)
+              let next_start = min (max 0 (first - max 0 ((window_size - (last - first + 1)) / 2))) (max 0 (count - window_size)) in
+              if next_start <> start || length < min window_size count then
+                Signal.set range (next_start, window_size)
           end
         | _ -> ())
       [Lui_elements.keyed ~source:visible ~key ~cmp ~mount]) context parent

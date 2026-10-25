@@ -24,7 +24,9 @@ let clause attr op value = `List [`String attr; `String op; value]
 let with_sheet backend session clauses f =
   set_filters session clauses;
   Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
-    click app ("view.filter." ^ R.list_view); f app)
+    click app ("view.filter." ^ R.list_view);
+    R.load_property_values session app;
+    f app)
 let pending app =
   let pending_effect = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
   J.from_string (Native_bridge.encode_effect pending_effect) |> member "text" |> text |> J.from_string
