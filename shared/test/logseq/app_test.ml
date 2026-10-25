@@ -10481,37 +10481,43 @@ let composer_attachment_previews_remove_only_the_selected_draft () =
   check_eq ~msg:"removing an attachment never submits it"
     (List.length (App.model application).pending_effects) 0
 
-let ui_session_restores_after_process_relaunch () =
+let ui_session_relaunch_opens_home_and_preserves_capture () =
   let original =
-    {
-      (Model.initial ()) with
+    { (Model.initial ()) with
       Model.selected_graph_id = Some "graph-a";
+      recent_graph_ids = ["graph-a"; "graph-b"];
+      destination = Model.FlashcardsDestination;
+      selected_page = Some {Model.uuid = "page-a"; title = "Previous page"};
       composer_expanded = true;
+      composer_tags = [{Model.uuid = "person"; title = "Person"}];
+      composer_assets = [{Model.uuid = "attachment"; title = "Unsent image";
+        local_path = "/tmp/unsent.png"; payload = "{}"}];
       search_open = true;
       search_query = "hello";
-      app_navigation_path = [ Model.NodeRoute "page-a" ];
-      search_navigation_path = [ Model.NodeRoute "block-b" ];
-      settings_open = true;
-    }
-  in
+      app_navigation_path = [Model.NodeRoute "page-a"];
+      search_navigation_path = [Model.NodeRoute "block-b"];
+      settings_open = true } in
   let saved = Model.ui_session original in
-  let fresh =
-    { (Model.initial ()) with Model.selected_graph_id = Some "graph-a" }
-  in
+  let fresh = { (Model.initial ()) with Model.selected_graph_id = Some "graph-a";
+    composer_draft = "Unsent text" } in
   let restored = Model.update fresh (Model.RestoreUISession saved) in
-  check_eq ~msg:"reopen Capture" restored.composer_expanded true;
-  check_eq ~msg:"reopen Search" restored.search_open true;
-  check_eq ~msg:"restore query" restored.search_query "hello";
-  check_eq ~msg:"restore app path" restored.app_navigation_path
-    original.app_navigation_path;
-  check_eq ~msg:"restore search path" restored.search_navigation_path
-    original.search_navigation_path;
-  check_eq ~msg:"restore settings" restored.settings_open true;
-  check_eq ~msg:"reload both routes and search results"
-    (List.length restored.pending_effects) 3;
+  check_eq ~msg:"a process relaunch always opens the journal home" restored.destination Model.JournalsDestination;
+  check_eq ~msg:"previous sidebar pages are not selected again" restored.selected_page None;
+  check_eq ~msg:"old app routes are not reopened" restored.app_navigation_path [];
+  check_eq ~msg:"old search routes are not reopened" restored.search_navigation_path [];
+  check_eq ~msg:"search stays closed on launch" restored.search_open false;
+  check_eq ~msg:"settings stay closed on launch" restored.settings_open false;
+  check_eq ~msg:"capture does not open the keyboard on launch" restored.composer_expanded false;
+  check_eq ~msg:"launch does not refetch old pages, search or flashcards" restored.pending_effects [];
+  check_eq ~msg:"unfinished text is preserved" restored.composer_draft "Unsent text";
+  check_eq ~msg:"unfinished capture tags are preserved" restored.composer_tags original.composer_tags;
+  check_eq ~msg:"unfinished attachments are preserved" restored.composer_assets original.composer_assets;
+  check_eq ~msg:"recent graph ordering is preserved" restored.recent_graph_ids original.recent_graph_ids;
+  let suspended = Model.update original Model.SaveUISession in
+  check_eq ~msg:"saving a warm session does not navigate away" suspended.app_navigation_path original.app_navigation_path;
+  check_eq ~msg:"saving a warm session keeps the current destination" suspended.destination original.destination;
   check_eq ~msg:"never restore another graph's state"
-    (Model.update (Model.initial ()) (Model.RestoreUISession saved))
-    (Model.initial ())
+    (Model.update (Model.initial ()) (Model.RestoreUISession saved)) (Model.initial ())
 
 let ui_session_preserves_independently_restored_composer_draft () =
   let previous =
@@ -10835,7 +10841,7 @@ let cases =
     case "composer-attachment-previews-remove-only-the-selected-draft" composer_attachment_previews_remove_only_the_selected_draft;
     case "library-does-not-offer-empty-outline" library_does_not_offer_an_empty_outline_editor;
     case "graph-picker-prioritizes-downloaded-and-recent" graph_picker_prioritizes_downloaded_and_recent_graphs;
-    case "ui-session-restores-after-process-relaunch" ui_session_restores_after_process_relaunch;
+    case "ui-session-relaunch-opens-home-and-preserves-capture" ui_session_relaunch_opens_home_and_preserves_capture;
     case "ui-session-preserves-independently-restored-composer-draft"
       ui_session_preserves_independently_restored_composer_draft;
     case "quick-actions-open-from-existing-navigation" quick_actions_open_from_existing_navigation;

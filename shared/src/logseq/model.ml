@@ -1874,60 +1874,27 @@ let ui_session (current : logseq_model) =
     settings_open = current.settings_open;
   }
 
-let restore_session_routes current paths search =
-  List.fold_left
-    (fun result route ->
-      let uuid = navigation_route_uuid route in
-      let id = result.next_effect_id in
-      enqueue_effect result
-        (if search then OpenSearchNodeEffect (id, uuid)
-         else OpenAppNodeEffect (id, uuid)))
-    current paths
-
 let restore_ui_session (current : logseq_model) (session : ui_session) =
-  if
-    session.graph_id = None
-    || session.graph_id <> current.selected_graph_id
-  then current
-  else begin
-    let restored =
-      {
-        current with
-        destination = session.destination;
-        recent_graph_ids = session.recent_graph_ids;
-        composer_assets = session.assets;
-        composer_tags = session.composer_tags;
-        composer_expanded = session.composer_expanded;
-        composer_autofocus = session.composer_expanded;
-        search_open = session.search_open;
-        search_query = session.query;
-        app_navigation_path = session.app_path;
-        search_navigation_path = session.search_path;
-        settings_open = session.settings_open;
-      }
-    in
-    let selected =
-      match session.selected_page_id with
-      | Some uuid ->
-        enqueue_effect restored
-          (SelectSidebarPageEffect (restored.next_effect_id, uuid))
-      | None -> restored
-    in
-    let app_restored = restore_session_routes selected session.app_path false in
-    let searched =
-      if session.search_open && session.query <> "" then
-        enqueue_effect
-          { app_restored with search_loading = true }
-          (SearchNodesEffect (app_restored.next_effect_id, session.query))
-      else app_restored
-    in
-    let routed = restore_session_routes searched session.search_path true in
-    match session.destination with
-    | FlashcardsDestination ->
-      enqueue_effect routed
-        (LoadFlashcardsEffect routed.next_effect_id)
-    | _ -> routed
-  end
+  if session.graph_id = None || session.graph_id <> current.selected_graph_id then current
+  else
+    { current with
+      recent_graph_ids = session.recent_graph_ids;
+      composer_assets = session.assets;
+      composer_tags = session.composer_tags;
+      destination = JournalsDestination;
+      selected_page = None;
+      selected_page_is_tag = false;
+      selected_page_is_property = false;
+      composer_expanded = false;
+      composer_autofocus = false;
+      search_open = false;
+      search_query = "";
+      search_loading = false;
+      search_loading_more = false;
+      app_navigation_path = [];
+      app_navigation_previews = [];
+      search_navigation_path = [];
+      settings_open = false }
 
 let hydrate_rows content rows =
   let by_id = Hashtbl.create (List.length content) in
