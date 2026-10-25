@@ -11,6 +11,8 @@ mkdir -p "$check_dir/SearchCheck.app"
 xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -target arm64-apple-ios17.0-simulator -I "$build_dir/Modules" \
   Sources/Logseq/LGNavigationExtension.swift \
+  Sources/Logseq/LGAdaptiveContentInsets.swift \
+  Sources/Logseq/LGInteractionDiagnostics.swift \
   Sources/Logseq/LGLiquidGlassTweak.swift \
   Sources/Logseq/LogseqThemeSettings.swift \
   "$build_dir/Logseq.build/DerivedSources/resource_bundle_accessor.swift" \

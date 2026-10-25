@@ -3,8 +3,27 @@ import SwiftUI
 @testable import LUIAppleBackend
 @testable import Logseq
 
+@MainActor private final class SearchKeyboardDismissal: NSObject {
+    private(set) var completed = false
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(didHide),
+            name: UIResponder.keyboardDidHideNotification, object: nil)
+    }
+    @objc private func didHide(_ notification: Notification) {
+        completed = true
+    }
+    deinit { NotificationCenter.default.removeObserver(self) }
+}
+
 @main struct SearchDismissTransitionCheck {
     @MainActor static func main() async throws {
+        try await check("")
+        try await check("Needle")
+        print("PASS: empty and populated search close with the native keyboard, preserve outgoing content, and keep the toolbar at the bottom")
+    }
+
+    @MainActor static func check(_ initialQuery: String) async throws {
         var query = ""
         func snapshot() -> String {
             let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work",
@@ -49,10 +68,15 @@ import SwiftUI
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }
         let field = views(window).compactMap { $0 as? UISearchTextField }.first { $0.isFirstResponder }!
-        field.insertText("Needle")
-        try await wait("Search results must be visible before closing") { find("search.result.found") != nil }
+        if !initialQuery.isEmpty {
+            field.insertText(initialQuery)
+            try await wait("Search results must be visible before closing") { find("search.result.found") != nil }
+        }
         try await Task.sleep(for: .milliseconds(250))
-        guard let presented = window.rootViewController?.presentedViewController else { throw failure("Missing search presentation") }
+        guard let root = window.rootViewController else { throw failure("Missing app controller") }
+        if let modal = root.presentedViewController, !(modal is UISearchController) {
+            throw failure("Search must close in place instead of adding a full-screen modal transition")
+        }
         func searchController(_ controller: UIViewController) -> UISearchController? {
             if let search = controller.navigationItem.searchController, search.isActive { return search }
             for child in controller.children {
@@ -60,41 +84,45 @@ import SwiftUI
             }
             return controller.presentedViewController.flatMap(searchController)
         }
-        guard let search = searchController(presented), let delegate = search.searchBar.delegate else {
+        guard let search = searchController(root), let delegate = search.searchBar.delegate else {
             throw failure("Missing active native search controller")
         }
+        let fieldTop = field.convert(field.bounds, to: window).minY
+        let keyboard = SearchKeyboardDismissal()
         delegate.searchBarCancelButtonClicked?(search.searchBar)
         func retainsQuery() -> Bool {
             let node = backend.rootIDs.flatMap(descendants).first {
                 backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
             }
-            guard let node, case .string("Needle")? = backend.extensionModel(id: node)?.properties["query"] else { return false }
-            return find("search.result.found") != nil
+            guard let node, case .string(let value)? = backend.extensionModel(id: node)?.properties["query"],
+                  value == initialQuery else { return false }
+            return initialQuery.isEmpty || find("search.result.found") != nil
         }
-        var animated = false
-        for _ in 0..<100 {
-            guard retainsQuery() else {
-                throw failure("Closing search must preserve the outgoing query and results until dismissal starts")
-            }
-            if presented.isBeingDismissed || presented.transitionCoordinator != nil {
-                animated = true
-                break
-            }
-            guard window.rootViewController?.presentedViewController != nil else {
-                throw failure("Search disappeared without a dismissal animation")
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        guard animated else { throw failure("Closing search must start its dismissal animation") }
         try await Task.sleep(for: .milliseconds(30))
-        guard retainsQuery() else {
+        guard field.window == nil || retainsQuery() else {
             throw failure("The outgoing results must remain mounted during dismissal")
         }
-        try await wait("Search must finish dismissing") { window.rootViewController?.presentedViewController == nil }
-        try await wait("The search session must be cleared after dismissal") { find("search.result.found") == nil }
+        for _ in 0..<6 {
+            guard field.window == nil || field.convert(field.bounds, to: window).minY >= fieldTop - 2 else {
+                throw failure("The outgoing search toolbar must not jump to the top during dismissal")
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await wait("The search session must be cleared after dismissal") {
+            let node = backend.rootIDs.flatMap(descendants).first {
+                backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+            }
+            guard let node, case .bool(false)? = backend.extensionModel(id: node)?.properties["presented"] else { return false }
+            return find("search.result.found") == nil
+        }
+        guard keyboard.completed else {
+            throw failure("Search must preserve its native hierarchy until the keyboard finishes dismissing")
+        }
+        try await wait("Search must release its input") { !field.isFirstResponder }
+        guard window.rootViewController === root else { throw failure("Search must retain the app controller") }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }
-        print("PASS: native search dismisses with its query and results intact, then clears the closed session")
     }
+
     static func failure(_ message: String) -> NSError {
         NSError(domain: "SearchDismissTransition", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }

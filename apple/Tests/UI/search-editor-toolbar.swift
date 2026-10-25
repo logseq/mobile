@@ -69,9 +69,6 @@ import SwiftUI
         defer { window.isHidden = true; runtime.stop() }
         try await Task.sleep(for: .milliseconds(300))
         try press("button.search")
-        try await wait("Search must present its own navigation controller") {
-            window.rootViewController?.presentedViewController != nil
-        }
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         try await wait("Native search must become ready for typing") {
             views(window).compactMap { $0 as? UISearchTextField }.contains { $0.isFirstResponder }
@@ -101,8 +98,7 @@ import SwiftUI
         guard find("toolbar.outliner.editor", in: chrome) != nil else { throw failure("Missing editor toolbar") }
         var measuredFrame: CGRect?
         try await wait("The search editor toolbar must be visible above the keyboard") {
-            guard let presented = window.rootViewController?.presentedViewController else { return false }
-            measuredFrame = views(presented.view).compactMap { $0 as? UIScrollView }.compactMap { scroll in
+            measuredFrame = views(window).compactMap { $0 as? UIScrollView }.compactMap { scroll in
                 let rect = scroll.convert(scroll.bounds, to: window)
                 return scroll.window != nil && rect.height >= 42 && rect.height <= 60
                     && rect.minY > window.bounds.height / 2

@@ -103,11 +103,16 @@ import UIKit
             query == "Search" && find("search.result.result-0") != nil && find("search.result.result-40") != nil
         }
         try await Task.sleep(for: .milliseconds(200))
-        let presented = window.rootViewController!.presentedViewController!
-        try await wait("Search must own a navigation controller") {
-            controllers(presented).contains { $0 is UINavigationController }
+        let root = window.rootViewController!
+        func searchNavigation() -> UINavigationController? {
+            controllers(root).compactMap { $0 as? UINavigationController }.first {
+                $0.viewControllers.contains { $0.navigationItem.searchController != nil }
+            }
         }
-        let navigation = controllers(presented).compactMap { $0 as? UINavigationController }.first!
+        try await wait("Search must own a navigation controller") {
+            searchNavigation() != nil
+        }
+        let navigation = searchNavigation()!
         func screenshot(_ name: String) throws {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -126,7 +131,7 @@ import UIKit
             try await wait("Result content must mount at its page or revealed block") {
                 find("outliner.block.\(target)") != nil
             }
-            guard window.rootViewController?.presentedViewController === presented,
+            guard window.rootViewController === root, searchNavigation() === navigation,
                   find("outliner.block.\(target)") != nil else {
                 throw failure("Opening a result must retain the search session and its loaded content")
             }
@@ -135,7 +140,7 @@ import UIKit
                 guard let item = navigation.topViewController?.navigationItem else { return false }
                 let hasNativeItems = !(item.rightBarButtonItems ?? []).isEmpty
                     || item.trailingItemGroups.contains { !$0.barButtonItems.isEmpty }
-                return hasNativeItems && find("button.connection") != nil
+                return !navigation.isNavigationBarHidden && hasNativeItems && find("button.connection") != nil
             }
             window.layoutIfNeeded()
             if cycle == 11 { try screenshot("search-result-destination.png") }
