@@ -351,7 +351,8 @@ let search_query path sql binds =
         , Db.column_text statement 2 )))
 
 (* Root and tail identify the persisted graph without reading index nodes.
-   Pending intents identify the optimistic projection layered on that graph. *)
+   Pending intents identify the optimistic projection layered on that graph.
+   Bump the version when row eligibility changes, even if the schema does not. *)
 let search_source_version path =
   with_app_db path (fun connection ->
     let roots = query connection
@@ -364,7 +365,7 @@ let search_source_version path =
         (fun row -> (Db.column_text row 0, Db.column_int row 1,
           Db.column_text row 2, Db.column_text row 3)) in
       Some (Digest.to_hex (Digest.string
-        (Marshal.to_string ("search-index-v2", roots, pending) []))))
+        (Marshal.to_string ("search-index-v3", roots, pending) []))))
 
 let search_version path =
   with_search_db path (fun connection ->
