@@ -559,6 +559,13 @@ let node_property_values_open_select_and_navigate () =
         check ~msg:"select persists the chosen node" (List.mem (`String Q.project) refs);
         check_eq ~msg:"many keeps prior nodes; single replaces its reference"
           (List.mem (`String Q.page) refs) many;
+        let references = find ("property.reference." ^ owner ^ "." ^ R.summary) in
+        check_eq ~msg:"Node values share a horizontal row on both platforms"
+          (App_test.node host references) (Some Lui_protocol.Row);
+        let rendered = App_test.children host references
+          |> List.map (fun node -> App_test.property_string host node Lui_protocol.TextValue) in
+        check_eq ~msg:"Node names are separated by comma and space, with no trailing separator"
+          rendered (if many then ["Workspace"; ", "; "Project"] else ["Project"]);
         open_select ();
         let navigation = "view.edit.open." ^ id ^ "." ^ Q.project in
         check ~msg:"select offers navigation for the saved reference" (find navigation <> -1);

@@ -16,7 +16,12 @@ import UIKit
                 ["attr": "logseq.property/" + name, "title": name.capitalized,
                  "kind": "datetime", "text": "Oct 23, 09:30", "editorValue": "1792719000000",
                  "editable": true, "textLayout": false, "raw": ["type": "number", "value": 1792719000000]] as [String: Any]
-            }]
+            } + [["attr": "user.property/Assignee", "title": "Assignee", "kind": "node",
+                  "text": "zhiyuan, megayu, Tienson", "editable": true, "textLayout": false,
+                  "many": true, "raw": ["type": "set", "value": ["zhiyuan", "megayu", "tienson"].map { ["type": "ref-uuid", "value": $0] }],
+                  "references": [["uuid": "zhiyuan", "title": "zhiyuan"],
+                                 ["uuid": "megayu", "title": "megayu"],
+                                 ["uuid": "tienson", "title": "Tienson"]]]]]
         }
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: AlignmentEffects())
         let backend = runtime.renderer.backend
@@ -71,6 +76,16 @@ import UIKit
                 if abs(key.width - 20) > 1 || value.minX - key.maxX > 9 { failures.append("Inline dates retain compact icons") }
                 if backend.model(id: pageID)?.property(.text)?.stringValue != name.capitalized {
                     failures.append("Page dates must use ordinary text labels: \(name)")
+                }
+            }
+            for owner in ["page", "body"] {
+                let prefix = "property.value." + owner + ".user.property/Assignee"
+                let values = [prefix, prefix + ".megayu", prefix + ".tienson"].compactMap { find($0).flatMap { frames[$0] } }
+                if values.count != 3 { failures.append("All Node values must remain visible on \(owner)") }
+                for (left, right) in zip(values, values.dropFirst()) {
+                    if abs(left.midY - right.midY) > 1 || right.minX < left.maxX {
+                        failures.append("Node values must share a horizontal row in order on \(owner): \(values)")
+                    }
                 }
             }
             guard let guide = views(window).first(where: { $0.accessibilityIdentifier == "outliner.indent-guides.metadata.body" }),
