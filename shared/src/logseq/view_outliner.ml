@@ -697,6 +697,30 @@ let node_properties ?(root = false) context model_source send =
     (Signal.map (fun (model : Model.logseq_model) -> if root then model.properties_json else match View_base.active_node_projection model with
       | Some route -> route.node_properties_json | None -> model.properties_json) model_source) send
 
+let with_result_page ?(root = false) context model_source send fallback : t =
+  dyn (fun full_page -> if not full_page then fallback else
+    column ~grow:1.0 ~gap:0 ~cross:`stretch ~accessibility_identifier:"page.results" [
+      box ~height:16 [];
+      if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)
+        (node_breadcrumbs model_source send);
+      if_ ~test:(reactive (if root then View_base.selected_page_content_title_visible_ else View_base.node_title_visible_) model_source)
+        (column ~gap:0 [
+          box ~padding_horizontal:16 [row ~gap:8 ~cross:`center [
+            View_base.node_icon_view ~size:28 (Signal.map (fun current ->
+              View_base.node_icon current (View_base.active_node_uuid current)) model_source);
+            heading ~level:3 ~style_class:"scroll-section-title"
+              ~value:(reactive View_base.active_node_title model_source)
+              ~accessibility_identifier:(if root then "title.selected-page" else "title.node") []]];
+          box ~height:12 []]);
+      node_properties ~root context model_source send;
+      box ~grow:1.0 ~padding_horizontal:16 ~padding_vertical:8 [
+        View_query.collection ~fill_height:true ~render_block:(render_result_block context model_source)
+          model_source (Signal.map View_base.active_node_result_views model_source) send];
+    ])
+    (Signal.map (fun current ->
+      (View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current)
+      && View_base.page_content_ready_ current && View_base.active_node_result_views current <> "") model_source)
+
 let outliner_row context model_source retained_row_source row_source send : t =
   let body = outliner_row_body context model_source retained_row_source row_source send in
   let body = decorate_row model_source row_source send body in
@@ -1251,7 +1275,8 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
     (column ~accessibility_identifier:"screen.node"
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
-      View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
+      with_result_page context model_source send
+      (View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
       (virtual_list ~grow:1.0 ~gap:0 ~style_class:"scroll-section-titles" ~accessibility_identifier:"list.outliner"
         ~data_attrs_signal:(Signal.map (fun current ->
           ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
@@ -1278,5 +1303,5 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
           box ~height:120 [];
-        ]);
+        ]));
     ])

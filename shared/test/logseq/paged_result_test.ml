@@ -78,6 +78,10 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
       let scroll first last = App_test.dispatch app (Lui_protocol.VisibleRange (surface (), first, last)); App_test.flush app in
       scroll 950 958;
       check_eq ~msg:"scrolling requests one bounded window" (List.length (pending ())) 1;
+      check ~msg:"scrolling reads do not insert a loading indicator above the view"
+        (find ("view.rows.loading." ^ R.table_view) = -1);
+      check ~msg:"existing rows remain mounted while the next window is pending"
+        (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") <> -1);
       scroll 900 908;
       check_eq ~msg:"rapid scrolling coalesces while a read is pending" (List.length (pending ())) 1;
       let before = (App.model app).outliner_rows in
@@ -180,9 +184,38 @@ let tag_routes_do_not_duplicate_members_in_legacy_payloads () = with_rows (fun s
   check_eq ~msg:"tag list interactions reuse on-demand outliner context loading"
     (member "uuid" (member "editing" (member "outlinerState" active))) (`String (uuid 999)))
 
+let object_page_views_mount_on_both_hosts () =
+  List.iter (fun backend -> List.iter (fun is_tag -> List.iter (fun pushed -> List.iter (fun typ ->
+    let collection = `Assoc ["ownerUuid", `String "object-owner";
+      "featureType", `String (if is_tag then "class-objects" else "property-objects");
+      "views", `List [`Assoc ["uuid", `String "object-view"; "name", `String "All"; "type", `String typ;
+        "columns", `List [`Assoc ["attr", `String "block/title"; "title", `String "Name"]];
+        "rowsDeferred", `Bool true; "rowCount", `Int 1000; "rowOffset", `Int 0;
+        "rows", `List [`Assoc ["block", Q.query_result_block "first-object" "First object"]]]]] in
+    let page = `Assoc ["uuid", `String "object-owner"; "title", `String "Objects"] in
+    let fields = if pushed then ["nodeRoutes", `List [`Assoc ["uuid", `String "object-owner";
+      "page", page; "isTag", `Bool is_tag; "isProperty", `Bool (not is_tag); "resultViews", collection]]]
+      else ["selectedPage", page; "selectedPageIsTag", `Bool is_tag;
+        "selectedPageIsProperty", `Bool (not is_tag); "resultViews", collection] in
+    Q.with_ui backend (J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc (
+      ["selectedGraphId", `String "object-pages"; "graphName", `String "Objects"] @ fields)])) (fun app ->
+      if pushed then (App_test.send app (Model.RequestAppNode "object-owner"); App_test.flush app);
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      check ~msg:"tag and property views mount in root and pushed page surfaces" (find "page.results" <> -1);
+      check ~msg:"object pages expose their own virtual viewport" (find "view.window.object-view" <> -1);
+      let rec nested_in_outliner node =
+        (App_test.property_string host node Lui_protocol.AccessibilityIdentifier = "list.outliner"
+          && App_test.descendant_with_identifier host node "view.window.object-view" <> -1)
+        || List.exists nested_in_outliner (App_test.children host node) in
+      check ~msg:"object pages do not wrap their viewport in the outliner scroll view"
+        (not (nested_in_outliner (Lui_app.root_node app)))))
+    ["table"; "list"; "gallery"]) [false; true]) [false; true]) [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
   case "snapshots and row reads are bounded after master sorting filtering and search" snapshots_and_reads_are_bounded_and_keep_master_membership;
   case "native visible ranges page shared rows and coalesce obsolete requests" native_ranges_load_rows_and_ignore_obsolete_requests;
   case "paged lists and resized galleries reach the final unpaired result" list_and_resized_gallery_reach_the_final_page;
   case "tag route snapshots omit hidden legacy member payloads" tag_routes_do_not_duplicate_members_in_legacy_payloads;
+  case "tag and property views mount on root and pushed pages on both hosts" object_page_views_mount_on_both_hosts;
 ]
