@@ -5,17 +5,8 @@ let tr_named current source name =
   String_kit.replace (tr current source) ~match_:"{1}" ~replacement:name
 
 let property_title current ~attr ~title =
-  if attr = "block/title" || (attr = "block/tags" && title = "Set tags") then tr current title else
-  match String.split_on_char '/' attr with
-  | [namespace; name] when namespace = "block" || namespace = "logseq.property"
-      || String.starts_with ~prefix:"logseq.property." namespace ->
-    let name = if String.ends_with ~suffix:"?" name then String.sub name 0 (String.length name - 1) else name in
-    let prefix = if String.starts_with ~prefix:"logseq.property." namespace then
-      String.sub namespace 16 (String.length namespace - 16) ^ "-" else "" in
-    let key = "property.built-in/" ^ prefix ^ name in
-    let translated = tr current key in
-    if translated = key then title else translated
-  | _ -> title
+  if attr = "block/title" || (attr = "block/tags" && title = "Set tags") then tr current title
+  else title
 
 open Lui_protocol
 
