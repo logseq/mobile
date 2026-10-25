@@ -28,6 +28,8 @@ type read_caches =
   ; journal_page_count : int option ref
   }
 
+type search_rebuild = Indexing of Ds.datom Seq.t | Pruning of string option
+
 type runtime_state =
   { server_t : int
   ; snapshot : Projection.pending_projection_snapshot
@@ -36,6 +38,8 @@ type runtime_state =
   ; journal_limit : int
   ; journal_block_limit : int option
   ; search_index_is_fresh : bool
+  ; search_rebuild : search_rebuild option
+  ; search_rebuild_failed : bool
   }
 
 type graph_runtime =
@@ -102,22 +106,56 @@ let search_error stage error =
 
 let refresh_search runtime =
   match runtime.search_index with
-  | Some search_index ->
+  | Some index when not (state runtime).search_index_is_fresh ->
     (try
-       Graph_sqlite.set_search_version search_index.path None;
-       Index.refresh search_index (db runtime);
-       Graph_sqlite.set_search_version search_index.path
+       let phase = match (state runtime).search_rebuild with
+         | Some phase -> phase
+         | None ->
+           Graph_sqlite.set_search_version index.path None;
+           Indexing (Ds.Db.datoms (db runtime) Ds.Aevt ~a:"block/uuid" ()) in
+       let live = db runtime in
+       let phase = match phase with
+         | Indexing cursor ->
+           let deadline = Unix.gettimeofday () +. 0.004 in
+           let rec collect count rows removed cursor =
+             if count >= 32 || (count > 0 && Unix.gettimeofday () >= deadline) then
+               rows, removed, Some (Indexing cursor)
+             else match Seq.uncons cursor with
+               | None -> rows, removed, Some (Pruning None)
+               | Some (d, rest) ->
+                 (match d.Ds.v with
+                  | Ds.Uuid uuid -> (match Index.row_for_uuid live uuid with
+                      | Some row -> collect (count + 1) (row :: rows) removed rest
+                      | None -> collect (count + 1) rows (uuid :: removed) rest)
+                  | _ -> collect (count + 1) rows removed rest) in
+           let rows, removed, phase = collect 0 [] [] cursor in
+           if removed <> [] then Index.search_delete index.path removed;
+           if rows <> [] then Index.search_upsert index.path (List.rev rows);
+           phase
+         | Pruning after ->
+           let sql, binds = match after with
+             | None -> "select id, page, title from blocks order by id limit 32", []
+             | Some id -> "select id, page, title from blocks where id > ? order by id limit 32", [id] in
+           let rows = Index.search_query index.path sql binds in
+           let removed = List.filter_map (fun (uuid, _, _) ->
+             if Index.row_for_uuid live uuid = None then Some uuid else None) rows in
+           if removed <> [] then Index.search_delete index.path removed;
+           (match List.rev rows with [] -> None | (last, _, _) :: _ -> Some (Pruning (Some last))) in
+       if phase = None then Graph_sqlite.set_search_version index.path
          (Graph_sqlite.search_source_version runtime.path);
-       runtime.state :=
-         { !(runtime.state) with search_index_is_fresh = true }
+       runtime.state := {!(runtime.state) with search_rebuild = phase;
+         search_index_is_fresh = phase = None; search_rebuild_failed = false}
      with error ->
        search_error "refresh" error;
-       runtime.state :=
-         { !(runtime.state) with search_index_is_fresh = false })
-  | None -> ()
+       runtime.state := { !(runtime.state) with search_index_is_fresh = false;
+         search_rebuild = None; search_rebuild_failed = true })
+  | _ -> ()
+
+let search_index_pending runtime = runtime.search_index <> None
+  && not (state runtime).search_index_is_fresh && not (state runtime).search_rebuild_failed
 
 let refresh_search_affected runtime before intent operations =
-  if (state runtime).search_index_is_fresh then
+  if (state runtime).search_index_is_fresh || (state runtime).search_rebuild <> None then
     match runtime.search_index with
     | Some search_index ->
       (try
@@ -129,15 +167,15 @@ let refresh_search_affected runtime before intent operations =
            | _ -> None) operations in
          Index.refresh_uuids search_index before (db runtime)
            (created @ Ops.affected_uuids before intent);
-         Graph_sqlite.set_search_version search_index.path
-           (Graph_sqlite.search_source_version runtime.path)
+         if (state runtime).search_index_is_fresh then
+           Graph_sqlite.set_search_version search_index.path (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->
          runtime.state :=
-           { !(runtime.state) with search_index_is_fresh = false })
+           { !(runtime.state) with search_index_is_fresh = false; search_rebuild = None })
     | None -> ()
 
 let refresh_search_after_rebase runtime before operations changed_uuids =
-  if (state runtime).search_index_is_fresh then
+  if (state runtime).search_index_is_fresh || (state runtime).search_rebuild <> None then
     match runtime.search_index with
     | Some search_index ->
       let after = db runtime in
@@ -152,11 +190,11 @@ let refresh_search_after_rebase runtime before operations changed_uuids =
       (try
          Graph_sqlite.set_search_version search_index.path None;
          Index.refresh_uuids search_index before after affected;
-         Graph_sqlite.set_search_version search_index.path
-           (Graph_sqlite.search_source_version runtime.path)
+         if (state runtime).search_index_is_fresh then
+           Graph_sqlite.set_search_version search_index.path (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->
          runtime.state :=
-           { !(runtime.state) with search_index_is_fresh = false })
+           { !(runtime.state) with search_index_is_fresh = false; search_rebuild = None })
     | None -> ()
 
 let confirmed_operation confirmed server_t _authoritative
@@ -357,6 +395,8 @@ let create_base path server_t conn options =
             journal_limit = 1;
             journal_block_limit = Some initial_journal_block_limit;
             search_index_is_fresh = false;
+            search_rebuild = None;
+            search_rebuild_failed = false;
           };
     }
   in
@@ -501,7 +541,7 @@ let stage runtime (operation : Ops.pending_operation) =
      | Some index when (state runtime).search_index_is_fresh ->
        (try Graph_sqlite.set_search_version index.path (Graph_sqlite.search_source_version runtime.path)
         with error -> search_error "save-version" error;
-          runtime.state := { !(runtime.state) with search_index_is_fresh = false })
+          runtime.state := { !(runtime.state) with search_index_is_fresh = false; search_rebuild = None })
      | _ -> ());
     Ok ()
   | _ ->
@@ -793,8 +833,8 @@ let normalize_titles runtime uuid titles =
 let search runtime query =
   match runtime.search_index with
   | Some search_index ->
-    if not (state runtime).search_index_is_fresh then
-      refresh_search runtime;
+    if (state runtime).search_rebuild_failed then
+      runtime.state := {!(runtime.state) with search_rebuild_failed = false};
     (try
        let hits = Index.search_hits 100 search_index (db runtime) query in
        prerr_endline
@@ -815,6 +855,7 @@ let search_page runtime ~offset ~limit query =
   match runtime.search_index with
   | None -> [], false
   | Some index ->
-    if not (state runtime).search_index_is_fresh then refresh_search runtime;
+    if (state runtime).search_rebuild_failed then
+      runtime.state := {!(runtime.state) with search_rebuild_failed = false};
     try Index.search_hits_page ~offset ~limit index (db runtime) query
     with error -> search_error "page" error; [], false

@@ -99,6 +99,7 @@ type host_options =
       (string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Search.indexed_search_hit list) option
   ; graph_search_page : (offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
+  ; graph_maintain_search_index : (string -> bool) option
   ; graph_due_flashcards : (int -> Cards.due_card list) option
   ; graph_review_flashcard :
       (string -> Cards.flashcard_rating -> int -> string -> (unit, string) result)
@@ -202,6 +203,7 @@ let default_options =
     graph_normalize_titles = None;
     graph_search = None;
     graph_search_page = None;
+    graph_maintain_search_index = None;
     graph_due_flashcards = None;
     graph_review_flashcard = None;
     graph_set_page_favorite = None;

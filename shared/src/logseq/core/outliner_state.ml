@@ -1705,7 +1705,8 @@ let update context (state : outliner_state) message =
               {
                 state with
                 editing =
-                  Some { editing with expected_title = value.title };
+                  Some { editing with expected_title =
+                    (match find_block context value.uuid with Some block -> block.title | None -> value.title) };
               }
               []
           else step state []

@@ -679,7 +679,7 @@ let sidebar_drag_disabled_ (current : Model.logseq_model) =
       || outliner_selection_active_ current)
 
 let connection_control_visible_ (current : Model.logseq_model) =
-  (not current.search_open)
+  (not current.search_open || current.search_navigation_path <> [])
   && (not (graph_picker_visible_ current))
   && not (authentication_screen_visible_ current)
 

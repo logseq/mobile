@@ -45,6 +45,8 @@ val references_for_node : mobile_graph -> string -> Cache_model.block list optio
 val normalize_titles :
   mobile_graph -> string -> string list -> string list * (string * string) list
 val search : mobile_graph -> string -> Search_index.indexed_search_hit list
+val pending_search_index : mobile_graph -> string option
+val maintain_search_index : mobile_graph -> string -> bool
 val due_flashcards : mobile_graph -> int -> Flashcards.due_card list
 val review_flashcard :
   mobile_graph ->

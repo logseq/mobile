@@ -61,6 +61,7 @@ let with_runtime ?(reject = false) f = Graph_runtime_test.with_store (fun path -
     let conn = D.conn_from_db (fixture ()) in
     let runtime = Graph_runtime.create path 42 conn {Graph_runtime.default_options with
       auto_create_today = false; search_index_path = Some search_path} in
+    Graph_runtime_test.finish_search runtime;
     let session = Rpc_session.create_session {Rpc_session.default_options with
       load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
       sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);

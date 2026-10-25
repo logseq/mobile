@@ -753,6 +753,9 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
          ]
          context (Some node)
      in
+     ignore ((if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+       current.search_open && current.search_navigation_path <> []) model_source)
+       (active_overflow_menu model_source send)) context (Some node));
      node
    else (
      ignore
@@ -765,6 +768,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
        ((column ~gap:0
            [if_ ~test:(Signal.map View_base.search_editor_active_ model_source)
               (main_bottom_chrome context model_source send)]) context (Some node));
+     ignore ((main_header_connection model_source send) context (Some node));
      ignore
        ((native_node_stack context model_source
            ~source:(reactive View_base.search_node_routes model_source) send)

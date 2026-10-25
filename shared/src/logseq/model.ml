@@ -297,6 +297,7 @@ type logseq_effect =
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SetOutlinerTaskPriorityEffect of int * string * task_status option
+  | MaintainSearchIndexEffect of int * string
   | SearchNodesEffect of int * string
   | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
@@ -504,6 +505,7 @@ type logseq_action =
   | SendComposer
   | StageComposerAsset of composer_asset
   | RemoveComposerAsset of string
+  | RequestSearchIndexMaintenance of string
   | DequeueEffect of int
   | ResolveEffect of int * bool * string
   | ResolveAssetPreview of string * string
@@ -857,7 +859,7 @@ let effect_id eff =
   | SyncPendingEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
   | SetOutlinerTaskPriorityEffect (id, _, _) -> id
-  | SearchNodesEffect (id, _) | LoadSearchPageEffect (id, _, _) -> id
+  | MaintainSearchIndexEffect (id, _) | SearchNodesEffect (id, _) | LoadSearchPageEffect (id, _, _) -> id
   | LoadPageReferencesEffect (id, _) -> id
   | HydrateOutlinerRowsEffect (id, _) -> id
   | TapOutlinerBlockEffect (id, _) -> id
@@ -1397,9 +1399,11 @@ let current_settings (current : logseq_model) =
   }
 
 let active_page (current : logseq_model) =
-  if current.destination <> JournalsDestination then None
+  if current.destination <> JournalsDestination && not current.search_open then None
   else begin
-    let routes = app_node_routes current in
+    let routes = if current.search_open then
+      app_node_routes_from current current.search_navigation_path 0
+      else app_node_routes current in
     match routes with
     | [] -> current.selected_page
     | _ ->
@@ -1641,8 +1645,19 @@ let resolve_failed_effect (current : logseq_model) eff message =
     else { current with composer_assets = current.composer_assets @ [asset] }
   | _ -> rollback_navigation_effect current eff
 
-let resolve_successful_effect (current : logseq_model) eff _message =
+let resolve_successful_effect (current : logseq_model) eff message =
   match eff with
+  | MaintainSearchIndexEffect (_, graph_id) ->
+    let ready = try
+      let open Yojson.Basic.Util in
+      Yojson.Basic.from_string message |> member "result" |> member "searchIndexReady" = `Bool true
+      with _ -> false in
+    let searching = function SearchNodesEffect _ | LoadSearchPageEffect _ -> true | _ -> false in
+    if ready && current.selected_graph_id = Some graph_id
+       && not (String_kit.is_blank current.search_query)
+       && not (List.exists searching (current.pending_effects @ current.in_flight_effects))
+    then enqueue_effect current (SearchNodesEffect (current.next_effect_id, current.search_query))
+    else current
   | SendTaggedCaptureEffect (id, _) | SendCaptureEffect (id, _) | SendTaskEffect (id, _, _) ->
     { current with capture_confirmation = Some id }
   | SendAssetEffect (id, asset, _, graph_id) ->
@@ -2279,6 +2294,10 @@ let rec update (current : logseq_model) action =
             (SendAssetEffect (updated.next_effect_id, asset, tags, graph_id)))
         with_text assets
     end
+  | RequestSearchIndexMaintenance graph_id ->
+    if current.selected_graph_id <> Some graph_id
+       || current.pending_effects <> [] || current.in_flight_effects <> [] then current
+    else enqueue_effect current (MaintainSearchIndexEffect (current.next_effect_id, graph_id))
   | DequeueEffect id ->
     let pending = current.pending_effects in
     (match effect_with_id pending id with
@@ -2755,7 +2774,13 @@ let rec update (current : logseq_model) action =
        let deleting =
          enqueue_effect updated (DeletePageEffect (delete_id, page.uuid))
        in
-       if deleting.app_navigation_path = [] then
+       if deleting.search_open && deleting.search_navigation_path <> [] then begin
+         let path = deleting.search_navigation_path in
+         let route = List.nth path (List.length path - 1) in
+         let closed = {deleting with search_navigation_path = pop_route path} in
+         enqueue_effect closed (CloseSearchNodeEffect (closed.next_effect_id, navigation_route_uuid route))
+       end
+       else if deleting.app_navigation_path = [] then
          let clear_id = deleting.next_effect_id in
          enqueue_effect deleting (ClearSelectedPageEffect clear_id)
        else begin

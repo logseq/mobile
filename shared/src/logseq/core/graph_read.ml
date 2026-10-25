@@ -378,7 +378,11 @@ let library_entity db eid =
 let page_summary decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
   let title = entity_title decrypt_title db eid in
-  let name = string_value (value db eid "block/name") in
+  let name = match string_value (value db eid "block/name") with
+    | Some _ as name -> name
+    | None when List.exists (entity_is_instance_of db eid)
+        ["logseq.class/Page"; "logseq.class/Tag"; "logseq.class/Property"; "logseq.class/Journal"] -> title
+    | None -> None in
   match (uuid, title, name) with
   | Some uuid, Some title, Some name ->
     if
@@ -678,6 +682,16 @@ let node_is_property db uuid =
 let unique_named_uuid require_tag db name =
   let key = String.lowercase_ascii (S.trim name) in
   if key = "" then None
+  else if not require_tag && String.contains key '/' then (
+    let rec resolve parent = function
+      | [] -> Option.bind parent (uuid_for_eid db)
+      | name :: rest ->
+        let matches = Ds.Db.datoms db Ds.Avet ~a:"block/name" ~v:(Ds.String name) ()
+          |> Seq.filter (fun (d : Ds.datom) -> not (page_is_hidden db d.e)
+            && ref_eids db d.e "block/parent" = Option.to_list parent)
+          |> List.of_seq in
+        match matches with [d] -> resolve (Some d.Ds.e) rest | _ -> None in
+    resolve None (String.split_on_char '/' key))
   else (
     let matches =
       List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ~v:(Ds.String key) ())
@@ -1031,7 +1045,7 @@ let node_destination decrypt_title db uuid =
     if page_is_hidden db eid then None
     else (
       let is_page =
-        Option.is_some (string_value (value db eid "block/name"))
+        Option.is_some (page_summary decrypt_title db eid)
       in
       let page_eid =
         if is_page then Some eid

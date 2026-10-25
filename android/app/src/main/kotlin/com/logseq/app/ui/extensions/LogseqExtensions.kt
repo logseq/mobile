@@ -372,12 +372,15 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                             Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
                     },
-                    actions = { IconButton(onClick = { context.emit("dismiss") }) {
-                        Icon(Icons.Filled.Close, "Close search")
-                    } },
+                    actions = {
+                        context.children.getOrNull(1)?.let { context.child(it) }
+                        IconButton(onClick = { context.emit("dismiss") }) {
+                            Icon(Icons.Filled.Close, "Close search")
+                        }
+                    },
                 )
             }
-            Box(Modifier.weight(1f)) { context.Children() }
+            Box(Modifier.weight(1f)) { context.children.firstOrNull()?.let { context.child(it) } }
             if (depth == 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {

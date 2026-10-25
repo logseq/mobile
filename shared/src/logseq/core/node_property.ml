@@ -55,7 +55,11 @@ let render db ~owner ~encode_block =
       | `Assoc fields -> `Assoc (["title", `String "Add tags"; "raw", `Null; "text", `String ""; "filterValues", `List choices] @
           List.filter (fun (name, _) -> not (List.mem name ["title"; "raw"; "text"; "filterValues"])) fields)
       | _ -> `Null in
-    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id);
+    let tags = G.ref_eids db id "block/tags" |> List.filter_map (fun tag ->
+      if not (G.tag_available_for_completion db tag) || G.page_is_hidden db tag then None else
+      Option.map (fun (tag : Cache_model.entity_summary) ->
+        `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) (G.entity_summary (fun value -> Ok value) db tag)) in
+    Ok (`Assoc ["ownerUuid", `String owner; "tags", `List tags; "canDelete", `Bool (Node_title.can_delete db id);
       "tagPicker", tag_picker; "canAdd", `Bool (Node_title.can_edit db id); "classSchema", `Bool class_;
       "availableProperties", `List catalog; "schemaProperties", `List (List.map property schema_attrs);
       "rename", rename; "properties", `List (List.map (fun attr ->
@@ -87,7 +91,36 @@ let attach db owner attr =
 let mutation db ~now ~fresh_uuid input =
   try
     let action = member "action" input in
-    if action = `String "setCodeLanguage" then (
+    if action = `String "remove" || action = `String "removeTag" then (
+      let owner = required "blockUuid" input in
+      let id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with
+        | Some id when Node_title.can_edit db id -> id | _ -> invalid_arg "This object is read-only" in
+      let attr, remaining = if action = `String "removeTag" then (
+        let tag = required "tagUuid" input in
+        let tag_id = match Ds.entid db "block/uuid" (Ds.Uuid tag) with
+          | Some id when G.tag_available_for_completion db id -> id | _ -> invalid_arg "This tag cannot be removed" in
+        let assigned = G.ref_eids db id "block/tags" in
+        if not (List.mem tag_id assigned) then invalid_arg "The tag is no longer assigned";
+        "block/tags", Some (List.filter ((<>) tag_id) assigned))
+      else (
+        let attr = required "attr" input in
+        if not (visible db attr) then invalid_arg "This property is read-only";
+        if Node_title.is_class db id then (
+          let definition = match Ds.entid db "db/ident" (Ds.Keyword attr) with
+            | Some id -> id | None -> invalid_arg "Property no longer exists" in
+          let assigned = G.ref_eids db id "logseq.property.class/properties" in
+          if not (List.mem definition assigned) then invalid_arg "The property is no longer assigned";
+          "logseq.property.class/properties", Some (List.filter ((<>) definition) assigned))
+        else attr, None) in
+      let raw = Result_view.property_json ~include_candidates:false db ~owner ~attr ~encode_block:(fun _ -> `Null) |> member "raw" in
+      let expected = if raw = `Null then None else Some (Pending_ops.semantic_value_of_json raw) in
+      let value = Option.map (fun ids -> Pending_ops.Set_value (List.map (fun id ->
+        match G.uuid_for_eid db id, ident db id with
+        | Some uuid, _ -> Pending_ops.Ref_uuid uuid
+        | _, Some attr -> Pending_ops.Ref_ident attr
+        | _ -> invalid_arg "The value has no stable identity") ids)) remaining in
+      Ok (Pending_ops.Set_property {uuid = owner; attr; expected; value}))
+    else if action = `String "setCodeLanguage" then (
       let uuid = required "blockUuid" input in
       let id = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
         | Some id when Node_title.can_edit db id && G.display_type_for_eid db id = Some "code" -> id

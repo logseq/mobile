@@ -455,7 +455,11 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             let request = LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
                 action: "executeEffect", payload: payload
             ))
-            return await Self.resolution(from: await callCore(request))
+            let resolution = await Self.resolution(from: await callCore(request))
+            if effect.kind == "maintain-search-index", resolution.succeeded {
+                return LGEffectResolution(succeeded: true, message: resolution.message, output: .discard)
+            }
+            return resolution
         } catch {
             return LGEffectResolution(succeeded: false, message: String(describing: error))
         }

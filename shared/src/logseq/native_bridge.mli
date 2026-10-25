@@ -37,6 +37,8 @@ val encode_effect : Model.logseq_effect -> string
 
 val encode_effect_dispatch : Model.logseq_effect -> string -> string
 
+val set_search_index_source : (unit -> string option) -> unit
+
 val take_effect : unit -> string
 
 val resolve_effect : int -> bool -> string -> string

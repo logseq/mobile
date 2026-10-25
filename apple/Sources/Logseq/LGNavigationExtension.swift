@@ -227,6 +227,7 @@ private struct LGNavigationStack: View {
             routeStartIndex: 6,
             synchronizationName: "navigation",
             toolbarStartIndex: 1,
+            trailingMenuIndex: nil,
             bottomChromeIndex: 5,
             rootTransform: nil
         )
@@ -348,9 +349,10 @@ private struct LGSearchSession: View {
         LGNavigationContent(
             context: context,
             rootIndex: 1,
-            routeStartIndex: 3,
+            routeStartIndex: 4,
             synchronizationName: "search navigation",
             toolbarStartIndex: nil,
+            trailingMenuIndex: 3,
             bottomChromeIndex: 2,
             rootTransform: searchRootTransform
         )
@@ -487,6 +489,7 @@ private struct LGNavigationContent: View {
     let routeStartIndex: Int
     let synchronizationName: String
     let toolbarStartIndex: Int?
+    let trailingMenuIndex: Int?
     let bottomChromeIndex: Int?
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var nativePop: LGNativeNavigationPop?
@@ -726,6 +729,13 @@ private struct LGNavigationContent: View {
                 .fixedSize()
                 .menuStyle(.button)
                 .buttonStyle(.plain)
+            }
+        } else if let trailingMenuIndex {
+            ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
+                childContent(at: trailingMenuIndex)
+                    .frame(width: 44, height: 44)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
             }
         }
     }

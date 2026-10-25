@@ -39,7 +39,7 @@ let rec empty db value = match content db value with
   | _ -> false
 let contains value input = Outliner_state.includes_case_insensitive value input
 
-type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; closed : bool; choices : int list}
+type property = {attr : string; title : string; typ : string; many : bool; ref_ : bool; closed : bool; choices : int list; classes : int list}
 let property ?owner db attr =
   let id = attr_eid db attr in
   let typ = if attr = "block/tags" then "class" else
@@ -50,6 +50,7 @@ let property ?owner db attr =
     | Some owner -> G.scope_closed_value_eids db ~owner all_choices
     | None -> all_choices in
   {attr; typ; choices; closed = all_choices <> [];
+   classes = Option.fold ~none:[] ~some:(fun id -> G.ref_eids db id "logseq.property/classes") id;
    title = (if attr = "block/title" then "Name" else if attr = "block/created-at" then "Created" else
      match Option.map (fun id -> display (get db id "block/title")) id with Some title when title <> "" -> title | _ -> attr);
    many = Option.fold ~none:false ~some:(fun schema -> schema.Ds.cardinality = Ds.Many) schema;
@@ -154,7 +155,7 @@ let columns db view rows =
   if scalar_columns > 0 && List.for_all (function Query_block.Cells _ -> true | _ -> false) rows then
     List.init scalar_columns (fun index -> {attr = "query.result/" ^ string_of_int index;
       title = (if scalar_columns = 1 then "Value" else "Column " ^ string_of_int (index + 1));
-      typ = "string"; many = false; ref_ = false; closed = false; choices = []})
+      typ = "string"; many = false; ref_ = false; closed = false; choices = []; classes = []})
   else
   let ordered = match view with None -> [] | Some id -> get db id "logseq.property.table/ordered-columns" |> values
     |> List.filter_map (function Ds.Keyword attr -> Some attr | _ -> None) in
@@ -188,9 +189,46 @@ let title_editor_value db source =
 let property_metadata db attr =
   let p = property db attr in
   `Assoc ["attr", `String attr; "title", `String p.title; "editable", `Bool (node_editable db p)]
-let column_json db rows p =
+let reference_predicate db p =
+  let classes = List.concat_map (G.class_descendants db) p.classes |> List.sort_uniq compare in
+  fun id ->
+    not (G.page_is_hidden db id) &&
+    (classes = [] || List.exists (fun tag -> List.mem tag classes) (G.ref_eids db id "block/tags")) &&
+    (match p.typ with
+     | "page" -> Node_title.is_page db id
+     | "class" -> G.entity_is_instance_of db id "logseq.class/Tag"
+     | "property" -> Node_title.is_property db id
+     | "node" | "entity" -> get db id "logseq.property/created-from-property" = Ds.Nil
+       && get db id "block/closed-value-property" = Ds.Nil
+     | _ -> true)
+let reference_candidates db p =
+  if p.closed || not (List.mem p.typ ["node"; "entity"; "page"; "class"; "property"]) then [] else
+  let accepts = reference_predicate db p in
+  let classes = match p.classes, p.typ with
+    | [], "class" -> Option.to_list (attr_eid db "logseq.class/Tag")
+    | [], "property" -> Option.to_list (attr_eid db "logseq.class/Property")
+    | classes, _ -> classes in
+  let ids = match classes with
+    | [] -> Ds.Db.datoms db Ds.Aevt ~a:(if p.typ = "page" then "block/name" else "block/uuid") ()
+      |> Seq.map (fun (d : Ds.datom) -> d.e) |> List.of_seq
+    | classes -> List.concat_map (G.class_descendants db) classes |> List.sort_uniq compare
+      |> List.concat_map (fun id -> Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" id
+        |> Seq.map (fun (d : Ds.datom) -> d.e) |> List.of_seq) |> List.sort_uniq compare in
+  List.filter_map (fun id ->
+    if accepts id && String.trim (display (get db id "block/title")) <> ""
+      && (p.typ <> "class" || G.tag_available_for_completion db id)
+    then Some (Ds.Ref id) else None) ids
+let property_references db p assigned =
+  if not (List.mem p.typ ["page"; "node"; "entity"; "class"; "property"; "date"]) then [] else
+  List.filter_map (fun value -> Option.bind (node_target_id db p value) (fun id ->
+    if empty db value || G.page_is_hidden db id then None else
+    Option.map (fun (node : Cache_model.entity_summary) ->
+      `Assoc ["uuid", `String node.uuid; "title", `String node.title])
+      (G.entity_summary (fun value -> Ok value) db id))) assigned
+let column_json ?(include_candidates = true) db rows p =
   let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @
+    (if include_candidates then reference_candidates db p else []) @
     List.concat_map (function Query_block.Cells _ -> [] | Query_block.Block block ->
       attr_values db (eid db block.uuid) p.attr) rows) |> List.sort_uniq compare in
   let filter_values = List.map (fun value ->
@@ -228,6 +266,7 @@ let row_json db encode properties = function
         "editorValue", `String (match attr_values db id p.attr with
           | value :: _ when p.attr = "block/title" -> title_editor_value db (display value)
           | value :: _ -> temporal_value db p value | [] -> "");
+        "references", `List (property_references db p (attr_values db id p.attr));
         "raw", semantic_json db (raw db id p.attr)])) properties)]
 let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
   let views = saved_views db owner feature in
@@ -259,8 +298,8 @@ let render_rows ?(input = "") db ~owner ~feature ~encode_block rows =
       let catalog = List.sort_uniq String.compare (known @ List.map (fun p -> p.attr) available)
         |> List.map (property db) in
       let cell_properties = if typ = "list" then [] else properties in
-      `Assoc (fields @ ["error", `Null; "columns", `List (List.map (column_json db original_rows) properties);
-        "properties", `List (List.map (column_json db original_rows) catalog);
+      `Assoc (fields @ ["error", `Null; "columns", `List (List.map (column_json ~include_candidates:(typ <> "list") db original_rows) properties);
+        "properties", `List (List.map (column_json ~include_candidates:(typ <> "list") db original_rows) catalog);
         "rows", `List (List.map (row_json db encode_block cell_properties) rows)])
     with error -> `Assoc (fields @ ["error", `String (match error with Invalid_argument message -> message | _ -> Printexc.to_string error);
       "rows", `List []; "columns", `List []]) in
@@ -344,11 +383,12 @@ let resolve_reference db p value =
     let valid = p.closed || match p.typ with
       | "number" | "datetime" -> Option.is_some (number (content db (Ds.Ref id)))
       | "date" -> get db id "block/journal-day" <> Ds.Nil
-      | "page" -> get db id "block/name" <> Ds.Nil
+      | "page" -> Node_title.is_page db id
       | "class" -> G.entity_is_instance_of db id "logseq.class/Tag"
       | "property" -> G.entity_is_instance_of db id "logseq.class/Property"
       | _ -> true in
-    if not valid then invalid_arg "Choose a value of this property's type";
+    if not valid || (not p.closed && not (reference_predicate db p id)) then
+      invalid_arg "Choose a value of this property's type and configured tags";
     semantic db (Ds.Ref id)
   in
   let matching = if p.closed then p.choices else
@@ -398,10 +438,15 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
           Ops.Ref_uuid uuid)
         else content
       else if member "create" json = `Bool true && List.mem p.typ ["page"; "node"; "entity"; "class"] then
-        (try resolve_reference db p text with Invalid_argument _ ->
+        (try resolve_reference db p text with Invalid_argument message ->
+          if is_uuid text || Seq.uncons (Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String text) ()) <> None
+          then invalid_arg message;
           let uuid = fresh_uuid () in
           let page = {Ops.uuid; title = text; created_at = now} in
-          created := (if p.typ = "class" then Ops.Create_tag page else Ops.Create_page page) :: !created;
+          let tags = List.filter_map (fun id -> let tag_uuid = Option.value ~default:"" (G.uuid_for_eid db id) in
+            if tag_uuid = "" then None else Some (Ops.Add_tag {uuid = page.uuid; tag_uuid})) p.classes in
+          let create = if p.typ = "class" then Ops.Create_tag page else Ops.Create_page page in
+          created := List.rev_append (create :: tags) !created;
           Ops.Ref_uuid uuid)
       else resolve_reference db p text in
     let assigned = if text_value && p.many && List.mem p.typ ["default"; "url"] && not p.closed then (
@@ -448,14 +493,12 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
   let blocks = if not text_layout then [] else List.filter_map (fun value ->
     Option.bind (ref_id db value) (fun id -> Option.map encode_block
       (G.block (fun value -> Ok value) db id))) assigned in
-  let references = if not (List.mem p.typ ["page"; "node"; "entity"; "class"; "property"]) then [] else
-    List.filter_map (fun value -> Option.bind (node_target_id db p value) (fun id ->
-      if empty db value then None else Option.map (fun (node : Cache_model.entity_summary) ->
-        `Assoc ["uuid", `String node.uuid; "title", `String node.title])
-        (G.entity_summary (fun value -> Ok value) db id))) assigned in
-  let metadata = match column_json db [] p with `Assoc fields -> fields | _ -> [] in
+  let references = property_references db p assigned in
+  let metadata = match column_json ~include_candidates:false db [] p with `Assoc fields -> fields | _ -> [] in
   let text = String.concat ", " (List.map (property_display db p) assigned) in
   let candidates = if text_layout || not include_candidates then [] else
+    if not p.closed && List.mem p.typ ["node"; "entity"; "page"; "class"; "property"] then reference_candidates db p
+    else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
   let candidates = List.sort_uniq compare (assigned @ candidates) in
   let filter_values = List.map (fun value -> `Assoc [

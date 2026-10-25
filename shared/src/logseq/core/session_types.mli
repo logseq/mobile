@@ -92,6 +92,7 @@ type host_options =
       (string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Search_index.indexed_search_hit list) option
   ; graph_search_page : (offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
+  ; graph_maintain_search_index : (string -> bool) option
   ; graph_due_flashcards : (int -> Flashcards.due_card list) option
   ; graph_review_flashcard :
       (string -> Flashcards.flashcard_rating -> int -> string -> (unit, string) result)
