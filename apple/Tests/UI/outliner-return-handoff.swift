@@ -5,6 +5,7 @@ import SwiftUI
 final class EditorModel: ObservableObject {
     @Published var title = "First block"
     @Published var blockID = "original"
+    @Published var inputPolicy = "{}"
     @Published var caret = "First block".utf16.count
     var returns = 0
     var pendingCarets: [Int]?
@@ -35,7 +36,7 @@ private struct EditorHost: View {
             HStack(alignment: .top, spacing: 2) {
                 BulletMarker().frame(width: 24, height: 24)
                 OutlinerInlineEditor(text: model.title, blockID: model.blockID,
-                    desiredCaretUTF16Offset: model.caret,
+                    desiredCaretUTF16Offset: model.caret, inputPolicy: model.inputPolicy,
                     onTextChange: { model.title = $0; model.caret = $1 },
                     onReturn: model.enter,
                     onBackspace: { _, _ in },
@@ -115,6 +116,27 @@ struct ReturnHandoffCheck {
         if model.returns != beforeRapid + 1 || model.title != "\nAfter" || editor().selectedRange.location != 6 {
             print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text; returns=\(model.returns) expected=\(beforeRapid + 1) title=\(model.title.debugDescription) caret=\(editor().selectedRange.location)"); failures += 1
         }
+        for code in [true, false] {
+            model.inputPolicy = "{\"multiline\":false,\"code\":\(code)}"
+            model.title = "x^2"; model.blockID = code ? "code" : "math"; model.caret = 3
+            await settle()
+            let beforeReturn = model.returns
+            type("\n", in: editor())
+            await settle()
+            if model.returns != beforeReturn + 1 || !model.title.isEmpty {
+                print("FAIL: Enter in Code and Math must create a new block"); failures += 1
+            }
+            model.title = "🙂alpha beta"; model.blockID += "-newline"; model.caret = 12
+            await settle()
+            editor().selectedRange = NSRange(location: 2, length: 5)
+            let beforeNewline = model.returns
+            shiftEnter()
+            await settle()
+            if model.returns != beforeNewline || model.title != "🙂\n beta" || editor().selectedRange.location != 3 {
+                print("FAIL: Shift+Enter in Code and Math must replace the selected text with a newline"); failures += 1
+            }
+        }
+        model.inputPolicy = "{}"
         model.title = "Matrix parent 20261018"; model.blockID = "delayed-selection"; model.caret = model.title.utf16.count
         await settle()
         model.pendingCarets = []

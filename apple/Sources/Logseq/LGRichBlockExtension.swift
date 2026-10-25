@@ -101,7 +101,7 @@ struct OutlinerRowDropDelegate: DropDelegate {
 @MainActor
 private enum LGRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -118,6 +118,7 @@ private enum LGRichBlockExtension {
                     .init(name: "youtube-target-url", kind: .string, isRequired: true),
                     .init(name: "is-asset", kind: .bool, isRequired: true),
                     .init(name: "is-completed", kind: .bool, isRequired: true),
+                    .init(name: "show-code-language", kind: .bool, isRequired: false),
                     .init(name: "asset-type", kind: .string, isRequired: true),
                     .init(name: "local-path", kind: .string, isRequired: true),
                 ],
@@ -199,6 +200,10 @@ private struct LGRichBlock: View {
                     }
                 )
                 .padding(.vertical, titleVerticalInset)
+                .environment(\.lgShowCodeLanguage, {
+                    if case let .bool(value) = context.property("show-code-language") { return value }
+                    return true
+                }())
             }
         }
         .font(propertyValue ? .callout : .body)

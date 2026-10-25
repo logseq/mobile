@@ -366,7 +366,19 @@ private struct InteractiveCloze: View {
     }
 }
 
+private struct ShowCodeLanguageKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var lgShowCodeLanguage: Bool {
+        get { self[ShowCodeLanguageKey.self] }
+        set { self[ShowCodeLanguageKey.self] = newValue }
+    }
+}
+
 private struct SyntaxHighlightedCodeBlock: View {
+    @Environment(\.lgShowCodeLanguage) private var showLanguage
     let code: String
     let language: String?
 
@@ -377,7 +389,7 @@ private struct SyntaxHighlightedCodeBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let language, !language.isEmpty {
+            if showLanguage, let language, !language.isEmpty {
                 Text(verbatim: language)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
@@ -391,7 +403,7 @@ private struct SyntaxHighlightedCodeBlock: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.1))
+        .background(showLanguage ? Color.secondary.opacity(0.1) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

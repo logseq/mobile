@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -223,14 +224,16 @@ internal fun OutlinerBlockContent(
                     },
                 )
             } else {
-                ProjectedMarkup(
-                    youtubeStarts = youtubeStarts,
-                    encoded = context.string("markup-json") ?: "",
-                    fallback = title,
-                    completedDecoration = decoration,
-                    onOpenNode = { context.emit("open-node", "uuid" to it) },
-                    onTapFallback = { context.emit("edit", "uuid" to uuid) },
-                )
+                CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
+                    ProjectedMarkup(
+                        youtubeStarts = youtubeStarts,
+                        encoded = context.string("markup-json") ?: "",
+                        fallback = title,
+                        completedDecoration = decoration,
+                        onOpenNode = { context.emit("open-node", "uuid" to it) },
+                        onTapFallback = { context.emit("edit", "uuid" to uuid) },
+                    )
+                }
             }
         }
         if (dragHover) {

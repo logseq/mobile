@@ -69,7 +69,7 @@ private const val RICH_FINGERPRINT =
         "ios/swiftui|standard-children:0|children:|" +
         "properties:10:asset-type:string:required:none,10:local-path:string:" +
         "required:none,11:markup-json:string:required:none,12:is-completed:bool:" +
-        "required:none,18:youtube-target-url:string:required:none,5:title:string:" +
+        "required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|" +
         "events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required," +
         "9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[" +
@@ -161,6 +161,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("local-path", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("markup-json", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("is-completed", LuiExtensionValueKind.BOOLEAN),
+            LuiExtensionProperty("show-code-language", LuiExtensionValueKind.BOOLEAN, required = false),
             LuiExtensionProperty("youtube-target-url", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING),

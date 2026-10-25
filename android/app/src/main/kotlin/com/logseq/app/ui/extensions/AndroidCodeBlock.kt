@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +36,8 @@ import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxThemes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+internal val LocalShowCodeLanguage = staticCompositionLocalOf { true }
 
 private data class CodeKey(val code: String, val language: String, val dark: Boolean, val background: Int)
 private val codeCache = object : LruCache<CodeKey, AnnotatedString>(512 * 1024) {
@@ -82,11 +85,11 @@ internal fun AndroidCodeBlock(code: String, language: String) {
     }
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalShowCodeLanguage.current) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
         modifier = Modifier.fillMaxWidth().testTag("block.rich.code"),
     ) {
         Column(Modifier.padding(12.dp)) {
-            if (language.isNotBlank()) {
+            if (LocalShowCodeLanguage.current && language.isNotBlank()) {
                 Text(language, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 6.dp))
             }

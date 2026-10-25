@@ -429,10 +429,11 @@ let code_commands_update_the_active_editor_style () =
       check ~msg:"code conversion keeps the editor mounted" (editor <> -1);
       let policy = match App_test.extension_property app editor "input-policy" with
         | Some (Lui_protocol.StringValue value) -> J.from_string value | _ -> `Null in
-      check_eq ~msg:"Code and Calculator commands immediately select code editor presentation"
-        (member "code" policy) (`Bool true);
-      check_eq ~msg:"the active code editor keeps multiline input" (member "multiline" policy) (`Bool true))))
-    ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
+      check_eq ~msg:"Code, Calculator and Math commands immediately select their editor presentation"
+        (member "code" policy) (`Bool (label <> "Math block"));
+      check_eq ~msg:"Enter submits a new block while Shift+Enter remains an explicit line break"
+        (member "multiline" policy) (`Bool false))))
+    ["Code block"; "Calculator"; "Math block"]) [App_test.ios_backend; App_test.kotlin_backend]
 
 let calculator_last_tracks_successful_lines () = R.with_runtime (fun session _ _ ->
   ignore (run session "Calculator");
@@ -530,16 +531,71 @@ let copied_urls_include_the_graph_identity () = R.with_runtime (fun session _ _ 
     (List.exists (fun command -> member "type" command = `String "setClipboardText"
       && member "text" command = `String ("logseq://graph/plain-1?block-id=" ^ Q.alpha)) commands))
 
-let return_selects_completion_and_code_keeps_line_breaks () = R.with_runtime (fun session runtime _ ->
-  ignore (start session "/h1");
-  ignore (event session "returnPressed" []);
-  check_eq ~msg:"Return selects the highlighted first command" (value runtime Q.alpha "logseq.property/heading") (Some (Ds.Int64 1L));
-  ignore (run session "Code block");
-  ignore (event session "returnPressed" ["title", `String "let x = 1"; "caretUTF16Offset", `Int 9]);
-  let response = snapshot session in
-  check_eq ~msg:"a code block keeps Return inside the same block"
-    (member "uuid" (draft response)) (`String Q.alpha);
-  check_eq (member "title" (draft response)) (`String "let x = 1\n"))
+let return_selects_completion_and_special_blocks_create_siblings () =
+  R.with_runtime (fun session runtime _ ->
+    ignore (start session "/h1");
+    ignore (event session "returnPressed" []);
+    check_eq ~msg:"Return selects the highlighted first command" (value runtime Q.alpha "logseq.property/heading") (Some (Ds.Int64 1L)));
+  List.iter (fun label -> List.iter (fun (title, caret, before, after) ->
+    R.with_runtime (fun session runtime _ ->
+      ignore (run session label);
+      let previous_ids = Graph_runtime.blocks_for_page runtime Q.page |> List.map (fun (b : Cache_model.block) -> b.uuid) in
+      ignore (type_at session title caret);
+      let response = event session "returnPressed" ["title", `String title; "caretUTF16Offset", `Int caret] in
+      let next = text (member "uuid" (draft response)) in
+      check ~msg:(label ^ " Enter focuses a new block") (next <> "" && next <> Q.alpha);
+      check_eq ~msg:"Enter retains the expected content in the original block" (value runtime Q.alpha "block/title") (Some (Ds.String before));
+      check_eq ~msg:"The new block receives the expected content" (value runtime next "block/title") (Some (Ds.String after));
+      check_eq ~msg:"The new block starts as ordinary text" (value runtime next "logseq.property.node/display-type") None;
+      check_eq ~msg:"Enter adds exactly one block"
+        (List.length (Graph_runtime.blocks_for_page runtime Q.page)) (List.length previous_ids + 1)))
+    ["", 0, "", ""; "x^2", 0, "x^2", ""; "x^2", 3, "x^2", "";
+     "🙂A\nB", 3, "🙂A", "\nB"])
+    ["Code block"; "Calculator"; "Math block"]
+
+let special_commands_match_master_for_click_and_enter () =
+  List.iter (fun (label, query, typ, language) ->
+    List.iter (fun (prefix, suffix, existing_type) ->
+      List.iter (fun via_enter -> R.with_runtime (fun session runtime conn ->
+        Option.iter (fun typ -> rebase runtime conn [put Q.alpha "logseq.property.node/display-type" (Ds.Keyword typ)]) existing_type;
+        let before = List.length (Graph_runtime.blocks_for_page runtime Q.page) in
+        ignore (start session (prefix ^ query ^ suffix));
+        ignore (type_at session (prefix ^ query ^ suffix) (Outliner_state.utf16_length (prefix ^ query)));
+        let response = if via_enter then event session "returnPressed" [] else command session label in
+        let uuid = text (member "uuid" (draft response)) in
+        let remaining = prefix ^ suffix in
+        let inserts = typ = "code" && (String.trim remaining <> "" || existing_type <> None) in
+        check_eq ~msg:(label ^ " uses master conversion rules through both selection methods") (uuid <> Q.alpha) inserts;
+        check_eq ~msg:"The slash command and query text are removed" (member "title" (draft response))
+          (`String (if inserts then "" else remaining));
+        check_eq (value runtime uuid "logseq.property.node/display-type") (Some (Ds.Keyword typ));
+        check_eq (value runtime uuid "logseq.property.code/lang") (Option.map (fun lang -> Ds.String lang) language);
+        check_eq ~msg:"Commands insert exactly one block only when master does"
+          (List.length (Graph_runtime.blocks_for_page runtime Q.page)) (before + if inserts then 1 else 0);
+        if inserts then check_eq ~msg:"Inserting code preserves the original prose"
+          (value runtime Q.alpha "block/title") (Some (Ds.String (String.trim remaining))))) [false; true])
+      ["", "", None; "Keep this ", "", None; "", " suffix", None;
+       "🙂 前文 ", " 后文", None; "", "", Some "quote"])
+    ["Code block", "/code", "code", None; "Calculator", "/calculator", "code", Some "calc";
+     "Math block", "/math", "math", None]
+
+let every_slash_command_removes_its_typed_query () =
+  let entries = R.with_runtime (fun _ runtime _ -> Editor_command.catalog (Some (Graph_runtime.db runtime))) in
+  List.iter (fun (entry : Editor_command.entry) ->
+    List.iter (fun via_enter -> R.with_runtime (fun session runtime _ ->
+      let prefix = "🙂 前文 " and suffix = " 后文" in
+      let query = "/" ^ entry.label in
+      let title = prefix ^ query ^ suffix in
+      ignore (start session title);
+      ignore (type_at session title (Outliner_state.utf16_length (prefix ^ query)));
+      let response = if via_enter then event session "returnPressed" [] else command session entry.label in
+      let active = text (member "title" (draft response)) in
+      let original = match value runtime Q.alpha "block/title" with Some (Ds.String title) -> title | _ -> "" in
+      check ~msg:(entry.label ^ " clears the slash and typed query")
+        (not (String_kit.includes ~sub:query active) && not (String_kit.includes ~sub:query original));
+      let content = match entry.action with Editor_command.Code _ -> original | _ -> active in
+      check ~msg:(entry.label ^ " preserves surrounding text")
+        (String.starts_with ~prefix content && String.ends_with ~suffix content))) [false; true]) entries
 
 let code_in_text_creates_a_separate_block () = R.with_runtime (fun session runtime _ ->
   ignore (start session "Keep this /");
@@ -869,7 +925,9 @@ let cases = [
   case "empty journals project without writes" empty_journals_are_projected_without_writes;
   case "page placeholders are lazy and editable" page_placeholders_are_lazy_and_editable;
   case "empty journal headings stay visible" empty_journal_pages_keep_their_heading;
-  case "Return selects completion and code keeps line breaks" return_selects_completion_and_code_keeps_line_breaks;
+  case "Return selects completion and special blocks create siblings" return_selects_completion_and_special_blocks_create_siblings;
+  case "special command selection matches master" special_commands_match_master_for_click_and_enter;
+  case "every slash command removes its typed query" every_slash_command_removes_its_typed_query;
   case "code in prose creates a separate block" code_in_text_creates_a_separate_block;
   case "HTML images and underline render as content" html_images_and_underline_render_as_content;
   case "command output has native presentation" command_output_has_native_presentation;

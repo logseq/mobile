@@ -69,10 +69,12 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             val effect = envelope.optJSONObject("effect") ?: return
             envelope.optString("patch").takeIf { it.isNotEmpty() }?.let { patch -> ui.runOnIdle { filter.applyJson(patch) } }
             val kind = effect.optString("kind")
+            var message = ""
             if (kind !in setOf("refresh-graphs", "persist-ui-session", "persist-composer-draft", "save-settings", "present-attachment")) {
-                apply(request("executeEffect", effect.toString()))
+                val response = request("executeEffect", effect.toString())
+                if (kind == "maintain-search-index") message = response else apply(response)
             }
-            ui.runOnIdle { bridge.resolveEffect(effect.getLong("id"), true, "").takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            ui.runOnIdle { bridge.resolveEffect(effect.getLong("id"), true, message).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
         }
         error("The native effect queue did not drain")
     }
@@ -105,7 +107,9 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
         val selected = request("selectPage", uuid(page))
         selectedSnapshot = selected
         val root = bridge.initialize(authenticationCode = 3)
-        apply(opened); apply(selected); host("graph-loading", "false")
+        apply(opened); apply(selected)
+        host("local-graph-ids", """["feedback"]""")
+        host("graph-loading", "false")
         ui.setContent { MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
             Box(Modifier.fillMaxSize()) { backend.Content(root) }
         } }
@@ -211,6 +215,44 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     ui.onNodeWithTag("button.outliner.code-language." + uuid(12)).performClick(); pause()
                     ui.onNodeWithTag("button.outliner.code-language.option.python").performClick(); pause()
                 }
+            }
+            "calculator-live" -> {
+                mount(2)
+                val configured = request("nodeProperty", JSONObject().put("action", "setCodeLanguage")
+                    .put("blockUuid", uuid(12)).put("value", "calc").toString())
+                assertTrue(configured, JSONObject(configured).optBoolean("ok"))
+                apply(configured)
+                pause()
+                val content = ui.onNodeWithTag("outliner.code.content." + uuid(12), useUnmergedTree = true)
+                content.assertExists(ui.onRoot(useUnmergedTree = true).printToString())
+                content.assertIsDisplayed().performClick()
+                pause()
+                val editor = ui.onNodeWithTag("field.outliner.block." + uuid(12), useUnmergedTree = true)
+                editor.assertExists(ui.onRoot(useUnmergedTree = true).printToString())
+                val results = ui.onNodeWithTag("outliner.calculator.results." + uuid(12), useUnmergedTree = true)
+                editor.performTextReplacement("6*7\nlast*3")
+                ui.waitUntil(10_000) {
+                    drain()
+                    runCatching { results.assertTextEquals("42\n126") }.isSuccess
+                }
+                val inputBounds = editor.getUnclippedBoundsInRoot()
+                val outputBounds = results.getUnclippedBoundsInRoot()
+                assertTrue("Calculator results occupy the right column", outputBounds.left >= inputBounds.right)
+                editor.performImeAction()
+                ui.waitUntil(10_000) {
+                    drain()
+                    runCatching { editor.assertDoesNotExist() }.isSuccess
+                }
+                val after = JSONObject(request("refresh")).getJSONObject("result").getJSONArray("outlinerRows")
+                val beforeCount = JSONObject(configured).getJSONObject("result").getJSONArray("outlinerRows").length()
+                assertEquals("Enter creates exactly one new block", beforeCount + 1, after.length())
+                results.assertTextEquals("42\n126")
+                content.performTouchInput { longClick() }
+                ui.waitUntil(10_000) {
+                    drain()
+                    runCatching { ui.onNodeWithTag("button.outliner.selection.copy").assertIsDisplayed() }.isSuccess
+                }
+                pause()
             }
             "language" -> {
                 mount(1); host("settings", """{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}""")

@@ -9,6 +9,7 @@ let logseq_theme_tokens : (string * Lui_ui.theme_token_value) list =
   [
     ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
     ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
+    ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
     ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
     ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
     ( "autocomplete-row-background",
@@ -89,6 +90,7 @@ let outliner_block_content_schema () =
       Lui_extension.property "youtube-target-url" StringScalar true None;
       Lui_extension.property "is-asset" BoolScalar true None;
       Lui_extension.property "is-completed" BoolScalar true None;
+      Lui_extension.property "show-code-language" BoolScalar false None;
       Lui_extension.property "asset-type" StringScalar true None;
       Lui_extension.property "local-path" StringScalar true None;
     ]
