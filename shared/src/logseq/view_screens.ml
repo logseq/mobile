@@ -640,7 +640,7 @@ let active_overflow_menu model_source send : t =
        (dyn (function None -> box [] | Some (graph, owner, action, property) ->
          let column = if action <> "rename" then property else match property with `Assoc fields ->
            `Assoc (("title", `String "Rename page") :: List.remove_assoc "title" fields) | value -> value in
-         View_query.property_editor ~id:("page." ^ action ^ "." ^ owner) ~column
+         View_query.property_editor ~owner ~send ~id:("page." ^ action ^ "." ^ owner) ~column
            ~submit:(fun fields -> ignore (send (Model.SubmitNodeProperty ("page." ^ action ^ "." ^ owner,
              Yojson.Basic.to_string (`Assoc (("blockUuid", `String owner) ::
                ("graphId", `String (Option.value ~default:"" graph)) ::

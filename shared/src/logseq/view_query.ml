@@ -127,7 +127,11 @@ let property_title current property = View_base.property_title current
   ~attr:(jtext (jfield "attr" property)) ~title:(jtext (jfield "title" property))
 let jlist = function `List values -> values | _ -> []
 let jbool = function `Bool value -> value | _ -> false
-let items json = (decode_json json).rows
+let jint = function `Int value -> value | _ -> 0
+let items json =
+  let offset = jint (jfield "rowOffset" json) in
+  List.map (fun item -> {item with index = item.index + offset}) (decode_json json).rows
+let row_count json = match jfield "rowCount" json with `Int count -> count | _ -> List.length (jlist (jfield "rows" json))
 let text_value = function
   | `String value -> value | `Int value -> string_of_int value | `Float value -> string_of_float value
   | `Bool value -> string_of_bool value | `Null -> "" | value -> Json.to_string value
@@ -170,11 +174,50 @@ let action_error source id = if_ ~test:(Signal.map (function Some (_, _, Some _)
     ~value_signal:(Signal.map2 (fun current -> function Some (_, _, Some message) -> View_base.tr current message | _ -> "")
       source (feedback source id)) [])
 let waiting source id = Signal.map (fun (model : Model.logseq_model) ->
-  List.exists (function Model.ResultViewEffect (_, view, _) | Model.NodePropertyEffect (_, view, _) -> view = id | _ -> false)
+  List.exists (function Model.LoadPropertyValuesEffect (_, view, _) | Model.ResultViewEffect (_, view, _) | Model.NodePropertyEffect (_, view, _) -> view = id | _ -> false)
     (model.pending_effects @ model.in_flight_effects)) source
 let action_error_section source id =
   if_ ~test:(Signal.map (function Some (_, _, Some _) -> true | _ -> false) (feedback source id))
     (list_section [list_item [action_error source id]])
+
+let loaded_column context ~id ~owner ~mode ~feature column model_source send =
+  let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+  let current = Signal.sample model_source in
+  let graph = current.Model.selected_graph_id in
+  let prefix = Option.value ~default:"local" graph ^ ":" ^ owner ^ ":" ^ mode ^ ":" ^ id
+    ^ ":" ^ string_of_int current.next_effect_id in
+  let request = own (Signal.cutoff (=) (own (Signal.map (fun col ->
+    jtext (jfield "attr" col), jfield "valuesDeferred" col = `Bool true) column))) in
+  let requested = ref None in
+  let load (attr, deferred) =
+    let key = prefix ^ ":" ^ attr in
+    if deferred && !requested <> Some key then (
+      requested := Some key;
+      ignore (send (Model.LoadPropertyValues (key, Json.to_string (`Assoc ([
+        "key", `String key; "ownerUuid", `String owner; "attr", `String attr;
+        "mode", `String mode; "featureType", `String feature] @
+        Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph]) graph)))))) in
+  ignore (Signal.own context.ui_scope (Signal.observe request load));
+  load (Signal.sample request);
+  let received = own (Signal.cutoff (=) (own (Signal.map2 (fun (attr, deferred) (model : Model.logseq_model) ->
+    let key = prefix ^ ":" ^ attr in
+    key, if deferred then List.assoc_opt key model.property_value_catalogs else None) request model_source))) in
+  let catalog = Signal.state context.ui_scheduler None in
+  let catalog_key = ref "" in
+  let receive (key, values) =
+    if key <> !catalog_key || values <> None then Signal.set catalog values;
+    catalog_key := key in
+  ignore (Signal.own context.ui_scope (Signal.observe received receive));
+  receive (Signal.sample received);
+  let catalog = Signal.value catalog in
+  let loaded = own (Signal.map2 (fun col raw -> match raw with
+    | Some raw -> (try Json.from_string raw with _ -> col) | None -> col) column catalog) in
+  let error = own (Signal.map2 (fun (attr, _) (model : Model.logseq_model) ->
+    match List.find_opt (fun (key, _, _) -> key = prefix ^ ":" ^ attr) model.result_view_feedback with
+    | Some (_, _, Some message) -> View_base.tr model message | _ -> "") request model_source) in
+  let loading = own (Signal.map2 (fun ((_, deferred), raw) error -> deferred && raw = None && error = "")
+    (own (Signal.map2 (fun request raw -> request, raw) request catalog)) error) in
+  loaded, loading, error
 
 type filter_draft = {key : int; attr : string; op : string; value : Json.t}
 type sort_draft = {key : int; attr : string; asc : bool}
@@ -251,7 +294,8 @@ let settings_sheet mode owner feature view_source model_source send close : t =
     let first : filter_draft = Signal.sample source in
     let id part = "view.filter." ^ part ^ "." ^ initial.id ^ "." ^ string_of_int first.key in
     let attr = own (Signal.map (fun (draft : filter_draft) -> draft.attr) source) in
-    let col = own (Signal.map2 view_column view_source attr) in
+    let col, loading, load_error = loaded_column context ~id:(initial.id ^ ".filter." ^ string_of_int first.key)
+      ~owner ~mode:"filter" ~feature (own (Signal.map2 view_column view_source attr)) model_source send in
     let change f = update_filter first.key f in
     let set_value value = change (fun draft -> {draft with value}) in
     let selecting = state false in
@@ -353,6 +397,8 @@ let settings_sheet mode owner feature view_source model_source send close : t =
         button ~icon:(`app "close") ~variant:`ghost ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Remove filter")
           ~accessibility_identifier:(id "remove") ~on_press:(fun _ -> Signal.set filters
             (List.filter (fun (draft : filter_draft) -> draft.key <> first.key) (Signal.sample (Signal.value filters)))) []]];
+      if_ ~test:loading (list_item [spinner []]);
+      if_ ~test:(own (Signal.map ((<>) "") load_error)) (list_item [text ~value_signal:load_error ~foreground:"destructive" []]);
       list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [dyn (fun op -> match op with
         | "is" | "is-not" -> choose_values
         | "between" -> row ~gap:8 [number_input "minimum" "Minimum" (Some 0); number_input "maximum" "Maximum" (Some 1)]
@@ -441,7 +487,7 @@ let rec raw_selection_values raw =
   | "" -> []
   | _ -> [text_value (jfield "value" raw)]
 
-let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
+let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
  fun context parent ->
   let view = {id; name = ""; typ = ""; data = `Null} in
   let own value = Signal.own_signal context.ui_scope value in
@@ -469,7 +515,11 @@ let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save m
         "expected", jfield "raw" property; "value", `String value; "create", `Bool create]
        @ (match selected_values with None -> [] | Some values -> ["selectedValues", `List (List.map (fun value -> `String value) values)])
        @ (if new_values = [] then [] else ["newValues", `List (List.map (fun value -> `String value) new_values)])) in
-  let options =
+  let column = if plain || checkbox || temporal || closed then
+    `Assoc (("valuesDeferred", `Bool false) :: List.remove_assoc "valuesDeferred" (fields col)) else col in
+  let column, loading, load_error = loaded_column context ~id:view.id ~owner ~mode:"property" ~feature:""
+    (Signal.constant context.ui_scheduler column) model_source send in
+  let options = own (Signal.map (fun col ->
     let choices = jlist (jfield "choices" col) in
     if closed then List.map (fun choice ->
       jtext (jfield "uuid" choice), jtext (jfield "title" choice)) choices
@@ -478,9 +528,9 @@ let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save m
         | [`String uuid] -> uuid | _ -> ""
         else text_value (jfield "value" choice) in
       value, jtext (jfield "title" choice)) (jlist (jfield "filterValues" col))
-    |> List.filter (fun (value, _) -> value <> "") in
-  let visible = own (Signal.map (fun input -> List.filter (fun (_, title) ->
-    String_kit.includes ~sub:(Dev_query.Unicode.lowercase input) (Dev_query.Unicode.lowercase title)) options) (Signal.value query)) in
+    |> List.filter (fun (value, _) -> value <> "")) column) in
+  let visible = own (Signal.map2 (fun options input -> List.filter (fun (_, title) ->
+    String_kit.includes ~sub:(Dev_query.Unicode.lowercase input) (Dev_query.Unicode.lowercase title)) options) options (Signal.value query)) in
   let visible_limit = state 50 in
   ignore (Signal.own context.ui_scope (Signal.observe (Signal.value query) (fun _ -> Signal.set visible_limit 50)));
   let mounted_options = own (Signal.map2 (fun options limit -> List.filteri (fun index _ -> index < limit) options)
@@ -493,9 +543,9 @@ let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save m
     else if ref_ then submit ~selected_values:[value] "" else submit value in
   let can_create = not closed && not plain && not checkbox && not temporal &&
     (jfield "canCreate" col <> `Bool false) in
-  let create_visible = own (Signal.map (fun input -> can_create && String.trim input <> ""
+  let create_visible = own (Signal.map2 (fun (options, loading) input -> not loading && can_create && String.trim input <> ""
     && not (List.exists (fun (_, title) -> Dev_query.Unicode.lowercase title = Dev_query.Unicode.lowercase (String.trim input)) options)
-    && not (List.mem (String.trim input) (Signal.sample (Signal.value created)))) (Signal.value query)) in
+    && not (List.mem (String.trim input) (Signal.sample (Signal.value created)))) (own (Signal.map2 (fun options loading -> options, loading) options loading)) (Signal.value query)) in
   let confirm _ = if plain || temporal then submit (Signal.sample (Signal.value query))
     else if ref_ then submit ~selected_values:(Signal.sample (Signal.value selected))
       ~new_values:(Signal.sample (Signal.value created)) ~create:true ""
@@ -547,6 +597,8 @@ let property_editor ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save m
             ~text_signal:(Signal.value query) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a choice") ~label:(View_base.tr (Signal.sample model_source) "Search")
             ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) [];
           list_section [
+            if_ ~test:loading (list_item [spinner ~accessibility_identifier:("view.edit.loading." ^ id) []]);
+            if_ ~test:(own (Signal.map ((<>) "") load_error)) (list_item [text ~value_signal:load_error ~foreground:"destructive" []]);
             keyed ~source:mounted_options ~key:fst ~cmp:String.compare ~mount:(fun source -> option_row (Signal.sample source));
             keyed ~source:(Signal.value created) ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
               let value = Signal.sample source in list_item ~height:44 ~padding_vertical:0 [menu_item ~height:44 ~padding_vertical:0 ~text:value ~selected:true
@@ -584,10 +636,104 @@ let value_sheet owner feature view model_source send item property close =
     uuid, View_base.tr_named (Signal.sample model_source) "Open {1}" (jtext (jfield "title" reference)),
     (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
     (jlist (jfield "references" property)) in
-  property_editor ?open_node ~open_nodes ~id:view.id ~column
+  property_editor ~owner:(Option.value ~default:"" item.uuid) ~send ?open_node ~open_nodes ~id:view.id ~column
     ~submit:(fun fields -> ignore (send (Model.SubmitResultView (view.id,
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close
+
+let table_column_width column = if jfield "attr" column = `String "block/title" then 260 else 170
+
+let table_column_window columns (offset, width) =
+  let total = List.fold_left (fun sum col -> sum + table_column_width col + 1) (-1) columns |> max 0 in
+  let offset = min (max 0 offset) (max 0 (total - width)) in
+  let rec collect position before visible after = function
+    | [] -> before, List.rev visible, after
+    | col :: rest ->
+      let extent = table_column_width col in
+      let stop = position + extent in
+      if stop > offset && position < offset + width then
+        collect (stop + 1) (if visible = [] then position else before) (col :: visible) (total - stop) rest
+      else collect (stop + 1) before visible after rest in
+  collect 0 0 [] total columns
+
+let table_viewport identifier viewport children : t = fun context parent ->
+  let node = Lui_ui.extension context "native-table-viewport" in
+  attach context parent node;
+  Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue identifier);
+  Lui_ui.on_event context node (function
+    | Lui_protocol.ExtensionEvent (_, _, "viewport-changed", fields) ->
+      (match Lui_protocol.String_map.find_opt "offset" fields, Lui_protocol.String_map.find_opt "width" fields with
+       | Some (Lui_protocol.IntValue offset), Some (Lui_protocol.IntValue width) when width > 0 ->
+         Signal.set viewport (max 0 offset, width)
+       | _ -> ())
+    | _ -> ());
+  List.iter (fun child -> ignore (child context (Some node))) children;
+  node
+
+let loaded_rows context ~owner ~feature view_source input model_source send =
+  let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+  let initial = Signal.sample view_source in
+  let initial_model = Signal.sample model_source in
+  let prefix = Option.value ~default:"local" initial_model.Model.selected_graph_id ^ ":rows:" ^ owner ^ ":" ^ initial.id
+    ^ ":" ^ string_of_int initial_model.next_effect_id ^ ":" in
+  let range = Signal.state context.ui_scheduler (0, 12) in
+  let retry_count = Signal.state context.ui_scheduler 0 in
+  let page = Signal.state context.ui_scheduler initial in
+  let loading = Signal.state context.ui_scheduler false and error = Signal.state context.ui_scheduler "" in
+  let previous = ref initial and generation = ref 0 and requested = ref None in
+  let previous_input = ref (Signal.sample input) in
+  let has_range data input offset limit =
+    let start = jint (jfield "rowOffset" data) and count = row_count data in
+    jtext (jfield "input" data) = input && start <= offset &&
+    start + List.length (jlist (jfield "rows" data)) >= min count (offset + limit) in
+  let drive ((view, input), ((offset, limit), (model, _))) =
+    if jfield "rowsDeferred" view.data <> `Bool true then Signal.set page view else (
+      let reset = input <> !previous_input || jfield "sorting" view.data <> jfield "sorting" (!previous).data
+        || jfield "filters" view.data <> jfield "filters" (!previous).data || view.typ <> (!previous).typ in
+      if reset then Signal.set range (0, 12);
+      previous_input := input;
+      if not (Json.equal view.data (!previous).data) then (
+        previous := view; incr generation; requested := None; Signal.set page view);
+      let offset = if reset then 0 else offset in
+      let key = prefix ^ string_of_int !generation ^ ":" ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
+      let current = Signal.sample (Signal.value page) in
+      let candidate = match List.assoc_opt key model.Model.result_row_windows with
+        | Some raw -> (try Some (Json.from_string raw) with _ -> None)
+        | None when jfield "revision" current.data = jfield "revision" view.data
+          && has_range current.data input offset limit -> Some current.data
+        | None when has_range view.data input offset limit -> Some view.data
+        | _ -> None in
+      let failure = match List.find_opt (fun (id, _, _) -> id = key) model.result_view_feedback with
+        | Some (_, _, Some message) -> View_base.tr model message | _ -> "" in
+      Signal.set error failure;
+      Signal.set loading (candidate = None && failure = "");
+      match candidate with
+      | Some data -> if not (Json.equal data current.data) then Signal.set page {view with data}
+      | None ->
+        let busy = List.exists (function Model.LoadResultRowsEffect (_, key, _) -> String.starts_with ~prefix key | _ -> false)
+          (model.pending_effects @ model.in_flight_effects) in
+        if not busy && !requested <> Some key then (
+          requested := Some key;
+          ignore (send (Model.LoadResultRows (key, Json.to_string (`Assoc ([
+            "key", `String key; "ownerUuid", `String owner; "featureType", `String feature; "viewUuid", `String view.id;
+            "input", `String input; "offset", `Int offset; "limit", `Int limit] @
+            Option.fold ~none:[] ~some:(fun id -> ["graphId", `String id]) model.selected_graph_id))))))) in
+  let request = own (Signal.map2 (fun view_input range_model -> view_input, range_model)
+    (own (Signal.map2 (fun view input -> view, input) view_source input))
+    (own (Signal.map2 (fun range model -> range, model) (Signal.value range)
+      (own (Signal.map2 (fun model retry -> model, retry) model_source (Signal.value retry_count)))))) in
+  ignore (Signal.own context.ui_scope (Signal.observe request drive));
+  drive (Signal.sample request);
+  let visible columns first last =
+    if first >= 0 && last >= first then (
+      let current = (Signal.sample (Signal.value page)).data in
+      let start = jint (jfield "rowOffset" current) and length = List.length (jlist (jfield "rows" current)) in
+      if first < start + 2 && start > 0 || last >= start + length - 2 && start + length < row_count current then (
+        let limit = min 64 (max 12 (((last - first + columns) / columns) * columns)) in
+        let offset = min (max 0 (row_count current - 1)) (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
+        Signal.set range (offset / columns * columns, limit))) in
+  let retry () = requested := None; Signal.set retry_count (1 + Signal.sample (Signal.value retry_count)) in
+  own (Signal.cutoff (=) (Signal.value page)), visible, Signal.value loading, Signal.value error, retry
 
 let collection_json ~render_block model_source parsed send : t =
  fun context parent ->
@@ -608,7 +754,7 @@ let collection_json ~render_block model_source parsed send : t =
   let results_toggle () =
     let label = own (Signal.map2 (fun views expanded ->
       if not expanded then "Results" else
-      string_of_int (List.fold_left (fun count view -> max count (List.length (jlist (jfield "rows" view.data)))) 0 views) ^ " results")
+      string_of_int (List.fold_left (fun count view -> max count (row_count view.data)) 0 views) ^ " results")
       views (Signal.value expanded)) in
     View_base.with_label_signal label
       (button ~variant:`ghost ~text_alignment:`start ~grow:1.0
@@ -623,12 +769,18 @@ let collection_json ~render_block model_source parsed send : t =
   let mount view_source : t =
    fun context parent ->
     let own value = Signal.own_signal context.ui_scope value in
+    let view_source, visible_rows, rows_loading, rows_error, retry_rows =
+      loaded_rows context ~owner ~feature view_source (Signal.value search) model_source send in
     let view = Signal.sample view_source in
     let limit = Signal.state context.ui_scheduler 20 in
     let settings = Signal.state context.ui_scheduler "" in
     let editing = Signal.state context.ui_scheduler None in
+    let horizontal_viewport = Signal.state context.ui_scheduler
+      (0, max 1 ((let width = (Signal.sample model_source).Model.viewport_width in if width > 0 then width else 390) - 32)) in
+    let column_window = own (Signal.cutoff (=) (own (Signal.map2
+      (fun view viewport -> table_column_window (choices view) viewport) view_source (Signal.value horizontal_viewport)))) in
     let rows = own (Signal.map2 (fun view input -> items view.data |> List.filter (fun item ->
-      String.trim input = "" || String_kit.includes ~sub:(Dev_query.Unicode.lowercase input)
+      jfield "rowsDeferred" view.data = `Bool true || String.trim input = "" || String_kit.includes ~sub:(Dev_query.Unicode.lowercase input)
         (Dev_query.Unicode.lowercase item.title))) view_source (Signal.value search)) in
     let entries = own (Signal.map2 list_take (Signal.value limit) rows) in
     let finished = ref None in
@@ -650,9 +802,12 @@ let collection_json ~render_block model_source parsed send : t =
           cell :: separator ~orientation:`vertical
             ~accessibility_identifier:("view.cell.separator." ^ view_id ^ "." ^ row_id ^ "." ^ next_attr) [] :: separated rest
       in separated cells in
+    let windowed_cells (before, _, after) cells =
+      (if before = 0 then [] else [box ~width:before []]) @ cells @
+      (if after = 0 then [] else [box ~width:after []]) in
     let table_row item_source : t =
      fun row_context parent ->
-      (dyn (fun (view, item) -> row ~gap:0 ~cross:`stretch (table_cells view.id
+      (dyn (fun ((view, item), ((_, visible_columns, _) as window)) -> row ~gap:0 ~cross:`stretch (windowed_cells window (table_cells view.id
         (Option.value ~default:(string_of_int item.index) item.uuid)
         (List.map (fun col -> let attr = jtext (jfield "attr" col) in attr,
         if String.starts_with ~prefix:"query.result/" attr then
@@ -677,8 +832,9 @@ let collection_json ~render_block model_source parsed send : t =
             ~accessibility_identifier:identifier ~on_press:(fun _ -> Option.iter (fun uuid ->
               ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) item.uuid) []
         else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
-          ~accessibility_identifier:identifier []) (choices view))))
-        (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) row_context parent in
+          ~accessibility_identifier:identifier []) visible_columns))))
+        (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun values window -> values, window)
+          (Signal.map2 (fun view item -> view, item) view_source item_source) column_window))) row_context parent in
     let gallery_card item_source : t =
      fun card_context parent ->
       (dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
@@ -692,17 +848,25 @@ let collection_json ~render_block model_source parsed send : t =
         (Signal.own_signal card_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) card_context parent in
     let item_key item = match item.uuid with
       | Some uuid -> "block:" ^ uuid | None -> "tuple:" ^ string_of_int item.index in
-    let result_window ?width ?(gap = 0) ~identifier ~extent ~source ~key ~mount () : t =
+    let result_window ?width ?(gap = 0) ?(columns = 1) ~identifier ~extent ~source ~key ~mount () : t =
      fun window_context parent ->
       let own signal = Signal.own_signal window_context.Lui_ui.ui_scope signal in
       let searches = own (Signal.map (fun input -> [input]) (Signal.value search)) in
-      (dyn (fun large ->
+      (if jfield "rowsDeferred" view.data = `Bool true then
+        keyed ~source:searches ~key:Fun.id ~cmp:String.compare ~mount:(fun _ ->
+          virtual_list ?width ~height:480 ~gap ~accessibility_identifier:identifier [
+            View_rows.paged_keyed ~identifier:("view.window." ^ view.id) ~item_extent:extent
+              ~count:(own (Signal.map (fun view -> (row_count view.data + columns - 1) / columns) view_source))
+              ~offset:(own (Signal.map (fun view -> jint (jfield "rowOffset" view.data) / columns) view_source))
+              ~on_visible_range:(fun first last -> visible_rows columns (first * columns) ((last + 1) * columns - 1))
+              ~source ~key ~cmp:String.compare ~mount])
+      else dyn (fun large ->
         if large then
           (* Search owns a fresh viewport; ordinary value refreshes retain it. *)
           keyed ~source:searches
             ~key:Fun.id ~cmp:String.compare ~mount:(fun _ ->
               virtual_list ?width ~height:480 ~gap ~accessibility_identifier:identifier [
-                View_rows.windowed_keyed ~identifier:("view.window." ^ view.id)
+                View_rows.windowed_keyed ~window_size:12 ~identifier:("view.window." ^ view.id)
                   ~item_extent:extent ~source ~key ~cmp:String.compare ~mount])
         else column ?width ~gap ~accessibility_identifier:identifier [
           keyed ~source ~key ~cmp:String.compare ~mount])
@@ -767,17 +931,26 @@ let collection_json ~render_block model_source parsed send : t =
         (row ~cross:`center [search_field ~grow:1.0 ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Search results") ~label:(View_base.tr (Signal.sample model_source) "Search results")
           ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) []]);
       action_error model_source view.id;
+      if_ ~test:rows_loading (spinner ~accessibility_identifier:("view.rows.loading." ^ view.id) []);
+      if_ ~test:(own (Signal.map ((<>) "") rows_error)) (row ~gap:8 [
+        text ~value_signal:rows_error ~foreground:"destructive" ~grow:1.0 [];
+        button ~text:(View_base.tr (Signal.sample model_source) "Refresh") ~variant:`ghost
+          ~accessibility_identifier:("view.rows.retry." ^ view.id) ~on_press:(fun _ -> retry_rows ()) []]);
       if_ ~test:(own (Signal.map ((<>) "") error))
         (text ~value_signal:error ~foreground:"destructive" ~accessibility_identifier:("view.error." ^ view.id) []);
       if_ ~test:(own (Signal.map ((=) "") error))
         (column ~gap:8 [
-          if_ ~test:(own (Signal.map ((=) []) rows)) (text ~value:(View_base.tr (Signal.sample model_source) "No results") ~foreground:"muted-foreground" ~accessibility_identifier:("query.empty." ^ owner) []);
+          if_ ~test:(own (Signal.map2 (fun (view, rows) loading ->
+            (if jfield "rowsDeferred" view.data = `Bool true then row_count view.data = 0 else rows = []) && not loading)
+            (own (Signal.map2 (fun view rows -> view, rows) view_source rows)) rows_loading))
+            (text ~value:(View_base.tr (Signal.sample model_source) "No results") ~foreground:"muted-foreground" ~accessibility_identifier:("query.empty." ^ owner) []);
           (dyn (fun (typ, columns, _, _) -> match typ with
-          | "table" -> scroll ~orientation:`horizontal ~accessibility_identifier:("view.table.scroll." ^ view.id) [
+          | "table" -> table_viewport ("view.table.scroll." ^ view.id) horizontal_viewport [
               column ~gap:0 ~cross:`stretch ~border_color:"border" ~border_width:1 ~corner_radius:10 [
-                row ~gap:0 ~cross:`stretch (table_cells view.id "header" (List.map (fun col -> jtext (jfield "attr" col),
-                  text ~value:(property_title (Signal.sample model_source) col) ~style_class:"subheadline single-line"
-                  ~width:(if jfield "attr" col = `String "block/title" then 260 else 170) ~min_height:48 ~padding:12 ~background:"secondary" []) columns));
+                dyn (fun ((_, visible_columns, _) as window) -> row ~gap:0 ~cross:`stretch
+                  (windowed_cells window (table_cells view.id "header" (List.map (fun col -> jtext (jfield "attr" col),
+                    text ~value:(property_title (Signal.sample model_source) col) ~style_class:"subheadline single-line"
+                    ~width:(table_column_width col) ~min_height:48 ~padding:12 ~background:"secondary" []) visible_columns)))) column_window;
                 separator [];
                 result_window ~identifier:("view.table.viewport." ^ view.id) ~extent:49
                   ~width:(List.fold_left (fun width col -> width +
@@ -786,7 +959,7 @@ let collection_json ~render_block model_source parsed send : t =
                   ~source:rows ~key:item_key
                   ~mount:(fun source -> column ~gap:0 [table_row source; separator []]) ()]]
           | "gallery" -> dyn (fun count ->
-              result_window ~identifier:("view.gallery." ^ view.id) ~gap:12
+              result_window ~identifier:("view.gallery." ^ view.id) ~gap:12 ~columns:count
                 ~extent:(96 + 24 * max 0 (List.length columns - 1))
                 ~source:gallery_rows ~key:(fun items -> item_key (List.hd items))
                 ~mount:(fun source grid_context parent -> (grid ~columns:count ~gap:12 [
@@ -794,10 +967,13 @@ let collection_json ~render_block model_source parsed send : t =
                   if_ ~test:(Signal.own_signal grid_context.Lui_ui.ui_scope
                     (Signal.map (fun items -> List.length items < count) source)) (box [])]) grid_context parent) ())
               gallery_columns
+          | _ when jfield "rowsDeferred" view.data = `Bool true ->
+              result_window ~identifier:("query.rows." ^ owner) ~extent:64 ~source:rows ~key:item_key
+                ~mount:(result_item owner render_block send) ()
           | _ -> column ~gap:4 ~accessibility_identifier:("query.rows." ^ owner) [
               keyed ~source:entries ~key:(fun item -> item.index) ~cmp:Int.compare ~mount:(result_item owner render_block send)]) layout);
           if_ ~test:(own (Signal.map2 (fun (view, rows) limit ->
-              view.typ <> "table" && view.typ <> "gallery" && List.length rows > limit)
+              jfield "rowsDeferred" view.data <> `Bool true && view.typ <> "table" && view.typ <> "gallery" && List.length rows > limit)
               (own (Signal.map2 (fun view rows -> view, rows) view_source rows)) (Signal.value limit)))
             (button ~text:(View_base.tr (Signal.sample model_source) "Show more") ~variant:`ghost ~accessibility_identifier:("query.more." ^ owner)
               ~on_press:(fun _ -> Signal.set limit (Signal.sample (Signal.value limit) + 20)) [])]);

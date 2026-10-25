@@ -542,9 +542,8 @@ let error_message fields =
   ^ Option.value ~default:"Core request failed"
       (string_member "message" error)
 
-let decode_response encoded =
-  try
-    match Json.from_string encoded with
+let decode_json_response json =
+    match json with
     | `Assoc entries ->
       let fields = fields_from_entries entries in
       if bool_member "ok" fields then
@@ -554,5 +553,7 @@ let decode_response encoded =
         | _ -> Error "Core response did not contain a snapshot"
       else Error (error_message fields)
     | _ -> Error "Core response must be a JSON object"
-  with Yojson.Json_error message ->
-    Error ("Invalid core response: " ^ message)
+
+let decode_response encoded =
+  try decode_json_response (Json.from_string encoded)
+  with Yojson.Json_error message -> Error ("Invalid core response: " ^ message)

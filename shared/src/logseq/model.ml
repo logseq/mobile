@@ -279,6 +279,8 @@ type composer_submission =
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | LoadPropertyValuesEffect of int * string * string
+  | LoadResultRowsEffect of int * string * string
   | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
   | SendTaggedCaptureEffect of int * composer_submission
@@ -448,6 +450,8 @@ type logseq_model =
   ; in_flight_effects : logseq_effect list
   ; next_effect_id : int
   ; result_view_feedback : (string * int * string option) list
+  ; property_value_catalogs : (string * string) list
+  ; result_row_windows : (string * string) list
   ; effect_error : string option
   ; last_core_response : string option
   ; attachment_picker_open : bool
@@ -461,6 +465,10 @@ type logseq_model =
 type logseq_action =
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
+  | LoadPropertyValues of string * string
+  | ReceivePropertyValues of string * string
+  | LoadResultRows of string * string
+  | ReceiveResultRows of string * string * string Lui_protocol.String_map.t
   | SelectGraph of string
   | BeginSync
   | SyncSucceeded
@@ -796,6 +804,8 @@ let initial () =
     composer_autofocus = false;
     capture_confirmation = None;
     result_view_feedback = [];
+    property_value_catalogs = [];
+    result_row_windows = [];
     pending_effects = [];
     in_flight_effects = [];
     next_effect_id = 1;
@@ -841,7 +851,7 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
-  | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
+  | LoadResultRowsEffect (id, _, _) | LoadPropertyValuesEffect (id, _, _) | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
   | LoadComposerTagsEffect (id, _) -> id
   | SendTaggedCaptureEffect (id, _) -> id
   | SendCaptureEffect (id, _) -> id
@@ -1935,6 +1945,20 @@ let rec update (current : logseq_model) action =
   match action with
   | FlashcardDeckAction payload ->
     enqueue_effect current (FlashcardDeckEffect (current.next_effect_id, payload))
+  | ReceiveResultRows (key, rows, icons) ->
+    let prefix = Option.value ~default:"local" current.selected_graph_id ^ ":rows:" in
+    {current with result_row_windows = sub_list 0 8
+      ((key, rows) :: List.remove_assoc key current.result_row_windows);
+      node_icons = (if String.starts_with ~prefix key then
+        Lui_protocol.String_map.union (fun _ _ newer -> Some newer) current.node_icons icons else current.node_icons)}
+  | LoadResultRows (key, payload) ->
+    enqueue_effect {current with result_view_feedback = List.filter (fun (id, _, _) -> id <> key) current.result_view_feedback}
+      (LoadResultRowsEffect (current.next_effect_id, key, payload))
+  | ReceivePropertyValues (key, values) ->
+    {current with property_value_catalogs = sub_list 0 8
+      ((key, values) :: List.remove_assoc key current.property_value_catalogs)}
+  | LoadPropertyValues (key, payload) ->
+    enqueue_effect current (LoadPropertyValuesEffect (current.next_effect_id, key, payload))
   | SubmitNodeProperty (uuid, payload) ->
     enqueue_effect {current with result_view_feedback = List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback}
       (NodePropertyEffect (current.next_effect_id, uuid, payload))
@@ -2306,11 +2330,14 @@ let rec update (current : logseq_model) action =
             | true, (ChooseOutlinerAutocompleteEffect _ | EditorOutlinerEventEffect _) -> current.outliner_selection_revision + 1
             | _ -> current.outliner_selection_revision);
          result_view_feedback = (match eff with
+           | LoadResultRowsEffect (_, key, _) | LoadPropertyValuesEffect (_, key, _) ->
+             let previous = List.filter (fun (view, _, _) -> view <> key) current.result_view_feedback in
+             if succeeded then previous else (key, id, Some message) :: sub_list 0 8 previous
            | ResultViewEffect (_, uuid, _) | NodePropertyEffect (_, uuid, _) -> (uuid, id, (if succeeded then None else Some message))
                :: List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback
            | _ -> resolved_current.result_view_feedback);
          effect_error =
-           (if succeeded || (match eff with ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
+           (if succeeded || (match eff with LoadResultRowsEffect _ | LoadPropertyValuesEffect _ | ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
               | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message
               | _ -> false)
             then None else Some message);

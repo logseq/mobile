@@ -137,8 +137,9 @@ let query_for session db uuid =
   Query_block.render ?current_page db uuid
   |> Option.map (fun result ->
       try
-        let views = Result_view.render_rows db ~owner:uuid ~feature:"query-result" ~encode_block:encode_tree result.Query_block.rows in
-        (match Query_block.to_yojson encode_tree result, views with
+        let views = Result_view.render_rows ~include_values:false ~window:Result_view.initial_window db ~owner:uuid ~feature:"query-result" ~encode_block:encode_tree result.Query_block.rows in
+        let preview = {result with Query_block.rows = List.of_seq (Seq.take 12 (List.to_seq result.rows))} in
+        (match Query_block.to_yojson encode_tree preview, views with
          | `Assoc fields, `Assoc view_fields -> `Assoc (fields @ view_fields)
          | value, _ -> value)
       with error -> Query_block.to_yojson Rpc.block_json
@@ -150,7 +151,7 @@ let object_views_for session owner is_tag is_property =
   | None -> `Null
   | Some db ->
     let feature = if is_tag then "class-objects" else "property-objects" in
-    match Result_view.render db ~owner ~feature ~encode_block:(result_block_encoder db) with
+    match Result_view.render ~include_values:false ~window:Result_view.initial_window db ~owner ~feature ~encode_block:(result_block_encoder db) with
     | Ok value -> value
     | Error message -> `Assoc ["ownerUuid", `String owner; "featureType", `String feature;
         "views", `List [`Assoc ["uuid", `String (owner ^ ":default"); "name", `String "All";
@@ -1276,7 +1277,8 @@ let open_node session fields =
          | None -> false
        in
        let related =
-         if tag then
+         if tag && So.uses_paged_tag_objects session then []
+         else if tag then
            match (host session).graph_tag_objects with
            | Some load -> Option.value ~default:[] (load uuid)
            | None -> []
@@ -2029,6 +2031,53 @@ let rec dispatch session action payload =
          Option.value ~default:`Null (query_for session db uuid)])
      | None, _ -> Rpc.failure "invalid_params" "A query block UUID is required"
      | _, None -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "resultRows" ->
+    (match payload, query_db session with
+     | Some payload, Some db ->
+       (try
+         let input = Json.from_string payload in
+         let member name = function `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields) | _ -> `Null in
+         let required name = match member name input with `String value when value <> "" -> value | _ -> invalid_arg ("Missing " ^ name) in
+         let integer name default = match member name input with `Int value -> value | _ -> default in
+         let graph = member "graphId" input in
+         if graph <> `Null && graph <> Option.fold ~none:`Null ~some:(fun c -> `String c.Api.graph_id) (state session).config
+         then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
+         else
+           let owner = required "ownerUuid" and feature = required "featureType" and view_uuid = required "viewUuid" in
+           let window = {Result_view.view_uuid = Some view_uuid; offset = max 0 (integer "offset" 0);
+             limit = min 64 (max 1 (integer "limit" 12))} in
+           let search = match member "input" input with `String value -> value | _ -> "" in
+           match Result_view.render ~input:search ~include_values:false ~window db ~owner ~feature
+             ~encode_block:(result_block_encoder db) with
+           | Error message -> Rpc.failure "invalid_view" message
+           | Ok result -> (match member "views" result with
+             | `List [view] -> Rpc.success (Rpc.with_node_icons (node_icon session) (with_local_assets session
+               (`Assoc ["isQueryPatch", `Bool true; "resultRows", `Assoc ["key", `String (required "key"); "view", view]])))
+             | _ -> Rpc.failure "invalid_view" "This view is unavailable")
+       with error -> Rpc.failure "invalid_view" (Printexc.to_string error))
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "propertyValues" ->
+    (match payload, query_db session with
+     | Some payload, Some db ->
+       (try
+         let input = Json.from_string payload in
+         let member name = function `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields) | _ -> `Null in
+         let required name json = match member name json with `String value when value <> "" -> value | _ -> invalid_arg ("Missing " ^ name) in
+         let key = required "key" input and owner = required "ownerUuid" input
+           and attr = required "attr" input in
+         let graph = member "graphId" input in
+         if graph <> `Null && graph <> Option.fold ~none:`Null ~some:(fun c -> `String c.Api.graph_id) (state session).config
+         then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
+         else
+           let column = if member "mode" input = `String "filter" then
+             Result_view.filter_values db ~owner ~feature:(required "featureType" input) ~attr
+           else if attr = "block/title" || attr = "block/tags" || String.starts_with ~prefix:"user.property/" attr
+             || String.starts_with ~prefix:"logseq.property/" attr then
+             Result_view.property_json db ~owner ~attr ~encode_block:(result_block_encoder db)
+           else invalid_arg "This property is unavailable" in
+           Rpc.success (`Assoc ["isQueryPatch", `Bool true; "propertyValues", `Assoc ["key", `String key; "column", column]])
+       with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "nodeProperties" ->
     (match payload, query_db session with
      | Some owner, Some db -> (match Node_property.render db ~owner ~encode_block:(result_block_encoder db) with

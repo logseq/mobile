@@ -211,6 +211,13 @@ let adaptive_content_insets_schema () =
     [ property "breakpoint" IntScalar true None;
       property "wide-inset" IntScalar true None ]
 
+let table_viewport_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "native-table-viewport" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "identifier" StringScalar true None]
+    [event "viewport-changed" [event_field "offset" IntScalar true; event_field "width" IntScalar true]]
+
 let property_row_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -236,6 +243,7 @@ let extension_registry () =
   let registry = Lui_extension.registry () in
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
+  Lui_extension.register_component registry (table_viewport_schema ());
   Lui_extension.register_component registry (property_date_schema ());
   Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());

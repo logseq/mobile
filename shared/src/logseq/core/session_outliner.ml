@@ -186,8 +186,11 @@ let load_page_references session uuid =
     Hashtbl.replace session.reference_cache uuid blocks
   end
 
+let uses_paged_tag_objects session = (Types.host session).Types.graph_db <> None
+
 let node_route_related_blocks session (route : Types.node_route) =
-  if not route.is_tag then references_for_node session route.uuid
+  if route.is_tag && uses_paged_tag_objects session then []
+  else if not route.is_tag then references_for_node session route.uuid
   else match (Types.host session).Types.graph_tag_objects with
   | Some load ->
     (match load route.uuid with
@@ -196,7 +199,7 @@ let node_route_related_blocks session (route : Types.node_route) =
   | None -> route.related_blocks
 
 let node_route_linked_reference_blocks session (route : Types.node_route) =
-  if route.is_tag then references_for_node session route.uuid else []
+  if route.is_tag && not (uses_paged_tag_objects session) then references_for_node session route.uuid else []
 
 let page_for_visible_block (block : Model.block) =
   let title =
@@ -336,7 +339,8 @@ let selected_page_is_property (session : Types.session) =
   | _ -> false
 
 let snapshot_related_blocks (session : Types.session) =
-  if selected_page_is_tag session then
+  if selected_page_is_tag session && uses_paged_tag_objects session then []
+  else if selected_page_is_tag session then
     match
       ( (Types.state session).selected_sidebar_page
       , (Types.host session).graph_tag_objects )
@@ -353,7 +357,7 @@ let snapshot_related_blocks (session : Types.session) =
   else (Types.state session).related_blocks
 
 let snapshot_linked_reference_blocks (session : Types.session) =
-  if selected_page_is_tag session then
+  if selected_page_is_tag session && not (uses_paged_tag_objects session) then
     match (Types.state session).selected_sidebar_page with
     | Some page -> references_for_node session page.Model.uuid
     | None -> []

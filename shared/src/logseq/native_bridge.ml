@@ -75,10 +75,33 @@ let flush_action action =
   take_patch ()
 
 let apply_response encoded =
-  flush_action
-    (match Response_snapshot.decode_response encoded with
-     | Ok projection -> Model.ApplyCoreSnapshot projection
-     | Error message -> Model.SyncFailed message)
+  let action = try
+    let json = Yojson.Basic.from_string encoded in
+    let member name = function
+      | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
+      | _ -> `Null in
+    let result = member "result" json in
+    let rows = member "resultRows" result in
+    let values = member "propertyValues" result in
+    match rows with
+    | `Assoc fields when member "ok" json = `Bool true ->
+      (match List.assoc_opt "key" fields, List.assoc_opt "view" fields with
+       | Some (`String key), Some (`Assoc _ as view) ->
+         (match Response_snapshot.decode_json_response json with
+          | Ok projection -> Model.ReceiveResultRows (key, Yojson.Basic.to_string view, projection.node_icons)
+          | Error message -> Model.SyncFailed message)
+       | _ -> Model.SyncFailed "Invalid result rows response")
+    | _ ->
+    match values with
+    | `Assoc fields when json |> member "ok" = `Bool true ->
+      (match List.assoc_opt "key" fields, List.assoc_opt "column" fields with
+       | Some (`String key), Some (`Assoc _ as column) -> Model.ReceivePropertyValues (key, Yojson.Basic.to_string column)
+       | _ -> Model.SyncFailed "Invalid property values response")
+    | _ -> (match Response_snapshot.decode_json_response json with
+      | Ok projection -> Model.ApplyCoreSnapshot projection
+      | Error message -> Model.SyncFailed message)
+    with Yojson.Json_error message -> Model.SyncFailed ("Invalid core response: " ^ message) in
+  flush_action action
 
 let session_asset (asset : Host_update.host_composer_asset) :
     Model.composer_asset =
@@ -286,6 +309,10 @@ let encode_effect (eff : Model.logseq_effect) =
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "flashcard-deck"; "text", `String payload])
   | SetJournalTitleFormatEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "set-journal-title-format"; "text", `String payload])
+  | LoadPropertyValuesEffect (id, _, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "load-property-values"; "text", `String payload])
+  | LoadResultRowsEffect (id, _, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "load-result-rows"; "text", `String payload])
   | NodePropertyEffect (id, _, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "node-property"; "text", `String payload])
   | SyncNowEffect id ->
@@ -590,6 +617,8 @@ let extension_event node identifier name text value =
     | _, "caret-change" -> [ "caret-utf16-offset", IntValue value ]
     | "native-property-date", "change" -> ["value", StringValue text]
     | _, "query-changed" -> [ "query", StringValue text ]
+    | "native-table-viewport", "viewport-changed" ->
+      ["offset", IntValue (Option.value ~default:0 (int_of_string_opt text)); "width", IntValue value]
     | "native-navigation-stack", "viewport-changed" -> [ "width", IntValue value ]
     | _, "back" -> [ "count", IntValue value ]
     | _ -> []

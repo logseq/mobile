@@ -23,6 +23,7 @@ let () =
       "markup", Markup_test.cases;
       "query_block", Query_block_test.cases;
       "result_view", Result_view_test.cases;
+      "paged_result", Paged_result_test.cases;
       "view_filters", View_filter_test.cases;
       "node_property", Node_property_test.cases;
       "mobile_feedback", Mobile_feedback_test.cases;

@@ -276,6 +276,8 @@ type composer_submission =
 type logseq_effect =
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
+  | LoadPropertyValuesEffect of int * string * string
+  | LoadResultRowsEffect of int * string * string
   | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
   | SendTaggedCaptureEffect of int * composer_submission
@@ -445,6 +447,8 @@ type logseq_model =
   ; in_flight_effects : logseq_effect list
   ; next_effect_id : int
   ; result_view_feedback : (string * int * string option) list
+  ; property_value_catalogs : (string * string) list
+  ; result_row_windows : (string * string) list
   ; effect_error : string option
   ; last_core_response : string option
   ; attachment_picker_open : bool
@@ -458,6 +462,10 @@ type logseq_model =
 type logseq_action =
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
+  | LoadPropertyValues of string * string
+  | ReceivePropertyValues of string * string
+  | LoadResultRows of string * string
+  | ReceiveResultRows of string * string * string Lui_protocol.String_map.t
   | SelectGraph of string
   | BeginSync
   | SyncSucceeded

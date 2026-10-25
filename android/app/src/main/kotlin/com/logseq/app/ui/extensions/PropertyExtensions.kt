@@ -1,5 +1,9 @@
 package com.logseq.app.ui.extensions
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +42,14 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 internal val LocalPropertyValue = staticCompositionLocalOf { false }
 
 internal fun LuiExtensionRegistry.registerProperties() {
+    register("native-table-viewport",
+        "lui-extension-v1|21:native-table-viewport|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:identifier:string:required:none|events:16:viewport-changed[5:width:int:required,6:offset:int:required]",
+        acceptsStandardChildren = true,
+        properties = listOf(LuiExtensionProperty("identifier", LuiExtensionValueKind.STRING, required = true)),
+        events = listOf(LuiExtensionEventSchema("viewport-changed", listOf(
+            LuiExtensionProperty("offset", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("width", LuiExtensionValueKind.INTEGER, required = true)))),
+    ) { TableViewport(this) }
     register("native-property-row",
         "lui-extension-v1|19:native-property-row|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:7:stacked:bool:required:none|events:",
         acceptsStandardChildren = true,
@@ -123,5 +135,23 @@ private fun PropertyDatePicker(context: LuiExtensionContext) {
     Column(Modifier.fillMaxWidth().testTag(context.string("identifier") ?: "")) {
         DatePicker(state = date, showModeToggle = false)
         if (time) TimeInput(state = clock)
+    }
+}
+
+@Composable
+private fun TableViewport(context: LuiExtensionContext) {
+    val scroll = rememberScrollState()
+    val current by rememberUpdatedState(context)
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val width = maxWidth.value.toInt().coerceAtLeast(1)
+        LaunchedEffect(scroll, width, density) {
+            snapshotFlow { scroll.value }.distinctUntilChanged().collect { offset ->
+                current.emit("viewport-changed", "offset" to (offset / density.density).toInt(), "width" to width)
+            }
+        }
+        Column(Modifier.fillMaxWidth().horizontalScroll(scroll).testTag(context.string("identifier") ?: "")) {
+            context.Children()
+        }
     }
 }
