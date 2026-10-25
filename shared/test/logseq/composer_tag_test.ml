@@ -123,6 +123,9 @@ let shared_picker_stages_and_removes_tags () =
       check ~msg:"unsent tags persist with the UI session" (items "composerTags" encoded_session <> []);
       click ("button.composer.tag.remove." ^ Q.project);
       App_test.send app (Model.RestoreUISession saved); App_test.flush app;
+      check_eq ~msg:"relaunch keeps staged tags while the composer is collapsed"
+        (App.model app).composer_tags saved.composer_tags;
+      App_test.send app Model.ExpandComposer; App_test.flush app;
       check ~msg:"restoring the same graph recovers staged tags" (find ("button.composer.tag.remove." ^ Q.project) <> -1);
       open_tags ();
       let input = find "view.edit.value.composer.tags" in
