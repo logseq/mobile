@@ -718,7 +718,7 @@ let native_node_stack context model_source ~source:routes_source send =
         ~source:(Signal.map2 (fun routes (index, route) ->
           (route, index = List.length routes - 1)) routes_source visit_source) send)
 
-let native_search_view (_context : Lui_ui.ui_context) model_source send :
+let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
     t =
  fun context parent ->
    let node = Lui_ui.extension context "native-search-presentation" in
@@ -780,7 +780,10 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      node
    else (
      ignore
-       ((logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send) context (Some node));
+       ((match base with
+         | Some view -> box ~grow:1.0 [view]
+         | None -> logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send)
+          context (Some node));
      ignore
        ((column ~grow:1.0 [ search_screen model_source send ]) context
           (Some node));
@@ -885,7 +888,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      ignore
        ((column
            [
-             native_search_view context model_source send;
+             logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send;
              if_
                ~test:(Signal.map View_base.bottom_chrome_selection_
                         model_source)
@@ -1015,7 +1018,11 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       [
         if_
           ~test:(Signal.map View_base.main_screen_visible_ model_source)
-          (native_navigation_view context model_source send);
+          (native_search_view ~base:(native_navigation_view context
+             (Signal.map (fun (current : Model.logseq_model) ->
+               let base = if current.search_open then View_base.without_outliner_interaction current else current in
+               { base with search_open = false; search_navigation_path = [] }) model_source) send)
+             context model_source send);
         if_
           ~test:
             (Signal.map View_base.graph_picker_screen_visible_

@@ -356,6 +356,7 @@ val sync_error_message : Model.logseq_model -> string
 val selected_page_content_title_visible_ : Model.logseq_model -> bool
 val selected_page_title : Model.logseq_model -> string
 val navigation_root_model : Model.logseq_model -> Model.logseq_model
+val without_outliner_interaction : Model.logseq_model -> Model.logseq_model
 val journal_navigation_model : Model.logseq_model -> Model.logseq_model
 val node_route_model :
   active:bool -> Model.logseq_model -> Model.node_projection -> Model.logseq_model

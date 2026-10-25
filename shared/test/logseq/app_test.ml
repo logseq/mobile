@@ -277,6 +277,15 @@ let main_root runtime application =
     (Lui_app.runtime application).Lui_runtime.runtime_extension_nodes
   in
   if picker_parent <> -1 then picker_parent
+  else if Hashtbl.find_opt extensions container = Some "native-search-presentation"
+  then
+    if extension_property application container "presented" = Some (Lui_protocol.BoolValue true)
+    then List.nth (children runtime container) 1
+    else
+      let base = List.hd (children runtime container) in
+      let navigation = List.hd (children runtime base) in
+      let wrapper = List.hd (children runtime navigation) in
+      List.hd (children runtime wrapper)
   else if Hashtbl.find_opt extensions container = Some "native-navigation-stack"
   then begin
     let wrapper = List.nth (children runtime container) 0 in
@@ -4640,6 +4649,11 @@ let search_lifecycle_keeps_query_owned_by_the_lg_model () =
   let search_extension =
     extension_node application "native-search-presentation"
   in
+  check_eq ~msg:"search wraps app navigation so both native stacks are independent"
+    (List.hd (children renderer (List.hd (children renderer search_extension))))
+    (extension_node application "native-navigation-stack");
+  check ~msg:"the underlying page keeps its capture and search chrome ready during dismissal"
+    (descendant_with_identifier renderer (native_bottom_chrome renderer application) "button.search" <> -1);
   let search_panel =
     child_with_identifier renderer search_root "screen.search"
   in

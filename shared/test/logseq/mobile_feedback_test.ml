@@ -180,17 +180,31 @@ let date_editors_offer_navigation_to_the_journal () = R.with_runtime (fun sessio
         (App.model app).pending_effects)))
 
 let search_property_navigation_stays_in_search () = R.with_runtime (fun session _ _ ->
-  with_ui session Q.alpha (fun app find click ->
+  with_ui session Q.alpha (fun app _ _ ->
     App_test.send app Model.OpenSearch;
     App_test.send app (Model.RequestSearchNode Q.alpha);
+    open_node session Q.alpha;
+    let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+      | Ok value -> value | Error message -> fail message in
+    App_test.send app (Model.ApplyCoreSnapshot snapshot);
     App_test.send app (Model.ResolveSearchNode (Q.alpha, true)); App_test.flush app;
+    let host = Lui_app.runtime app in
+    let search = App_test.extension_node app "native-search-presentation" in
+    (* Search overlays the retained app page, which can contain the same property IDs. *)
+    let find id = List.find_map (fun root ->
+      let node = App_test.descendant_with_identifier host root id in
+      if node = -1 then None else Some node) (List.rev (App_test.children host search))
+      |> Option.value ~default:(-1) in
+    let click id = let node = find id in check ~msg:("Missing search action: " ^ id) (node <> -1);
+      App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
     let expand = "properties.expand." ^ Q.alpha in
     if find expand <> -1 then click expand;
     click ("property.value." ^ Q.alpha ^ "." ^ R.due);
     click ("view.edit.open.property." ^ Q.alpha ^ "." ^ R.due ^ "." ^ R.day_a);
     check ~msg:"a journal opened from a search property remains in the visible search stack"
       (List.exists (function Model.OpenSearchNodeEffect (_, uuid) -> uuid = R.day_a | _ -> false)
-        (App.model app).pending_effects)))
+        (App.model app).pending_effects);
+    ignore (Rpc_test.dispatch_json session "closeNode" "")))
 
 let tag_pages_allow_removing_tags_and_schema_properties () = R.with_runtime (fun session runtime conn ->
   update runtime conn [put Q.project "block/tags" (D.Ref_to (D.Ident "logseq.class/Task"));

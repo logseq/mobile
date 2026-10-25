@@ -89,10 +89,7 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
             if delayedQueries != nil { delayedQueries?.append(query) }
             else { applyQuery(query) }
         }
-        let host = SearchCheckHost(rootView: NavigationStack {
-            LUISwiftUIRoot(backend: backend, rootID: 1)
-                .toolbar { ToolbarItem(placement: .topBarLeading) { Text("Journals") } }
-        })
+        let host = SearchCheckHost(rootView: LUISwiftUIRoot(backend: backend, rootID: 1))
         let window = UIWindow(frame: CGRect(x:0,y:0,width:402,height:874))
         self.window = window
         window.rootViewController = host; window.makeKeyAndVisible()
@@ -147,8 +144,8 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
                 record("FAIL: search should accept typing while its presentation animates")
                 failures += 1
             }
-            if window.rootViewController?.presentedViewController == nil {
-                record("FAIL: search navigation must be isolated from the app navigation")
+            if let modal = window.rootViewController?.presentedViewController, !(modal is UISearchController) {
+                record("FAIL: search must not add a full-screen modal over the app navigation")
                 failures += 1
             }
             input()?.insertText("Fixture")

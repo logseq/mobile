@@ -54,6 +54,7 @@ val native_node_screen :
   source:(Model.node_projection * bool) Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val native_search_view :
+  ?base:Lui_elements.t ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t

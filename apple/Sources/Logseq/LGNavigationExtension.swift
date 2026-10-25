@@ -304,20 +304,25 @@ private struct LGSearchPresentation: View {
     @State private var nativePresented = false
 
     var body: some View {
-        baseContent
-            .fullScreenCover(isPresented: $nativePresented, onDismiss: didDismiss) {
+        ZStack {
+            baseContent
+                .ignoresSafeArea(.keyboard, edges: nativePresented ? .bottom : [])
+                .allowsHitTesting(!nativePresented)
+                .accessibilityHidden(nativePresented)
+            if nativePresented {
                 LGSearchSession(context: context, close: closeSearch)
-                    .presentationBackground(.background)
+                    .zIndex(1)
             }
-            .onChange(of: presented, initial: true) {
-                if presented {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { nativePresented = true }
-                } else {
-                    closeSearch()
-                }
+        }
+        .onChange(of: presented, initial: true) {
+            if presented {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { nativePresented = true }
+            } else {
+                closeSearch()
             }
+        }
     }
 
     private var baseContent: AnyView {
@@ -331,9 +336,13 @@ private struct LGSearchPresentation: View {
     }
 
     private func closeSearch() {
-        var transaction = Transaction(animation: .default)
-        transaction.disablesAnimations = false
+        guard nativePresented else { return }
+        // The system search control already animates cancellation and the keyboard.
+        // Retire this layer without adding another presentation transition.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
         withTransaction(transaction) { nativePresented = false }
+        didDismiss()
     }
 
     private func didDismiss() {
@@ -356,6 +365,8 @@ private struct LGSearchSession: View {
                 if pendingQuery == query { pendingQuery = nil }
             }
             #if os(iOS)
+            .opacity(closing ? 0 : 1)
+            .animation(.easeOut(duration: 0.2), value: closing)
             .onChange(of: depth) {
                 if depth == 0 && !closing { nativeSearchPresented = true }
             }
@@ -378,10 +389,14 @@ private struct LGSearchSession: View {
     private func searchRootTransform(_ content: AnyView) -> AnyView {
         let content = AnyView(content.environment(\.luiTextHighlightQuery, query))
         #if os(iOS)
+        let observedContent = AnyView(content.background(LGSearchDismissalObserver(
+            willDismiss: { if depth == 0 { exitSearch() } },
+            didDismiss: { if depth == 0 && closing { close() } }
+        )))
         if #available(iOS 26.0, *) {
-            return AnyView(nativeBottomSearch(content))
+            return AnyView(nativeBottomSearch(observedContent))
         }
-        return AnyView(nativeLegacySearch(content))
+        return AnyView(nativeLegacySearch(observedContent))
         #else
         return AnyView(nativeAutomaticSearch(content))
         #endif
@@ -417,7 +432,7 @@ private struct LGSearchSession: View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(searchTitle)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(
                 text: queryBinding,
@@ -428,13 +443,13 @@ private struct LGSearchSession: View {
             .toolbar {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
             }
+            .toolbar(depth == 0 ? .hidden : .visible, for: .navigationBar)
     }
 
     private func exitSearch() {
         guard !closing else { return }
         closing = true
         pendingQuery = query
-        close()
     }
 
     private var nativeSearchPresentedBinding: Binding<Bool> {
@@ -851,6 +866,85 @@ private struct LGNavigationContent: View {
 }
 
 #if os(iOS)
+@MainActor
+private struct LGSearchDismissalObserver: UIViewControllerRepresentable {
+    let willDismiss: () -> Void
+    let didDismiss: () -> Void
+
+    func makeUIViewController(context: Context) -> Observer {
+        Observer(willDismiss: willDismiss, didDismiss: didDismiss)
+    }
+
+    func updateUIViewController(_ controller: Observer, context: Context) {
+        controller.proxy.willDismiss = willDismiss
+        controller.proxy.didDismiss = didDismiss
+        controller.resolve()
+    }
+
+    static func dismantleUIViewController(_ controller: Observer, coordinator: ()) {
+        controller.uninstall()
+    }
+
+    final class Observer: UIViewController {
+        let proxy: Delegate
+        weak var search: UISearchController?
+
+        init(willDismiss: @escaping () -> Void, didDismiss: @escaping () -> Void) {
+            proxy = Delegate(willDismiss: willDismiss, didDismiss: didDismiss)
+            super.init(nibName: nil, bundle: nil)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+        override func loadView() { view = UIView() }
+        override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); resolve() }
+        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); resolve() }
+
+        func resolve() {
+            guard let search = navigationController?.viewControllers.compactMap({ $0.navigationItem.searchController }).first,
+                  search.delegate !== proxy else { return }
+            uninstall()
+            self.search = search
+            proxy.forwarded = search.delegate
+            search.delegate = proxy
+        }
+
+        func uninstall() {
+            if let search, search.delegate === proxy { search.delegate = proxy.forwarded }
+            search = nil
+        }
+    }
+
+    final class Delegate: NSObject, UISearchControllerDelegate {
+        // UIKit's optional-method lookup is nonisolated; installation stays on the main actor.
+        nonisolated(unsafe) weak var forwarded: UISearchControllerDelegate?
+        var willDismiss: () -> Void
+        var didDismiss: () -> Void
+
+        init(willDismiss: @escaping () -> Void, didDismiss: @escaping () -> Void) {
+            self.willDismiss = willDismiss
+            self.didDismiss = didDismiss
+        }
+
+        func willDismissSearchController(_ searchController: UISearchController) {
+            willDismiss()
+            forwarded?.willDismissSearchController?(searchController)
+        }
+
+        func didDismissSearchController(_ searchController: UISearchController) {
+            forwarded?.didDismissSearchController?(searchController)
+            didDismiss()
+        }
+
+        nonisolated override func responds(to selector: Selector!) -> Bool {
+            super.responds(to: selector) || forwarded?.responds(to: selector) == true
+        }
+
+        nonisolated override func forwardingTarget(for selector: Selector!) -> Any? {
+            if let forwarded, forwarded.responds(to: selector) { return forwarded }
+            return super.forwardingTarget(for: selector)
+        }
+    }
+}
+
 @MainActor
 private final class LGNavigationTransitions {
     weak var controller: UINavigationController?
