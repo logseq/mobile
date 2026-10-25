@@ -236,6 +236,14 @@ struct OutlinerTextRow: UIViewRepresentable {
             button.removeTarget(nil, action: nil, for: .touchUpInside)
             button.tag = index
             button.addTarget(self, action: #selector(openTag(_:)), for: .touchUpInside)
+            if row.canRemoveTags == true, let title = row.removeTagTitle {
+                button.menu = UIMenu(children: [UIAction(title: title, attributes: .destructive) { [weak self] _ in
+                    self?.emit?("remove-tag", tag.uuid, [:])
+                }])
+                button.showsMenuAsPrimaryAction = false
+            } else {
+                button.menu = nil
+            }
         }
         backgroundColor = row.selected ? tintColor.withAlphaComponent(0.12) : .clear
         invalidateIntrinsicContentSize()

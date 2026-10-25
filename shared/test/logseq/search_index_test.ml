@@ -86,7 +86,34 @@ let with_index f =
       Unix.rmdir root)
     (fun () -> f (Search.create path))
 
-let results index query = Search.search (fun _ -> false) 100 index query
+let results index query = Search.search 100 index query
+
+let graph_search_uses_only_fts_matches () = with_index (fun index ->
+  let db = Ds.conn_db (seeded_conn ()) in
+  Search.refresh index db;
+  check ~msg:"contiguous FTS matches remain searchable" (results index "movie" <> []);
+  List.iter (fun query ->
+    check_eq ~msg:"search does not add subsequence or short LIKE fallbacks" (results index query) [];
+    check_eq (Search.search_hits_page ~offset:0 ~limit:20 index db query) ([], false)) ["mve"; "4k"; "电影"];
+  let indexes = Graph_sqlite.with_search_db index.path (fun connection ->
+    Graph_sqlite.query connection
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'blocks' AND sql IS NOT NULL"
+      [] (fun row -> Sqlite3.column_text row 0)) in
+  check_eq ~msg:"FTS search needs no additional title B-tree index" indexes [])
+
+let search_limits_matches_before_reading_unneeded_ranks () = with_index (fun index ->
+  let db = Ds.conn_db (seeded_conn ()) in
+  Search.search_upsert index.path [
+    "first", "A long introduction before the bounded needle result", page_uuid;
+    "second", "needle", page_uuid;
+    "third", "needle", page_uuid];
+  let first, more = Search.search_hits_page ~offset:0 ~limit:1 index db "needle" in
+  check_eq ~msg:"the first MATCH window is independent of ranks outside it"
+    (List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) first) ["first"];
+  check more;
+  let next, more = Search.search_hits_page ~offset:1 ~limit:1 index db "needle" in
+  check_eq (List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) next) ["second"];
+  check more)
 
 let find_result index query uuid =
   List.find_opt
@@ -133,8 +160,7 @@ let fuzzy_scores_and_utf8_segmentation_preserve_search_semantics () =
   let emoji = "😀" in
   let text = "a" ^ cjk ^ emoji in
   check_eq 3 (Search.utf8_length text);
-  check_eq [ "a"; cjk; emoji ] (Search.utf8_chars text);
-  check_eq "%\\%%\\_%\\\\%" (Search.fuzzy_like_pattern "%_\\")
+  check_eq [ "a"; cjk; emoji ] (Search.utf8_chars text)
 
 let candidates_are_deduplicated_limited_and_idempotently_refreshed () =
   with_index (fun index ->
@@ -147,14 +173,14 @@ let candidates_are_deduplicated_limited_and_idempotently_refreshed () =
       (List.length (List.sort_uniq String.compare ids));
     List.iter
       (fun limit ->
-        check_eq [] (Search.search (fun _ -> false) limit index "movies"))
+        check_eq [] (Search.search limit index "movies"))
       [ 0; -1 ];
     check_eq [] (results index " \t\n");
     check_eq
       (match found with
        | first :: _ -> [ first ]
        | [] -> [])
-      (Search.search (fun _ -> false) 1 index "movies");
+      (Search.search 1 index "movies");
     check_eq []
       (Search.query_rows index
          "select id, page, title from missing_table" []);
@@ -176,8 +202,8 @@ let persisted_search_ranks_pages_resolves_references_and_refreshes_changes () =
        | [] -> None);
     List.iter
       (fun query -> check (find_result index query block_uuid <> None))
-      [ "movies"; "ovie"; "4k" ];
-    check (find_result index "电影" cjk_uuid <> None);
+      [ "movies"; "ovie"; "4k movies" ];
+    check (find_result index "晚上看" cjk_uuid <> None);
     check_eq (Some "[[Movies]] marathon plan")
       (match find_result index "Movies marathon" ref_block_uuid with
        | Some (hit : Search.search_result) -> Some hit.title
@@ -229,7 +255,7 @@ let sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred () =
     List.iter (fun query ->
       let page, _ = Search.search_hits_page ~offset:0 ~limit:20 index db query in
       check ~msg:("paged search preserves matching for " ^ query) (page <> []))
-      ["movies"; "ovie"; "4k"; "电影"; "[[Movies]]"; "movies AND marathon"];
+      ["movies"; "ovie"; "4k movies"; "晚上看"; "[[Movies]]"; "movies AND marathon"];
     check_eq ([], false) (Search.search_hits_page ~offset:0 ~limit:20 index db "  ");
     check_eq ([], false) (Search.search_hits_page ~offset:0 ~limit:0 index db "movies");
     check_eq ([], false) (Search.search_hits_page ~offset:200 ~limit:20 index db "Paged needle"))
@@ -250,9 +276,11 @@ let builtin_content_tags_are_searchable () =
 
 let cases =
   [
+    case "graph search uses only FTS matches" graph_search_uses_only_fts_matches;
     case "built-in content tags are searchable" builtin_content_tags_are_searchable;
     case "incomplete queries do not break search or later valid queries"
       incomplete_queries_do_not_break_search_or_later_valid_queries;
+    case "search bounds candidate work before ranking" search_limits_matches_before_reading_unneeded_ranks;
     case "sqlite pages are stable bounded and not capped at one hundred" sqlite_pages_are_stable_bounded_and_not_capped_at_one_hundred;
     case "match input preserves logseq boolean and phrase rules"
       match_input_preserves_logseq_boolean_and_phrase_rules;

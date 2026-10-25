@@ -535,9 +535,14 @@ let active_overflow_menu model_source send : t =
      | Some route -> route.Model.node_properties_json | None -> current.Model.properties_json) model_source) in
    let rename_source = own (Signal.map View_property.rename_page raw_source) in
    let tag_source = own (Signal.map View_property.tag_picker raw_source) in
+   let tag_schema_source = own (Signal.map View_property.has_tag_schema raw_source) in
+   let tag_properties_open = Signal.state context.ui_scheduler false in
+   let tag_properties_owner = ref None in
    let editing = Signal.state context.ui_scheduler None in
    let finished = ref None in
    ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (current : Model.logseq_model) ->
+     let owner = current.selected_graph_id, View_property.owner_uuid (Signal.sample raw_source) in
+     if !tag_properties_owner <> Some owner then Signal.set tag_properties_open false;
      match Signal.sample (Signal.value editing) with
      | Some (graph, owner, action, _) ->
        let active_owner = match Signal.sample tag_source with Some (owner, _) -> Some owner
@@ -587,7 +592,7 @@ let active_overflow_menu model_source send : t =
                  (List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "rename", property))) []);
        if_ ~test:(own (Signal.map Option.is_some tag_source))
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.page.tags"
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Set tags") ~accessibility_identifier:"button.page.tags"
            ~on_press:(fun _ -> match Signal.sample tag_source with
              | None -> ()
              | Some (owner, property) -> let current = Signal.sample model_source in
@@ -595,6 +600,13 @@ let active_overflow_menu model_source send : t =
                  (List.find_opt (fun (key, _, _) -> key = "page.tags." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "tags", property))) []);
        add_property;
+       if_ ~test:tag_schema_source
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Tag properties")
+           ~accessibility_identifier:"button.page.tag-properties"
+           ~on_press:(fun _ ->
+             tag_properties_owner := Some ((Signal.sample model_source).Model.selected_graph_id,
+               View_property.owner_uuid (Signal.sample raw_source));
+             Signal.set tag_properties_open true) []);
        if_ ~test:page_actions_source
          (menu_item ~text:(View_base.tr (Signal.sample model_source) "Share") ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
@@ -622,6 +634,8 @@ let active_overflow_menu model_source send : t =
        [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
            ~accessibility_identifier:"button.connection" entries ] in
    stack [menu; add_picker;
+     if_ ~test:(Signal.value tag_properties_open)
+       (View_property.tag_properties model_source raw_source send (fun () -> Signal.set tag_properties_open false));
      if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
        (dyn (function None -> box [] | Some (graph, owner, action, property) ->
          let column = if action <> "rename" then property else match property with `Assoc fields ->
@@ -630,7 +644,7 @@ let active_overflow_menu model_source send : t =
            ~submit:(fun fields -> ignore (send (Model.SubmitNodeProperty ("page." ^ action ^ "." ^ owner,
              Yojson.Basic.to_string (`Assoc (("blockUuid", `String owner) ::
                ("graphId", `String (Option.value ~default:"" graph)) ::
-               (if action = "tags" then ("action", `String "addTags") :: fields else fields)))))))
+               (if action = "tags" then ("action", `String "setTags") :: fields else fields)))))))
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
    ])) context parent
 
@@ -715,6 +729,12 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
      Signal.map View_base.search_navigation_depth model_source
    in
    let query_source = Signal.map View_base.model_search_query model_source in
+   Lui_ui.extension_property_signal context node "back-title"
+     (Signal.map (fun current -> StringValue (View_base.tr current "Back")) model_source);
+   Lui_ui.extension_property_signal context node "clear-title"
+     (Signal.map (fun current -> StringValue (View_base.tr current "Clear")) model_source);
+   Lui_ui.extension_property_signal context node "close-title"
+     (Signal.map (fun current -> StringValue (View_base.tr current "Close")) model_source);
    Lui_ui.extension_property_signal context node "presented"
      (Signal.map View_base.bool_wire_value presented_source);
    Lui_ui.extension_property_signal context node "depth"

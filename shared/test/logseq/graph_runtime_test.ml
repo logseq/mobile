@@ -917,7 +917,7 @@ let remote_search_refresh_preserves_unrelated_index_rows () =
          | Some index ->
            List.exists
              (fun (hit : Search.search_result) -> hit.uuid = "search-sentinel")
-             (Search.search (fun _ -> false) 100 index "incremental sentinel")
+             (Search.search 100 index "incremental sentinel")
          | None -> false))
 
 let referenced_page_renames_reindex_the_page_and_its_referrers () =

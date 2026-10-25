@@ -45,21 +45,13 @@ let render db ~owner ~encode_block =
       | _ -> None) |> List.of_seq |> List.sort (fun a b ->
         compare (member "title" a) (member "title" b)) in
     let tag_picker = if not (Node_title.can_edit db id) then `Null else
-      let assigned = Hashtbl.create 8 in
-      List.iter (fun id -> Option.iter (fun uuid -> Hashtbl.replace assigned uuid ()) (G.uuid_for_eid db id))
-        (G.ref_eids db id "block/tags");
-      let choices = G.tag_pages (fun value -> Ok value) db |> List.filter_map (fun (tag : Cache_model.entity_summary) ->
-        if Hashtbl.mem assigned tag.uuid then None else Some (`Assoc ["title", `String tag.title;
-          "value", `Null; "match", `List [`String tag.uuid]])) in
+      let choices = G.tag_pages (fun value -> Ok value) db |> List.map (fun (tag : Cache_model.entity_summary) ->
+        `Assoc ["title", `String tag.title; "value", `Null; "match", `List [`String tag.uuid]]) in
       match Result_view.property_json ~include_candidates:false db ~owner ~attr:"block/tags" ~encode_block with
-      | `Assoc fields -> `Assoc (["title", `String "Add tags"; "raw", `Null; "text", `String ""; "filterValues", `List choices] @
-          List.filter (fun (name, _) -> not (List.mem name ["title"; "raw"; "text"; "filterValues"])) fields)
+      | `Assoc fields -> `Assoc (["title", `String "Set tags"; "filterValues", `List choices] @
+          List.filter (fun (name, _) -> not (List.mem name ["title"; "filterValues"])) fields)
       | _ -> `Null in
-    let tags = G.ref_eids db id "block/tags" |> List.filter_map (fun tag ->
-      if not (G.tag_available_for_completion db tag) || G.page_is_hidden db tag then None else
-      Option.map (fun (tag : Cache_model.entity_summary) ->
-        `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) (G.entity_summary (fun value -> Ok value) db tag)) in
-    Ok (`Assoc ["ownerUuid", `String owner; "tags", `List tags; "canDelete", `Bool (Node_title.can_delete db id);
+    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id);
       "tagPicker", tag_picker; "canAdd", `Bool (Node_title.can_edit db id); "classSchema", `Bool class_;
       "availableProperties", `List catalog; "schemaProperties", `List (List.map property schema_attrs);
       "rename", rename; "properties", `List (List.map (fun attr ->
@@ -133,15 +125,17 @@ let mutation db ~now ~fresh_uuid input =
         | Some (Ds.String value) -> Some (Pending_ops.String_value value) | _ -> None in
       Ok (Pending_ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected;
         value = if language = "" then None else Some (Pending_ops.String_value language)}))
-    else if action = `String "addTags" then (
+    else if action = `String "addTags" || action = `String "setTags" then (
       let owner = required "blockUuid" input in
       let owner_id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in
       if not (Node_title.can_edit db owner_id) then invalid_arg "This object is read-only";
       let values name = match member name input with `Null -> [] | `List values -> List.map (function
         | `String value -> value | _ -> invalid_arg "Choose a tag") values | _ -> invalid_arg "Choose a tag" in
+      let selected_uuids = List.sort_uniq String.compare (values "selectedValues") in
+      let assigned = G.ref_eids db owner_id "block/tags" in
       let selected = List.map (fun uuid ->
         if not (G.node_is_tag db uuid) then invalid_arg "The tag no longer exists";
-        Pending_ops.Add_tag {uuid = owner; tag_uuid = uuid}) (List.sort_uniq String.compare (values "selectedValues")) in
+        Pending_ops.Add_tag {uuid = owner; tag_uuid = uuid}) selected_uuids in
       let created = List.concat_map (fun title ->
         let title = Dev_query.Unicode.trim title in
         if title = "" || String.contains title '#' || String.contains title '/' || String.starts_with ~prefix:"[[" title
@@ -153,8 +147,19 @@ let mutation db ~now ~fresh_uuid input =
         | None -> let uuid = fresh_uuid () in
           [Pending_ops.Create_tag {uuid; title; created_at = now}; Pending_ops.Add_tag {uuid = owner; tag_uuid = uuid}])
         (List.sort_uniq String.compare (values "newValues")) in
-      if selected = [] && created = [] then invalid_arg "Choose at least one tag";
-      Ok (Pending_ops.Atomic (selected @ created)))
+      let replace = if action <> `String "setTags" then [] else
+        let retained = List.filter (fun tag ->
+          not (G.tag_available_for_completion db tag) || G.page_is_hidden db tag ||
+          Option.fold ~none:false ~some:(fun uuid -> List.mem uuid selected_uuids) (G.uuid_for_eid db tag)) assigned in
+        let current = Result_view.property_json ~include_candidates:false db ~owner ~attr:"block/tags"
+          ~encode_block:(fun _ -> `Null) |> member "raw" in
+        let expected = match member "expected" input with `Null -> current | raw -> raw in
+        [Pending_ops.Set_property {uuid = owner; attr = "block/tags";
+          expected = (if expected = `Null then None else Some (Pending_ops.semantic_value_of_json expected));
+          value = Some (Pending_ops.Set_value (List.map (fun tag ->
+            Pending_ops.Ref_uuid (Option.get (G.uuid_for_eid db tag))) retained))}] in
+      if replace = [] && selected = [] && created = [] then invalid_arg "Choose at least one tag";
+      Ok (Pending_ops.Atomic (replace @ selected @ created)))
     else     if action = `String "add" then
       Ok (attach db (required "blockUuid" input) (required "attr" input))
     else if action = `String "create" then (

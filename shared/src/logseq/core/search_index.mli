@@ -9,7 +9,6 @@ type search_result =
   ; title : string
   ; page_uuid : string
   ; is_page : bool
-  ; score : float
   }
 
 type indexed_search_hit =
@@ -38,15 +37,12 @@ val referring_uuids : Datascript.db -> string -> string list
 val refresh_uuids :
   search_index -> Datascript.db -> Datascript.db -> string list -> unit
 val refresh : search_index -> Datascript.db -> unit
-val scored : string -> (string * string * string) list -> search_result list
-val fuzzy_rows : search_index -> string -> int -> search_result list
 val search :
-  (string -> bool) -> int -> search_index -> string -> search_result list
+  int -> search_index -> string -> search_result list
 val search_hits :
   int -> search_index -> Datascript.db -> string -> indexed_search_hit list
 val query_rows :
   search_index -> string -> string list -> (string * string * string) list
-val fuzzy_like_pattern : string -> string
 
 val search_hits_page :
   offset:int -> limit:int -> search_index -> Datascript.db -> string ->

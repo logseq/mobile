@@ -120,6 +120,7 @@ let outliner_block_row_schema () =
     [Lui_extension.property "payload" StringScalar true None]
     [Lui_extension.event "edit" [uuid; Lui_extension.event_field "caret-utf16-offset" IntScalar false];
      Lui_extension.event "open-node" [uuid];
+     Lui_extension.event "remove-tag" [uuid];
      Lui_extension.event "collapse" [uuid]; Lui_extension.event "long-press" [uuid];
      Lui_extension.event "drag-start" [uuid];
      Lui_extension.event "drop" [uuid; Lui_extension.event_field "placement" StringScalar true];
@@ -173,6 +174,9 @@ let native_search_presentation_schema () =
     [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     true []
     [
+      Lui_extension.property "back-title" StringScalar false None;
+      Lui_extension.property "clear-title" StringScalar false None;
+      Lui_extension.property "close-title" StringScalar false None;
       Lui_extension.property "bottom-occupies-layout-space" BoolScalar true None;
       Lui_extension.property "presented" BoolScalar true None;
       Lui_extension.property "depth" IntScalar true None;

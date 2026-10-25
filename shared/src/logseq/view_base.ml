@@ -1,6 +1,22 @@
 let tr (current : Model.logseq_model) value =
   Localization.translate ~language:current.language ~system_language:current.system_language value
 
+let tr_named current source name =
+  String_kit.replace (tr current source) ~match_:"{1}" ~replacement:name
+
+let property_title current ~attr ~title =
+  if attr = "block/title" || (attr = "block/tags" && title = "Set tags") then tr current title else
+  match String.split_on_char '/' attr with
+  | [namespace; name] when namespace = "block" || namespace = "logseq.property"
+      || String.starts_with ~prefix:"logseq.property." namespace ->
+    let name = if String.ends_with ~suffix:"?" name then String.sub name 0 (String.length name - 1) else name in
+    let prefix = if String.starts_with ~prefix:"logseq.property." namespace then
+      String.sub namespace 16 (String.length namespace - 16) ^ "-" else "" in
+    let key = "property.built-in/" ^ prefix ^ name in
+    let translated = tr current key in
+    if translated = key then title else translated
+  | _ -> title
+
 open Lui_protocol
 
 let node_icon (current : Model.logseq_model) uuid =
@@ -447,7 +463,7 @@ let search_results_present_ (current : Model.logseq_model) =
 
 let search_result_status (current : Model.logseq_model) =
   if current.search_loading then "Searching…"
-  else if String_kit.is_blank current.search_query then ""
+  else if not (Model.search_query_ready current.search_query) then ""
   else begin
     let total = current.search_result_count in
     string_of_int total ^ (if current.search_has_more then "+" else "")
@@ -458,11 +474,11 @@ let search_result_context_present_ (hit : Model.search_hit) =
   not (String_kit.is_blank hit.breadcrumb)
 
 let search_empty_message (current : Model.logseq_model) =
-  if String_kit.is_blank current.search_query then "Search your graph"
+  if not (Model.search_query_ready current.search_query) then "Search your graph"
   else "No results"
 
 let search_empty_supporting_message query =
-  if String_kit.is_blank query then
+  if not (Model.search_query_ready query) then
     "Find pages and blocks by title or content."
   else "Try a different keyword."
 

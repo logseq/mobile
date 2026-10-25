@@ -225,12 +225,17 @@ let property_references db p assigned =
     Option.map (fun (node : Cache_model.entity_summary) ->
       `Assoc ["uuid", `String node.uuid; "title", `String node.title])
       (G.entity_summary (fun value -> Ok value) db id))) assigned
+let scoped_reference_values db p values =
+  if p.closed || not (List.mem p.typ ["node"; "entity"; "page"; "class"; "property"]) then values
+  else
+    let accepts = reference_predicate db p in
+    List.filter (fun value -> Option.fold ~none:false ~some:accepts (node_target_id db p value)) values
 let column_json ?(include_candidates = true) db rows p =
   let values = (if p.typ = "checkbox" then [Ds.Bool false; Ds.Bool true] else
     List.map (fun id -> Ds.Ref id) p.choices @
     (if include_candidates then reference_candidates db p else []) @
     List.concat_map (function Query_block.Cells _ -> [] | Query_block.Block block ->
-      attr_values db (eid db block.uuid) p.attr) rows) |> List.sort_uniq compare in
+      attr_values db (eid db block.uuid) p.attr) rows) |> scoped_reference_values db p |> List.sort_uniq compare in
   let filter_values = List.map (fun value ->
     let match_value = match value with Ds.Bool value -> `Bool value
       | Ds.Ref id -> `List [`String (uuid db id)] | _ -> `List [plain value] in
@@ -500,7 +505,7 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
     if not p.closed && List.mem p.typ ["node"; "entity"; "page"; "class"; "property"] then reference_candidates db p
     else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
-  let candidates = List.sort_uniq compare (assigned @ candidates) in
+  let candidates = scoped_reference_values db p (assigned @ candidates) |> List.sort_uniq compare in
   let filter_values = List.map (fun value -> `Assoc [
     "title", `String (property_display db p value); "value", plain value;
     "match", (match ref_id db value with Some id -> `List [`String (uuid db id)] | None -> `List [plain value])]) candidates in

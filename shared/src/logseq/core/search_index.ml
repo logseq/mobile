@@ -17,7 +17,6 @@ type search_result =
   ; title : string
   ; page_uuid : string
   ; is_page : bool
-  ; score : float
   }
 
 type indexed_search_hit =
@@ -28,7 +27,7 @@ type indexed_search_hit =
   ; breadcrumbs : Cache_model.entity_summary list
   }
 
-(* Preserve the existing byte-wise fuzzy matcher and UTF-8 length heuristic. *)
+(* Count UTF-8 code points for search thresholds and editor matching. *)
 let utf8_length value =
   let rec loop index length =
     if index = String.length value then length
@@ -275,161 +274,25 @@ let refresh index db =
   if stale <> [] then search_delete index.path stale;
   ignore (if changed <> [] then search_upsert index.path changed)
 
-let like_escape value =
-  if List.mem value [ "%"; "_"; "\\" ] then "\\" ^ value else value
-
-let fuzzy_like_pattern query =
-  "%" ^ String.concat "%" (List.map like_escape (utf8_chars query)) ^ "%"
-
-let fuzzy_candidate_limit limit = min 400 (max 40 (4 * limit))
-
-let exact_title_query query = not (String.exists whitespace_char query)
-
-let multi_term_query query =
-  matches_regex "[^ \t\n][ \t\n]+[^ \t\n]" query
-
 let query_rows index sql binds =
   try search_query index.path sql binds with Failure _ -> []
 
-let scored query rows =
-  List.map
-    (fun (id, page, title) ->
-      ({
-        uuid = id;
-        title;
-        page_uuid = page;
-        is_page = id = page;
-        score = fuzzy_score query title;
-       }
-       : search_result))
-    rows
-
-let fuzzy_rows index query limit =
-  let normalized = clean_str query in
-  let normalized =
-    if String_kit.starts_with ~prefix:"#" normalized then
-      String.sub normalized 1 (String.length normalized - 1)
-    else normalized
-  in
-  if String.trim normalized = "" then []
-  else
-    let candidate_limit = fuzzy_candidate_limit limit in
-    let pattern = fuzzy_like_pattern normalized in
-    let page_rows =
-      query_rows index
-        ("select id, page, title from blocks where id = page and lower(title) \
-          like ? escape '\\' limit "
-         ^ string_of_int candidate_limit)
-        [ pattern ]
-    in
-    let page_ids =
-      List.fold_left
-        (fun table (id, _, _) ->
-          Hashtbl.replace table id ();
-          table)
-        (Hashtbl.create 64) page_rows
-    in
-    let remaining = candidate_limit - List.length page_rows in
-    let block_rows =
-      if remaining > 0 then
-        List.filter
-          (fun (id, _, _) -> not (Hashtbl.mem page_ids id))
-          (query_rows index
-             ("select id, page, title from blocks where lower(title) like ? \
-               escape '\\' limit "
-              ^ string_of_int (remaining + List.length page_rows))
-             [ pattern ])
-        |> (fun rows ->
-          let rec take n acc xs =
-            match (n, xs) with
-            | 0, _ | _, [] -> List.rev acc
-            | n, x :: rest -> take (n - 1) (x :: acc) rest
-          in
-          take remaining [] rows)
-      else []
-    in
-    List.filter
-      (fun result -> result.score > 0.0)
-      (scored normalized (page_rows @ block_rows))
-
-(* Keep candidate precedence stable before score sorting and UUID dedup. *)
-let search has_tags limit index query =
+let full_text_rows ~offset ~limit index query =
   let query = String.trim query in
-  if query = "" then []
-  else
-    let input = get_match_input query in
-    let exact =
-      if exact_title_query query then
-        scored query
-          (query_rows index
-             ("select id, page, title from blocks where title = ? COLLATE \
-               NOCASE limit "
-              ^ string_of_int limit)
-             [ query ])
-      else []
-    in
-    let enough_exact = List.length exact >= limit in
-    let matched =
-      if enough_exact then []
-      else
-        scored query
-          (query_rows index
-             ("select id, page, title from blocks_fts where title match ? \
-               limit "
-              ^ string_of_int limit)
-             [ input ])
-    in
-    let short =
-      if utf8_length query <= 2 then
-        scored query
-          (query_rows index
-             ("select id, page, title from blocks_fts where title like ? limit "
-              ^ string_of_int limit)
-             [
-               "%"
-               ^ Str.global_replace (Str.regexp "[ \t\n]+") "%" query
-               ^ "%";
-             ])
-      else []
-    in
-    let fuzzy =
-      if enough_exact || (multi_term_query query && matched <> []) then []
-      else fuzzy_rows index query limit
-    in
-    let ranked =
-      List.map
-        (fun (result : search_result) ->
-          ( result
-          , result.score
-            +. (if result.is_page then 2.0 else 0.0)
-            +.
-            if result.is_page then 0.02
-            else if has_tags result.uuid then 0.01
-            else 0.0 ))
-        (exact @ fuzzy @ matched @ short)
-    in
-    let sorted =
-      List.sort
-        (fun (_, left) (_, right) -> compare right left)
-        ranked
-    in
-    let seen = Hashtbl.create 32 in
-    let results =
-      List.fold_left
-        (fun results ((result : search_result), _) ->
-          if Hashtbl.mem seen result.uuid then results
-          else begin
-            Hashtbl.add seen result.uuid ();
-            results @ [ result ]
-          end)
-        [] sorted
-    in
-    let rec take n acc xs =
-      match (n, xs) with
-      | 0, _ | _, [] -> List.rev acc
-      | n, x :: rest -> take (n - 1) (x :: acc) rest
-    in
-    take (max 0 limit) [] results
+  let query = if String.starts_with ~prefix:"#" query && not (String.exists whitespace_char query)
+    then String.sub query 1 (String.length query - 1) else query in
+  if query = "" || limit <= 0 then [] else
+    try Sql.with_search_db index.path (fun connection ->
+      Sql.query connection
+        "SELECT id, page, title FROM blocks_fts WHERE title MATCH ? LIMIT ? OFFSET ?"
+        [Sqlite3.Data.TEXT (get_match_input query); Sqlite3.Data.INT (Int64.of_int limit);
+         Sqlite3.Data.INT (Int64.of_int (max 0 offset))]
+        (fun row ->
+          let uuid = Sqlite3.column_text row 0 and page_uuid = Sqlite3.column_text row 1 in
+          {uuid; page_uuid; title = Sqlite3.column_text row 2; is_page = uuid = page_uuid}))
+    with Failure _ -> []
+
+let search limit index query = full_text_rows ~offset:0 ~limit index query
 
 let hydrate_hits db results =
   let entity_eid uuid = Ds.entid db "block/uuid" (Ds.Uuid uuid) in
@@ -463,44 +326,28 @@ let hydrate_hits db results =
       })
     results
 
+(* Reference completion also accepts literal short page names. The global
+   search UI uses the MATCH-only paged API below. *)
 let search_hits limit index db query =
-  let has_tags uuid = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
-    | Some eid -> not (Seq.is_empty (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:"block/tags" ()))
-    | None -> false in
-  hydrate_hits db (search has_tags limit index query)
-
-(* Ranking and slicing stay in SQLite. Only the requested page crosses into
-   OCaml and loads graph context; the lookahead row only detects continuation. *)
-let search_hits_page ~offset ~limit index db query =
   let query = String.trim query in
-  if query = "" || limit <= 0 then ([], false)
-  else
+  if limit <= 0 || query = "" then []
+  else if utf8_length query < 3 then
+    let query = Dev_query.Unicode.lowercase query in
+    Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
+    |> Seq.filter_map (fun (datom : Ds.datom) ->
+      if Graph.page_is_hidden db datom.e then None else
+      Option.bind (Graph.page_summary (fun value -> Ok value) db datom.e) (fun page ->
+        if String_kit.includes ~sub:query (Dev_query.Unicode.lowercase page.title) then
+          Some {uuid = page.uuid; title = page.title; is_page = true; page = None; breadcrumbs = []}
+        else None))
+    |> Seq.take limit |> List.of_seq
+  else hydrate_hits db (search limit index query)
+
+(* Bound the MATCH window before reading graph context, as on desktop. *)
+let search_hits_page ~offset ~limit index db query =
+  if limit <= 0 then [], false else
     let limit = min 100 limit in
-    let offset = max 0 offset in
-    let normalized = clean_str query in
-    let normalized = if String_kit.starts_with ~prefix:"#" normalized then
-      String.sub normalized 1 (String.length normalized - 1) else normalized in
-    let run with_fts = Sql.with_search_db index.path (fun connection ->
-      Sqlite3.create_fun1 connection "logseq_search_score" (function
-        | Sqlite3.Data.TEXT title -> Sqlite3.Data.FLOAT (fuzzy_score query title)
-        | _ -> Sqlite3.Data.FLOAT 0.0);
-      let exact = "SELECT id, page, title FROM blocks WHERE title = ? COLLATE NOCASE" in
-      let matched = "SELECT id, page, title FROM blocks_fts WHERE title MATCH ?" in
-      let short = "SELECT id, page, title FROM blocks_fts WHERE title LIKE ?" in
-      let fuzzy = "SELECT id, page, title FROM (SELECT id, page, title FROM blocks WHERE id = page AND lower(title) LIKE ? ESCAPE '\\' LIMIT 400) UNION SELECT id, page, title FROM (SELECT id, page, title FROM blocks WHERE id <> page AND lower(title) LIKE ? ESCAPE '\\' LIMIT 400)" in
-      let parts = [exact, [query]]
-        @ (if with_fts then [matched, [get_match_input query]] else [])
-        @ (if utf8_length query <= 2 then [short, ["%" ^ query ^ "%"]] else [])
-        @ (if normalized = "" then [] else [fuzzy, [fuzzy_like_pattern normalized; fuzzy_like_pattern normalized]]) in
-      let sql = "WITH candidates AS (" ^ String.concat " UNION " (List.map fst parts)
-        ^ ") SELECT id, page, title FROM candidates ORDER BY (id = page) DESC, logseq_search_score(title) DESC, id LIMIT ? OFFSET ?" in
-      let binds = List.concat_map (fun (_, binds) -> List.map (fun s -> Sqlite3.Data.TEXT s) binds) parts
-        @ [Sqlite3.Data.INT (Int64.of_int (limit + 1)); Sqlite3.Data.INT (Int64.of_int offset)] in
-      Sql.query connection sql binds (fun row ->
-        { uuid = Sqlite3.column_text row 0; page_uuid = Sqlite3.column_text row 1;
-          title = Sqlite3.column_text row 2; is_page = Sqlite3.column_text row 0 = Sqlite3.column_text row 1;
-          score = 0.0 })) in
-    let results = try run true with Failure _ -> run false in
+    let results = full_text_rows ~offset ~limit:(limit + 1) index query in
     let rec take n acc = function
       | [] -> List.rev acc, false
       | _ when n = 0 -> List.rev acc, true

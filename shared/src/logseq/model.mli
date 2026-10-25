@@ -612,6 +612,7 @@ val settings_language_by_id :
 val settings_language_choice_selected_ :
   logseq_model -> settings_language_choice -> bool
 val initial : unit -> logseq_model
+val search_query_ready : string -> bool
 val journal_section_key : outline_row -> string option
 val refresh_journal_window :
   outline_row list -> outline_row list -> outline_row list
@@ -688,6 +689,7 @@ val valid_authentication_state_ : string -> bool
 val current_settings : logseq_model -> settings_projection
 val active_page : logseq_model -> sidebar_page option
 val page_can_delete : logseq_model -> string -> bool
+val node_can_set_tags : logseq_model -> string -> bool
 val page_is_favorite_ : logseq_model -> string -> bool
 val page_share_text : sidebar_page -> outline_row list -> string
 val page_share_asset_paths : outline_row list -> string list
