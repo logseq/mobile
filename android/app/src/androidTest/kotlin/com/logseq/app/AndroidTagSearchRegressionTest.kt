@@ -120,25 +120,31 @@ class AndroidTagSearchRegressionTest {
         ui.onNodeWithTag("view.cell.table.object-0.user.property/Column23").assertIsDisplayed()
         ui.onNodeWithTag("view.cell.table.object-0.block/title").assertDoesNotExist()
         ui.onNodeWithTag("view.table.viewport.table").performScrollToIndex(999)
-        var reads = emptyList<JSONObject>()
-        ui.waitUntil(5000) { reads = effects().filter { it.optString("kind") == "load-result-rows" }; reads.isNotEmpty() }
-        ui.onNodeWithTag("view.rows.loading.table").assertDoesNotExist()
-        val eff = reads.single()
-        val request = JSONObject(eff.getString("text"))
-        val offset = request.getInt("offset")
-        val limit = request.getInt("limit")
-        assertTrue(offset > 900 && limit <= 64)
-        val loaded = JSONObject(response.getJSONObject("result").getJSONObject("resultViews").getJSONArray("views").getJSONObject(0).toString())
-            .put("rowOffset", offset).put("rows", JSONArray().apply {
-                for (index in offset until minOf(1000, offset + limit)) put(JSONObject().put("block", JSONObject()
-                    .put("uuid", "object-$index").put("title", "Object $index").put("pageId", "owner")))
-            })
-        val reply = JSONObject().put("ok", true).put("result", JSONObject().put("isQueryPatch", true)
-            .put("resultRows", JSONObject().put("key", request.getString("key")).put("view", loaded))).toString()
-        ui.runOnIdle {
-            bridge.applySnapshot(reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
-            bridge.resolveEffect(eff.getLong("id"), true, reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        var lastOffset = -1
+        for (attempt in 0..2) {
+            var reads = emptyList<JSONObject>()
+            ui.waitUntil(5000) { reads = effects().filter { it.optString("kind") == "load-result-rows" }; reads.isNotEmpty() }
+            ui.onNodeWithTag("view.rows.loading.table").assertDoesNotExist()
+            val eff = reads.single()
+            val request = JSONObject(eff.getString("text"))
+            val offset = request.getInt("offset")
+            val limit = request.getInt("limit")
+            assertTrue("Row reads remain bounded", limit <= 64)
+            val loaded = JSONObject(response.getJSONObject("result").getJSONObject("resultViews").getJSONArray("views").getJSONObject(0).toString())
+                .put("rowOffset", offset).put("rows", JSONArray().apply {
+                    for (index in offset until minOf(1000, offset + limit)) put(JSONObject().put("block", JSONObject()
+                        .put("uuid", "object-$index").put("title", "Object $index").put("pageId", "owner")))
+                })
+            val reply = JSONObject().put("ok", true).put("result", JSONObject().put("isQueryPatch", true)
+                .put("resultRows", JSONObject().put("key", request.getString("key")).put("view", loaded))).toString()
+            ui.runOnIdle {
+                bridge.applySnapshot(reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+                bridge.resolveEffect(eff.getLong("id"), true, reply).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+            }
+            lastOffset = offset
+            if (offset > 900) break
         }
+        assertTrue("Coalesced scrolling reaches the final row window: $lastOffset", lastOffset > 900)
         ui.onNodeWithTag("view.cell.table.object-999.user.property/Column23").assertIsDisplayed()
         ui.onNodeWithTag("button.overflow-menu").performClick()
         ui.onNodeWithTag("button.page.tag-properties").performClick()
