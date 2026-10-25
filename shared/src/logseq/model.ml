@@ -1413,15 +1413,18 @@ let active_page (current : logseq_model) =
        | None -> None)
   end
 
-let page_can_delete (current : logseq_model) uuid =
+let node_permission (current : logseq_model) uuid permission =
   let raw = match List.find_opt (fun (route : node_projection) -> route.node_uuid = uuid) current.node_routes with
     | Some route -> route.node_properties_json
     | None -> if Option.fold ~none:false ~some:(fun (page : sidebar_page) -> page.uuid = uuid) current.selected_page
       then current.properties_json else "" in
   match (try Yojson.Basic.from_string raw with _ -> `Null) with
   | `Assoc fields when List.assoc_opt "ownerUuid" fields = Some (`String uuid) ->
-    List.assoc_opt "canDelete" fields <> Some (`Bool false)
+    List.assoc_opt permission fields <> Some (`Bool false)
   | _ -> true
+
+let page_can_delete current uuid = node_permission current uuid "canDelete"
+let node_can_set_tags current uuid = node_permission current uuid "canAdd"
 
 let page_is_favorite_ (current : logseq_model) uuid =
   List.exists (fun (page : sidebar_page) -> page.uuid = uuid)
@@ -1645,6 +1648,8 @@ let resolve_failed_effect (current : logseq_model) eff message =
     else { current with composer_assets = current.composer_assets @ [asset] }
   | _ -> rollback_navigation_effect current eff
 
+let search_query_ready query = Search_index.utf8_length (String.trim query) > 2
+
 let resolve_successful_effect (current : logseq_model) eff message =
   match eff with
   | MaintainSearchIndexEffect (_, graph_id) ->
@@ -1654,7 +1659,7 @@ let resolve_successful_effect (current : logseq_model) eff message =
       with _ -> false in
     let searching = function SearchNodesEffect _ | LoadSearchPageEffect _ -> true | _ -> false in
     if ready && current.selected_graph_id = Some graph_id
-       && not (String_kit.is_blank current.search_query)
+       && search_query_ready current.search_query
        && not (List.exists searching (current.pending_effects @ current.in_flight_effects))
     then enqueue_effect current (SearchNodesEffect (current.next_effect_id, current.search_query))
     else current
@@ -1958,13 +1963,13 @@ let rec update (current : logseq_model) action =
     else enqueue_effect current (HydrateOutlinerRowsEffect (current.next_effect_id, ids))
   | LoadMoreSearchResults ->
     if not current.search_has_more || current.search_loading || current.search_loading_more
-       || String_kit.is_blank current.search_query then current
+       || not (search_query_ready current.search_query) then current
     else enqueue_effect { current with search_loading_more = true }
       (LoadSearchPageEffect (current.next_effect_id, current.search_query, current.search_result_count))
   | ChangeSearchQuery query when query = current.search_query -> current
   | ChangeSearchQuery query ->
     let pending = remove_search_effects current.pending_effects in
-    if String_kit.is_blank query then
+    if not (search_query_ready query) then
       {
         current with
         search_query = query;

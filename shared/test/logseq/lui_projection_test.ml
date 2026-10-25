@@ -177,7 +177,7 @@ let quick_actions_clear_selection_before_opening_native_recorder () =
 let search_queries_wait_200ms_and_only_dispatch_the_latest_input () =
   ignore (Native_bridge.initialize 2 2 3);
   Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
-    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "ab"));
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "abc"));
     let waiting () =
       let response = Json.from_string (Native_bridge.take_effect ()) in
       Test_util.check ~msg:"a pending query returns a nonblocking wakeup"
@@ -185,13 +185,13 @@ let search_queries_wait_200ms_and_only_dispatch_the_latest_input () =
     in
     waiting ();
     ignore (Unix.select [] [] [] 0.11);
-    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "abc"));
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "abcd"));
     ignore (Unix.select [] [] [] 0.11);
     waiting ();
     ignore (Unix.select [] [] [] 0.11);
     let eff = take_effect () in
     Test_util.check_eq (string_member "kind" eff) (Some "search-nodes");
-    Test_util.check_eq (string_member "text" eff) (Some "abc");
+    Test_util.check_eq (string_member "text" eff) (Some "abcd");
     ignore (Native_bridge.flush_action (Model.ChangeSearchQuery ""));
     Test_util.check_eq (Native_bridge.take_effect ()) "")
 

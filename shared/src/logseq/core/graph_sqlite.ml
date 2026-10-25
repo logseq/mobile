@@ -307,8 +307,7 @@ let ensure_search_schema connection =
        title TEXT NOT NULL, page TEXT)";
       "CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(id, title, \
        page, tokenize=\"trigram\")";
-      "CREATE INDEX IF NOT EXISTS blocks_title_nocase_idx ON blocks(title \
-       COLLATE NOCASE)";
+      "DROP INDEX IF EXISTS blocks_title_nocase_idx";
       "CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN \
        DELETE FROM blocks_fts WHERE id = old.id; END";
       "CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN \

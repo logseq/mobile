@@ -2170,7 +2170,7 @@ let native_search_presentation_extension_contract_is_pinned () =
     ~msg:"search must use a distinct native full-screen navigation contract"
     fingerprint
     (Some
-       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
 
 let liquid_glass_remains_an_ios_local_tweak () =
   let registry = View.extension_registry () in
@@ -7754,6 +7754,63 @@ let search_query_publishes_a_core_effect_and_rejects_stale_results () =
   check ~msg:"the current result ends the loading state"
     (not current.search_loading)
 
+let native_search_waits_for_three_unicode_characters () =
+  let queries = ["", false; "a", false; "ab", false; "abc", true;
+    "中", false; "中文", false; "中文页", true;
+    "😀", false; "😀😀", false; "😀😀😀", true;
+    "éé", false; "ééé", true; "中a", false; "中a😀", true;
+    "   ", false; "  中文  ", false; "  中文页  ", true] in
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    send application (Model.SelectGraph "Work");
+    send application Model.OpenSearch;
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let find id = descendant_with_identifier renderer (main_root renderer application) id in
+    let search = extension_node application "native-search-presentation" in
+    List.iter (fun (query, ready) ->
+      dispatch application (Lui_protocol.ExtensionEvent (search,
+        "native-search-presentation", "query-changed",
+        Lui_protocol.String_map.singleton "query" (Lui_protocol.StringValue query)));
+      flush application;
+      let model = App.model application in
+      let requests = List.filter (function Model.SearchNodesEffect _ -> true | _ -> false)
+        model.pending_effects in
+      check_eq ~msg:("native input preserves the query: " ^ query) model.search_query query;
+      check_eq ~msg:("search waits for three Unicode characters: " ^ query)
+        (List.length requests) (if ready then 1 else 0);
+      check_eq ~msg:("loading starts only for a searchable query: " ^ query)
+        model.search_loading ready;
+      if not ready then (
+        check_eq ~msg:"short queries retain the search entry state"
+          (property_string renderer (find "search.empty") Lui_protocol.TextValue) "Search your graph";
+        check_eq ~msg:"short queries do not claim to have searched"
+          (property_string renderer (find "search.status") Lui_protocol.TextValue) "";
+        check_eq ~msg:"short queries keep the search entry guidance"
+          (property_string renderer (find "search.empty.supporting") Lui_protocol.TextValue)
+          "Find pages and blocks by title or content.")) queries
+  ) [ios_backend; kotlin_backend]
+
+let shortening_search_clears_results_and_queued_requests () =
+  let hit = {Model.hit_uuid = "found"; hit_title = "Found";
+    breadcrumb = ""; breadcrumbs = []; is_page = false} in
+  let queried = Model.update (Model.initial ()) (Model.ChangeSearchQuery "中文页") in
+  let loaded = Model.update queried (Model.ApplySearchResults ("中文页", [hit])) in
+  let loaded = {loaded with pending_effects = loaded.pending_effects @ [Model.RefreshGraphsEffect 99];
+    search_has_more = true; search_loading_more = true} in
+  let shortened = Model.update loaded (Model.ChangeSearchQuery "中文") in
+  check_eq ~msg:"shortening clears old search results" shortened.search_result_pages [];
+  check_eq shortened.search_result_count 0;
+  check ~msg:"shortening resets all loading and pagination state"
+    (not shortened.search_loading && not shortened.search_loading_more && not shortened.search_has_more);
+  check_eq ~msg:"shortening cancels queued search while preserving unrelated work"
+    shortened.pending_effects [Model.RefreshGraphsEffect 99];
+  let stale = Model.update shortened (Model.ApplySearchResults ("中文页", [hit])) in
+  check_eq ~msg:"late results cannot reappear below the threshold" stale.search_result_pages [];
+  let paged = Model.update {shortened with search_has_more = true} Model.LoadMoreSearchResults in
+  check_eq ~msg:"scroll callbacks cannot page a short query" paged.pending_effects shortened.pending_effects
+
 let search_results_render_as_keyed_native_rows () =
   let application = App.create (ios_backend ()) in
   let hit =
@@ -9232,7 +9289,7 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
-    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;
@@ -9305,6 +9362,37 @@ let outliner_rows_render_status_tags_and_sync_failures () =
   flush application;
   check_eq ~msg:"native tag presses retain typed navigation"
     (App.model application).app_navigation_path [Model.NodeRoute "tag-a"]
+
+let existing_outliner_tag_menus_remove_from_the_owning_node () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    start application;
+    let row = { (outline_row "block-a" "Ship it") with
+      Model.tags = [{Model.uuid = "tag-a"; title = "Project"}] } in
+    send application (apply_core_snapshot None (empty_sidebar_projection ()) [] true "" [] []
+      None None [] [] [row] false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = main_root renderer application in
+    let rendered = descendant_with_identifier renderer root "outliner.block.block-a" in
+    let native = native_row application rendered in
+    if native <> -1 then (
+      let payload = native_row_payload application rendered in
+      check_eq ~msg:"the existing native tag offers a removal menu"
+        (Yojson.Basic.Util.member "canRemoveTags" payload) (`Bool true);
+      dispatch application (Lui_protocol.ExtensionEvent (native, "outliner-block-row", "remove-tag",
+        Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "tag-a"))))
+    else (
+      let menu = descendant_with_identifier renderer rendered "button.block-tag.remove.block-a.tag-a" in
+      check ~msg:"the existing tag offers a removal menu on Kotlin" (menu <> -1);
+      dispatch application (Lui_protocol.Press menu));
+    flush application;
+    let payload = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (Yojson.Basic.from_string body)
+      | _ -> None) (App.model application).pending_effects |> Option.get in
+    let open Yojson.Basic.Util in
+    check_eq (member "action" payload) (`String "removeTag");
+    check_eq ~msg:"removal targets the owning block, not the tag page" (member "blockUuid" payload) (`String "block-a");
+    check_eq (member "tagUuid" payload) (`String "tag-a")) [ios_backend; kotlin_backend]
 
 let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   let application = App.create (ios_backend ()) in
@@ -10776,6 +10864,8 @@ let cases =
     case "selected-pages-do-not-render-journal-home-headings" selected_pages_do_not_render_journal_home_headings;
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
+    case "native-search-waits-for-three-unicode-characters" native_search_waits_for_three_unicode_characters;
+    case "shortening-search-clears-results-and-queued-requests" shortening_search_clears_results_and_queued_requests;
     case "native-page-title-waits-for-the-content-heading-to-scroll" native_page_title_waits_for_the_content_heading_to_scroll;
     case "search-uses-regular-list-and-paginates-on-scroll" search_uses_a_regular_list_and_paginates_on_scroll;
     case "search-results-render-as-keyed-native-rows" search_results_render_as_keyed_native_rows;
@@ -10816,6 +10906,7 @@ let cases =
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
+    case "existing-outliner-tags-remove-from-the-owning-node" existing_outliner_tag_menus_remove_from_the_owning_node;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
     case "parent selection highlights visible descendants" parent_selection_highlights_visible_descendants;
     case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;

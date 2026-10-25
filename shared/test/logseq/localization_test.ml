@@ -29,5 +29,43 @@ let native_labels_and_desktop_dictionary_share_the_same_locale () =
     ["Settings", "设置"; "Theme", "主题"; "Auto-correction", "自动更正";
      "Export Graph SQLite DB", "导出图谱数据库"; "Unknown note title", "Unknown note title"]
 
-let cases = [case "localization" language_settings_translate_controls_without_translating_notes;
+let tag_and_property_editors_use_desktop_translations () =
+  List.iter (fun (language, tags, properties, open_named) ->
+    let translate source = Localization.translate ~language ~system_language:"en" source in
+    check_eq (translate "Set tags") tags;
+    check_eq (translate "Tag properties") properties;
+    check_eq (translate "Open {1}") open_named)
+    ["zh-CN", "设置标签", "标签属性", "打开 {1}";
+     "zh-Hant", "設定標籤", "標籤屬性", "開啟 {1}";
+     "ja", "タグを設定", "タグプロパティ", "{1}を開く"]
+
+let builtin_property_titles_use_master_identifiers () =
+  let translate source = Localization.translate ~language:"zh-CN" ~system_language:"en" source in
+  check_eq (translate "property.built-in/assignee") "负责人";
+  check_eq (translate "property.built-in/status") "状态";
+  check_eq (translate "property.built-in/class-properties") "标签属性";
+  let current = { (Model.initial ()) with language = "zh-CN" } in
+  check_eq (View_base.property_title current ~attr:"logseq.property.class/properties" ~title:"Properties") "标签属性";
+  check_eq ~msg:"user property names are not translated"
+    (View_base.property_title current ~attr:"user.property/Status" ~title:"Status") "Status"
+
+let native_search_controls_receive_translated_labels () =
+  List.iter (fun backend ->
+    let app = App.create (backend ()) in
+    start app;
+    send app (Model.SelectGraph "Work");
+    send app (Model.ApplySettingsSnapshot { (settings []) with Model.language = "zh-CN" });
+    send app Model.OpenSearch;
+    flush app;
+    let search = extension_node app "native-search-presentation" in
+    List.iter (fun (name, expected) ->
+      check_eq ~msg:("native search localizes " ^ name)
+        (extension_property app search name) (Some (Lui_protocol.StringValue expected)))
+      ["back-title", "返回"; "close-title", "关闭"; "clear-title", "清空"])
+    [ios_backend; kotlin_backend]
+
+let cases = [case "native search controls receive translated labels" native_search_controls_receive_translated_labels;
+  case "localization" language_settings_translate_controls_without_translating_notes;
+  case "tag and property editors use desktop translations" tag_and_property_editors_use_desktop_translations;
+  case "built-in property titles use master identifiers" builtin_property_titles_use_master_identifiers;
   case "native labels supplement the desktop dictionary" native_labels_and_desktop_dictionary_share_the_same_locale]

@@ -1,4 +1,6 @@
 val tr : Model.logseq_model -> string -> string
+val tr_named : Model.logseq_model -> string -> string -> string
+val property_title : Model.logseq_model -> attr:string -> title:string -> string
 val outliner_node_icon : Model.logseq_model -> Model.outline_row -> string
 val node_icon : Model.logseq_model -> string -> string
 val node_icon_view : ?muted:bool -> size:int -> string Signal.signal -> Lui_elements.t

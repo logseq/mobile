@@ -32,7 +32,7 @@ val related_row_breadcrumbs :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_tag :
-  Model.sidebar_page Signal.signal ->
+  Model.logseq_model Signal.signal -> string -> Model.sidebar_page Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_zoom_control :
   Lui_ui.ui_context ->

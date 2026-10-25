@@ -147,7 +147,13 @@ let completion_refreshes_visible_search () =
   check_eq ~msg:"partial slices do not repeatedly refresh the search UI" partial.pending_effects [];
   let stale = Model.resolve_successful_effect model (Model.MaintainSearchIndexEffect (1, "old-graph"))
     {|{"ok":true,"result":{"searchIndexReady":true}}|} in
-  check_eq ~msg:"old graph completion does not change the new graph search" stale.pending_effects []
+  check_eq ~msg:"old graph completion does not change the new graph search" stale.pending_effects [];
+  List.iter (fun query ->
+    let current = {model with search_query = query} in
+    let complete = Model.resolve_successful_effect current (Model.MaintainSearchIndexEffect (1, "graph"))
+      {|{"ok":true,"result":{"searchIndexReady":true}}|} in
+    check_eq ~msg:("index completion does not search below the Unicode threshold: " ^ query)
+      complete.pending_effects []) [""; "ab"; "中文"; "😀😀"; "  中文  "]
 let cases = [
   case "completed indexing refreshes active search only for the current graph" completion_refreshes_visible_search;
   case "idle native effects automatically build while yielding to interactions" idle_native_drain_builds_and_yields;

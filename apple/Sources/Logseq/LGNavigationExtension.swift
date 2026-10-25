@@ -264,7 +264,7 @@ private struct LGNavigationDestination: View {
 @MainActor
 enum LGSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -273,6 +273,9 @@ enum LGSearchPresentationExtension {
                 fingerprint: fingerprint,
                 acceptsStandardChildren: true,
                 properties: [
+                    .init(name: "back-title", kind: .string),
+                    .init(name: "clear-title", kind: .string),
+                    .init(name: "close-title", kind: .string),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                     .init(name: "presented", kind: .bool, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
@@ -298,14 +301,23 @@ enum LGSearchPresentationExtension {
 @MainActor
 private struct LGSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
+    @State private var nativePresented = false
 
     var body: some View {
         baseContent
-            .fullScreenCover(isPresented: presentedBinding) {
-                LGSearchSession(context: context)
+            .fullScreenCover(isPresented: $nativePresented, onDismiss: didDismiss) {
+                LGSearchSession(context: context, close: closeSearch)
                     .presentationBackground(.background)
             }
-            .transaction(value: presented) { $0.disablesAnimations = true }
+            .onChange(of: presented, initial: true) {
+                if presented {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { nativePresented = true }
+                } else {
+                    closeSearch()
+                }
+            }
     }
 
     private var baseContent: AnyView {
@@ -318,15 +330,20 @@ private struct LGSearchPresentation: View {
         return value
     }
 
-    private var presentedBinding: Binding<Bool> {
-        Binding(get: { presented }, set: { value in
-            if !value { try? context.emit(name: "dismiss", values: [:]) }
-        })
+    private func closeSearch() {
+        var transaction = Transaction(animation: .default)
+        transaction.disablesAnimations = false
+        withTransaction(transaction) { nativePresented = false }
+    }
+
+    private func didDismiss() {
+        if presented { try? context.emit(name: "dismiss", values: [:]) }
     }
 }
 
 private struct LGSearchSession: View {
     let context: LUIAppleExtensionViewContext
+    let close: () -> Void
     @State private var pendingQuery: String?
     #if os(iOS)
     @State private var nativeSearchPresented = true
@@ -375,7 +392,7 @@ private struct LGSearchSession: View {
             .searchable(
                 text: queryBinding,
                 placement: .automatic,
-                prompt: "Search pages and blocks"
+                prompt: Text(searchTitle)
             )
     }
 
@@ -388,7 +405,7 @@ private struct LGSearchSession: View {
                 text: queryBinding,
                 isPresented: nativeSearchPresentedBinding,
                 placement: .automatic,
-                prompt: "Search pages and blocks"
+                prompt: Text(searchTitle)
             )
             .onAppear {
                 nativeSearchPresented = true
@@ -406,7 +423,7 @@ private struct LGSearchSession: View {
                 text: queryBinding,
                 isPresented: nativeSearchPresentedBinding,
                 placement: .toolbar,
-                prompt: "Search pages and blocks"
+                prompt: Text(searchTitle)
             )
             .toolbar {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -416,7 +433,8 @@ private struct LGSearchSession: View {
     private func exitSearch() {
         guard !closing else { return }
         closing = true
-        emitDismiss()
+        pendingQuery = query
+        close()
     }
 
     private var nativeSearchPresentedBinding: Binding<Bool> {
@@ -449,19 +467,22 @@ private struct LGSearchSession: View {
         Binding(
             get: { pendingQuery ?? query },
             set: { newValue in
+                #if os(iOS)
+                guard !closing else { return }
+                #endif
                 // Keep local typing ahead of asynchronous core acknowledgements.
                 pendingQuery = newValue
-                emitQueryChanged(newValue)
+                // Native Cancel also clears its text binding. Let the presentation
+                // binding close first so that event cannot clear the outgoing results.
+                Task { @MainActor in
+                    #if os(iOS)
+                    guard !closing, nativeSearchPresented else { return }
+                    #endif
+                    guard pendingQuery == newValue else { return }
+                    emitQueryChanged(newValue)
+                }
             }
         )
-    }
-
-    private func emitDismiss() {
-        do {
-            try context.emit(name: "dismiss", values: [:])
-        } catch {
-            logger.error("Could not dismiss native search: \(String(describing: error))")
-        }
     }
 
     private func emitQueryChanged(_ query: String) {

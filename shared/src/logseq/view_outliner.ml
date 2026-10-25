@@ -153,7 +153,12 @@ let related_row_breadcrumbs model_source row_source send : t =
           node_breadcrumb_button model_source breadcrumb_source send);
     ]
 
-let outliner_tag tag_source send : t =
+let remove_node_tag current owner tag =
+  Model.SubmitNodeProperty ("tag.remove." ^ owner ^ "." ^ tag,
+    Yojson.Basic.to_string (`Assoc ["blockUuid", `String owner; "action", `String "removeTag";
+      "tagUuid", `String tag; "graphId", `String (Option.value ~default:"" current.Model.selected_graph_id)]))
+
+let outliner_tag model_source owner tag_source send : t =
   let tag = Signal.sample tag_source in
   View_base.with_label_signal
     (Signal.map View_base.outliner_tag_title tag_source)
@@ -165,8 +170,12 @@ let outliner_tag tag_source send : t =
        ~on_press:(fun _ ->
          ignore
            (send
-              (Model.RequestAppNode (Signal.sample tag_source : Model.sidebar_page).uuid)))
-       [])
+              (View_base.request_node_action (Signal.sample model_source)
+                (Signal.sample tag_source : Model.sidebar_page).uuid)))
+       [context_menu [if_ ~test:(Signal.map (fun current -> Model.node_can_set_tags current owner) model_source)
+         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove tag") ~variant:`destructive
+           ~accessibility_identifier:("button.block-tag.remove." ^ owner ^ "." ^ tag.uuid)
+           ~on_press:(fun _ -> ignore (send (remove_node_tag (Signal.sample model_source) owner tag.uuid))) [])]])
 
 let outliner_zoom_control (context : Lui_ui.ui_context) model_source
     row_source send search_open : t =
@@ -404,7 +413,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
                    ~source:
                      (Signal.map View_base.outliner_row_tags row_source)
                    ~key:View_base.outliner_tag_identifier ~cmp:compare
-                   ~mount:(fun tag_source -> outliner_tag tag_source send);
+                   ~mount:(fun tag_source -> outliner_tag model_source current_row.row_uuid tag_source send);
                ]);
           if_ ~test:sync_failed_source
             (text
@@ -454,6 +463,8 @@ let native_outliner_row model_source retained_source row_source send : t =
       "youtubeURL", `String (View_base.outliner_row_youtube_target row);
       "completed", `Bool (View_base.outliner_row_completed_ row);
       "selected", `Bool retained.is_selected;
+      "canRemoveTags", `Bool (Model.node_can_set_tags current row.row_uuid);
+      "removeTagTitle", `String (View_base.tr current "Remove tag");
       "opensAsPage", `Bool row.opens_as_page;
       "journalBullet", `Bool false;
       "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
@@ -473,6 +484,10 @@ let native_outliner_row model_source retained_source row_source send : t =
       (Signal.map View_rows.retained_row_editing_title retained_source)
       (Signal.map View_rows.retained_row_editing_caret retained_source) send])) context (Some node));
   Lui_ui.on_event context node (function
+    | ExtensionEvent (_, _, "remove-tag", values) ->
+      (match String_map.find_opt "uuid" values with
+       | Some (StringValue tag) -> ignore (send (remove_node_tag (Signal.sample model_source) (Signal.sample row_source).row_uuid tag))
+       | _ -> ())
     | ExtensionEvent (_, _, "collapse", _) -> ignore (send (Model.ToggleOutlinerCollapsed (Signal.sample row_source).row_uuid))
     | ExtensionEvent (_, _, "long-press", _) -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))
     | ExtensionEvent (_, _, "set-priority", values) ->

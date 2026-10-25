@@ -534,11 +534,15 @@ let node_property_values_open_select_and_navigate () =
             | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects)) in
         let initial = member "raw" (property R.summary (result (read session owner))) in
         open_select ();
-        if many then click ("view.edit.option." ^ id ^ "." ^ Q.project);
+        let search_project () =
+          App_test.dispatch app (Lui_protocol.TextChanged (find ("view.edit.value." ^ id), "Project"));
+          App_test.flush app in
+        if many then (search_project (); click ("view.edit.option." ^ id ^ "." ^ Q.project));
         click ("view.edit.cancel." ^ id);
         check_eq ~msg:"cancelling selection submits no mutation" (App.model app).pending_effects [];
         check_eq (member "raw" (property R.summary (result (read session owner)))) initial;
         open_select ();
+        search_project ();
         click ("view.edit.option." ^ id ^ "." ^ Q.project);
         if many then click ("view.edit.save." ^ id);
         let eff = List.find (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects in
@@ -649,7 +653,12 @@ let empty_pages_expose_the_add_property_flow () =
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
       let click id = let node = find id in check ~msg:id (node <> -1); App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
       let overflow = match find "button.connection" with -1 -> find "button.overflow-menu" | node -> node in
-      check ~msg:"Add property belongs to the top overflow menu"
+      if owner = Q.project then (
+        check ~msg:"tag properties belong to the top overflow menu"
+          (App_test.descendant_with_identifier host overflow "button.page.tag-properties" <> -1);
+        check_eq ~msg:"tags do not expose the page Add property action" (find ("property.add." ^ owner)) (-1);
+        click "button.page.tag-properties")
+      else check ~msg:"Add property belongs to the top overflow menu"
         (App_test.descendant_with_identifier host overflow ("property.add." ^ owner) <> -1);
       check ~msg:"empty pages have no property controls in their reading content"
         (find ("properties." ^ owner) = -1);

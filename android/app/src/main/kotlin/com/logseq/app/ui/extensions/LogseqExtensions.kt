@@ -85,7 +85,9 @@ private const val NAVIGATION_FINGERPRINT =
 private const val SEARCH_FINGERPRINT =
     "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
-        "properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none," +
+        "properties:10:back-title:string:optional:none,11:clear-title:string:optional:none," +
+        "11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none," +
+        "5:depth:int:required:none,5:query:string:required:none," +
         "5:title:string:required:none,9:presented:bool:required:none|events:" +
         "13:query-changed[5:query:string:required],4:back[5:count:int:required]," +
         "7:dismiss[]"
@@ -231,6 +233,9 @@ fun logseqExtensionRegistry(
         SEARCH_FINGERPRINT,
         acceptsStandardChildren = true,
         properties = listOf(
+            LuiExtensionProperty("back-title", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("clear-title", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("close-title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("query", LuiExtensionValueKind.STRING),
@@ -369,13 +374,13 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                     navigationIcon = {
                         IconButton(onClick = { context.emit("back", "count" to 1) },
                             modifier = Modifier.testTag("button.search.back")) {
-                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, context.string("back-title") ?: "Back")
                         }
                     },
                     actions = {
                         context.children.getOrNull(1)?.let { context.child(it) }
                         IconButton(onClick = { context.emit("dismiss") }) {
-                            Icon(Icons.Filled.Close, "Close search")
+                            Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
                         }
                     },
                 )
@@ -395,14 +400,14 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                         trailingIcon = if (fieldValue.isEmpty()) null else ({
                             IconButton(onClick = { fieldValue = ""; context.emit("query-changed", "query" to "") }) {
-                                Icon(Icons.Filled.Close, "Clear")
+                                Icon(Icons.Filled.Close, context.string("clear-title") ?: "Clear")
                             }
                         }),
                         singleLine = true,
                     )
                     IconButton(onClick = { context.emit("dismiss") },
                         modifier = Modifier.size(48.dp).testTag("button.search.close")) {
-                        Icon(Icons.Filled.Close, "Close search")
+                        Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
                     }
                 }
             }

@@ -195,7 +195,8 @@ let search_property_navigation_stays_in_search () = R.with_runtime (fun session 
 let tag_pages_allow_removing_tags_and_schema_properties () = R.with_runtime (fun session runtime conn ->
   update runtime conn [put Q.project "block/tags" (D.Ref_to (D.Ident "logseq.class/Task"));
     put Q.project "logseq.property.class/properties" (D.Ref_to (D.Ident R.score))];
-  with_ui session Q.project (fun _ find _ ->
+  with_ui session Q.project (fun _ find click ->
+    click "button.page.tag-properties";
     check ~msg:"schema properties offer removal"
       (find ("property.schema.remove." ^ Q.project ^ "." ^ R.score) <> -1));
   let mutate fields = Rpc_test.dispatch_json session "nodeProperty"
@@ -237,19 +238,136 @@ let creation_and_removal_reject_protected_or_invalid_targets () = R.with_runtime
   check_eq ~msg:"invalid operations leave no partial pages or removals"
     (Graph_runtime.pending_operations runtime) before)
 
-let tag_only_pages_expose_removal_controls () = R.with_runtime (fun session runtime conn ->
+let tags_are_managed_together_in_set_tags () = R.with_runtime (fun session runtime conn ->
   update runtime conn (R.entity 220 person "Extra tag" @ [
     put person "block/tags" (D.Ref_to (D.Ident "logseq.class/Tag"));
     put Q.project "block/tags" (D.Ref_to (ref_uuid person))]);
-  with_ui session Q.project (fun _ find _ ->
-    check ~msg:"a page with only tags still exposes tag removal"
-      (find ("property.tag.remove." ^ Q.project ^ "." ^ person) <> -1)))
+  with_ui session Q.project (fun app find click ->
+    check_eq ~msg:"tags are not rendered a second time in the property panel"
+      (find ("property.tag." ^ Q.project ^ "." ^ person)) (-1);
+    check_eq ~msg:"tag links do not offer a separate long-press removal action"
+      (find ("property.tag.remove." ^ Q.project ^ "." ^ person)) (-1);
+    check_eq ~msg:"the menu describes both assigning and removing tags"
+      (App_test.property_string (Lui_app.runtime app) (find "button.page.tags") Lui_protocol.TextValue) "Set tags";
+    click "button.page.tags";
+    let option = "view.edit.option.page.tags." ^ Q.project ^ "." ^ person in
+    check ~msg:"assigned tags stay in the picker so they can be deselected" (find option <> -1);
+    check ~msg:"assigned tags start selected"
+      (App_test.property_bool (Lui_app.runtime app) (find option) Lui_protocol.Selected);
+    click option;
+    click ("view.edit.save.page.tags." ^ Q.project);
+    let payload = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (J.from_string body) | _ -> None)
+      (App.model app).pending_effects |> Option.get in
+    check_eq (member "action" payload) (`String "setTags");
+    check ~msg:"deselecting removes the tag from the submitted selection"
+      (not (List.mem (`String person) (items "selectedValues" payload)))))
+
+let set_tags_replaces_assignments_and_preserves_structural_types () = R.with_runtime (fun session runtime conn ->
+  update runtime conn (R.entity 220 person "Extra tag" @ [
+    put person "block/tags" (D.Ref_to (D.Ident "logseq.class/Tag"));
+    put Q.project "block/tags" (D.Ref_to (ref_uuid person))]);
+  let edit selected created = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "blockUuid", `String Q.project; "action", `String "setTags";
+    "selectedValues", `List (List.map (fun uuid -> `String uuid) selected);
+    "newValues", `List (List.map (fun name -> `String name) created)])) in
+  ignore (N.result (edit [] ["Replacement"]));
+  let db = Graph_runtime.db runtime in
+  let owner = D.entid db "block/uuid" (D.Uuid Q.project) |> Option.get in
+  let replacement = Graph_read.unique_named_uuid true db "Replacement" |> Option.get in
+  let replacement_id = D.entid db "block/uuid" (D.Uuid replacement) |> Option.get in
+  let tag = D.entid db "db/ident" (D.Keyword "logseq.class/Tag") |> Option.get in
+  check_eq ~msg:"one operation can remove, create and assign while preserving the structural Tag type"
+    (List.sort compare (Graph_read.ref_eids db owner "block/tags")) (List.sort compare [tag; replacement_id]);
+  let pending = Graph_runtime.pending_operations runtime in
+  check_eq ~msg:"invalid tag creation rolls back the complete selection"
+    (member "ok" (edit [] ["#Invalid"])) (`Bool false);
+  check_eq (Graph_runtime.pending_operations runtime) pending;
+  ignore (N.result (edit [] []));
+  check_eq ~msg:"clearing all selectable tags is allowed"
+    (Graph_read.ref_eids (Graph_runtime.db runtime) owner "block/tags") [tag];
+  verify_sync runtime conn)
+
+let built_in_pages_cannot_set_tags () = R.with_runtime (fun session runtime conn ->
+  update runtime conn [put Q.page "logseq.property/built-in?" (D.Bool true)];
+  let task = D.entid (Graph_runtime.db runtime) "db/ident" (D.Keyword "logseq.class/Task") |> Option.get
+    |> Graph_read.uuid_for_eid (Graph_runtime.db runtime) |> Option.get in
+  List.iter (fun owner ->
+    with_ui session owner (fun _ find _ ->
+      check_eq ~msg:"built-in pages have no Set tags action" (find "button.page.tags") (-1));
+    let before = Graph_runtime.pending_operations runtime in
+    List.iter (fun action ->
+      check_eq ~msg:"direct requests cannot set tags on built-in pages"
+        (member "ok" (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+          "blockUuid", `String owner; "action", `String action;
+          "selectedValues", `List [`String Q.project]])))) (`Bool false)) ["addTags"; "setTags"];
+    check_eq (Graph_runtime.pending_operations runtime) before) [Q.page; task])
+
+let node_pickers_exclude_values_outside_configured_tags () = R.with_runtime (fun session runtime conn ->
+  configure_nodes runtime conn;
+  update runtime conn [
+    put Q.page node_property (D.Ref_to (ref_uuid Q.beta));
+    put Q.alpha node_property (D.Ref_to (ref_uuid Q.beta))];
+  let check_choices json =
+    let choices = items "filterValues" json in
+    check ~msg:"changing the scope does not make old out-of-scope assignments selectable"
+      (not (List.exists (fun choice -> member "match" choice = `List [`String Q.beta]) choices));
+    check ~msg:"instances of child tags remain selectable"
+      (List.exists (fun choice -> member "match" choice = `List [`String person]) choices) in
+  check_choices (N.property node_property (N.result (N.read session Q.page)));
+  let table = R.find_view R.table_view (R.read session) in
+  check_choices (List.find (fun col -> member "attr" col = `String node_property) (items "columns" table));
+  with_ui session Q.page (fun _ find click ->
+    let expand = "properties.expand." ^ Q.page in
+    if find expand <> -1 then click expand;
+    click ("property.value." ^ Q.page ^ "." ^ node_property);
+    let option uuid = "view.edit.option.property." ^ Q.page ^ "." ^ node_property ^ "." ^ uuid in
+    check_eq ~msg:"the native node picker excludes out-of-scope nodes" (find (option Q.beta)) (-1);
+    check (find (option person) <> -1)))
+
+let tag_properties_are_managed_from_the_overflow_menu () = R.with_runtime (fun session runtime conn ->
+  update runtime conn [put Q.project "logseq.property.class/properties" (D.Ref_to (D.Ident R.score))];
+  with_ui session Q.project (fun _ find click ->
+    let property = "property.schema." ^ Q.project ^ "." ^ R.score in
+    check_eq ~msg:"tag schema properties are absent from the page body" (find property) (-1);
+    check ~msg:"the tag menu offers its properties" (find "button.page.tag-properties" <> -1);
+    click "button.page.tag-properties";
+    check ~msg:"the separate sheet lists existing properties" (find property <> -1);
+    check ~msg:"properties can be removed inside the sheet"
+      (find ("property.schema.remove." ^ Q.project ^ "." ^ R.score) <> -1);
+    click ("property.add." ^ Q.project);
+    check ~msg:"properties can be added inside the sheet" (find ("property.add." ^ Q.project ^ ".sheet") <> -1));
+  with_ui session Q.page (fun _ find _ ->
+    check_eq ~msg:"ordinary pages have no tag schema editor" (find "button.page.tag-properties") (-1)))
+
+let large_tag_pickers_mount_in_pages_without_losing_candidates () = R.with_runtime (fun session runtime conn ->
+  let tag index = Printf.sprintf "83000000-0000-4000-8000-%012d" index in
+  update runtime conn (List.init 500 Fun.id |> List.concat_map (fun index -> R.entity (5000 + index) (tag index)
+    (Printf.sprintf "PerfTag%03d" index) @ [put (tag index) "block/tags" (D.Ref_to (D.Ident "logseq.class/Tag"))]));
+  with_ui session Q.project (fun app find click ->
+    click "button.page.tags";
+    let id = "page.tags." ^ Q.project in
+    let option index = "view.edit.option." ^ id ^ "." ^ tag index in
+    check_eq ~msg:"opening a large picker does not mount every candidate" (find (option 499)) (-1);
+    let input value =
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.edit.value." ^ id), value));
+      App_test.flush app in
+    input "PerfTag499";
+    check ~msg:"search still considers candidates beyond the first mounted page" (find (option 499) <> -1);
+    input "";
+    App_test.dispatch app (Lui_protocol.VisibleRange (find ("view.edit.list." ^ id), 40, 49));
+    App_test.flush app;
+    check ~msg:"scrolling loads the next page of candidates" (find (option 80) <> -1)))
 
 let cases = [
+  case "large tag pickers mount incrementally and search the complete catalog" large_tag_pickers_mount_in_pages_without_losing_candidates;
+  case "node picker scopes exclude previously assigned values" node_pickers_exclude_values_outside_configured_tags;
+  case "tag properties are managed from the overflow menu" tag_properties_are_managed_from_the_overflow_menu;
   case "search property links navigate in the visible stack" search_property_navigation_stays_in_search;
   case "table property editors share node discovery and journal links" tables_share_node_candidates_and_date_navigation;
   case "creation and removal enforce type protections atomically" creation_and_removal_reject_protected_or_invalid_targets;
-  case "tag-only pages expose tag removal" tag_only_pages_expose_removal_controls;
+  case "tags are managed together in Set tags" tags_are_managed_together_in_set_tags;
+  case "Set tags replaces assignments and preserves structural types" set_tags_replaces_assignments_and_preserves_structural_types;
+  case "built-in pages cannot Set tags" built_in_pages_cannot_set_tags;
   case "pasted page refs survive saving and subsequent paste" pasted_page_references_survive_followup_edits;
   case "tags without lookup names appear and open" tags_without_lookup_names_are_selectable_and_navigable;
   case "search result pages retain overflow actions" search_destinations_keep_the_page_menu;
