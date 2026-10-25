@@ -726,7 +726,7 @@ let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
                   ~label:(View_base.tr (Signal.sample model_source) "Sign out actions")
                   ~accessibility_identifier:"toolbar.sign-out"
                   [
-                    button ~variant:`ghost
+                    button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.sign-out.cancel"
                       ~on_press:(press send Model.CancelSignOut)
@@ -751,7 +751,8 @@ let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
           ~value:
             "Sync will pause. Downloaded graphs remain available on this device."
           [];
-        button ~accessibility_identifier:"button.sign-out.cancel"
+        button ~style_class:"cancellation-action"
+          ~accessibility_identifier:"button.sign-out.cancel"
           ~on_press:(press send Model.CancelSignOut)
           ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
         button ~variant:`destructive
@@ -1166,7 +1167,7 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
                   ~label:(View_base.tr (Signal.sample model_source) "Page deletion actions")
                   ~accessibility_identifier:"toolbar.page-delete"
                   [
-                    button ~variant:`ghost
+                    button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.page-delete.cancel"
                       ~on_press:(press send Model.CancelDeleteActivePage)
@@ -1188,7 +1189,8 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
       ~on_dismiss:(press send Model.CancelDeleteActivePage)
       [
         text ~value:(View_base.tr (Signal.sample model_source) "The page will be moved to Recycle.") [];
-        button ~accessibility_identifier:"button.page-delete.cancel"
+        button ~style_class:"cancellation-action"
+          ~accessibility_identifier:"button.page-delete.cancel"
           ~on_press:(press send Model.CancelDeleteActivePage)
           ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
         button ~variant:`destructive

@@ -868,8 +868,8 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
             = Some recycle_eid
        then Ok []
        else if
-         not (Node_title.can_delete db page_eid)
-       then Error "Built-in page cannot be deleted"
+         not (Node_title.can_delete ~now:value.deleted_at db page_eid)
+       then Error "Protected page cannot be deleted"
        else
          let parent =
            match one_value db reference "block/parent" with

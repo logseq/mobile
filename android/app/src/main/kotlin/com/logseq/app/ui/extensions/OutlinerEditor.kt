@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
 // Port of the former _OutlinerEditor Dart implementation.
 //
 // The block title/caret are owned by the OCaml core. Local edits emit
-// text-change (debounced 80ms), Enter emits return, backspace at offset 0
+// text-change (debounced 80ms), the block-creation key emits return, backspace at offset 0
 // emits a structural backspace. Model acknowledgements echo locally
 // published titles — those updates are swallowed so typing is never
 // reverted mid-keystroke.
@@ -328,6 +328,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     return@onPreviewKeyEvent true
                 }
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isShiftPressed) {
+                    if (code && multiline) {
+                        returnAtSelection()
+                        return@onPreviewKeyEvent true
+                    }
                     val start = value.selection.min.coerceIn(0, value.text.length)
                     val end = value.selection.max.coerceIn(start, value.text.length)
                     val title = value.text.replaceRange(start, end, "\n")

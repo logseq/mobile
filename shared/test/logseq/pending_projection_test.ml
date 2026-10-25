@@ -687,6 +687,31 @@ let recycling_pages_hides_descendants_and_preserves_original_location () =
     (Some (Ds.String "a1"));
   check_eq (title recycled "page") "Page"
 
+let journal_deletion_uses_the_recorded_local_day () =
+  let midnight, _ = Unix.mktime { (Unix.localtime 0.) with
+    Unix.tm_year = 199; tm_mon = 0; tm_mday = 1;
+    tm_hour = 0; tm_min = 0; tm_sec = 0; tm_isdst = false } in
+  let midnight = int_of_float (midnight *. 1000.) in
+  let day = Cache_model.journal_day_for_ms midnight in
+  let db = with_tx (base_db ()) [
+    add 1 "block/journal-day" (Ds.Int64 (Int64.of_int day));
+    add 30 "block/uuid" (Ds.Uuid "recycle-page");
+    add 30 "block/title" (Ds.String "Recycle");
+    add 30 "block/name" (Ds.String "recycle");
+    add 30 "logseq.property/built-in?" (Ds.Bool true)
+  ] in
+  List.iter (fun (label, deleted_at, allowed) ->
+    let intent = Ops.Delete_page {Ops.page_uuid = "page"; order = "a0"; deleted_at} in
+    let result = Projection.compile db intent in
+    check_eq ~msg:(label ^ " uses the operation's local date during replay")
+      (Result.is_ok result) allowed;
+    check_eq ~msg:"compiling never mutates the authoritative journal"
+      (value db "page" "logseq.property/deleted-at") None)
+    ["future journal before midnight", midnight - 1, true;
+     "today's journal at midnight", midnight, false;
+     "today's journal before next midnight", midnight + 86399999, false;
+     "past journal after next midnight", midnight + 86400000, true]
+
 let new_tags_can_be_referenced_by_later_pending_edits () =
   let db = base_db () in
   let intent =
@@ -1308,6 +1333,7 @@ let cases =
     case
       "recycling pages hides descendants and preserves original location"
       recycling_pages_hides_descendants_and_preserves_original_location;
+    case "journal deletion uses the recorded local day" journal_deletion_uses_the_recorded_local_day;
     case "new tags can be referenced by later pending edits"
       new_tags_can_be_referenced_by_later_pending_edits;
     case "partial journal creation restores the missing first block"

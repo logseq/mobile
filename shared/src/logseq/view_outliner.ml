@@ -12,7 +12,7 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
          if row.row_uuid = uuid then row.row_display_type else None) current.outliner_rows in
        let special = List.mem display_type [Some "code"; Some "math"] in
        StringValue (if special then Yojson.Basic.to_string (`Assoc [
-         "multiline", `Bool false; "code", `Bool (display_type = Some "code");
+         "multiline", `Bool (display_type = Some "code"); "code", `Bool (display_type = Some "code");
          "emptyPairs", `List [`Assoc ["text", `String "[[]]"; "deleteOffset", `Int 1]]])
          else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "focus-enabled"

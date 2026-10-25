@@ -304,6 +304,27 @@ let protected_page_deletion_never_stages_mutations () =
      "built-in class without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.class/Protected")];
      "built-in property without a flag", [add 1 "db/ident" (Ds.Keyword "logseq.property/protected-test")]]
 
+let today_journal_deletion_never_stages_mutations () =
+  with_store (fun path ->
+    let now = Session_types.now_ms () in
+    let today = Model.journal_day_for_ms now in
+    let database = Ds.db_with [
+      add 1 "block/journal-day" (Ds.Int64 (Int64.of_int today));
+      add 20 "block/uuid" (Ds.Uuid "recycle-page");
+      add 20 "block/title" (Ds.String "Recycle");
+      add 20 "block/name" (Ds.String "recycle");
+      add 20 "logseq.property/built-in?" (Ds.Bool true)
+    ] (base_db "Keep today's content") in
+    let current = Runtime.create path 42 (Ds.conn_from_db database) Runtime.default_options in
+    check ~msg:"today's journal cannot be deleted even through the mutation API"
+      (not (is_ok (Runtime.delete_page current "page" "delete-today" now)));
+    check_eq ~msg:"rejected deletion does not enqueue a durable operation"
+      (Runtime.pending_operations current) [];
+    check_eq ~msg:"rejected deletion preserves the journal"
+      (Graph_read.value (Runtime.db current) 1 "logseq.property/deleted-at") None;
+    check_eq ~msg:"rejected deletion preserves its content"
+      (Graph_read.value (Runtime.db current) 10 "block/title") (Some (Ds.String "Keep today's content")))
+
 let flashcard_review_is_one_atomic_millisecond_operation () =
   with_store (fun path ->
       let now = 1776000000000 in
@@ -1902,6 +1923,7 @@ let cases =
     case "favorites update sidebar and encode the link transaction"
       favorites_update_sidebar_and_encode_the_link_transaction;
     case "protected deletions never stage mutations" protected_page_deletion_never_stages_mutations;
+    case "today journal deletion never stages mutations" today_journal_deletion_never_stages_mutations;
     case "page deletion is optimistic durable and rejects built-ins"
       page_deletion_is_optimistic_durable_and_rejects_built_ins;
     case "flashcard review is one atomic millisecond operation"

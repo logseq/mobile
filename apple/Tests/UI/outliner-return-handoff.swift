@@ -117,23 +117,30 @@ struct ReturnHandoffCheck {
             print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text; returns=\(model.returns) expected=\(beforeRapid + 1) title=\(model.title.debugDescription) caret=\(editor().selectedRange.location)"); failures += 1
         }
         for code in [true, false] {
-            model.inputPolicy = "{\"multiline\":false,\"code\":\(code)}"
+            model.inputPolicy = "{\"multiline\":\(code),\"code\":\(code)}"
             model.title = "x^2"; model.blockID = code ? "code" : "math"; model.caret = 3
             await settle()
             let beforeReturn = model.returns
             type("\n", in: editor())
             await settle()
+            if code {
+                if model.returns != beforeReturn || model.title != "x^2\n" {
+                    print("FAIL: Enter in Code and Calculator must insert a newline"); failures += 1
+                }
+                shiftEnter()
+                await settle()
+            }
             if model.returns != beforeReturn + 1 || !model.title.isEmpty {
-                print("FAIL: Enter in Code and Math must create a new block"); failures += 1
+                print("FAIL: Shift+Enter in Code and Calculator, and Enter in Math, must create a new block"); failures += 1
             }
             model.title = "🙂alpha beta"; model.blockID += "-newline"; model.caret = 12
             await settle()
             editor().selectedRange = NSRange(location: 2, length: 5)
             let beforeNewline = model.returns
-            shiftEnter()
+            if code { type("\n", in: editor()) } else { shiftEnter() }
             await settle()
             if model.returns != beforeNewline || model.title != "🙂\n beta" || editor().selectedRange.location != 3 {
-                print("FAIL: Shift+Enter in Code and Math must replace the selected text with a newline"); failures += 1
+                print("FAIL: the newline key must replace a UTF-16 selection inside Code and Math"); failures += 1
             }
         }
         model.inputPolicy = "{}"

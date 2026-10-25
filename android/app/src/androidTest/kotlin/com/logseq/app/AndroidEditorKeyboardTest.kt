@@ -20,7 +20,7 @@ class AndroidEditorKeyboardTest {
     private lateinit var backend: LuiBackend
     private var generation = 1
 
-    private fun render(title: String): SemanticsNodeInteraction {
+    private fun render(title: String, inputPolicy: String = "{}"): SemanticsNodeInteraction {
         val registry = logseqExtensionRegistry { it }
         backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray().put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
@@ -28,7 +28,7 @@ class AndroidEditorKeyboardTest {
                 .put("fingerprint", registry.registration("outliner-editor")!!.fingerprint))
             .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 2).put("index", 0))
         mapOf("block-id" to "keyboard-block", "title" to title, "caret-utf16-offset" to title.length,
-            "selection-revision" to 0, "input-policy" to "{}").forEach { (name, value) ->
+            "selection-revision" to 0, "focus-enabled" to true, "input-policy" to inputPolicy).forEach { (name, value) ->
             ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2).put("property", name).put("value", value))
         }
         assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString()))
@@ -148,6 +148,32 @@ class AndroidEditorKeyboardTest {
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" } }
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
+    @Test fun codeEnterInsertsLinesAndShiftEnterCreatesOneBlock() {
+        val editor = render("6*7", """{"code":true,"multiline":true}""")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.assertTextEquals("6*7\n")
+        editor.performTextInput("last*3\n")
+        editor.assertTextEquals("6*7\nlast*3\n")
+        ui.runOnIdle { assertFalse(events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" }) }
+        editor.performKeyInput { keyDown(Key.ShiftLeft); pressKey(Key.Enter); keyUp(Key.ShiftLeft) }
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" } }
+        ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
+    }
+
+    @Test fun codeShiftEnterReplacesUnicodeSelectionAndPreservesHandoffTyping() {
+        val editor = render("Hello 中文 📝 world", """{"code":true,"multiline":true}""")
+        editor.performTextInputSelection(TextRange(11, 6))
+        editor.performKeyInput { keyDown(Key.ShiftRight); pressKey(Key.Enter); keyUp(Key.ShiftRight) }
+        ui.runOnIdle {
+            val split = events.filterIsInstance<LuiEvent.Extension>().single { it.name == "return" }
+            assertEquals("Hello  world", split.values["title"])
+            assertEquals(6, split.values["caret-utf16-offset"])
+        }
+        editor.performTextInput("Next")
+        acknowledge("next-block", " world", 0)
+        ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("Next world")
+    }
+
     @Test fun savedWritingAssistanceFlagsReachTheNativeKeyboardAndUpdateWithoutLosingSelection() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = context.getSharedPreferences("logseq", android.content.Context.MODE_PRIVATE)

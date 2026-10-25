@@ -96,7 +96,40 @@ let native_search_controls_receive_translated_labels () =
       ["back-title", "返回"; "close-title", "关闭"; "clear-title", "清空"])
     [ios_backend; kotlin_backend]
 
-let cases = [case "native search controls receive translated labels" native_search_controls_receive_translated_labels;
+let confirmation_cancel_actions_are_semantic_and_localized () =
+  List.iter (fun backend -> List.iter (fun language ->
+    List.iter (fun (identifier, request) ->
+      let app = App.create (backend ()) in
+      let local = graph "local" "Local graph" false true in
+      start app;
+      send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+        graphs = [local]; selected_graph_id = Some "local";
+        sidebar = { (empty_sidebar_projection ()) with
+          selected_page = Some {Model.uuid = "page"; title = "Project"} } });
+      send app (Model.ApplyLocalGraphIds ["local"]);
+      send app (Model.ApplySettingsSnapshot { (settings []) with Model.language = language });
+      send app request;
+      flush app;
+      let runtime = Lui_app.runtime app in
+      let cancel = descendant_with_identifier runtime (Lui_app.root_node app) identifier in
+      check ~msg:("dialog exposes its cancellation action: " ^ identifier) (cancel <> -1);
+      check_eq ~msg:"cancel labels remain localized"
+        (property_string runtime cancel Lui_protocol.TextValue)
+        (Localization.translate ~language ~system_language:"en" "Cancel");
+      check ~msg:"native cancellation is explicit rather than inferred from translated text"
+        (String.split_on_char ' ' (property_string runtime cancel Lui_protocol.StyleClass)
+         |> List.mem "cancellation-action");
+      dispatch app (Lui_protocol.Press cancel); flush app;
+      check_eq ~msg:"cancelling never deletes a graph or page"
+        (List.filter (function Model.DeleteLocalGraphEffect _ | Model.DeletePageEffect _ -> true | _ -> false)
+          (App.model app).pending_effects) [])
+      ["button.graph-delete.cancel", Model.RequestDeleteGraph "local";
+       "button.page-delete.cancel", Model.RequestDeleteActivePage;
+       "button.sign-out.cancel", Model.RequestSignOut])
+    ["en"; "zh-CN"; "ja"]) [ios_backend; kotlin_backend]
+
+let cases = [case "confirmation cancel actions are semantic and localized" confirmation_cancel_actions_are_semantic_and_localized;
+  case "native search controls receive translated labels" native_search_controls_receive_translated_labels;
   case "localization" language_settings_translate_controls_without_translating_notes;
   case "tag and property editors use desktop translations" tag_and_property_editors_use_desktop_translations;
   case "property titles preserve graph names" property_titles_preserve_graph_names;

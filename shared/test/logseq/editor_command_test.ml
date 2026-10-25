@@ -431,8 +431,8 @@ let code_commands_update_the_active_editor_style () =
         | Some (Lui_protocol.StringValue value) -> J.from_string value | _ -> `Null in
       check_eq ~msg:"Code, Calculator and Math commands immediately select their editor presentation"
         (member "code" policy) (`Bool (label <> "Math block"));
-      check_eq ~msg:"Enter submits a new block while Shift+Enter remains an explicit line break"
-        (member "multiline" policy) (`Bool false))))
+      check_eq ~msg:"Enter inserts a line break in Code and Calculator while Math creates a block"
+        (member "multiline" policy) (`Bool (label <> "Math block")))))
     ["Code block"; "Calculator"; "Math block"]) [App_test.ios_backend; App_test.kotlin_backend]
 
 let calculator_last_tracks_successful_lines () = R.with_runtime (fun session _ _ ->
