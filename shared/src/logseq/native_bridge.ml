@@ -310,6 +310,9 @@ let encode_effect (eff : Model.logseq_effect) =
   | LoadSearchPageEffect (id, query, offset) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "load-search-page";
       "text", `String query; "value", `Int offset])
+  | MaintainSearchIndexEffect (id, graph_id) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"maintain-search-index\",\"text\":"
+    ^ Lui_wire.quoted graph_id ^ "}"
   | SearchNodesEffect (id, query) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"search-nodes\",\"text\":" ^ Lui_wire.quoted query ^ "}"
@@ -448,7 +451,17 @@ let encode_effect_dispatch eff patch =
   "{\"effect\":" ^ encode_effect eff ^ ",\"patch\":"
   ^ Lui_wire.quoted patch ^ "}"
 
+let search_index_source = ref (fun () -> None)
+let set_search_index_source source = search_index_source := source
+
 let take_effect () =
+  let current = App.model (app ()) in
+  let () =
+    if current.pending_effects = [] && current.in_flight_effects = [] then
+      match !search_index_source () with
+      | Some graph_id when current.selected_graph_id = Some graph_id ->
+        ignore (flush_action (Model.RequestSearchIndexMaintenance graph_id))
+      | _ -> () in
   let effects = (App.model (app ())).pending_effects in
   let independent = function
     | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ -> true

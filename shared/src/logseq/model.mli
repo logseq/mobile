@@ -294,6 +294,7 @@ type logseq_effect =
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
   | SetOutlinerTaskPriorityEffect of int * string * task_status option
+  | MaintainSearchIndexEffect of int * string
   | SearchNodesEffect of int * string
   | LoadSearchPageEffect of int * string * int
   | LoadPageReferencesEffect of int * string
@@ -501,6 +502,7 @@ type logseq_action =
   | SendComposer
   | StageComposerAsset of composer_asset
   | RemoveComposerAsset of string
+  | RequestSearchIndexMaintenance of string
   | DequeueEffect of int
   | ResolveEffect of int * bool * string
   | ResolveAssetPreview of string * string

@@ -751,6 +751,20 @@ let dispatch_outliner_event session payload =
              if operations = [] then context
              else project_outliner_operations context operations
            in
+           let projected = match operations, query_db session with
+             | _ :: _, Some db ->
+               let changed = Hashtbl.create 8 in
+               List.iter (fun (op : Ops.pending_operation) ->
+                 List.iter (fun uuid -> Hashtbl.replace changed uuid ())
+                   (Ops.affected_uuids db op.intent)) operations;
+               {projected with Outliner.db = Some db;
+                 blocks = List.map (fun (block : Model.block) ->
+                   if not (Hashtbl.mem changed block.uuid) then block else
+                   match Datascript.entid db "block/uuid" (Datascript.Uuid block.uuid) with
+                   | Some id -> (match Graph_read.value db id "block/title" with
+                       | Some (Datascript.String title) -> {block with title} | _ -> block)
+                   | None -> block) projected.blocks}
+             | _ -> projected in
            let projected =
              refresh_reference_metadata session aggregate projected
                operations
@@ -2226,6 +2240,14 @@ let rec dispatch session action payload =
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
       "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
       "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
+  | "maintainSearchIndex" -> object_action (fun _ fields ->
+    match Rpc.required_string fields "graphId" with
+    | Ok graph_id ->
+      let ready = match s.config, h.Types.graph_maintain_search_index with
+        | Some config, Some maintain when config.Api.graph_id = graph_id -> maintain graph_id
+        | _ -> false in
+      success session (`Assoc ["searchIndexReady", `Bool ready])
+    | Error message -> Rpc.failure "invalid_search_maintenance" message)
   | "composerTags" -> composer_tags session
   | "sendTagged" -> object_action (send_tagged session)
   | "send" -> send_message session payload

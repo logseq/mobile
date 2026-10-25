@@ -119,6 +119,18 @@ let search (host : mobile_graph) query =
   | Some opened -> Runtime.search opened.read_runtime query
   | None -> []
 
+let pending_search_index (host : mobile_graph) =
+  match !(host.current) with
+  | Some opened when Runtime.search_index_pending opened.read_runtime -> Some opened.graph_id
+  | _ -> None
+
+let maintain_search_index (host : mobile_graph) graph_id =
+  match !(host.current) with
+  | Some opened when opened.graph_id = graph_id ->
+    Runtime.refresh_search opened.read_runtime;
+    (Runtime.state opened.read_runtime).search_index_is_fresh
+  | _ -> false
+
 let due_flashcards (host : mobile_graph) now =
   match !(host.current) with
   | Some opened -> Runtime.due_flashcards opened.read_runtime now

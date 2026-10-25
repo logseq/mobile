@@ -75,6 +75,7 @@ val tag_pages :
   (string -> (string, string) result) ->
   Datascript.db ->
   Cache_model.entity_summary list
+val tag_available_for_completion : Datascript.db -> int -> bool
 val node_is_tag : Datascript.db -> string -> bool
 val node_is_property : Datascript.db -> string -> bool
 val unique_named_uuid : bool -> Datascript.db -> string -> string option

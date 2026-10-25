@@ -564,8 +564,11 @@ let value_sheet owner feature view model_source send item property close =
     | _ -> column in
   let open_node = if jfield "attr" property <> `String "block/title" then None else Option.map (fun uuid ->
     (if Option.fold ~none:false ~some:(fun block -> block.row.Model.opens_as_page) item.block then "Open page" else "Open node"),
-    (fun () -> ignore (send (Model.RequestAppNode uuid)))) item.uuid in
-  property_editor ?open_node ~id:view.id ~column
+    (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid)))) item.uuid in
+  let open_nodes = List.map (fun reference -> let uuid = jtext (jfield "uuid" reference) in
+    uuid, "Open “" ^ jtext (jfield "title" reference) ^ "”", (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
+    (jlist (jfield "references" property)) in
+  property_editor ?open_node ~open_nodes ~id:view.id ~column
     ~submit:(fun fields -> ignore (send (Model.SubmitResultView (view.id,
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close
@@ -655,7 +658,7 @@ let collection_json ~render_block model_source parsed send : t =
           button ~text:value ~label ~text_alignment:`start ~variant:`ghost ~style_class:"single-line"
             ~width ~min_height:48 ~corner_radius:0 ~padding_horizontal:12
             ~accessibility_identifier:identifier ~on_press:(fun _ -> Option.iter (fun uuid ->
-              ignore (send (Model.RequestAppNode uuid))) item.uuid) []
+              ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) item.uuid) []
         else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
           ~accessibility_identifier:identifier []) (choices view))))
         (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) row_context parent in
@@ -664,7 +667,7 @@ let collection_json ~render_block model_source parsed send : t =
       (dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
         ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid) [
         button ~text:item.title ~text_alignment:`start ~variant:`ghost ~min_height:44
-          ~on_press:(fun _ -> Option.iter (fun uuid -> ignore (send (Model.RequestAppNode uuid))) item.uuid) [];
+          ~on_press:(fun _ -> Option.iter (fun uuid -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) item.uuid) [];
         column ~gap:8 (choices view |> List.filter (fun col -> jfield "attr" col <> `String "block/title")
           |> List.map (fun col -> let property = cell view item (jtext (jfield "attr" col)) in
             row ~gap:12 ~main:`space_between [text ~value:(jtext (jfield "title" col)) ~foreground:"muted-foreground" ~style_class:"caption" [];

@@ -364,7 +364,7 @@ let property_value_attrs db (value : Ops.pending_property_value) =
 let create_attrs db uuid title created_at =
   let attrs = [ ("block/uuid", Ds.One_value (Ds.Uuid uuid))
   ; ( "block/name"
-    , Ds.One_value (Ds.String (String.lowercase_ascii title)) )
+    , Ds.One_value (Ds.String (Node_title.name title)) )
   ; ("block/title", Ds.One_value (Ds.String title))
   ; ("block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
   ; ("block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
@@ -659,6 +659,27 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
            (subtree db roots))
   | Ops.Create_page value ->
     if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then Ok []
+    else if String.contains value.title '/' && not (Dev_query.Date_time_util.valid_journal_title value.title) then
+      let parts = String.split_on_char '/' value.title |> List.map Dev_query.Unicode.trim in
+      if List.exists ((=) "") parts then Error "Enter a valid page path" else
+      let rec create db parent reversed = function
+        | [] -> Ok (List.rev reversed)
+        | title :: rest ->
+          let existing = Ds.Db.datoms db Ds.Avet ~a:"block/name" ~v:(Ds.String (Node_title.name title)) ()
+            |> Seq.filter (fun (d : Ds.datom) -> not (Graph_read.page_is_hidden db d.e)
+              && Graph_read.ref_eids db d.e "block/parent" = Option.to_list parent)
+            |> List.of_seq in
+          match existing with
+          | [d] -> create db (Some d.Ds.e) reversed rest
+          | _ :: _ -> Error "Multiple pages share this path"
+          | [] ->
+            let uuid = if rest = [] then value.uuid else match Ds.squuid () with Ds.Uuid uuid -> uuid | _ -> assert false in
+            let attrs = create_attrs db uuid title value.created_at @
+              (match parent with None -> [] | Some id -> ["block/parent", Ds.One_value (Ds.Ref id)]) in
+            let tx = entity_tx (Ds.Temp_id ("pending/" ^ uuid)) attrs in
+            let db = Ds.db_with [tx] db in
+            create db (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (tx :: reversed) rest in
+      create db None [] parts
     else
       Ok
         [
@@ -874,7 +895,7 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
            | _ -> []
          in
          Ok
-           [
+           ([
              entity_tx
                (lookup value.page_uuid)
                ([
@@ -888,7 +909,17 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
                 ]
                 @ parent
                 @ order);
-           ])
+           ] @ (subtree db [page_eid] |> List.concat_map (fun target ->
+             List.concat_map (fun (attr, (spec : Ds.schema_attr)) ->
+               if spec.value_type <> Some Ds.RefType || not
+                 (String.starts_with ~prefix:"user.property/" attr
+                  || List.mem attr ["block/tags"; "block/alias"]
+                  || (String.starts_with ~prefix:"logseq.property/" attr &&
+                    match Ds.entid db "db/ident" (Ds.Keyword attr) with
+                    | Some id -> Graph_read.value db id "logseq.property/public?" = Some (Ds.Bool true)
+                    | None -> false)) then [] else
+               Datascript_value.datoms_by_ref db Ds.Aevt attr target |> Seq.map (fun (d : Ds.datom) ->
+                 Ds.Retract (Ds.Entity_id d.e, attr, Some d.v)) |> List.of_seq) db.Ds.schema))))
 
 let compile db intent =
   let literal_blocks = Hashtbl.create 8 in

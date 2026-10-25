@@ -25,7 +25,12 @@ internal class CoreEffectExecutor(
             if (effect.kind == "refresh-graphs") return resolution(GraphCatalogClient(callCore).refresh())
             val request = request(effect)
             val response = callCore(request.toString())
-            resolution(response)
+            val resolved = resolution(response)
+            if (effect.kind == "maintain-search-index" && resolved is NativeEffectResolution.CoreResponse) {
+                NativeEffectResolution.Discard(succeeded = true, message = response)
+            } else {
+                resolved
+            }
         } catch (error: Throwable) {
             NativeEffectResolution.Failure(error.toString())
         }

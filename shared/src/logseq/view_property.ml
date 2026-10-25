@@ -99,9 +99,14 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
   let owners = own (Signal.map (fun json -> let owner = text (field "ownerUuid" json) in
-    if owner = "" || (list (field "properties" json) = [] && (compact || list (field "schemaProperties" json) = [])) then [] else [owner]) source) in
+    if owner = "" || (list (field "properties" json) = [] &&
+      (compact || (list (field "schemaProperties" json) = [] && list (field "tags" json) = []))) then [] else [owner]) source) in
   (keyed ~source:owners ~key:Fun.id ~cmp:String.compare ~mount:(fun owner_source ->
     let owner = Signal.sample owner_source in
+    let remove identifier fields = menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove") ~variant:`destructive
+      ~accessibility_identifier:identifier
+      ~on_press:(fun _ -> ignore (send (Model.SubmitNodeProperty (identifier,
+        J.to_string (`Assoc (("blockUuid", `String owner) :: fields)))))) [] in
     let expanded = Signal.state context.ui_scheduler false in
     let all_properties = own (Signal.map (fun json -> list (field "properties" json)) source) in
     let properties = own (Signal.map2 (fun values expanded ->
@@ -112,6 +117,16 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
       else column ~gap:2 ~padding_horizontal:16 ~margin_bottom:12 ~cross:`stretch
         ~accessibility_identifier:("properties." ^ owner) children in
     View_base.with_string_prop Lui_protocol.FontSize (if compact then "14" else "16") (layout [
+      (if compact then box [] else keyed ~source:(own (Signal.map (fun json -> list (field "tags" json)) source))
+        ~key:(fun tag -> text (field "uuid" tag)) ~cmp:String.compare ~mount:(fun tag_source ->
+          let tag = Signal.sample tag_source in
+          let uuid = text (field "uuid" tag) in
+          button ~text:("#" ^ text (field "title" tag)) ~variant:`ghost ~text_alignment:`start ~min_height:44
+            ~accessibility_identifier:("property.tag." ^ owner ^ "." ^ uuid)
+            ~on_press:(fun _ -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid)))
+            [context_menu [if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
+              (remove ("property.tag.remove." ^ owner ^ "." ^ uuid)
+                ["action", `String "removeTag"; "tagUuid", `String uuid])]]));
       keyed ~source:properties ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
         ~mount:(fun property_source -> fun context parent ->
           let own source = Signal.own_signal context.ui_scope source in
@@ -167,8 +182,8 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                     ~min_height:(if compact then 28 else 44)
                     ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr ^ (if index = 0 then "" else "." ^ uuid))
                     ~on_press:(fun _ -> if field "editable" property = `Bool true then edit ()
-                      else ignore (send (Model.RequestAppNode uuid)))
-                    ~on_long_press:(fun _ -> ignore (send (Model.RequestAppNode uuid))) []) references)) property_source in
+                      else ignore (send (View_base.request_node_action (Signal.sample model_source) uuid)))
+                    ~on_long_press:(fun _ -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) []) references)) property_source in
           let checkbox_value = checkbox ~foreground:"muted-foreground" ~width:32 ~height:32
             ~checked_signal:(Signal.value checked)
             ~disabled_signal:(own (Signal.map2 (fun property model -> field "editable" property <> `Bool true || List.exists (function
@@ -199,7 +214,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
               (dyn (function None -> box [] | Some property ->
                 let open_nodes = List.map (fun reference ->
                   let uuid = text (field "uuid" reference) in
-                  uuid, "Open “" ^ text (field "title" reference) ^ "”", (fun () -> ignore (send (Model.RequestAppNode uuid))))
+                  uuid, "Open “" ^ text (field "title" reference) ^ "”", (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
                   (list (field "references" property)) in
                 View_query.property_editor ~open_nodes ~id ~column:property
                 ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
@@ -218,6 +233,11 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             Lui_elements.text ~value:(View_base.tr (Signal.sample model_source) "Tag properties") ~foreground:"muted-foreground" ~style_class:"callout" [];
             keyed ~source:(own (Signal.map (fun json -> list (field "schemaProperties" json)) source))
               ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare ~mount:(fun property_source ->
-                Lui_elements.text ~value_signal:(own (Signal.map (fun property -> text (field "title" property)) property_source))
-                  ~min_height:32 ~accessibility_identifier:("property.schema." ^ owner ^ "." ^ text (field "attr" (Signal.sample property_source))) [])]));
+                let attr = text (field "attr" (Signal.sample property_source)) in
+                row ~cross:`center [
+                  Lui_elements.text ~value_signal:(own (Signal.map (fun property -> text (field "title" property)) property_source))
+                    ~grow:1.0 ~min_height:44 ~accessibility_identifier:("property.schema." ^ owner ^ "." ^ attr) [];
+                  if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
+                    (menu ~icon:(`app "more-horiz") ~label:(View_base.tr (Signal.sample model_source) "Property actions")
+                      [remove ("property.schema.remove." ^ owner ^ "." ^ attr) ["action", `String "remove"; "attr", `String attr]])]) ]));
     ]))) context parent

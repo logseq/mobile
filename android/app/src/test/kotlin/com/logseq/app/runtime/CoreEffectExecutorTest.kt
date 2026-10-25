@@ -8,6 +8,20 @@ import org.junit.Test
 
 class CoreEffectExecutorTest {
     @Test
+    fun `index maintenance completes without replacing the UI snapshot`() = runBlocking {
+        val response = """{"apiVersion":1,"ok":true,"result":{"searchIndexReady":true}}"""
+        val executor = CoreEffectExecutor(
+            callCore = { response },
+            executePlatformEffect = NativeEffectExecutor { error("Unexpected platform effect") },
+            executeGraphEffect = NativeEffectExecutor { error("Unexpected graph effect") },
+        )
+        val resolution = executor.execute(NativeEffect(id = 1, kind = "maintain-search-index", text = "graph"))
+        assertTrue(resolution.succeeded)
+        assertTrue(resolution is NativeEffectResolution.Discard)
+        assertEquals(response, resolution.message)
+    }
+
+    @Test
     fun `automatic pending sync reaches the platform upload pump`() = runBlocking {
         val kinds = mutableListOf<String>()
         val executor = CoreEffectExecutor(

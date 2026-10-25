@@ -7016,14 +7016,14 @@ let app_and_search_routes_are_retained_by_distinct_native_stacks () =
   check_eq ~msg:"the app stack retains chrome, its root, and app route"
     (List.length app_children) 7;
   check_eq
-    ~msg:"search retains the app surface, search root, editor chrome, and search route"
-    (List.length search_children) 4;
+    ~msg:"search retains its app surface, search root, editor chrome, page menu, and search route"
+    (List.length search_children) 5;
   check ~msg:"the app route remains behind the search presentation"
     (descendant_with_identifier renderer (List.nth app_children 6)
        "outliner.block.app-child"
     <> -1);
   check ~msg:"the search route is retained only by the search stack"
-    (descendant_with_identifier renderer (List.nth search_children 3)
+    (descendant_with_identifier renderer (List.nth search_children 4)
        "outliner.block.search-child"
     <> -1)
 

@@ -87,10 +87,15 @@ public final class LogseqCore {
               let requestJSON = String(data: data, encoding: .utf8) else {
             return ""
         }
+        var maintenance = request.params.action == "maintainSearchIndex"
+        if request.params.action == "executeEffect", let payload = request.params.payload,
+           let effect = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] {
+            maintenance = effect["kind"] as? String == "maintain-search-index"
+        }
         return await LogseqCoreExecutor.shared.call(
             { request in LogseqCore.shared.logseq_call(request) },
             requestJSON: requestJSON,
-            priority: .interaction
+            priority: maintenance ? .maintenance : .interaction
         )
     }
 

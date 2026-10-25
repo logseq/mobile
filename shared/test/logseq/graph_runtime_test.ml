@@ -752,7 +752,14 @@ let existing_inserts_remain_confirmed_after_later_title_changes () =
     (not
        (Pending.committed_despite_later_changes 42 (Ds.empty_db ~schema ()) op))
 
-let with_search_runtime db f =
+let finish_search runtime =
+  let rec loop remaining =
+    if (Runtime.state runtime).search_index_is_fresh then ()
+    else if remaining = 0 then fail "Search maintenance did not complete"
+    else (Runtime.refresh_search runtime; loop (remaining - 1)) in
+  loop 5000
+
+let with_search_runtime ?(indexed = true) db f =
   with_store (fun path ->
       let search_path = Filename.temp_file "logseq-runtime-search" ".sqlite" in
       let conn = Ds.conn_from_db db in
@@ -764,6 +771,7 @@ let with_search_runtime db f =
               search_index_path = Some search_path;
             }
         in
+        if indexed then finish_search current;
         f search_path conn current;
         remove_if_exists search_path;
         remove_if_exists (search_path ^ "-shm");
@@ -780,6 +788,7 @@ let persisted_search_reopens_without_a_full_graph_refresh () =
     let conn = Ds.conn_from_db stored in
     let options = { Runtime.default_options with search_index_path = Some search_path } in
     let current = Runtime.create current.path 42 conn options in
+    finish_search current;
     ignore (Runtime.search current "Old");
     check (is_ok (Runtime.stage current (save_title "persist-search" "Old" "Pending")));
     let reopen () = Runtime.create current.path 42
@@ -793,6 +802,7 @@ let persisted_search_reopens_without_a_full_graph_refresh () =
     let changed = reopen () in
     check ~msg:"a changed storage tail invalidates the persisted index"
       (not (Runtime.state changed).search_index_is_fresh);
+    finish_search changed;
     ignore (Runtime.search changed "Pending");
     check (Runtime.state changed).search_index_is_fresh;
     let clean = reopen () in
@@ -803,6 +813,7 @@ let incomplete_search_index_is_not_reused_after_restart () =
     let stored = Ds.store ~storage:(Store.storage current.path) (base_db "Old") in
     let options = { Runtime.default_options with search_index_path = Some search_path } in
     let current = Runtime.create current.path 42 (Ds.conn_from_db stored) options in
+    finish_search current;
     ignore (Runtime.search current "Old");
     Graph_sqlite.with_search_db search_path (fun connection ->
       ignore (Sqlite3.exec connection
@@ -814,6 +825,7 @@ let incomplete_search_index_is_not_reused_after_restart () =
       (not (Runtime.state reopened).search_index_is_fresh);
     Graph_sqlite.with_search_db search_path (fun connection ->
       ignore (Sqlite3.exec connection "DROP TRIGGER reject_search_update"));
+    finish_search reopened;
     check (List.exists (fun hit -> hit.Search.uuid = "block") (Runtime.search reopened "Pending")))
 
 let search_index_incrementally_follows_edits_and_splits () =
@@ -880,6 +892,7 @@ let unavailable_search_index_preserves_projection_and_recovers () =
              Sys.rename backup search_path;
              raise e);
           Sys.rename backup search_path;
+          finish_search current;
           check
             (List.exists
                (fun hit -> hit.Search_index.uuid = "block")

@@ -46,6 +46,8 @@ let request ~now ~fresh_id payload =
     | "load-page-references" -> raw "loadPageReferences"
     | "hydrate-outliner-rows" -> raw "hydrateOutlinerRows"
     | "search-nodes" -> raw "searchNodes"
+    | "maintain-search-index" -> let* graph_id = text () in
+      json "maintainSearchIndex" ["graphId", `String graph_id]
     | "load-search-page" -> let* query = text () in let* offset = integer fields "value" in
       json "searchNodesPage" ["query", `String query; "offset", `Int offset]
     | "open-node" | "open-search-result" -> let* uuid = text () in

@@ -17,4 +17,4 @@ val host_options :
   Session_types.host_options
 val create : (string -> string) -> mobile_session
 val call : mobile_session -> string -> string
-val start : (string -> string) -> unit
+val start : (string -> string) -> mobile_session

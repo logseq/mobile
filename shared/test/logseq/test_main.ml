@@ -25,6 +25,8 @@ let () =
       "result_view", Result_view_test.cases;
       "view_filters", View_filter_test.cases;
       "node_property", Node_property_test.cases;
+      "mobile_feedback", Mobile_feedback_test.cases;
+      "background_search", Background_search_test.cases;
       "flashcards", Flashcards_test.cases;
       "mobile_session", Mobile_session_test.cases;
       "outliner", Outliner_test.cases;

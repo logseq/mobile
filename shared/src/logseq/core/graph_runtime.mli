@@ -21,6 +21,8 @@ type read_caches =
   ; journal_page_count : int option ref
   }
 
+type search_rebuild = Indexing of Datascript.datom Seq.t | Pruning of string option
+
 type runtime_state =
   { server_t : int
   ; snapshot : Pending_projection.pending_projection_snapshot
@@ -29,6 +31,8 @@ type runtime_state =
   ; journal_limit : int
   ; journal_block_limit : int option
   ; search_index_is_fresh : bool
+  ; search_rebuild : search_rebuild option
+  ; search_rebuild_failed : bool
   }
 
 type graph_runtime =
@@ -51,6 +55,7 @@ val operation_statuses :
 val trace_stage : string -> float -> string -> unit
 val search_error : string -> exn -> unit
 val refresh_search : graph_runtime -> unit
+val search_index_pending : graph_runtime -> bool
 val refresh_search_affected :
   graph_runtime -> Datascript.db -> Pending_ops.pending_intent -> Datascript.tx_op list -> unit
 val refresh_search_after_rebase :

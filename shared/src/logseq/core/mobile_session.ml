@@ -84,6 +84,7 @@ let host_options (database : Database.mobile_database) ring catalog =
     graph_normalize_titles =
       Some (fun uuid titles -> Graph.normalize_titles graph uuid titles);
     graph_search = Some (fun query -> Graph.search graph query);
+    graph_maintain_search_index = Some (Graph.maintain_search_index graph);
     graph_search_page = Some (fun ~offset ~limit query -> Graph.search_page graph ~offset ~limit query);
     graph_due_flashcards =
       Some (fun now -> Graph.due_flashcards graph now);
@@ -175,4 +176,5 @@ let call (host : mobile_session) request =
 
 let start crypto_call =
   let host = create crypto_call in
-  Callback.register "logseq_mobile_call" (fun request -> call host request)
+  Callback.register "logseq_mobile_call" (fun request -> call host request);
+  host

@@ -131,6 +131,12 @@ import UIKit
                 throw failure("Opening a result must retain the search session and its loaded content")
             }
             phase("push.ready.\(cycle)")
+            try await wait("Search result pages must retain their native overflow menu") {
+                guard let item = navigation.topViewController?.navigationItem else { return false }
+                let hasNativeItems = !(item.rightBarButtonItems ?? []).isEmpty
+                    || item.trailingItemGroups.contains { !$0.barButtonItems.isEmpty }
+                return hasNativeItems && find("button.connection") != nil
+            }
             window.layoutIfNeeded()
             if cycle == 11 { try screenshot("search-result-destination.png") }
             phase("pop.request.\(cycle)")
@@ -138,7 +144,9 @@ import UIKit
             try await wait("Back must restore the result list and settle the native route") {
                 navigation.viewControllers.count == 1 && navigation.transitionCoordinator == nil && routes.isEmpty
             }
-            try await wait("Back must reactivate search input") { searchField.isFirstResponder }
+            try await wait("Back must reactivate search input") {
+                views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
+            }
             phase("pop.ready.\(cycle)")
             if cycle == 11 {
                 try screenshot("search-result-navigation.png")
