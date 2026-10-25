@@ -113,7 +113,7 @@ let first_authoritative_snapshot_publishes_retained_patch () =
        Test_util.check ~msg:"authoritative snapshot produced a patch"
          (Native_bridge.apply_response graph_response <> ""))
 
-let native_session_roundtrip_preserves_draft_assets_and_navigation () =
+let native_session_roundtrip_preserves_assets_and_returns_home () =
   let asset =
     { Model.uuid = "pending-photo";
       title = "照片.jpg";
@@ -142,8 +142,11 @@ let native_session_roundtrip_preserves_draft_assets_and_navigation () =
        ignore
          (Native_bridge.apply_host_update "restore-ui-session" saved);
        ignore (Native_bridge.apply_host_update "save-ui-session" "null");
+       let expected = { (Model.ui_session original) with
+         composer_expanded = false; search_open = false; query = "";
+         app_path = []; search_path = [] } in
        Test_util.check_eq
-         (Json.from_string saved)
+         (Json.from_string (Native_bridge.encode_ui_session expected))
          (Json.from_string (persisted_session 8)))
 
 let quick_actions_clear_selection_before_opening_native_recorder () =
@@ -265,8 +268,8 @@ let cases =
     Test_util.case "first authoritative snapshot publishes retained patch"
       first_authoritative_snapshot_publishes_retained_patch;
     Test_util.case
-      "native session roundtrip preserves draft assets and navigation"
-      native_session_roundtrip_preserves_draft_assets_and_navigation;
+      "native session roundtrip preserves assets and returns home"
+      native_session_roundtrip_preserves_assets_and_returns_home;
     Test_util.case "quick actions clear selection before opening native recorder"
       quick_actions_clear_selection_before_opening_native_recorder;
     Test_util.case "search waits 200ms and dispatches only the latest input"

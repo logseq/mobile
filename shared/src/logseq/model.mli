@@ -716,8 +716,6 @@ val remove_composer_draft_effects : logseq_effect list -> logseq_effect list
 val update : logseq_model -> logseq_action -> logseq_model
 val editing_sync_state : logseq_model -> sync_state
 val ui_session : logseq_model -> ui_session
-val restore_session_routes :
-  logseq_model -> navigation_route list -> bool -> logseq_model
 val restore_ui_session : logseq_model -> ui_session -> logseq_model
 
 val graph_creation_password_invalid_ : logseq_model -> bool
