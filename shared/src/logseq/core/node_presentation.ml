@@ -38,14 +38,17 @@ let calculator source =
           | "abs" -> abs_float n | "round" -> Float.round n | "log" -> log n | _ -> failwith "Unknown function"
         end else if token = "pi" then Float.pi else if token = "e" then exp 1. else Hashtbl.find vars token) in
   String.split_on_char '\n' source |> List.map (fun line ->
-    if String.trim line = "" then line else try
-      let s = tokenize line in
+    let expression_source = match String.index_opt line '#' with
+      | Some index -> String.sub line 0 index | None -> line in
+    if String.trim expression_source = "" then line else try
+      let s = tokenize expression_source in
       let name = match !s with name :: "=" :: rest -> s := rest; Some name | _ -> None in
       let n = expression s in
       if !s <> [] || not (Float.is_finite n) then failwith "Invalid expression";
       Option.iter (fun name -> Hashtbl.replace vars name n) name;
+      Hashtbl.replace vars "last" n;
       line ^ "  = " ^ Printf.sprintf "%.10g" n
-    with _ -> line ^ "  = Error") |> String.concat "\n"
+    with _ -> Hashtbl.remove vars "last"; line ^ "  = Error") |> String.concat "\n"
 
 let discussion_kind db eid =
   let tagged eid ident = List.exists (fun tag ->

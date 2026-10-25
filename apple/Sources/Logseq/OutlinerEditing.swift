@@ -137,6 +137,11 @@ enum NativeEditorInputPolicy {
         struct EmptyPair: Decodable { let text: String; let deleteOffset: Int }
         let emptyPairs: [EmptyPair]?
         let multiline: Bool?
+        let code: Bool?
+    }
+
+    static func usesCodePresentation(_ inputPolicy: String) -> Bool {
+        (try? JSONDecoder().decode(Policy.self, from: Data(inputPolicy.utf8)))?.code == true
     }
 
     static func allowsLineBreak(_ inputPolicy: String) -> Bool {

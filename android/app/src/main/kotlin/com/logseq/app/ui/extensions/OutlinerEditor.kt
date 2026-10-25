@@ -41,6 +41,12 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.lui.LuiExtensionContext
 import kotlinx.coroutines.delay
 
@@ -59,6 +65,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val selectionRevision = context.int("selection-revision") ?: 0
     val inputPolicy = context.string("input-policy") ?: "{}"
     val focusEnabled = context.bool("focus-enabled") == true
+    val code = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optBoolean("code") }.getOrDefault(false) }
     val multiline = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optBoolean("multiline") }.getOrDefault(false) }
 
     val focusRequester = remember { FocusRequester() }
@@ -295,6 +302,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
+    Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+        .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
     BasicTextField(
         value = value,
         onValueChange = ::acceptValue,
@@ -350,14 +359,17 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             color = MaterialTheme.colorScheme.onSurface,
             // Match iOS `.body` (17pt, ~22pt leading).
             fontSize = 17.sp,
+            fontFamily = if (code) FontFamily.Monospace else FontFamily.Default,
             lineHeight = 22.sp,
         ),
         keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.Sentences,
+            capitalization = if (code) KeyboardCapitalization.None else KeyboardCapitalization.Sentences,
+            autoCorrectEnabled = if (code) false else null,
             imeAction = if (multiline) ImeAction.Default else ImeAction.Next,
         ),
         keyboardActions = KeyboardActions(onNext = { returnAtSelection() }),
     )
+    }
     }
 }
 

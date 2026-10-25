@@ -345,7 +345,11 @@ and convert_node source references tags node position =
     let valid = Ref_text.is_uuid value || match position with
       | None -> true
       | Some (pos : Mldoc.Pos.pos_meta) -> Ref_text.hashtag_boundaries source pos.start_pos pos.end_pos in
-    if not valid then raw else (match find_summary tags value with
+    let summary = match find_summary tags value with
+      | Some _ as summary -> summary
+      | None when Ref_text.is_uuid value -> find_summary references value
+      | None -> None in
+    if not valid then raw else (match summary with
      | Some summary ->
        [ Markup_tag_ref (summary.Cache_model.uuid, summary.Cache_model.title) ]
      | None -> [ Markup_text ("#" ^ value) ])

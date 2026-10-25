@@ -68,6 +68,17 @@ class AndroidEditorCompletionTest {
         }
     }
 
+    @Test fun activeCodeUsesTheCodeSurfaceAndKeepsMultilineEditing() {
+        start("let value = 42", null)
+        val response = JSONObject(snapshot(null, "let value = 42"))
+        response.getJSONObject("result").getJSONArray("outlinerRows").getJSONObject(0)
+            .getJSONObject("block").put("displayType", "code")
+        ui.runOnIdle { bridge.applySnapshot(response.toString()).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+        ui.onNodeWithTag("outliner.code-editor.editing").assertIsDisplayed()
+        ui.onNodeWithTag("field.outliner.block.editing").performTextInput("\nvalue + 1")
+        ui.onNodeWithTag("outliner.code-editor.editing").assertIsDisplayed()
+    }
+
     @Test fun commandsReferencesAndTagsUseOneNativePanel() {
         start("/", "command")
         for ((kind, title) in listOf("command" to "/", "node" to "[[Pro", "tag" to "#Pro")) {

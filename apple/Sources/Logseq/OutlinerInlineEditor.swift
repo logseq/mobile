@@ -285,26 +285,34 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     private func applyTextLayout(to textView: UITextView) {
-        let font = UIFont.preferredFont(forTextStyle: .body)
+        let code = NativeEditorInputPolicy.usesCodePresentation(inputPolicy)
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        let font = code ? UIFont.monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body
         let inset = OutlinerNativeTextLayoutPolicy.verticalInset(
             fontLineHeight: font.lineHeight,
             minimumLineHeight: OutlinerLayoutMetrics.titleLineHeight
         )
         textView.font = font
+        textView.backgroundColor = code ? UIColor.secondaryLabel.withAlphaComponent(0.08) : .clear
+        textView.layer.cornerRadius = code ? 8 : 0
         textView.textContainerInset = UIEdgeInsets(
-            top: inset,
-            left: 0,
-            bottom: inset,
-            right: 0
+            top: code ? 12 : inset,
+            left: code ? 12 : 0,
+            bottom: code ? 12 : inset,
+            right: code ? 12 : 0
         )
     }
 
     private func applyWritingAssistance(to textView: UITextView) {
+        let code = NativeEditorInputPolicy.usesCodePresentation(inputPolicy)
         let defaults = UserDefaults.standard
         let spellCheck = defaults.object(forKey: "logseq.editor.spellCheck") as? Bool ?? true
         let autoCorrection = defaults.object(forKey: "logseq.editor.autoCorrection") as? Bool ?? true
-        textView.spellCheckingType = spellCheck ? .yes : .no
-        textView.autocorrectionType = autoCorrection ? .yes : .no
+        textView.spellCheckingType = !code && spellCheck ? .yes : .no
+        textView.autocorrectionType = !code && autoCorrection ? .yes : .no
+        textView.autocapitalizationType = code ? .none : .sentences
+        textView.smartQuotesType = code ? .no : .default
+        textView.smartDashesType = code ? .no : .default
     }
 
     func sizeThatFits(
@@ -314,13 +322,15 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     ) -> CGSize? {
         guard let width = proposal.width, width.isFinite, width > 0,
               let font = uiView.font else { return nil }
-        return OutlinerNativeTextMeasurement.size(
+        let horizontalInset = uiView.textContainerInset.left + uiView.textContainerInset.right
+        let measured = OutlinerNativeTextMeasurement.size(
             text: uiView.text,
             font: font,
-            width: width,
+            width: max(1, width - horizontalInset),
             verticalInset: uiView.textContainerInset.top,
             scale: uiView.traitCollection.displayScale
         )
+        return CGSize(width: width, height: measured.height)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {

@@ -8,9 +8,12 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
    attach context parent node;
    Lui_ui.extension_property_signal context node "input-policy"
      (Signal.map2 (fun (current : Model.logseq_model) uuid ->
-       let multiline = List.exists (fun (row : Model.outline_row) -> row.row_uuid = uuid
-         && List.mem row.row_display_type [Some "code"; Some "math"]) current.outliner_rows in
-       StringValue (if multiline then {|{"multiline":true,"emptyPairs":[{"text":"[[]]","deleteOffset":1}]}|}
+       let display_type = List.find_map (fun (row : Model.outline_row) ->
+         if row.row_uuid = uuid then row.row_display_type else None) current.outliner_rows in
+       let multiline = List.mem display_type [Some "code"; Some "math"] in
+       StringValue (if multiline then Yojson.Basic.to_string (`Assoc [
+         "multiline", `Bool true; "code", `Bool (display_type = Some "code");
+         "emptyPairs", `List [`Assoc ["text", `String "[[]]"; "deleteOffset", `Int 1]]])
          else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "focus-enabled"
      (Signal.map (fun (current : Model.logseq_model) -> BoolValue
