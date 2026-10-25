@@ -1,6 +1,11 @@
 package com.logseq.app
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -64,7 +69,7 @@ class AndroidTagSearchRegressionTest {
                         .put("type", "ref-uuid").put("value", "tag-0")))))))
     }
 
-    private fun render(language: String = "en", response: JSONObject = snapshot()) {
+    private fun render(language: String = "en", response: JSONObject = snapshot(), height: State<Dp>? = null) {
         val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
         filter = LuiPatchFilter(backend)
@@ -76,7 +81,7 @@ class AndroidTagSearchRegressionTest {
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
-                Surface(Modifier.fillMaxSize(), color = LogseqTheme.lightScheme.background) { backend.Content(root) }
+                Surface(if (height == null) Modifier.fillMaxSize() else Modifier.height(height.value), color = LogseqTheme.lightScheme.background) { backend.Content(root) }
             }
         }
     }
@@ -117,6 +122,7 @@ class AndroidTagSearchRegressionTest {
         ui.onNodeWithTag("view.table.viewport.table").performScrollToIndex(999)
         var reads = emptyList<JSONObject>()
         ui.waitUntil(5000) { reads = effects().filter { it.optString("kind") == "load-result-rows" }; reads.isNotEmpty() }
+        ui.onNodeWithTag("view.rows.loading.table").assertDoesNotExist()
         val eff = reads.single()
         val request = JSONObject(eff.getString("text"))
         val offset = request.getInt("offset")
@@ -139,6 +145,36 @@ class AndroidTagSearchRegressionTest {
         ui.onNodeWithTag("property.schema.owner.user.property/Notes", useUnmergedTree = true).assertIsDisplayed()
         ui.onNodeWithTag("property.add.owner").assertDoesNotExist()
     }
+
+    private fun resultPageFillsRemainingHeight(isTag: Boolean, type: String) {
+        val response = snapshot()
+        val columns = JSONArray().put(JSONObject().put("attr", "block/title").put("title", "Name"))
+        response.getJSONObject("result").put("selectedPageIsTag", isTag).put("selectedPageIsProperty", !isTag)
+            .put("outlinerRows", JSONArray()).remove("nodeProperties")
+        response.getJSONObject("result").put("resultViews", JSONObject().put("ownerUuid", "owner")
+            .put("featureType", if (isTag) "class-objects" else "property-objects")
+            .put("views", JSONArray().put(JSONObject().put("uuid", "results").put("name", "All").put("type", type)
+                .put("columns", columns).put("rowCount", 1000).put("rowOffset", 0).put("rowsDeferred", true)
+                .put("input", "").put("revision", 1).put("rows", JSONArray().apply {
+                    repeat(12) { put(JSONObject().put("block", JSONObject().put("uuid", "object-$it")
+                        .put("title", "Object $it").put("pageId", "owner"))) }
+                }))))
+        val height = mutableStateOf(440.dp)
+        render(response = response, height = height)
+        val identifier = when (type) { "table" -> "view.table.viewport.results"; "gallery" -> "view.gallery.results"; else -> "query.rows.owner" }
+        val before = ui.onNodeWithTag(identifier).fetchSemanticsNode().boundsInRoot.height
+        ui.runOnIdle { height.value = 600.dp }
+        val after = ui.onNodeWithTag(identifier).fetchSemanticsNode().boundsInRoot.height
+        val growth = with(ui.density) { 160.dp.toPx() }
+        assertEquals("$isTag $type fills additional available height", growth, after - before, 3f)
+    }
+
+    @Test fun tagTableFillsRemainingHeight() = resultPageFillsRemainingHeight(true, "table")
+    @Test fun tagListFillsRemainingHeight() = resultPageFillsRemainingHeight(true, "list")
+    @Test fun tagGalleryFillsRemainingHeight() = resultPageFillsRemainingHeight(true, "gallery")
+    @Test fun propertyTableFillsRemainingHeight() = resultPageFillsRemainingHeight(false, "table")
+    @Test fun propertyListFillsRemainingHeight() = resultPageFillsRemainingHeight(false, "list")
+    @Test fun propertyGalleryFillsRemainingHeight() = resultPageFillsRemainingHeight(false, "gallery")
 
     @Test fun existingBlockTagsOfferRemovalAndTagPropertiesUseTheirOwnSheet() {
         render()

@@ -1,7 +1,7 @@
 val view : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
   Model.logseq_model Signal.signal -> Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val collection : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
+val collection : ?fill_height:bool -> render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
   Model.logseq_model Signal.signal -> string Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 
 val property_editor : ?owner:string -> ?send:(Model.logseq_action -> bool) -> ?open_node:(string * (unit -> unit)) ->

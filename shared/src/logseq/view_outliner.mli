@@ -106,3 +106,5 @@ val node_screen :
   (Model.logseq_action -> bool) -> Lui_elements.t
 val node_properties : ?root:bool -> Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
+val with_result_page : ?root:bool -> Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> Lui_elements.t -> Lui_elements.t
