@@ -63,6 +63,41 @@ let partial_rebuilds_resume_after_restart () = G.with_search_runtime ~indexed:fa
   let clean = R.create original.path 42 (Result.get_ok (Graph_store.restore_conn original.path)) options in
   check ~msg:"completed indexes reopen without rebuilding" (R.state clean).search_index_is_fresh;
   check_eq (Graph_sqlite.search_version path) (Graph_sqlite.search_source_version original.path))
+let upgrades_rebuild_indexes_that_omitted_public_builtin_tags () =
+  let db = Result.get_ok (Graph_bootstrap.database "builtin-search-upgrade" false (fun value -> Ok value)) in
+  G.with_search_runtime ~indexed:false db (fun path _ original ->
+    let fresh = D.init_db ~schema:(D.schema db) (List.of_seq (D.Db.datoms db D.Eavt ())) in
+    let stored = D.store ~storage:(Graph_store.storage original.path) fresh in
+    let options = {R.default_options with search_index_path = Some path} in
+    let runtime = R.create original.path 42 (D.conn_from_db stored) options in
+    finish runtime;
+    let tags = ["Code-block", "Code"; "Math-block", "Math"; "Quote-block", "Quote";
+      "Card", "Card"; "Task", "Task"; "Query", "Query"; "Cards", "Cards"; "Template", "Template"]
+      |> List.map (fun (ident, title) ->
+        let id = Option.get (D.entid db "db/ident" (D.Keyword ("logseq.class/" ^ ident))) in
+        Option.get (Graph_read.uuid_for_eid db id), title) in
+    S.search_delete path (List.map fst tags);
+    (* Reproduce the persisted v2 format from releases that excluded built-in tags. *)
+    let legacy_version = Graph_sqlite.with_app_db original.path (fun connection ->
+      let roots = Graph_sqlite.query connection
+        "SELECT addr, content, addresses FROM kvs WHERE addr IN (0, 1) ORDER BY addr" []
+        (fun row -> Sqlite3.column_int row 0, Sqlite3.column_text row 1, Sqlite3.column row 2) in
+      Digest.to_hex (Digest.string (Marshal.to_string ("search-index-v2", roots, []) []))) in
+    Graph_sqlite.set_search_version path (Some legacy_version);
+    let reopen () = R.create original.path 42 (match Graph_store.restore_conn original.path with
+      | Ok conn -> conn | Error message -> fail message) options in
+    let upgraded = reopen () in
+    check ~msg:"upgrading the indexing rules invalidates a complete legacy index without graph edits"
+      (R.search_index_pending upgraded);
+    check_eq ~msg:"search leaves the upgrade rebuild to background maintenance" (R.search upgraded "Code") [];
+    check ~msg:"reading search does not perform a full rebuild" (R.search_index_pending upgraded);
+    finish upgraded;
+    List.iter (fun (uuid, title) -> List.iter (fun query ->
+      check ~msg:("public built-in tag becomes searchable after upgrading: " ^ query)
+        (List.exists (fun (hit : S.indexed_search_hit) -> hit.uuid = uuid) (R.search upgraded query)))
+      [title; "#" ^ String.lowercase_ascii title]) tags;
+    check_eq ~msg:"index upgrades do not mutate the graph" (R.pending_operations upgraded) [];
+    check ~msg:"a completed upgrade is reused on the next launch" (R.state (reopen ())).search_index_is_fresh)
 let imported_graphs_have_scoped_maintenance () =
   Mobile_session_test.with_favorite_graphs (fun host call fields cache download ->
     ignore (call "bootstrapGraph" (fields "graph-a"));
@@ -160,5 +195,6 @@ let cases = [
   case "search reads never trigger full graph indexing" search_does_not_build_the_graph;
   case "bounded indexing yields to editing and preserves concurrent changes" bounded_steps_allow_edits_and_cleanup;
   case "partial indexing resumes safely after restart" partial_rebuilds_resume_after_restart;
+  case "index upgrades restore public built-in tags without graph edits" upgrades_rebuild_indexes_that_omitted_public_builtin_tags;
   case "imported graphs build automatically through scoped maintenance" imported_graphs_have_scoped_maintenance;
 ]
