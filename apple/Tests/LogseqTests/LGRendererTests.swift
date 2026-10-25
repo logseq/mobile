@@ -85,7 +85,7 @@ struct LGRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"},
           {"op":"set-extension-prop","id":2,"property":"block-id","value":"block-a"},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
           {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},

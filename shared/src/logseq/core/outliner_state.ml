@@ -1442,8 +1442,7 @@ let enter context state editing =
     let block = find_block context editing.uuid in
     let property_value = Option.is_some block && not (List.exists
       (fun (block : Model.block) -> block.uuid = editing.uuid) context.blocks) in
-    if property_value || Option.fold ~none:false
-      ~some:(fun block -> List.mem block.Model.display_type [Some "code"; Some "math"]) block then
+    if property_value then
       let index = byte_index_of_utf16 editing.title editing.caret in
       step {state with editing = Some {editing with
         title = replace_range editing.title index index "\n"; caret = editing.caret + 1}} []

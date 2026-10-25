@@ -12,6 +12,8 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -105,6 +107,21 @@ class AndroidRichContentTest {
 
     @Test fun quoteLongPressSelectsInsteadOfEditing() =
         assertLongPressSelects("""[{"type":"quote","children":[{"type":"text","text":"Quote block"}]}]""", "Quote block")
+
+    @Test fun codeLongPressSelectsInsteadOfEditing() =
+        assertLongPressSelects("""[{"type":"codeBlock","style":"python","text":"print(42)"}]""", "print(42)")
+
+    @Test fun mathLongPressSelectsInsteadOfEditing() {
+        render("""[{"type":"math","style":"display","text":"x^2"}]""")
+        ui.waitUntil(10_000) {
+            ui.onAllNodesWithContentDescription("x^2").fetchSemanticsNodes().isNotEmpty()
+        }
+        ui.onNodeWithContentDescription("x^2").performTouchInput { longClick() }
+        ui.runOnIdle {
+            assertEquals("A formula long press selects the block exactly once", listOf("drag-start"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+        }
+    }
 
     @Test fun malformedBodyLongPressStillSelects() = assertLongPressSelects("not-json", "Readable fallback")
 

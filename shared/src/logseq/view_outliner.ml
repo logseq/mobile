@@ -10,9 +10,9 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
      (Signal.map2 (fun (current : Model.logseq_model) uuid ->
        let display_type = List.find_map (fun (row : Model.outline_row) ->
          if row.row_uuid = uuid then row.row_display_type else None) current.outliner_rows in
-       let multiline = List.mem display_type [Some "code"; Some "math"] in
-       StringValue (if multiline then Yojson.Basic.to_string (`Assoc [
-         "multiline", `Bool true; "code", `Bool (display_type = Some "code");
+       let special = List.mem display_type [Some "code"; Some "math"] in
+       StringValue (if special then Yojson.Basic.to_string (`Assoc [
+         "multiline", `Bool false; "code", `Bool (display_type = Some "code");
          "emptyPairs", `List [`Assoc ["text", `String "[[]]"; "deleteOffset", `Int 1]]])
          else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "focus-enabled"
@@ -35,12 +35,13 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
             block_id_source send));
    node
 
-let outliner_rich_block_view model_source title_source markup_source
+let outliner_rich_block_view ?(show_code_language = true) model_source title_source markup_source
     youtube_target_source is_asset_source row_source asset_type_source
     local_path_source send : t =
  fun context parent ->
    let node = Lui_ui.extension context "outliner-block-content" in
    attach context parent node;
+   Lui_ui.extension_property context node "show-code-language" (BoolValue show_code_language);
    Lui_ui.extension_property_signal context node "block-id"
      (Signal.map View_base.outliner_row_id_wire_value row_source);
    Lui_ui.extension_property_signal context node "title"
@@ -343,6 +344,71 @@ let outliner_priority_control model_source row_source send : t =
               ~accessibility_identifier:"button.block-task-priority-clear" ~on_press:(fun _ -> choose "") []
           ]]))]
 
+let code_language row =
+    try match Yojson.Basic.from_string row.Model.markup_json with
+      | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
+      | _ -> "" with _ -> ""
+
+let code_language_control model_source row_source send : t =
+  let current_row = Signal.sample row_source in
+  if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
+    (row ~main:`start ~padding_horizontal:12 ~padding_vertical:2
+      ~accessibility_identifier:("outliner.code.language-header." ^ current_row.row_uuid) [
+      box ~height:28 [menu_trigger ~style_class:"caption" ~foreground:"muted-foreground" ~text_signal:(Signal.map (fun row -> let value = code_language row in if value = "" then "Plain text" else value) row_source)
+        ~label:(View_base.tr (Signal.sample model_source) "Code language")
+        ~accessibility_identifier:("button.outliner.code-language." ^ current_row.row_uuid)
+        [dropdown_menu (List.map (fun (value, label) ->
+          menu_item ~text:label ~accessibility_identifier:("button.outliner.code-language.option." ^ value)
+            ~on_press:(fun _ ->
+              let row = Signal.sample row_source in
+              ignore (send (Model.SubmitNodeProperty (row.row_uuid, Yojson.Basic.to_string (`Assoc [
+                "action", `String "setCodeLanguage"; "blockUuid", `String row.row_uuid; "value", `String value]))))) [])
+          ["", "Plain text"; "bash", "Bash"; "c", "C"; "cpp", "C++"; "clojure", "Clojure";
+           "css", "CSS"; "go", "Go"; "html", "HTML"; "java", "Java"; "javascript", "JavaScript";
+           "json", "JSON"; "kotlin", "Kotlin"; "markdown", "Markdown"; "ocaml", "OCaml";
+           "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
+           "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ] ])
+
+let code_block_content model_source retained_source row_source send : t =
+ fun context parent ->
+  let current_row = Signal.sample row_source in
+  let source = Signal.map (fun retained -> if View_rows.retained_row_editing_ retained then
+    View_rows.retained_row_editing_title retained else (View_rows.retained_row_value retained).Model.row_title) retained_source in
+  let calculator = Signal.map (fun row -> code_language row = "calc") row_source in
+  let input = column ~gap:0 ~cross:`stretch [
+    if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
+      (outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
+        (Signal.map View_rows.retained_row_editing_title retained_source)
+        (Signal.map View_rows.retained_row_editing_caret retained_source) send);
+    if_ ~test:(Signal.map (fun retained -> not (View_rows.retained_row_editing_ retained)) retained_source)
+      (list_item ~padding:0
+        ~accessibility_identifier:("outliner.code.content." ^ current_row.row_uuid)
+        ~on_press:(fun _ -> ignore (send (Model.BeginOutlinerEdit (Signal.sample row_source).row_uuid)))
+        ~on_long_press:(fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid)))
+        [dyn (fun calculator -> if calculator then
+          text ~value_signal:source ~font_family:"monospace" ~font_size:"17" ~padding:12 [] else
+          outliner_rich_block_view ~show_code_language:false model_source
+            (Signal.map View_base.outliner_row_title row_source)
+            (Signal.map (fun (row : Model.outline_row) -> row.markup_json) row_source)
+            (Signal.map View_base.outliner_row_youtube_target row_source)
+            (Signal.map (fun (row : Model.outline_row) -> row.is_asset) row_source) row_source
+            (Signal.map View_base.outliner_row_asset_type row_source)
+            (Signal.map View_base.outliner_row_local_path row_source) send) calculator]);
+  ] in
+  (column ~gap:0 ~cross:`stretch ~corner_radius:8
+    ~background_signal:(Signal.map (fun retained ->
+      if View_rows.retained_row_selected_ retained then "#00000000" else "code-container") retained_source)
+    ~accessibility_identifier:("outliner.code." ^ current_row.Model.row_uuid) [
+      code_language_control model_source row_source send;
+      dyn (fun calculator -> if not calculator then input else
+        row ~gap:0 ~cross:`start
+          ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
+          box ~min_width:64 ~padding:12 [
+            text ~value_signal:(Signal.map (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
+              ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
+              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
+    ]) context parent
+
 let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
@@ -402,13 +468,14 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
-          if_ ~test:editing_source
-            (outliner_editor_view model_source block_id_source editing_title_source
-               editing_caret_source send);
-          if_ ~test:not_editing_source
-            (outliner_rich_block_view model_source title_source
-               markup_source youtube_target_source is_asset_source
-               row_source asset_type_source local_path_source send);
+          dyn (fun code -> if code then code_block_content model_source retained_row_source row_source send else
+            column ~gap:0 ~cross:`stretch [
+              if_ ~test:editing_source
+                (outliner_editor_view model_source block_id_source editing_title_source editing_caret_source send);
+              if_ ~test:not_editing_source
+                (outliner_rich_block_view model_source title_source markup_source youtube_target_source is_asset_source
+                  row_source asset_type_source local_path_source send)])
+            (Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source);
           if_ ~test:has_tags_source
             (row ~gap:6
                [
@@ -466,6 +533,8 @@ let native_outliner_row model_source retained_source row_source send : t =
       "youtubeURL", `String (View_base.outliner_row_youtube_target row);
       "completed", `Bool (View_base.outliner_row_completed_ row);
       "selected", `Bool retained.is_selected;
+      "editing", `Bool (View_rows.retained_row_editing_ retained);
+      "hasCustomContent", `Bool (View_rows.retained_row_editing_ retained || row.row_display_type = Some "code");
       "canRemoveTags", `Bool (Model.node_can_set_tags current row.row_uuid);
       "removeTagTitle", `String (View_base.tr current "Remove tag");
       "opensAsPage", `Bool row.opens_as_page;
@@ -482,10 +551,12 @@ let native_outliner_row model_source retained_source row_source send : t =
       "tags", `List (List.map summary row.tags)]) in
   Lui_ui.extension_property_signal context node "payload"
     (Signal.map2 (fun current retained -> StringValue (payload current retained)) model_source retained_source);
-  ignore ((if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
-    (box ~padding:0 [outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
-      (Signal.map View_rows.retained_row_editing_title retained_source)
-      (Signal.map View_rows.retained_row_editing_caret retained_source) send])) context (Some node));
+  ignore ((dyn (fun code -> if code then code_block_content model_source retained_source row_source send else
+    if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
+      (box ~padding:0 [outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
+        (Signal.map View_rows.retained_row_editing_title retained_source)
+        (Signal.map View_rows.retained_row_editing_caret retained_source) send]))
+    (Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)) context (Some node));
   Lui_ui.on_event context node (function
     | ExtensionEvent (_, _, "remove-tag", values) ->
       (match String_map.find_opt "uuid" values with
@@ -627,29 +698,6 @@ let row_metadata (row : Model.outline_row) =
 let metadata_member key row =
   match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
 
-let code_language_control model_source row_source send : t =
-  let row = Signal.sample row_source in
-  let language row =
-    try match Yojson.Basic.from_string row.Model.markup_json with
-      | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
-      | _ -> "" with _ -> "" in
-  if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
-    (box ~padding_horizontal:32 [
-      menu_trigger ~text_signal:(Signal.map (fun row -> let value = language row in if value = "" then View_base.tr (Signal.sample model_source) "Plain text" else value) row_source)
-        ~label:(View_base.tr (Signal.sample model_source) "Code language")
-        ~accessibility_identifier:("button.outliner.code-language." ^ row.row_uuid)
-        [dropdown_menu (List.map (fun (value, label) ->
-          menu_item ~text:(View_base.tr (Signal.sample model_source) label) ~accessibility_identifier:("button.outliner.code-language.option." ^ value)
-            ~on_press:(fun _ ->
-              let row = Signal.sample row_source in
-              ignore (send (Model.SubmitNodeProperty (row.row_uuid, Yojson.Basic.to_string (`Assoc [
-                "action", `String "setCodeLanguage"; "blockUuid", `String row.row_uuid; "value", `String value]))))) [])
-          ["", "Plain text"; "bash", "Bash"; "c", "C"; "cpp", "C++"; "clojure", "Clojure";
-           "css", "CSS"; "go", "Go"; "html", "HTML"; "java", "Java"; "javascript", "JavaScript";
-           "json", "JSON"; "kotlin", "Kotlin"; "markdown", "Markdown"; "ocaml", "OCaml";
-           "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
-           "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ])
-
 let discussion_body model_source row_source body : t =
   let row = Signal.sample row_source in
   dyn (fun kind ->
@@ -678,7 +726,7 @@ let reaction_strip row_source : t =
             ~background:"muted" ~style_class:"caption" [])])
 
 let decorate_row model_source row_source send body =
-  column ~gap:0 [code_language_control model_source row_source send; discussion_body model_source row_source body; reaction_strip row_source]
+  column ~gap:0 [discussion_body model_source row_source body; reaction_strip row_source]
 
 let render_result_block context model_source row_source send =
     let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in

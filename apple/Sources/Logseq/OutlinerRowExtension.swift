@@ -53,6 +53,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let youtubeURL: String
     let completed: Bool
     let selected: Bool
+    let editing: Bool?
+    let hasCustomContent: Bool?
     let opensAsPage: Bool
     let nodeIcon: NodeIconPayload?
     let listNumber: Int?
@@ -123,13 +125,18 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
+    private var hasCustomContent: Bool {
+        row.hasCustomContent ?? !context.childIDs.isEmpty
+    }
+
     @ViewBuilder var body: some View {
         #if os(iOS)
-        if context.childIDs.isEmpty {
+        if !(row.editing ?? !context.childIDs.isEmpty) {
             content
                 .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
-                .onLongPressGesture { emit("long-press") }
+                .contentShape(Rectangle())
+                .highPriorityGesture(LongPressGesture().onEnded { _ in emit("long-press") })
                 .onDrag { emit("drag-start"); return NSItemProvider(object: row.uuid as NSString) }
                 .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry, depth: row.depth) {
                     emit("drop", extra: ["placement": .string($0.eventValue)])
@@ -144,7 +151,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @ViewBuilder private var content: some View {
         Group {
         #if os(iOS)
-        if context.childIDs.isEmpty && OutlinerTextRow.supports(row) {
+        if !hasCustomContent && OutlinerTextRow.supports(row) {
             OutlinerTextRow(row: row,
                 emit: { name, uuid, values in emit(name, uuid: uuid, extra: values) },
                 onOpenLink: { url in
@@ -185,6 +192,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
             }
+            .simultaneousGesture(LongPressGesture().onEnded { _ in
+                if row.editing == true { emit("long-press") }
+            })
             .padding(.trailing, row.status != nil
                 ? OutlinerLayoutMetrics.statusLeading - OutlinerLayoutMetrics.bulletHitSize
                 : (row.priority != nil ? -4 : OutlinerLayoutMetrics.bulletContentSpacing))
@@ -232,8 +242,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 .accessibilityIdentifier("button.block-task-priority")
             }
             VStack(alignment: .leading, spacing: 2) {
-                if let editor = context.childIDs.first {
+                if hasCustomContent, let editor = context.childIDs.first {
                     context.content(for: editor)
+                        .font(row.markup.contains { $0.type == .codeBlock } ? .caption : .body)
                 } else if row.isAsset {
                     LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath)
                 } else {

@@ -4,6 +4,7 @@ val outliner_editor_view :
   string Signal.signal ->
   int Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_rich_block_view :
+  ?show_code_language:bool ->
   Model.logseq_model Signal.signal ->
   string Signal.signal ->
   string Signal.signal ->
