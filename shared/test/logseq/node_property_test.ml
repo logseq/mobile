@@ -348,6 +348,7 @@ let page_rename_updates_lookup_search_and_references () =
 
 let builtin_pages_hide_delete_and_reject_deletion_requests () =
   let base = R.fixture () in
+  let today = Cache_model.journal_day_for_ms (Session_types.now_ms ()) in
   List.iter (fun (label, additions, allowed) ->
     let db = Ds.db_with additions base in
     let session, _ = R.make_session db in
@@ -372,6 +373,9 @@ let builtin_pages_hide_delete_and_reject_deletion_requests () =
             (not (List.exists (function Model.DeletePageEffect _ -> true | _ -> false) confirmed.pending_effects)))))
       [App_test.ios_backend; App_test.kotlin_backend])
     ["ordinary page", [], true;
+     "today's journal", [put Q.page "block/journal-day" (Ds.Int64 (Int64.of_int today))], false;
+     "past journal", [put Q.page "block/journal-day" (Ds.Int64 20200101L)], true;
+     "future journal", [put Q.page "block/journal-day" (Ds.Int64 20991231L)], true;
      "built-in page", [put Q.page "logseq.property/built-in?" (Ds.Bool true)], false;
      "built-in property without flag", [put Q.page "db/ident" (Ds.Keyword "logseq.property/protected-test")], false;
      "hidden system page", [put Q.page "logseq.property/hide?" (Ds.Bool true)], false]

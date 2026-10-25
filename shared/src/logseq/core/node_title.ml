@@ -18,7 +18,10 @@ let builtin db id = get db id "logseq.property/built-in?" = Some (D.Bool true)
 let journal db id = get db id "block/journal-day" <> None || tagged db id "logseq.class/Journal"
 let can_edit db id = not (builtin db id || journal db id)
 let can_rename_page db id = is_page db id && can_edit db id
-let can_delete db id = not (builtin db id) && get db id "logseq.property/hide?" <> Some (D.Bool true)
+let can_delete ?(now = int_of_float (Unix.gettimeofday () *. 1000.)) db id =
+  not (builtin db id)
+  && get db id "logseq.property/hide?" <> Some (D.Bool true)
+  && G.int_value (get db id "block/journal-day") <> Some (Cache_model.journal_day_for_ms now)
 
 let nfc text =
   let normalizer = Uunf.create `NFC in

@@ -383,7 +383,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText replacement: String
         ) -> Bool {
-            let isInlineLineBreak = (textView as? FocusRetainingTextView)?.isInsertingLineBreak == true
+            let isShiftReturn = (textView as? FocusRetainingTextView)?.isInsertingLineBreak == true
+            let isInlineLineBreak = isShiftReturn && !(NativeEditorInputPolicy.usesCodePresentation(parent.inputPolicy)
+                && NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy))
             if isAwaitingBlockHandoff {
                 // Structure events are serialized and rebound to the latest
                 // editor by the store. Forward them immediately so fast
@@ -419,7 +421,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 parent.onTextChange(deletion.text, deletion.caretUTF16Offset)
                 return false
             }
-            if replacement == "\n", NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy) { return true }
+            if replacement == "\n", !isShiftReturn, NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy) { return true }
             if replacement == "\n" {
                 LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.return")
                 var submittedText = textView.text ?? ""

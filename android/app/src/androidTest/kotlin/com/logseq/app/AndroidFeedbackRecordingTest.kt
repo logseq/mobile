@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -238,15 +239,19 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 val inputBounds = editor.getUnclippedBoundsInRoot()
                 val outputBounds = results.getUnclippedBoundsInRoot()
                 assertTrue("Calculator results occupy the right column", outputBounds.left >= inputBounds.right)
-                editor.performImeAction()
+                editor.performKeyInput { pressKey(Key.Enter) }
+                editor.assertTextEquals("6*7\nlast*3\n")
+                drain()
+                val beforeCount = JSONObject(configured).getJSONObject("result").getJSONArray("outlinerRows").length()
+                assertEquals("Enter stays inside Calculator", beforeCount,
+                    JSONObject(request("refresh")).getJSONObject("result").getJSONArray("outlinerRows").length())
+                editor.performKeyInput { keyDown(Key.ShiftLeft); pressKey(Key.Enter); keyUp(Key.ShiftLeft) }
                 ui.waitUntil(10_000) {
                     drain()
                     runCatching { editor.assertDoesNotExist() }.isSuccess
                 }
                 val after = JSONObject(request("refresh")).getJSONObject("result").getJSONArray("outlinerRows")
-                val beforeCount = JSONObject(configured).getJSONObject("result").getJSONArray("outlinerRows").length()
-                assertEquals("Enter creates exactly one new block", beforeCount + 1, after.length())
-                results.assertTextEquals("42\n126")
+                assertEquals("Shift+Enter creates exactly one new block", beforeCount + 1, after.length())
                 content.performTouchInput { longClick() }
                 ui.waitUntil(10_000) {
                     drain()

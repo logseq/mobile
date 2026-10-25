@@ -342,7 +342,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
                   ~label:(View_base.tr (Signal.sample model_source) "Graph deletion actions")
                   ~accessibility_identifier:"toolbar.graph-delete"
                   [
-                    button ~variant:`ghost
+                    button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.graph-delete.cancel"
                       ~on_press:(press send Model.CancelDeleteGraph)
@@ -372,7 +372,8 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
             "Notice that we can't recover this graph after being \
              deleted. Make sure you have backups before deleting it."
           [];
-        button ~accessibility_identifier:"button.graph-delete.cancel"
+        button ~style_class:"cancellation-action"
+          ~accessibility_identifier:"button.graph-delete.cancel"
           ~on_press:(press send Model.CancelDeleteGraph)
           ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
         button ~variant:`destructive
