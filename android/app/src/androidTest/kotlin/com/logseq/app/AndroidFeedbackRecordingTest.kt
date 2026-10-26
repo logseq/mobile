@@ -217,7 +217,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     ui.onNodeWithTag("button.outliner.code-language.option.python").performClick(); pause()
                 }
             }
-            "calculator-live" -> {
+            "calculator-live", "calculator-toolbar" -> {
                 mount(2)
                 val configured = request("nodeProperty", JSONObject().put("action", "setCodeLanguage")
                     .put("blockUuid", uuid(12)).put("value", "calc").toString())
@@ -245,13 +245,30 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 val beforeCount = JSONObject(configured).getJSONObject("result").getJSONArray("outlinerRows").length()
                 assertEquals("Enter stays inside Calculator", beforeCount,
                     JSONObject(request("refresh")).getJSONObject("result").getJSONArray("outlinerRows").length())
-                editor.performKeyInput { keyDown(Key.ShiftLeft); pressKey(Key.Enter); keyUp(Key.ShiftLeft) }
+                if (scenario == "calculator-toolbar") {
+                    ui.mainClock.autoAdvance = false
+                    try {
+                        editor.performTextInput("pending🙂")
+                        ui.onNodeWithTag("button.outliner.editor.newBlock").performClick()
+                        drain()
+                    } finally {
+                        ui.mainClock.autoAdvance = true
+                    }
+                } else {
+                    editor.performKeyInput { keyDown(Key.ShiftLeft); pressKey(Key.Enter); keyUp(Key.ShiftLeft) }
+                }
                 ui.waitUntil(10_000) {
                     drain()
                     runCatching { editor.assertDoesNotExist() }.isSuccess
                 }
                 val after = JSONObject(request("refresh")).getJSONObject("result").getJSONArray("outlinerRows")
                 assertEquals("Shift+Enter creates exactly one new block", beforeCount + 1, after.length())
+                if (scenario == "calculator-toolbar") {
+                    val source = (0 until after.length()).map { after.getJSONObject(it).getJSONObject("block") }
+                        .single { it.getString("uuid") == uuid(12) }
+                    assertEquals("The toolbar preserves typing that has not reached the debounced core update",
+                        "6*7\nlast*3\npending🙂", source.getString("title"))
+                }
                 content.performTouchInput { longClick() }
                 ui.waitUntil(10_000) {
                     drain()

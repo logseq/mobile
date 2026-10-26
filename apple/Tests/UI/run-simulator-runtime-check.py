@@ -102,7 +102,7 @@ import SwiftUI
             "CFBundleIdentifier": bundle, "CFBundleExecutable": "RuntimeCheck",
             "CFBundleName": "Runtime check", "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "MinimumOSVersion": "17.0",
-            "UIDeviceFamily": [1], "UILaunchScreen": {},
+            "UIDeviceFamily": [1, 2], "UILaunchScreen": {},
         }))
         for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)

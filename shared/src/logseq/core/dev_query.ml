@@ -970,8 +970,8 @@ let date_of_formatter (fmt : string) (s : string) : (int * int * int) option =
         (match tok with
          | TokLit c ->
              if i < n && s.[i] = c then go rest (i + 1) (y, m, d) else None
-         | TokYear _ ->
-             try_num rest i (y, m, d) 8 (fun v (_, mm, dd) -> (v, mm, dd))
+         | TokYear width ->
+             try_num rest i (y, m, d) width (fun v (_, mm, dd) -> (v, mm, dd))
          | TokMonthNum ->
              try_num rest i (y, m, d) 2 (fun v (yy, _, dd) -> (yy, v, dd))
          | TokDay ->
@@ -1061,9 +1061,15 @@ let parse_journal_title ?(formatters = built_in_journal_title_formatters)
 (* date-time-util/journal-title->int *)
 let journal_title_to_int ?(formatters = built_in_journal_title_formatters)
     (title : string) : int option =
-  match parse_journal_title ~formatters title with
-  | Some ms -> Some (date_to_int ms)
-  | None -> None
+  if String.for_all is_digit title && String.length title <> 8 then None
+  else
+    let title = capitalize_all title in
+    List.find_map (fun fmt ->
+      match date_of_formatter fmt title with
+      | Some (year, month, day) ->
+        let value = year * 10000 + month * 100 + day in
+        if Journal.valid_day value then Some value else None
+      | None -> None) formatters
 
 (* common-date/valid-journal-title? *)
 let valid_journal_title ?(formatters = built_in_journal_title_formatters)

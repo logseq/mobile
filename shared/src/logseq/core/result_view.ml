@@ -419,7 +419,7 @@ let calendar_day text =
     else text in
   if String.length compact <> 8 || not (digits compact) then None
   else let day = int_of_string compact in
-    if day / 10000 < 1 || Dev_query.Time.local_date_of_journal_day (Dev_query.Time.local_tz ()) day = None
+    if not (Journal.valid_day day)
     then invalid_arg "Enter a valid calendar date";
     Some day
 let resolve_reference db p value =

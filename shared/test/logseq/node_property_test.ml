@@ -15,6 +15,20 @@ let edit session uuid p value extra =
     "blockUuid", `String uuid; "attr", member "attr" p; "expected", member "raw" p;
     "value", `String value] @ extra)))
 
+let sync_all runtime conn =
+  List.iter (fun operation ->
+    let before = (Graph_runtime.state runtime).server_t in
+    let _, tx = match Graph_runtime.prepare_sync runtime operation with
+      | Ok value -> value | Error message -> fail message in
+    let journal = match Journal_sync.decode (J.to_string (`Assoc ["type", `String "tx/batch/ok";
+      "t-before", `Int before; "t", `Int (before + 1); "txs", `List [`Assoc ["t", `Int (before + 1);
+      "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
+      | Ok value -> value | Error message -> fail message in
+    check_ok (Graph_runtime.stage runtime {operation with Pending_ops.state = Pending_ops.Accepted (before + 1)});
+    let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+      | Ok value -> value | Error message -> fail message in
+    Graph_runtime.rebase runtime journal.t ids changed) (Graph_runtime.pending_operations runtime)
+
 let projection_and_navigation () =
   let db = R.fixture () in
   let db = Ds.db_with [put Q.page R.summary (Ds.Ref_to (Q.ref_uuid R.text_b));
@@ -240,6 +254,11 @@ let temporal_properties_display_and_edit () = R.with_runtime (fun session runtim
   check_eq (member "editorValue" due) (`String "2026-10-01");
   ignore (result (edit session Q.alpha due "2026-10-22" []));
   check_eq (member "editorValue" (property R.due (result (read session Q.alpha)))) (`String "2026-10-22");
+  let due = property R.due (result (read session Q.alpha)) in
+  ignore (result (edit session Q.alpha due "0044-03-15" []));
+  check_eq (member "editorValue" (property R.due (result (read session Q.alpha)))) (`String "0044-03-15");
+  check ~msg:"historical Date properties reference a real Journal"
+    (Graph_read.journal_page_uuid (Graph_runtime.db runtime) 440315 <> None);
   ignore (result (edit session Q.alpha p "1792719000000" []));
   let p = property attr (result (read session Q.alpha)) in
   check_eq (member "editorValue" p) (`String "1792719000000");
@@ -770,7 +789,40 @@ let page_tags_use_a_separate_overflow_action () = R.with_runtime (fun session ru
   check_eq ~msg:"invalid tags do not partially write" (Graph_runtime.pending_operations runtime) pending;
   List.iter (fun operation -> check_ok (Graph_runtime.prepare_sync runtime operation)) pending)
 
+let text_property_references_create_journals_and_keep_partial_dates_literal () =
+  List.iter (fun (date, day) -> R.with_runtime (fun session runtime conn ->
+    let p = property R.summary (result (read session Q.alpha)) in
+    ignore (result (edit session Q.alpha p ("Opened [[" ^ date ^ "]]") []));
+    let db = Graph_runtime.db runtime in
+    let journal = match Graph_read.journal_page_uuid db day with
+      | Some uuid -> uuid | None -> fail "A full date reference in a text property must create a Journal" in
+    let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid journal)) in
+    check ~msg:"date references point to a Journal, not an ordinary Page"
+      (Graph_read.entity_is_instance_of db id "logseq.class/Journal");
+    let p = property R.summary (result (read session Q.alpha)) in
+    let block = List.hd (items "blocks" p) in
+    check_eq (member "title" block) (`String ("Opened [[" ^ journal ^ "]]"));
+    let owner = Option.get (Ds.entid db "block/uuid" (Ds.Uuid (R.text (member "uuid" block)))) in
+    check ~msg:"new text property references are indexed immediately" (List.mem id (Graph_read.ref_eids db owner "block/refs"));
+    let p = property R.summary (result (read session Q.alpha)) in
+    ignore (result (edit session Q.alpha p "[[2026-10-26]] and [[2026]] and [[2026-10]]" []));
+    check_eq ~msg:"different spellings reuse the same journal identity"
+      (Graph_read.journal_page_uuid (Graph_runtime.db runtime) day) (Some journal);
+    List.iter (fun name ->
+      let uuid = Option.get (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) name) in
+      let db = Graph_runtime.db runtime in
+      let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+      check_eq (Graph_read.value db id "block/journal-day") None) ["2026"; "2026-10"];
+    let restored = Graph_runtime.create runtime.path 42 conn {Graph_runtime.default_options with auto_create_today = false} in
+    check_eq ~msg:"journal references survive an offline restart"
+      (Graph_read.journal_page_uuid (Graph_runtime.db restored) day) (Some journal);
+    sync_all restored conn;
+    check_eq ~msg:"journal references compile and synchronize with dependent text edits"
+      (Graph_runtime.pending_operations restored) []))
+    ["2026-10-26", 20261026; "Oct 26th, 2026", 20261026; "0044-03-15", 440315]
+
 let cases = [
+  case "text property date references create Journals while partial dates remain Pages" text_property_references_create_journals_and_keep_partial_dates_literal;
   case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;
   case "wrapped node values navigate to their actual target safely" wrapped_node_values_resolve_only_the_owning_property;
   case "property creation validates names and reuses definitions safely" property_creation_rejects_unsafe_names_and_preserves_definitions;

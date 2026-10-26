@@ -1054,6 +1054,16 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
 
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =
+  let new_block =
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+      Option.fold ~none:false ~some:(fun editing ->
+        List.exists (fun (row : Model.outline_row) -> row.row_uuid = editing.Model.editing_uuid
+          && row.row_display_type = Some "code") current.outliner_rows) current.outliner_editing) model_source)
+      (button ~icon:(`app "add") ~variant:`ghost ~size:`icon
+        ~width:(if Lui_ui.host context = KotlinHost then 48 else 38) ~height:42
+        ~label:(View_base.tr (Signal.sample model_source) "Create new block")
+        ~accessibility_identifier:"button.outliner.editor.newBlock"
+        ~on_press:(fun _ -> ignore (send (Model.PerformOutlinerToolbarAction "newBlock"))) []) in
   if Lui_ui.host context = KotlinHost then
     let task_status (current : Model.logseq_model) =
       match current.outliner_editing with
@@ -1102,6 +1112,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               "button.outliner.editor.moveUp" "moveUp" send;
             toolbar_button model_source (`app "toolbar-move-down") "Move down"
               "button.outliner.editor.moveDown" "moveDown" send;
+            new_block;
             toolbar_button model_source (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
             toolbar_button model_source (`app "toolbar-camera") "Photo"
@@ -1149,6 +1160,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           "button.outliner.editor.moveUp" "moveUp";
         apple_icon_button (`app "toolbar-move-down") "Move down"
           "button.outliner.editor.moveDown" "moveDown";
+        new_block;
         apple_icon_button (`app "toolbar-tag") "Tag"
           "button.outliner.editor.tag" "tag";
         apple_icon_button (`app "toolbar-camera") "Photo"

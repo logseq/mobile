@@ -47,6 +47,7 @@ type outliner_toolbar =
   | Audio
   | Attachment
   | Hide_keyboard
+  | New_block
   | Copy
   | Delete
   | Copy_reference

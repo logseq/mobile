@@ -22,7 +22,76 @@ enum LGNavigationSurfacePolicy {
     ) -> CGFloat {
         max(iconWidth, minimumHitTarget)
     }
+
+    static func sidebarGraphWidth(_ availableWidth: CGFloat) -> CGFloat {
+        // Keep room for Settings, the system sidebar toggle, and toolbar margins.
+        max(44, availableWidth - 2 * 44 - 3 * 16)
+    }
 }
+
+#if os(iOS)
+private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
+    let update: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe(update: update) }
+    func updateUIView(_ view: Probe, context: Context) { view.update = update }
+
+    final class Probe: UIView {
+        var update: (CGFloat) -> Void
+        private var marker: Marker?
+
+        init(update: @escaping (CGFloat) -> Void) {
+            self.update = update
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            marker?.removeFromSuperview()
+            marker = nil
+            guard let host = window?.rootViewController?.view else { return }
+            // Observe the root view's docked guide; the rendered content may already
+            // have been resized by SwiftUI's floating-keyboard avoidance.
+            host.keyboardLayoutGuide.followsUndockedKeyboard = false
+            let marker = Marker { [weak self] inset in self?.update(inset) }
+            marker.translatesAutoresizingMaskIntoConstraints = false
+            marker.isUserInteractionEnabled = false
+            host.addSubview(marker)
+            NSLayoutConstraint.activate([
+                marker.topAnchor.constraint(equalTo: host.keyboardLayoutGuide.topAnchor),
+                marker.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+                marker.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                marker.widthAnchor.constraint(equalToConstant: 1),
+            ])
+            self.marker = marker
+        }
+    }
+
+    private final class Marker: UIView {
+        let update: (CGFloat) -> Void
+        private var lastInset: CGFloat = -1
+
+        init(update: @escaping (CGFloat) -> Void) {
+            self.update = update
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let host = superview else { return }
+            let inset = max(0, host.bounds.maxY - host.keyboardLayoutGuide.layoutFrame.minY - host.safeAreaInsets.bottom)
+            guard abs(inset - lastInset) > 0.5 else { return }
+            lastInset = inset
+            DispatchQueue.main.async { [weak self] in self?.update(inset) }
+        }
+    }
+}
+#endif
 
 @MainActor
 enum LGNavigationExtension {
@@ -180,32 +249,40 @@ private struct LGSidebarNavigation: View {
 
     var body: some View {
         let _ = context.revision
-        NavigationStack {
-            child(at: 0)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(background.ignoresSafeArea())
-                #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(background, for: .navigationBar)
-                #endif
-                .toolbar {
+        GeometryReader { geometry in
+            NavigationStack {
+                child(at: 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(background.ignoresSafeArea())
                     #if os(iOS)
-                    if #available(iOS 26.0, *) {
-                        ToolbarItem(placement: .topBarLeading) {
-                            child(at: 1).fixedSize(horizontal: true, vertical: false)
-                        }
-                        .sharedBackgroundVisibility(.hidden)
-                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
-                            .sharedBackgroundVisibility(.hidden)
-                    } else {
-                        ToolbarItem(placement: .topBarLeading) { child(at: 1) }
-                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
-                    }
-                    #else
-                    ToolbarItem(placement: .navigation) { child(at: 1) }
-                    ToolbarItem(placement: .primaryAction) { child(at: 2) }
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackground(background, for: .navigationBar)
                     #endif
-                }
+                    .toolbar {
+                        #if os(iOS)
+                        if #available(iOS 26.0, *) {
+                            ToolbarItem(placement: .topBarLeading) {
+                                child(at: 1)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width))
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                            ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                                .sharedBackgroundVisibility(.hidden)
+                        } else {
+                            ToolbarItem(placement: .topBarLeading) {
+                                child(at: 1).lineLimit(1).truncationMode(.middle)
+                                    .frame(maxWidth: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width))
+                            }
+                            ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                        }
+                        #else
+                        ToolbarItem(placement: .navigation) { child(at: 1) }
+                        ToolbarItem(placement: .primaryAction) { child(at: 2) }
+                        #endif
+                    }
+            }
         }
     }
 
@@ -531,6 +608,7 @@ private struct LGNavigationContent: View {
     @State private var nativePop: LGNativeNavigationPop?
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
+    @State private var dockedKeyboardInset: CGFloat = 0
     #endif
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
@@ -587,6 +665,15 @@ private struct LGNavigationContent: View {
                     sizedBottomChrome
                 }
             }
+            #if os(iOS)
+            .padding(.bottom, dockedKeyboardInset)
+            .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad ? .bottom : [])
+            .background {
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    LGDockedKeyboardInsetReader { dockedKeyboardInset = $0 }
+                }
+            }
+            #endif
             .background(routeBackground.ignoresSafeArea())
     }
 

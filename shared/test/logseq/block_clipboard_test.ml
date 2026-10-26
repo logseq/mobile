@@ -300,7 +300,26 @@ let pasted_literal_blocks_do_not_create_reference_pages () =
      "$$\n[[Literal destination]]\n$$";
      "Before math\n\n$$\n[[Literal destination]]\n$$"]
 
+let quote_paste_preserves_paragraphs_inside_one_block () =
+  List.iter (fun (before, start, length) -> R.with_runtime (fun session runtime _ ->
+    set runtime target "logseq.property.node/display-type" (Pending_ops.Keyword_value "quote");
+    rename runtime target before;
+    let before_count = List.length (Graph_runtime.blocks_for_page runtime Q.page) in
+    let plain = "First paragraph\r\n\r\nSecond paragraph\n\n- A quoted list\n- Another item" in
+    let result = paste ~start ~length session target before plain in success result;
+    let expected, caret = Block_clipboard.inline {target_uuid = target; before_title = before;
+      selection_start = start; selection_length = length; plain_text = plain; blocks_edn = ""} in
+    check_eq ~msg:"Quote retains all pasted paragraphs and list lines" (title runtime target) expected;
+    check_eq ~msg:"pasting into Quote creates no sibling blocks"
+      (List.length (Graph_runtime.blocks_for_page runtime Q.page)) before_count;
+    check_eq (value runtime target "logseq.property.node/display-type") (Some (D.Keyword "quote"));
+    let editing = member "editing" (member "outlinerState" (member "result" result)) in
+    check_eq (member "uuid" editing) (`String target);
+    check_eq (member "caretUTF16Offset" editing) (`Int caret)))
+    ["", 0, 0; "Before 🙂 replace after", 10, 7]
+
 let cases = [
+  case "Quote paste retains paragraphs and Markdown in one block" quote_paste_preserves_paragraphs_inside_one_block;
   case "pasted code and math never create reference pages" pasted_literal_blocks_do_not_create_reference_pages;
   case "reference-created pages are searchable immediately" created_reference_pages_are_searchable_immediately;
   case "pasted wiki references create and deduplicate ordinary pages" pasted_page_references_create_missing_pages;

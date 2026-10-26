@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerFormatter
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberDatePickerState
@@ -36,6 +38,12 @@ import dev.lui.LuiExtensionValueKind
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.Date
+import java.util.Locale
+import android.icu.text.DateFormat
+import android.icu.text.DisplayContext
+import android.icu.util.GregorianCalendar
+import android.icu.util.TimeZone
 import java.time.ZoneOffset
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -121,8 +129,26 @@ private fun PropertyDatePicker(context: LuiExtensionContext) {
         if (time) (source.toLongOrNull()?.let(Instant::ofEpochMilli) ?: Instant.now()).atZone(zone)
         else (runCatching { LocalDate.parse(source) }.getOrDefault(LocalDate.now())).atStartOfDay(zone)
     }
-    val date = rememberDatePickerState(initialSelectedDateMillis = initial.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+    val date = rememberDatePickerState(
+        initialSelectedDateMillis = initial.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        yearRange = 1..9999,
+    )
     val clock = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute)
+    LaunchedEffect(source) {
+        val selected = if (time) source.toLongOrNull()?.let { Instant.ofEpochMilli(it).atZone(zone) }
+            else runCatching { LocalDate.parse(source).atStartOfDay(zone) }.getOrNull()
+        if (selected != null && selected.year in date.yearRange) {
+            val millis = selected.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            if (date.selectedDateMillis != millis) {
+                date.selectedDateMillis = millis
+                date.displayedMonthMillis = millis
+            }
+            if (time) {
+                clock.hour = selected.hour
+                clock.minute = selected.minute
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         snapshotFlow { Triple(date.selectedDateMillis, clock.hour, clock.minute) }.distinctUntilChanged().collect { (millis, hour, minute) ->
             if (millis != null) {
@@ -133,9 +159,34 @@ private fun PropertyDatePicker(context: LuiExtensionContext) {
         }
     }
     Column(Modifier.fillMaxWidth().testTag(context.string("identifier") ?: "")) {
-        DatePicker(state = date, showModeToggle = false)
+        DatePicker(state = date, dateFormatter = CalendarDateFormatter, showModeToggle = false)
         if (time) TimeInput(state = clock)
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+private object CalendarDateFormatter : DatePickerFormatter {
+    private val formatters = mutableMapOf<Pair<String, Locale>, DateFormat>()
+
+    private fun format(millis: Long?, skeleton: String, locale: Locale): String? = millis?.let {
+        val formatter = formatters.getOrPut(skeleton to locale) {
+            DateFormat.getInstanceForSkeleton(skeleton, locale).apply {
+                // Keep ICU labels on the same proleptic Gregorian calendar as the picker state.
+                calendar = GregorianCalendar(TimeZone.GMT_ZONE, locale).apply {
+                    gregorianChange = Date(Long.MIN_VALUE)
+                }
+                setContext(DisplayContext.CAPITALIZATION_FOR_STANDALONE)
+            }
+        }
+        formatter.format(Date(it))
+    }
+
+    override fun formatMonthYear(monthMillis: Long?, locale: Locale): String? =
+        format(monthMillis, DatePickerDefaults.YearMonthSkeleton, locale)
+
+    override fun formatDate(dateMillis: Long?, locale: Locale, forContentDescription: Boolean): String? =
+        format(dateMillis, if (forContentDescription) DatePickerDefaults.YearMonthWeekdayDaySkeleton
+            else DatePickerDefaults.YearAbbrMonthDaySkeleton, locale)
 }
 
 @Composable
