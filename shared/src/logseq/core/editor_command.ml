@@ -71,22 +71,16 @@ let candidates db query =
     |> List.stable_sort (fun (_, a) (_, b) -> compare b a)
     |> List.map fst
 
-let journal_reference db ms =
-  let day = Cache_model.journal_day_for_ms ms in
+let journal_reference_for_day db day =
   let uuid = Option.bind db (fun db -> Read.journal_page_uuid db day)
     |> Option.value ~default:(Journal.page_uuid day) in
   "[[" ^ uuid ^ "]]"
 
-let date_ms value =
-  try
-    if String.length value <> 10 || value.[4] <> '-' || value.[7] <> '-' then invalid_arg "date";
-    let y = int_of_string (String.sub value 0 4) and m = int_of_string (String.sub value 5 2)
-    and d = int_of_string (String.sub value 8 2) in
-    let seconds, tm = Unix.mktime { (Unix.localtime 0.) with tm_year = y - 1900; tm_mon = m - 1; tm_mday = d;
-      tm_hour = 0; tm_min = 0; tm_sec = 0; tm_isdst = false } in
-    if tm.Unix.tm_year <> y - 1900 || tm.tm_mon <> m - 1 || tm.tm_mday <> d then invalid_arg "date";
-    Ok (int_of_float (seconds *. 1000.))
-  with _ -> Error "Choose a valid date"
+let journal_reference db ms = journal_reference_for_day db (Cache_model.journal_day_for_ms ms)
+
+let date_day value = match Journal.day_of_string value with
+  | Some day -> Ok day
+  | None -> Error "Choose a valid date"
 
 let timestamp value =
   try

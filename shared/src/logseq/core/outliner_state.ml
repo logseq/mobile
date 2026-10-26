@@ -49,6 +49,7 @@ type outliner_toolbar =
   | Audio
   | Attachment
   | Hide_keyboard
+  | New_block
   | Copy
   | Delete
   | Copy_reference
@@ -1306,7 +1307,8 @@ let apply_editor_action context state editing action =
     let tm = Unix.localtime (Unix.gettimeofday ()) in
     let seconds, _ = Unix.mktime {tm with tm_mday = tm.tm_mday + offset} in
     let ms = int_of_float (seconds *. 1000.) in
-    finish (insert_at_caret editing (journal_reference context.db ms) 0) [Execute_editor (Ensure_journal ms)]
+    finish (insert_at_caret editing (journal_reference context.db ms) 0)
+      [Execute_editor (Ensure_journal (Cache_model.journal_day_for_ms ms))]
   | Pick picker ->
     step {state with editing = Some editing; autocomplete = Some {kind = Picker picker; query = ""}} []
   | Code language when String.trim editing.title <> ""
@@ -1325,10 +1327,10 @@ let submit_completion context state value =
       | Error message -> step state [Editor_error message] in
     (match picker with
      | Link | Image -> inserted (link ~image:(picker = Image) value)
-     | Date -> (match date_ms value with
+     | Date -> (match date_day value with
        | Error message -> step state [Editor_error message]
-       | Ok ms -> let next, commands = inserted (Ok (journal_reference context.db ms)) in
-         step next (commands @ [Execute_editor (Ensure_journal ms)]))
+       | Ok day -> let next, commands = inserted (Ok (journal_reference_for_day context.db day)) in
+         step next (commands @ [Execute_editor (Ensure_journal day)]))
      | Deadline | Scheduled ->
        (match int_of_string_opt value with
         | Some _ -> apply_editor_action context state editing
@@ -1499,6 +1501,16 @@ let update context (state : outliner_state) message =
        step {state with editing = Some {editing with title; caret};
          autocomplete = None; completion_dismissed = true} [Paste_blocks content]
      | _ -> step state [Editor_error "Paste target is no longer being edited"])
+  | Text_changed {title; caret}
+      when caret > 0 && String_kit.starts_with ~prefix:">" title
+        && Option.fold ~none:false ~some:(fun (editing : editor_draft) ->
+          (title = ">" || editing.title = "")
+          && Option.fold ~none:false ~some:(fun (block : Model.block) -> block.display_type = None)
+            (find_block context editing.uuid)) state.editing ->
+    let editing = Option.get state.editing in
+    apply_editor_action context state
+      {editing with title = String.sub title 1 (String.length title - 1); caret = caret - 1}
+      (Editor_command.Properties ["logseq.property.node/display-type", Some (Ops.Keyword_value "quote")])
   | Text_pasted value | Text_changed value ->
     (match state.editing with
      | Some editing ->
@@ -1590,6 +1602,10 @@ let update context (state : outliner_state) message =
     (match state.editing with
      | Some editing ->
        step state [ Cycle_task_status editing.uuid; Haptic Impact ]
+     | None -> step state [])
+  | Toolbar New_block ->
+    (match state.editing with
+     | Some editing -> split_or_outdent context {state with autocomplete = None} editing
      | None -> step state [])
   | Toolbar Hide_keyboard ->
     step

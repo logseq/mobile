@@ -1,6 +1,7 @@
 (* UI translations reuse Logseq desktop dictionaries; note content is never translated. *)
 let dictionaries = [
   ("af", [
+    ("Create new block", "Skep 'n nuwe blok");
     ("Back", "Terug");
     ("Close", "Sluit");
     ("Rename page", "Hernoem");
@@ -236,6 +237,7 @@ let dictionaries = [
     ("value", "Waarde")
   ]);
   ("ar", [
+    ("Create new block", "إنشاء كتلة جديدة");
     ("Back", "رجوع");
     ("Close", "إغلاق");
     ("Rename page", "إعادة تسمية");
@@ -471,6 +473,7 @@ let dictionaries = [
     ("value", "القيمة")
   ]);
   ("ca", [
+    ("Create new block", "Crear bloc nou");
     ("Back", "Enrere");
     ("Close", "Tanca");
     ("Rename page", "Reanomenar");
@@ -706,6 +709,7 @@ let dictionaries = [
     ("value", "Valor")
   ]);
   ("cs", [
+    ("Create new block", "Vytvořit nový blok");
     ("Back", "Zpět");
     ("Close", "Zavřít");
     ("Rename page", "Přejmenovat");
@@ -941,6 +945,7 @@ let dictionaries = [
     ("value", "Hodnota")
   ]);
   ("de", [
+    ("Create new block", "Neuen Block erstellen");
     ("Back", "Zurück");
     ("Close", "Schließen");
     ("Rename page", "Umbenennen");
@@ -1176,6 +1181,7 @@ let dictionaries = [
     ("value", "Wert")
   ]);
   ("en", [
+    ("Create new block", "Create new block");
     ("Back", "Back");
     ("Close", "Close");
     ("Rename page", "Rename");
@@ -1419,6 +1425,7 @@ let dictionaries = [
     ("value", "value")
   ]);
   ("es", [
+    ("Create new block", "Crear bloque nuevo");
     ("Back", "Ir hacia atrás");
     ("Close", "Cerrar");
     ("Rename page", "Renombrar");
@@ -1654,6 +1661,7 @@ let dictionaries = [
     ("value", "Valor")
   ]);
   ("fa", [
+    ("Create new block", "بلوک جدید");
     ("Back", "بازگشت");
     ("Close", "بستن");
     ("Rename page", "تغییر نام");
@@ -1889,6 +1897,7 @@ let dictionaries = [
     ("value", "مقدار")
   ]);
   ("fr", [
+    ("Create new block", "Créer un nouveau bloc");
     ("Back", "Retour en arrière");
     ("Close", "Fermer");
     ("Rename page", "Renommer");
@@ -2124,6 +2133,7 @@ let dictionaries = [
     ("value", "Valeur")
   ]);
   ("id", [
+    ("Create new block", "Buat blok baru");
     ("Back", "Kembali");
     ("Close", "Tutup");
     ("Rename page", "Ganti nama");
@@ -2359,6 +2369,7 @@ let dictionaries = [
     ("value", "Nilai")
   ]);
   ("it", [
+    ("Create new block", "Crea un nuovo blocco");
     ("Back", "Indietro");
     ("Close", "Chiudi");
     ("Rename page", "Rinomina");
@@ -2594,6 +2605,7 @@ let dictionaries = [
     ("value", "Valore")
   ]);
   ("ja", [
+    ("Create new block", "新しいブロック");
     ("Back", "戻る");
     ("Close", "閉じる");
     ("Rename page", "名前を変更");
@@ -2829,6 +2841,7 @@ let dictionaries = [
     ("value", "値")
   ]);
   ("ko", [
+    ("Create new block", "블록 만들기");
     ("Back", "뒤로");
     ("Close", "닫기");
     ("Rename page", "이름 변경");
@@ -3064,6 +3077,7 @@ let dictionaries = [
     ("value", "값")
   ]);
   ("nb-no", [
+    ("Create new block", "Opprett ny blokk");
     ("Back", "Tilbake");
     ("Close", "Lukk");
     ("Rename page", "Gi nytt navn");
@@ -3299,6 +3313,7 @@ let dictionaries = [
     ("value", "Verdi")
   ]);
   ("nl", [
+    ("Create new block", "Maak nieuw blok");
     ("Back", "Terug");
     ("Close", "Sluiten");
     ("Rename page", "Hernoemen");
@@ -3534,6 +3549,7 @@ let dictionaries = [
     ("value", "Waarde")
   ]);
   ("pl", [
+    ("Create new block", "Utwórz nowy blok");
     ("Back", "Wstecz");
     ("Close", "Zamknij");
     ("Rename page", "Zmień nazwę");
@@ -3769,6 +3785,7 @@ let dictionaries = [
     ("value", "Wartość")
   ]);
   ("pt-br", [
+    ("Create new block", "Criar novo bloco");
     ("Back", "Voltar");
     ("Close", "Fechar");
     ("Rename page", "Renomear");
@@ -4004,6 +4021,7 @@ let dictionaries = [
     ("value", "Valor")
   ]);
   ("pt-pt", [
+    ("Create new block", "Criar novo bloco");
     ("Back", "Voltar");
     ("Close", "Fechar");
     ("Rename page", "Renomear");
@@ -4239,6 +4257,7 @@ let dictionaries = [
     ("value", "Valor")
   ]);
   ("ru", [
+    ("Create new block", "Создать новый блок");
     ("Back", "Назад");
     ("Close", "Закрыть");
     ("Rename page", "Переименовать");
@@ -4474,6 +4493,7 @@ let dictionaries = [
     ("value", "Значение")
   ]);
   ("sk", [
+    ("Create new block", "Vytvoriť nový blok");
     ("Back", "Späť");
     ("Close", "Zavrieť");
     ("Rename page", "Premenovať");
@@ -4709,6 +4729,7 @@ let dictionaries = [
     ("value", "Hodnota")
   ]);
   ("tr", [
+    ("Create new block", "Yeni blok oluştur");
     ("Back", "Geri");
     ("Close", "Kapat");
     ("Rename page", "Yeniden adlandır");
@@ -4951,6 +4972,7 @@ let dictionaries = [
     ("value", "Değer")
   ]);
   ("uk", [
+    ("Create new block", "Створити новий блок");
     ("Back", "Повернутися");
     ("Close", "Закрити");
     ("Rename page", "Перейменувати");
@@ -5193,6 +5215,7 @@ let dictionaries = [
     ("value", "значення")
   ]);
   ("vi", [
+    ("Create new block", "Tạo khối mới");
     ("Back", "Quay lại");
     ("Close", "Đóng");
     ("Back", "Quay lại");
@@ -5237,6 +5260,7 @@ let dictionaries = [
     ("month", "tháng")
   ]);
   ("zh-CN", [
+    ("Create new block", "创建块");
     ("Back", "返回");
     ("Close", "关闭");
     ("Rename page", "重命名");
@@ -5427,6 +5451,7 @@ let dictionaries = [
     ("Version", "版本")
   ]);
   ("zh-cn", [
+    ("Create new block", "创建块");
     ("1 day ago", "1 天前");
     ("1 month ago", "1 个月前");
     ("1 week ago", "1 周前");
@@ -5550,6 +5575,7 @@ let dictionaries = [
     ("value", "值")
   ]);
   ("zh-hant", [
+    ("Create new block", "建立塊");
     ("Back", "返回");
     ("Close", "關閉");
     ("Rename page", "重新命名");

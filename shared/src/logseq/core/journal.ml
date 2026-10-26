@@ -134,6 +134,15 @@ let valid_day day =
   let days = match month with 2 -> if leap then 29 else 28 | 4 | 6 | 9 | 11 -> 30 | _ -> 31 in
   year >= 1 && year <= 9999 && month >= 1 && month <= 12 && date >= 1 && date <= days
 
+let day_of_string text =
+  let compact = if String.length text = 10 && text.[4] = '-' && text.[7] = '-' then
+      String.sub text 0 4 ^ String.sub text 5 2 ^ String.sub text 8 2
+    else text in
+  if String.length compact <> 8 || not (String.for_all (fun c -> c >= '0' && c <= '9') compact)
+  then None
+  else let day = int_of_string compact in
+    if valid_day day then Some day else None
+
 let format db =
   Option.bind (D.entid db "db/ident" (D.Keyword "logseq.class/Journal")) (fun eid ->
     match Seq.uncons (D.Db.datoms db D.Eavt ~e:eid ~a:format_attr ()) with

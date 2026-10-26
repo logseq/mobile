@@ -277,7 +277,7 @@ let insert db ~now ~fresh_uuid content nodes =
 
 let paste db ~graph ~now ~fresh_uuid content = protect (fun () ->
   let id = eid db content.target_uuid in
-  let literal = List.mem (get db id "logseq.property.node/display-type") [D.Keyword "code"; D.Keyword "math"] in
+  let literal = List.mem (G.display_type_for_eid db id) [Some "code"; Some "math"; Some "quote"] in
   let rich = if literal then None else decode ~graph content.blocks_edn in
   let source = normalize_lines content.plain_text in
   let nodes = match rich with Some nodes -> Some nodes | None when literal -> None

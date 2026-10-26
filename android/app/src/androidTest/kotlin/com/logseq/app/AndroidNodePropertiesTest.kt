@@ -18,7 +18,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.app.runtime.LogseqNativeBridge
 import com.logseq.app.runtime.LuiPatchFilter
@@ -42,6 +48,51 @@ class AndroidNodePropertiesTest {
 
     @After fun closeBridge() {
         if (::bridge.isInitialized) ui.runOnIdle { bridge.close() }
+    }
+
+    @Test fun historicalDatesCanBeOpenedTypedAndSelected() {
+        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
+            extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
+        val filter = LuiPatchFilter(backend)
+        bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
+        val root = bridge.initialize(authenticationCode = 3)
+        val snapshot = JSONObject(InstrumentationRegistry.getInstrumentation().context.assets
+            .open("node-properties.json").bufferedReader().use { it.readText() })
+        val properties = snapshot.getJSONObject("result").getJSONObject("nodeProperties").getJSONArray("properties")
+        for (i in 0 until properties.length()) {
+            val property = properties.getJSONObject(i)
+            if (property.getString("attr") == "user.property/Due") property.put("editorValue", "0044-03-15")
+        }
+        filter.applyJson(bridge.applySnapshot(snapshot.toString()))
+        bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        ui.setContent { MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
+            Box(Modifier.fillMaxSize()) { backend.Content(root) }
+        } }
+        ui.onNodeWithTag("properties.expand.page").performClick()
+        val editor = "property.page.user.property/Due"
+        ui.onNodeWithTag("property.value.page.user.property/Due").performScrollTo().performClick()
+        fun input() = ui.onNodeWithTag("view.edit.date.input.$editor")
+        input().assertTextEquals("0044-03-15")
+        val calendar = hasAnyAncestor(hasTestTag("view.edit.date.$editor"))
+        ui.onNode(hasText("March 15", substring = true) and calendar, useUnmergedTree = true).performScrollTo().performClick()
+        input().assertTextEquals("0044-03-15")
+        input().performTextReplacement("2026-10-26")
+        closeSoftKeyboard()
+        ui.onNode(hasText("October 23", substring = true) and calendar, useUnmergedTree = true).performScrollTo().performClick()
+        input().assertTextEquals("2026-10-23")
+        input().performTextReplacement("0044-03-15")
+        ui.onNodeWithTag("view.edit.save.$editor").performClick()
+        ui.runOnIdle {
+            var selected: JSONObject? = null
+            repeat(32) {
+                val encoded = bridge.takeEffect()
+                if (encoded.isNotEmpty()) {
+                    val effect = JSONObject(encoded).optJSONObject("effect")
+                    if (effect?.optString("kind") == "node-property") selected = JSONObject(effect.getString("text"))
+                }
+            }
+            assertEquals("Historical dates remain calendar dates across the native bridge", "0044-03-15", selected?.getString("value"))
+        }
     }
 
     @Test fun pagePropertiesUseBlocksAndNativeTypedEditors() {

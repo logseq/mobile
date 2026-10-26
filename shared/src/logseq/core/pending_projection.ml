@@ -377,30 +377,52 @@ let create_attrs db uuid title created_at =
    nested clipboard operations share the same creation and deduplication rules. *)
 let resolve_page_references literal_blocks db intent =
   let created = ref [] and seen = Hashtbl.create 8 in
+  let resolve name =
+    let day = Dev_query.Date_time_util.journal_title_to_int
+      ~formatters:(Journal.journal_title_formatters (Some (Journal.format db))) name in
+    match day with
+    | Some day when day / 10000 >= 1 && Journal.valid_day day ->
+      (match Graph_read.journal_page_uuid db day with
+       | Some _ as uuid -> uuid
+       | None ->
+         let key = "journal:" ^ string_of_int day in
+         (match Hashtbl.find_opt seen key with
+          | Some uuid -> Some uuid
+          | None ->
+            let uuid = Journal.page_uuid day in
+            let block_uuid = match Ds.squuid () with Ds.Uuid uuid -> uuid | _ -> assert false in
+            Hashtbl.add seen key uuid;
+            created := Ops.Create_journal {page_uuid = uuid; block_uuid; block_title = "";
+              title = Journal.title db day; journal_day = day;
+              created_at = int_of_float (Unix.gettimeofday () *. 1000.)} :: !created;
+            Some uuid))
+    | _ ->
+      (match Graph_read.unique_named_uuid false db name with
+       | Some _ as uuid -> uuid
+       | None ->
+         let key = "page:" ^ Node_title.name name in
+         match Hashtbl.find_opt seen key with
+         | Some uuid -> Some uuid
+         | None ->
+           let uuid = match Ds.squuid () with Ds.Uuid uuid -> uuid | _ -> assert false in
+           Hashtbl.add seen key uuid;
+           created := Ops.Create_page {uuid; title = name; created_at = int_of_float (Unix.gettimeofday () *. 1000.)} :: !created;
+           Some uuid) in
   let title uuid text =
     let literal = match Hashtbl.find_opt literal_blocks uuid with
       | Some literal -> literal
       | None -> Option.fold ~none:false ~some:(fun id ->
           List.mem (Graph_read.display_type_for_eid db id) [Some "code"; Some "math"])
           (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
-    if literal then text else Ref_text.to_ids (fun name ->
-      match Graph_read.unique_named_uuid false db name with
-      | Some _ as uuid -> uuid
-      | None ->
-        let key = Node_title.name name in
-        match Hashtbl.find_opt seen key with
-        | Some uuid -> Some uuid
-        | None ->
-          let uuid = match Ds.squuid () with Ds.Uuid uuid -> uuid | _ -> assert false in
-          Hashtbl.add seen key uuid;
-          created := Ops.Create_page {uuid; title = name; created_at = int_of_float (Unix.gettimeofday () *. 1000.)} :: !created;
-          Some uuid) (Graph_read.unique_named_uuid true db) text in
+    if literal then text else Ref_text.to_ids resolve (Graph_read.unique_named_uuid true db) text in
   let next = match intent with
     | Ops.Save_title value -> Ops.Save_title {value with title = title value.uuid value.title}
     | Ops.Insert_block value -> Ops.Insert_block {value with title = title value.uuid value.title}
     | Ops.Split_block value -> Ops.Split_block {value with before = title value.uuid value.before; after = title value.uuid value.after}
     | Ops.Merge_backward value -> Ops.Merge_backward {value with title = title value.uuid value.title}
     | Ops.Create_journal value -> Ops.Create_journal {value with block_title = title value.block_uuid value.block_title}
+    | Ops.Create_property_value ({content = Ops.String_value text; _} as value) ->
+      Ops.Create_property_value {value with content = Ops.String_value (title value.uuid text)}
     | _ -> intent in
   if !created = [] then next else Ops.Atomic (List.rev !created @ [next])
 
@@ -457,7 +479,8 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
     if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then Error "property value UUID already exists"
     else if Ds.entid db "block/uuid" (Ds.Uuid value.owner_uuid) = None then Error "property owner no longer exists"
     else if Ds.entid db "db/ident" (Ds.Keyword value.property_ident) = None then Error "property no longer exists"
-    else Ok [entity_tx (Ds.Temp_id ("pending/" ^ value.uuid)) (property_value_attrs db value)]
+    else Ok (entity_tx (Ds.Temp_id ("pending/" ^ value.uuid)) (property_value_attrs db value)
+      :: (match value.content with Ops.String_value text -> title_tx db value.uuid text | _ -> []))
   | Ops.Save_title value ->
     (match
        string_value (one_value db (lookup value.uuid) "block/title")

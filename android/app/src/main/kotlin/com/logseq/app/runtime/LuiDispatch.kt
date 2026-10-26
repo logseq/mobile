@@ -2,13 +2,35 @@ package com.logseq.app.runtime
 
 import dev.lui.LuiEvent
 
+internal object NativeEditorInput {
+    private var owner: Any? = null
+    private var pending: (() -> Unit)? = null
+
+    fun register(owner: Any, flush: () -> Unit) {
+        this.owner = owner
+        pending = flush
+    }
+
+    fun unregister(owner: Any) {
+        if (this.owner === owner) {
+            this.owner = null
+            pending = null
+        }
+    }
+
+    fun flush() { pending?.invoke() }
+}
+
 // Kotlin port of the former lui_dispatch.dart: LUI events → native
 // bridge calls, including the extension (text, value) extraction the OCaml
 // side reinterprets by identifier/name.
 internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqNativeBridge) {
     when (event) {
         is LuiEvent.Appear -> native.appear(event.node)
-        is LuiEvent.Press -> native.press(event.node)
+        is LuiEvent.Press -> {
+            NativeEditorInput.flush()
+            native.press(event.node)
+        }
         is LuiEvent.LongPress -> native.longPress(event.node)
         is LuiEvent.DoublePress -> native.doublePress(event.node)
         is LuiEvent.Change -> native.change(event.node)

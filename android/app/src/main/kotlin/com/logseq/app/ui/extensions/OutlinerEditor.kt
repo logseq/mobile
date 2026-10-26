@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -48,6 +49,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.lui.LuiExtensionContext
+import com.logseq.app.runtime.NativeEditorInput
 import kotlinx.coroutines.delay
 
 // Port of the former _OutlinerEditor Dart implementation.
@@ -169,7 +171,23 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             "caret-utf16-offset" to caretOffset(value, title),
         )
     }
-    DisposableEffect(Unit) { onDispose { debounceSeq++ } }
+    val inputOwner = remember { Any() }
+    SideEffect {
+        if (focusEnabled) NativeEditorInput.register(inputOwner) {
+            if (!awaitingHandoff && value.text != modelTitle && value.text != publishedTitles.lastOrNull()) {
+                debounceSeq++
+                publishedTitles.add(value.text)
+                context.emit("text-change", "title" to value.text,
+                    "caret-utf16-offset" to caretOffset(value, value.text))
+            }
+        } else NativeEditorInput.unregister(inputOwner)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            debounceSeq++
+            NativeEditorInput.unregister(inputOwner)
+        }
+    }
 
     fun submitReturn(title: String, caret: Int) {
         if (awaitingHandoff) {

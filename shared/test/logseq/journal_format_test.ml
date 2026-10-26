@@ -201,7 +201,15 @@ let search_reindexes_journals_and_references_when_format_changes () =
     check ~msg:"references in indexed block titles follow the chosen journal format"
       (List.exists (fun (hit : Search_index.indexed_search_hit) -> hit.uuid = Q.alpha && String_kit.includes ~sub:"23-10-2026" hit.title) hits))
 
+let reference_dates_parse_without_epoch_conversion () =
+  List.iter (fun (title, expected) ->
+    check_eq ~msg:title (Dev_query.Date_time_util.journal_title_to_int title) expected)
+    ["2026", None; "2026-10", None; "2026-02-30", None;
+     "20261026", Some 20261026; "2026-10-26", Some 20261026;
+     "0044-03-15", Some 440315; "Mar 15th, 0044", Some 440315]
+
 let cases = [
+  case "reference dates parse without epoch conversion or partial years" reference_dates_parse_without_epoch_conversion;
   case "search refreshes journal and reference labels on format changes" search_reindexes_journals_and_references_when_format_changes;
   case "date commands preserve existing and new journal identities" date_commands_keep_stable_journal_references_after_format_changes;
   case "open destinations refresh date labels immediately" open_destinations_refresh_without_reopening;

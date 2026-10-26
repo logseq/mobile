@@ -116,8 +116,7 @@ let clone_template db ~now ~fresh_uuid target source draft =
 
 let plan db ~now ~fresh_uuid operation =
   try Ok (match operation with
-    | Ensure_journal ms ->
-      let day = Cache_model.journal_day_for_ms ms in
+    | Ensure_journal day ->
       if Read.journal_page_uuid db day <> None then [] else
       [Ops.Create_journal {page_uuid = Journal.page_uuid day;
         block_uuid = fresh_uuid (); block_title = ""; title = Journal.title db day; journal_day = day; created_at = now}]
@@ -147,7 +146,14 @@ let plan db ~now ~fresh_uuid operation =
           order = position (Read.string_value (Read.value db target "block/order")) (next_order db target); created_at = now};
           Ops.Set_property {uuid = fresh; attr = "block/link"; expected = None; value = Some (Ops.Ref_uuid source)}]]
     | Apply_template (target, source, draft) -> clone_template db ~now ~fresh_uuid target source draft
-    | Apply (uuid, Properties fields) -> List.map (fun (attr, value) -> set db uuid attr value) fields
+    | Apply (uuid, Properties fields) ->
+      List.map (fun (attr, value) -> set db uuid attr value) fields
+      @ (if List.assoc_opt "logseq.property.node/display-type" fields = Some (Some (Ops.Keyword_value "quote")) then
+          match Option.bind (Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Quote-block"))
+            (fun id -> Read.uuid_for_eid db id) with
+          | Some tag_uuid -> [Ops.Add_tag {uuid; tag_uuid}]
+          | None -> []
+        else [])
     | Apply (uuid, Choice (attr, value)) -> [edit db ~now ~fresh_uuid uuid attr (Option.value ~default:"" value)]
     | Apply (uuid, Code lang) -> [set db uuid "logseq.property.node/display-type" (Some (Ops.Keyword_value "code"))]
       @ (match lang with None -> [] | Some lang -> [set db uuid "logseq.property.code/lang" (Some (Ops.String_value lang))])

@@ -20,7 +20,8 @@ val candidates : Datascript.db option -> string -> entry list
 val picker_name : picker -> string
 val picker_of_name : string -> picker option
 val journal_reference : Datascript.db option -> int -> string
-val date_ms : string -> (int, string) result
+val journal_reference_for_day : Datascript.db option -> int -> string
+val date_day : string -> (int, string) result
 val timestamp : string -> (int, string) result
 val link : image:bool -> string -> (string, string) result
 

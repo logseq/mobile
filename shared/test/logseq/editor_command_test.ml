@@ -421,6 +421,76 @@ let templates_clone_without_mutating_the_source () = R.with_runtime (fun session
   check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Beta result"));
   check_eq ~msg:"template application does not create a live link" (value runtime Q.alpha "block/link") None)
 
+let typed_quote_marker_converts_only_ordinary_blocks () =
+  R.with_runtime (fun session runtime _ ->
+    ignore (start session "");
+    let response = type_at session ">Batched quote" 14 in
+    check_eq ~msg:"debounced typing into a blank block still consumes the quote shortcut"
+      (member "title" (draft response)) (`String "Batched quote");
+    check_eq (value runtime Q.alpha "logseq.property.node/display-type") (Some (Ds.Keyword "quote")));
+  R.with_runtime (fun session runtime _ ->
+    let response = start session ">" in
+    check_eq ~msg:"typing > consumes the quote shortcut" (member "title" (draft response)) (`String "");
+    check_eq (member "caretUTF16Offset" (draft response)) (`Int 0);
+    check_eq ~msg:"quote conversion is persisted immediately"
+      (value runtime Q.alpha "logseq.property.node/display-type") (Some (Ds.Keyword "quote"));
+    let db = Graph_runtime.db runtime in
+    let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.alpha)) in
+    check ~msg:"the shortcut creates a real Quote instance"
+      (Graph_read.entity_is_instance_of db id "logseq.class/Quote-block");
+    ignore (type_at session "Quoted text" 11); save session;
+    check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "Quoted text")));
+  List.iter (fun title -> R.with_runtime (fun session runtime _ ->
+    ignore (start session title); save session;
+    check_eq ~msg:"an embedded or pasted quote marker stays text"
+      (value runtime Q.alpha "logseq.property.node/display-type") None)) ["before >"; "> text"];
+  List.iter (fun label -> R.with_runtime (fun session runtime _ ->
+    ignore (run session label); ignore (type_at session ">" 1); save session;
+    check_eq ~msg:"code and math do not interpret quote shortcuts"
+      (value runtime Q.alpha "block/title") (Some (Ds.String ">"));
+    check_eq (value runtime Q.alpha "logseq.property.node/display-type")
+      (Some (Ds.Keyword (if label = "Math block" then "math" else "code")))))
+    ["Code block"; "Calculator"; "Math block"]
+
+let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
+  List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session runtime _ ->
+    ignore (run session label); ignore (type_at session "6*7\nlast*3" 10);
+    let before = List.length (Graph_runtime.blocks_for_page runtime Q.page) in
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let button = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.newBlock" in
+      check ~msg:"the software keyboard exposes New block for Code and Calculator" (button <> -1);
+      App_test.dispatch app (Lui_protocol.Press button); App_test.flush app;
+      check ~msg:"the native toolbar forwards the shared structural action"
+        (List.exists (function Model.OutlinerToolbarEffect (_, "newBlock") -> true | _ -> false)
+          (App.model app).pending_effects));
+    let response = event session "toolbar" ["action", `String "newBlock"] in
+    check_eq (List.length (Graph_runtime.blocks_for_page runtime Q.page)) (before + 1);
+    check ~msg:"the new block receives editor focus" (member "uuid" (draft response) <> `String Q.alpha);
+    check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "6*7\nlast*3"))))
+    ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
+
+let date_command_accepts_typed_historical_dates () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
+    ignore (run session "Date picker");
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let input = find "view.edit.date.input.editor-command" in
+      check ~msg:"date commands provide a direct date input" (input <> -1);
+      App_test.dispatch app (Lui_protocol.TextChanged (input, "0044-03-15")); App_test.flush app;
+      App_test.dispatch app (Lui_protocol.Press (find "button.outliner.autocomplete.submit")); App_test.flush app;
+      check ~msg:"historical dates can be submitted without scrolling a calendar"
+        (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
+          let json = J.from_string payload in
+          member "type" json = `String "submitAutocomplete" && member "value" json = `String "0044-03-15"
+          | _ -> false)
+          (App.model app).pending_effects));
+    ignore (submit session "0044-03-15"); save session;
+    check ~msg:"typed historical dates create a real journal through the date command"
+      (Graph_read.journal_page_uuid (Graph_runtime.db runtime) 440315 <> None)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let code_commands_update_the_active_editor_style () =
   List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session _ _ ->
     ignore (run session label);
@@ -909,6 +979,9 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
+  case "Code and Calculator toolbars create blocks with software keyboards" code_toolbar_creates_a_block_without_a_hardware_keyboard;
+  case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;
   case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
   case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;
   case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;

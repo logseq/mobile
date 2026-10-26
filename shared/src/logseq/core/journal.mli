@@ -14,6 +14,7 @@ val weekday_index : int * int * int -> int
 val formatter_of_date : string -> int * int * int -> string
 val int_to_journal_title : int -> string -> string
 val valid_day : int -> bool
+val day_of_string : string -> int option
 val format : Datascript.db -> string
 val day_title : int -> string
 val title : Datascript.db -> int -> string

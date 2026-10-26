@@ -227,7 +227,8 @@ let filter_value_title col value = match value with
       | Some choice -> jtext (jfield "title" choice) | None -> text_value value) values)
   | value -> input_value value
 
-let temporal_picker kind id source set : t = fun context parent ->
+let temporal_picker kind id source set : t =
+  let calendar : t = fun context parent ->
   let node = Lui_ui.extension context "native-property-date" in
   attach context parent node;
   Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
@@ -237,7 +238,14 @@ let temporal_picker kind id source set : t = fun context parent ->
     | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
       (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> set value | _ -> ())
     | _ -> ());
-  node
+  node in
+  if kind = "date" then
+    column ~gap:8 [
+      text_field ~text_signal:source ~placeholder:"YYYY-MM-DD" ~label:"YYYY-MM-DD"
+        ~accessibility_identifier:("view.edit.date.input." ^ id)
+        ~on_input:(function Lui_protocol.TextChanged (_, value) -> set value | _ -> ()) [];
+      calendar]
+  else calendar
 
 let temporal_default kind =
   let now = Unix.gettimeofday () in
