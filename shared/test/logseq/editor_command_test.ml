@@ -460,6 +460,10 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
       let host = Lui_app.runtime app in
       let button = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.newBlock" in
       check ~msg:"the software keyboard exposes New block for Code and Calculator" (button <> -1);
+      let neighbor = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.moveDown" in
+      List.iter (fun key -> check_eq ~msg:"New block matches neighboring toolbar controls"
+        (App_test.property host button key) (App_test.property host neighbor key))
+        [Lui_protocol.WidthValue; Lui_protocol.HeightValue; Lui_protocol.SizeValue; Lui_protocol.VariantValue];
       App_test.dispatch app (Lui_protocol.Press button); App_test.flush app;
       check ~msg:"the native toolbar forwards the shared structural action"
         (List.exists (function Model.OutlinerToolbarEffect (_, "newBlock") -> true | _ -> false)

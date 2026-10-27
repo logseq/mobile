@@ -1059,8 +1059,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
       Option.fold ~none:false ~some:(fun editing ->
         List.exists (fun (row : Model.outline_row) -> row.row_uuid = editing.Model.editing_uuid
           && row.row_display_type = Some "code") current.outliner_rows) current.outliner_editing) model_source)
-      (button ~icon:(`app "add") ~variant:`ghost ~size:`icon
-        ~width:(if Lui_ui.host context = KotlinHost then 48 else 38) ~height:42
+      (button ~icon:(`app "add") ~variant:`ghost
+        ?size:(if Lui_ui.host context = KotlinHost then Some `icon else None)
+        ~width:(if Lui_ui.host context = KotlinHost then 48 else 38)
+        ~height:(if Lui_ui.host context = KotlinHost then 48 else 42)
         ~label:(View_base.tr (Signal.sample model_source) "Create new block")
         ~accessibility_identifier:"button.outliner.editor.newBlock"
         ~on_press:(fun _ -> ignore (send (Model.PerformOutlinerToolbarAction "newBlock"))) []) in

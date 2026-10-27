@@ -37,8 +37,9 @@ import UIKit
         }
         try await Task.sleep(for: .milliseconds(600))
         try backend.performPress(node: node("button.sidebar"))
-        for name in ["Short", "Abhilesh_Knowledge_Graph", String(repeating: "Long graph name ", count: 8), "Short again"] {
+        for name in ["My notes", "Short", "Abhilesh_Knowledge_Graph", String(repeating: "Long graph name ", count: 8), "Short again"] {
             try runtime.applyCoreResponse(snapshot(name))
+            try backend.performToggle(node: node("application.shell"), checked: true)
             try await Task.sleep(for: .milliseconds(800))
             let settingsID = try node("button.sidebar.settings")
             let graphID = try node("button.graph-switch")
@@ -47,9 +48,10 @@ import UIKit
             }
             guard let settings = frames[settingsID], let graph = frames[graphID],
                   settings.width >= 40, settings.height >= 40,
+                  graph.minX >= 12, graph.width >= 80,
                   window.bounds.contains(settings), window.bounds.contains(graph),
                   settings.minX >= graph.maxX - 1 else {
-                throw failure("Global settings must remain visible and unobscured for graph \(name): settings=\(String(describing: frames[settingsID])) graph=\(String(describing: frames[graphID]))")
+                throw failure("The graph switch must fit its label without clipping and preserve Settings for graph \(name): settings=\(String(describing: frames[settingsID])) graph=\(String(describing: frames[graphID]))")
             }
         }
         try backend.performPress(node: node("button.sidebar.settings"))
