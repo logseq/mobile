@@ -91,7 +91,7 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          [ sidebar_graph_switch_content model_source ])
   else
     View_base.with_label "Switch graph"
-      (button ~variant:`ghost ~min_height:44
+      (button ~variant:`ghost ~min_height:44 ~grow:1.0
       ~text_signal:(Signal.map View_base.graph_label model_source)
       ~text_alignment:`start ~style_class:"semibold" ~foreground:"foreground"
       ~icon:(`app "chevron-down") ~icon_placement:`trailing

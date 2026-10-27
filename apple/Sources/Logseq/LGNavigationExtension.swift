@@ -265,7 +265,7 @@ private struct LGSidebarNavigation: View {
                                 child(at: 1)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                    .frame(maxWidth: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width))
+                                    .frame(width: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width), alignment: .leading)
                             }
                             .sharedBackgroundVisibility(.hidden)
                             ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
@@ -273,7 +273,7 @@ private struct LGSidebarNavigation: View {
                         } else {
                             ToolbarItem(placement: .topBarLeading) {
                                 child(at: 1).lineLimit(1).truncationMode(.middle)
-                                    .frame(maxWidth: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width))
+                                    .frame(width: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width), alignment: .leading)
                             }
                             ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
                         }
