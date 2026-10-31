@@ -91,6 +91,8 @@ class AndroidNodePropertiesTest {
         input().performTextReplacement("not a date")
         ui.onNode(hasText("January 1,", substring = true) and calendar, useUnmergedTree = true).assertIsDisplayed()
         input().performTextReplacement("January 1, 2000")
+        input().performTextReplacement("")
+        input().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         ui.onNodeWithTag("view.edit.save.$editor").performClick()
         ui.runOnIdle {
             var selected: JSONObject? = null

@@ -287,7 +287,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = fun context
         ~accessibility_identifier:("view.edit.date.input." ^ id)
         ~on_input:(function Lui_protocol.TextChanged (_, value) ->
           Signal.set input value;
-          update (Option.value ~default:value (sync value))
+          Option.iter update (sync value)
           | _ -> ())
         ?on_submit [];
       calendar]) context parent

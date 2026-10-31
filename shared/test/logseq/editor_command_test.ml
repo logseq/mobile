@@ -537,8 +537,11 @@ let temporal_commands_submit_the_previewed_selection () =
       let calendar = App_test.extension_node app "native-property-date" in
       let expected = match App_test.extension_property app calendar "value" with
         | Some (Lui_protocol.StringValue value) -> `String value | _ -> fail "Missing date selection" in
+      List.iter (fun draft ->
+        App_test.dispatch app (Lui_protocol.TextChanged (find "view.edit.date.input.editor-command", draft));
+        App_test.flush app) ["not a date"; "in 10000 years"; ""];
       App_test.dispatch app (Lui_protocol.Press (find "button.outliner.autocomplete.submit")); App_test.flush app;
-      check ~msg:"submission uses the previewed instant instead of reparsing relative input later"
+      check ~msg:"invalid or cleared drafts preserve the previewed selection when submitting"
         (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
           member "value" (J.from_string payload) = expected | _ -> false) (App.model app).pending_effects))))
     ["Date picker", "January 1, 2000"; "Scheduled", "in 3 hours"; "Deadline", "in 3 hours"])
