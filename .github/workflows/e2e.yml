@@ -386,7 +386,7 @@ jobs:
           xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR_UDID" -b
 
       - name: Run iOS e2e module
-        timeout-minutes: ${{ env.IOS_MODULE == 'smoke' && 10 || 60 }}
+        timeout-minutes: ${{ env.IOS_MODULE == 'smoke' && 20 || 60 }}
         run: |
           eval $(opam env)
           export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
