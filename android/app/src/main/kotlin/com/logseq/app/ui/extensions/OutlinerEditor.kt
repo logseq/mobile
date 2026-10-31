@@ -147,7 +147,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val acknowledged = if (blockChanged) -1 else publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
-            if (!selectionRequested) return@LaunchedEffect
+            // An older echo must not replace newer typing or active IME composition.
+            if (!selectionRequested || value.text != modelTitle || value.composition != null) {
+                return@LaunchedEffect
+            }
         }
         // Acknowledging our caret must preserve native selection and IME composition.
         val externalCaret = caretChanged && modelCaret != value.selection.start
