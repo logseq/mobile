@@ -740,6 +740,7 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
     {
       (Model.initial ()) with
       Model.sync_state = OfflineState;
+      authentication_state = "signedIn";
       has_pending_semantic_operations = true;
     }
   in
@@ -747,6 +748,7 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
     {
       (Model.initial ()) with
       Model.sync_state = SyncingState;
+      authentication_state = "signedIn";
       has_pending_semantic_operations = true;
     }
   in
@@ -774,7 +776,7 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
           (Model.ChangeOutlinerText ("offline-block", "Draft", 5))))
     "Not connected"
 
-let sync_indicator_uses_only_yellow_or_green () =
+let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter
     (fun sync_state ->
       List.iter
@@ -783,6 +785,7 @@ let sync_indicator_uses_only_yellow_or_green () =
             (fun has_pending_sync_request ->
               let current =
                 { (Model.initial ()) with Model.sync_state;
+                  authentication_state = "signedIn";
                   has_pending_semantic_operations; has_pending_sync_request }
               in
               let expected =
@@ -796,6 +799,21 @@ let sync_indicator_uses_only_yellow_or_green () =
             [false; true])
         [false; true])
     [OfflineState; FailedState "Connection failed"; SyncingState; SyncedState]
+
+let sync_indicator_is_neutral_without_authentication () =
+  List.iter (fun authentication_state ->
+    List.iter (fun sync_state ->
+      List.iter (fun pending_sync_error ->
+        List.iter (fun has_pending_semantic_operations ->
+          List.iter (fun has_pending_sync_request ->
+            let current = { (Model.initial ()) with Model.authentication_state;
+              sync_state; pending_sync_error; has_pending_semantic_operations;
+              has_pending_sync_request } in
+            check_eq ~msg:"unauthenticated sessions stay gray even with stale sync state or pending work"
+              (View_base.sync_indicator_foreground current) "muted-foreground")
+            [false; true]) [false; true]) [None; Some "Previous sync failed"])
+      [OfflineState; FailedState "Connection failed"; SyncingState; SyncedState])
+    ["restoring"; "signedOut"; "signingIn"; "signingOut"]
 
 let settings_navigation_tabs_and_diagnostics_are_lg_owned () =
   let initial =
@@ -2830,7 +2848,8 @@ let pending_sync_patches_preserve_the_current_screen_and_cursor () =
     }
   in
   let current =
-    Model.update (Model.initial ()) (Model.ApplyCoreSnapshot full)
+    Model.update { (Model.initial ()) with authentication_state = "signedIn" }
+      (Model.ApplyCoreSnapshot full)
   in
   let patch =
     {
@@ -10749,7 +10768,8 @@ let cases =
     case "empty-outliner-rows-use-the-main-untitled-accessibility-title" empty_outliner_rows_use_the_main_untitled_accessibility_title;
     case "synced-header-control-uses-the-main-accessibility-label" synced_header_control_uses_the_main_accessibility_label;
     case "sync-indicator-prioritizes-connectivity-before-pending-work" sync_indicator_prioritizes_connectivity_before_pending_work;
-    case "sync-indicator-uses-only-yellow-or-green" sync_indicator_uses_only_yellow_or_green;
+    case "authenticated-sync-indicator-uses-only-yellow-or-green" authenticated_sync_indicator_uses_only_yellow_or_green;
+    case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
     case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;
