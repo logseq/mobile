@@ -41,12 +41,10 @@ appId: com.logseq.logseq
 - assertNotVisible: "Cancel"
 - assertNotVisible:
     id: "BackButton"
-- tapOn: "Search pages and blocks"
-- waitForAnimationToEnd
 - inputText: "x"
 - eraseText: 1
 - inputText: "Search task __LOGSEQ_E2E_RUN_ID__"
-- tapOn: "Search"
+- pressKey: Enter
 - extendedWaitUntil:
     visible:
       id: "search.result.*"

@@ -187,6 +187,22 @@ if [[ ${LOGSEQ_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
       cp -R "$data_container/Documents/graphs" "$seed_cache_dir/$seed_cache_key/"
     fi
   fi
+  # The graph is already provisioned. Cached fixtures only need selection,
+  # not another authentication/graph-creation pass inside the tested flow.
+  cat > "$rendered_setup" <<EOF
+appId: $app_id
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "$graph_name"
+    commands:
+      - tapOn: "$graph_name"
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+EOF
 fi
 if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then
   run_setup_flow

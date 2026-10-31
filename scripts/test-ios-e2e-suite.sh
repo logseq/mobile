@@ -153,6 +153,7 @@ fi
 
 for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
   flow=${flows[$flow_index]}
+  flow_started=$SECONDS
   echo "==> $flow"
   if [[ $flow == tests/e2e/ios-page-outliner-only.yaml \
      || $flow == tests/e2e/ios-invalid-order-bounds-regression.yaml \
@@ -179,6 +180,7 @@ for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
       LOGSEQ_IOS_E2E_FLOW="$flow" \
       "$repo_root/scripts/test-ios-e2e.sh"
   fi
+  echo "[ios-e2e] $flow completed in $((SECONDS - flow_started))s"
 done
 
 echo "iOS Simulator E2E '$selector' passed ($((${#flows[@]} - start_index)) flows)"

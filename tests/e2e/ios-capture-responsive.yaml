@@ -9,8 +9,10 @@ appId: com.logseq.logseq
     timeout: 30000
 - assertVisible:
     id: "button.composer.expand"
-- tapOn: "Search"
-- assertVisible: "Search pages and blocks"
+- tapOn:
+    id: "button.search"
+- assertVisible:
+    id: "screen.search"
 - tapOn: "close"
 - assertVisible:
     id: "button.composer.expand"
@@ -31,7 +33,8 @@ appId: com.logseq.logseq
     id: "button.composer.expand"
 - assertVisible:
     id: "field.composer"
-- assertNotVisible: "Search pages and blocks"
+- assertNotVisible:
+    id: "screen.search"
 - assertVisible:
     id: "button.attachment"
 - assertVisible:
