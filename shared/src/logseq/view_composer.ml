@@ -142,7 +142,8 @@ let composer_send_button model_source context ?send_icon send_disabled on_send :
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
-    button ~icon:android_icon ~variant:`primary ~label:(View_base.tr (Signal.sample model_source) "Send")
+    button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48 ~height:48
+      ~label:(View_base.tr (Signal.sample model_source) "Send")
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
   else
@@ -242,8 +243,8 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
   in
   let surface =
     if Lui_ui.host context = KotlinHost then
-      column ?key ?accessibility_identifier ~grow:1.0 ~gap:8 ~padding:8
-        ~background:"surface-container-low"
+      column ?key ?accessibility_identifier ~grow:1.0 ~gap:4 ~padding:8
+        ~background:"surface-container-highest" ~corner_radius:28
         (attachment_strip
          @ [ field;
              row ~gap:8 ~height:48 ~cross:`center
