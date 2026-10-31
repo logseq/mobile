@@ -279,10 +279,20 @@ jobs:
         with:
           background: "true"
 
+      - name: Restore iOS E2E binaries
+        id: ios-e2e-binaries
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apple/.build/Logseq.app
+            _build/default/shared/native/logseq_e2e_seed.exe
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
+
       - name: Restore iOS build artifacts
         # SwiftPM + xcodebuild products; stale objects are harmless — the
         # build only reuses what still matches.
         id: ios-build-artifacts
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -298,18 +308,42 @@ jobs:
           restore-keys: |
             ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
             ios-build-v2-${{ runner.os }}-xcode26.3-
-            ios-build-artifacts-${{ runner.os }}-xcode26.3-
+
+      - name: Restore legacy SwiftPM artifacts on a cold build cache
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && steps.ios-build-artifacts.outputs.cache-matched-key == ''
+        uses: actions/cache/restore@v4
+        with:
+          # Cache versions include the path list; the expanded Dune cache
+          # cannot restore the original SwiftPM-only cache directly.
+          path: apple/.build
+          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
+          restore-keys: ios-build-artifacts-${{ runner.os }}-xcode26.3-
 
       - name: Build iOS app for the simulator
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         run: |
           eval $(opam env)
           export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
           ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Build iOS E2E fixture seed tool
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
           dune build shared/native/logseq_e2e_seed.exe
 
+      - name: Save iOS E2E binaries
+        if: success() && steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apple/.build/Logseq.app
+            _build/default/shared/native/logseq_e2e_seed.exe
+          key: ${{ steps.ios-e2e-binaries.outputs.cache-primary-key }}
+
       - name: Save iOS build artifacts
-        if: always() && steps.ios-build-artifacts.outputs.cache-hit != 'true'
+        if: always() && steps.ios-build-artifacts.outputs.cache-primary-key != '' && steps.ios-build-artifacts.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -355,6 +389,7 @@ jobs:
           eval $(opam env)
           export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
+          export LOGSEQ_E2E_SEED_BIN="$GITHUB_WORKSPACE/_build/default/shared/native/logseq_e2e_seed.exe"
           LOGSEQ_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
       - name: Upload Maestro debug artifacts
