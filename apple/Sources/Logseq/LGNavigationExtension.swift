@@ -680,8 +680,12 @@ private struct LGNavigationContent: View {
     }
 
     private var navigationStack: some View {
-        NavigationStack(path: pathBinding) {
-            rootNavigationSurface
+        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        return NavigationStack(path: pathBinding) {
+            Group {
+                if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
+                else { rootNavigationSurface }
+            }
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
@@ -724,16 +728,9 @@ private struct LGNavigationContent: View {
                                     ))
                             }
                             .sharedBackgroundVisibility(.hidden)
-                            ToolbarItem(placement: .principal) {
-                                rootToolbarTitle
-                            }
-                            .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
                                 context.content(for: leadingID)
-                            }
-                            ToolbarItem(placement: .principal) {
-                                rootToolbarTitle
                             }
                         }
                         trailingToolbar
@@ -815,15 +812,6 @@ private struct LGNavigationContent: View {
         }
         #endif
         return themePalette.background
-    }
-
-    private var rootToolbarTitle: some View {
-        Text(navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
-            .font(.headline)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("title.main")
     }
 
     private var navigationTitle: String {
