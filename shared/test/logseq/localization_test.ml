@@ -53,10 +53,10 @@ let property_titles_preserve_graph_names () =
 
 let native_property_labels_and_editors_preserve_graph_names () =
   let db = Ds.db_with [Q.put Q.project "logseq.property.class/properties"
-    (Ds.Ref_to (Ds.Ident "logseq.property/description"))] (R.fixture ()) in
+    (Ds.Ref_to (Ds.Ident "logseq.property/status"))] (R.fixture ()) in
   let session, _ = R.make_session db in
   let properties = member "nodeProperties" (result (Rpc_test.dispatch_json session "nodeProperties" Q.alpha)) in
-  let property = List.find (fun value -> member "attr" value = `String "logseq.property/description")
+  let property = List.find (fun value -> member "attr" value = `String "logseq.property/status")
     (Q.items "properties" properties) in
   let title = R.text (member "title" property) in
   let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
@@ -71,7 +71,7 @@ let native_property_labels_and_editors_preserve_graph_names () =
     let click id = let node = find id in check ~msg:id (node <> -1);
       dispatch app (Lui_protocol.Press node); flush app in
     if find ("properties.expand." ^ Q.alpha) <> -1 then click ("properties.expand." ^ Q.alpha);
-    let suffix = Q.alpha ^ ".logseq.property/description" in
+    let suffix = Q.alpha ^ ".logseq.property/status" in
     check_eq ~msg:"native property label preserves its graph title"
       (property_string runtime (find ("property.label." ^ suffix)) Lui_protocol.TextValue) title;
     click ("property.value." ^ suffix);

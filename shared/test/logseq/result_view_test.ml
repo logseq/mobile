@@ -222,15 +222,18 @@ let scopes_and_references () =
     "ownerUuid", `String Q.project; "featureType", `String "linked-references"])) in
   check_eq ~msg:"references do not acquire configurable views" (member "ok" unsupported) (`Bool false)
 
-let with_runtime ?projection_limit f = Graph_runtime_test.with_store (fun path ->
+let with_runtime ?projection_limit ?(search = false) f = Graph_runtime_test.with_store (fun path ->
   Fun.protect ~finally:(fun () -> Graph_runtime_test.cleanup_store path) (fun () ->
     let conn = Ds.conn_from_db (fixture ()) in
-    let runtime = Graph_runtime.create path 42 conn {Graph_runtime.default_options with auto_create_today = false} in
+    let runtime = Graph_runtime.create path 42 conn {Graph_runtime.default_options with auto_create_today = false;
+      search_index_path = (if search then Some path else None)} in
+    if search then Option.iter (fun index -> Search_index.refresh index (Graph_runtime.db runtime)) runtime.search_index;
     let session = Session.create_session {Session.default_options with
       outliner_projection_limit = projection_limit;
       load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
       sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);
       graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      graph_search = (if search then Some (Graph_runtime.search runtime) else None);
       graph_node_icon = Some (fun uuid -> Graph_read.node_icon (Graph_runtime.db runtime) uuid);
       graph_tag_pages = Some (fun () -> Some (Graph_read.tag_pages (fun value -> Ok value) (Graph_runtime.db runtime)));
       graph_node_is_tag = Some (Graph_runtime.node_is_tag runtime);

@@ -178,7 +178,7 @@ let native_labels_layout_and_editor () =
       check (App_test.reported_errors (App.model app) <> [])))) [App_test.ios_backend; App_test.kotlin_backend]
 
 let text_editor_refresh_and_value_catalog () =
-  List.iter (fun backend -> R.with_runtime (fun session runtime conn ->
+  List.iter (fun backend -> R.with_runtime ~search:true (fun session runtime conn ->
     ignore (Ds.transact_conn conn [Ds.RetractAttr (Q.ref_uuid Q.alpha, R.summary);
       put Q.project "logseq.property.class/properties" (Ds.Ref_to (Ds.Ident R.summary))]);
     Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [Q.alpha; Q.project];
@@ -188,9 +188,27 @@ let text_editor_refresh_and_value_catalog () =
     ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
       App_test.send app (Model.RequestAppNode Q.alpha);
-      let refresh () = let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
-        | Ok value -> value | Error message -> fail message in App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app in
-      refresh ();
+      let apply response =
+        ignore (result response);
+        let snapshot = match Response_snapshot.decode_response (J.to_string response) with
+          | Ok value -> value | Error message -> fail message in
+        App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app in
+      apply (J.from_string (Rpc_session.snapshot_visible session));
+      List.iter (fun eff -> App_test.send app (Model.DequeueEffect (Model.effect_id eff)))
+        (App.model app).pending_effects;
+      let rec execute_pending () =
+        let next = List.find_opt (function
+          | Model.NodePropertyEffect _ | Model.ChangeOutlinerTextEffect _
+          | Model.ChooseOutlinerAutocompleteEffect _ | Model.OutlinerToolbarEffect _ -> true
+          | _ -> false) (App.model app).pending_effects in
+        match next with None -> () | Some eff ->
+          let id = Model.effect_id eff in
+          let encoded = J.from_string (Native_bridge.encode_effect eff) in
+          let fields = match encoded with `Assoc fields -> List.remove_assoc "kind" (List.remove_assoc "id" fields) | _ -> assert false in
+          App_test.send app (Model.DequeueEffect id);
+          let response = Core_effect_test.execute session (R.text (member "kind" encoded)) fields in
+          App_test.send app (Model.ResolveEffect (id, true, J.to_string response));
+          apply response; execute_pending () in
       let host = Lui_app.runtime app in
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
       let expand = find ("properties.expand." ^ Q.alpha) in
@@ -198,17 +216,33 @@ let text_editor_refresh_and_value_catalog () =
       let empty = find ("property.value." ^ Q.alpha ^ "." ^ R.summary) in
       check ~msg:"empty tag text property has an edit affordance" (empty <> -1);
       App_test.dispatch app (Lui_protocol.Press empty); App_test.flush app;
-      let editor = "property." ^ Q.alpha ^ "." ^ R.summary in
-      check_eq ~msg:"text properties support multiline editing"
-        (App_test.node host (find ("view.edit.value." ^ editor))) (Some Lui_protocol.Textarea);
-      App_test.dispatch app (Lui_protocol.Press (find ("view.edit.cancel." ^ editor))); App_test.flush app;
-      let p = property R.summary (result (read session Q.alpha)) in
-      let response = Core_effect_test.execute session "node-property" ["text", `String (J.to_string (`Assoc [
-        "blockUuid", `String Q.alpha; "attr", `String R.summary; "expected", member "raw" p; "value", `String "New notes"]))] in
-      ignore (result response); refresh ();
-      let updated = property R.summary (result (read session Q.alpha)) in
-      let uuid = R.text (member "uuid" (List.hd (items "blocks" updated))) in
+      execute_pending ();
+      check ~msg:"an empty text property enters ordinary block editing" ((App.model app).outliner_editing <> None);
+      let uuid = (Option.get (App.model app).outliner_editing).editing_uuid in
+      check_eq ~msg:"text editing does not open a separate property sheet"
+        (find ("view.edit.sheet.property." ^ Q.alpha ^ "." ^ R.summary)) (-1);
       check ~msg:"empty-to-text updates mount a real block without reopening the node" (find ("outliner.block." ^ uuid) <> -1);
+      let node = find ("outliner.block." ^ uuid) in
+      let editor = App_test.descendant_with_extension host app node "outliner-editor" in
+      let prefix = "📝 Notes\n[[Work" in
+      let title = prefix ^ " suffix" in
+      App_test.dispatch app (Lui_protocol.ExtensionEvent (editor, "outliner-editor", "text-change",
+        Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue title;
+          "caret-utf16-offset", Lui_protocol.IntValue (String_kit.utf16_length prefix)]));
+      App_test.flush app; execute_pending ();
+      check ~msg:"text properties use the ordinary page-reference candidates"
+        (List.exists (fun (candidate : Model.outliner_autocomplete_candidate) -> candidate.candidate_value = Q.page)
+          (App.model app).outliner_autocomplete_candidates);
+      App_test.send app (Model.ChooseOutlinerAutocomplete Q.page); App_test.flush app; execute_pending ();
+      check_eq (Option.get (App.model app).outliner_editing).editing_title "📝 Notes\n[[Workspace]] suffix";
+      check_eq (Option.get (App.model app).outliner_editing).caret_utf16_offset
+        (String_kit.utf16_length "📝 Notes\n[[Workspace]]");
+      App_test.send app (Model.PerformOutlinerToolbarAction "hideKeyboard"); App_test.flush app; execute_pending ();
+      let updated = property R.summary (result (read session Q.alpha)) in
+      check_eq ~msg:"block editing saves a canonical page reference"
+        (member "text" updated) (`String ("📝 Notes\n[[" ^ Q.page ^ "]] suffix"));
+      check_eq ~msg:"the created value retains its block identity"
+        (member "uuid" (List.hd (items "blocks" updated))) (`String uuid);
       check_eq (find ("property.value." ^ Q.alpha ^ "." ^ R.summary)) (-1)))) [App_test.ios_backend; App_test.kotlin_backend]
 
 let many_text_edits_preserve_sibling_values () = R.with_runtime (fun session runtime conn ->
@@ -497,7 +531,7 @@ let text_and_url_values_edit_inline_as_blocks () =
           let next = List.find_opt (function
             | Model.TapOutlinerBlockEffect _ | Model.EditorOutlinerEventEffect _
             | Model.ChangeOutlinerTextEffect _ | Model.OutlinerToolbarEffect _
-            | Model.ReturnOutlinerEditorEffect _ -> true
+            | Model.ReturnOutlinerEditorEffect _ | Model.BackspaceOutlinerEditorEffect _ -> true
             | _ -> false) (App.model app).pending_effects in
           match next with None -> () | Some eff ->
             let id = Model.effect_id eff in
@@ -534,6 +568,13 @@ let text_and_url_values_edit_inline_as_blocks () =
             Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue next;
               "caret-utf16-offset", Lui_protocol.IntValue (String.length next)]));
           App_test.flush app; execute_pending ();
+          App_test.dispatch app (Lui_protocol.ExtensionEvent (editor, "outliner-editor", "backspace",
+            Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue next;
+              "selection-length", Lui_protocol.IntValue 0]));
+          App_test.flush app; execute_pending ();
+          let draft = (App.model app).outliner_editing |> Option.get in
+          check_eq ~msg:"start-of-value Backspace cannot merge into the ordinary outline" draft.editing_uuid R.text_a;
+          check_eq ~msg:"start-of-value Backspace preserves the property draft" draft.editing_title next;
           let next = if kind <> "default" then next else (
             App_test.dispatch app (Lui_protocol.ExtensionEvent (editor, "outliner-editor", "return",
               Lui_protocol.String_map.of_list ["title", Lui_protocol.StringValue next;
