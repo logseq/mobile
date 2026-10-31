@@ -178,16 +178,19 @@ let native_labels_layout_and_editor () =
       check (App_test.reported_errors (App.model app) <> [])))) [App_test.ios_backend; App_test.kotlin_backend]
 
 let text_editor_refresh_and_value_catalog () =
-  List.iter (fun backend -> R.with_runtime ~search:true (fun session runtime conn ->
-    ignore (Ds.transact_conn conn [Ds.RetractAttr (Q.ref_uuid Q.alpha, R.summary);
+  List.iter (fun backend -> List.iter (fun owner -> R.with_runtime ~search:true (fun session runtime conn ->
+    ignore (Ds.transact_conn conn [Ds.RetractAttr (Q.ref_uuid owner, R.summary);
+      put R.day_a "block/name" (Ds.String "2026-10-01");
+      put R.day_a "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Journal"));
+      put owner "block/tags" (Ds.Ref_to (Q.ref_uuid Q.project));
       put Q.project "logseq.property.class/properties" (Ds.Ref_to (Ds.Ident R.summary))]);
-    Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [Q.alpha; Q.project];
+    Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [owner; Q.project];
     let p = property R.score (result (read session Q.alpha)) in
     check ~msg:"an open selector offers values already used by other objects"
       (List.exists (fun value -> member "title" value = `String "10") (items "filterValues" p));
-    ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+    ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String owner])));
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
-      App_test.send app (Model.RequestAppNode Q.alpha);
+      App_test.send app (Model.RequestAppNode owner);
       let apply response =
         ignore (result response);
         let snapshot = match Response_snapshot.decode_response (J.to_string response) with
@@ -211,16 +214,16 @@ let text_editor_refresh_and_value_catalog () =
           apply response; execute_pending () in
       let host = Lui_app.runtime app in
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
-      let expand = find ("properties.expand." ^ Q.alpha) in
+      let expand = find ("properties.expand." ^ owner) in
       if expand <> -1 then (App_test.dispatch app (Lui_protocol.Press expand); App_test.flush app);
-      let empty = find ("property.value." ^ Q.alpha ^ "." ^ R.summary) in
+      let empty = find ("property.value." ^ owner ^ "." ^ R.summary) in
       check ~msg:"empty tag text property has an edit affordance" (empty <> -1);
       App_test.dispatch app (Lui_protocol.Press empty); App_test.flush app;
       execute_pending ();
       check ~msg:"an empty text property enters ordinary block editing" ((App.model app).outliner_editing <> None);
       let uuid = (Option.get (App.model app).outliner_editing).editing_uuid in
       check_eq ~msg:"text editing does not open a separate property sheet"
-        (find ("view.edit.sheet.property." ^ Q.alpha ^ "." ^ R.summary)) (-1);
+        (find ("view.edit.sheet.property." ^ owner ^ "." ^ R.summary)) (-1);
       check ~msg:"empty-to-text updates mount a real block without reopening the node" (find ("outliner.block." ^ uuid) <> -1);
       let node = find ("outliner.block." ^ uuid) in
       let editor = App_test.descendant_with_extension host app node "outliner-editor" in
@@ -238,12 +241,12 @@ let text_editor_refresh_and_value_catalog () =
       check_eq (Option.get (App.model app).outliner_editing).caret_utf16_offset
         (String_kit.utf16_length "📝 Notes\n[[Workspace]]");
       App_test.send app (Model.PerformOutlinerToolbarAction "hideKeyboard"); App_test.flush app; execute_pending ();
-      let updated = property R.summary (result (read session Q.alpha)) in
+      let updated = property R.summary (result (read session owner)) in
       check_eq ~msg:"block editing saves a canonical page reference"
         (member "text" updated) (`String ("📝 Notes\n[[" ^ Q.page ^ "]] suffix"));
       check_eq ~msg:"the created value retains its block identity"
         (member "uuid" (List.hd (items "blocks" updated))) (`String uuid);
-      check_eq (find ("property.value." ^ Q.alpha ^ "." ^ R.summary)) (-1)))) [App_test.ios_backend; App_test.kotlin_backend]
+      check_eq (find ("property.value." ^ owner ^ "." ^ R.summary)) (-1)))) [Q.alpha; R.day_a]) [App_test.ios_backend; App_test.kotlin_backend]
 
 let many_text_edits_preserve_sibling_values () = R.with_runtime (fun session runtime conn ->
   ignore (Ds.transact_conn conn [put R.summary_property "db/cardinality" (Ds.Keyword "db.cardinality/many");

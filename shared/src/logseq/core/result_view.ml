@@ -533,7 +533,7 @@ let begin_text_edit db ~now ~fresh_uuid input =
   let owner = required "blockUuid" input and attr = required "attr" input in
   let owner_id = eid db owner in
   let property = property ~owner:owner_id db attr in
-  if not (Node_title.can_edit db owner_id && property.ref_ && List.mem property.typ ["default"; "url"]
+  if not (property.ref_ && List.mem property.typ ["default"; "url"]
       && not property.closed && node_editable db property) then
     invalid_arg "Choose an editable text property";
   let raw = raw db owner_id attr in
