@@ -60,6 +60,11 @@ import kotlinx.coroutines.delay
 // emits a structural backspace. Model acknowledgements echo locally
 // published titles — those updates are swallowed so typing is never
 // reverted mid-keystroke.
+private sealed interface EditorHandoff {
+    data class Return(val title: String, val caret: Int) : EditorHandoff
+    data class Paste(val payload: String) : EditorHandoff
+}
+
 @Composable
 internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
@@ -86,8 +91,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var rememberedBlockId by remember { mutableStateOf(blockId) }
     var awaitingHandoff by remember { mutableStateOf(false) }
-    // Each segment contains typing after one queued Enter, preserving input order.
+    // Each segment buffers typing after a structural edit until acknowledgement.
     val handoffSegments = remember { ArrayDeque<String>() }
+    val queuedHandoffs = remember { ArrayDeque<EditorHandoff>() }
     var applyingModel by remember { mutableStateOf(false) }
     var debounceSeq by remember { mutableIntStateOf(0) }
     var handoffRevision by remember { mutableStateOf<Int?>(null) }
@@ -99,7 +105,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
     val pasteKey = remember { Any() }
     val publishedTitles = remember { mutableStateListOf<String>() }
-    var handoffReturn by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
 
     // Reconcile a structural handoff in this composition, so the IME sees the
     // new text, caret and identity together instead of waiting another frame.
@@ -119,7 +125,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         if (awaitingHandoff) {
             handoffRevision = selectionRevision
             publishedTitles.add(merged)
-            handoffReturn = merged to caret
+            handoffEvent = when (val queued = queuedHandoffs.removeFirst()) {
+                is EditorHandoff.Return -> EditorHandoff.Return(merged, caret)
+                is EditorHandoff.Paste -> EditorHandoff.Paste(
+                    rebasePastePayload(queued.payload, merged),
+                )
+            }
         } else {
             if (value.text != merged || value.selection != TextRange(caret)) {
                 value = TextFieldValue(merged, TextRange(caret))
@@ -129,9 +140,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         }
     }
     LaunchedEffect(blockId, selectionRevision) {
-        handoffReturn?.let { (title, caret) ->
-            handoffReturn = null
-            context.emit("return", "title" to title, "caret-utf16-offset" to caret)
+        val event = handoffEvent
+        handoffEvent = null
+        when (event) {
+            is EditorHandoff.Return -> context.emit(
+                "return", "title" to event.title, "caret-utf16-offset" to event.caret,
+            )
+            is EditorHandoff.Paste -> context.emit("paste-content", "value" to event.payload)
+            null -> Unit
         }
     }
 
@@ -203,6 +219,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
         observedText = value.text
         if (awaitingHandoff) {
+            queuedHandoffs.addLast(EditorHandoff.Return(title, caret))
             handoffSegments.addLast("")
             return
         }
@@ -322,6 +339,11 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         value = TextFieldValue(value.text.replaceRange(start, end, plain), TextRange(start + plain.length))
         observedText = value.text
         debounceSeq++
+        if (awaitingHandoff) {
+            queuedHandoffs.addLast(EditorHandoff.Paste(payload))
+            handoffSegments.addLast("")
+            return
+        }
         handoffRevision = selectionRevision
         awaitingHandoff = true
         handoffSegments.addLast("")
@@ -423,3 +445,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
 private fun caretOffset(value: TextFieldValue, text: String): Int =
     if (value.selection.start < 0) text.length else value.selection.start
+
+private fun rebasePastePayload(payload: String, title: String): String {
+    val fields = org.json.JSONObject(payload)
+    val previous = fields.getString("beforeTitle")
+    val start = (fields.getInt("selectionStart") + title.length - previous.length).coerceIn(0, title.length)
+    val length = fields.getInt("selectionLength").coerceIn(0, title.length - start)
+    return fields.put("beforeTitle", title).put("selectionStart", start)
+        .put("selectionLength", length).toString()
+}
