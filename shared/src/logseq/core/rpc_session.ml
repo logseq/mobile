@@ -2114,6 +2114,13 @@ let rec dispatch session action payload =
          if not same_graph then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
          else match editing_cursor session with
          | Error (code, message) -> Rpc.failure code message
+         | Ok cursor when Yojson.Basic.Util.member "action" input = `String "editText" ->
+           let uuid, intent = Result_view.begin_text_edit db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input in
+           let staged = match intent with
+             | Some intent -> stage_result session (fresh_squuid ()) cursor intent
+             | None -> snapshot_visible session in
+           if Yojson.Basic.Util.member "ok" (Json.from_string staged) <> `Bool true then staged
+           else dispatch_outliner_event session (Json.to_string (`Assoc ["type", `String "tapBlock"; "uuid", `String uuid]))
          | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input with
              | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
              | Error message -> Rpc.failure "invalid_property" message)

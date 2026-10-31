@@ -174,11 +174,16 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
               Signal.set checked (checked_value (Signal.sample property_source));
               if error = None then Signal.set editing None
             | _ -> ())));
-          let edit () =
-            let property = Signal.sample property_source in
-            if field "editable" property = `Bool true then Signal.set editing (Some property) in
           let submit fields = ignore (send (Model.SubmitNodeProperty (id,
             J.to_string (`Assoc (("blockUuid", `String owner) :: fields))))) in
+          let edit () =
+            let property = Signal.sample property_source in
+            if field "editable" property = `Bool true then
+              if field "textLayout" property = `Bool true && field "ref" property = `Bool true then
+                submit (["action", `String "editText"; "attr", `String attr; "expected", field "raw" property]
+                  @ Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph])
+                      (Signal.sample model_source).Model.selected_graph_id)
+              else Signal.set editing (Some property) in
           let send_block = function
             | (Model.BeginOutlinerEdit _ | Model.BeginOutlinerEditAt _) as action ->
               if field "editable" (Signal.sample property_source) = `Bool true then send action else true
@@ -198,7 +203,10 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
               if value = "" then View_base.tr current "Empty"
               else if field "kind" p = `String "datetime" && List.mem value ["Today"; "Tomorrow"]
               then View_base.tr current value else value) model_source property_source))
-            ~label:(property_title (Signal.sample model_source) first) ~disabled:(field "editable" first <> `Bool true)
+            ~label:(property_title (Signal.sample model_source) first)
+            ~disabled:(reactive (fun property model -> field "editable" property <> `Bool true || List.exists (function
+              | Model.NodePropertyEffect (_, key, _) -> key = id | _ -> false)
+                (model.Model.pending_effects @ model.in_flight_effects)) property_source model_source)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
           let node_value = dyn (fun property -> match list (field "references" property) with
             | [] -> value

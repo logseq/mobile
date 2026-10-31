@@ -1131,20 +1131,17 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
         (visible_rows context state)
     in
     let index =
-      match
-        let rec loop index rest =
+      let rec loop index rest =
           match rest with
           | [] -> None
           | (row : outliner_row) :: remaining ->
             if row.block.uuid = editing.uuid then Some index
             else loop (index + 1) remaining
-        in
-        loop 0 rows
-      with
-      | Some index -> index
-      | None -> List.length rows
+      in
+      loop 0 rows
     in
-    if index > 0 then
+    (match index with
+    | Some index when index > 0 ->
       let previous = (List.nth rows (index - 1)).block in
       step state
         ((if editing.content_uuid <> editing.uuid then
@@ -1159,13 +1156,13 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
               expected_previous_title = previous.title;
             };
         ])
-    else if String.trim editing.title = "" && block.journal = None
+    | Some index when String.trim editing.title = "" && block.journal = None
             && not (List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid) context.blocks)
-            && index + 1 < List.length rows then
+            && index + 1 < List.length rows ->
       step
         (start_editing context state (List.nth rows (index + 1)).block 0)
         [ Remove_blocks [ editing.uuid ] ]
-    else step state []
+    | _ -> step state [])
   | None -> step state []
 
 let toggle_member values value =

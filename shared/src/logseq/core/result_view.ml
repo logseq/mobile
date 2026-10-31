@@ -529,6 +529,31 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
       | _ -> invalid_arg "Invalid selected values" in
     let intent = Ops.Set_property {uuid = target; attr; expected = Option.map (semantic db) (raw db target_id attr); value = assigned} in
     if !created = [] then intent else Ops.Atomic (List.rev !created @ [intent])
+let begin_text_edit db ~now ~fresh_uuid input =
+  let owner = required "blockUuid" input and attr = required "attr" input in
+  let owner_id = eid db owner in
+  let property = property ~owner:owner_id db attr in
+  if not (Node_title.can_edit db owner_id && property.ref_ && List.mem property.typ ["default"; "url"]
+      && not property.closed && node_editable db property) then
+    invalid_arg "Choose an editable text property";
+  let raw = raw db owner_id attr in
+  if member "expected" input <> semantic_json db raw then
+    invalid_arg "This property changed. Reopen it to edit the latest value";
+  let values = attr_values db owner_id attr in
+  match List.find_map (fun value -> Option.bind (ref_id db value) (fun id ->
+    if G.ref_eids db id "logseq.property/created-from-property" <> Option.to_list (attr_eid db attr) then None
+    else Option.map (fun (block : Cache_model.block) -> block.uuid) (G.block (fun text -> Ok text) db id))) values with
+  | Some uuid -> uuid, None
+  | None ->
+    if not (List.for_all (empty db) values) then invalid_arg "This property has no editable text block";
+    let uuid = fresh_uuid () in
+    let value = Pending_ops.Ref_uuid uuid in
+    uuid, Some (Pending_ops.Atomic [
+      Pending_ops.Create_property_value {uuid; owner_uuid = owner; property_ident = attr;
+        content = Pending_ops.String_value ""; created_at = now};
+      Pending_ops.Set_property {uuid = owner; attr; expected = Option.map (semantic db) raw;
+        value = Some (if property.many then Pending_ops.Set_value [value] else value)}])
+
 let edit_cell db ~now ~fresh_uuid owner feature _view json =
   let target = required "blockUuid" json in
   if not (List.exists (function Query_block.Block block -> block.uuid = target | _ -> false) (scope db owner feature))

@@ -19,4 +19,7 @@ val property_metadata : Datascript.db -> string -> Yojson.Basic.t
 val edit_property : ?text_value:bool -> ?allow_builtin:bool -> Datascript.db -> now:int -> fresh_uuid:(unit -> string) ->
   Yojson.Basic.t -> Pending_ops.pending_intent
 
+val begin_text_edit : Datascript.db -> now:int -> fresh_uuid:(unit -> string) ->
+  Yojson.Basic.t -> string * Pending_ops.pending_intent option
+
 val filter_values : Datascript.db -> owner:string -> feature:string -> attr:string -> Yojson.Basic.t
