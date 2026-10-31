@@ -246,7 +246,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     context.content(for: editor)
                         .font(row.markup.contains { $0.type == .codeBlock } ? .caption : .body)
                 } else if row.isAsset {
-                    LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath)
+                    LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath,
+                        allowsInteraction: { context.isUserInteractionEnabled })
                 } else {
                     title
                         .accessibilityIdentifier("outliner.block-action." + row.uuid)
@@ -317,7 +318,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
             youtubePlaybackStarts: playback.starts,
             onSeekYouTube: { playback.starts[$0] = $1 },
             allowsLinkInteraction: { context.isUserInteractionEnabled },
-            onOpenMarkupLink: { link in if case let .node(uuid) = link { emit("open-node", uuid: uuid) } })
+            onOpenMarkupLink: { link in if case let .node(uuid) = link { emit("open-node", uuid: uuid) } },
+            onEdit: { emit(row.opensAsPage ? "open-node" : "edit") })
             .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
             .strikethrough(row.completed)
             .foregroundStyle(row.completed ? .secondary : .primary)
