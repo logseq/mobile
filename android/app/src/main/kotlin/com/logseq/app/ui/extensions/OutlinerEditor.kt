@@ -3,7 +3,8 @@ package com.logseq.app.ui.extensions
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -15,6 +16,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -65,6 +68,19 @@ private sealed interface EditorHandoff {
     data class Paste(val payload: String) : EditorHandoff
 }
 
+private class EditorFieldValue(private val state: TextFieldState) {
+    operator fun getValue(owner: Any?, property: kotlin.reflect.KProperty<*>): TextFieldValue =
+        TextFieldValue(state.text.toString(), state.selection, state.composition)
+
+    operator fun setValue(owner: Any?, property: kotlin.reflect.KProperty<*>, next: TextFieldValue) {
+        if (state.text.toString() == next.text && state.selection == next.selection) return
+        state.edit {
+            if (asCharSequence().toString() != next.text) replace(0, length, next.text)
+            selection = next.selection
+        }
+    }
+}
+
 @Composable
 internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
@@ -78,12 +94,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val codeLanguage = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optString("language") }.getOrDefault("") }
 
     val focusRequester = remember { FocusRequester() }
-    var value by remember {
-        mutableStateOf(
-            TextFieldValue(modelTitle, TextRange(modelCaret.coerceAtLeast(0)))
-        )
-    }
-    var observedText by remember { mutableStateOf(value.text) }
+    val fieldState = remember { TextFieldState(modelTitle, TextRange(modelCaret.coerceIn(0, modelTitle.length))) }
+    val nativeValue = remember { EditorFieldValue(fieldState) }
+    var value: TextFieldValue by nativeValue
+    var observedValue by remember { mutableStateOf(value) }
     var previousText by remember { mutableStateOf(modelTitle) }
     var previousSelection by remember { mutableStateOf(value.selection) }
     var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
@@ -107,10 +121,29 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val publishedTitles = remember { mutableStateListOf<String>() }
     var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
 
+    fun capturePendingTyping(incoming: TextFieldValue) {
+        if (!awaitingHandoff) return
+        val text = incoming.text
+        val prior = observedValue.text
+        if (text != prior) {
+            var prefix = 0
+            while (prefix < prior.length && prefix < text.length && prior[prefix] == text[prefix]) prefix++
+            var suffix = 0
+            while (suffix < prior.length - prefix && suffix < text.length - prefix &&
+                prior[prior.lastIndex - suffix] == text[text.lastIndex - suffix]) suffix++
+            val removed = prior.length - prefix - suffix
+            val inserted = text.substring(prefix, text.length - suffix)
+            val last = handoffSegments.removeLastOrNull().orEmpty()
+            handoffSegments.addLast(last.dropLast(removed.coerceAtMost(last.length)) + inserted)
+        }
+        observedValue = incoming
+    }
+
     // Reconcile a structural handoff in this composition, so the IME sees the
     // new text, caret and identity together instead of waiting another frame.
     val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
-    if (awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)) {
+    if (awaitingHandoff && value.composition == null && (blockId != rememberedBlockId || handoffAcknowledged)) {
+        capturePendingTyping(value)
         handoffRevision = null
         val typing = handoffSegments.removeFirstOrNull().orEmpty()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
@@ -135,7 +168,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             if (value.text != merged || value.selection != TextRange(caret)) {
                 value = TextFieldValue(merged, TextRange(caret))
             }
-            observedText = merged
+            observedValue = value
             if (typing.isNotEmpty()) debounceSeq++
         }
     }
@@ -153,8 +186,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     // Model → field sync (didUpdateWidget equivalent).
     LaunchedEffect(blockId, modelTitle, modelCaret, selectionRevision) {
+        if (awaitingHandoff) return@LaunchedEffect
         val blockChanged = blockId != rememberedBlockId
-        if (awaitingHandoff && !blockChanged) return@LaunchedEffect
         rememberedBlockId = blockId
         val selectionRequested = selectionRevision != rememberedSelectionRevision
         rememberedSelectionRevision = selectionRevision
@@ -178,7 +211,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             debounceSeq++
             val offset = modelCaret.coerceIn(0, modelTitle.length)
             value = TextFieldValue(modelTitle, TextRange(offset))
-            observedText = modelTitle
+            observedValue = value
             applyingModel = false
         }
     }
@@ -215,9 +248,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitReturn(title: String, caret: Int) {
+        capturePendingTyping(TextFieldValue(title, TextRange(caret)))
         // Rebase the native field before later IME commits can target the old block.
         value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
-        observedText = value.text
+        observedValue = value
         if (awaitingHandoff) {
             queuedHandoffs.addLast(EditorHandoff.Return(title, caret))
             handoffSegments.addLast("")
@@ -246,44 +280,42 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun acceptValue(incoming: TextFieldValue) {
+            if (incoming == observedValue) return
+            val prior = observedValue
             if (awaitingHandoff) {
-                val prior = value.text
+                val priorText = prior.text
                 var prefix = 0
-                while (prefix < prior.length && prefix < incoming.text.length && prior[prefix] == incoming.text[prefix]) prefix++
+                while (prefix < priorText.length && prefix < incoming.text.length && priorText[prefix] == incoming.text[prefix]) prefix++
                 var suffix = 0
-                while (suffix < prior.length - prefix && suffix < incoming.text.length - prefix &&
-                    prior[prior.lastIndex - suffix] == incoming.text[incoming.text.lastIndex - suffix]) suffix++
+                while (suffix < priorText.length - prefix && suffix < incoming.text.length - prefix &&
+                    priorText[priorText.lastIndex - suffix] == incoming.text[incoming.text.lastIndex - suffix]) suffix++
                 val inserted = incoming.text.substring(prefix, incoming.text.length - suffix)
-                val removed = prior.length - prefix - suffix
+                val removed = priorText.length - prefix - suffix
                 if (inserted == "\n" && removed == 0) {
-                    submitReturn(prior, prefix)
+                    submitReturn(priorText, prefix)
                     return
-                } else if (inserted.isNotEmpty() || removed > 0) {
-                    val last = handoffSegments.removeLastOrNull().orEmpty()
-                    handoffSegments.addLast(last.dropLast(removed.coerceAtMost(last.length)) + inserted)
                 }
+                capturePendingTyping(incoming)
                 value = incoming
-                observedText = incoming.text
                 return
             }
             val location = incoming.selection.start
-            val deletion = if (incoming.composition == null && value.selection.collapsed && location >= 0
-                && value.text.length == incoming.text.length + 1 && location < value.text.length
-                && value.text.removeRange(location, location + 1) == incoming.text) {
-                applyEmptyPairDeletion(inputPolicy, value.text, location, 1, "")
+            val deletion = if (incoming.composition == null && prior.selection.collapsed && location >= 0
+                && prior.text.length == incoming.text.length + 1 && location < prior.text.length
+                && prior.text.removeRange(location, location + 1) == incoming.text) {
+                applyEmptyPairDeletion(inputPolicy, prior.text, location, 1, "")
             } else null
             val next = deletion?.let { TextFieldValue(it.first, TextRange(it.second)) } ?: incoming
             if (applyingModel) {
                 value = next
                 return
             }
-            val textChanged = next.text != observedText
+            val textChanged = next.text != prior.text
             if (textChanged) {
-                previousText = observedText
-                previousSelection = value.selection
+                previousText = prior.text
+                previousSelection = prior.selection
             }
-            observedText = next.text
-            val prior = value
+            observedValue = next
             value = next
 
             if (!textChanged && next.selection != prior.selection && next.selection.start >= 0) {
@@ -321,7 +353,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
                 applyingModel = true
                 value = TextFieldValue(submitted, TextRange(submittedCaret))
-                observedText = submitted
+                observedValue = value
                 applyingModel = false
                 submitReturn(submitted, submittedCaret)
             } else {
@@ -330,6 +362,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitPaste() {
+        capturePendingTyping(value)
         val payload = com.logseq.app.AndroidBlockClipboard.content(androidContext, value.text,
             value.selection.min, value.selection.max - value.selection.min) ?: return
         val plain = org.json.JSONObject(payload).getString("plainText")
@@ -337,7 +370,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val start = value.selection.min.coerceIn(0, value.text.length)
         val end = value.selection.max.coerceIn(start, value.text.length)
         value = TextFieldValue(value.text.replaceRange(start, end, plain), TextRange(start + plain.length))
-        observedText = value.text
+        observedValue = value
         debounceSeq++
         if (awaitingHandoff) {
             queuedHandoffs.addLast(EditorHandoff.Paste(payload))
@@ -348,6 +381,11 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         awaitingHandoff = true
         handoffSegments.addLast("")
         context.emit("paste-content", "value" to payload)
+    }
+    val onNativeChange by rememberUpdatedState(::acceptValue)
+    LaunchedEffect(fieldState) {
+        snapshotFlow { TextFieldValue(fieldState.text.toString(), fieldState.selection, fieldState.composition) }
+            .collect { onNativeChange(it) }
     }
     val completionToolbar = remember(nativeToolbar, value, selectionRevision) {
         object : TextToolbar {
@@ -365,14 +403,18 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
     val highlighted = if (code) rememberHighlightedCode(value.text, codeLanguage) else value.annotatedString
+    val highlightedState = rememberUpdatedState(highlighted)
+    val outputTransformation = remember {
+        OutputTransformation {
+            val styled = highlightedState.value
+            if (styled.text == asCharSequence().toString()) {
+                styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
+            }
+        }
+    }
     BasicTextField(
-        value = value,
-        onValueChange = ::acceptValue,
-        visualTransformation = androidx.compose.ui.text.input.VisualTransformation { original ->
-            androidx.compose.ui.text.input.TransformedText(
-                if (highlighted.text == original.text) highlighted else original,
-                androidx.compose.ui.text.input.OffsetMapping.Identity)
-        },
+        state = fieldState,
+        outputTransformation = outputTransformation,
         modifier = Modifier
             .fillMaxWidth()
             .appendTextContextMenuComponents {
@@ -402,13 +444,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     val end = value.selection.max.coerceIn(start, value.text.length)
                     val title = value.text.replaceRange(start, end, "\n")
                     if (awaitingHandoff) {
+                        capturePendingTyping(value)
                         val last = handoffSegments.removeLastOrNull().orEmpty()
                         handoffSegments.addLast(last + "\n")
                     } else {
-                        value = TextFieldValue(title, TextRange(start + 1))
-                        observedText = title
                         debounceSeq++
                     }
+                    value = TextFieldValue(title, TextRange(start + 1))
+                    observedValue = value
                     true
                 } else if (!multiline && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                     // Handle hardware Enter before the IME can batch several keys into pasted text.
@@ -437,7 +480,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             autoCorrectEnabled = if (code) false else null,
             imeAction = if (multiline) ImeAction.Default else ImeAction.Next,
         ),
-        keyboardActions = KeyboardActions(onNext = { returnAtSelection() }),
+        onKeyboardAction = { returnAtSelection() },
     )
     }
     }
