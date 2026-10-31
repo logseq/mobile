@@ -20,7 +20,7 @@ import SwiftUI
     @MainActor static func main() async throws {
         try await check("")
         try await check("Needle")
-        print("PASS: empty and populated search close with the native keyboard, preserve outgoing content, and keep the toolbar at the bottom")
+        print("PASS: empty and populated search close promptly, preserve outgoing content, and keep the toolbar at the bottom")
     }
 
     @MainActor static func check(_ initialQuery: String) async throws {
@@ -89,6 +89,17 @@ import SwiftUI
         }
         let fieldTop = field.convert(field.bounds, to: window).minY
         let keyboard = SearchKeyboardDismissal()
+        let closeStart = ProcessInfo.processInfo.systemUptime
+        var closedAfter: Double?
+        func isClosed() -> Bool {
+            let node = backend.rootIDs.flatMap(descendants).first {
+                backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+            }
+            guard let node, case .bool(false)? = backend.extensionModel(id: node)?.properties["presented"],
+                  find("search.result.found") == nil else { return false }
+            if closedAfter == nil { closedAfter = ProcessInfo.processInfo.systemUptime - closeStart }
+            return true
+        }
         delegate.searchBarCancelButtonClicked?(search.searchBar)
         func retainsQuery() -> Bool {
             let node = backend.rootIDs.flatMap(descendants).first {
@@ -99,25 +110,26 @@ import SwiftUI
             return initialQuery.isEmpty || find("search.result.found") != nil
         }
         try await Task.sleep(for: .milliseconds(30))
+        _ = isClosed()
         guard field.window == nil || retainsQuery() else {
             throw failure("The outgoing results must remain mounted during dismissal")
         }
         for _ in 0..<6 {
+            _ = isClosed()
             guard field.window == nil || field.convert(field.bounds, to: window).minY >= fieldTop - 2 else {
                 throw failure("The outgoing search toolbar must not jump to the top during dismissal")
             }
             try await Task.sleep(for: .milliseconds(20))
         }
         try await wait("The search session must be cleared after dismissal") {
-            let node = backend.rootIDs.flatMap(descendants).first {
-                backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
-            }
-            guard let node, case .bool(false)? = backend.extensionModel(id: node)?.properties["presented"] else { return false }
-            return find("search.result.found") == nil
+            isClosed()
         }
-        guard keyboard.completed else {
-            throw failure("Search must preserve its native hierarchy until the keyboard finishes dismissing")
+        let elapsed = closedAfter!
+        print("Cancel search (\(initialQuery.isEmpty ? "empty" : "populated")): \(Int(elapsed * 1000)) ms")
+        guard elapsed < 0.2 else {
+            throw failure("Search must restore the page within 200 ms without waiting for keyboard dismissal; took \(Int(elapsed * 1000)) ms")
         }
+        try await wait("The native keyboard must finish dismissing independently") { keyboard.completed }
         try await wait("Search must release its input") { !field.isFirstResponder }
         guard window.rootViewController === root else { throw failure("Search must retain the app controller") }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }

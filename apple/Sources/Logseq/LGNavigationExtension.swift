@@ -442,8 +442,11 @@ private struct LGSearchSession: View {
                 if pendingQuery == query { pendingQuery = nil }
             }
             #if os(iOS)
-            .opacity(closing ? 0 : 1)
-            .animation(.easeOut(duration: 0.2), value: closing)
+            .task(id: closing) {
+                // Finish the native cancel callback before retiring this layer,
+                // without waiting for the keyboard's dismissal animation.
+                if closing { close() }
+            }
             .onChange(of: depth) {
                 if depth == 0 && !closing { nativeSearchPresented = true }
             }
@@ -467,8 +470,7 @@ private struct LGSearchSession: View {
         let content = AnyView(content.environment(\.luiTextHighlightQuery, query))
         #if os(iOS)
         let observedContent = AnyView(content.background(LGSearchDismissalObserver(
-            willDismiss: { if depth == 0 { exitSearch() } },
-            didDismiss: { if depth == 0 && closing { close() } }
+            willDismiss: { if depth == 0 { exitSearch() } }
         )))
         if #available(iOS 26.0, *) {
             return AnyView(nativeBottomSearch(observedContent))
@@ -956,15 +958,13 @@ private struct LGNavigationContent: View {
 @MainActor
 private struct LGSearchDismissalObserver: UIViewControllerRepresentable {
     let willDismiss: () -> Void
-    let didDismiss: () -> Void
 
     func makeUIViewController(context: Context) -> Observer {
-        Observer(willDismiss: willDismiss, didDismiss: didDismiss)
+        Observer(willDismiss: willDismiss)
     }
 
     func updateUIViewController(_ controller: Observer, context: Context) {
         controller.proxy.willDismiss = willDismiss
-        controller.proxy.didDismiss = didDismiss
         controller.resolve()
     }
 
@@ -976,8 +976,8 @@ private struct LGSearchDismissalObserver: UIViewControllerRepresentable {
         let proxy: Delegate
         weak var search: UISearchController?
 
-        init(willDismiss: @escaping () -> Void, didDismiss: @escaping () -> Void) {
-            proxy = Delegate(willDismiss: willDismiss, didDismiss: didDismiss)
+        init(willDismiss: @escaping () -> Void) {
+            proxy = Delegate(willDismiss: willDismiss)
             super.init(nibName: nil, bundle: nil)
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -1004,21 +1004,14 @@ private struct LGSearchDismissalObserver: UIViewControllerRepresentable {
         // UIKit's optional-method lookup is nonisolated; installation stays on the main actor.
         nonisolated(unsafe) weak var forwarded: UISearchControllerDelegate?
         var willDismiss: () -> Void
-        var didDismiss: () -> Void
 
-        init(willDismiss: @escaping () -> Void, didDismiss: @escaping () -> Void) {
+        init(willDismiss: @escaping () -> Void) {
             self.willDismiss = willDismiss
-            self.didDismiss = didDismiss
         }
 
         func willDismissSearchController(_ searchController: UISearchController) {
             willDismiss()
             forwarded?.willDismissSearchController?(searchController)
-        }
-
-        func didDismissSearchController(_ searchController: UISearchController) {
-            forwarded?.didDismissSearchController?(searchController)
-            didDismiss()
         }
 
         nonisolated override func responds(to selector: Selector!) -> Bool {
