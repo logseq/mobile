@@ -57,7 +57,7 @@ internal class CognitoAuthProvider(
             saveTokens(refreshed)
             refreshed.idToken
         } catch (error: Throwable) {
-            android.util.Log.w("CognitoAuthProvider", "token refresh failed", error)
+            android.util.Log.w("CognitoAuthProvider", "token refresh failed\n${error.stackTraceToString()}")
             if (error is TokenRequestException && error.code in setOf("invalid_grant", "invalid_token")) clearTokens()
             throw error
         }

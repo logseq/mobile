@@ -218,7 +218,7 @@ internal class AndroidGraphEventsSync(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     if (continuation.isActive || !isCancelled())
-                        android.util.Log.w("AndroidGraphEventsSync", "WebSocket failed", t)
+                        android.util.Log.w("AndroidGraphEventsSync", "WebSocket failed\n${t.stackTraceToString()}")
                     frames.trySend(
                         Frame.Failure(
                             response?.let { "HTTP ${it.code}" }

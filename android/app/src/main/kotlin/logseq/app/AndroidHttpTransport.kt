@@ -28,7 +28,7 @@ object AndroidHttpTransport {
         }
         response(connection)
     }.getOrElse {
-        android.util.Log.w("AndroidHttpTransport", "send failed", it)
+        android.util.Log.w("AndroidHttpTransport", "send failed\n${it.stackTraceToString()}")
         "ERROR\n${it.message ?: it.javaClass.simpleName}"
     }
 
@@ -59,7 +59,7 @@ object AndroidHttpTransport {
         }
         response(connection)
     }.getOrElse {
-        android.util.Log.w("AndroidHttpTransport", "upload failed", it)
+        android.util.Log.w("AndroidHttpTransport", "upload failed\n${it.stackTraceToString()}")
         "ERROR\n${it.message ?: it.javaClass.simpleName}"
     }
 
