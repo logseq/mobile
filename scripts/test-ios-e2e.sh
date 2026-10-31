@@ -172,15 +172,18 @@ if [[ ${LOGSEQ_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
     [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
       || die "timed out waiting for the graph snapshot import to finish"
     xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
-    if command -v dune >/dev/null 2>&1; then
-      dune_seed=(dune exec)
+    if [[ -n ${LOGSEQ_E2E_SEED_BIN:-} ]]; then
+      [[ -x $LOGSEQ_E2E_SEED_BIN ]] || die "E2E seed executable was not found: $LOGSEQ_E2E_SEED_BIN"
+      seed_command=("$LOGSEQ_E2E_SEED_BIN")
+    elif command -v dune >/dev/null 2>&1; then
+      seed_command=(dune exec shared/native/logseq_e2e_seed.exe --)
     else
-      dune_seed=(opam exec --switch=5.5.0 -- dune exec)
+      seed_command=(opam exec --switch=5.5.0 -- dune exec shared/native/logseq_e2e_seed.exe --)
     fi
     if [[ -n $fixture_seed_mode ]]; then
-      "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+      "${seed_command[@]}" "$graph_database" "$fixture_seed_mode"
     else
-      "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$graph_database"
+      "${seed_command[@]}" "$graph_database"
     fi
     if [[ -n $seed_cache_dir ]]; then
       mkdir -p "$seed_cache_dir/$seed_cache_key"

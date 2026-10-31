@@ -69,10 +69,12 @@ plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.log
 plutil -create xml1 "$signature_entitlements"
 plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.logseq.logseq"]' "$signature_entitlements"
 
+build_phase_started=$SECONDS
 core_object=$(LOGSEQ_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
   LOGSEQ_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd" \
   PKG_CONFIG_PATH="$ffi_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
   "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" ios_simulator)
+echo "[ios-build] OCaml core: $((SECONDS - build_phase_started))s" >&2
 
 for source in logseq_https_darwin.m logseq_crypto_darwin.m; do
   "$clang" \
@@ -107,11 +109,14 @@ if [[ ${LOGSEQ_IOS_ENABLE_TESTING:-0} == 1 ]]; then
   swift_build_args+=(-Xswiftc -enable-testing)
 fi
 
+build_phase_started=$SECONDS
 prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 LOGSEQ_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
 swift build "${swift_build_args[@]}"
+echo "[ios-build] Swift app: $((SECONDS - build_phase_started))s" >&2
 
+build_phase_started=$SECONDS
 xcodebuild \
   -project "$repo_root/apple/App/Logseq.xcodeproj" \
   -target LogseqShareExtension \
@@ -124,6 +129,8 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   -quiet \
   build
+echo "[ios-build] Xcode extensions: $((SECONDS - build_phase_started))s" >&2
+build_phase_started=$SECONDS
 
 if [[ -d $app_dir ]]; then
   chmod -R u+w "$app_dir"
@@ -187,4 +194,5 @@ codesign --force --sign - --entitlements "$signature_entitlements" \
 python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
 python3 "$repo_root/scripts/verify-ios-share-extension.py" "$app_dir"
 python3 "$repo_root/scripts/verify-ios-native-symbols.py" "$app_dir"
+echo "[ios-build] Bundle, assets, signing and verification: $((SECONDS - build_phase_started))s" >&2
 echo "$app_dir"
