@@ -6,8 +6,8 @@ press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Alpha"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-wait ext:native-search-presentation
-ext ext:native-search-presentation native-search-presentation present '{}'
+wait prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
 wait prop:accessibility-identifier=screen.search
 ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'
 wait prop:accessibility-identifier=search.result.page-1

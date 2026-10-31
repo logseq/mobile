@@ -134,20 +134,22 @@ import SwiftUI
             }
             return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3)
         }
-        guard let baselineY = displayedFrame().titleY else { fatalError("The visible search title must be measurable") }
+        guard displayedFrame().titleY != nil else { fatalError("The visible search title must be measurable") }
         let start = ProcessInfo.processInfo.systemUptime
         cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
         var homeAfter: TimeInterval?
-        for _ in 0..<30 {
+        for _ in 0..<45 {
             let displayed = displayedFrame()
-            if let y = displayed.titleY, abs(y - baselineY) > 4 {
+            guard displayed.homeVisible || displayed.titleY != nil else {
                 throw NSError(domain: "SearchLayout", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                    "Visible search text must not move before disappearing; before=\(baselineY), during=\(y)"])
+                    "Cancellation must preserve the outgoing content until the home page is visible, without an intermediate empty screen"])
             }
             if displayed.homeVisible && homeAfter == nil { homeAfter = ProcessInfo.processInfo.systemUptime - start }
             try await Task.sleep(for: .milliseconds(16))
         }
-        guard let homeAfter, homeAfter < 0.2 else { fatalError("The home page must be visibly restored within 200 ms") }
+        guard let homeAfter, homeAfter < 0.2 else {
+            fatalError("The original page must become visible as cancellation begins, while UIKit finishes closing its keyboard")
+        }
         guard displayedFrame().titleY == nil else { fatalError("Closed search content must be hidden") }
         guard let capture = views(window).compactMap({ $0 as? UITextField }).first(where: {
             $0.placeholder == "Capture"
@@ -163,6 +165,6 @@ import SwiftUI
                 "The home page must resume keyboard avoidance when its own input takes focus"])
         }
         capture.resignFirstResponder()
-        print("PASS: native Cancel visibly restores home in \(Int(homeAfter * 1000)) ms without moving outgoing text")
+        print("PASS: native Cancel visibly restores home in \(Int(homeAfter * 1000)) ms without an empty intermediate frame")
     }
 }

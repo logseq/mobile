@@ -4649,10 +4649,14 @@ let search_lifecycle_keeps_query_owned_by_the_lg_model () =
   flush application;
   let renderer = Lui_app.runtime application in
   let chrome = native_bottom_chrome renderer application in
-  check_eq ~msg:"iOS uses the system search item instead of a duplicate button"
-    (descendant_with_identifier renderer chrome "button.search") (-1);
-  dispatch application (Lui_protocol.ExtensionEvent
-    (extension_node application "native-search-presentation", "native-search-presentation", "present", Lui_protocol.String_map.empty));
+  let search_button =
+    descendant_with_identifier renderer chrome "button.search"
+  in
+  check_eq ~msg:"search keeps the main-branch accessibility identifier"
+    (property_string renderer search_button
+       Lui_protocol.AccessibilityIdentifier)
+    "button.search";
+  dispatch application (Lui_protocol.Press search_button);
   flush application;
   check ~msg:"search presentation is model-owned"
     (App.model application).search_open;
@@ -4663,8 +4667,8 @@ let search_lifecycle_keeps_query_owned_by_the_lg_model () =
   check_eq ~msg:"search wraps app navigation so both native stacks are independent"
     (List.hd (children renderer (List.hd (children renderer search_extension))))
     (extension_node application "native-navigation-stack");
-  check ~msg:"the underlying page keeps its capture ready during system dismissal"
-    (descendant_with_identifier renderer (native_bottom_chrome renderer application) "button.composer.expand" <> -1);
+  check ~msg:"the underlying page keeps its capture and search chrome ready during dismissal"
+    (descendant_with_identifier renderer (native_bottom_chrome renderer application) "button.search" <> -1);
   let search_panel =
     child_with_identifier renderer search_root "screen.search"
   in
@@ -4785,7 +4789,12 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
       "the collapsed bottom row fills the viewport for symmetric edge insets"
     (property_float renderer placement Lui_protocol.GrowValue)
     1.0;
-  check_eq ~msg:"the system toolbar owns the iOS search control" search (-1);
+  check_eq ~msg:"collapsed search uses the main branch icon control"
+    (property_string renderer search Lui_protocol.InlineIconName)
+    "app:search";
+  check_eq ~msg:"search keeps semantic ghost styling"
+    (property_string renderer search Lui_protocol.VariantValue)
+    "ghost";
   check_eq ~msg:"collapsed capture keeps its automation identifier"
     (property_string renderer collapsed Lui_protocol.AccessibilityIdentifier)
     "button.composer.expand";
@@ -4966,7 +4975,15 @@ let ios_capture_and_search_match_main_native_metrics () =
   check_eq ~msg:"Capture and Search keep main's ten-point separation"
     (property_int renderer row Lui_protocol.Gap)
     10;
-  check_eq ~msg:"native search supplies its own platform hit target" search (-1);
+  check_eq ~msg:"Search keeps main's native 58-point hit target"
+    (property_int renderer search Lui_protocol.WidthValue)
+    58;
+  check_eq ~msg:"Search keeps main's native 58-point hit target"
+    (property_int renderer search Lui_protocol.HeightValue)
+    58;
+  check_eq ~msg:"Search uses the native 24-point icon size policy"
+    (property_string renderer search Lui_protocol.SizeValue)
+    "icon";
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;

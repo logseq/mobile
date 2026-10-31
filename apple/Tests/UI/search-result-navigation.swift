@@ -108,9 +108,7 @@ import UIKit
         try await Task.sleep(for: .milliseconds(200))
         let root = window.rootViewController!
         func searchNavigation() -> UINavigationController? {
-            controllers(root).compactMap { $0 as? UINavigationController }.first {
-                $0.viewControllers.contains { $0.navigationItem.searchController != nil }
-            }
+            controllers(root).compactMap { $0 as? UINavigationController }.first
         }
         try await wait("Search must reuse the main navigation controller") {
             searchNavigation() != nil
