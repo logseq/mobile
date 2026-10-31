@@ -90,7 +90,7 @@ private const val SEARCH_FINGERPRINT =
         "5:depth:int:required:none,5:query:string:required:none," +
         "5:title:string:required:none,9:presented:bool:required:none|events:" +
         "13:query-changed[5:query:string:required],4:back[5:count:int:required]," +
-        "7:dismiss[]"
+        "7:dismiss[],7:present[]"
 
 fun logseqExtensionRegistry(
     onOpenImage: ((String, String) -> Unit)? = null,
@@ -253,6 +253,7 @@ fun logseqExtensionRegistry(
                 listOf(LuiExtensionProperty("count", LuiExtensionValueKind.INTEGER, required = true)),
             ),
             LuiExtensionEventSchema("dismiss"),
+            LuiExtensionEventSchema("present"),
         ),
     ) {
         SearchPresentation(this)

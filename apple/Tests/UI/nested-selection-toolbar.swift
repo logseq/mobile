@@ -76,8 +76,11 @@ import UIKit
         try await Task.sleep(for: .milliseconds(500))
         for destination in ["Page A", "Page B", "Recent C", "Linked D", "Found"] {
             if destination == "Found" {
-                guard let search = find("button.search") else { throw failure("Missing search action") }
-                try runtime.renderer.backend.performPress(node: search)
+                let backend = runtime.renderer.backend
+                let search = backend.rootIDs.flatMap(descendants).first {
+                    backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+                }!
+                try backend.performExtensionEvent(node: search, name: "present", values: [:])
                 try await wait("Native search must accept input") {
                     views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
                 }

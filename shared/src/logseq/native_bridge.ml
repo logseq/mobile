@@ -619,7 +619,7 @@ let extension_event node identifier name text value =
     | _, "query-changed" -> [ "query", StringValue text ]
     | "native-table-viewport", "viewport-changed" ->
       ["offset", IntValue (Option.value ~default:0 (int_of_string_opt text)); "width", IntValue value]
-    | "native-navigation-stack", "viewport-changed" -> [ "width", IntValue value ]
+    | ("native-navigation-stack" | "native-sidebar"), "viewport-changed" -> [ "width", IntValue value ]
     | _, "back" -> [ "count", IntValue value ]
     | _ -> []
   in

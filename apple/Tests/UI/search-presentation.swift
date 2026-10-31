@@ -54,6 +54,7 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
     func run() async throws {
         let registry = LUIAppleExtensionRegistry()
         try LGSearchPresentationExtension.register(in: registry)
+        try LGNavigationExtension.register(in: registry)
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         var generation = 1
         try backend.apply(json: """
@@ -67,6 +68,26 @@ let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
           {"op":"create-node","id":2,"kind":"column"},
           {"op":"set-prop","id":2,"property":"grow","value":1.0},
           {"op":"set-prop","id":2,"property":"background","value":"#ff0000"},
+        {"op":"create-extension","id":6,"identifier":"native-navigation-stack","fingerprint":"\(LGNavigationExtension.fingerprint)"},
+        {"op":"set-extension-prop","id":6,"property":"depth","value":0},
+        {"op":"set-extension-prop","id":6,"property":"back-depth","value":0},
+        {"op":"set-extension-prop","id":6,"property":"bottom-occupies-layout-space","value":false},
+        {"op":"set-extension-prop","id":6,"property":"composer-dismissal-enabled","value":false},
+        {"op":"set-extension-prop","id":6,"property":"title","value":"Home"},
+        {"op":"create-node","id":7,"kind":"column"},
+        {"op":"set-prop","id":7,"property":"grow","value":1.0},
+        {"op":"insert-child","parent":6,"child":7,"index":0},
+        {"op":"create-node","id":8,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":8,"index":1},
+        {"op":"create-node","id":9,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":9,"index":2},
+        {"op":"create-node","id":10,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":10,"index":3},
+        {"op":"create-node","id":11,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":11,"index":4},
+        {"op":"create-node","id":12,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":12,"index":5},
+        {"op":"insert-child","parent":2,"child":6,"index":0},
           {"op":"create-node","id":3,"kind":"column"},
           {"op":"set-prop","id":3,"property":"grow","value":1.0},
           {"op":"set-prop","id":3,"property":"background","value":"#ffffff"},

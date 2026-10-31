@@ -2179,7 +2179,7 @@ let native_search_presentation_extension_contract_is_pinned () =
     ~msg:"search must use a distinct native full-screen navigation contract"
     fingerprint
     (Some
-       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]")
 
 let liquid_glass_remains_an_ios_local_tweak () =
   let registry = View.extension_registry () in
@@ -3122,6 +3122,21 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     "sync 2";
   check_eq ~msg:"the graph switch is a native menu button"
     (node renderer graph_switch) (Some Lui_protocol.Button);
+  let main_width = (App.model application).viewport_width in
+  List.iter (fun (width, expected) ->
+    let accepted = try
+      dispatch application (Lui_protocol.ExtensionEvent
+        (native_sidebar, "native-sidebar", "viewport-changed",
+         Lui_protocol.String_map.singleton "width" (Lui_protocol.IntValue width)));
+      true
+      with Invalid_argument _ -> false in
+    check ~msg:"the sidebar accepts its measured native width" accepted;
+    flush application;
+    check_eq ~msg:"the actual sidebar width bounds the native menu label"
+      (property_int renderer graph_switch Lui_protocol.WidthValue) expected;
+    check_eq ~msg:"sidebar measurement leaves the main viewport independent"
+      (App.model application).viewport_width main_width)
+    [318, 182; 240, 104; 600, 464];
   check_eq ~msg:"the graph switch keeps the disclosure affordance"
     (property_string renderer graph_switch Lui_protocol.InlineIconName)
     "app:chevron-down";
@@ -10096,6 +10111,17 @@ let native_bridge_preserves_viewport_width () =
   ignore (Native_bridge.extension_event navigation "native-navigation-stack"
     "viewport-changed" "" 820);
   check_eq ~msg:"the native ABI preserves tablet width" (App.model application).viewport_width 820;
+  let sidebar = extension_node application "native-sidebar" in
+  let accepts_sidebar = try
+    ignore (Native_bridge.extension_event sidebar "native-sidebar" "viewport-changed" "" 318);
+    true with Invalid_argument _ -> false in
+  check ~msg:"the native ABI preserves the sidebar's measured width" accepts_sidebar;
+  let renderer = Lui_app.runtime application in
+  let switch = descendant_with_identifier renderer sidebar "button.graph-switch" in
+  check_eq ~msg:"the native ABI bounds the actual menu label"
+    (property_int renderer switch Lui_protocol.WidthValue) 182;
+  check_eq ~msg:"the sidebar ABI leaves the main viewport independent"
+    (App.model application).viewport_width 820;
   send application Model.OpenSidebar;
   send application Model.ShowJournals;
   flush application;

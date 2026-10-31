@@ -91,7 +91,10 @@ import UIKit
             phase("teardown.end")
         }
         try await Task.sleep(for: .milliseconds(250))
-        try backend.performPress(node: find("button.search")!)
+        let searchID = backend.rootIDs.flatMap(descendants).first {
+            backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+        }!
+        try backend.performExtensionEvent(node: searchID, name: "present", values: [:])
         try await wait("Native search must accept input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }
@@ -105,11 +108,9 @@ import UIKit
         try await Task.sleep(for: .milliseconds(200))
         let root = window.rootViewController!
         func searchNavigation() -> UINavigationController? {
-            controllers(root).compactMap { $0 as? UINavigationController }.first {
-                $0.viewControllers.contains { $0.navigationItem.searchController != nil }
-            }
+            controllers(root).compactMap { $0 as? UINavigationController }.first
         }
-        try await wait("Search must own a navigation controller") {
+        try await wait("Search must reuse the main navigation controller") {
             searchNavigation() != nil
         }
         let navigation = searchNavigation()!
