@@ -656,7 +656,8 @@ private struct LGNavigationContent: View {
     }
 
     private var navigationStack: some View {
-        let title = searchVisible || toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        // UISearchController owns the bar transition; keep its returning content mounted.
+        let title = showsSearchPage || toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
             Group {
                 if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
@@ -695,7 +696,7 @@ private struct LGNavigationContent: View {
                         #endif
                 }
                 .toolbar {
-                    if !searchVisible, let toolbarStartIndex,
+                    if !showsSearchPage, let toolbarStartIndex,
                        let leadingID = childID(at: toolbarStartIndex) {
                         if #available(iOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
@@ -795,9 +796,6 @@ private struct LGNavigationContent: View {
                 }
             }
         }
-        #if os(iOS)
-        .navigationBarBackButtonHidden(searchVisible && !showsSearchPage)
-        #endif
     }
 
     @ViewBuilder
@@ -850,7 +848,7 @@ private struct LGNavigationContent: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
-        } else if !searchVisible, let toolbarStartIndex {
+        } else if !showsSearchPage, let toolbarStartIndex {
             ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
                 // Keep these controls in one item so the system cannot replace
                 // one of them with its own overflow menu as the title changes.

@@ -6,10 +6,16 @@ import SwiftUI
 @MainActor private final class SearchDismissLayoutProbe {
     var homeFrame = CGRect.zero
     var homeBaseline = CGRect.zero
+    var keyboardAnimationDuration: TimeInterval?
 }
 
 @main struct SearchDismissLayoutCheck {
     @MainActor static func main() async throws {
+        try await check("")
+        try await check("Needle")
+    }
+
+    @MainActor static func check(_ initialQuery: String) async throws {
         let probe = SearchDismissLayoutProbe()
         let registry = LUIAppleExtensionRegistry()
         try LGSearchPresentationExtension.register(in: registry)
@@ -31,6 +37,11 @@ import SwiftUI
                     probe.homeFrame = frame
                 })
         })
+        try registry.register(LUIAppleExtension(identifier: "search-topbar-probe", fingerprint: "search-topbar-probe", properties: []) { _ in
+            AnyView(Button {} label: {
+                Rectangle().fill(Color.green).frame(width: 24, height: 24)
+            })
+        })
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         var generation = 1
         try backend.apply(json: """
@@ -39,7 +50,7 @@ import SwiftUI
         {"op":"set-extension-prop","id":1,"property":"presented","value":false},
         {"op":"set-extension-prop","id":1,"property":"bottom-occupies-layout-space","value":false},
         {"op":"set-extension-prop","id":1,"property":"depth","value":0},
-        {"op":"set-extension-prop","id":1,"property":"query","value":""},
+        {"op":"set-extension-prop","id":1,"property":"query","value":"\(initialQuery)"},
         {"op":"set-extension-prop","id":1,"property":"title","value":"Search"},
         {"op":"create-node","id":2,"kind":"column"},
         {"op":"set-prop","id":2,"property":"grow","value":1.0},
@@ -53,10 +64,14 @@ import SwiftUI
         {"op":"set-prop","id":7,"property":"grow","value":1.0},
         {"op":"insert-child","parent":6,"child":7,"index":0},
         {"op":"create-node","id":8,"kind":"column"},
+        {"op":"create-extension","id":13,"identifier":"search-topbar-probe","fingerprint":"search-topbar-probe"},
+        {"op":"insert-child","parent":8,"child":13,"index":0},
         {"op":"insert-child","parent":6,"child":8,"index":1},
         {"op":"create-node","id":9,"kind":"column"},
         {"op":"insert-child","parent":6,"child":9,"index":2},
         {"op":"create-node","id":10,"kind":"column"},
+        {"op":"create-extension","id":14,"identifier":"search-topbar-probe","fingerprint":"search-topbar-probe"},
+        {"op":"insert-child","parent":10,"child":14,"index":0},
         {"op":"insert-child","parent":6,"child":10,"index":3},
         {"op":"create-node","id":11,"kind":"column"},
         {"op":"insert-child","parent":6,"child":11,"index":4},
@@ -111,7 +126,7 @@ import SwiftUI
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
         let region = CGRect(x: 0, y: window.safeAreaInsets.top, width: window.bounds.width,
             height: fieldFrame.minY - window.safeAreaInsets.top - 4).integral
-        func displayedFrame() -> (titleY: Double?, homeVisible: Bool) {
+        func displayedFrame() -> (titleY: Double?, homeVisible: Bool, topbarVisible: Bool) {
             let image = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: false) }
             let cropped = image.cgImage!.cropping(to: region)!
             let width = cropped.width, height = cropped.height
@@ -122,7 +137,7 @@ import SwiftUI
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)!
                 context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
             }
-            var count = 0, totalY = 0, redCount = 0
+            var count = 0, totalY = 0, redCount = 0, leadingCount = 0, trailingCount = 0, topbarTitleCount = 0
             for y in 0..<height {
                 for x in 0..<width {
                     let p = (y * width + x) * 4
@@ -130,14 +145,32 @@ import SwiftUI
                         count += 1; totalY += y
                     }
                     if pixels[p] > 200 && pixels[p + 1] < 120 && pixels[p + 2] < 120 { redCount += 1 }
+                    if y < 60 && x > width / 3 && x < width * 2 / 3 &&
+                        pixels[p] < 100 && pixels[p + 1] < 100 && pixels[p + 2] < 100 {
+                        topbarTitleCount += 1
+                    }
+                    if y < 60 && pixels[p + 1] > 140 && Int(pixels[p + 1]) > Int(pixels[p]) + 40 && Int(pixels[p + 1]) > Int(pixels[p + 2]) + 40 {
+                        if x < width / 3 { leadingCount += 1 }
+                        if x > width * 2 / 3 { trailingCount += 1 }
+                    }
                 }
             }
-            return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3)
+            return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3, leadingCount > 100 && trailingCount > 100 && topbarTitleCount > 20)
         }
+        guard !displayedFrame().topbarVisible else { fatalError("Search must hide the underlying topbar while active") }
         guard displayedFrame().titleY != nil else { fatalError("The visible search title must be measurable") }
+        let keyboardObserver = NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
+        ) { notification in
+            MainActor.assumeIsolated {
+                probe.keyboardAnimationDuration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(keyboardObserver) }
         let start = ProcessInfo.processInfo.systemUptime
         cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
         var homeAfter: TimeInterval?
+        var topbarAfter: TimeInterval?
         for _ in 0..<45 {
             let displayed = displayedFrame()
             guard displayed.homeVisible || displayed.titleY != nil else {
@@ -145,10 +178,21 @@ import SwiftUI
                     "Cancellation must preserve the outgoing content until the home page is visible, without an intermediate empty screen"])
             }
             if displayed.homeVisible && homeAfter == nil { homeAfter = ProcessInfo.processInfo.systemUptime - start }
+            if displayed.topbarVisible && topbarAfter == nil { topbarAfter = ProcessInfo.processInfo.systemUptime - start }
             try await Task.sleep(for: .milliseconds(16))
         }
-        guard let homeAfter, homeAfter < 0.2 else {
-            fatalError("The original page must become visible as cancellation begins, while UIKit finishes closing its keyboard")
+        let screenshot = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: false) }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try screenshot.pngData()!.write(to: documents.appendingPathComponent("search-topbar-closed.png"))
+        print("Cancellation rendered page at \(Int((homeAfter ?? -1) * 1000)) ms, complete topbar at \(Int((topbarAfter ?? -1) * 1000)) ms")
+        guard let homeAfter else { fatalError("The underlying page must become visible after cancelling") }
+        guard let topbarAfter, let nativeDuration = probe.keyboardAnimationDuration, topbarAfter < nativeDuration else {
+            throw NSError(domain: "SearchLayout", code: 4, userInfo: [NSLocalizedDescriptionKey:
+                "The complete topbar must return during the native keyboard animation, without a second transition after dismissal; page=\(Int(homeAfter * 1000)) ms, topbar=\(Int((topbarAfter ?? -1) * 1000)) ms"])
+        }
+        guard homeAfter < 0.2 else {
+            throw NSError(domain: "SearchLayout", code: 5, userInfo: [NSLocalizedDescriptionKey:
+                "The page must become visible as cancellation begins; page=\(Int(homeAfter * 1000)) ms"])
         }
         guard displayedFrame().titleY == nil else { fatalError("Closed search content must be hidden") }
         guard let capture = views(window).compactMap({ $0 as? UITextField }).first(where: {
@@ -165,6 +209,6 @@ import SwiftUI
                 "The home page must resume keyboard avoidance when its own input takes focus"])
         }
         capture.resignFirstResponder()
-        print("PASS: native Cancel visibly restores home in \(Int(homeAfter * 1000)) ms without an empty intermediate frame")
+        print("PASS: native Cancel visibly restores home in \(Int(homeAfter * 1000)) ms and the complete topbar in \(Int(topbarAfter * 1000)) ms without an empty intermediate frame")
     }
 }
