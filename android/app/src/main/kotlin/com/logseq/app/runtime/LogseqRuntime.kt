@@ -88,6 +88,7 @@ internal class LogseqRuntime(
     private val patchFilter = LuiPatchFilter(backend)
     private val bridge = LogseqNativeBridge(onPatch = ::applyPatch)
     private var awaitingRendererSnapshot = false
+    private var rendererSnapshotPending = false
 
     private val graphAssetLoader by lazy {
         AndroidGraphAssetLoader(java.io.File(activity.cacheDir, "asset-downloads"), bridge::callCore)
@@ -256,7 +257,11 @@ internal class LogseqRuntime(
 
     @Synchronized
     private fun applyPatch(patch: String) {
-        if (patch.isEmpty() || awaitingRendererSnapshot) return
+        if (patch.isEmpty()) return
+        if (awaitingRendererSnapshot) {
+            requestRendererSnapshot()
+            return
+        }
         try {
             val t0 = SystemClock.elapsedRealtimeNanos()
             patchFilter.applyJson(patch)
@@ -265,17 +270,25 @@ internal class LogseqRuntime(
         } catch (error: Throwable) {
             awaitingRendererSnapshot = true
             Log.w("LogseqRuntime", "Rejected UI delta; requesting authoritative snapshot", error)
-            try {
-                bridge.resync(::applyRendererSnapshot)
-            } catch (failure: Throwable) {
-                reportError(failure)
-                startupError = failure
-            }
+            requestRendererSnapshot()
+        }
+    }
+
+    private fun requestRendererSnapshot() {
+        if (rendererSnapshotPending) return
+        rendererSnapshotPending = true
+        try {
+            bridge.resync(::applyRendererSnapshot)
+        } catch (failure: Throwable) {
+            rendererSnapshotPending = false
+            reportError(failure)
+            startupError = failure
         }
     }
 
     @Synchronized
     private fun applyRendererSnapshot(snapshot: String) {
+        rendererSnapshotPending = false
         try {
             patchFilter.applySnapshotJson(snapshot)
             awaitingRendererSnapshot = false
