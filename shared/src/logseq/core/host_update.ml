@@ -61,6 +61,7 @@ type host_update =
   | Confirm_outliner_delete
   | Open_capture
   | Open_node of string
+  | Open_pdf of string * string * string
   | Asset_preview_resolved of string * string
 
 let string_field name value = Util.to_string (Util.member name value)
@@ -153,6 +154,7 @@ let decode kind payload =
     | "confirm-outliner-delete" -> Ok Confirm_outliner_delete
     | "open-capture" -> Ok Open_capture
     | "open-node" -> Ok (Open_node (Util.to_string value))
+    | "open-pdf" -> Ok (Open_pdf (string_field "uuid" value, string_field "title" value, string_field "path" value))
     | "asset-preview-resolved" ->
       Ok
         (Asset_preview_resolved

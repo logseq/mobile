@@ -100,6 +100,7 @@ fun logseqExtensionRegistry(
     val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     registerNodeIcon()
     registerProperties()
+    registerPdfWorkspace(loadImage)
 
     register(
         "outliner-editor",

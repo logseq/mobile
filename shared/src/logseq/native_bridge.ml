@@ -160,6 +160,7 @@ let host_action (update : Host_update.host_update) =
   | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
   | Open_node uuid -> Model.RequestAppNode uuid
+  | Open_pdf (uuid, title, path) -> Model.OpenPdf (uuid, title, path)
   | Asset_preview_resolved (title, path) ->
     Model.ResolveAssetPreview (title, path)
 
@@ -298,6 +299,8 @@ let encode_effect (eff : Model.logseq_effect) =
   | DeletePageEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"delete-page\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"
+  | PdfAnnotationEffect (id, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "pdf-annotation"; "text", `String payload])
   | ResultViewEffect (id, _, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "result-view"; "text", `String payload])
   | FlashcardDeckEffect (id, payload) ->
@@ -582,6 +585,7 @@ let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
     match identifier, name with
+    | "native-pdf-workspace", "event" -> ["payload", StringValue text]
     | "outliner-block-row", "set-priority" -> ["priority", StringValue text]
     | "outliner-block-row", "set-status" -> ["uuid", StringValue text; "count", IntValue value]
     | "outliner-block-row", "drop" -> ["uuid", StringValue text; "placement", StringValue

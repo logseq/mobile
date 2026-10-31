@@ -14,7 +14,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     let onOpenLink: (URL) -> Void
 
     static func supports(_ row: OutlinerRowPayload) -> Bool {
-        !row.isAsset && row.markup.allSatisfy { node in
+        !row.isAsset && row.pdfAnnotation == nil && row.markup.allSatisfy { node in
             node.type == .text || (node.type == .link && node.children.allSatisfy { $0.type == .text })
         }
     }

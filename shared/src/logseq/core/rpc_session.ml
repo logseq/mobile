@@ -2101,6 +2101,42 @@ let rec dispatch session action payload =
          | Ok value -> success session (`Assoc ["nodeProperties", value])
          | Error message -> Rpc.failure "invalid_property" message)
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "pdfAnnotation" ->
+    (match payload, query_db session, (state session).config with
+     | Some payload, Some db, Some config ->
+       (try
+         let input = Json.from_string payload in
+         let get key = match input with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null in
+         let text = function `String value -> value | _ -> "" in
+         let asset_uuid = text (get "assetUuid") in
+         let respond ?snapshot () =
+           match query_db session with
+           | None -> Rpc.failure "graph_unavailable" "No graph is open"
+           | Some current -> (match Pdf_annotation.read current ~asset_uuid with
+             | Error message -> Rpc.failure "invalid_pdf_annotation" message
+             | Ok (`Assoc fields) ->
+               let pdf = `Assoc (("graphId", `String config.graph_id) :: fields) in
+               (match snapshot with
+                | None -> Rpc.success (`Assoc ["isPdfPatch", `Bool true; "pdfWorkspace", pdf])
+                | Some body -> (match Json.from_string body with
+                  | `Assoc envelope ->
+                    (match List.assoc_opt "result" envelope with
+                     | Some (`Assoc fields) -> Json.to_string (`Assoc
+                       (("result", `Assoc (("pdfWorkspace", pdf) :: fields)) :: List.remove_assoc "result" envelope))
+                     | _ -> body)
+                  | _ -> body))
+             | Ok _ -> assert false) in
+         if get "graphId" <> `String config.graph_id then
+           Rpc.failure "stale_graph" "The active graph changed. Reopen the PDF"
+         else if get "action" = `String "load" then respond ()
+         else (match editing_cursor session with
+           | Error (code, message) -> Rpc.failure code message
+           | Ok cursor -> (match Pdf_annotation.mutation db ~now:(now_ms ()) input with
+             | Error message -> Rpc.failure "invalid_pdf_annotation" message
+             | Ok None -> respond ()
+             | Ok (Some intent) -> respond ~snapshot:(stage_result session (fresh_squuid ()) cursor intent) ()))
+       with error -> Rpc.failure "invalid_pdf_annotation" (Printexc.to_string error))
+     | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "nodeProperty" ->
     (match payload, query_db session with
      | Some payload, Some db ->

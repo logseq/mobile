@@ -327,6 +327,7 @@ public final class LGRuntime {
                 return
             }
             let text = Self.extensionString(values, name: "title")
+                ?? Self.extensionString(values, name: "payload")
                 ?? Self.extensionString(values, name: "query")
                 ?? Self.extensionString(values, name: "priority")
                 ?? Self.extensionString(values, name: "uuid")

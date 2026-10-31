@@ -15,6 +15,7 @@ enum LGExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
         try LGLiquidGlassTweak.register(in: registry)
         try LGNavigationExtension.register(in: registry)
+        try LGPDFWorkspaceExtension.register(in: registry)
         try LGPropertyExtension.register(in: registry)
         try LGSearchPresentationExtension.register(in: registry)
         try NodeIconExtension.register(in: registry)
@@ -315,6 +316,7 @@ struct LGAssetPreview: View {
     let localPath: String
     var allowsInteraction: () -> Bool = { true }
     @Environment(\.lgImagePreviews) private var imagePreviews
+    @Environment(\.lgOpenPDF) private var openPDF
     @State private var downloadedURL: URL?
     @State private var downloadError: String?
     @State private var retry = 0
@@ -423,7 +425,10 @@ struct LGAssetPreview: View {
                 }
                 try Task.checkCancellation()
                 guard allowsInteraction() else { return }
-                filePreviewURL = url
+                if assetType.lowercased() == "pdf" || assetType.lowercased() == "application/pdf" || url.pathExtension.lowercased() == "pdf",
+                   let openPDF {
+                    openPDF(uuid, title, url)
+                } else { filePreviewURL = url }
             } catch is CancellationError {
                 return
             } catch {
