@@ -3,6 +3,7 @@ package com.logseq.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,8 +39,10 @@ class MainActivity : ComponentActivity() {
         entryHandled = savedInstanceState?.getBoolean("entryHandled") ?: false
         // The theme opts out of edge-to-edge enforcement and pins opaque
         // light system bars; the runtime contrast flags keep them opaque.
-        window.isStatusBarContrastEnforced = false
-        window.isNavigationBarContrastEnforced = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
 
         runtime = LogseqRuntime(this, lifecycleScope)
         runtime.start()
