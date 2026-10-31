@@ -89,7 +89,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val handoffSegments = remember { ArrayDeque<String>() }
     var applyingModel by remember { mutableStateOf(false) }
     var debounceSeq by remember { mutableIntStateOf(0) }
-    var pasteRevision by remember { mutableStateOf<Int?>(null) }
+    var handoffRevision by remember { mutableStateOf<Int?>(null) }
     val nativeToolbar = LocalTextToolbar.current
     val androidContext = LocalContext.current
     val clipboard = remember(androidContext) {
@@ -101,9 +101,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     // Reconcile a structural handoff in this composition, so the IME sees the
     // new text, caret and identity together instead of waiting another frame.
-    val pasteAcknowledged = pasteRevision != null && selectionRevision != pasteRevision
-    if (awaitingHandoff && (blockId != rememberedBlockId || pasteAcknowledged)) {
-        pasteRevision = null
+    val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
+    if (awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)) {
+        handoffRevision = null
         val typing = handoffSegments.removeFirstOrNull().orEmpty()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
         val merged = modelTitle.substring(0, offset) + typing + modelTitle.substring(offset)
@@ -117,13 +117,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         observedText = merged
         awaitingHandoff = handoffSegments.isNotEmpty()
         if (awaitingHandoff) {
+            handoffRevision = selectionRevision
             publishedTitles.add(merged)
             handoffReturn = merged to caret
         } else if (typing.isNotEmpty()) {
             debounceSeq++
         }
     }
-    LaunchedEffect(blockId) {
+    LaunchedEffect(blockId, selectionRevision) {
         handoffReturn?.let { (title, caret) ->
             handoffReturn = null
             context.emit("return", "title" to title, "caret-utf16-offset" to caret)
@@ -198,6 +199,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         debounceSeq++
         publishedTitles.add(title)
         awaitingHandoff = true
+        handoffRevision = selectionRevision
         handoffSegments.addLast("")
         context.emit("return", "title" to title, "caret-utf16-offset" to caret)
     }
@@ -303,7 +305,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val payload = com.logseq.app.AndroidBlockClipboard.content(androidContext, value.text,
             value.selection.min, value.selection.max - value.selection.min) ?: return
         debounceSeq++
-        pasteRevision = selectionRevision
+        handoffRevision = selectionRevision
         awaitingHandoff = true
         handoffSegments.addLast("")
         context.emit("paste-content", "value" to payload)
