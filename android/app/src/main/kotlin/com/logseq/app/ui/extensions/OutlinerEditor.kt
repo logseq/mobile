@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextRange
@@ -92,6 +93,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var handoffRevision by remember { mutableStateOf<Int?>(null) }
     val nativeToolbar = LocalTextToolbar.current
     val androidContext = LocalContext.current
+    val pasteLabel = stringResource(android.R.string.paste)
     val clipboard = remember(androidContext) {
         androidContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     }
@@ -339,7 +341,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             .appendTextContextMenuComponents {
                 val clip = clipboard.primaryClip
                 val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(androidContext)?.toString() else null
-                if (text != null) item(pasteKey, androidContext.getString(android.R.string.paste)) {
+                if (text != null) item(pasteKey, pasteLabel) {
                     submitPaste()
                     close()
                 }
