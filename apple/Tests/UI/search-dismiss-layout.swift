@@ -5,6 +5,10 @@ import SwiftUI
 
 @MainActor private final class SearchDismissLayoutProbe {
     var active = false
+    var homeFrame = CGRect.zero
+    var homeBaseline = CGRect.zero
+    var dismissing = false
+    var resizedHomeFrame: CGRect?
 }
 
 @main struct SearchDismissLayoutCheck {
@@ -21,7 +25,18 @@ import SwiftUI
                 .onDisappear { probe.active = false })
         })
         try registry.register(LUIAppleExtension(identifier: "search-home-probe", fingerprint: "search-home-probe", properties: []) { _ in
-            AnyView(Text("Home").frame(maxWidth: .infinity, maxHeight: .infinity).background(.red))
+            AnyView(VStack {
+                Text("Home")
+                Spacer()
+                TextField("Capture", text: .constant(""))
+                    .accessibilityIdentifier("search-home.capture")
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.red)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    probe.homeFrame = frame
+                    if probe.dismissing && abs(frame.height - probe.homeBaseline.height) > 1 {
+                        probe.resizedHomeFrame = frame
+                    }
+                })
         })
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         var generation = 1
@@ -60,6 +75,7 @@ import SwiftUI
         defer { window.isHidden = true; window.rootViewController = nil }
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         try await Task.sleep(for: .milliseconds(300))
+        probe.homeBaseline = probe.homeFrame
         present(true)
         var field: UISearchTextField?
         for _ in 0..<150 {
@@ -106,6 +122,7 @@ import SwiftUI
             return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3)
         }
         guard let baselineY = displayedFrame().titleY else { fatalError("The visible search title must be measurable") }
+        probe.dismissing = true
         let start = ProcessInfo.processInfo.systemUptime
         cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
         var homeAfter: TimeInterval?
@@ -119,7 +136,26 @@ import SwiftUI
             try await Task.sleep(for: .milliseconds(16))
         }
         guard let homeAfter, homeAfter < 0.2 else { fatalError("The home page must be visibly restored within 200 ms") }
+        if let frame = probe.resizedHomeFrame {
+            throw NSError(domain: "SearchLayout", code: 2, userInfo: [NSLocalizedDescriptionKey:
+                "The home page must not resize with the outgoing search keyboard; before=\(probe.homeBaseline), during=\(frame)"])
+        }
         guard !probe.active else { fatalError("Search must disappear") }
+        probe.dismissing = false
+        guard let capture = views(window).compactMap({ $0 as? UITextField }).first(where: {
+            $0.placeholder == "Capture"
+        }) else { fatalError("Missing home capture input") }
+        try await Task.sleep(for: .milliseconds(300))
+        capture.becomeFirstResponder()
+        for _ in 0..<100 {
+            if probe.homeFrame.height < probe.homeBaseline.height - 100 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard capture.isFirstResponder, probe.homeFrame.height < probe.homeBaseline.height - 100 else {
+            throw NSError(domain: "SearchLayout", code: 3, userInfo: [NSLocalizedDescriptionKey:
+                "The home page must resume keyboard avoidance when its own input takes focus"])
+        }
+        capture.resignFirstResponder()
         print("PASS: native Cancel visibly restores home in \(Int(homeAfter * 1000)) ms without moving outgoing text")
     }
 }

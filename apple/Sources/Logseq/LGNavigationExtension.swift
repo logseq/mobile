@@ -379,11 +379,16 @@ enum LGSearchPresentationExtension {
 private struct LGSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
     @State private var nativePresented = false
+    #if os(iOS)
+    @State private var searchOwnsKeyboardInsets = false
+    #endif
 
     var body: some View {
         ZStack {
             baseContent
-                .ignoresSafeArea(.keyboard, edges: nativePresented ? .bottom : [])
+                #if os(iOS)
+                .ignoresSafeArea(.keyboard, edges: nativePresented || searchOwnsKeyboardInsets ? .bottom : [])
+                #endif
                 .allowsHitTesting(!nativePresented)
                 .accessibilityHidden(nativePresented)
             if nativePresented {
@@ -396,11 +401,27 @@ private struct LGSearchPresentation: View {
             if presented {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
-                withTransaction(transaction) { nativePresented = true }
+                withTransaction(transaction) {
+                    #if os(iOS)
+                    searchOwnsKeyboardInsets = true
+                    #endif
+                    nativePresented = true
+                }
             } else {
                 closeSearch()
             }
         }
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+            // The returning page keeps its full viewport until the search keyboard is gone.
+            if !nativePresented { searchOwnsKeyboardInsets = false }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            // A new responder on the returning page owns keyboard avoidance, including
+            // when search used a hardware keyboard and did not send a hide notification.
+            if !nativePresented { searchOwnsKeyboardInsets = false }
+        }
+        #endif
     }
 
     private var baseContent: AnyView {
