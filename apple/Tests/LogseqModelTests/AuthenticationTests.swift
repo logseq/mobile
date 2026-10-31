@@ -4,6 +4,7 @@ import Testing
 
 private actor FakeCognitoProvider: LogseqCognitoProviding {
     private var token: String?
+    private var tokenError: URLError?
     private let signInToken: String
     private var signOutCount = 0
 
@@ -13,8 +14,12 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
     }
 
     func apiToken() async throws -> String? {
-        token
+        if let tokenError { throw tokenError }
+        return token
     }
+
+    func setToken(_ token: String?) { self.token = token }
+    func failTokenRequests(_ error: URLError?) { tokenError = error }
 
     func signIn() async throws -> String {
         token = signInToken
@@ -103,19 +108,53 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         #expect(await provider.recordedSignOutCount() == 1)
     }
 
-    @Test @MainActor func accessTokenFailureUpdatesObservableAuthenticationState() async {
-        var published: [String?] = []
-        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { token in
-            published.append(token)
-        }
+    @Test @MainActor func temporaryRefreshFailurePreservesAuthenticationAndCanRecover() async throws {
+        for code in [URLError.notConnectedToInternet, .timedOut, .cancelled] {
+            let provider = FakeCognitoProvider(token: "old-token")
+            var published: [String?] = []
+            let auth = LogseqAuthenticationStore(provider: provider) { published.append($0) }
+            await auth.restore()
+            await provider.failTokenRequests(URLError(code))
 
+            do {
+                _ = try await auth.apiToken()
+                Issue.record("Expected token refresh to fail")
+            } catch {
+                #expect(auth.state == .signedIn)
+                #expect(auth.errorMessage?.isEmpty == false)
+                #expect(published == ["old-token"])
+            }
+
+            await provider.failTokenRequests(nil)
+            await provider.setToken("new-token")
+            #expect(try await auth.apiToken() == "new-token")
+            #expect(auth.state == .signedIn)
+            #expect(auth.errorMessage == nil)
+            #expect(published == ["old-token", "new-token"])
+        }
+    }
+
+    @Test @MainActor func offlineRestoreDoesNotRequireAnotherSignIn() async {
+        var published: [String?] = []
+        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { published.append($0) }
+        await auth.restore()
+        #expect(auth.state == .signedIn)
+        #expect(auth.errorMessage?.isEmpty == false)
+        #expect(published.isEmpty)
+    }
+
+    @Test @MainActor func invalidatedSessionClearsPublishedAuthorization() async {
+        let provider = FakeCognitoProvider(token: "old-token")
+        var published: [String?] = []
+        let auth = LogseqAuthenticationStore(provider: provider) { published.append($0) }
+        await auth.restore()
+        await provider.setToken(nil)
         do {
             _ = try await auth.apiToken()
-            #expect(1 == 0, "Expected access token restoration to fail")
+            Issue.record("Expected an invalidated session to require sign-in")
         } catch {
             #expect(auth.state == .signedOut)
-            #expect(auth.errorMessage?.isEmpty == false)
-            #expect(published == [nil])
+            #expect(published == ["old-token", nil])
         }
     }
 

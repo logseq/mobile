@@ -34,8 +34,13 @@ enum CognitoAuthProviderError: Error, LocalizedError {
     }
 }
 
-private struct CognitoTokenStore: Sendable {
-    private let service = "com.logseq.logseq.cognito.tokens"
+struct CognitoTokenStore: Sendable {
+    private let service: String
+
+    init(service: String = "com.logseq.logseq.cognito.tokens") {
+        self.service = service
+    }
+
     private let account = "current-session"
 
     func load() throws -> CognitoStoredTokens? {
@@ -126,7 +131,8 @@ private struct CognitoTokenStore: Sendable {
 
 @MainActor final class CognitoAuthProvider: LogseqCognitoProviding {
     private let configuration: CognitoOAuthConfiguration
-    private let tokenStore = CognitoTokenStore()
+    private let tokenStore: CognitoTokenStore
+    private let urlSession: URLSession
     private let webAuthentication = CognitoWebAuthenticationSession()
 
     init(
@@ -136,8 +142,12 @@ private struct CognitoTokenStore: Sendable {
         oauthDomain: String,
         redirectURI: String,
         logoutURI: String,
-        scopes: [String]
+        scopes: [String],
+        tokenStore: CognitoTokenStore = CognitoTokenStore(),
+        urlSession: URLSession = .shared
     ) {
+        self.tokenStore = tokenStore
+        self.urlSession = urlSession
         _ = region
         _ = userPoolId
         configuration = CognitoOAuthConfiguration(
@@ -170,7 +180,11 @@ private struct CognitoTokenStore: Sendable {
             try tokenStore.save(tokens)
             return tokens.idToken
         } catch {
-            try? tokenStore.clear()
+            if case CognitoAuthProviderError.tokenRequest(let code) = error,
+               code == "invalid_grant" || code == "invalid_token" {
+                try tokenStore.clear()
+                return nil
+            }
             throw error
         }
     }
@@ -236,7 +250,7 @@ private struct CognitoTokenStore: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(body.utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let reason = (try? JSONDecoder().decode(CognitoOAuthFailureResponse.self, from: data).error)
                 ?? "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"
@@ -259,7 +273,7 @@ private struct CognitoTokenStore: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(body.utf8)
-        _ = try await URLSession.shared.data(for: request)
+        _ = try await urlSession.data(for: request)
     }
 
     private func randomURLSafeString(byteCount: Int) throws -> String {
