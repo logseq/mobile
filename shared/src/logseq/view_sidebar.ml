@@ -11,7 +11,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
     View_base.node_icon current page.uuid) model_source page_source in
   let item custom =
     View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
-      (list_item
+      (list_item ~corner_radius:10
         ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
         ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
         ?icon:(if custom then None else Some (`app "document"))
@@ -102,14 +102,14 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_label "Journals"
-      (list_item ~icon:(`app "calendar")
+      (list_item ~corner_radius:10 ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
       ~text:(View_base.tr (Signal.sample model_source) "Journals") [])
   else
     View_base.with_label "Journals"
-      (list_item ~role:`navigation ~icon:(`app "calendar")
+      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
@@ -118,14 +118,14 @@ let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_label "Flashcards"
-      (list_item ~icon:(`app "flashcards")
+      (list_item ~corner_radius:10 ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
       ~text:(View_base.tr (Signal.sample model_source) "Flashcards") [])
   else
     View_base.with_label "Flashcards"
-      (list_item ~role:`navigation ~icon:(`app "flashcards")
+      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
@@ -134,14 +134,14 @@ let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_label "Graphs"
-      (list_item ~icon:(`app "folder")
+      (list_item ~corner_radius:10 ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
       ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
   else
     View_base.with_label "Graphs"
-      (list_item ~role:`navigation ~icon:(`app "folder")
+      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
