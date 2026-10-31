@@ -309,14 +309,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     title.removeRange(newline, newline + 1) == previousText
             val replacedSelection =
                 !previousSelection.collapsed &&
-                    previousSelection.start >= 0 &&
+                    previousSelection.min >= 0 &&
                     previousText.replaceRange(
-                        previousSelection.start,
-                        previousSelection.end,
+                        previousSelection.min,
+                        previousSelection.max,
                         "\n",
                     ) == title
             if (!multiline && (singleInsertion || replacedSelection)) {
-                val splitAt = if (replacedSelection) previousSelection.start else newline
+                val splitAt = if (replacedSelection) previousSelection.min else newline
                 val submitted = title.removeRange(splitAt, splitAt + 1)
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
                 applyingModel = true
