@@ -8,6 +8,12 @@ import UIKit
 #endif
 
 struct OutlinerRowPayload: Decodable, Equatable {
+    struct PDFReference: Codable, Equatable {
+        let id: String
+        let assetUuid: String
+        let assetTitle: String
+        let page: Int
+    }
     struct Summary: Decodable, Identifiable, Equatable {
         let uuid: String
         let title: String
@@ -67,6 +73,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let tags: [Summary]
     let canRemoveTags: Bool?
     let removeTagTitle: String?
+    let pdfAnnotation: PDFReference?
 }
 
 @MainActor enum OutlinerRowExtension {
@@ -124,6 +131,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.lgOpenPDFAnnotation) private var openPDFAnnotation
 
     private var hasCustomContent: Bool {
         row.hasCustomContent ?? !context.childIDs.isEmpty
@@ -241,6 +249,16 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 .accessibilityLabel(priority.title)
                 .accessibilityIdentifier("button.block-task-priority")
             }
+            #if os(iOS)
+            if let reference = row.pdfAnnotation {
+                OutlinerPDFPageLink(reference: reference, identifier: row.uuid, enabled: context.isUserInteractionEnabled) {
+                    guard let data = try? JSONEncoder().encode(reference) else { return }
+                    openPDFAnnotation?(String(decoding: data, as: UTF8.self))
+                }
+                .fixedSize()
+                .frame(height: OutlinerLayoutMetrics.titleLineHeight)
+            }
+            #endif
             VStack(alignment: .leading, spacing: 2) {
                 if hasCustomContent, let editor = context.childIDs.first {
                     context.content(for: editor)
@@ -343,3 +361,28 @@ struct OutlinerRowPayload: Decodable, Equatable {
         catch { LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Outliner interaction failed: \(error)") }
     }
 }
+
+#if os(iOS)
+private struct OutlinerPDFPageLink: UIViewRepresentable {
+    let reference: OutlinerRowPayload.PDFReference
+    let identifier: String
+    let enabled: Bool
+    let open: () -> Void
+
+    func makeUIView(context: Context) -> UIButton { UIButton(type: .system) }
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.setTitle("📌 P\(reference.page)", for: .normal)
+        button.contentHorizontalAlignment = .leading
+        button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.accessibilityIdentifier = "pdf.annotation-page." + identifier
+        button.accessibilityLabel = "Open PDF at page \(reference.page)"
+        button.isEnabled = enabled
+        button.removeAction(identifiedBy: UIAction.Identifier("open-pdf"), for: .touchUpInside)
+        button.addAction(UIAction(identifier: UIAction.Identifier("open-pdf")) { _ in open() }, for: .touchUpInside)
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        CGSize(width: max(44, uiView.intrinsicContentSize.width + 4), height: 44)
+    }
+}
+#endif

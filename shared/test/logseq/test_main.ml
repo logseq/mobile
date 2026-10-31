@@ -2,6 +2,7 @@ let () =
   Alcotest.run "logseq"
     [
       "asset_files", Asset_files_test.cases;
+      "pdf_annotation", Pdf_annotation_test.cases;
       "e2ee", E2ee_test.cases;
       "e2ee_keyring", E2ee_keyring_test.cases;
       "graph_store", Graph_store_test.cases;

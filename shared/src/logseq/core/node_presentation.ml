@@ -155,6 +155,8 @@ let decorate db =
         | Some title -> ("sourceTitle", `String title) :: fields
         | None -> fields
         else fields in
+      let fields = match Pdf_annotation.reference db uuid with
+        | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
         :: ("reactions", `List (reactions db eid))
         :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)

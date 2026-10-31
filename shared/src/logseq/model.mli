@@ -247,6 +247,8 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; pdf_update : string option
+  ; is_pdf_patch : bool
   ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
@@ -274,6 +276,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
   | LoadPropertyValuesEffect of int * string * string
@@ -458,10 +461,13 @@ type logseq_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
 
 type logseq_action =
+  | OpenPdf of string * string * string
+  | PdfWorkspaceEvent of string
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
   | LoadPropertyValues of string * string

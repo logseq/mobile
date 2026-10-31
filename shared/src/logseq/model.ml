@@ -250,6 +250,8 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; pdf_update : string option
+  ; is_pdf_patch : bool
   ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
@@ -277,6 +279,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
   | LoadPropertyValuesEffect of int * string * string
@@ -461,10 +464,13 @@ type logseq_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
 
 type logseq_action =
+  | OpenPdf of string * string * string
+  | PdfWorkspaceEvent of string
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
   | LoadPropertyValues of string * string
@@ -817,6 +823,7 @@ let initial () =
     attachment_picker_open = false;
     task_status_picker_open = false;
     asset_preview = None;
+    pdf_workspace = None;
     app_navigation_previews = [];
     app_navigation_path = [];
     search_navigation_path = [];
@@ -854,6 +861,7 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
+  | PdfAnnotationEffect (id, _)
   | LoadResultRowsEffect (id, _, _) | LoadPropertyValuesEffect (id, _, _) | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
   | LoadComposerTagsEffect (id, _) -> id
   | SendTaggedCaptureEffect (id, _) -> id
@@ -1945,8 +1953,70 @@ let wide_content_breakpoint = 600
 let sidebar_after_navigation current =
   current.sidebar_open && current.viewport_width >= wide_content_breakpoint
 
+let pdf_fields payload = try match Yojson.Basic.from_string payload with
+  | `Assoc fields -> fields | _ -> [] with Yojson.Json_error _ -> []
+
+let pdf_string fields key = match List.assoc_opt key fields with Some (`String value) -> value | _ -> ""
+
+let pdf_request current fields =
+  match current.pdf_workspace with
+  | None -> current
+  | Some workspace ->
+    let identity = pdf_fields workspace in
+    let fields = List.filter (fun (key, _) -> key <> "graphId" && key <> "assetUuid") fields in
+    let payload = Yojson.Basic.to_string (`Assoc
+      (["graphId", `String (pdf_string identity "graphId");
+        "assetUuid", `String (pdf_string identity "assetUuid")] @ fields)) in
+    enqueue_effect current (PdfAnnotationEffect (current.next_effect_id, payload))
+
+let pdf_merge workspace fields =
+  Yojson.Basic.to_string (`Assoc (fields @ List.filter
+    (fun (key, _) -> not (List.mem_assoc key fields)) (pdf_fields workspace)))
+
 let rec update (current : logseq_model) action =
   match action with
+  | OpenPdf (uuid, title, path) ->
+    (match current.selected_graph_id with
+     | Some graph_id when uuid <> "" ->
+       let workspace = Yojson.Basic.to_string (`Assoc ["assetUuid", `String uuid;
+         "graphId", `String graph_id; "title", `String title; "path", `String path;
+         "highlights", `List []; "page", `Int 1; "loading", `Bool true]) in
+       pdf_request {current with pdf_workspace = Some workspace; sidebar_open = false}
+         ["action", `String "load"]
+     | _ -> current)
+  | PdfWorkspaceEvent payload ->
+    let fields = pdf_fields payload in
+    let stale = match current.pdf_workspace with
+      | Some workspace -> let identity = pdf_fields workspace in
+        List.exists (fun key -> List.mem_assoc key fields && pdf_string fields key <> pdf_string identity key)
+          ["graphId"; "assetUuid"]
+      | None -> false in
+    if stale then current else (match pdf_string fields "action" with
+     | "open" -> update current (OpenPdf (pdf_string fields "uuid", pdf_string fields "title", pdf_string fields "path"))
+     | "open-annotation" ->
+       let reference = match List.assoc_opt "annotation" fields with Some (`Assoc fields) -> fields | _ -> [] in
+       let asset = pdf_string reference "assetUuid" in
+       let page = match List.assoc_opt "page" reference with Some (`Int page) -> page | _ -> 0 in
+       if asset = "" || page < 1 then current else
+       let path = Option.bind (List.find_opt (fun (row : outline_row) -> row.row_uuid = asset) current.outliner_rows)
+         (fun row -> row.local_path) |> Option.value ~default:"" in
+       let opened = update current (OpenPdf (asset, pdf_string reference "assetTitle", path)) in
+       {opened with pdf_workspace = Option.map (fun workspace -> pdf_merge workspace
+         ["targetPage", `Int page; "targetAnnotation", `String (pdf_string reference "id");
+          "navigationToken", `Int current.next_effect_id]) opened.pdf_workspace}
+     | "close" -> {current with pdf_workspace = None}
+     | "set-fullscreen" ->
+       (match List.assoc_opt "fullScreen" fields with
+        | Some (`Bool _ as full_screen) -> {current with pdf_workspace =
+            Option.map (fun workspace -> pdf_merge workspace ["fullScreen", full_screen]) current.pdf_workspace}
+        | _ -> current)
+     | "open-annotations" -> (match current.pdf_workspace with
+         | Some workspace -> update {current with pdf_workspace = Some (pdf_merge workspace ["fullScreen", `Bool false])}
+             (RequestAppNode (pdf_string (pdf_fields workspace) "assetUuid"))
+         | None -> current)
+     | "open-note" when current.pdf_workspace <> None -> update current (RequestAppNode (pdf_string fields "id"))
+     | "save" | "delete" | "recolor" | "visit" | "load" -> pdf_request current fields
+     | _ -> current)
   | FlashcardDeckAction payload ->
     enqueue_effect current (FlashcardDeckEffect (current.next_effect_id, payload))
   | ReceiveResultRows (key, rows, icons) ->
@@ -2028,7 +2098,21 @@ let rec update (current : logseq_model) action =
       { current with search_result_pages = [results]; search_result_count = List.length results; search_loading = false; search_loading_more = false; search_has_more = false }
     else current
   | ApplyCoreSnapshot projection ->
-    let applied = apply_core_snapshot current projection in
+    let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
+    let applied =
+      if applied.selected_graph_id <> current.selected_graph_id then {applied with pdf_workspace = None}
+      else match applied.pdf_workspace, projection.pdf_update with
+      | Some workspace, Some payload ->
+        let before = pdf_fields workspace and next = pdf_fields payload in
+        if pdf_string before "graphId" <> pdf_string next "graphId"
+           || pdf_string before "assetUuid" <> pdf_string next "assetUuid" then applied
+        else {applied with pdf_workspace = Some (pdf_merge workspace
+          (["loading", `Bool false; "error", `Null] @ next))}
+      | Some _, None when not projection.is_pdf_patch
+          && not (List.exists (function PdfAnnotationEffect _ -> true | _ -> false)
+            (applied.pending_effects @ applied.in_flight_effects)) ->
+        pdf_request applied ["action", `String "load"]
+      | _ -> applied in
     let applied =
       if applied == current then current
       else { applied with node_icons = Lui_protocol.String_map.union (fun _ _ newer -> Some newer)
@@ -2156,7 +2240,10 @@ let rec update (current : logseq_model) action =
      | Some index ->
        let row = List.nth current.outliner_rows index in
        if row.is_asset then
-         match row.local_path with
+         let pdf = List.mem (String.lowercase_ascii (Option.value ~default:"" row.asset_type)) ["pdf"; "application/pdf"]
+           || String.ends_with ~suffix:".pdf" (String.lowercase_ascii row.row_title) in
+         if pdf then update current (OpenPdf (uuid, row.row_title, Option.value ~default:"" row.local_path))
+         else match row.local_path with
          | Some path ->
            let id = current.next_effect_id in
            let asset_type =
@@ -2319,6 +2406,12 @@ let rec update (current : logseq_model) action =
          else resolve_failed_effect current eff message
        in
        let resolved_current = match eff with
+         | PdfAnnotationEffect (_, payload) when not succeeded ->
+           (match resolved_current.pdf_workspace with
+            | Some workspace when pdf_string (pdf_fields workspace) "graphId" = pdf_string (pdf_fields payload) "graphId"
+                && pdf_string (pdf_fields workspace) "assetUuid" = pdf_string (pdf_fields payload) "assetUuid" ->
+              {resolved_current with pdf_workspace = Some (pdf_merge workspace ["loading", `Bool false; "error", `String message])}
+            | _ -> resolved_current)
          | SearchNodesEffect (_, query) when not succeeded && query = current.search_query ->
            { resolved_current with search_loading = false }
          | LoadSearchPageEffect (_, query, _) when not succeeded && query = current.search_query ->
