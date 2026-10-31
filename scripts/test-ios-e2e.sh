@@ -33,7 +33,7 @@ case ${flow##*/} in
     graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-outliner-$run_id}
     fixture_seed_mode=--outliner
     ;;
-  ios-page-outliner-only.yaml|ios-outliner-empty-block-caret.yaml|\
+  ios-search-navigation.yaml|ios-page-outliner-only.yaml|ios-outliner-empty-block-caret.yaml|\
   ios-outliner-fixture-edit-baseline.yaml|ios-invalid-order-bounds-regression.yaml|\
   ios-sidebar-page-empty-block-delete.yaml|ios-node-tag-navigation.yaml|\
   ios-sidebar-node-navigation.yaml|ios-page-share.yaml|ios-page-favorite.yaml|\

@@ -13,24 +13,34 @@ appId: com.logseq.logseq
     visible:
       id: "field.native-search"
     timeout: 10000
-- inputText: "E2E Page Target"
+- inputText: "Aug 16th, 2026"
 - assertVisible:
     id: "field.native-search"
-    text: "E2E Page Target"
+    text: "Aug 16th, 2026"
 - extendedWaitUntil:
-    visible: "E2E Page Target"
+    visible:
+      id: "search.result.title.e2e10000-0000-4000-8000-000000000007"
+      text: "Aug 16th, 2026"
     timeout: 10000
 - tapOn:
     id: "search.result.e2e10000-0000-4000-8000-000000000007"
 - extendedWaitUntil:
-    visible: "E2E Block Target"
+    visible:
+      id: "outliner.block-action.e2e20000-0000-4000-8000-000000000007"
+      text: "Edit block E2E Block Target"
     timeout: 10000
+- assertVisible:
+    id: "title.node"
+    text: "Aug 16th, 2026"
 - tapOn:
     id: "BackButton"
 - assertVisible:
     id: "screen.search"
-- assertVisible: "E2E Page Target 20260816"
-- tapOn:
-    id: "BackButton"
+- assertVisible:
+    id: "search.result.e2e10000-0000-4000-8000-000000000007"
+- assertVisible:
+    id: "search.result.title.e2e10000-0000-4000-8000-000000000007"
+    text: "Aug 16th, 2026"
+- tapOn: "close"
 - assertVisible:
     id: "button.search"
