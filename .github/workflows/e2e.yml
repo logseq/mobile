@@ -280,13 +280,14 @@ jobs:
           background: "true"
 
       - name: Restore iOS E2E binaries
+        # Runner-only edits do not change the app or seed executable.
         id: ios-e2e-binaries
         uses: actions/cache/restore@v4
         with:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
 
       - name: Restore iOS build artifacts
         # Dune databases reference .actions dependency records; restore both.
