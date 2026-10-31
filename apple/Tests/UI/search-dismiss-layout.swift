@@ -157,7 +157,7 @@ import SwiftUI
             }
             return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3, leadingCount > 100 && trailingCount > 100 && topbarTitleCount > 20)
         }
-        guard !displayedFrame().topbarVisible else { fatalError("Search must hide the underlying topbar while active") }
+        guard displayedFrame().topbarVisible else { fatalError("Bottom search must retain the topbar while active") }
         guard displayedFrame().titleY != nil else { fatalError("The visible search title must be measurable") }
         let keyboardObserver = NotificationCenter.default.addObserver(
             forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main

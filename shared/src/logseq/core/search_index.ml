@@ -282,10 +282,19 @@ let full_text_rows ~offset ~limit index query =
   let query = if String.starts_with ~prefix:"#" query && not (String.exists whitespace_char query)
     then String.sub query 1 (String.length query - 1) else query in
   if query = "" || limit <= 0 then [] else
+    (* Trigram MATCH cannot find one or two characters. Search the same indexed
+       content literally, keeping the result window bounded before hydration. *)
+    let predicate, input =
+      if utf8_length query < 3 then
+        let escaped = List.fold_left (fun value symbol ->
+          String_kit.replace value ~match_:symbol ~replacement:("\\" ^ symbol))
+          query ["\\"; "%"; "_"] in
+        "title LIKE ? ESCAPE '\\'", "%" ^ escaped ^ "%"
+      else "title MATCH ?", get_match_input query in
     try Sql.with_search_db index.path (fun connection ->
       Sql.query connection
-        "SELECT id, page, title FROM blocks_fts WHERE title MATCH ? LIMIT ? OFFSET ?"
-        [Sqlite3.Data.TEXT (get_match_input query); Sqlite3.Data.INT (Int64.of_int limit);
+        ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ " LIMIT ? OFFSET ?")
+        [Sqlite3.Data.TEXT input; Sqlite3.Data.INT (Int64.of_int limit);
          Sqlite3.Data.INT (Int64.of_int (max 0 offset))]
         (fun row ->
           let uuid = Sqlite3.column_text row 0 and page_uuid = Sqlite3.column_text row 1 in
@@ -326,8 +335,8 @@ let hydrate_hits db results =
       })
     results
 
-(* Reference completion also accepts literal short page names. The global
-   search UI uses the MATCH-only paged API below. *)
+(* Reference completion restricts short queries to page names. Global search
+   uses the paged API below to include both page titles and block content. *)
 let search_hits limit index db query =
   let query = String.trim query in
   if limit <= 0 || query = "" then []
@@ -343,7 +352,7 @@ let search_hits limit index db query =
     |> Seq.take limit |> List.of_seq
   else hydrate_hits db (search limit index query)
 
-(* Bound the MATCH window before reading graph context, as on desktop. *)
+(* Bound the result window before reading graph context. *)
 let search_hits_page ~offset ~limit index db query =
   if limit <= 0 then [], false else
     let limit = min 100 limit in

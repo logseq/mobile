@@ -2254,7 +2254,7 @@ let native_search_presentation_extension_contract_is_pinned () =
     ~msg:"search must use a distinct native full-screen navigation contract"
     fingerprint
     (Some
-       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]")
+       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,12:status-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]")
 
 let liquid_glass_remains_an_ios_local_tweak () =
   let registry = View.extension_registry () in
@@ -7845,12 +7845,12 @@ let search_query_publishes_a_core_effect_and_rejects_stale_results () =
   check ~msg:"the current result ends the loading state"
     (not current.search_loading)
 
-let native_search_waits_for_three_unicode_characters () =
-  let queries = ["", false; "a", false; "ab", false; "abc", true;
-    "中", false; "中文", false; "中文页", true;
-    "😀", false; "😀😀", false; "😀😀😀", true;
-    "éé", false; "ééé", true; "中a", false; "中a😀", true;
-    "   ", false; "  中文  ", false; "  中文页  ", true] in
+let native_search_accepts_nonempty_unicode_queries () =
+  let queries = ["", false; "a", true; "ab", true; "abc", true;
+    "中", true; "中文", true; "中文页", true;
+    "😀", true; "😀😀", true; "😀😀😀", true;
+    "éé", true; "ééé", true; "中a", true; "中a😀", true;
+    "   ", false; "  中文  ", true; "  中文页  ", true] in
   List.iter (fun backend ->
     let application = App.create (backend ()) in
     start application;
@@ -7869,16 +7869,16 @@ let native_search_waits_for_three_unicode_characters () =
       let requests = List.filter (function Model.SearchNodesEffect _ -> true | _ -> false)
         model.pending_effects in
       check_eq ~msg:("native input preserves the query: " ^ query) model.search_query query;
-      check_eq ~msg:("search waits for three Unicode characters: " ^ query)
+      check_eq ~msg:("every nonempty query starts a search: " ^ query)
         (List.length requests) (if ready then 1 else 0);
       check_eq ~msg:("loading starts only for a searchable query: " ^ query)
         model.search_loading ready;
       if not ready then (
-        check_eq ~msg:"short queries retain the search entry state"
+        check_eq ~msg:"blank queries retain the search entry state"
           (property_string renderer (find "search.empty") Lui_protocol.TextValue) "Search your graph";
-        check_eq ~msg:"short queries do not claim to have searched"
-          (property_string renderer (find "search.status") Lui_protocol.TextValue) "";
-        check_eq ~msg:"short queries keep the search entry guidance"
+        check_eq ~msg:"search status is not repeated in the content"
+          (find "search.status") (-1);
+        check_eq ~msg:"blank queries keep the search entry guidance"
           (property_string renderer (find "search.empty.supporting") Lui_protocol.TextValue)
           "Find pages and blocks by title or content.")) queries
   ) [ios_backend; kotlin_backend]
@@ -7890,7 +7890,18 @@ let shortening_search_clears_results_and_queued_requests () =
   let loaded = Model.update queried (Model.ApplySearchResults ("中文页", [hit])) in
   let loaded = {loaded with pending_effects = loaded.pending_effects @ [Model.RefreshGraphsEffect 99];
     search_has_more = true; search_loading_more = true} in
-  let shortened = Model.update loaded (Model.ChangeSearchQuery "中文") in
+  let short_query = Model.update loaded (Model.ChangeSearchQuery "中") in
+  check ~msg:"shortening to one character starts a fresh search" short_query.search_loading;
+  check ~msg:"the one-character request replaces the queued longer request"
+    (List.exists (function Model.SearchNodesEffect (_, "中") -> true | _ -> false) short_query.pending_effects
+     && not (List.exists (function Model.SearchNodesEffect (_, "中文页") -> true | _ -> false) short_query.pending_effects));
+  check_eq ~msg:"a shorter query clears stale results" short_query.search_result_pages [];
+  let short_loaded = Model.update short_query (Model.ApplySearchResults ("中", [hit])) in
+  check_eq ~msg:"one-character results are accepted" short_loaded.search_result_pages [[hit]];
+  let paged = Model.update {short_loaded with search_has_more = true} Model.LoadMoreSearchResults in
+  check ~msg:"one-character results can load another page"
+    (List.exists (function Model.LoadSearchPageEffect (_, "中", 1) -> true | _ -> false) paged.pending_effects);
+  let shortened = Model.update paged (Model.ChangeSearchQuery "") in
   check_eq ~msg:"shortening clears old search results" shortened.search_result_pages [];
   check_eq shortened.search_result_count 0;
   check ~msg:"shortening resets all loading and pagination state"
@@ -7898,9 +7909,9 @@ let shortening_search_clears_results_and_queued_requests () =
   check_eq ~msg:"shortening cancels queued search while preserving unrelated work"
     shortened.pending_effects [Model.RefreshGraphsEffect 99];
   let stale = Model.update shortened (Model.ApplySearchResults ("中文页", [hit])) in
-  check_eq ~msg:"late results cannot reappear below the threshold" stale.search_result_pages [];
+  check_eq ~msg:"late results cannot reappear after clearing" stale.search_result_pages [];
   let paged = Model.update {shortened with search_has_more = true} Model.LoadMoreSearchResults in
-  check_eq ~msg:"scroll callbacks cannot page a short query" paged.pending_effects shortened.pending_effects
+  check_eq ~msg:"scroll callbacks cannot page an empty query" paged.pending_effects shortened.pending_effects
 
 let search_results_render_as_keyed_native_rows () =
   let application = App.create (ios_backend ()) in
@@ -8007,8 +8018,13 @@ let search_renders_main_empty_states_and_result_sections () =
     "Find pages and blocks by title or content.";
   send application (Model.ChangeSearchQuery "missing");
   flush application;
-  check ~msg:"pending queries show progress before any results are available"
-    (descendant_with_identifier renderer panel "search.loading" <> -1);
+  let search = extension_node application "native-search-presentation" in
+  check_eq ~msg:"pending queries show progress in the topbar title"
+    (extension_property application search "status-title") (Some (Lui_protocol.StringValue "Searching…"));
+  check_eq ~msg:"search has no separate status row"
+    (descendant_with_identifier renderer panel "search.status") (-1);
+  check_eq ~msg:"search has no separate loading row"
+    (descendant_with_identifier renderer panel "search.loading") (-1);
   check_eq ~msg:"a pending query must not flash a false no-results state"
     (descendant_with_identifier renderer panel "search.empty")
     (-1);
@@ -8029,6 +8045,8 @@ let search_renders_main_empty_states_and_result_sections () =
        scrolling behavior"
     (descendant_with_identifier renderer panel "screen.search.results"
     <> -1);
+  check_eq ~msg:"completed search puts its result count in the topbar title"
+    (extension_property application search "status-title") (Some (Lui_protocol.StringValue "2 results"));
   check ~msg:"page results have the main section label"
     (descendant_with_identifier renderer panel "search.section.pages"
     <> -1);
@@ -10968,7 +10986,7 @@ let cases =
     case "selected-pages-do-not-render-journal-home-headings" selected_pages_do_not_render_journal_home_headings;
     case "search-navigation-is-isolated-and-cleared-with-the-presentation" search_navigation_is_isolated_and_cleared_with_the_presentation;
     case "search-query-publishes-a-core-effect-and-rejects-stale-results" search_query_publishes_a_core_effect_and_rejects_stale_results;
-    case "native-search-waits-for-three-unicode-characters" native_search_waits_for_three_unicode_characters;
+    case "native-search-accepts-nonempty-unicode-queries" native_search_accepts_nonempty_unicode_queries;
     case "shortening-search-clears-results-and-queued-requests" shortening_search_clears_results_and_queued_requests;
     case "native-page-title-waits-for-the-content-heading-to-scroll" native_page_title_waits_for_the_content_heading_to_scroll;
     case "search-uses-regular-list-and-paginates-on-scroll" search_uses_a_regular_list_and_paginates_on_scroll;
