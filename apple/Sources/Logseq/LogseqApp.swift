@@ -939,6 +939,8 @@ public enum LogseqBackgroundRefresh {
         do {
             try BGTaskScheduler.shared.submit(request)
             logger.debug("Scheduled background refresh")
+        } catch let error as BGTaskScheduler.Error where error.code == .unavailable {
+            logger.info("Background refresh is unavailable: \(String(describing: error))")
         } catch {
             logger.error("Could not schedule background refresh: \(String(describing: error))")
         }

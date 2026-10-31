@@ -108,9 +108,9 @@ fi
 data_container=$(xcrun simctl get_app_container "$device" "$app_id" data 2>/dev/null || true)
 if [[ -n $data_container && -d $data_container ]]; then
   rm -rf "$data_container/Documents" "$data_container/Library" "$data_container/tmp"
-  # iOS guarantees <container>/tmp exists at runtime; the core writes the
-  # initial graph snapshot there via Filename.temp_file.
-  mkdir -p "$data_container/tmp"
+  # Preserve the container directories iOS creates on installation: the
+  # core opens its catalog in Documents and writes snapshots in tmp.
+  mkdir -p "$data_container/Documents" "$data_container/Library" "$data_container/tmp"
 fi
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.baseURL >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.selectedGraphId >/dev/null 2>&1 || true
