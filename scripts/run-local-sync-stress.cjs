@@ -42,6 +42,7 @@ for (const file of ['auth.json', 'cli.edn']) {
 const tracePath = path.join(runRoot, `operations-${seed}.jsonl`);
 const trace = event => fs.appendFileSync(tracePath, JSON.stringify(event) + '\n');
 const coverage = {}, scenarios = [], assets = [];
+const batchSizes = [], messageBytes = [];
 const movements = { indent: 0, outdent: 0, up: 0, down: 0 };
 let serverPaused = false;
 const mobileIDs = new Set(), pageIDs = new Set(), tagIDs = new Set();
@@ -94,7 +95,7 @@ class Client {
 }
 
 class Mobile extends Client {
-  constructor(root) { super(root); this.transportTail = Promise.resolve(); this.generation = 0; this.online = false; }
+  constructor(root) { super(root); this.transportTail = Promise.resolve(); this.generation = 0; this.online = false; this.batchSizes = batchSizes; this.messageBytes = messageBytes; }
   queueTransport(run) {
     this.transportTail = this.transportTail.then(run).catch(error => { this.failure = error; });
   }
@@ -156,6 +157,11 @@ class Mobile extends Client {
       if (request.delayMs) await sleep(request.delayMs);
       let response, body;
       if (request.method === 'WS') {
+        const transactions = JSON.parse(request.body).txs.length;
+        const bytes = Buffer.byteLength(request.body, 'utf8');
+        assert(transactions >= 1 && transactions <= 50, 'A sync batch must contain at most 50 transactions');
+        assert(bytes <= 1_000_000, 'A WebSocket sync message must fit the 1 MB encoded byte budget');
+        this.batchSizes.push(transactions); this.messageBytes.push(bytes);
         this.dropAcknowledgement = loseReply || crashAfterAccept;
         try {
           response = await new Promise((resolve, reject) => {
@@ -338,6 +344,11 @@ async function main() {
   await mobile.open(); await mobile.reconnect(); await mobile.flush();
   const page = await createPage(`Mobile random ${seed}`);
   await insert(page); await mobile.flush();
+  const backlogStart = mobile.batchSizes.length;
+  for (let index = 0; index < 101; index++) await insert(page, `Batch backlog ${index} 中文 😀`);
+  await mobile.flush();
+  assert.deepEqual(mobile.batchSizes.slice(backlogStart), [50, 50, 1], '101 queued edits must drain in three WebSocket batches');
+  scenarios.push('101 queued edits upload as 50 + 50 + 1 transactions');
   const cliPage = `CLI random ${seed}`;
   await cli(['upsert', 'page', '--page', cliPage]);
   const cliSecondary = cliPage + ' secondary';
@@ -482,7 +493,8 @@ async function main() {
   assert.deepEqual(cliTitles.sort(), mobileTitles.sort(), 'CLI and mobile titles must converge');
   for (const type of types) assert(coverage[type] > 0, `Missing mobile operation coverage: ${type}`);
   if (count >= 121) assert(scenarios.includes('server accepted but WebSocket acknowledgement was lost'));
-  const summary = { seed, operations: sequence, cliMutations, coverage, movements, scenarios, assetUploads: assets.length, serverT: local.serverT,
+  const summary = { seed, operations: sequence, cliMutations, coverage, movements, scenarios, assetUploads: assets.length,
+    websocketBatches: { count: mobile.batchSizes.length, maximumOperations: Math.max(...mobile.batchSizes), maximumBytes: Math.max(...mobile.messageBytes) }, serverT: local.serverT,
     datoms: local.datoms.length, pending: local.pending.length, graphId: fixture.graphId, tracePath };
   fs.writeFileSync(path.join(runRoot, `summary-${seed}.json`), JSON.stringify(summary, null, 2));
   await mobile.rpc('openNode', { uuid: page });

@@ -59,6 +59,7 @@ type semantic_pending =
 type semantic_active =
   { id : int
   ; pending : semantic_pending
+  ; following : semantic_pending list
   ; request : Api.api_request
   }
 
@@ -129,6 +130,8 @@ type host_options =
   ; stage_operation : (Ops.pending_operation -> (unit, string) result) option
   ; prepare_operation :
       (Ops.pending_operation -> (string * string, string) result) option
+  ; prepare_operations :
+      (Ops.pending_operation list -> (string * string, string) result list) option
   ; pending_operations : (unit -> Ops.pending_operation list) option
   ; load_sync_error : (unit -> string option) option
   ; record_sync_failure : (semantic:bool -> string -> string option -> unit) option
@@ -228,6 +231,7 @@ let default_options =
       (fun path -> try Sys.remove path with _ -> ());
     stage_operation = None;
     prepare_operation = None;
+    prepare_operations = None;
     pending_operations = None;
     load_sync_error = None;
     record_sync_failure = None;

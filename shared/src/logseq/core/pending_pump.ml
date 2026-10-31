@@ -6,6 +6,10 @@ module Rpc = Rpc
 module Model = Cache_model
 module Ops = Pending_ops
 
+let json_field name = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
+  | _ -> `Null
+
 let pending_sync_error session =
   let pending = match (Types.host session).load_sync_error with
   | Some load -> load ()
@@ -191,54 +195,76 @@ let rec prepare_pending_next (session : Types.session) (pump : Types.pending_syn
     pump.active := None;
     session.state := { !(session.state) with pending_sync = None }
 
+let semantic_members (active : Types.semantic_active) = active.pending :: active.following
+
+let semantic_tx_id (operation : Ops.pending_operation) =
+  match operation.intent with Ops.Create_asset asset -> asset.uuid | _ -> operation.operation_id
+
+let rec singleton_intent = function
+  | Ops.Delete_blocks _ | Ops.Delete_page _ -> true
+  | Ops.Atomic intents -> List.exists singleton_intent intents
+  | _ -> false
+
+let batch_max_operations = 50
+let batch_max_bytes = 1_000_000
+
 let activate_semantic_request (session : Types.session) config accepted =
   let s = Types.state session in
-  let caught_up =
-    match Types.projection_server_t session, s.accepted_server_t with
-    | Some local, Some latest -> local >= latest
-    | _ -> true
-  in
+  let caught_up = match Types.projection_server_t session, s.accepted_server_t with
+    | Some local, Some latest -> local >= latest | _ -> true in
   if s.semantic_active = None && caught_up then
     match s.semantic_queue with
-    | pending :: _ ->
-      (match (Types.host session).prepare_operation with
-       | Some prepare ->
-         (match prepare pending.operation with
-          | Error message ->
-            Types.debug
-              ("semantic operation id=" ^ pending.operation.operation_id
-               ^ " is waiting for authoritative dependencies: " ^ message)
-          | Ok (outliner_op, tx) ->
-            let operation = pending.operation in
-            let latest =
-              match Types.submission_server_t session with
-              | Some t -> t
-              | None -> operation.base_t
-            in
-            let before =
-              match accepted with
-              | Some accepted -> max latest accepted
-              | None -> latest
-            in
-            let tx_id =
-              match operation.Ops.intent with
-              | Ops.Create_asset asset -> asset.uuid
-              | _ -> operation.operation_id
-            in
-            let request =
-              Api.tx_batch_websocket_request config before tx_id outliner_op tx
-            in
-            let next_id = s.next_pending_request_id + 1 in
-            session.state :=
-              {
-                !(session.state) with
-                next_pending_request_id = next_id;
-                semantic_queue = List.tl s.semantic_queue;
-                semantic_active =
-                  Some { Types.id = next_id; pending; request };
-              })
-       | None -> ())
     | [] -> ()
+    | first :: _ ->
+      let latest = Option.value (Types.submission_server_t session) ~default:first.operation.base_t in
+      let before = Option.fold ~none:latest ~some:(max latest) accepted in
+      let rec candidates count reversed = function
+        | [] -> List.rev reversed
+        | _ when count = batch_max_operations -> List.rev reversed
+        | (pending : Types.semantic_pending) :: rest ->
+          if singleton_intent pending.operation.intent then
+            if reversed = [] then [pending] else List.rev reversed
+          else candidates (count + 1) (pending :: reversed) rest in
+      let candidates = candidates 0 [] s.semantic_queue in
+      let operations = List.map (fun (pending : Types.semantic_pending) -> pending.operation) candidates in
+      let prepared = match (Types.host session).prepare_operations, (Types.host session).prepare_operation with
+        | Some prepare, _ -> prepare operations
+        | None, Some prepare -> List.map prepare operations
+        | None, None -> [] in
+      let empty = Api.tx_batch_websocket_request config before [] in
+      let overhead = String.length (Option.get empty.body) in
+      let rec pack bytes members wires candidates prepared =
+        match candidates, prepared with
+        | (pending : Types.semantic_pending) :: rest, Ok (op, tx) :: results ->
+          let wire = semantic_tx_id pending.operation, op, tx in
+          let size = String.length (Json.to_string (Api.tx_batch_transaction wire)) in
+          let total = bytes + size + (if members = [] then 0 else 1) in
+          if total > batch_max_bytes then begin
+            if members = [] then begin
+              let message = "The local transaction exceeds the 1 MB WebSocket message limit" in
+              session.state := { !(session.state) with pending_sync_error = Some message };
+              Option.iter (fun record -> record ~semantic:true pending.operation.operation_id (Some message))
+                (Types.host session).record_sync_failure
+            end;
+            List.rev members, List.rev wires
+          end else pack total (pending :: members) (wire :: wires) rest results
+        | pending :: _, Error message :: _ ->
+          Types.debug ("semantic operation id=" ^ pending.operation.operation_id
+            ^ " is waiting for authoritative dependencies: " ^ message);
+          List.rev members, List.rev wires
+        | _ -> List.rev members, List.rev wires in
+      let members, wires = pack overhead [] [] candidates prepared in
+      match members with
+      | [] -> ()
+      | pending :: following ->
+        let rec drop n values = if n = 0 then values else match values with
+          | [] -> [] | _ :: rest -> drop (n - 1) rest in
+        let next_id = s.next_pending_request_id + 1 in
+        session.state := { !(session.state) with
+          next_pending_request_id = next_id;
+          semantic_queue = drop (List.length members) s.semantic_queue;
+          semantic_active = Some { Types.id = next_id; pending; following;
+            request = Api.tx_batch_websocket_request config before wires } }
 
 let enqueue_semantic (session : Types.session) operation =
   match
@@ -287,18 +313,18 @@ let enqueue_capture session uuid title now status =
 let restore_semantic_queue (session : Types.session) =
   match (Types.host session).pending_operations with
   | Some pending ->
-    let active =
-      match (Types.state session).semantic_active with
-      | Some active -> Some active.Types.pending.operation.operation_id
-      | None -> None
-    in
+    let active_ids = Hashtbl.create batch_max_operations in
+    Option.iter (fun active -> List.iter (fun (pending : Types.semantic_pending) ->
+      Hashtbl.replace active_ids pending.operation.operation_id ()) (semantic_members active))
+      (Types.state session).semantic_active;
+
     session.state :=
       {
         !(session.state) with
         semantic_queue =
           List.filter_map
             (fun (operation : Ops.pending_operation) ->
-              if Some operation.operation_id = active then None
+              if Hashtbl.mem active_ids operation.operation_id then None
               else Some { Types.operation })
             (pending ());
       }
@@ -347,7 +373,8 @@ let settle_semantic_active (session : Types.session) active succeeded
   in
   (match (Types.host session).stage_operation with
    | Some stage ->
-     ignore (stage { active.Types.pending.operation with Ops.state = next_state })
+     List.iter (fun (pending : Types.semantic_pending) ->
+       ignore (stage { pending.operation with Ops.state = next_state })) (semantic_members active)
    | None -> ());
   (if succeeded then
      match accepted with
@@ -483,11 +510,11 @@ let accepted_transaction body =
     match Json.from_string body with
     | `Assoc _ as body ->
       let rejected =
-        Json_util.member "type" body = `String "tx/reject"
+        json_field "type" body = `String "tx/reject"
       in
       let accepted =
         match
-          (Json_util.member "acceptedT" body, Json_util.member "t" body)
+          (json_field "acceptedT" body, json_field "t" body)
         with
         | `Int t, _ -> Some t
         | _, `Int t -> Some t
@@ -549,77 +576,6 @@ let parse_transport_completion input expected_id =
             }
         | _ -> Error "pending transport returned no HTTP status"))
 
-let complete_semantic_response session (active : Types.semantic_active)
-    input =
-  try
-    let ( let* ) = Result.bind in
-    let* succeeded, accepted =
-      parse_semantic_completion input active.id
-    in
-    settle_semantic_active session active succeeded accepted;
-    (if not succeeded then
-       match Json_util.member "body" input with
-       | `String body ->
-         (match Json.from_string body with
-          | `Assoc _ as rejection when Json_util.member "type" rejection = `String "tx/reject" ->
-            (match Json_util.member "t" rejection with
-             | `Int t when t >= 0 -> Types.record_accepted_server_t session t
-             | _ -> ());
-            let reason = match Json_util.member "reason" rejection with
-              | `String reason -> reason
-              | _ -> "transaction rejected"
-            in
-            if reason <> "stale" && Json_util.member "retryable" rejection <> `Bool true then
-              (match (Types.host session).stage_operation with
-               | Some stage ->
-                 ignore (stage { active.pending.operation with Ops.state = Ops.Conflicted reason })
-               | None -> ())
-          | _ -> ())
-       | _ -> ());
-    let* () =
-      match succeeded, (Types.host session).apply_sync_event, Json_util.member "body" input with
-      | true, Some apply, `String body ->
-        let* journal = Journal_sync.decode body in
-        (match Types.projection_server_t session, journal.t_before with
-         | Some local, Some before when local < before -> Ok ()
-         | _ ->
-           let scoped_body = match (Types.state session).config, Json.from_string body with
-             | Some config, `Assoc fields ->
-               Json.to_string (`Assoc (("graphId", `String config.graph_id) :: List.remove_assoc "graphId" fields))
-             | _ -> body
-           in
-           apply scoped_body)
-      | _ -> Ok ()
-    in
-    if succeeded then begin
-      restore_semantic_queue session;
-      match (Types.state session).config with
-      | Some config -> activate_semantic_request session config accepted
-      | None -> ()
-    end;
-    Ok ()
-  with error ->
-    Error ("invalid pending sync completion: " ^ Printexc.to_string error)
-
-let complete_transport_response session (pump : Types.pending_sync)
-    (active : Types.pending_active) input =
-  try
-    let ( let* ) = Result.bind in
-    let* response = parse_transport_completion input active.id in
-    cleanup_pending_active session active;
-    (match response with
-     | Ok response -> complete_pending_active session pump active response
-     | Error message ->
-       Types.debug
-         ("pending transport failed id=" ^ string_of_int active.id
-          ^ " message=" ^ message);
-       finish_pending_block session pump
-         (Types.transport_operation_block active.operation)
-         false);
-    Ok ()
-  with error ->
-    Error ("invalid pending sync completion: " ^ Printexc.to_string error)
-
 let completion_failure input =
   match completion_error input with
   | Some _ as error -> error
@@ -652,9 +608,129 @@ let completion_failure input =
         ^ Option.fold ~none:"" ~some:(fun value -> " — " ^ value) detail)
     | _ -> None
 
+let semantic_settlements (active : Types.semantic_active) input succeeded accepted =
+  let members = semantic_members active in
+  let retry error = List.map (fun pending -> pending, Ops.Retryable, error) members in
+  if succeeded then
+    let state = match accepted with Some t -> Ops.Accepted t | None -> Ops.Submitted in
+    Ok (List.map (fun pending -> pending, state, None) members)
+  else if completion_error input <> None then Ok (retry (completion_error input))
+  else
+    let body = match Json_util.member "body" input with
+      | `String body -> (try Json.from_string body with Yojson.Json_error _ -> `Null)
+      | _ -> `Null in
+    if json_field "type" body <> `String "tx/reject" then
+      Ok (retry (completion_failure input))
+    else
+      let ( let* ) = Result.bind in
+      let* successes = match json_field "success-tx-ids" body with
+        | `Null -> Ok []
+        | `List ids when List.for_all (function `String _ -> true | _ -> false) ids ->
+          Ok (List.map Json_util.to_string ids)
+        | _ -> Error "invalid batch rejection success IDs" in
+      let reason = match json_field "reason" body with
+        | `String reason -> reason | _ -> "transaction rejected" in
+      let failure = completion_failure input in
+      if reason = "stale" || reason = "snapshot upload in progress" then
+        if successes <> [] then Error "batch rejection has an invalid accepted prefix"
+        else Ok (retry failure)
+      else
+        let rec prefix reversed members ids = match members, ids with
+          | _, [] -> Ok (List.rev reversed, members)
+          | (pending : Types.semantic_pending) :: rest, id :: ids
+            when semantic_tx_id pending.operation = id -> prefix (pending :: reversed) rest ids
+          | _ -> Error "rejection accepted IDs are not a batch prefix" in
+        let* successful, remaining = prefix [] members successes in
+        let* cursor = match successful, json_field "t" body with
+          | [], _ -> Ok None
+          | _ :: _, `Int t when t >= 0 -> Ok (Some t)
+          | _ -> Error "partial batch rejection omitted its server cursor" in
+        match remaining with
+        | [] -> Error "batch rejection omitted its failed member"
+        | failed :: unexecuted ->
+          let* () = match json_field "failed-tx-id" body with
+            | `String id when id = semantic_tx_id failed.operation -> Ok ()
+            | `Null when successes = [] -> Ok ()
+            | _ -> Error "rejection failed ID is not the next submitted member" in
+          let accepted = List.map (fun pending -> pending, Ops.Accepted (Option.get cursor), None) successful in
+          let failed_state = if json_field "retryable" body = `Bool true then Ops.Retryable
+            else Ops.Conflicted reason in
+          Ok (List.rev_append (List.rev accepted)
+            ((failed, failed_state, failure) :: List.map (fun pending -> pending, Ops.Retryable, None) unexecuted))
+
+let complete_semantic_response session (active : Types.semantic_active) input =
+  try
+    let ( let* ) = Result.bind in
+    let* succeeded, accepted = parse_semantic_completion input active.id in
+    let* settlements = semantic_settlements active input succeeded accepted in
+    let* () = List.fold_left (fun result ((pending : Types.semantic_pending), state, _) ->
+      let* () = result in
+      match (Types.host session).stage_operation with
+      | Some stage -> stage { pending.operation with Ops.state = state }
+      | None -> Ok ()) (Ok ()) settlements in
+    let retryable = List.filter_map (fun (pending, state, _) ->
+      if state = Ops.Retryable then Some pending else None) settlements in
+    session.Types.state := { !(session.state) with semantic_active = None;
+      semantic_queue = List.rev_append (List.rev retryable) (Types.state session).semantic_queue };
+    (match succeeded, accepted with
+     | true, Some accepted -> Types.record_accepted_server_t session accepted
+     | _ ->
+       (match Json_util.member "body" input with
+        | `String body ->
+          let body = try Json.from_string body with Yojson.Json_error _ -> `Null in
+          if json_field "type" body = `String "tx/reject" then
+            (match json_field "t" body with
+             | `Int t when t >= 0 -> Types.record_accepted_server_t session t
+             | _ -> ())
+        | _ -> ()));
+    let* () =
+      match succeeded, (Types.host session).apply_sync_event, Json_util.member "body" input with
+      | true, Some apply, `String body ->
+        let* journal = Journal_sync.decode body in
+        (match Types.projection_server_t session, journal.t_before with
+         | Some local, Some before when local < before -> Ok ()
+         | _ ->
+           let scoped_body = match (Types.state session).config, Json.from_string body with
+             | Some config, `Assoc fields ->
+               Json.to_string (`Assoc (("graphId", `String config.graph_id) :: List.remove_assoc "graphId" fields))
+             | _ -> body in
+           apply scoped_body)
+      | _ -> Ok () in
+    List.iter (fun ((pending : Types.semantic_pending), _, failure) ->
+      Option.iter (fun record -> record ~semantic:true pending.operation.operation_id failure)
+        (Types.host session).record_sync_failure) settlements;
+    restore_semantic_queue session;
+    let continue = succeeded || List.exists (fun (_, state, _) ->
+      match state with Ops.Conflicted _ -> true | _ -> false) settlements in
+    if continue then
+      (match (Types.state session).config with
+       | Some config -> activate_semantic_request session config accepted
+       | None -> ());
+    Ok ()
+  with error -> Error ("invalid pending sync completion: " ^ Printexc.to_string error)
+
+let complete_transport_response session (pump : Types.pending_sync)
+    (active : Types.pending_active) input =
+  try
+    let ( let* ) = Result.bind in
+    let* response = parse_transport_completion input active.id in
+    cleanup_pending_active session active;
+    (match response with
+     | Ok response -> complete_pending_active session pump active response
+     | Error message ->
+       Types.debug
+         ("pending transport failed id=" ^ string_of_int active.id
+          ^ " message=" ^ message);
+       finish_pending_block session pump
+         (Types.transport_operation_block active.operation)
+         false);
+    Ok ()
+  with error ->
+    Error ("invalid pending sync completion: " ^ Printexc.to_string error)
+
 let complete_pending_sync (session : Types.session) payload =
   let input = Json.from_string payload in
-  let complete ~semantic expected failure_id label handle =
+  let complete ~semantic expected failure_ids label handle =
     let ( let* ) = Result.bind in
     let* _ = validate_completion_id input expected in
     let transient = completion_error input <> None ||
@@ -678,8 +754,10 @@ let complete_pending_sync (session : Types.session) payload =
     end in
     let failure = match result with Ok () -> completion_failure input | Error message -> Some message in
     session.state := { !(session.state) with pending_sync_error = failure };
-    Option.iter (fun record -> record ~semantic failure_id (Option.map (fun message -> label ^ ": " ^ message) failure))
-      (Types.host session).record_sync_failure;
+    if not semantic || (transient && attempt < 3) || Result.is_error result then
+      List.iter (fun failure_id ->
+        Option.iter (fun record -> record ~semantic failure_id (Option.map (fun message -> label ^ ": " ^ message) failure))
+          (Types.host session).record_sync_failure) failure_ids;
     result in
   let id =
     match input with
@@ -714,7 +792,8 @@ let complete_pending_sync (session : Types.session) payload =
          | _ -> None) in
       let label = String.map (function '-' -> ' ' | value -> value) (Ops.outliner_op operation.intent)
         ^ " (" ^ Option.value ~default:operation.operation_id target ^ ")" in
-      complete ~semantic:true active.id operation.operation_id label (fun () -> complete_semantic_response session active input)
+      complete ~semantic:true active.id
+        (List.map (fun (pending : Types.semantic_pending) -> pending.operation.operation_id) (semantic_members active)) label (fun () -> complete_semantic_response session active input)
   | None ->
     (match (Types.state session).pending_sync with
      | Some pump ->
@@ -730,7 +809,7 @@ let complete_pending_sync (session : Types.session) payload =
               | Types.Update_status _ -> "Update task status"
               | Types.Create_journal _ -> "Create journal"
               | Types.Create_block _ -> "Create block" in
-            complete ~semantic:false active.id block.uuid (label ^ " (" ^ block.uuid ^ ")")
+            complete ~semantic:false active.id [block.uuid] (label ^ " (" ^ block.uuid ^ ")")
               (fun () -> complete_transport_response session pump active input)
         | None ->
           if finished then Ok ()
@@ -746,7 +825,7 @@ let cancel_pending_sync (session : Types.session) =
        {
          !(session.state) with
          semantic_queue =
-           active.Types.pending :: (Types.state session).semantic_queue;
+           List.rev_append (List.rev (semantic_members active)) (Types.state session).semantic_queue;
          semantic_active = None;
        }
    | None -> ());

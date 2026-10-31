@@ -100,7 +100,8 @@ val raw_asset_upload_request :
   api_config -> string -> string -> string -> string -> string -> api_file_upload
 val update_block_request : api_config -> string -> string -> api_request
 val tx_batch_request : api_config -> int -> string -> string -> string -> api_request
-val tx_batch_websocket_request : api_config -> int -> string -> string -> string -> api_request
+val tx_batch_transaction : string * string * string -> Yojson.Basic.t
+val tx_batch_websocket_request : api_config -> int -> (string * string * string) list -> api_request
 val update_block_status_request : api_config -> string -> string -> api_request
 val bool_member : bool -> string -> Yojson.Basic.t -> bool
 val nonempty_string_member : string -> Yojson.Basic.t -> string option

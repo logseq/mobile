@@ -88,6 +88,8 @@ val prepare_sync :
   Pending_ops.pending_operation ->
   (string * string, string) result
 val transport_state : Pending_ops.pending_state -> bool
+val prepare_sync_batch :
+  graph_runtime -> Pending_ops.pending_operation list -> (string * string, string) result list
 val stage :
   graph_runtime -> Pending_ops.pending_operation -> (unit, string) result
 val queued_operation :

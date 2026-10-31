@@ -68,6 +68,8 @@ val prepare_sync :
   Pending_ops.pending_operation ->
   (string * string, string) result
 val pending_operations : mobile_graph -> Pending_ops.pending_operation list
+val prepare_sync_batch :
+  mobile_graph -> Pending_ops.pending_operation list -> (string * string, string) result list
 val record_sync_failure : mobile_graph -> semantic:bool -> string -> string option -> unit
 val sync_error : mobile_graph -> string option
 val report_open : float -> string -> unit

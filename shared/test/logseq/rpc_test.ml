@@ -1932,7 +1932,7 @@ let semantic_capture_pump_never_calls_blocking_transport () =
           "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}")
     = None)
 
-let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
+let encrypted_task_stages_journal_before_status_in_one_batch () =
   let staged = ref [] in
   let cursor = ref 91 in
   let session =
@@ -1965,27 +1965,12 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
      check_eq property.uuid "encrypted-async";
      check_eq property.attr "logseq.property/status"
    | _ -> check false);
-  let begin_response = dispatch_json session "beginPendingSync" "" in
-  cursor := 92;
-  let complete_response =
-    dispatch_json session "completePendingSync"
-      "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}"
-  in
-  List.iter
-    (fun response ->
-      match pending_request response with
-      | Some request ->
-        check_eq
-          (json_string (member "url" request))
-          "ws://127.0.0.1:8787/sync/encrypted-1"
-      | None -> check false)
-    [ begin_response; complete_response ];
+  let request = required_pending_request session in
+  check_eq (json_string (member "url" request)) "ws://127.0.0.1:8787/sync/encrypted-1";
+  check_eq (List.length (json_items "txs" (member "bodyObject" request))) 2;
   cursor := 93;
-  check
-    (pending_request
-       (dispatch_json session "completePendingSync"
-          "{\"id\":2,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":93}\",\"error\":null}")
-    = None)
+  check_eq (member "pendingSyncRequest" (complete_request session request
+    {|{"type":"tx/batch/ok","t":93}|})) `Null
 
 let graph_creation_stops_after_initial_upload_failure () =
   let discovered = ref false in
@@ -2605,14 +2590,18 @@ let confirmed_journal_releases_next_durable_operation () =
               { uuid = "source"; expected_title; title };
         })
       [ ("first", "Old", "First"); ("second", "First", "Second") ];
-  let completion =
-    complete_request session (required_pending_request session) "{\"t\":43}"
-  in
+  let request = required_pending_request session in
+  check_eq (List.length (json_items "txs" (member "bodyObject" request))) 2;
+  let completion = complete_request session request {|{"t":44}|} in
   check_eq (member "pendingSyncRequest" completion) `Null;
-  cursor := 43;
+  (match Session.enqueue_semantic session { Ops.operation_id = "third"; base_t = 42;
+    state = Ops.Queued; intent = Ops.Save_title { uuid = "source"; expected_title = "Second"; title = "Third" } } with
+   | Ok () -> () | Error message -> fail message);
+  check_eq (pending_request (dispatch_json session "beginPendingSync" "")) None;
+  cursor := 44;
   let request = required_pending_request session in
   let tx = List.hd (json_items "txs" (member "bodyObject" request)) in
-  check_eq (member "tx-id" tx) (`String "second")
+  check_eq (member "tx-id" tx) (`String "third")
 
 let merge_backward_stages_one_atomic_semantic_intent () =
   let staged = ref [] in
@@ -6680,8 +6669,8 @@ let cases =
       journal_calendar_opens_existing_days_and_creates_missing_days;
     case "semantic capture pump never calls blocking transport"
       semantic_capture_pump_never_calls_blocking_transport;
-    case "encrypted task stages journal before status and drains both requests"
-      encrypted_task_stages_journal_before_status_and_drains_both_requests;
+    case "encrypted task stages journal before status in one batch"
+      encrypted_task_stages_journal_before_status_in_one_batch;
     case "graph creation stops after initial upload failure"
       graph_creation_stops_after_initial_upload_failure;
     case "autosave emits bounded patches and advances expected title"

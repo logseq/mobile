@@ -323,24 +323,23 @@ let update_block_request config uuid title =
   request config "PATCH" (graph_path config ("/blocks/" ^ url_encode uuid))
     (json_body [ ("title", `String title) ])
 
-let tx_batch_fields t_before tx_id outliner_op tx =
-  [
-    ("t-before", `Int t_before);
-    ("txs", `List [`Assoc
-       ["tx-id", `String tx_id; "tx", `String tx; "outliner-op", `String outliner_op]]);
-  ]
+let tx_batch_transaction (tx_id, outliner_op, tx) =
+  `Assoc ["tx-id", `String tx_id; "tx", `String tx; "outliner-op", `String outliner_op]
+
+let tx_batch_fields t_before transactions =
+  ["t-before", `Int t_before; "txs", `List (List.map tx_batch_transaction transactions)]
 
 let tx_batch_request config t_before tx_id outliner_op tx =
   request config "POST"
     ("/sync/" ^ url_encode config.graph_id ^ "/tx/batch")
-    (json_body (tx_batch_fields t_before tx_id outliner_op tx))
+    (json_body (tx_batch_fields t_before [tx_id, outliner_op, tx]))
 
-let tx_batch_websocket_request config t_before tx_id outliner_op tx =
+let tx_batch_websocket_request config t_before transactions =
   let url = match sync_websocket_url config with
     | Some url -> url
     | None -> invalid_arg "Unsupported sync base URL" in
   { method_ = "WS"; url; token = config.token;
-    body = json_body (("type", `String "tx/batch") :: tx_batch_fields t_before tx_id outliner_op tx) }
+    body = json_body (("type", `String "tx/batch") :: tx_batch_fields t_before transactions) }
 
 let update_block_status_request config uuid status =
   request config "PUT"
