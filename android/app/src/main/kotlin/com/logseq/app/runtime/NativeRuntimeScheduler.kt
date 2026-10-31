@@ -23,18 +23,12 @@ internal class NativeRuntimeScheduler {
     suspend fun <T> runCore(operation: suspend () -> T): T {
         pendingCoreCalls.incrementAndGet()
         try {
-            return coreMutex.withLock {
-                try {
-                    operation()
-                } finally {
-                    if (pendingCoreCalls.decrementAndGet() == 0) {
-                        flushUiCalls()
-                        onIdle?.invoke()
-                    }
-                }
+            return coreMutex.withLock { operation() }
+        } finally {
+            if (pendingCoreCalls.decrementAndGet() == 0) {
+                flushUiCalls()
+                onIdle?.invoke()
             }
-        } catch (error: Throwable) {
-            throw error
         }
     }
 
