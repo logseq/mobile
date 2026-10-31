@@ -616,7 +616,18 @@ private fun AndroidLinkedImage(url: String, alt: String) {
                     connectTimeout = 10_000
                     readTimeout = 10_000
                 }
-                val bytes = connection.getInputStream().use { it.readNBytes(20_000_001) }
+                val bytes = connection.getInputStream().use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var remaining = 20_000_001
+                    while (remaining > 0) {
+                        val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        remaining -= count
+                    }
+                    output.toByteArray()
+                }
                 require(bytes.size <= 20_000_000) { "Image is too large" }
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
