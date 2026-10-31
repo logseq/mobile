@@ -23,6 +23,9 @@ for bundle in (app, extension):
     signed = subprocess.run(["codesign", "-d", "--entitlements", ":-", str(bundle)],
                             check=True, capture_output=True)
     entitlements = plistlib.loads(signed.stdout)
+    assert all("*" not in group for group in entitlements.get("keychain-access-groups", [])), (
+        f"{bundle.name} must request concrete keychain groups, not provisioning-profile wildcards"
+    )
     assert "group.com.logseq.logseq" in entitlements.get("com.apple.security.application-groups", []), (
         f"{bundle.name} must share the capture inbox app group"
     )

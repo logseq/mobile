@@ -32,6 +32,26 @@ die() {
   exit 1
 }
 
+write_development_entitlements() {
+  python3 - "$1" "$2" "$3" "$4" <<'PYTHON'
+import plistlib
+import sys
+from pathlib import Path
+
+source_path, profile_path, bundle_id, output_path = sys.argv[1:]
+requested = plistlib.loads(Path(source_path).read_bytes())
+profile = plistlib.loads(Path(profile_path).read_bytes())
+app_id = profile["ApplicationIdentifierPrefix"][0] + "." + bundle_id
+requested.update({
+    "application-identifier": app_id,
+    "com.apple.developer.team-identifier": profile["TeamIdentifier"][0],
+    "keychain-access-groups": [app_id],
+    "get-task-allow": profile["Entitlements"].get("get-task-allow", False),
+})
+Path(output_path).write_bytes(plistlib.dumps(requested))
+PYTHON
+}
+
 prune_stale_swift_resource_bundles() {
   [[ -d $swift_build_dir ]] || return 0
   [[ $swift_build_dir == "$swift_scratch_dir/"* && $swift_build_dir != "$swift_scratch_dir" ]] \
@@ -220,8 +240,8 @@ for key in CFBundleShortVersionString CFBundleVersion; do
 done
 cp "$widget_profile" "$widget_dir/embedded.mobileprovision"
 security cms -D -i "$widget_profile" > "$widget_profile_plist"
-plutil -extract Entitlements xml1 -o "$widget_entitlements" "$widget_profile_plist"
-plutil -replace application-identifier -string "$team_id.$widget_bundle_id" "$widget_entitlements"
+write_development_entitlements "$repo_root/apple/App/Entitlements.plist" \
+  "$widget_profile_plist" "$widget_bundle_id" "$widget_entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$widget_entitlements" "$widget_dir"
 
@@ -244,13 +264,13 @@ for key in CFBundleShortVersionString CFBundleVersion; do
 done
 cp "$share_profile" "$share_dir/embedded.mobileprovision"
 security cms -D -i "$share_profile" > "$share_profile_plist"
-plutil -extract Entitlements xml1 -o "$share_entitlements" "$share_profile_plist"
-plutil -replace application-identifier -string "$team_id.$share_bundle_id" "$share_entitlements"
+write_development_entitlements "$repo_root/apple/App/ShareExtension/ShareExtension.entitlements" \
+  "$share_profile_plist" "$share_bundle_id" "$share_entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$share_entitlements" "$share_dir"
 
-plutil -extract Entitlements xml1 -o "$entitlements" "$profile_plist"
-plutil -replace application-identifier -string "$expected_app_id" "$entitlements"
+write_development_entitlements "$repo_root/apple/App/Entitlements.plist" \
+  "$profile_plist" "$bundle_id" "$entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$entitlements" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
