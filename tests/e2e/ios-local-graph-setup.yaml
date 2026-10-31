@@ -32,6 +32,8 @@ appId: com.logseq.logseq
       # Restart from the stored session instead of querying the transient
       # post-login tree, which can crash the XCTest hierarchy driver.
       - stopApp
+      # Do not snapshot the completed hosted browser session after relaunch.
+      - stopApp: com.apple.SafariViewService
       - launchApp
 - runFlow:
     when:
