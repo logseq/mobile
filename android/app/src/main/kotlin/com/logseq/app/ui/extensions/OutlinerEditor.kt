@@ -101,7 +101,6 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var previousText by remember { mutableStateOf(modelTitle) }
     var previousSelection by remember { mutableStateOf(value.selection) }
     var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
-    var rememberedModelCaret by remember { mutableIntStateOf(modelCaret) }
     var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var rememberedBlockId by remember { mutableStateOf(blockId) }
     var awaitingHandoff by remember { mutableStateOf(false) }
@@ -138,7 +137,6 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val (merged, caret) = pending?.rebase(modelTitle, offset) ?: (modelTitle to offset)
         rememberedBlockId = blockId
         rememberedModelTitle = modelTitle
-        rememberedModelCaret = modelCaret
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
         awaitingHandoff = handoffSegments.isNotEmpty()
@@ -179,9 +177,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val selectionRequested = selectionRevision != rememberedSelectionRevision
         rememberedSelectionRevision = selectionRevision
         val titleChanged = modelTitle != rememberedModelTitle
-        val caretChanged = modelCaret != rememberedModelCaret
         rememberedModelTitle = modelTitle
-        rememberedModelCaret = modelCaret
         val acknowledged = if (blockChanged) -1 else publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
@@ -190,9 +186,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 return@LaunchedEffect
             }
         }
-        // Acknowledging our caret must preserve native selection and IME composition.
-        val externalCaret = caretChanged && modelCaret != value.selection.start
-        if (blockChanged || selectionRequested || titleChanged || (externalCaret && value.text == modelTitle)) {
+        // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
+        if (blockChanged || selectionRequested || titleChanged) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++
