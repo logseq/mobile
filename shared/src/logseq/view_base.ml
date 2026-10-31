@@ -675,7 +675,8 @@ let authentication_screen_visible_ (current : Model.logseq_model) =
   authentication_required_ current && current.local_graph_ids = []
 
 let primary_sidebar_button_visible_ (current : Model.logseq_model) =
-  (not (node_screen_visible_ current))
+  current.pdf_workspace = None
+  && (not (node_screen_visible_ current))
   && (not (graph_loading_visible_ current))
   && (not (graph_picker_visible_ current))
   && (not current.search_open)

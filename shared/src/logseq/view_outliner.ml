@@ -410,6 +410,24 @@ let code_block_content model_source retained_source row_source send : t =
               ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
     ]) context parent
 
+let row_metadata (row : Model.outline_row) =
+  try Yojson.Basic.from_string row.row_metadata_json with _ -> `Null
+
+let metadata_member key row =
+  match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
+
+let annotation_page_link row_source send =
+  let reference = Signal.map (metadata_member "pdfAnnotation") row_source in
+  let current_row = Signal.sample row_source in
+  if_ ~test:(Signal.map (function `Assoc _ -> true | _ -> false) reference)
+    (button ~variant:`ghost ~foreground:"link" ~height:44 ~padding_horizontal:4
+      ~accessibility_identifier:("pdf.annotation-page." ^ current_row.Model.row_uuid)
+      ~on_press:(fun _ -> ignore (send (Model.PdfWorkspaceEvent (Yojson.Basic.to_string (`Assoc
+        ["action", `String "open-annotation"; "annotation", Signal.sample reference])))))
+      [text ~value_signal:(Signal.map (fun value ->
+        let page = try Yojson.Basic.Util.(value |> member "page" |> to_int) with _ -> 0 in
+        "📌 P" ^ string_of_int page) reference) ~style_class:"caption" []])
+
 let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
@@ -466,6 +484,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
            [ outliner_status_control context model_source row_source send ]);
       if_ ~test:(reactive (fun (row : Model.outline_row) -> row.row_priority <> None) row_source)
         (outliner_priority_control model_source row_source send);
+      annotation_page_link row_source send;
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
@@ -523,6 +542,7 @@ let native_outliner_row model_source retained_source row_source send : t =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "pdfAnnotation", metadata_member "pdfAnnotation" row;
       "listNumber", (match (if row.row_is_embed then None else row.row_list_number) with Some n -> `Int n | None -> `Null);
       "nodeIcon", (let icon = View_base.outliner_node_icon current row in
         if icon = "" then `Null else Yojson.Basic.from_string icon);
@@ -692,12 +712,6 @@ let outliner_task_dates context model_source row_source send =
     (Signal.map (outliner_text_leading context) row_source)
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
-
-let row_metadata (row : Model.outline_row) =
-  try Yojson.Basic.from_string row.row_metadata_json with _ -> `Null
-
-let metadata_member key row =
-  match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
 
 let discussion_body model_source row_source body : t =
   let row = Signal.sample row_source in

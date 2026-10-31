@@ -61,6 +61,7 @@ type host_update =
   | Confirm_outliner_delete
   | Open_capture
   | Open_node of string
+  | Open_pdf of string * string * string
   | Asset_preview_resolved of string * string
 
 val decode : string -> string -> (host_update, string) result

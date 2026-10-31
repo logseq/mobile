@@ -40,6 +40,7 @@ let request ~now ~fresh_id payload =
     | "result-view" -> raw "resultView"
     | "flashcard-deck" -> raw "flashcardDeck"
     | "node-property" -> raw "nodeProperty"
+    | "pdf-annotation" -> raw "pdfAnnotation"
     | "load-property-values" -> raw "propertyValues"
     | "load-result-rows" -> raw "resultRows"
     | "set-journal-title-format" -> raw "setJournalTitleFormat"

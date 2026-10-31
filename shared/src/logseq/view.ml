@@ -243,8 +243,16 @@ let property_date_schema () =
       property "identifier" StringScalar true None]
     [event "change" [event_field "value" StringScalar true]]
 
+let pdf_workspace_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "native-pdf-workspace" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "payload" StringScalar true None]
+    [event "event" [event_field "payload" StringScalar true]]
+
 let extension_registry () =
   let registry = Lui_extension.registry () in
+  Lui_extension.register_component registry (pdf_workspace_schema ());
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (table_viewport_schema ());

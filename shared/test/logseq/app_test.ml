@@ -380,7 +380,7 @@ let empty_core_projection () =
     is_outliner_patch = false;
     is_outliner_content_patch = false;
     reference_update = None;
-    query_update = None;
+    pdf_update = None; is_pdf_patch = false; query_update = None;
     pending_reference_uuid = None;
     hydrated_rows = [];
     is_search_patch = false;

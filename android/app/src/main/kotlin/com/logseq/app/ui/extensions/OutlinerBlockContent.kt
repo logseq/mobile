@@ -641,6 +641,8 @@ private fun ProjectedAsset(
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
 ) {
     when {
+        assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
+            PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         isImageAsset(assetType, localPath) ->
             GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->

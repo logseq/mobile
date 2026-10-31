@@ -1030,7 +1030,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
   overlay ~alignment:`top ~accessibility_identifier:"capture.confirmation.overlay"
     [content; confirmation]
 
-let logseq_view (context : Lui_ui.ui_context) model_source send : t =
+let application_drawer_view (context : Lui_ui.ui_context) model_source send : t =
   let drawer_main = application_main_content context model_source send in
   let drawer_panel = View_sidebar.sidebar_view context model_source send in
   if Lui_ui.platform context = AndroidOS then
@@ -1108,3 +1108,21 @@ let logseq_view (context : Lui_ui.ui_context) model_source send : t =
                (if open_ then Model.OpenSidebar else Model.CloseSidebar))
         | _ -> ())
       drawer_main drawer_panel
+
+let logseq_view (context : Lui_ui.ui_context) model_source send : t =
+  if Lui_ui.host context <> SwiftUIHost && Lui_ui.host context <> KotlinHost then
+    application_drawer_view context model_source send
+  else fun context parent ->
+    let node = Lui_ui.extension context "native-pdf-workspace" in
+    attach context parent node;
+    Lui_ui.extension_property_signal context node "payload"
+      (Signal.map (fun (current : Model.logseq_model) ->
+        View_base.string_wire_value (Option.value ~default:"null" current.pdf_workspace)) model_source);
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, "event", values) ->
+        (match String_map.find_opt "payload" values with
+         | Some (StringValue payload) -> ignore (send (Model.PdfWorkspaceEvent payload))
+         | _ -> ())
+      | _ -> ());
+    ignore ((application_drawer_view context model_source send) context (Some node));
+    node

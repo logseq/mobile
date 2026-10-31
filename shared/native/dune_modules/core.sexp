@@ -4,6 +4,7 @@
 "Snapshot_download"
 "Shared_capture"
 "Media"
+"Pdf_annotation"
 "Asset_files"
 "Cache_model"
 "Datascript_value"

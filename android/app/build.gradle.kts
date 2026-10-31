@@ -58,7 +58,7 @@ android {
 
     defaultConfig {
         applicationId = providers.gradleProperty("logseqApplicationId").getOrElse("com.logseq.app")
-        minSdk = 26
+        minSdk = 28
         targetSdk = 36
         versionCode = 1
         versionName = appVersion
@@ -151,6 +151,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose")
     implementation("androidx.browser:browser:1.10.0")
+    implementation("androidx.pdf:pdf-compose:1.0.0-beta01")
+    implementation("androidx.pdf:pdf-document-service:1.0.0-beta01")
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

@@ -68,7 +68,7 @@ internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqNativeBridge) {
 }
 
 internal fun extensionText(values: Map<String, Any?>): String {
-    for (key in listOf("uuid", "title", "query", "value")) {
+    for (key in listOf("uuid", "title", "query", "value", "payload")) {
         (values[key] as? String)?.let { return it }
     }
     return (values["offset"] as? Number)?.toLong()?.toString() ?: ""

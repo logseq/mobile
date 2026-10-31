@@ -8,6 +8,12 @@ iOS and Android share the app version in `version.xcconfig`. Android builds,
 the iOS build scripts, and the TestFlight lane embed the mobile repository's
 current Git commit as the settings revision.
 
+PDF assets open full-screen in narrow windows and beside the main editor in
+wide windows, with a control to switch modes. The viewer uses PDFKit on iOS/iPadOS
+and AndroidX PDF Viewer on Android. Highlights are stored as Logseq `Pdf-annotation`
+blocks in the graph and use the normal offline persistence and sync queue; the
+original PDF stays unchanged.
+
 Shared core sources live in `shared/src/logseq/core`, with executable entry points
 in `shared/src/logseq/entry`. The `shared/native` directory contains Dune configuration and
 native platform bridges; generated OCaml stays under `_build`. Core tests live
@@ -62,6 +68,8 @@ profiles are selected automatically; set `LOGSEQ_IOS_WIDGET_PROFILE` or
 `LOGSEQ_IOS_SHARE_PROFILE` to select a profile explicitly.
 
 ## Android
+
+Android 9 (API 28) or later is required.
 
 Android is a standard Gradle project:
 

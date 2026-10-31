@@ -242,7 +242,7 @@ let outline_row_from_block youtube_target_url opens_as_page depth
     Some
       { Model.row_uuid; row_title;
         row_metadata_json = Yojson.Basic.to_string (`Assoc (List.filter (fun (key, _) ->
-          List.mem key ["discussionKind"; "reactions"; "commentAuthor"]) fields));
+          List.mem key ["discussionKind"; "reactions"; "commentAuthor"; "pdfAnnotation"]) fields));
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         row_list_number = int_member "listNumber" fields;
         row_is_embed = bool_member "isEmbed" fields;
@@ -506,6 +506,9 @@ let core_projection fields =
         (selection_member fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
+    pdf_update = (match List.assoc_opt "pdfWorkspace" fields with
+      | Some (`Assoc _ as value) -> Some (Yojson.Basic.to_string value) | _ -> None);
+    is_pdf_patch = bool_member "isPdfPatch" fields;
     query_update = (if bool_member "isQueryPatch" fields then
       Option.bind (string_member "queryOwnerUuid" fields) (fun uuid ->
         match List.assoc_opt "query" fields with
