@@ -115,15 +115,17 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         rememberedModelCaret = modelCaret
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
-        value = TextFieldValue(merged, TextRange(caret))
-        observedText = merged
         awaitingHandoff = handoffSegments.isNotEmpty()
         if (awaitingHandoff) {
             handoffRevision = selectionRevision
             publishedTitles.add(merged)
             handoffReturn = merged to caret
-        } else if (typing.isNotEmpty()) {
-            debounceSeq++
+        } else {
+            if (value.text != merged || value.selection != TextRange(caret)) {
+                value = TextFieldValue(merged, TextRange(caret))
+            }
+            observedText = merged
+            if (typing.isNotEmpty()) debounceSeq++
         }
     }
     LaunchedEffect(blockId, selectionRevision) {
@@ -197,6 +199,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitReturn(title: String, caret: Int) {
+        // Rebase the native field before later IME commits can target the old block.
+        value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
+        observedText = value.text
         if (awaitingHandoff) {
             handoffSegments.addLast("")
             return
@@ -234,7 +239,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 val inserted = incoming.text.substring(prefix, incoming.text.length - suffix)
                 val removed = prior.length - prefix - suffix
                 if (inserted == "\n" && removed == 0) {
-                    handoffSegments.addLast("")
+                    submitReturn(prior, prefix)
+                    return
                 } else if (inserted.isNotEmpty() || removed > 0) {
                     val last = handoffSegments.removeLastOrNull().orEmpty()
                     handoffSegments.addLast(last.dropLast(removed.coerceAtMost(last.length)) + inserted)
