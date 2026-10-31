@@ -280,12 +280,15 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
-    row ~grow:1.0 ~gap:8 ~cross:`center ~padding:8
-      ~background:"surface-container-low" ~corner_radius:12
-      [ button ~icon:(`app "toolbar-camera") ~variant:`secondary ~label:(View_base.tr (Signal.sample model_source) "Camera")
+    row ~grow:1.0 ~height:56 ~gap:0 ~cross:`center
+      ~padding_horizontal:4 ~background:"surface-container-low" ~corner_radius:28
+      [ button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+          ~width:48 ~height:48 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")
           ~accessibility_identifier:"button.composer.camera"
           ~on_press:(press send (Model.ChooseAttachment "camera")) [];
-        button ~variant:`outline ~grow:1.0 ~text:(View_base.tr (Signal.sample model_source) "Capture") ~label:(View_base.tr (Signal.sample model_source) "Capture")
+        button ~variant:`ghost ~grow:1.0 ~height:56 ~padding_horizontal:4
+          ~foreground:"muted-foreground" ~text_alignment:`start ~style_class:"body"
+          ~text:(View_base.tr (Signal.sample model_source) "Capture") ~label:(View_base.tr (Signal.sample model_source) "Capture")
           ~accessibility_identifier:"button.composer.expand"
           ~on_press:(press send Model.ExpandComposer) [] ]
   else
