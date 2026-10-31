@@ -286,7 +286,7 @@ jobs:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
 
       - name: Restore iOS build artifacts
         # SwiftPM + xcodebuild products; stale objects are harmless — the
@@ -328,7 +328,7 @@ jobs:
           ./scripts/build-mobile-ios-simulator.sh
 
       - name: Build iOS E2E fixture seed tool
-        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && env.IOS_MODULE != 'smoke' && env.IOS_MODULE != 'composer'
         run: |
           eval $(opam env)
           dune build shared/native/logseq_e2e_seed.exe

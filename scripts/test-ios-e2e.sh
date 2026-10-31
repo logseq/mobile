@@ -19,9 +19,11 @@ case ${flow##*/} in
     graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-header-$run_id}
     fixture_seed_mode=--header-navigation
     ;;
-  ios-capture-responsive.yaml|ios-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml)
+  ios-capture-responsive.yaml|ios-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml|sidebar.yaml)
     graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-composer-$run_id}
-    fixture_seed_mode=--composer
+    # These flows write through the sync API. Keep the server's real graph
+    # identities instead of replacing its pages with local-only fixture UUIDs.
+    fixture_seed_mode=--live
     ;;
   ios-outliner-mode.yaml|ios-outliner-interactions.yaml|\
   ios-outliner-editor-toolbar.yaml|ios-outliner-continuous-editing.yaml|\
@@ -172,7 +174,9 @@ if [[ ${LOGSEQ_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
     [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
       || die "timed out waiting for the graph snapshot import to finish"
     xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
-    if [[ -n ${LOGSEQ_E2E_SEED_BIN:-} ]]; then
+    if [[ $fixture_seed_mode == --live ]]; then
+      echo "[ios-e2e] preserving the server-backed graph for capture flows"
+    elif [[ -n ${LOGSEQ_E2E_SEED_BIN:-} ]]; then
       [[ -x $LOGSEQ_E2E_SEED_BIN ]] || die "E2E seed executable was not found: $LOGSEQ_E2E_SEED_BIN"
       seed_command=("$LOGSEQ_E2E_SEED_BIN")
     elif command -v dune >/dev/null 2>&1; then
@@ -180,10 +184,12 @@ if [[ ${LOGSEQ_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
     else
       seed_command=(opam exec --switch=5.5.0 -- dune exec shared/native/logseq_e2e_seed.exe --)
     fi
-    if [[ -n $fixture_seed_mode ]]; then
-      "${seed_command[@]}" "$graph_database" "$fixture_seed_mode"
-    else
-      "${seed_command[@]}" "$graph_database"
+    if [[ $fixture_seed_mode != --live ]]; then
+      if [[ -n $fixture_seed_mode ]]; then
+        "${seed_command[@]}" "$graph_database" "$fixture_seed_mode"
+      else
+        "${seed_command[@]}" "$graph_database"
+      fi
     fi
     if [[ -n $seed_cache_dir ]]; then
       mkdir -p "$seed_cache_dir/$seed_cache_key"
