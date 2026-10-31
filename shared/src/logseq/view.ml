@@ -183,6 +183,7 @@ let native_search_presentation_schema () =
       Lui_extension.property "presented" BoolScalar true None;
       Lui_extension.property "depth" IntScalar true None;
       Lui_extension.property "query" StringScalar true None;
+      Lui_extension.property "status-title" StringScalar false None;
       Lui_extension.property "title" StringScalar true None;
     ]
     [

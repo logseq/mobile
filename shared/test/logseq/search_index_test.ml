@@ -88,18 +88,48 @@ let with_index f =
 
 let results index query = Search.search 100 index query
 
-let graph_search_uses_only_fts_matches () = with_index (fun index ->
+let graph_search_preserves_fts_matches_for_long_queries () = with_index (fun index ->
   let db = Ds.conn_db (seeded_conn ()) in
   Search.refresh index db;
   check ~msg:"contiguous FTS matches remain searchable" (results index "movie" <> []);
   List.iter (fun query ->
-    check_eq ~msg:"search does not add subsequence or short LIKE fallbacks" (results index query) [];
-    check_eq (Search.search_hits_page ~offset:0 ~limit:20 index db query) ([], false)) ["mve"; "4k"; "电影"];
+    check_eq ~msg:"long search does not add subsequence matching" (results index query) [];
+    check_eq (Search.search_hits_page ~offset:0 ~limit:20 index db query) ([], false)) ["mve"];
   let indexes = Graph_sqlite.with_search_db index.path (fun connection ->
     Graph_sqlite.query connection
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'blocks' AND sql IS NOT NULL"
       [] (fun row -> Sqlite3.column_text row 0)) in
   check_eq ~msg:"FTS search needs no additional title B-tree index" indexes [])
+
+let short_queries_search_pages_blocks_and_literal_symbols () = with_index (fun index ->
+  let db = Ds.conn_db (seeded_conn ()) in
+  Search.refresh index db;
+  List.iter (fun (query, uuid) ->
+    let hits, _ = Search.search_hits_page ~offset:0 ~limit:20 index db query in
+    check ~msg:("short query returns its matching page or block: " ^ query)
+      (List.exists (fun (hit : Search.indexed_search_hit) -> hit.uuid = uuid) hits))
+    ["m", page_uuid; "MO", page_uuid; "4k", block_uuid; "电", cjk_uuid; "电影", cjk_uuid];
+  let hidden, _ = Search.search_hits_page ~offset:0 ~limit:20 index db "se" in
+  check_eq ~msg:"short queries keep hidden content excluded" hidden [];
+  Search.search_upsert index.path ["symbols", "50% _ \\ \" 😀 é", page_uuid];
+  List.iter (fun query ->
+    let hits, _ = Search.search_hits_page ~offset:0 ~limit:20 index db query in
+    check_eq ~msg:("short queries match symbols literally: " ^ query)
+      (List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) hits) ["symbols"])
+    ["%"; "_"; "\\"; "\""; "😀"; "é"];
+  List.iter (fun query -> check_eq (Search.search_hits_page ~offset:0 ~limit:20 index db query) ([], false))
+    [""; "  "; "#"];
+  Search.search_upsert index.path (List.init 45 (fun i -> string_of_int i, "中", page_uuid));
+  let ids offset = let hits, more = Search.search_hits_page ~offset ~limit:20 index db "中" in
+    List.map (fun (hit : Search.indexed_search_hit) -> hit.uuid) hits, more in
+  let first, more = ids 0 in
+  check more; check_eq (List.length first) 20;
+  let second, more = ids 20 in
+  check more; check_eq (List.length second) 20;
+  let last, more = ids 40 in
+  check (not more); check_eq (List.length last) 5;
+  check_eq ~msg:"short-query pages do not overlap" (List.length (List.sort_uniq String.compare (first @ second @ last))) 45;
+  check_eq ~msg:"short-query pagination is stable" (ids 0) (first, true))
 
 let search_limits_matches_before_reading_unneeded_ranks () = with_index (fun index ->
   let db = Ds.conn_db (seeded_conn ()) in
@@ -276,7 +306,8 @@ let builtin_content_tags_are_searchable () =
 
 let cases =
   [
-    case "graph search uses only FTS matches" graph_search_uses_only_fts_matches;
+    case "graph search preserves FTS matches for long queries" graph_search_preserves_fts_matches_for_long_queries;
+    case "short queries search pages blocks and literal symbols" short_queries_search_pages_blocks_and_literal_symbols;
     case "built-in content tags are searchable" builtin_content_tags_are_searchable;
     case "incomplete queries do not break search or later valid queries"
       incomplete_queries_do_not_break_search_or_later_valid_queries;

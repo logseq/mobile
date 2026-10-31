@@ -336,7 +336,7 @@ private struct LGNavigationDestination: View {
 @MainActor
 enum LGSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,12:status-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -352,6 +352,7 @@ enum LGSearchPresentationExtension {
                     .init(name: "presented", kind: .bool, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "query", kind: .string, isRequired: true),
+                    .init(name: "status-title", kind: .string),
                     .init(name: "title", kind: .string, isRequired: true),
                 ],
                 events: [
@@ -400,6 +401,10 @@ private final class LGNativeSearchState {
     }
     var query: String {
         guard case let .string(value) = context.property("query") else { return "" }
+        return value
+    }
+    var statusTitle: String {
+        guard case let .string(value) = context.property("status-title") else { return title }
         return value
     }
 
@@ -511,19 +516,31 @@ private struct LGNativeSearchHost: ViewModifier {
     func body(content: Content) -> some View {
         if let search {
             let _ = search.context.revision
-            #if os(iOS)
-            let _ = search.nativePresented
-            if #available(iOS 26.0, *) {
-                content
-                    .scrollEdgeEffectHidden(true, for: .bottom)
-                    .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
-            } else {
-                content.background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
+            Group {
+                #if os(iOS)
+                let _ = search.nativePresented
+                if #available(iOS 26.0, *) {
+                    content
+                        .scrollEdgeEffectHidden(true, for: .bottom)
+                        .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
+                } else {
+                    content.background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
+                }
+                #else
+                content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                    placement: .automatic, prompt: Text(search.title))
+                #endif
             }
-            #else
-            content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
-                placement: .automatic, prompt: Text(search.title))
-            #endif
+            .toolbar {
+                if search.isVisible {
+                    ToolbarItem(placement: .principal) {
+                        Text(search.statusTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("search.status")
+                    }
+                }
+            }
         } else { content }
     }
 }
@@ -656,8 +673,8 @@ private struct LGNavigationContent: View {
     }
 
     private var navigationStack: some View {
-        // UISearchController owns the bar transition; keep its returning content mounted.
-        let title = showsSearchPage || toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        // Keep returning content mounted while UISearchController animates its toolbar.
+        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
             Group {
                 if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
@@ -688,7 +705,7 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground)
                         .toolbar {
-                            trailingToolbar
+                            trailingToolbar(searchPage: searchRoutes.contains(childID))
                         }
                         .modifier(LGNativeSearchHost(search: searchRoutes.contains(childID) ? nil : search))
                         #if os(iOS)
@@ -696,7 +713,7 @@ private struct LGNavigationContent: View {
                         #endif
                 }
                 .toolbar {
-                    if !showsSearchPage, let toolbarStartIndex,
+                    if let toolbarStartIndex,
                        let leadingID = childID(at: toolbarStartIndex) {
                         if #available(iOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
@@ -714,7 +731,7 @@ private struct LGNavigationContent: View {
                                 context.content(for: leadingID)
                             }
                         }
-                        trailingToolbar
+                        trailingToolbar(searchPage: false)
                     }
                 }
                 .modifier(LGNativeSearchHost(search: search))
@@ -840,15 +857,15 @@ private struct LGNavigationContent: View {
     }
 
     @ToolbarContentBuilder
-    private var trailingToolbar: some ToolbarContent {
-        if showsSearchPage, let search, search.context.childIDs.indices.contains(3) {
+    private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
+        if searchPage, let search, search.context.childIDs.indices.contains(3) {
             ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
                 search.context.content(for: search.context.childIDs[3])
                     .frame(width: 44, height: 44)
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
-        } else if !showsSearchPage, let toolbarStartIndex {
+        } else if let toolbarStartIndex {
             ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
                 // Keep these controls in one item so the system cannot replace
                 // one of them with its own overflow menu as the title changes.
@@ -997,6 +1014,11 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             controller.delegate = self
             controller.searchResultsUpdater = self
             controller.obscuresBackgroundDuringPresentation = false
+            if #available(iOS 26.0, *) {
+                // Search lives in the bottom toolbar. Collapsing the top bar changes
+                // the safe area and adds a second transition when returning from a result.
+                controller.hidesNavigationBarDuringPresentation = false
+            }
             controller.searchBar.searchTextField.accessibilityIdentifier = "field.native-search"
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }

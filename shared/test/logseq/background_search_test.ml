@@ -187,8 +187,9 @@ let completion_refreshes_visible_search () =
     let current = {model with search_query = query} in
     let complete = Model.resolve_successful_effect current (Model.MaintainSearchIndexEffect (1, "graph"))
       {|{"ok":true,"result":{"searchIndexReady":true}}|} in
-    check_eq ~msg:("index completion does not search below the Unicode threshold: " ^ query)
-      complete.pending_effects []) [""; "ab"; "中文"; "😀😀"; "  中文  "]
+    let expected = if String.trim query = "" then [] else [Model.SearchNodesEffect (1, query)] in
+    check_eq ~msg:("index completion refreshes every nonempty query: " ^ query)
+      complete.pending_effects expected) [""; " "; "a"; "ab"; "中"; "中文"; "😀😀"; "  中文  "]
 let cases = [
   case "completed indexing refreshes active search only for the current graph" completion_refreshes_visible_search;
   case "idle native effects automatically build while yielding to interactions" idle_native_drain_builds_and_yields;

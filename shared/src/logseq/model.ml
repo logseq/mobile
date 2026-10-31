@@ -1662,7 +1662,7 @@ let resolve_failed_effect (current : logseq_model) eff message =
     else { current with composer_assets = current.composer_assets @ [asset] }
   | _ -> rollback_navigation_effect current eff
 
-let search_query_ready query = Search_index.utf8_length (String.trim query) > 2
+let search_query_ready query = String.trim query <> ""
 
 let resolve_successful_effect (current : logseq_model) eff message =
   match eff with

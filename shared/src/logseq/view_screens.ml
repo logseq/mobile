@@ -48,7 +48,7 @@ let search_section_heading title identifier : t =
      ~accessibility_identifier:identifier ~value:title [] in
    (if Lui_ui.host context = KotlinHost then
       box ~padding_horizontal:20 ~padding_vertical:8 [title]
-    else title) context parent
+    else list_item ~separator:`hidden [box ~padding_vertical:8 [title]]) context parent
 
 type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
 
@@ -75,18 +75,6 @@ let search_result_entries model_source send : t =
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
     [
-      row ~height:24 ~gap:6 ~cross:`center ~padding_horizontal:20
-        [
-          if_
-            ~test:(Signal.map View_base.model_search_loading_ model_source)
-            (spinner ~width:12 ~height:12
-               ~accessibility_identifier:"search.loading" []);
-          text
-            ~value_signal:
-              (Signal.map View_base.search_result_status model_source)
-            ~style_class:"caption" ~foreground:"muted-foreground"
-            ~accessibility_identifier:"search.status" [];
-        ];
       if_
         ~test:(Signal.map View_base.search_empty_state_present_
                  model_source)
@@ -706,6 +694,10 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node "query"
      (Signal.map View_base.string_wire_value query_source);
+   Lui_ui.extension_property_signal context node "status-title"
+     (Signal.map (fun current ->
+       let status = View_base.search_result_status current in
+       StringValue (if status = "" then View_base.tr current "Search" else status)) model_source);
    Lui_ui.extension_property_signal context node "title"
      (Signal.map (fun (current : Model.logseq_model) -> StringValue
        (if Lui_ui.host context = SwiftUIHost || current.search_navigation_path = [] then View_base.tr current "Search"

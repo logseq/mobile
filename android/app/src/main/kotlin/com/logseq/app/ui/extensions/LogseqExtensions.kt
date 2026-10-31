@@ -86,7 +86,7 @@ private const val SEARCH_FINGERPRINT =
     "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
         "properties:10:back-title:string:optional:none,11:clear-title:string:optional:none," +
-        "11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none," +
+        "11:close-title:string:optional:none,12:status-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none," +
         "5:depth:int:required:none,5:query:string:required:none," +
         "5:title:string:required:none,9:presented:bool:required:none|events:" +
         "13:query-changed[5:query:string:required],4:back[5:count:int:required]," +
@@ -240,6 +240,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("query", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("status-title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("presented", LuiExtensionValueKind.BOOLEAN),
         ),
@@ -370,23 +371,23 @@ private fun SearchPresentation(context: LuiExtensionContext) {
     Surface(modifier = Modifier.fillMaxSize().testTag("native-search-presentation"),
         color = MaterialTheme.colorScheme.background) {
         Column {
-            if (depth > 0) {
-                androidx.compose.material3.TopAppBar(
-                    title = { Text(title, maxLines = 1) },
-                    navigationIcon = {
-                        IconButton(onClick = { context.emit("back", "count" to 1) },
-                            modifier = Modifier.testTag("button.search.back")) {
-                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, context.string("back-title") ?: "Back")
-                        }
-                    },
-                    actions = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text(if (depth > 0) title else context.string("status-title") ?: title, maxLines = 1) },
+                navigationIcon = {
+                    if (depth > 0) IconButton(onClick = { context.emit("back", "count" to 1) },
+                        modifier = Modifier.testTag("button.search.back")) {
+                        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, context.string("back-title") ?: "Back")
+                    }
+                },
+                actions = {
+                    if (depth > 0) {
                         context.children.getOrNull(1)?.let { context.child(it) }
                         IconButton(onClick = { context.emit("dismiss") }) {
                             Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
                         }
-                    },
-                )
-            }
+                    }
+                },
+            )
             Box(Modifier.weight(1f)) { context.children.firstOrNull()?.let { context.child(it) } }
             if (depth == 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
