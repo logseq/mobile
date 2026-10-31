@@ -445,24 +445,46 @@ let db_before_operation runtime operation_id =
   in
   loop (Ops.list runtime.path)
 
-let prepare_sync runtime operation =
-  let ( let* ) = Result.bind in
-  let* () =
-    if operation.Ops.base_t <> (state runtime).server_t
-       && not (List.exists (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id)
-                 (Ops.list runtime.path)) then
-      Error "operation was created against a stale server cursor"
-    else Ok ()
+let prepare_sync_batch runtime operations =
+  let queued = Hashtbl.create 32 in
+  List.iter (fun (op : Ops.pending_operation) -> Hashtbl.replace queued op.operation_id ()) (Ops.list runtime.path);
+  let before = match operations with
+    | first :: _ -> db_before_operation runtime first.Ops.operation_id
+    | [] -> Ds.conn_db runtime.conn in
+  let created = Hashtbl.create 32 in
+  let prepare before operation =
+    let ( let* ) = Result.bind in
+    let* () =
+      if operation.Ops.base_t <> (state runtime).server_t
+         && not (Hashtbl.mem queued operation.operation_id) then
+        Error "operation was created against a stale server cursor"
+      else Ok ()
+    in
+    let* tx = stored_transaction runtime before operation in
+    let items = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string tx) in
+    Hashtbl.iter (fun uuid value -> Hashtbl.replace created uuid value)
+      (Dev_sync.Sync_replay.tx_self_created items);
+    if Dev_sync.Sync_replay.pending_tx_unresolvable (Ds.conn_db runtime.conn) ~created items then
+      Error "pending transaction is waiting for confirmed dependencies"
+    else
+      let* wire = Journal_sync.encode runtime.encrypt_title tx in
+      Ok (tx, (Ops.outliner_op operation.intent, wire))
   in
-  let before = db_before_operation runtime operation.Ops.operation_id in
-  let* tx = stored_transaction runtime before operation in
-  let items = Dev_sync.Sync_apply.normalize_tx_data_for_rebase (Dev_sync.Transit_codec.of_string tx) in
-  let created = Dev_sync.Sync_replay.tx_self_created items in
-  if Dev_sync.Sync_replay.pending_tx_unresolvable (Ds.conn_db runtime.conn) ~created items then
-    Error "pending transaction is waiting for confirmed dependencies"
-  else
-    let* wire = Journal_sync.encode runtime.encrypt_title tx in
-    Ok (Ops.outliner_op operation.intent, wire)
+  let rec loop before reversed = function
+    | [] -> List.rev reversed
+    | operation :: rest ->
+      (match prepare before operation with
+       | Error message -> List.rev (Error message :: reversed)
+       | Ok (tx, wire) ->
+         let before = Journal_sync.replay before operation.Ops.operation_id (Ops.outliner_op operation.intent) tx in
+         loop before (Ok wire :: reversed) rest)
+  in
+  loop before [] operations
+
+let prepare_sync runtime operation =
+  match prepare_sync_batch runtime [operation] with
+  | [result] -> result
+  | _ -> assert false
 
 let transport_state (value : Ops.pending_state) =
   match value with

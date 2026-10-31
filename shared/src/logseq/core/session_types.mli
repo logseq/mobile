@@ -52,6 +52,7 @@ type semantic_pending =
 type semantic_active =
   { id : int
   ; pending : semantic_pending
+  ; following : semantic_pending list
   ; request : Api.api_request
   }
 
@@ -122,6 +123,8 @@ type host_options =
   ; stage_operation : (Pending_ops.pending_operation -> (unit, string) result) option
   ; prepare_operation :
       (Pending_ops.pending_operation -> (string * string, string) result) option
+  ; prepare_operations :
+      (Pending_ops.pending_operation list -> (string * string, string) result list) option
   ; pending_operations : (unit -> Pending_ops.pending_operation list) option
   ; load_sync_error : (unit -> string option) option
   ; record_sync_failure : (semantic:bool -> string -> string option -> unit) option

@@ -563,11 +563,12 @@ let sync_errors_follow_their_operations_through_other_acceptances_and_lost_repli
         state = Pending_ops.Queued; intent = Pending_ops.Create_page { uuid; title = id; created_at = 7 } } in
       match Mobile_graph.stage graph operation with Ok () -> () | Error message -> fail message in
     let acknowledgement request =
-      let tx = U.member "bodyObject" request |> U.member "txs" |> U.to_list |> List.hd in
+      let txs = U.member "bodyObject" request |> U.member "txs" |> U.to_list in
       let before = Option.get (Mobile_graph.sync_cursor graph) in
       J.to_string (`Assoc ["type", `String "tx/batch/ok"; "graphId", `String "graph-a";
-        "t-before", `Int before; "t", `Int (before + 1);
-        "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", U.member "tx-id" tx; "tx", U.member "tx" tx]]]) in
+        "t-before", `Int before; "t", `Int (before + List.length txs);
+        "txs", `List (List.mapi (fun index tx -> `Assoc ["t", `Int (before + index + 1);
+          "tx-id", U.member "tx-id" tx; "tx", U.member "tx" tx]) txs)]) in
     let has text result = match U.member "pendingSyncError" result with
       | `String message -> (try ignore (Str.search_forward (Str.regexp_string text) message 0); true with Not_found -> false)
       | _ -> false in

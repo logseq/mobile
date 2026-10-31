@@ -177,6 +177,13 @@ datoms and replay on a display DB without durable storage. Snapshot bootstrap
 reads its cursor through the existing pull endpoint and its schema from the
 snapshot database, without requiring extra snapshot metadata or response headers.
 
+Pending graph edits upload in order, with at most 50 transactions and 1,000,000
+UTF-8 bytes per JSON WebSocket message, including escaping and protocol fields.
+Dependencies created earlier in a batch can be used by later transactions.
+Deletes upload separately. Oversized individual transactions stay local with a
+sync error. Partial rejections settle the accepted prefix, mark the failed
+transaction, and preserve the unexecuted suffix for retry.
+
 The normalization and overlay replay algorithms in `Dev_sync` are extracted
 verbatim from Logseq dev commit `53952776ef10805cba03009d444cf021f0d2c3ce`.
 `python3 scripts/vendor-dev-sync.py ../logseq-1 --check` verifies the pinned source;

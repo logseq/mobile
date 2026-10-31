@@ -282,6 +282,7 @@ let rapid_editing_and_reparenting_settles_after_the_last_save () =
         sync_cursor = Some (fun () -> Some (R.state runtime).server_t);
         stage_operation = Some (R.stage runtime);
         prepare_operation = Some (R.prepare_sync runtime);
+        prepare_operations = Some (R.prepare_sync_batch runtime);
         pending_operations = Some (fun () -> R.pending_operations runtime);
         apply_sync_event = Some apply_journal } in
       let dispatch action payload = Rpc_session.call session (J.to_string (`Assoc [
@@ -324,13 +325,14 @@ let rapid_editing_and_reparenting_settles_after_the_last_save () =
         match member "pendingSyncRequest" (member "result" (J.from_string response)) with
         | `Null -> count
         | request ->
-          let tx = member "bodyObject" request |> member "txs" |> U.to_list |> List.hd in
+          let txs = member "bodyObject" request |> member "txs" |> U.to_list in
           let before = (R.state runtime).server_t in
           let body = J.to_string (`Assoc ["type", `String "tx/batch/ok";
-            "t-before", `Int before; "t", `Int (before + 1);
-            "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", member "tx-id" tx; "tx", member "tx" tx]]]) in
+            "t-before", `Int before; "t", `Int (before + List.length txs);
+            "txs", `List (List.mapi (fun index tx -> `Assoc [
+              "t", `Int (before + index + 1); "tx-id", member "tx-id" tx; "tx", member "tx" tx]) txs)]) in
           pump (dispatch "completePendingSync" (J.to_string (`Assoc ["id", member "id" request;
-            "status", `Int 200; "body", `String body; "error", `Null]))) (count + 1) in
+            "status", `Int 200; "body", `String body; "error", `Null]))) (count + List.length txs) in
       let requests = pump (dispatch "beginPendingSync" "") 0 in
       check ~msg:"rapid structural changes actually reached the server" (requests >= 60);
       Option.iter (fun id -> ignore (Native_bridge.resolve_effect id true "")) !held_sync;

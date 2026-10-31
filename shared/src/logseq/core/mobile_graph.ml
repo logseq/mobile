@@ -186,6 +186,11 @@ let pending_operations (host : mobile_graph) =
   | Some opened -> Runtime.pending_operations opened.read_runtime
   | None -> []
 
+let prepare_sync_batch (host : mobile_graph) operations =
+  match !(host.current) with
+  | Some opened -> Runtime.prepare_sync_batch opened.read_runtime operations
+  | None -> [Error "graph runtime is not open"]
+
 let record_sync_failure (host : mobile_graph) ~semantic operation_id message =
   match !(host.current) with
   | Some opened ->

@@ -105,6 +105,7 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun operation -> Graph.stage graph operation);
     prepare_operation =
       Some (fun operation -> Graph.prepare_sync graph operation);
+    prepare_operations = Some (Graph.prepare_sync_batch graph);
     pending_operations =
       Some (fun () -> Graph.pending_operations graph);
     load_sync_error = Some (fun () -> Graph.sync_error graph);
