@@ -141,15 +141,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
   else
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
-      [
-        View_composer.composer_view context model_source send;
-        View_base.with_liquid_glass "circle"
-          (button ~icon:(`app "search") ~variant:`ghost ~size:`icon
-             ~width:58 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
-             ~accessibility_identifier:"button.search"
-             ~on_press:(press send Model.OpenSearch)
-             []);
-      ]
+      [View_composer.composer_view context model_source send]
 
 let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
     =
@@ -240,13 +232,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           ~test:
             (Signal.map View_base.bottom_chrome_capture_and_search_
                model_source)
-          (column ~container_relative_frame:`horizontal ~cross:`stretch
-             ~gap:0 ~padding_horizontal:16
-             [
-               box ~height:8 [];
-               capture_and_search_row context model_source send;
-               box ~height:21 [];
-             ]);
+          (capture_and_search_row context model_source send);
       ]
 
 let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source

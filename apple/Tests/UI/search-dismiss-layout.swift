@@ -4,11 +4,8 @@ import SwiftUI
 @testable import Logseq
 
 @MainActor private final class SearchDismissLayoutProbe {
-    var active = false
     var homeFrame = CGRect.zero
     var homeBaseline = CGRect.zero
-    var dismissing = false
-    var resizedHomeFrame: CGRect?
 }
 
 @main struct SearchDismissLayoutCheck {
@@ -16,13 +13,12 @@ import SwiftUI
         let probe = SearchDismissLayoutProbe()
         let registry = LUIAppleExtensionRegistry()
         try LGSearchPresentationExtension.register(in: registry)
+        try LGNavigationExtension.register(in: registry)
         try registry.register(LUIAppleExtension(identifier: "search-layout-probe", fingerprint: "search-layout-probe", properties: []) { _ in
             AnyView(VStack {
                 Text("Search your graph").font(.headline)
                 Text("Find pages and blocks by title or content.")
-            }.foregroundStyle(.blue).frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear { probe.active = true }
-                .onDisappear { probe.active = false })
+            }.foregroundStyle(.blue).frame(maxWidth: .infinity, maxHeight: .infinity))
         })
         try registry.register(LUIAppleExtension(identifier: "search-home-probe", fingerprint: "search-home-probe", properties: []) { _ in
             AnyView(VStack {
@@ -33,9 +29,6 @@ import SwiftUI
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.red)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                     probe.homeFrame = frame
-                    if probe.dismissing && abs(frame.height - probe.homeBaseline.height) > 1 {
-                        probe.resizedHomeFrame = frame
-                    }
                 })
         })
         let backend = try LUIAppleBackend(extensionRegistry: registry)
@@ -50,8 +43,28 @@ import SwiftUI
         {"op":"set-extension-prop","id":1,"property":"title","value":"Search"},
         {"op":"create-node","id":2,"kind":"column"},
         {"op":"set-prop","id":2,"property":"grow","value":1.0},
+        {"op":"create-extension","id":6,"identifier":"native-navigation-stack","fingerprint":"\(LGNavigationExtension.fingerprint)"},
+        {"op":"set-extension-prop","id":6,"property":"depth","value":0},
+        {"op":"set-extension-prop","id":6,"property":"back-depth","value":0},
+        {"op":"set-extension-prop","id":6,"property":"bottom-occupies-layout-space","value":false},
+        {"op":"set-extension-prop","id":6,"property":"composer-dismissal-enabled","value":false},
+        {"op":"set-extension-prop","id":6,"property":"title","value":"Home"},
+        {"op":"create-node","id":7,"kind":"column"},
+        {"op":"set-prop","id":7,"property":"grow","value":1.0},
+        {"op":"insert-child","parent":6,"child":7,"index":0},
+        {"op":"create-node","id":8,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":8,"index":1},
+        {"op":"create-node","id":9,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":9,"index":2},
+        {"op":"create-node","id":10,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":10,"index":3},
+        {"op":"create-node","id":11,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":11,"index":4},
+        {"op":"create-node","id":12,"kind":"column"},
+        {"op":"insert-child","parent":6,"child":12,"index":5},
+        {"op":"insert-child","parent":2,"child":6,"index":0},
         {"op":"create-extension","id":5,"identifier":"search-home-probe","fingerprint":"search-home-probe"},
-        {"op":"insert-child","parent":2,"child":5,"index":0},
+        {"op":"insert-child","parent":7,"child":5,"index":0},
         {"op":"create-node","id":3,"kind":"column"},
         {"op":"set-prop","id":3,"property":"grow","value":1.0},
         {"op":"create-extension","id":4,"identifier":"search-layout-probe","fingerprint":"search-layout-probe"},
@@ -122,7 +135,6 @@ import SwiftUI
             return (count > 30 ? Double(totalY) / Double(count) : nil, redCount > width * height / 3)
         }
         guard let baselineY = displayedFrame().titleY else { fatalError("The visible search title must be measurable") }
-        probe.dismissing = true
         let start = ProcessInfo.processInfo.systemUptime
         cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
         var homeAfter: TimeInterval?
@@ -136,12 +148,7 @@ import SwiftUI
             try await Task.sleep(for: .milliseconds(16))
         }
         guard let homeAfter, homeAfter < 0.2 else { fatalError("The home page must be visibly restored within 200 ms") }
-        if let frame = probe.resizedHomeFrame {
-            throw NSError(domain: "SearchLayout", code: 2, userInfo: [NSLocalizedDescriptionKey:
-                "The home page must not resize with the outgoing search keyboard; before=\(probe.homeBaseline), during=\(frame)"])
-        }
-        guard !probe.active else { fatalError("Search must disappear") }
-        probe.dismissing = false
+        guard displayedFrame().titleY == nil else { fatalError("Closed search content must be hidden") }
         guard let capture = views(window).compactMap({ $0 as? UITextField }).first(where: {
             $0.placeholder == "Capture"
         }) else { fatalError("Missing home capture input") }

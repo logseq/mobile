@@ -22,11 +22,6 @@ enum LGNavigationSurfacePolicy {
     ) -> CGFloat {
         max(iconWidth, minimumHitTarget)
     }
-
-    static func sidebarGraphWidth(_ availableWidth: CGFloat) -> CGFloat {
-        // Keep room for Settings, the system sidebar toggle, and toolbar margins.
-        max(44, availableWidth - 2 * 44 - 3 * 16)
-    }
 }
 
 #if os(iOS)
@@ -142,8 +137,9 @@ enum LGNavigationExtension {
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-sidebar",
-                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
-                acceptsStandardChildren: true
+                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:16:viewport-changed[5:width:int:required]",
+                acceptsStandardChildren: true,
+                events: [.init(name: "viewport-changed", fields: [.init(name: "width", kind: .int, isRequired: true)])]
             ) { context in
                 AnyView(LGSidebarNavigation(context: context))
             }
@@ -249,40 +245,39 @@ private struct LGSidebarNavigation: View {
 
     var body: some View {
         let _ = context.revision
-        GeometryReader { geometry in
-            NavigationStack {
-                child(at: 0)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(background.ignoresSafeArea())
+        NavigationStack {
+            child(at: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(background.ignoresSafeArea())
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(background, for: .navigationBar)
+                #endif
+                .toolbar {
                     #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(background, for: .navigationBar)
-                    #endif
-                    .toolbar {
-                        #if os(iOS)
-                        if #available(iOS 26.0, *) {
-                            ToolbarItem(placement: .topBarLeading) {
-                                child(at: 1)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .frame(width: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width), alignment: .leading)
-                            }
-                            .sharedBackgroundVisibility(.hidden)
-                            ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
-                                .sharedBackgroundVisibility(.hidden)
-                        } else {
-                            ToolbarItem(placement: .topBarLeading) {
-                                child(at: 1).lineLimit(1).truncationMode(.middle)
-                                    .frame(width: LGNavigationSurfacePolicy.sidebarGraphWidth(geometry.size.width), alignment: .leading)
-                            }
-                            ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                    if #available(iOS 26.0, *) {
+                        ToolbarItem(placement: .topBarLeading) {
+                            child(at: 1)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                        #else
-                        ToolbarItem(placement: .navigation) { child(at: 1) }
-                        ToolbarItem(placement: .primaryAction) { child(at: 2) }
-                        #endif
+                        .sharedBackgroundVisibility(.hidden)
+                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
+                            .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .topBarLeading) {
+                            child(at: 1).lineLimit(1).truncationMode(.middle)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
                     }
-            }
+                    #else
+                    ToolbarItem(placement: .navigation) { child(at: 1) }
+                    ToolbarItem(placement: .primaryAction) { child(at: 2) }
+                    #endif
+                }
+        }
+        .onGeometryChange(for: Int.self) { Int($0.size.width.rounded(.down)) } action: { width in
+            try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
         }
     }
 
@@ -341,7 +336,7 @@ private struct LGNavigationDestination: View {
 @MainActor
 enum LGSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-title:string:optional:none,11:clear-title:string:optional:none,11:close-title:string:optional:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[],7:present[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -364,6 +359,7 @@ enum LGSearchPresentationExtension {
                         .init(name: "count", kind: .int, isRequired: true),
                     ]),
                     .init(name: "dismiss", fields: []),
+                    .init(name: "present", fields: []),
                     .init(name: "query-changed", fields: [
                         .init(name: "query", kind: .string, isRequired: true),
                     ]),
@@ -376,234 +372,142 @@ enum LGSearchPresentationExtension {
 }
 
 @MainActor
-private struct LGSearchPresentation: View {
+@Observable
+private final class LGNativeSearchState {
+    private enum Phase { case inactive, active, closing }
     let context: LUIAppleExtensionViewContext
-    @State private var nativePresented = false
-    #if os(iOS)
-    @State private var searchOwnsKeyboardInsets = false
-    #endif
+    private var phase = Phase.inactive
+    private var pendingQuery: String?
+    private(set) var nativePresented = false
 
-    var body: some View {
-        ZStack {
-            baseContent
-                #if os(iOS)
-                .ignoresSafeArea(.keyboard, edges: nativePresented || searchOwnsKeyboardInsets ? .bottom : [])
-                #endif
-                .allowsHitTesting(!nativePresented)
-                .accessibilityHidden(nativePresented)
-            if nativePresented {
-                LGSearchSession(context: context, close: closeSearch)
-                    .transition(.identity)
-                    .zIndex(1)
-            }
-        }
-        .onChange(of: presented, initial: true) {
-            if presented {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    #if os(iOS)
-                    searchOwnsKeyboardInsets = true
-                    #endif
-                    nativePresented = true
-                }
-            } else {
-                closeSearch()
-            }
-        }
-        #if os(iOS)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
-            // The returning page keeps its full viewport until the search keyboard is gone.
-            if !nativePresented { searchOwnsKeyboardInsets = false }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            // A new responder on the returning page owns keyboard avoidance, including
-            // when search used a hardware keyboard and did not send a hide notification.
-            if !nativePresented { searchOwnsKeyboardInsets = false }
-        }
-        #endif
-    }
+    init(context: LUIAppleExtensionViewContext) { self.context = context }
 
-    private var baseContent: AnyView {
-        guard let childID = context.childIDs.first else { return AnyView(EmptyView()) }
-        return context.content(for: childID)
-    }
-
-    private var presented: Bool {
+    var isVisible: Bool { phase == .active }
+    var corePresented: Bool {
         guard case let .bool(value) = context.property("presented") else { return false }
         return value
     }
-
-    private func closeSearch() {
-        guard nativePresented else { return }
-        // The system search control already animates cancellation and the keyboard.
-        // Retire this layer without adding another presentation transition.
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { nativePresented = false }
-        didDismiss()
-    }
-
-    private func didDismiss() {
-        if presented { try? context.emit(name: "dismiss", values: [:]) }
-    }
-}
-
-private struct LGSearchSession: View {
-    let context: LUIAppleExtensionViewContext
-    let close: () -> Void
-    @State private var pendingQuery: String?
-    #if os(iOS)
-    @State private var nativeSearchPresented = true
-    @State private var closing = false
-    #endif
-
-    var body: some View {
-        searchNavigation
-            .onChange(of: query) {
-                if pendingQuery == query { pendingQuery = nil }
-            }
-            #if os(iOS)
-            .onChange(of: depth) {
-                if depth == 0 && !closing { nativeSearchPresented = true }
-            }
-            #endif
-    }
-
-    private var searchNavigation: some View {
-        LGNavigationContent(
-            context: context,
-            rootIndex: 1,
-            routeStartIndex: 4,
-            synchronizationName: "search navigation",
-            toolbarStartIndex: nil,
-            trailingMenuIndex: 3,
-            bottomChromeIndex: 2,
-            rootTransform: searchRootTransform
-        )
-    }
-
-    private func searchRootTransform(_ content: AnyView) -> AnyView {
-        let content = AnyView(content.environment(\.luiTextHighlightQuery, query))
-        #if os(iOS)
-        let observedContent = AnyView(content.background(LGSearchDismissalObserver(
-            willDismiss: { if depth == 0 { exitSearch() } }
-        )))
-        if #available(iOS 26.0, *) {
-            return AnyView(nativeBottomSearch(observedContent))
-        }
-        return AnyView(nativeLegacySearch(observedContent))
-        #else
-        return AnyView(nativeAutomaticSearch(content))
-        #endif
-    }
-
-    private func nativeAutomaticSearch(_ content: AnyView) -> some View {
-        content
-            .searchable(
-                text: queryBinding,
-                placement: .automatic,
-                prompt: Text(searchTitle)
-            )
-    }
-
-    #if os(iOS)
-    private func nativeLegacySearch(_ content: AnyView) -> some View {
-        content
-            .navigationTitle(searchTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: queryBinding,
-                isPresented: nativeSearchPresentedBinding,
-                placement: .automatic,
-                prompt: Text(searchTitle)
-            )
-            .onAppear {
-                nativeSearchPresented = true
-            }
-    }
-
-    @available(iOS 26.0, *)
-    private func nativeBottomSearch(_ content: AnyView) -> some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(
-                text: queryBinding,
-                isPresented: nativeSearchPresentedBinding,
-                placement: .toolbar,
-                prompt: Text(searchTitle)
-            )
-            .toolbar {
-                DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            }
-            .toolbar(depth == 0 ? .hidden : .visible, for: .navigationBar)
-    }
-
-    private func exitSearch() {
-        guard !closing else { return }
-        closing = true
-        pendingQuery = query
-        // Retire the layer before a closing-state layout can resize its content.
-        close()
-    }
-
-    private var nativeSearchPresentedBinding: Binding<Bool> {
-        Binding(
-            get: { nativeSearchPresented },
-            set: { isPresented in
-                nativeSearchPresented = isPresented
-                if !isPresented && depth == 0 { exitSearch() }
-            }
-        )
-    }
-    #endif
-
-    private var depth: Int {
+    var depth: Int {
         guard case let .int(value) = context.property("depth") else { return 0 }
         return value
     }
-
-    private var query: String {
+    var title: String {
+        guard case let .string(value) = context.property("title") else { return "Search" }
+        return value
+    }
+    var query: String {
         guard case let .string(value) = context.property("query") else { return "" }
         return value
     }
 
-    private var searchTitle: String {
-        guard case let .string(value) = context.property("title") else { return "Search" }
-        return value
-    }
-
-    private var queryBinding: Binding<String> {
-        Binding(
-            get: { pendingQuery ?? query },
-            set: { newValue in
-                #if os(iOS)
-                guard !closing else { return }
-                #endif
-                // Keep local typing ahead of asynchronous core acknowledgements.
-                pendingQuery = newValue
-                // Native Cancel also clears its text binding. Let the presentation
-                // binding close first so that event cannot clear the outgoing results.
-                Task { @MainActor in
-                    #if os(iOS)
-                    guard !closing, nativeSearchPresented else { return }
-                    #endif
-                    guard pendingQuery == newValue else { return }
-                    emitQueryChanged(newValue)
-                }
-            }
-        )
-    }
-
-    private func emitQueryChanged(_ query: String) {
-        do {
-            try context.emit(name: "query-changed", values: ["query": .string(query)])
-        } catch {
-            logger.error("Could not update native search query: \(String(describing: error))")
+    func synchronizeCore() {
+        if corePresented {
+            guard phase != .closing else { return }
+            if phase != .active { pendingQuery = nil }
+            phase = .active
+            nativePresented = depth == 0
+        } else {
+            phase = .inactive
+            nativePresented = false
+            pendingQuery = nil
         }
+    }
+
+    func synchronizeDepth() {
+        if isVisible && depth == 0 { nativePresented = true }
+    }
+    func suspendInput() {
+        if depth > 0 { nativePresented = false }
+    }
+    func acknowledgeQuery() { if pendingQuery == query { pendingQuery = nil } }
+
+    private func open() {
+        nativePresented = true
+        guard phase != .active else { return }
+        phase = .active
+        pendingQuery = nil
+        try? context.emit(name: "present", values: [:])
+    }
+
+    func close() {
+        guard phase == .active else { return }
+        phase = .closing
+        nativePresented = false
+        try? context.emit(name: "dismiss", values: [:])
+    }
+
+    var presentationBinding: Binding<Bool> {
+        Binding(get: { self.nativePresented }, set: { value in
+            if value { self.open() }
+            else if self.depth == 0 { self.close() }
+            else { self.nativePresented = false }
+        })
+    }
+
+    var queryBinding: Binding<String> {
+        Binding(get: { self.pendingQuery ?? self.query }, set: { value in
+            guard self.isVisible, self.nativePresented else { return }
+            self.pendingQuery = value
+            // Native Cancel clears text too. Its dismissal must win over that change.
+            Task { @MainActor in
+                guard self.isVisible, self.nativePresented, self.pendingQuery == value else { return }
+                try? self.context.emit(name: "query-changed", values: ["query": .string(value)])
+            }
+        })
+    }
+}
+
+private extension EnvironmentValues {
+    @Entry var logseqNativeSearch: LGNativeSearchState? = nil
+}
+
+@MainActor
+private struct LGSearchPresentation: View {
+    let context: LUIAppleExtensionViewContext
+    @State private var search: LGNativeSearchState
+
+    init(context: LUIAppleExtensionViewContext) {
+        self.context = context
+        _search = State(initialValue: LGNativeSearchState(context: context))
+    }
+
+    var body: some View {
+        let _ = context.revision
+        Group {
+            if let child = context.childIDs.first { context.content(for: child) }
+        }
+        .environment(\.logseqNativeSearch, search)
+        .onChange(of: search.corePresented, initial: true) { search.synchronizeCore() }
+        .onChange(of: search.depth) { search.synchronizeDepth() }
+        .onChange(of: search.query) { search.acknowledgeQuery() }
+    }
+}
+
+private struct LGNativeSearchHost: ViewModifier {
+    let search: LGNativeSearchState?
+    let idleToolbarVisible: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let search {
+            let _ = search.context.revision
+            #if os(iOS)
+            if #available(iOS 26.0, *) {
+                content
+                    .searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                        placement: .toolbar, prompt: Text(search.title))
+                    .toolbarBackground(.hidden, for: .bottomBar)
+                    .toolbar(search.isVisible ? (search.depth == 0 ? .visible : .hidden) :
+                        (idleToolbarVisible ? .visible : .hidden), for: .bottomBar)
+            } else {
+                content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                    placement: .automatic, prompt: Text(search.title))
+            }
+            #else
+            content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                placement: .automatic, prompt: Text(search.title))
+            #endif
+        } else { content }
     }
 }
 
@@ -631,10 +535,24 @@ private struct LGNavigationContent: View {
     @State private var transitions = LGNavigationTransitions()
     @State private var dockedKeyboardInset: CGFloat = 0
     #endif
+    @State private var navigationWidth: CGFloat = 0
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqNativeSearch) private var inheritedSearch
+
+    private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
+    private var searchVisible: Bool { search?.isVisible == true }
+    private var searchRoutes: [Int] {
+        guard searchVisible, let search else { return [] }
+        return Array(search.context.childIDs.dropFirst(4).prefix(max(0, search.depth)))
+    }
+    private var showsSearchPage: Bool { searchVisible && (search?.depth ?? 0) > 0 }
+    private var chromeContext: LUIAppleExtensionViewContext { showsSearchPage ? search!.context : context }
+    private var showsBottomChrome: Bool { !searchVisible || showsSearchPage }
+
+
 
     // This view observes the extension independently of its parent. Read the
     // route depth and chrome from the same live model as the child IDs.
@@ -643,8 +561,19 @@ private struct LGNavigationContent: View {
         return value
     }
 
+    private var usesNativeBottomToolbar: Bool {
+        #if os(iOS)
+        guard toolbarStartIndex != nil, !showsSearchPage, !bottomOccupiesLayoutSpace, !composerDismissalEnabled,
+              let index = bottomChromeIndex, let chrome = childID(at: index) else { return false }
+        let _ = context.measureStamp(of: chrome)
+        return !context.childIDs(of: chrome).isEmpty
+        #else
+        false
+        #endif
+    }
+
     private var bottomOccupiesLayoutSpace: Bool {
-        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else { return false }
+        guard case let .bool(value) = chromeContext.property("bottom-occupies-layout-space") else { return false }
         return value
     }
 
@@ -664,12 +593,13 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     var body: some View {
         let _ = context.revision
+        let _ = search?.context.revision
         navigationLayout
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
             }
             .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
-                visibleScrollTitle = title
+                if !searchVisible { visibleScrollTitle = title }
             }
     }
 
@@ -677,20 +607,20 @@ private struct LGNavigationContent: View {
     private var navigationLayout: some View {
         navigationStack
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if bottomOccupiesLayoutSpace {
+                if bottomOccupiesLayoutSpace && showsBottomChrome {
                     sizedBottomChrome
                 }
             }
             .overlay(alignment: .bottom) {
-                if !bottomOccupiesLayoutSpace {
+                if !bottomOccupiesLayoutSpace && !usesNativeBottomToolbar && showsBottomChrome {
                     sizedBottomChrome
                 }
             }
             #if os(iOS)
-            .padding(.bottom, dockedKeyboardInset)
-            .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad ? .bottom : [])
+            .padding(.bottom, usesNativeBottomToolbar ? 0 : dockedKeyboardInset)
+            .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad && !usesNativeBottomToolbar ? .bottom : [])
             .background {
-                if UIDevice.current.userInterfaceIdiom == .pad {
+                if UIDevice.current.userInterfaceIdiom == .pad && !usesNativeBottomToolbar {
                     LGDockedKeyboardInsetReader { dockedKeyboardInset = $0 }
                 }
             }
@@ -699,7 +629,7 @@ private struct LGNavigationContent: View {
     }
 
     private var navigationStack: some View {
-        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        let title = searchVisible || toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
             Group {
                 if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
@@ -721,7 +651,7 @@ private struct LGNavigationContent: View {
                     }
                 }
                 .navigationDestination(for: Int.self) { childID in
-                    context.content(for: childID)
+                    destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
                         .frame(
                             maxWidth: .infinity,
@@ -730,11 +660,18 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground)
                         .toolbar {
+                            nativeBottomToolbar
                             trailingToolbar
                         }
+                        .modifier(LGNativeSearchHost(search: searchRoutes.contains(childID) ? nil : search,
+                            idleToolbarVisible: usesNativeBottomToolbar))
+                        #if os(iOS)
+                        .toolbar(.visible, for: .navigationBar)
+                        #endif
                 }
                 .toolbar {
-                    if let toolbarStartIndex,
+                    nativeBottomToolbar
+                    if !searchVisible, let toolbarStartIndex,
                        let leadingID = childID(at: toolbarStartIndex) {
                         if #available(iOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
@@ -755,9 +692,10 @@ private struct LGNavigationContent: View {
                         trailingToolbar
                     }
                 }
+                .modifier(LGNativeSearchHost(search: search, idleToolbarVisible: usesNativeBottomToolbar))
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar(.visible, for: .navigationBar)
+                .toolbar(toolbarStartIndex == nil ? .hidden : .visible, for: .navigationBar)
                 #endif
         }
         .frame(
@@ -771,6 +709,7 @@ private struct LGNavigationContent: View {
         .toolbarBackground(routeBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         #endif
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { navigationWidth = $0 }
         .onAppear {
             LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")
         }
@@ -782,6 +721,30 @@ private struct LGNavigationContent: View {
                 self.nativePop = nil
             }
         }
+    }
+
+    @ToolbarContentBuilder
+    private var nativeBottomToolbar: some ToolbarContent {
+        #if os(iOS)
+        if usesNativeBottomToolbar {
+            if #available(iOS 26.0, *) {
+                ToolbarItem(id: "logseq.composer", placement: .bottomBar) {
+                    bottomChrome.frame(width: max(0, navigationWidth - 100))
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(id: "logseq.composer", placement: .bottomBar) {
+                    bottomChrome.frame(width: max(0, navigationWidth - 32))
+                }
+            }
+        }
+        if search != nil {
+            if #available(iOS 26.0, *) {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            }
+        }
+        #endif
     }
 
     // Toolbar closures may outlive their retained extension during root replacement.
@@ -807,13 +770,48 @@ private struct LGNavigationContent: View {
 
     @ViewBuilder
     private var rootNavigationSurface: some View {
-        transformedRootContent
+        searchSurface(transformedRootContent, active: path.isEmpty)
             .padding(.top, navigationContentTopPadding)
             #if os(iOS)
             .background(LGNavigationControllerObserver(transitions: transitions).allowsHitTesting(false))
             #endif
     }
 
+
+    private func searchSurface(_ base: AnyView, active: Bool) -> some View {
+        ZStack {
+            base
+                .allowsHitTesting(!searchVisible)
+                .accessibilityHidden(searchVisible)
+            if active, let search, search.isVisible {
+                if search.context.childIDs.indices.contains(1) {
+                    search.context.content(for: search.context.childIDs[1])
+                        .environment(\.luiTextHighlightQuery, search.query)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(routeBackground)
+                        .transition(.identity)
+                }
+            }
+        }
+        #if os(iOS)
+        .navigationBarBackButtonHidden(searchVisible && !showsSearchPage)
+        .background {
+            if let search {
+                LGSearchDismissalObserver(willDismiss: { if search.depth == 0 { search.close() } })
+            }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func destinationSurface(_ childID: Int) -> some View {
+        if let search, searchRoutes.contains(childID) {
+            search.context.content(for: childID)
+                .onAppear { search.suspendInput() }
+        } else {
+            searchSurface(context.content(for: childID), active: childID == path.last)
+        }
+    }
 
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -848,7 +846,14 @@ private struct LGNavigationContent: View {
 
     @ToolbarContentBuilder
     private var trailingToolbar: some ToolbarContent {
-        if let toolbarStartIndex {
+        if showsSearchPage, let search, search.context.childIDs.indices.contains(3) {
+            ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
+                search.context.content(for: search.context.childIDs[3])
+                    .frame(width: 44, height: 44)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+            }
+        } else if !searchVisible, let toolbarStartIndex {
             ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
                 // Keep these controls in one item so the system cannot replace
                 // one of them with its own overflow menu as the title changes.
@@ -873,6 +878,9 @@ private struct LGNavigationContent: View {
     }
 
     private var bottomChrome: AnyView {
+        if showsSearchPage, let search, search.context.childIDs.indices.contains(2) {
+            return search.context.content(for: search.context.childIDs[2])
+        }
         guard let bottomChromeIndex else { return AnyView(EmptyView()) }
         return childContent(at: bottomChromeIndex)
     }
@@ -904,7 +912,7 @@ private struct LGNavigationContent: View {
         for index in 0..<retainedDepth {
             result.append(childIDs[index + routeStartIndex])
         }
-        return result
+        return result + searchRoutes
     }
 
     private var trailingToolbarPlacement: ToolbarItemPlacement {
@@ -944,7 +952,7 @@ private struct LGNavigationContent: View {
 
     private func emitBack(count: Int) {
         do {
-            try context.emit(name: "back", values: ["count": .int(count)])
+            try (showsSearchPage ? search!.context : context).emit(name: "back", values: ["count": .int(count)])
         } catch {
             logger.error(
                 "Could not synchronize native \(synchronizationName): \(String(describing: error))"
@@ -993,7 +1001,9 @@ private struct LGSearchDismissalObserver: UIViewControllerRepresentable {
         override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); resolve() }
 
         func resolve() {
-            guard let search = navigationController?.viewControllers.compactMap({ $0.navigationItem.searchController }).first,
+            var owner = parent
+            while let candidate = owner, candidate.navigationItem.searchController == nil { owner = candidate.parent }
+            guard let search = owner?.navigationItem.searchController,
                   search.delegate !== proxy else { return }
             uninstall()
             self.search = search

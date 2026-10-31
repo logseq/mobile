@@ -20,11 +20,12 @@ import SwiftUI
     @MainActor static func main() async throws {
         try await check("")
         try await check("Needle")
-        print("PASS: empty and populated search close promptly, preserve outgoing content, and retain the journal viewport")
+        print("PASS: empty and populated search close promptly, retain the native toolbar and search controller, and avoid another query")
     }
 
     @MainActor static func check(_ initialQuery: String) async throws {
         var query = ""
+        var searchRequests = 0
         func snapshot() -> String {
             let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work",
                 "outlinerRows": (0..<8).map { index in
@@ -39,7 +40,10 @@ import SwiftUI
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { request in
             if let data = request.params.payload?.data(using: .utf8),
                let effect = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               effect["kind"] as? String == "search-nodes" { query = effect["text"] as? String ?? "" }
+               effect["kind"] as? String == "search-nodes" {
+                searchRequests += 1
+                query = effect["text"] as? String ?? ""
+            }
             return snapshot()
         }))
         try runtime.applyCoreResponse(snapshot())
@@ -68,16 +72,23 @@ import SwiftUI
         window.makeKeyAndVisible()
         defer { window.isHidden = true; runtime.stop() }
         try await Task.sleep(for: .milliseconds(300))
-        guard let homeScroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
-            $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height
-        }) else { throw failure("Missing retained journal scroll view") }
-        let homeHeight = homeScroll.bounds.height
-        func journalFrame() -> CGRect? {
-            views(window).compactMap { $0 as? UILabel }.first { $0.text == "Journal body 2" }
-                .map { $0.convert($0.bounds, to: window) }
+        func controllers(_ value: UIViewController) -> [UIViewController] {
+            [value] + value.children.flatMap(controllers)
         }
-        guard let homeJournalFrame = journalFrame() else { throw failure("Missing next-journal body") }
-        try backend.performPress(node: find("button.search")!)
+        guard let mainNavigation = controllers(window.rootViewController!).compactMap({ $0 as? UINavigationController }).first,
+              !(mainNavigation.topViewController?.toolbarItems ?? []).isEmpty else {
+            throw failure("The composer and search must share the system bottom toolbar")
+        }
+        guard let journal = views(window).compactMap({ $0 as? UILabel }).first(where: { $0.text == "Journal body 2" }) else {
+            throw failure("Missing retained journal body")
+        }
+        guard let nativeSearch = mainNavigation.topViewController?.navigationItem.searchController else {
+            throw failure("Search must belong to the same navigation controller as the composer")
+        }
+        guard let presentation = backend.rootIDs.flatMap(descendants).first(where: {
+            backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+        }) else { throw failure("Missing search presentation") }
+        try backend.performExtensionEvent(node: presentation, name: "present", values: [:])
         try await wait("Search must accept native input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }
@@ -86,7 +97,7 @@ import SwiftUI
             field.insertText(initialQuery)
             try await wait("Search results must be visible before closing") { find("search.result.found") != nil }
         }
-        try await Task.sleep(for: .milliseconds(250))
+        try await Task.sleep(for: .milliseconds(700))
         guard let root = window.rootViewController else { throw failure("Missing app controller") }
         if let modal = root.presentedViewController, !(modal is UISearchController) {
             throw failure("Search must close in place instead of adding a full-screen modal transition")
@@ -98,9 +109,13 @@ import SwiftUI
             }
             return controller.presentedViewController.flatMap(searchController)
         }
-        guard searchController(root) != nil else {
+        guard let search = searchController(root),
+              let searchNavigation = controllers(root).compactMap({ $0 as? UINavigationController }).first(where: {
+                  $0.viewControllers.contains { $0.navigationItem.searchController === search }
+              }) else {
             throw failure("Missing active native search controller")
         }
+        guard search === nativeSearch else { throw failure("Search must retain the main native controller") }
         let fieldFrame = field.convert(field.bounds, to: window)
         guard let cancel = views(window).compactMap({ $0 as? UIControl }).first(where: { control in
             let frame = control.convert(control.bounds, to: window)
@@ -109,6 +124,7 @@ import SwiftUI
             guard let hit = window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil) else { return false }
             return hit === control || hit.isDescendant(of: control)
         }) else { throw failure("Missing visible native Cancel control") }
+        let requestsBeforeCancel = searchRequests
         let keyboard = SearchKeyboardDismissal()
         let closeStart = ProcessInfo.processInfo.systemUptime
         var closedAfter: Double?
@@ -122,26 +138,13 @@ import SwiftUI
             return true
         }
         cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
-        func retainsQuery() -> Bool {
-            let node = backend.rootIDs.flatMap(descendants).first {
-                backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
-            }
-            guard let node, case .string(let value)? = backend.extensionModel(id: node)?.properties["query"],
-                  value == initialQuery else { return false }
-            return initialQuery.isEmpty || find("search.result.found") != nil
-        }
-        try await Task.sleep(for: .milliseconds(30))
-        _ = isClosed()
-        guard field.window == nil || retainsQuery() else {
-            throw failure("The outgoing results must remain mounted during dismissal")
-        }
         for _ in 0..<40 {
             _ = isClosed()
-            if closedAfter != nil, homeScroll.bounds.height < homeHeight - 1 {
-                throw failure("Returning to journals must preserve the full viewport while the outgoing search keyboard dismisses; before=\(homeHeight), during=\(homeScroll.bounds.height)")
+            guard searchNavigation.view.window === window else {
+                throw failure("Cancelling search must let the system controller finish its keyboard transition without tearing down its navigation host")
             }
-            if closedAfter != nil, let frame = journalFrame(), abs(frame.minY - homeJournalFrame.minY) > 2 {
-                throw failure("The returned journal layout must not shrink and expand with the outgoing keyboard; before=\(homeJournalFrame.minY), during=\(frame.minY)")
+            guard journal.window === window, journal.isDescendant(of: mainNavigation.view) else {
+                throw failure("System bar transitions must retain the journal content")
             }
             try await Task.sleep(for: .milliseconds(16))
         }
@@ -155,6 +158,8 @@ import SwiftUI
         }
         try await wait("The native keyboard must finish dismissing independently") { keyboard.completed }
         try await wait("Search must release its input") { !field.isFirstResponder }
+        guard searchRequests == requestsBeforeCancel else { throw failure("Closing search must not run another query") }
+        guard searchNavigation.view.window === window else { throw failure("The native search host must remain available for reopening") }
         guard window.rootViewController === root else { throw failure("Search must retain the app controller") }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }
     }

@@ -70,6 +70,8 @@ let handle_native_navigation_event input_event send =
 
 let handle_native_search_event input_event send =
   match input_event with
+  | ExtensionEvent (_node, _identifier, "present", _values) ->
+    send Model.OpenSearch
   | ExtensionEvent (_node, _identifier, "back", values) ->
     send (Model.BackSearchNavigation (extension_int values "count"))
   | ExtensionEvent (_node, _identifier, "dismiss", _values) ->

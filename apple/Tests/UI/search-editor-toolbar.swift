@@ -68,7 +68,10 @@ import SwiftUI
         window.makeKeyAndVisible()
         defer { window.isHidden = true; runtime.stop() }
         try await Task.sleep(for: .milliseconds(300))
-        try press("button.search")
+        let searchID = backend.rootIDs.flatMap(descendants).first {
+            backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+        }!
+        try backend.performExtensionEvent(node: searchID, name: "present", values: [:])
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         try await wait("Native search must become ready for typing") {
             views(window).compactMap { $0 as? UISearchTextField }.contains { $0.isFirstResponder }

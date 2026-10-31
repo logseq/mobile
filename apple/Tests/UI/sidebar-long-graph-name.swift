@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Vision
 @testable import Logseq
 @testable import LUIAppleBackend
 
@@ -37,7 +38,7 @@ import UIKit
         }
         try await Task.sleep(for: .milliseconds(600))
         try backend.performPress(node: node("button.sidebar"))
-        for name in ["My notes", "Short", "Abhilesh_Knowledge_Graph", String(repeating: "Long graph name ", count: 8), "Short again"] {
+        for name in ["My notes", "Short", "Query Demo 2026-10-22", "Abhilesh_Knowledge_Graph", String(repeating: "Long graph name ", count: 8), "Short again"] {
             try runtime.applyCoreResponse(snapshot(name))
             try backend.performToggle(node: node("application.shell"), checked: true)
             try await Task.sleep(for: .milliseconds(800))
@@ -52,6 +53,22 @@ import UIKit
                   window.bounds.contains(settings), window.bounds.contains(graph),
                   settings.minX >= graph.maxX - 1 else {
                 throw failure("The graph switch must fit its label without clipping and preserve Settings for graph \(name): settings=\(String(describing: frames[settingsID])) graph=\(String(describing: frames[graphID]))")
+            }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let rendered = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let header = CGRect(x: 0, y: window.safeAreaInsets.top, width: settings.minX, height: 64).integral
+            let crop = rendered.cgImage!.cropping(to: header)!
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: crop).perform([request])
+            let prefix = String(name.prefix(4)).lowercased()
+            guard let label = request.results?.first(where: {
+                $0.topCandidates(1).first?.string.lowercased().hasPrefix(prefix) == true
+            }), label.boundingBox.minX * header.width >= 10 else {
+                throw failure("The visible graph name must retain its leading characters and sidebar inset: " + name)
             }
         }
         try backend.performPress(node: node("button.sidebar.settings"))

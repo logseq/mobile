@@ -5,8 +5,8 @@ press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Alpha"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-expect prop:accessibility-identifier=button.search
-press prop:accessibility-identifier=button.search
+expect ext:native-search-presentation
+ext ext:native-search-presentation native-search-presentation present '{}'
 wait prop:accessibility-identifier=screen.search
 expect prop:accessibility-identifier=search.empty
 ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'

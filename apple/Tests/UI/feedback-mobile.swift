@@ -146,11 +146,11 @@ import LogseqModel
                     try press("button.outliner.editor.hideKeyboard"); await pause()
                 }
             case "search-tags":
-                try press("button.search"); await pause()
+                try extensionEvent("native-search-presentation", "present", [:]); await pause()
                 try extensionEvent("native-search-presentation", "query-changed", ["query":.string("#code")]); await pause()
                 observations["code-tag"] = backend.rootIDs.flatMap(descendants).contains { backend.model(id: $0)?.property(.text)?.stringValue == "Code" }
             case "search-toolbar":
-                try press("button.search"); await pause()
+                try extensionEvent("native-search-presentation", "present", [:]); await pause()
                 try extensionEvent("native-search-presentation", "query-changed", ["query":.string("print")]); await pause()
                 try press("search.result." + Self.uuid(12)); await pause()
                 try extensionEvent("outliner-block-row", "edit", ["uuid":.string(Self.uuid(12))]); await pause()

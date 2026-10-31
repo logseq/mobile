@@ -61,7 +61,10 @@ import UIKit
             throw failure(message)
         }
         try await Task.sleep(for: .milliseconds(400))
-        try backend.performPress(node: find("button.search")!)
+        let searchID = backend.rootIDs.flatMap(descendants).first {
+            backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+        }!
+        try backend.performExtensionEvent(node: searchID, name: "present", values: [:])
         try await wait("Search must focus its native input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }

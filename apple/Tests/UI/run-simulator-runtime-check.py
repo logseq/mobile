@@ -23,6 +23,14 @@ def run(arguments, **kwargs):
         raise SystemExit(f"Runtime check command failed (exit {error.returncode}): {arguments[0]}") from None
 
 
+def terminate_app(simulator, bundle):
+    try:
+        subprocess.run(["xcrun", "simctl", "terminate", simulator, bundle], capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        # A fresh simulator can stall when terminating a bundle that was never installed.
+        pass
+
+
 def main():
     print(f"RUNTIME_CHECK_CONFIGURATION={CONFIGURATION}", flush=True)
     entry, check_type = sys.argv[1:3]
@@ -110,7 +118,7 @@ import SwiftUI
         if assets.exists():
             shutil.copy2(assets, app / assets.name)
         run(["codesign", "--force", "--sign", "-", str(app)])
-        subprocess.run(["xcrun", "simctl", "terminate", SIMULATOR, bundle], capture_output=True)
+        terminate_app(SIMULATOR, bundle)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
         launch_environment = os.environ.copy()
         if benchmark:
@@ -125,18 +133,18 @@ import SwiftUI
             if not interactive:
                 launch_environment["SIMCTL_CHILD_LOGSEQ_BENCH_EXIT"] = "1"
         if interactive:
-            run(["xcrun", "simctl", "launch", "--terminate-running-process", SIMULATOR, bundle], env=launch_environment)
+            run(["xcrun", "simctl", "launch", SIMULATOR, bundle], env=launch_environment)
             print(f"INTERACTIVE_CHECK_READY bundle={bundle}", flush=True)
             return
         try:
-            output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process",
+            output = subprocess.run(["xcrun", "simctl", "launch", "--console",
                                      SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                     timeout=180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30"))), env=launch_environment)
             print(output.stdout)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
                 raise SystemExit("Simulator runtime check did not complete")
         finally:
-            subprocess.run(["xcrun", "simctl", "terminate", SIMULATOR, bundle], capture_output=True)
+            terminate_app(SIMULATOR, bundle)
             artifacts = os.environ.get("LOGSEQ_RUNTIME_CHECK_ARTIFACTS")
             if artifacts:
                 container = Path(subprocess.check_output(

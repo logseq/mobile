@@ -227,7 +227,15 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
       [(fun context parent ->
           let node = Lui_ui.extension context "native-sidebar" in
           attach context parent node;
+          let graph_width = Signal.state context.ui_scheduler 160 in
+          Lui_ui.on_event context node (function
+            | ExtensionEvent (_, _, "viewport-changed", values) ->
+              (* Reserve Settings, the sidebar toggle, and the native toolbar margins. *)
+              Signal.set graph_width (max 44 (View_base.extension_int values "width" - 2 * 44 - 3 * 16))
+            | _ -> ());
+          let switch = View_base.with_int_prop_signal WidthValue (Signal.value graph_width)
+            (sidebar_graph_switch context model_source send) in
           List.iter (fun child -> ignore (child context (Some node)))
-            [content; sidebar_graph_switch context model_source send; settings];
+            [content; switch; settings];
           node)]
   else content

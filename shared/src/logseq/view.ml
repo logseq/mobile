@@ -162,7 +162,7 @@ let native_navigation_title_schema () =
 let native_sidebar_schema () =
   let open Lui_protocol in
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
-    true [] [] []
+    true [] [] [Lui_extension.event "viewport-changed" [Lui_extension.event_field "width" Lui_extension.IntScalar true]]
 
 let native_top_notification_schema () =
   let open Lui_protocol in
@@ -189,6 +189,7 @@ let native_search_presentation_schema () =
       Lui_extension.event "back"
         [ Lui_extension.event_field "count" IntScalar true ];
       Lui_extension.event "dismiss" [];
+      Lui_extension.event "present" [];
       Lui_extension.event "query-changed"
         [ Lui_extension.event_field "query" StringScalar true ];
     ]
