@@ -79,6 +79,9 @@ enum LatexMarkupDocument {
         for(const node of document.querySelectorAll('[data-tex]')){
           katex.render(node.dataset.tex,node,{displayMode:node.dataset.display==='true',throwOnError:false,trust:false,strict:false});
         }
+        document.addEventListener('click',event=>{
+          if(!event.target.closest('a'))window.webkit.messageHandlers.mathEdit.postMessage(null);
+        });
         const report=()=>window.webkit.messageHandlers.mathHeight.postMessage(Math.ceil(document.body.getBoundingClientRect().height));
         new ResizeObserver(report).observe(document.body);document.fonts.ready.then(report);report();
         </script></body></html>
@@ -93,12 +96,14 @@ struct NativeLatexMarkupContent: View {
     let nodes: [LogseqMarkupNode]
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    var onEdit: (() -> Void)? = nil
 
     var body: some View {
         #if os(iOS)
         LatexWebContent(html: LatexMarkupDocument.html(nodes: nodes, fontSize: fontSize,
             foreground: colorScheme == .dark ? LogseqThemePolicy.dark.primaryTextHex : LogseqThemePolicy.light.primaryTextHex),
-            height: $height, allowsLinkInteraction: allowsLinkInteraction, onOpenMarkupLink: onOpenMarkupLink)
+            height: $height, allowsLinkInteraction: allowsLinkInteraction,
+            onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit)
             .frame(height: height).frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier("block.rich.math")
         #else
@@ -113,11 +118,13 @@ private struct LatexWebContent: UIViewRepresentable {
     @Binding var height: CGFloat
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    let onEdit: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(context.coordinator, name: "mathHeight")
+        configuration.userContentController.add(context.coordinator, name: "mathEdit")
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.isOpaque = false
         view.backgroundColor = .clear
@@ -134,6 +141,7 @@ private struct LatexWebContent: UIViewRepresentable {
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "mathHeight")
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "mathEdit")
         view.stopLoading()
     }
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -141,6 +149,10 @@ private struct LatexWebContent: UIViewRepresentable {
         var loadedHTML: String?
         init(_ parent: LatexWebContent) { self.parent = parent }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "mathEdit" {
+                if parent.allowsLinkInteraction() { parent.onEdit?() }
+                return
+            }
             guard let value = message.body as? Double, value.isFinite, value > 0 else { return }
             let height = CGFloat(value)
             guard abs(parent.height - height) > 0.5 else { return }

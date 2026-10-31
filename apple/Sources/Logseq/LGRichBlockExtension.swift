@@ -6,6 +6,7 @@ import SwiftUI
 #if os(iOS)
 import UIKit
 import UniformTypeIdentifiers
+import QuickLook
 #endif
 
 @MainActor
@@ -181,7 +182,8 @@ private struct LGRichBlock: View {
                     uuid: blockID,
                     title: stringProperty("title"),
                     assetType: stringProperty("asset-type"),
-                    localPath: stringProperty("local-path")
+                    localPath: stringProperty("local-path"),
+                    allowsInteraction: { context.isUserInteractionEnabled }
                 )
             } else {
                 OutlinerMixedRichMarkupContent(
@@ -197,7 +199,8 @@ private struct LGRichBlock: View {
                         case .node(let uuid):
                             emitOpenNode(uuid)
                         }
-                    }
+                    },
+                    onEdit: emitEdit
                 )
                 .padding(.vertical, titleVerticalInset)
                 .environment(\.lgShowCodeLanguage, {
@@ -263,6 +266,7 @@ private struct LGRichBlock: View {
     }
 
     private func emitEdit() {
+        guard context.isUserInteractionEnabled else { return }
         do {
             try context.emit(name: "edit", values: ["uuid": .string(blockID)])
         } catch {
@@ -309,10 +313,13 @@ struct LGAssetPreview: View {
     let title: String
     let assetType: String
     let localPath: String
+    var allowsInteraction: () -> Bool = { true }
     @Environment(\.lgImagePreviews) private var imagePreviews
     @State private var downloadedURL: URL?
     @State private var downloadError: String?
     @State private var retry = 0
+    @State private var isLoadingFile = false
+    @State private var filePreviewURL: URL?
 
     var body: some View {
         #if os(iOS)
@@ -367,16 +374,65 @@ struct LGAssetPreview: View {
                     .frame(height: 44)
             }
         } else {
-            fileSummary
+            filePreview
         }
         #else
         fileSummary
+            .accessibilityIdentifier("asset.preview.file")
         #endif
     }
 
     private var kind: AssetPresentationKind {
         AssetPresentationPolicy.kind(assetType: assetType, localPath: localPath)
     }
+
+    #if os(iOS)
+    private var filePreview: some View {
+        Button {
+            guard allowsInteraction() else { return }
+            downloadError = nil
+            isLoadingFile = true
+        } label: {
+            HStack {
+                fileSummary
+                if isLoadingFile { ProgressView() }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoadingFile)
+        .accessibilityIdentifier("asset.preview.file")
+        .quickLookPreview($filePreviewURL)
+        .alert("Unable to open file", isPresented: Binding(
+            get: { downloadError != nil },
+            set: { if !$0 { downloadError = nil } }
+        )) {
+            Button("OK", role: .cancel) { downloadError = nil }
+        } message: {
+            Text(downloadError ?? "")
+        }
+        .task(id: isLoadingFile) {
+            guard isLoadingFile else { return }
+            defer { isLoadingFile = false }
+            do {
+                let url: URL
+                if let local = LocalAssetPath.resolve(localPath, title: title, assetType: assetType) {
+                    url = local
+                } else {
+                    url = try await LGGraphAssetLoader.load(uuid: uuid, assetType: assetType)
+                }
+                try Task.checkCancellation()
+                guard allowsInteraction() else { return }
+                filePreviewURL = url
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                downloadError = error.localizedDescription
+            }
+        }
+    }
+    #endif
 
     private var fileSummary: some View {
         HStack(spacing: 8) {
@@ -387,6 +443,5 @@ struct LGAssetPreview: View {
                 .fontWeight(.medium)
                 .lineLimit(3)
         }
-        .accessibilityIdentifier("asset.preview.file")
     }
 }

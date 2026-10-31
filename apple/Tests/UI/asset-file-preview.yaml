@@ -1,0 +1,14 @@
+appId: com.logseq.logseq.RuntimeCheck
+---
+- extendedWaitUntil:
+    visible: "Blank.pages"
+    timeout: 30000
+- tapOn: "Blank.pages"
+- extendedWaitUntil:
+    visible: "Document.pdf"
+    timeout: 30000
+- tapOn: "Document.pdf"
+- extendedWaitUntil:
+    visible: "Retry.pages"
+    timeout: 30000
+- tapOn: "Retry.pages"

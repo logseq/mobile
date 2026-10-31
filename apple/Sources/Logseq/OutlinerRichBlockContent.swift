@@ -16,6 +16,7 @@ struct OutlinerMixedRichMarkupContent: View {
     let onSeekYouTube: (String, Int) -> Void
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    var onEdit: (() -> Void)? = nil
 
     private var chunks: [[LogseqMarkupNode]] {
         OutlinerRichMarkupPolicy.chunks(nodes)
@@ -35,7 +36,7 @@ struct OutlinerMixedRichMarkupContent: View {
                 let chunk = chunks[index]
                 if LatexMarkupDocument.containsMath(chunk) {
                     NativeLatexMarkupContent(nodes: chunk, allowsLinkInteraction: allowsLinkInteraction,
-                        onOpenMarkupLink: onOpenMarkupLink)
+                        onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit)
                 } else if chunk.count == 1,
                    let node = chunk.first,
                    OutlinerRichMarkupPolicy.isRich(node.type) {
@@ -44,7 +45,8 @@ struct OutlinerMixedRichMarkupContent: View {
                         youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
                         onSeekYouTube: onSeekYouTube,
                         allowsLinkInteraction: allowsLinkInteraction,
-                        onOpenMarkupLink: onOpenMarkupLink
+                        onOpenMarkupLink: onOpenMarkupLink,
+                        onEdit: onEdit
                     )
                 } else {
                     inlineContent(chunk)
@@ -227,6 +229,7 @@ struct OutlinerRichBlockContent: View {
     let onSeekYouTube: (String, Int) -> Void
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    var onEdit: (() -> Void)? = nil
 
     @ViewBuilder var body: some View {
         Group {
@@ -242,7 +245,7 @@ struct OutlinerRichBlockContent: View {
                 }
             case .math:
                 NativeLatexMarkupContent(nodes: [node], allowsLinkInteraction: allowsLinkInteraction,
-                    onOpenMarkupLink: onOpenMarkupLink)
+                    onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit)
             case .codeBlock:
                 SyntaxHighlightedCodeBlock(
                     code: node.text ?? "",
