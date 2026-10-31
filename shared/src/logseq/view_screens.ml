@@ -519,7 +519,12 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
               ~accessibility_identifier_signal:
                 (Signal.map View_base.sync_accessibility_identifier
                    model_source)
-              ~on_press:(press send Model.OpenSyncDetails)
+              ~on_press:(fun _ ->
+                let current = Signal.sample model_source in
+                ignore (send
+                  (if current.Model.authentication_state = "signedIn"
+                   then Model.OpenSyncDetails
+                   else Model.SignIn)))
               []));
     ]
 

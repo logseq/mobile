@@ -412,10 +412,8 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
     | Some s -> host_responses host (Drive.Session.read_model s)
   in
   let initial =
-    if authentication = "signedIn" then Model.initial ()
-    else
-      Model.update (Model.initial ())
-        (Model.ApplyAuthentication (authentication, None))
+    Model.update (Model.initial ())
+      (Model.ApplyAuthentication (authentication, None))
   in
   let session =
     Drive.Session.mount ~profile ~drain

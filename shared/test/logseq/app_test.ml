@@ -2115,6 +2115,61 @@ let local_graphs_remain_accessible_without_authentication () =
     check_label "Sign in")
     [ios_backend (); kotlin_backend ()]
 
+let sync_indicator_routes_to_sign_in_when_required () =
+  List.iter (fun backend ->
+    let application = App.create backend in
+    start application;
+    send application (Model.ApplyCoreSnapshot {
+      (empty_core_projection ()) with
+      graphs = [graph "local" "Local" false true];
+      selected_graph_id = Some "local"; graph_name = Some "Local";
+    });
+    send application (Model.ApplyLocalGraphIds ["local"]);
+    let press_indicator () =
+      flush application;
+      let renderer = Lui_app.runtime application in
+      let indicator = descendant_with_identifier renderer (Lui_app.root_node application)
+        (View_base.sync_accessibility_identifier (App.model application)) in
+      check ~msg:"the local graph keeps its sync indicator visible" (indicator <> -1);
+      dispatch application (Lui_protocol.Press indicator);
+      flush application in
+    let sign_in_ids () = List.filter_map (function
+      | Model.SignInEffect id -> Some id | _ -> None)
+      (App.model application).pending_effects in
+    List.iter (fun state ->
+      send application (Model.ApplyAuthentication (state, None));
+      press_indicator ();
+      check ~msg:"an authentication transition must not open sync details"
+        (not (App.model application).sync_details_open);
+      check_eq ~msg:"authentication transitions do not start overlapping sign-in"
+        (sign_in_ids ()) []) ["restoring"; "signingOut"; "signingIn"];
+    send application (Model.ApplyAuthentication ("signedOut", None));
+    press_indicator ();
+    check_eq ~msg:"the signed-out indicator starts hosted sign-in"
+      (App.model application).authentication_state "signingIn";
+    check ~msg:"sign-in replaces the sync status destination"
+      (not (App.model application).sync_details_open);
+    let ids = sign_in_ids () in
+    check_eq ~msg:"one indicator press requests one authentication flow" (List.length ids) 1;
+    press_indicator ();
+    check_eq ~msg:"repeated indicator presses reuse the active authentication flow"
+      (sign_in_ids ()) ids;
+    let id = List.hd ids in
+    send application (Model.DequeueEffect id);
+    send application (Model.ResolveEffect (id, false, "Authorization was cancelled"));
+    press_indicator ();
+    check_eq ~msg:"cancelling sign-in permits another indicator retry" (List.length (sign_in_ids ())) 1;
+    let id = List.hd (sign_in_ids ()) in
+    send application (Model.DequeueEffect id);
+    send application (Model.ResolveEffect (id, true, ""));
+    flush application;
+    let ids = sign_in_ids () in
+    press_indicator ();
+    check ~msg:"an authenticated indicator opens sync details"
+      (App.model application).sync_details_open;
+    check_eq ~msg:"authenticated indicator presses do not request sign-in" (sign_in_ids ()) ids)
+    [ios_backend (); kotlin_backend ()]
+
 let signed_out_users_can_choose_downloaded_graphs () =
   List.iter (fun backend ->
     let application = App.create backend in
@@ -2703,6 +2758,7 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
     }
   in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.SelectGraph "Work");
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
@@ -10794,6 +10850,7 @@ let cases =
     case "settings-language-picker-exposes-and-validates-all-main-choices" settings_language_picker_exposes_and_validates_all_main_choices;
     case "settings-community-links-use-a-typed-platform-boundary" settings_community_links_use_a_typed_platform_boundary;
     case "local-graphs-remain-accessible-without-authentication" local_graphs_remain_accessible_without_authentication;
+    case "sync-indicator-routes-to-sign-in-when-required" sync_indicator_routes_to_sign_in_when_required;
     case "signed-out-users-can-choose-downloaded-graphs" signed_out_users_can_choose_downloaded_graphs;
     case "authentication-entry-is-lg-owned-and-idempotent" authentication_entry_is_lg_owned_and_idempotent;
     case "authentication-screen-renders-from-lg-state" authentication_screen_renders_from_lg_state;
