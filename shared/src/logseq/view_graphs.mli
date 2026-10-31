@@ -17,8 +17,6 @@ val graph_delete_dialog :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val graph_picker_overflow_menu : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
-val graph_picker_error_banner :
-  Model.logseq_model Signal.signal -> Lui_elements.t
 val graph_password_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

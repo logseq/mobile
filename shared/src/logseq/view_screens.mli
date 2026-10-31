@@ -24,8 +24,6 @@ val journal_tree_panes :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val global_effect_error_feedback :
-  Lui_ui.ui_context -> Model.logseq_model Signal.signal -> Lui_elements.t
 val graph_loading_feedback :
   Lui_ui.ui_context -> Model.logseq_model Signal.signal -> Lui_elements.t
 val logseq_main_view :

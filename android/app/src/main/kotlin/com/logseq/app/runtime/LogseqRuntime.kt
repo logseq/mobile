@@ -751,9 +751,6 @@ internal class LogseqRuntime(
     private fun reportError(error: Throwable) {
         logRuntime("error", "ui", error.toString())
         Log.e("LogseqRuntime", "Effect failed", error)
-        com.logseq.app.ui.extensions.LogseqDialogs.notifyError(
-            "Something went wrong: $error"
-        )
     }
 
     private fun traceNativeEffect(message: String) {

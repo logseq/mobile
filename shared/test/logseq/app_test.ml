@@ -1,3 +1,6 @@
+let reported_errors (model : Model.logseq_model) = List.filter_map (function
+  | Model.ReportErrorEffect (_, message) -> Some message | _ -> None) model.pending_effects
+
 open Test_util
 
 let property (runtime : Lui_runtime.application) node property_key =
@@ -976,7 +979,7 @@ let runtime_log_filters_refresh_and_successful_results_enter_lg_state () =
   let in_flight = Model.update filtered (Model.DequeueEffect 1) in
   let resolved = Model.update in_flight (Model.ResolveEffect (1, true, "")) in
   let expected = [ runtime_record "1" "INFO" "ui" "Started" ] in
-  let applied = Model.update resolved (Model.ApplyRuntimeLog expected) in
+  let applied = Model.update resolved (Model.ApplyRuntimeLog (expected, None)) in
   check_eq
     ~msg:"changing a log filter refreshes the visible result immediately"
     filtered.pending_effects
@@ -1218,10 +1221,9 @@ let encrypted_graph_unlock_renders_the_secure_field_contract () =
   let error =
     descendant_with_identifier renderer root "text.graph-unlock-error"
   in
-  check ~msg:"an unlock failure stays inside the sheet" (error <> -1);
-  check_eq ~msg:"the unlock failure explains why the graph stayed locked"
-    (property_string renderer error Lui_protocol.TextValue)
-    "Wrong password";
+  check_eq ~msg:"unlock diagnostics do not render in the sheet" error (-1);
+  check ~msg:"unlock diagnostics enter the host log"
+    (List.mem "Wrong password" (reported_errors (App.model application)));
   check_eq
     ~msg:"the password sheet does not duplicate its error globally"
     (descendant_count_with_identifier renderer root "error.banner")
@@ -1370,7 +1372,7 @@ let settings_render_the_main_branch_navigation_contract () =
   send application Model.BackSettings;
   send application Model.OpenRuntimeLog;
   send application
-    (Model.ApplyRuntimeLog [ runtime_record "1" "INFO" "ui" "Started" ]);
+    (Model.ApplyRuntimeLog ([ runtime_record "1" "INFO" "ui" "Started" ], None));
   flush application;
   check ~msg:"runtime log retains its baseline screen identifier"
     (descendant_with_identifier renderer root "screen.runtime-log" <> -1);
@@ -2046,9 +2048,9 @@ let authentication_screen_renders_from_lg_state () =
   let error =
     descendant_with_identifier renderer root "text.authentication-error"
   in
-  check_eq ~msg:"authentication errors render inside the LG screen"
-    (property_string renderer error Lui_protocol.TextValue)
-    "Authorization was cancelled";
+  check_eq ~msg:"authentication diagnostics do not render inside the page" error (-1);
+  check ~msg:"authentication diagnostics enter the host log"
+    (List.mem "Authorization was cancelled" (reported_errors (App.model application)));
   check_eq ~msg:"a failed callback removes progress and allows retry"
     (descendant_with_identifier renderer root "sign-in.loading") (-1);
   send application (Model.ApplyAuthentication ("signedIn", None));
@@ -2440,17 +2442,9 @@ let graph_picker_matches_main_layout_actions_errors_and_overflow_menu () =
   let main = main_root renderer application in
   let picker = child_with_identifier renderer main "screen.graph-picker" in
   let banner = child_with_identifier renderer picker "error.banner" in
-  check ~msg:"the picker displays core failures" (banner <> -1);
-  check_eq ~msg:"the failure code is presented as a user-facing title"
-    (property_string renderer
-       (descendant_with_identifier renderer banner "error.banner.code")
-       Lui_protocol.TextValue)
-    "Couldn't load graphs";
-  check_eq ~msg:"the failure message remains visible"
-    (property_string renderer
-       (descendant_with_identifier renderer banner "error.banner.message")
-       Lui_protocol.TextValue)
-    "Connection refused"
+  check_eq ~msg:"graph discovery diagnostics do not render inside the picker" banner (-1);
+  check ~msg:"graph discovery diagnostics enter the host log"
+    (List.mem "graph_discovery_failed\nConnection refused" (reported_errors (App.model application)))
 
 let kotlin_graph_picker_uses_a_material_empty_state () =
   let application = App.create (kotlin_backend ()) in
@@ -2577,15 +2571,9 @@ let kotlin_loading_and_errors_use_material_feedback_surfaces () =
   let surface =
     descendant_with_identifier renderer root "layout.error.banner"
   in
-  let message =
-    descendant_with_identifier renderer surface "error.banner"
-  in
-  check_eq ~msg:"Android failures use a Material error surface"
-    (node renderer surface)
-    (Some Lui_protocol.Alert);
-  check_eq ~msg:"the Material error surface preserves the failure reason"
-    (property_string renderer message Lui_protocol.TextValue)
-    "Could not delete graph"
+  check_eq ~msg:"Android diagnostics do not render inside the page" surface (-1);
+  check ~msg:"Android diagnostics enter the host log"
+    (List.mem "Could not delete graph" (reported_errors (App.model application)))
 
 let graph_and_sync_actions_update_retained_status_in_place () =
   let application = App.create (ios_backend ()) in
@@ -2702,9 +2690,9 @@ let sync_details_show_websocket_server_rejections () =
   flush application;
   let renderer = Lui_app.runtime application in
   let error = descendant_with_identifier renderer (Lui_app.root_node application) "sync.error" in
-  check ~msg:"WebSocket server refusals also belong in Sync status" (error <> -1);
-  check ~msg:"the server's message survives transport disconnection"
-    (contains "Graph access denied" (property_string renderer error Lui_protocol.TextValue))
+  check_eq ~msg:"WebSocket diagnostics do not render in Sync status" error (-1);
+  check ~msg:"the server's message enters the host log"
+    (List.exists (contains "Graph access denied") (reported_errors (App.model application)))
 
 let sync_details_show_every_server_rejection () =
   let module R = Rpc_test in
@@ -2728,9 +2716,9 @@ let sync_details_show_every_server_rejection () =
     let assert_error () =
       let renderer = Lui_app.runtime application in
       let error = descendant_with_identifier renderer (Lui_app.root_node application) "sync.error" in
-      check ~msg:("server rejection is visible: " ^ expected) (error <> -1);
-      check ~msg:"the error explains the server's actual rejection"
-        (contains expected (property_string renderer error Lui_protocol.TextValue));
+      check_eq ~msg:("server rejection stays out of the status sheet: " ^ expected) error (-1);
+      check ~msg:"the host log retains the server's actual rejection"
+        (List.exists (contains expected) (reported_errors (App.model application)));
       check_eq ~msg:"a server rejection cannot look like an indefinitely active sync"
         (View_base.sync_label (App.model application)) "Sync failed" in
     assert_error ();
@@ -2887,11 +2875,9 @@ let sync_details_show_the_last_sync_failure () =
     descendant_with_identifier renderer (Lui_app.root_node application)
       "sync.error"
   in
-  check ~msg:"the sync failure has a stable status-sheet identifier"
-    (error <> -1);
-  check_eq ~msg:"the status sheet preserves the actionable failure reason"
-    (property_string renderer error Lui_protocol.TextValue)
-    "Network unavailable"
+  check_eq ~msg:"sync diagnostics do not render in the status sheet" error (-1);
+  check ~msg:"sync diagnostics enter the host log"
+    (List.mem "Network unavailable" (reported_errors (App.model application)))
 
 let pending_sync_patches_preserve_the_current_screen_and_cursor () =
   let full =
@@ -4509,10 +4495,9 @@ let kotlin_add_graph_sheet_shows_creation_errors_inline () =
   let error =
     descendant_with_identifier renderer root "text.graph-create.error"
   in
-  check ~msg:"the Add graph sheet keeps its error visible" (error <> -1);
-  check_eq ~msg:"the Add graph sheet explains why creation failed"
-    (property_string renderer error Lui_protocol.TextValue)
-    "Initial snapshot upload failed"
+  check_eq ~msg:"graph creation diagnostics do not render in the sheet" error (-1);
+  check ~msg:"graph creation diagnostics enter the host log"
+    (List.mem "Initial snapshot upload failed" (reported_errors (App.model application)))
 
 let graph_lifecycle_operations_show_loading () =
   List.iter (fun backend ->
@@ -4543,16 +4528,21 @@ let graph_lifecycle_operations_show_loading () =
     send application Model.ConfirmDeleteGraph;
     flush application;
     check ~msg:"queued graph deletion immediately shows progress" (find "graph-delete.loading" <> -1);
-    send application (Model.DequeueEffect 2);
+    let deletion_id = Model.effect_id (List.find (function Model.DeleteLocalGraphEffect _ -> true | _ -> false)
+      (App.model application).pending_effects) in
+    send application (Model.DequeueEffect deletion_id);
     flush application;
     check ~msg:"running graph deletion retains progress" (find "graph-delete.loading" <> -1);
-    send application (Model.ResolveEffect (2, false, "Deletion failed"));
+    send application (Model.ResolveEffect (deletion_id, false, "Deletion failed"));
     flush application;
     check_eq ~msg:"failed deletion clears progress" (find "graph-delete.loading") (-1);
     send application (Model.RequestDeleteGraph "local");
     send application Model.ConfirmDeleteGraph;
-    send application (Model.DequeueEffect 3);
-    send application (Model.ResolveEffect (3, true, ""));
+    flush application;
+    let deletion_id = Model.effect_id (List.find (function Model.DeleteLocalGraphEffect _ -> true | _ -> false)
+      (App.model application).pending_effects) in
+    send application (Model.DequeueEffect deletion_id);
+    send application (Model.ResolveEffect (deletion_id, true, ""));
     flush application;
     check_eq ~msg:"successful deletion clears progress" (find "graph-delete.loading") (-1)
   ) [ios_backend; kotlin_backend]
@@ -4661,12 +4651,9 @@ let graph_deletion_confirmation_names_the_local_graph () =
     descendant_with_identifier renderer (Lui_app.root_node application)
       "error.banner"
   in
-  check
-    ~msg:"a platform failure remains visible after the confirmation closes"
-    (error <> -1);
-  check_eq ~msg:"the visible error preserves the platform reason"
-    (property_string renderer error Lui_protocol.TextValue)
-    "Could not delete graph"
+  check_eq ~msg:"platform diagnostics do not render after the confirmation closes" error (-1);
+  check ~msg:"the host log preserves the platform reason"
+    (List.mem "Could not delete graph" (reported_errors (App.model application)))
 
 let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
   let application = App.create (kotlin_backend ()) in

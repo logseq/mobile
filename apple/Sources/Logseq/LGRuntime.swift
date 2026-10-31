@@ -70,7 +70,13 @@ public enum LGRuntimeError: Error, Equatable {
 @MainActor
 public final class LGRuntime {
     public let renderer: LGRenderer
-    public private(set) var lastError: String?
+    public private(set) var lastError: String? {
+        didSet {
+            if let lastError, lastError != oldValue {
+                LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: lastError)
+            }
+        }
+    }
     public private(set) var isStarted = false
 
     @ObservationIgnored

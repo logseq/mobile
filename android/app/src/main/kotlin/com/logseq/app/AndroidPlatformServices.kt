@@ -104,7 +104,7 @@ class AndroidPlatformServices(private val context: Context) {
         val requestedSource = AndroidRuntimeLogSource.entries.firstOrNull {
             it.wireValue == source
         } ?: return "[]"
-        return AndroidRuntimeLogs.shared.encodedRecords(
+        return AndroidRuntimeLogs.shared.encodedSnapshot(
             source = requestedSource,
             errorsOnly = flags and 1 != 0,
             newestFirst = flags and 2 != 0,

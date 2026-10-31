@@ -30,7 +30,13 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
 
 @MainActor @Observable public final class LogseqAuthenticationStore {
     public private(set) var state: LogseqAuthenticationState = .restoring
-    public private(set) var errorMessage: String?
+    public private(set) var errorMessage: String? {
+        didSet {
+            if let errorMessage, errorMessage != oldValue {
+                LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: errorMessage)
+            }
+        }
+    }
 
     private let provider: any LogseqCognitoProviding
     private let onAccessToken: @MainActor (String?) -> Void

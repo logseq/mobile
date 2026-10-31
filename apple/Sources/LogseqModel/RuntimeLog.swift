@@ -20,15 +20,30 @@ public struct LogseqRuntimeLogRecord: Identifiable, Codable, Hashable, Sendable 
 }
 
 public final class LogseqRuntimeLog: @unchecked Sendable {
-    public static let shared = LogseqRuntimeLog()
+    public static let shared = LogseqRuntimeLog(persistenceURL: FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("Logseq/last-error.json"), onError: { message in
+        Task { @MainActor in LogseqErrorFeedback.shared.receive(message) }
+    })
 
+    private let onError: (@Sendable (String) -> Void)?
+    private var lastErrorRecord: LogseqRuntimeLogRecord?
+    public var lastError: LogseqRuntimeLogRecord? { lock.withLock { lastErrorRecord } }
+    private let persistenceURL: URL?
     private let capacity: Int
     private let lock = NSLock()
     private var nextID = 0
     private var storage: [LogseqRuntimeLogRecord] = []
 
-    public init(capacity: Int = 500) {
+    public init(capacity: Int = 500, persistenceURL: URL? = nil, onError: (@Sendable (String) -> Void)? = nil) {
+        self.persistenceURL = persistenceURL
+        self.onError = onError
         self.capacity = max(1, capacity)
+        if let persistenceURL, let data = try? Data(contentsOf: persistenceURL),
+           let record = try? JSONDecoder().decode(LogseqRuntimeLogRecord.self, from: data) {
+            lastErrorRecord = record
+            nextID = record.id
+        }
     }
 
     public func append(
@@ -38,7 +53,6 @@ public final class LogseqRuntimeLog: @unchecked Sendable {
         timestampMilliseconds: Int = Int(Date().timeIntervalSince1970 * 1_000)
     ) {
         lock.lock()
-        defer { lock.unlock() }
         nextID += 1
         storage.append(LogseqRuntimeLogRecord(
             id: nextID,
@@ -50,6 +64,15 @@ public final class LogseqRuntimeLog: @unchecked Sendable {
         if storage.count > capacity {
             storage.removeFirst(storage.count - capacity)
         }
+        if level == .error {
+            lastErrorRecord = storage.last
+            if let persistenceURL, let data = try? JSONEncoder().encode(lastErrorRecord) {
+                try? FileManager.default.createDirectory(at: persistenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: persistenceURL, options: .atomic)
+            }
+        }
+        lock.unlock()
+        if level == .error { onError?(message) }
     }
 
     public func records(

@@ -98,6 +98,11 @@ public struct LGRuntimeLogPayload: Codable, Equatable, Sendable {
     public let message: String
 }
 
+private struct LGRuntimeLogSnapshotPayload: Encodable {
+    let records: [LGRuntimeLogPayload]
+    let lastError: LGRuntimeLogPayload?
+}
+
 @MainActor
 
 public final class LGPlatformEffectHandler: LGEffectExecuting {
@@ -154,6 +159,9 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
         do {
             switch effect.kind {
+            case "report-error":
+                runtimeLog.append(level: .error, source: .ui, message: effect.text)
+                return LGEffectResolution(succeeded: true, message: "", output: .discard)
             case "persist-ui-session":
                 UserDefaults.standard.set(effect.text, forKey: "logseq.uiSession")
                 return LGEffectResolution(succeeded: true, message: "", output: .discard)
@@ -185,25 +193,18 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                 }
                 let flags = effect.value ?? 0
                 let timeFormatter = DateFormatter()
-                timeFormatter.dateStyle = .none
+                timeFormatter.dateStyle = .short
                 timeFormatter.timeStyle = .short
-                let records = runtimeLog.records(
-                    source: source,
-                    errorsOnly: flags & 1 != 0,
-                    newestFirst: flags & 2 != 0
-                ).map { record in
-                    LGRuntimeLogPayload(
-                        id: String(record.id),
-                        level: record.level.rawValue.uppercased(),
-                        source: record.source.rawValue,
-                        timestamp: timeFormatter.string(from: Date(
-                            timeIntervalSince1970:
-                                Double(record.timestampMilliseconds) / 1_000
-                        )),
-                        message: record.message
-                    )
+                func payload(_ record: LogseqRuntimeLogRecord) -> LGRuntimeLogPayload {
+                    LGRuntimeLogPayload(id: String(record.id), level: record.level.rawValue.uppercased(),
+                        source: record.source.rawValue, timestamp: timeFormatter.string(from: Date(
+                            timeIntervalSince1970: Double(record.timestampMilliseconds) / 1_000)),
+                        message: record.message)
                 }
-                let data = try JSONEncoder().encode(records)
+                let records = runtimeLog.records(source: source, errorsOnly: flags & 1 != 0,
+                    newestFirst: flags & 2 != 0).map(payload)
+                let snapshot = LGRuntimeLogSnapshotPayload(records: records, lastError: runtimeLog.lastError.map(payload))
+                let data = try JSONEncoder().encode(snapshot)
                 guard let payload = String(data: data, encoding: .utf8) else {
                     throw LGEffectEncodingError.invalidUTF8
                 }
@@ -429,7 +430,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
 
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
         switch effect.kind {
-        case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
+        case "report-error", "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
              "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
             guard let platformEffect else {

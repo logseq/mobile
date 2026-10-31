@@ -80,9 +80,10 @@ import SwiftUI
         build_entitlements = plistlib.loads((core / "simulator-entitlements.plist").read_bytes())
         team = build_entitlements["application-identifier"].split(".", 1)[0]
         identifier = f"{team}.{bundle}"
+        legacy_keychain = os.environ.get("LOGSEQ_RUNTIME_CHECK_LEGACY_KEYCHAIN") == "1"
         entitlements.write_bytes(plistlib.dumps({
             "application-identifier": identifier,
-            "keychain-access-groups": [identifier],
+            "keychain-access-groups": [f"{team}.*" if legacy_keychain else identifier],
         }))
         runtime = Path((core / "native-link-inputs.txt").read_text().split(":", 1)[0])
         if not runtime.is_file():
@@ -155,7 +156,7 @@ import SwiftUI
                     shutil.copy2(screenshot, destination / screenshot.name)
                 for diagnostic in (container / "Library/Caches").glob("interaction-debug*.log"):
                     shutil.copy2(diagnostic, destination / diagnostic.name)
-            if not benchmark:
+            if not benchmark and os.environ.get("LOGSEQ_RUNTIME_CHECK_KEEP_INSTALLED") != "1":
                 run(["xcrun", "simctl", "uninstall", SIMULATOR, bundle])
 
 

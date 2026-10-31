@@ -176,7 +176,6 @@ struct LGPlatformPresentationHost: ViewModifier {
     let confirmOutlinerDelete: @MainActor () -> Void
     let stageAsset: @MainActor (String) throws -> Void
     var openJournal: @MainActor (Int) async throws -> Void = { _ in }
-    @State private var journalError: String?
 
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
@@ -225,16 +224,11 @@ struct LGPlatformPresentationHost: ViewModifier {
                     coordinator.journalCalendarPresented = false
                     Task {
                         do { try await openJournal(day) }
-                        catch { journalError = error.localizedDescription }
+                        catch { logger.error("Could not open journal: \(error.localizedDescription)") }
                     }
                 }
                 .presentationDetents([.height(460)])
             }
-            .alert("Could not open journal", isPresented: Binding(
-                get: { journalError != nil }, set: { if !$0 { journalError = nil } }
-            )) {
-                Button("OK") { journalError = nil }
-            } message: { Text(journalError ?? "") }
             .sheet(isPresented: mediaPanelBinding) {
                 let request = coordinator.attachmentRequest
                 let target = request.targetBlockID

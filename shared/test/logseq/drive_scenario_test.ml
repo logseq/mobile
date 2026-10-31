@@ -280,9 +280,13 @@ let host_responses host model =
                  })
           :: resolved
         else resolved
+      | Model.ReportErrorEffect (id, message) ->
+        host.runtime_log <- { Model.id = "error-" ^ string_of_int id; level = "ERROR";
+          source = "ui"; timestamp = "Now"; message } :: host.runtime_log;
+        Model.DequeueEffect id :: resolved
       | Model.RefreshRuntimeLogEffect (id, _, _, _) ->
         Model.DequeueEffect id
-        :: Model.ApplyRuntimeLog host.runtime_log
+        :: Model.ApplyRuntimeLog (host.runtime_log, None)
         :: resolved
       | Model.DeletePageEffect _ -> resolved
       | Model.TapOutlinerBlockEffect (id, uuid) -> (

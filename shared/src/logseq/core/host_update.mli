@@ -49,7 +49,7 @@ type host_authentication =
 
 type host_update =
   | Settings of host_settings
-  | Runtime_log of host_runtime_log_record list
+  | Runtime_log of host_runtime_log_record list * host_runtime_log_record option
   | Local_graph_ids of string list
   | Save_ui_session
   | Restore_ui_session of host_ui_session

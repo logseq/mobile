@@ -3,6 +3,8 @@ package logseq.app
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 enum class AndroidRuntimeLogLevel(val wireValue: String) {
     DEBUG("DEBUG"),
@@ -23,8 +25,10 @@ data class AndroidRuntimeLogRecord(
     val message: String,
 )
 
-class AndroidRuntimeLog(private val capacity: Int = 500) {
+class AndroidRuntimeLog(private val capacity: Int = 500, private val onError: ((String) -> Unit)? = null) {
     private val maximumCapacity = capacity.coerceAtLeast(1)
+    var lastError: AndroidRuntimeLogRecord? = null
+        private set
     private var nextId = 0L
     private val storage = mutableListOf<AndroidRuntimeLogRecord>()
 
@@ -45,6 +49,10 @@ class AndroidRuntimeLog(private val capacity: Int = 500) {
         )
         val overflow = storage.size - maximumCapacity
         if (overflow > 0) storage.subList(0, overflow).clear()
+        if (level == AndroidRuntimeLogLevel.ERROR) {
+            lastError = storage.last()
+            onError?.invoke(message)
+        }
     }
 
     @Synchronized
@@ -65,20 +73,27 @@ class AndroidRuntimeLog(private val capacity: Int = 500) {
         errorsOnly: Boolean = false,
         newestFirst: Boolean = false,
     ): String {
-        val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-        return records(source, errorsOnly, newestFirst).joinToString(
-            prefix = "[",
-            postfix = "]",
-        ) { record ->
-            "{" +
-                "\"id\":${jsonString(record.id.toString())}," +
-                "\"level\":${jsonString(record.level.wireValue)}," +
-                "\"source\":${jsonString(record.source.wireValue)}," +
-                "\"timestamp\":${jsonString(formatter.format(Date(record.timestampMilliseconds)))}," +
-                "\"message\":${jsonString(record.message)}" +
-                "}"
+        val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        return records(source, errorsOnly, newestFirst).joinToString(prefix = "[", postfix = "]") {
+            encodeRecord(it, formatter)
         }
     }
+
+    @Synchronized
+    fun encodedSnapshot(source: AndroidRuntimeLogSource?, errorsOnly: Boolean, newestFirst: Boolean): String {
+        val records = encodedRecords(source, errorsOnly, newestFirst)
+        val error = lastError?.let { encodeRecord(it, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())) } ?: "null"
+        return "{\"records\":$records,\"lastError\":$error}"
+    }
+
+    private fun encodeRecord(record: AndroidRuntimeLogRecord, formatter: SimpleDateFormat): String =
+        "{" +
+            "\"id\":${jsonString(record.id.toString())}," +
+            "\"level\":${jsonString(record.level.wireValue)}," +
+            "\"source\":${jsonString(record.source.wireValue)}," +
+            "\"timestamp\":${jsonString(formatter.format(Date(record.timestampMilliseconds)))}," +
+            "\"message\":${jsonString(record.message)}" +
+            "}"
 
     private fun jsonString(value: String): String = buildString {
         append('"')
@@ -103,5 +118,7 @@ class AndroidRuntimeLog(private val capacity: Int = 500) {
 }
 
 object AndroidRuntimeLogs {
-    val shared = AndroidRuntimeLog()
+    private val errorEvents = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val errors = errorEvents.asSharedFlow()
+    val shared = AndroidRuntimeLog(onError = { errorEvents.tryEmit(it) })
 }

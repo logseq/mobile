@@ -8,6 +8,21 @@ import org.junit.Test
 
 class CoreEffectExecutorTest {
     @Test
+    fun `diagnostic reports go to the native logger`() = runBlocking {
+        val messages = mutableListOf<String>()
+        val executor = CoreEffectExecutor(
+            callCore = { error("Diagnostics must not call the core") },
+            executePlatformEffect = NativeEffectExecutor { effect ->
+                messages += effect.text
+                NativeEffectResolution.Discard()
+            },
+            executeGraphEffect = NativeEffectExecutor { error("Unexpected graph effect") },
+        )
+        assertTrue(executor.execute(NativeEffect(id = 1, kind = "report-error", text = "Auth failed")).succeeded)
+        assertEquals(listOf("Auth failed"), messages)
+    }
+
+    @Test
     fun `index maintenance completes without replacing the UI snapshot`() = runBlocking {
         val response = """{"apiVersion":1,"ok":true,"result":{"searchIndexReady":true}}"""
         val executor = CoreEffectExecutor(

@@ -519,6 +519,20 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
           ~text:(View_base.tr (Signal.sample model_source) "Copy") [];
       ]
 
+let runtime_last_error model_source : t =
+  keyed ~source:(Signal.map (fun (model : Model.logseq_model) ->
+      Option.to_list model.runtime_log_last_error) model_source)
+    ~key:View_base.runtime_log_record_identifier ~cmp:compare
+    ~mount:(fun record ->
+      column ~gap:6 ~accessibility_identifier:"log.last-error"
+        [ heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Last error") [];
+          text ~style_class:"caption" ~foreground:"muted-foreground"
+            ~value_signal:(Signal.map (fun (value : Model.runtime_log_record) ->
+              value.timestamp ^ " · " ^ String.uppercase_ascii value.source) record) [];
+          text ~style_class:"caption" ~accessibility_identifier:"log.last-error.message"
+            ~value_signal:(Signal.map View_base.runtime_log_message record) [];
+          separator [] ])
+
 let runtime_log_screen (context : Lui_ui.ui_context) model_source send : t =
   column ~gap:12 ~padding:16 ~grow:1.0
     ~accessibility_identifier:"screen.runtime-log" ~background:"background"
@@ -528,6 +542,7 @@ let runtime_log_screen (context : Lui_ui.ui_context) model_source send : t =
         [
           column ~gap:10
             [
+              runtime_last_error model_source;
               if_
                 ~test:(Signal.map View_base.runtime_log_empty_
                          model_source)
@@ -699,12 +714,7 @@ let settings_account_row context model_source send : t =
          ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
          ~on_press:(press send Model.SignIn) [sign_in_label model_source]);
     if_ ~test:(Signal.map not signed_out) (settings_sign_out_row model_source context send);
-    if_ ~test:(Signal.map (fun current ->
-        View_base.authentication_required_ current
-        && View_base.authentication_error_present_ current) model_source)
-      (text ~foreground:"destructive"
-         ~value_signal:(Signal.map View_base.authentication_error_message model_source)
-         ~accessibility_identifier:"text.authentication-error" []);
+
   ]
 
 let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
@@ -1254,17 +1264,8 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                       ~accessibility_identifier:"sync.cursor" [];
                   ];
               ];
-            if_
-              ~test:(Signal.map View_base.sync_error_present_ model_source)
-              (text ~style_class:"footnote" ~foreground:"muted-foreground"
-                 ~value:(View_base.tr (Signal.sample model_source) "Last error") []);
-            if_
-              ~test:(Signal.map View_base.sync_error_present_ model_source)
-              (text
-                 ~value_signal:
-                   (Signal.map View_base.sync_error_message model_source)
-                 ~foreground:"destructive"
-                 ~accessibility_identifier:"sync.error" []);
+
+
                   ];
               ];
             row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
@@ -1285,7 +1286,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
       ]
   else
     View_base.with_string_prop_signal Lui_protocol.Detents
-      (Signal.map (fun current -> if View_base.sync_error_present_ current then "medium,large" else "medium") model_source)
+      (Signal.map (fun current -> "medium") model_source)
     (sheet ~text:(View_base.tr (Signal.sample model_source) "Sync status") ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
@@ -1324,20 +1325,8 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                     ~accessibility_identifier:"sync.cursor" [];
                 ];
             ];
-          if_
-            ~test:(Signal.map View_base.sync_error_present_ model_source)
-            (heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Last error") []);
-          if_
-            ~test:(Signal.map View_base.sync_error_present_ model_source)
-            (list_item
-               [
-                 text
-                   ~value_signal:
-                     (Signal.map View_base.sync_error_message
-                        model_source)
-                   ~foreground:"red" ~accessibility_identifier:"sync.error"
-                   [];
-               ]);
+
+
           button ~accessibility_identifier:"button.sync-now"
             ~on_press:(press send Model.SyncNow)
             ~text:(View_base.tr (Signal.sample model_source) "Sync now") [];

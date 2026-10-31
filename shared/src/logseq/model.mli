@@ -338,6 +338,7 @@ type logseq_effect =
   | OpenExternalURLEffect of int * string
   | RefreshRuntimeLogEffect of int * string * bool * bool
   | CopyRuntimeLogEffect of int * runtime_log_record list
+  | ReportErrorEffect of int * string
   | SignInEffect of int
   | SignOutEffect of int
 
@@ -415,6 +416,7 @@ type logseq_model =
   ; runtime_log_errors_only : bool
   ; runtime_log_newest_first : bool
   ; runtime_log_records : runtime_log_record list
+  ; runtime_log_last_error : runtime_log_record option
   ; search_open : bool
   ; search_query : string
   ; search_result_pages : search_hit list list
@@ -599,7 +601,7 @@ type logseq_action =
   | ToggleRuntimeLogErrors
   | ToggleRuntimeLogOrder
   | ToggleRuntimeLogSource
-  | ApplyRuntimeLog of runtime_log_record list
+  | ApplyRuntimeLog of runtime_log_record list * runtime_log_record option
   | RefreshRuntimeLog
   | CopyRuntimeLog
   | RequestSignOut

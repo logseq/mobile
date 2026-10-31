@@ -370,44 +370,6 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
         retained_journal_pane context model_source send;
       ]
 
-let global_effect_error_feedback (context : Lui_ui.ui_context)
-    model_source : t =
-  if Lui_ui.host context = KotlinHost then
-    alert ~variant:`destructive ~padding:14 ~corner_radius:16
-      ~border_width:0
-      ~accessibility_identifier:"layout.error.banner"
-      [
-        row ~gap:10 ~cross:`center
-          [
-            icon ~name:(`app "warning") ~width:22 ~height:22
-              ~foreground:"destructive" [];
-            text
-              ~value_signal:
-                (Signal.map View_base.effect_error_message model_source)
-              ~grow:1.0 ~accessibility_identifier:"error.banner" [];
-          ];
-      ]
-  else
-    box ~padding_horizontal:16 ~padding_vertical:8
-      [
-        alert ~variant:`destructive ~padding:14 ~corner_radius:16
-          ~border_width:0
-          ~accessibility_identifier:"layout.error.banner"
-          [
-            row ~gap:10 ~cross:`center
-              [
-                icon ~name:(`app "warning") ~width:22 ~height:22
-                  ~foreground:"destructive" [];
-                text
-                  ~value_signal:
-                    (Signal.map View_base.effect_error_message
-                       model_source)
-                  ~grow:1.0 ~accessibility_identifier:"error.banner"
-                  [];
-              ];
-          ];
-      ]
-
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =
   if Lui_ui.host context = KotlinHost then
@@ -439,10 +401,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
         (View_graphs.graphs_screen context model_source send);
-      if_
-        ~test:(Signal.map View_base.global_effect_error_present_
-                 model_source)
-        (global_effect_error_feedback context model_source);
+
       if_
         ~test:(Signal.map View_base.graph_loading_visible_ model_source)
         (graph_loading_feedback context model_source);
@@ -951,21 +910,7 @@ let authentication_content (context : Lui_ui.ui_context) model_source
           (Signal.map View_base.authentication_signing_in_ model_source)
         ~on_press:(press send Model.SignIn)
         ~text:(View_base.tr (Signal.sample model_source) "Sign in") [View_settings.sign_in_label model_source];
-      if_
-        ~test:
-          (Signal.map View_base.authentication_error_present_
-             model_source)
-        (column ~cross:`center
-           [
-             box ~height:16 [];
-             text
-               ~value_signal:
-                 (Signal.map View_base.authentication_error_message
-                    model_source)
-               ~style_class:"caption" ~foreground:"destructive"
-               ~text_alignment:`center
-               ~accessibility_identifier:"text.authentication-error" [];
-           ]);
+
     ]
 
 let authentication_screen (context : Lui_ui.ui_context) model_source send

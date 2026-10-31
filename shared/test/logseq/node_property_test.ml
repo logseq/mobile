@@ -174,7 +174,8 @@ let native_labels_layout_and_editor () =
       check_eq (App.model app).effect_error None;
       check ~msg:"a rejected toggle restores the confirmed checkbox state"
         (App_test.property_bool host (find (id R.ready)) Lui_protocol.Checked);
-      check (find ("view.action.error." ^ editor) <> -1)))) [App_test.ios_backend; App_test.kotlin_backend]
+      check_eq (find ("view.action.error." ^ editor)) (-1);
+      check (App_test.reported_errors (App.model app) <> [])))) [App_test.ios_backend; App_test.kotlin_backend]
 
 let text_editor_refresh_and_value_catalog () =
   List.iter (fun backend -> R.with_runtime (fun session runtime conn ->

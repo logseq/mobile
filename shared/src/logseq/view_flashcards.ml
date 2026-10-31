@@ -240,18 +240,13 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             if_ ~test:(own (Signal.map ((=) []) targets))
               (list_item [text ~value:(View_base.tr (Signal.sample model_source) "No matching pages or tags") ~foreground:"muted-foreground" []]);
           ];
-          if_ ~test:(own (Signal.map (fun (model : Model.logseq_model) -> model.effect_error <> None) model_source))
-            (list_section [list_item [text ~foreground:"destructive" ~accessibility_identifier:"error.flashcards.deck"
-              ~value_signal:(own (Signal.map (fun (model : Model.logseq_model) ->
-                Option.value ~default:"" model.effect_error |> String.split_on_char '\n' |> List.rev |> List.hd) model_source)) []]]);
+
         ];
         (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; create]
          else toolbar ~label:(View_base.tr (Signal.sample model_source) "Card group actions") ~style_class:"navigation-actions" [cancel; create]);
       ]) context parent) in
     (column ~gap:0 [controls;
-      if_ ~test:(own (Signal.map (fun json -> json_field "error" json <> `Null) metadata))
-        (text ~foreground:"destructive" ~padding_horizontal:20
-          ~value_signal:(own (Signal.map (fun json -> json_text (json_field "error" json)) metadata)) []);
+
       picker]) context parent)) context parent
 
 let flashcard_screen model_source send : t =
