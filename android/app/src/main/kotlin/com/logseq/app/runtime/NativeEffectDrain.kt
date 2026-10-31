@@ -66,10 +66,14 @@ internal class NativeEffectDrain(
             active.join()
             return
         }
-        val job = kotlinx.coroutines.Job()
+        val job = kotlinx.coroutines.Job(scope.coroutineContext[kotlinx.coroutines.Job])
         activeDrain = job
-        kotlinx.coroutines.withContext(job) { run() }
-        activeDrain = null
+        try {
+            kotlinx.coroutines.withContext(job) { run() }
+        } finally {
+            job.complete()
+            if (activeDrain === job) activeDrain = null
+        }
     }
 
     private suspend fun run() {
@@ -128,6 +132,7 @@ internal class NativeEffectDrain(
 
     fun dispose() {
         disposed = true
+        activeDrain?.cancel()
         queryWake?.complete(Unit)
         queryWake = null
     }
