@@ -122,7 +122,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     fun capturePendingInput(incoming: TextFieldValue) {
         if (!awaitingHandoff) return
-        handoffSegments.lastOrNull()?.capture(incoming.text, incoming.selection.start)
+        handoffSegments.lastOrNull()?.capture(incoming.text, incoming.selection.start, incoming.selection.end)
         observedValue = incoming
     }
 
@@ -134,7 +134,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         handoffRevision = null
         val pending = handoffSegments.removeFirstOrNull()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
-        val (merged, caret) = pending?.rebase(modelTitle, offset) ?: (modelTitle to offset)
+        val snapshot = pending?.rebase(modelTitle, offset) ?: EditorInputSnapshot(modelTitle, offset)
+        val merged = snapshot.text
+        val caret = snapshot.selectionStart
+        val selection = TextRange(snapshot.selectionStart, snapshot.selectionEnd)
         rememberedBlockId = blockId
         rememberedModelTitle = modelTitle
         rememberedSelectionRevision = selectionRevision
@@ -150,8 +153,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 )
             }
         } else {
-            if (value.text != merged || value.selection != TextRange(caret)) {
-                value = TextFieldValue(merged, TextRange(caret))
+            if (value.text != merged || value.selection != selection) {
+                value = TextFieldValue(merged, selection)
             }
             observedValue = value
             if (merged != modelTitle) debounceSeq++

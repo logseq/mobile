@@ -2,6 +2,7 @@ package com.logseq.app
 
 import com.logseq.app.ui.extensions.applyEmptyPairDeletion
 import com.logseq.app.ui.extensions.PendingEditorInput
+import com.logseq.app.ui.extensions.EditorInputSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -23,7 +24,24 @@ class NativeEditorInputPolicyTest {
         for (case in cases) {
             val pending = PendingEditorInput(case.initial, case.origin)
             case.edits.forEach { pending.capture(it.first, it.second) }
-            assertEquals(case.toString(), case.expected, pending.rebase(case.canonical, case.caret))
+            val result = pending.rebase(case.canonical, case.caret)
+            assertEquals(case.toString(), case.expected, result.text to result.selectionStart)
+        }
+    }
+
+    @Test fun preservesSelectedTextAndDirectionAcrossPasteAcknowledgement() {
+        data class Case(val text: String, val start: Int, val end: Int, val canonical: String,
+            val expected: EditorInputSnapshot)
+        val cases = listOf(
+            Case("paste", 5, 3, "paste", EditorInputSnapshot("paste", 5, 3)),
+            Case("Bold note", 9, 7, "**Bold note**", EditorInputSnapshot("**Bold note**", 11, 9)),
+            Case("Bold note", 7, 9, "**Bold note**", EditorInputSnapshot("**Bold note**", 9, 11)),
+            Case("😀", 2, 0, "**😀**", EditorInputSnapshot("**😀**", 4, 2)),
+        )
+        for (case in cases) {
+            val pending = PendingEditorInput(case.text, case.text.length)
+            pending.capture(case.text, case.start, case.end)
+            assertEquals(case.toString(), case.expected, pending.rebase(case.canonical, case.canonical.length))
         }
     }
 
