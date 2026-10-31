@@ -1,8 +1,8 @@
 (rule
  (targets quickjs.c quickjs.h quickjs-atom.h quickjs-opcode.h
           cutils.c cutils.h dtoa.c dtoa.h list.h libregexp.c libregexp.h
-          libregexp-opcode.h libunicode.c libunicode.h libunicode-table.h chrono_bundle.h)
- (deps fetch.py dependencies.json)
+          libregexp-opcode.h libunicode.c libunicode.h libunicode-table.h chrono_bundle.h codemirror_bundle.h)
+ (deps fetch.py bundle_syntax.py syntax.js dependencies.json)
  (action (run python3 %{dep:fetch.py} %{dep:dependencies.json} .)))
 
 (library
@@ -10,6 +10,6 @@
  (modules)
  (foreign_stubs
   (language c)
-  (names logseq_nlp_stub quickjs cutils dtoa libregexp libunicode)
+  (names logseq_nlp_stub logseq_syntax_stub quickjs cutils dtoa libregexp libunicode)
   (flags (:standard -Os -ffunction-sections -fdata-sections -D_GNU_SOURCE
                     "-DCONFIG_VERSION=\"2026-06-04\""))))

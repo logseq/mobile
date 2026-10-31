@@ -148,6 +148,7 @@ type pending_property_value =
 
 type pending_intent =
   | Atomic of pending_intent list
+  | Set_key_value of { key : string; value : semantic_value option }
   | Create_property_value of pending_property_value
   | Save_title of pending_title
   | Set_property of pending_property

@@ -1,4 +1,5 @@
 import SwiftUI
+import LogseqModel
 #if os(iOS)
 import UIKit
 #endif
@@ -181,6 +182,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             location: min(desiredCaretUTF16Offset ?? text.utf16.count, text.utf16.count),
             length: 0
         )
+        coordinator.highlight(textView)
         if focusEnabled { textView.requestFocusWhenAttached() }
         LGInteractionDiagnostics.editor(textView, blockID: blockID, event: "editor.make")
         return textView
@@ -269,6 +271,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.activeBlockID = blockID
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
+        context.coordinator.highlight(textView)
         if !focusEnabled {
             (textView as? FocusRetainingTextView)?.cancelPendingFocus()
         } else if InlineEditorFocusPolicy.shouldRequestFocus(
@@ -282,6 +285,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
         LGInteractionDiagnostics.editor(textView, blockID: coordinator.activeBlockID, event: "editor.dismantle")
         textView.delegate = nil
+        coordinator.highlightTask?.cancel()
     }
 
     private func applyTextLayout(to textView: UITextView) {
@@ -342,11 +346,54 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var activeBlockID: String
         var isApplyingModel = false
         var selectionRevision: Int
+        var highlightTask: Task<Void, Never>?
+        private var highlightKey: String?
 
         init(parent: NativeOutlinerTextView) {
             self.parent = parent
             activeBlockID = parent.blockID
             selectionRevision = parent.selectionRevision
+        }
+
+        func highlight(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            let policy = (try? JSONSerialization.jsonObject(with: Data(parent.inputPolicy.utf8))) as? [String: Any]
+            let language = policy?["language"] as? String ?? ""
+            let source = textView.text ?? ""
+            let code = policy?["code"] as? Bool == true
+            guard code else {
+                highlightTask?.cancel()
+                if highlightKey != nil { applyHighlighting([], to: textView) }
+                highlightKey = nil
+                return
+            }
+            let key = source + "\u{0}" + language
+            guard highlightKey != key else { return }
+            highlightTask?.cancel()
+            highlightKey = key
+            highlightTask = Task { @MainActor [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(35))
+                guard !Task.isCancelled else { return }
+                let tokens = await CodeSyntaxHighlighter.shared.tokens(code: source, language: language)
+                guard !Task.isCancelled, let self, let textView, textView.text == source,
+                      self.highlightKey == key else { return }
+                guard textView.markedTextRange == nil else {
+                    self.highlightKey = nil
+                    return
+                }
+                self.applyHighlighting(tokens, to: textView)
+            }
+        }
+
+        private func applyHighlighting(_ tokens: [CodeSyntaxToken], to textView: UITextView) {
+            let selection = textView.selectedRange
+            isApplyingModel = true
+            textView.textStorage.beginEditing()
+            NativeCodeHighlighting.apply(tokens, to: textView.textStorage)
+            textView.textStorage.endEditing()
+            textView.selectedRange = selection
+            textView.typingAttributes[.foregroundColor] = UIColor.label
+            isApplyingModel = false
         }
 
         func applySelectionRequest(to textView: UITextView) {
@@ -362,6 +409,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.input")
             localText = textView.text
             guard textView.markedTextRange == nil else { return }
+            highlight(textView)
             if (textView as? FocusRetainingTextView)?.isPasting == true, let onPaste = parent.onPaste {
                 onPaste(textView.text, textView.selectedRange.location)
             } else {

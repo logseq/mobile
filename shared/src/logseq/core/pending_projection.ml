@@ -157,6 +157,11 @@ let tag_behavior_tx db uuid tag_eid =
     match Graph_read.tag_display_type db tag_eid with
     | Some display ->
       [Ds.Add (reference, "logseq.property.node/display-type", Ds.Keyword display)]
+      @ (if display = "code" && one_value db reference "logseq.property.code/lang" = None then
+          match Graph_read.latest_code_language db with
+          | Some language -> [Ds.Add (reference, "logseq.property.code/lang", Ds.String language)]
+          | None -> []
+        else [])
     | None -> [] in
   let task =
     match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task") with
@@ -465,6 +470,14 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
       @ (match existing, Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Page") with
         | Some _, Some page -> [Ds.Retract (reference, "block/tags", Some (Ds.Ref page))]
         | _ -> []))
+  | Ops.Set_key_value {key; value} ->
+    let existing = Ds.entid db "db/ident" (Ds.Keyword key) in
+    (match value with
+     | None -> Ok (match existing with Some id -> [Ds.RetractAttr (Ds.Entity_id id, "kv/value")] | None -> [])
+     | Some value ->
+       let reference = match existing with Some id -> Ds.Entity_id id | None -> Ds.Temp_id ("pending/kv/" ^ key) in
+       Ok [entity_tx reference ["db/ident", Ds.One_value (Ds.Keyword key);
+         "kv/value", Ds.One_value (datascript_value value)]])
   | Ops.Atomic intents ->
     if intents = [] then Error "atomic operation cannot be empty"
     else
@@ -973,6 +986,8 @@ let block_location_matches db uuid page_uuid parent_uuid order =
 let rec satisfied db (intent : Ops.pending_intent) =
   match intent with
   | Ops.Atomic intents -> intents <> [] && List.for_all (satisfied db) intents
+  | Ops.Set_key_value {key; value} ->
+    semantic_value_equal db (property_value db (Ds.Ident key) "kv/value") value
   | Ops.Create_property_value value ->
     let content_attr = match value.content with Ops.String_value _ -> "block/title" | _ -> "logseq.property/value" in
     semantic_value_equal db (one_value db (lookup value.uuid) content_attr) (Some value.content)

@@ -4,6 +4,11 @@
     "url": "https://bellard.org/quickjs/quickjs-2026-06-04.tar.xz",
     "sha256": "b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a"
   },
+  "codemirror": {
+    "version": "5.65.18",
+    "url": "https://registry.npmjs.org/codemirror/-/codemirror-5.65.18.tgz",
+    "sha256": "775b7a711166c3f39899e56179a7fc8b5b755c3a043ee973c54ae5838023400f"
+  },
   "chrono-node": {
     "version": "2.9.0",
     "url": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.9.0.tgz",

@@ -121,6 +121,7 @@ let plan db ~now ~fresh_uuid operation =
       [Ops.Create_journal {page_uuid = Journal.page_uuid day;
         block_uuid = fresh_uuid (); block_title = ""; title = Journal.title db day; journal_day = day; created_at = now}]
     | Insert_code (uuid, language) ->
+      let language = match language with Some _ -> language | None -> Read.latest_code_language db in
       let target = eid db uuid in
       let page = match Read.ref_eids db target "block/page" with p :: _ -> Option.get (Read.uuid_for_eid db p) | _ -> invalid_arg "Missing page" in
       let parent = match Read.ref_eids db target "block/parent" with p :: _ -> Option.get (Read.uuid_for_eid db p) | _ -> page in
@@ -155,7 +156,9 @@ let plan db ~now ~fresh_uuid operation =
           | None -> []
         else [])
     | Apply (uuid, Choice (attr, value)) -> [edit db ~now ~fresh_uuid uuid attr (Option.value ~default:"" value)]
-    | Apply (uuid, Code lang) -> [set db uuid "logseq.property.node/display-type" (Some (Ops.Keyword_value "code"))]
+    | Apply (uuid, Code lang) ->
+      let lang = match lang with Some _ -> lang | None -> Read.latest_code_language db in
+      [set db uuid "logseq.property.node/display-type" (Some (Ops.Keyword_value "code"))]
       @ (match lang with None -> [] | Some lang -> [set db uuid "logseq.property.code/lang" (Some (Ops.String_value lang))])
     | Apply (uuid, Number children) ->
       let targets = if children then Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" (eid db uuid)

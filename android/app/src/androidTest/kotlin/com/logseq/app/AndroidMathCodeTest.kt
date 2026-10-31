@@ -121,6 +121,20 @@ class AndroidMathCodeTest {
         assertEquals(code, layout(code).layoutInput.text.text)
     }
 
+    @Test fun clojureDefinitionsAndOcamlBindingsHaveSyntaxColors() {
+        val clojure = "(def answer 42)\n(defn square [x] (* x x)) ; note"
+        val ocaml = "let square x = x * x\n(* nested (* comment *) *)\ntype point = { x : float }"
+        ui.setContent { MaterialTheme { Column { AndroidCodeBlock(clojure, "clj"); AndroidCodeBlock(ocaml, "OCaml") } } }
+        for ((source, keywords) in listOf(clojure to listOf("def", "defn"), ocaml to listOf("let", "type"))) {
+            val text = awaitHighlight(source).layoutInput.text
+            assertEquals(source, text.text)
+            for (keyword in keywords) {
+                val start = source.indexOf(keyword)
+                assertTrue("$keyword has a syntax color", text.spanStyles.any { it.start <= start && it.end >= start + keyword.length })
+            }
+        }
+    }
+
     @Test fun codeThemeAndSourceChangesInvalidateHighlighting() {
         val dark = mutableStateOf(false)
         val source = mutableStateOf("let value = 1")

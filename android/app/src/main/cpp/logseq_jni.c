@@ -308,3 +308,17 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_logseqCall(
   (void)clazz;
   return call_s(env, "logseq_call", request);
 }
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_highlightCode(
+    JNIEnv *env, jclass clazz, jbyteArray request) {
+  (void)clazz;
+  typedef char *(*highlight_fn)(const char *);
+  highlight_fn fn = (highlight_fn)core_symbol("logseq_highlight_code");
+  if (!fn) return NULL;
+  char *input = jbytes_to_cstr(env, request);
+  char *result = fn(input);
+  jbyteArray output = cstr_to_jbytes(env, result);
+  free(input);
+  free(result);
+  return output;
+}

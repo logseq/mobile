@@ -69,6 +69,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val focusEnabled = context.bool("focus-enabled") == true
     val code = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optBoolean("code") }.getOrDefault(false) }
     val multiline = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optBoolean("multiline") }.getOrDefault(false) }
+    val codeLanguage = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optString("language") }.getOrDefault("") }
 
     val focusRequester = remember { FocusRequester() }
     var value by remember {
@@ -322,9 +323,15 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
+    val highlighted = if (code) rememberHighlightedCode(value.text, codeLanguage) else value.annotatedString
     BasicTextField(
         value = value,
         onValueChange = ::acceptValue,
+        visualTransformation = androidx.compose.ui.text.input.VisualTransformation { original ->
+            androidx.compose.ui.text.input.TransformedText(
+                if (highlighted.text == original.text) highlighted else original,
+                androidx.compose.ui.text.input.OffsetMapping.Identity)
+        },
         modifier = Modifier
             .fillMaxWidth()
             .appendTextContextMenuComponents {

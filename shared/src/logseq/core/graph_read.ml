@@ -19,6 +19,12 @@ let string_value = function
   | Some (Ds.String value) -> Some value
   | _ -> None
 
+let latest_code_language db =
+  Option.bind (Ds.entid db "db/ident" (Ds.Keyword "logseq.kv/latest-code-lang"))
+    (fun id -> match value db id "kv/value" with
+      | Some (Ds.String language) when String.trim language <> "" -> Some language
+      | _ -> None)
+
 let uuid_value = function
   | Some (Ds.Uuid value) | Some (Ds.String value) -> Some value
   | _ -> None

@@ -49,4 +49,5 @@ internal object NativeCore {
     external fun luiApplySnapshot(response: ByteArray): ByteArray?
     external fun luiApplyHostUpdate(kind: ByteArray, payload: ByteArray): ByteArray?
     external fun logseqCall(request: ByteArray): ByteArray?
+    external fun highlightCode(request: ByteArray): ByteArray?
 }

@@ -6,6 +6,41 @@ module R = Result_view_test
 let member = Q.member
 let result response = check_eq ~msg:(J.to_string response) (member "ok" response) (`Bool true); member "result" response
 
+external syntax_tokens : string -> string = "logseq_syntax_tokens"
+external syntax_initializations : unit -> int = "logseq_syntax_init_count"
+
+let syntax_matches_master_modes () =
+  let date_initializations = Natural_date.initialization_count () in
+  let tokens language text = J.from_string (syntax_tokens (J.to_string (`Assoc [
+    "language", `String language; "text", `String text]))) in
+  let assert_token language text word style =
+    let offset = Str.search_forward (Str.regexp_string word) text 0 in
+    let prefix = String.sub text 0 offset in
+    let start = Outliner_state.utf16_length prefix in
+    let expected = `List [`Int start; `Int (start + String.length word); `String style] in
+    match tokens language text with
+    | `List spans -> check ~msg:(language ^ ": missing " ^ word ^ " token: " ^ J.to_string (`List spans)) (List.mem expected spans)
+    | _ -> failwith "Expected syntax spans" in
+  List.iter (fun language ->
+    assert_token language "(def answer 42)\n(defn square [x] (* x x))" "def" "keyword";
+    assert_token language "(defn square [x] (* x x))" "defn" "keyword") ["clojure"; "clj"; "cljs"; "CLJC"];
+  List.iter (fun language ->
+    assert_token language "let square x = x * x" "let" "keyword";
+    assert_token language "type shape = Circle of float" "type" "keyword") ["ocaml"; "OCaml"; "ml"; "text/x-ocaml"];
+  List.iter (fun (language, source, word, style) -> assert_token language source word style)
+    ["python", "def square(x):\n  return x*x", "def", "keyword";
+     "javascript", "const answer = 42;", "const", "keyword";
+     "swift", "let answer = 42 // note", "42", "number";
+     "rust", "fn square(x: i32) -> i32 { x*x }", "fn", "keyword";
+     "clojure", "; 😀\r\n(def answer 42)\r\n", "def", "keyword";
+     "ocaml", "(* outer (* nested *) comment *)\nlet x = 42", "let", "keyword"];
+  List.iter (fun (language, text) -> check_eq (tokens language text) (`List []))
+    ["", "  中文 😀\t\n"; "custom-language", "(def x 1)"; "calc", "1+2";
+     "clojure", ""; "clojure", String.make 100_001 'x'];
+  assert_token "clojure" "(def recovered 42)" "def" "keyword";
+  check_eq ~msg:"The syntax runtime is reused" (syntax_initializations ()) 1;
+  check_eq ~msg:"Highlighting does not load the date parser" (Natural_date.initialization_count ()) date_initializations
+
 let code_language_can_be_changed_and_cleared () = R.with_runtime (fun session runtime conn ->
   Editor_command_test.rebase runtime conn [Q.put Q.alpha "logseq.property.node/display-type" (Ds.Keyword "code")];
   List.iter (fun language ->
@@ -17,6 +52,42 @@ let code_language_can_be_changed_and_cleared () = R.with_runtime (fun session ru
   ) ["python"; "ocaml"; ""];
   check_eq (member "ok" (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
     "action", `String "setCodeLanguage"; "blockUuid", `String Q.beta; "value", `String "python"])))) (`Bool false))
+
+let new_code_uses_the_graphs_latest_language () = R.with_runtime (fun session runtime conn ->
+  let latest () = Option.bind (Ds.entid (Graph_runtime.db runtime) "db/ident"
+    (Ds.Keyword "logseq.kv/latest-code-lang"))
+    (fun id -> Graph_read.value (Graph_runtime.db runtime) id "kv/value") in
+  Editor_command_test.rebase runtime conn [Ds.Entity {Ds.db_id = Some (Ds.Temp_id "latest-language");
+    attrs = ["db/ident", Ds.One_value (Ds.Keyword "logseq.kv/latest-code-lang");
+      "kv/value", Ds.One_value (Ds.String "ocaml")]}];
+  ignore (Editor_command_test.run session "Code block");
+  check_eq ~msg:"New code reads the same graph KV as master"
+    (Editor_command_test.value runtime Q.alpha "logseq.property.code/lang") (Some (Ds.String "ocaml"));
+  let choose language = ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "action", `String "setCodeLanguage"; "blockUuid", `String Q.alpha; "value", `String language])))) in
+  choose "clojure";
+  check_eq ~msg:"Selecting a language persists it in the graph KV" (latest ()) (Some (Ds.String "clojure"));
+  List.iter (fun backend ->
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let editor = App_test.descendant_with_extension host app (Lui_app.root_node app) "outliner-editor" in
+      let policy = match App_test.extension_property app editor "input-policy" with
+        | Some (Lui_protocol.StringValue json) -> J.from_string json | _ -> `Null in
+      check_eq ~msg:"Both native editors receive the selected code language" (member "language" policy) (`String "clojure")))
+    [App_test.ios_backend; App_test.kotlin_backend];
+  ignore (Editor_command_test.start session "Keep /code");
+  let response = Editor_command_test.command session "Code block" in
+  let uuid = R.text (member "uuid" (Editor_command_test.draft response)) in
+  check ~msg:"Nonempty source creates a separate code block" (uuid <> Q.alpha);
+  check_eq (Editor_command_test.value runtime uuid "logseq.property.code/lang") (Some (Ds.String "clojure"));
+  ignore (Editor_command_test.run session "Calculator");
+  check_eq ~msg:"The Calculator command keeps the latest selected language" (latest ()) (Some (Ds.String "clojure"));
+  choose "";
+  check_eq ~msg:"Selecting plain text clears the preference" (latest ()) None;
+  ignore (Editor_command_test.start session "Next /code");
+  let response = Editor_command_test.command session "Code block" in
+  let uuid = R.text (member "uuid" (Editor_command_test.draft response)) in
+  check_eq (Editor_command_test.value runtime uuid "logseq.property.code/lang") None)
 
 let code_commands_keep_one_block_and_its_language_control () =
   List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session runtime _ ->
@@ -107,6 +178,8 @@ let calculator_results_follow_the_unsaved_editor () =
          "2*3\ninvalid(2)\nlast*2\n4", "6\nError\nError\n4"; "", ""])))
     [App_test.ios_backend; App_test.kotlin_backend]
 
-let cases = [case "calculator results follow the unsaved editor" calculator_results_follow_the_unsaved_editor;
+let cases = [case "syntax matches master modes" syntax_matches_master_modes;
+  case "new code uses the graph's latest language" new_code_uses_the_graphs_latest_language;
+  case "calculator results follow the unsaved editor" calculator_results_follow_the_unsaved_editor;
   case "code language" code_language_can_be_changed_and_cleared;
   case "code command keeps its language control inside the block" code_commands_keep_one_block_and_its_language_control]

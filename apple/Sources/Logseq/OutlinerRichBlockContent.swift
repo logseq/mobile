@@ -1,7 +1,6 @@
 import SwiftUI
 import LogseqModel
 
-import HighlightSwift
 #if os(iOS)
 import AVKit
 import UIKit
@@ -381,10 +380,11 @@ private struct SyntaxHighlightedCodeBlock: View {
     @Environment(\.lgShowCodeLanguage) private var showLanguage
     let code: String
     let language: String?
+    @State private var highlighted: (code: String, language: String?, text: AttributedString)?
 
-    private var contentHeight: CGFloat {
-        let lineCount = max(code.components(separatedBy: "\n").count, 1)
-        return min(max(CGFloat(lineCount * 20 + 34), 72), 320)
+    private var displayText: AttributedString {
+        if let highlighted, highlighted.code == code, highlighted.language == language { return highlighted.text }
+        return AttributedString(code)
     }
 
     var body: some View {
@@ -395,9 +395,7 @@ private struct SyntaxHighlightedCodeBlock: View {
                     .foregroundStyle(.secondary)
             }
             ScrollView(.horizontal, showsIndicators: true) {
-                CodeText(code)
-                    .highlightMode(.languageAliasIgnoreIllegal(language ?? "plaintext"))
-                    .codeTextColors(.theme(.github))
+                Text(displayText)
                     .font(.callout.monospaced())
                     .textSelection(.enabled)
             }
@@ -405,6 +403,16 @@ private struct SyntaxHighlightedCodeBlock: View {
         .padding(10)
         .background(showLanguage ? Color.secondary.opacity(0.1) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: [code, language ?? ""]) {
+            highlighted = nil
+            let tokens = await CodeSyntaxHighlighter.shared.tokens(code: code, language: language ?? "")
+            guard !Task.isCancelled else { return }
+            #if os(iOS)
+            highlighted = (code, language, NativeCodeHighlighting.attributed(code, tokens: tokens))
+            #else
+            highlighted = (code, language, AttributedString(code))
+            #endif
+        }
     }
 }
 

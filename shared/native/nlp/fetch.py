@@ -1,4 +1,4 @@
-"""Fetch checksum-pinned build dependencies and bundle Chrono's English parser."""
+"""Fetch checksum-pinned QuickJS, Chrono and CodeMirror build dependencies."""
 import hashlib
 import io
 import json
@@ -10,6 +10,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from bundle_syntax import bundle_syntax
 
 
 def archive(spec):
@@ -31,6 +32,8 @@ def main():
     lock = json.loads(Path(sys.argv[1]).read_text())
     output = Path(sys.argv[2])
     output.mkdir(parents=True, exist_ok=True)
+    with archive(lock["codemirror"]) as source:
+        bundle_syntax(source, output)
     with archive(lock["quickjs"]) as source:
         names = ["quickjs.c", "quickjs.h", "quickjs-atom.h", "quickjs-opcode.h",
                  "cutils.c", "cutils.h", "dtoa.c", "dtoa.h", "list.h", "libregexp.c",

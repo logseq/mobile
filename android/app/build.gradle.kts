@@ -156,7 +156,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20260814")
     implementation("ru.noties:jlatexmath-android:0.2.0")
-    implementation("dev.snipme:highlights:1.1.0")
 
     testImplementation("org.json:json:20260814")
     testImplementation("junit:junit:4.13.2")

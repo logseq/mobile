@@ -180,6 +180,7 @@ type pending_property_value =
 
 type pending_intent =
   | Atomic of pending_intent list
+  | Set_key_value of { key : string; value : semantic_value option }
   | Create_property_value of pending_property_value
   | Save_title of pending_title
   | Set_property of pending_property
@@ -345,6 +346,7 @@ let search_visible_property attr =
 let rec affected_uuids db intent =
   match intent with
   | Atomic intents -> List.concat_map (affected_uuids db) intents |> List.sort_uniq String.compare
+  | Set_key_value _ -> []
   | Set_property value -> if search_visible_property value.attr then [ value.uuid ] else []
   | Set_properties value ->
     if
@@ -372,7 +374,7 @@ let rec affected_uuids db intent =
 let rec safe_to_rebase intent =
   match intent with
   | Atomic intents -> List.for_all safe_to_rebase intents
-  | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Split_block _
+  | Set_key_value _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Split_block _
   | Merge_backward _ | Create_tag _ | Create_page _ | Create_property _ | Create_journal _
   | Add_tag _ | Insert_block _ | Create_asset _ | Move_block _ | Move_blocks _
   | Set_favorite _ | Delete_page _ -> true
@@ -413,7 +415,7 @@ let remove_raw = Graph_sqlite.remove_pending
 
 let outliner_op intent =
   match intent with
-  | Atomic _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
+  | Atomic _ | Set_key_value _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
   | Create_page _ | Create_property _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
   | Set_favorite value -> if value.favorite then "insert-blocks" else "delete-blocks"
@@ -602,6 +604,7 @@ let rec intent_json intent =
   let kind, fields =
     match intent with
     | Atomic intents -> ("atomic", ["intents", `List (List.map intent_json intents)])
+    | Set_key_value {key; value} -> ("set-key-value", ["key", `String key; "value", option_json semantic_value_json value])
     | Create_property_value value -> ("create-property-value", [
         "uuid", `String value.uuid; "ownerUuid", `String value.owner_uuid;
         "propertyIdent", `String value.property_ident; "content", semantic_value_json value.content;
@@ -733,6 +736,7 @@ let rec intent_of_json input =
   let fields = object_fields input "pending intent must be an object" in
   match string_field fields "type" with
   | "atomic" -> Atomic (List.map intent_of_json (array_field fields "intents"))
+  | "set-key-value" -> Set_key_value {key = string_field fields "key"; value = semantic_field fields "value"}
   | "save-title" ->
     Save_title
       {
