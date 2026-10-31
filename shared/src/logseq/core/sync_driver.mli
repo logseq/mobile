@@ -9,6 +9,7 @@ type event =
   | Cancelled
   | Snapshot_applied
   | Network of bool
+  | Submission_response of int * string * int option
 
 val empty : t
 val generation : t -> int

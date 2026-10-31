@@ -53,6 +53,7 @@ let () =
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;
       "rpc", Rpc_test.cases;
+      "websocket_upload", Websocket_upload_test.cases;
       "core_effect", Core_effect_test.cases;
       "native_bootstrap", Native_bootstrap_test.cases;
       "shared_capture", Shared_capture_test.cases;

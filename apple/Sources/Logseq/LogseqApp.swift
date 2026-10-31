@@ -855,8 +855,6 @@ public struct LogseqRootView : View {
             allowSnapshotDownload: false,
             isEncrypted: isEncrypted
         ) else { return false }
-        await store.syncPendingForBackground()
-        guard store.lastError == nil else { return false }
         _ = await store.runGraphEventsOnce(
             graphID: graphID,
             baseURL: baseURL,

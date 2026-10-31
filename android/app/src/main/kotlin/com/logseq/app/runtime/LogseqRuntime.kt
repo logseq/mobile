@@ -115,6 +115,7 @@ internal class LogseqRuntime(
     @Volatile private var selectedGraphId = ""
     @Volatile private var storageBaseUrl = ""
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
+    @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
     private var graphEventsJob: kotlinx.coroutines.Job? = null
@@ -321,12 +322,15 @@ internal class LogseqRuntime(
                     isCancelled = { !isActive },
                 )
                 val outcome = try {
+                    graphEventsSync = sync
                     sync.runSession(AndroidGraphEventsSync.Connection(graphId, storageBaseUrl, token))
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
                 } catch (error: Throwable) {
                     logRuntime("error", "core", "graph events stopped: $error")
                     break
+                } finally {
+                    if (graphEventsSync === sync) graphEventsSync = null
                 }
                 when (outcome) {
                     is AndroidGraphEventsSync.SessionOutcome.SnapshotRequired -> {
@@ -375,6 +379,7 @@ internal class LogseqRuntime(
                 applyResponse = ::applyCoreResponse,
                 isCancelled = { !job.isActive },
                 log = { level, message -> logRuntime(level, "core", message) },
+                sendWebSocket = { graphEventsSync?.sendPending(it) },
             ).run()
         } while (pendingSyncRequested && job.isActive)
     }

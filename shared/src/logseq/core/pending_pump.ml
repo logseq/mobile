@@ -226,7 +226,7 @@ let activate_semantic_request (session : Types.session) config accepted =
               | _ -> operation.operation_id
             in
             let request =
-              Api.tx_batch_request config before tx_id outliner_op tx
+              Api.tx_batch_websocket_request config before tx_id outliner_op tx
             in
             let next_id = s.next_pending_request_id + 1 in
             session.state :=

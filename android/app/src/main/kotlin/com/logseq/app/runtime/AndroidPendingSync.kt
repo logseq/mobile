@@ -1,15 +1,57 @@
 package com.logseq.app.runtime
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
+import okhttp3.WebSocket
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
+internal class AndroidPendingWebSocket(private val socket: WebSocket, private val url: String) {
+    private var active: Pair<Long, CompletableDeferred<AndroidPendingSyncResult>>? = null
+    private var closed = false
+
+    suspend fun send(request: AndroidPendingSyncRequest): AndroidPendingSyncResult {
+        val response = CompletableDeferred<AndroidPendingSyncResult>()
+        synchronized(this) {
+            if (closed || request.url != url || request.body == null || active != null)
+                return AndroidPendingSyncResult(null, null, "The graph WebSocket is unavailable")
+            active = request.id to response
+        }
+        try {
+            if (!socket.send(request.body!!)) close("WebSocket send failed")
+            return withTimeout(30_000) { response.await() }
+        } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            close("The graph WebSocket response timed out")
+            return AndroidPendingSyncResult(null, null, "The graph WebSocket response timed out")
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            close("WebSocket upload cancelled")
+            throw error
+        } finally {
+            synchronized(this) { if (active?.second === response) active = null }
+        }
+    }
+
+    @Synchronized fun complete(id: Long, body: String) {
+        if (active?.first == id) active?.second?.complete(AndroidPendingSyncResult(200, body, null))
+    }
+
+    @Synchronized fun close(message: String = "The graph WebSocket closed") {
+        closed = true
+        socket.cancel()
+        active?.second?.complete(AndroidPendingSyncResult(null, null, message))
+    }
+}
+
 // Kotlin port of PendingSyncTransport.swift: the core emits
 // `pendingSyncRequest` objects on every snapshot while a pending-sync pump
-// is active; the host performs the HTTP request and reports back through
+// is active; the host uses the graph socket for WS requests and HTTP for files,
+// then reports the response through
 // the `completePendingSync` dispatch action.
 
 internal data class AndroidPendingSyncRequest(
@@ -113,6 +155,7 @@ internal class AndroidPendingSyncPump(
     private val applyResponse: suspend (String) -> Unit,
     private val isCancelled: () -> Boolean,
     private val log: (String, String) -> Unit = { _, _ -> },
+    private val sendWebSocket: suspend (AndroidPendingSyncRequest) -> AndroidPendingSyncResult? = { null },
 ) {
     suspend fun run() {
         val beginResponse = callCore(dispatchRequest("beginPendingSync"))
@@ -122,9 +165,8 @@ internal class AndroidPendingSyncPump(
             while (pending != null && !isCancelled()) {
                 if (pending.delayMs > 0) kotlinx.coroutines.delay(pending.delayMs)
                 if (isCancelled()) break
-                val result = withContext(Dispatchers.IO) {
-                    AndroidPendingSyncTransport.send(pending)
-                }
+                val result = if (pending.method == "WS") sendWebSocket(pending) ?: break
+                    else withContext(Dispatchers.IO) { AndroidPendingSyncTransport.send(pending) }
                 if (isCancelled()) break
                 val completion = JSONObject()
                     .put("id", pending.id)

@@ -1,5 +1,67 @@
 import Foundation
 
+@MainActor final class LogseqPendingWebSocket {
+    private let socket: URLSessionWebSocketTask
+    private let url: String
+    private var active: (id: Int, attempt: UUID, continuation: CheckedContinuation<LogseqPendingSyncResult, Never>)?
+    private var timeout: Task<Void, Never>?
+    private var closed = false
+
+    init(socket: URLSessionWebSocketTask, url: String) {
+        self.socket = socket
+        self.url = url
+    }
+
+    func send(_ request: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
+        guard !closed, request.url == url, let body = request.body, active == nil else {
+            return LogseqPendingSyncResult(status: nil, body: nil, error: "The graph WebSocket is unavailable")
+        }
+        let attempt = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                active = (request.id, attempt, continuation)
+                timeout = Task {
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                    guard active?.attempt == attempt else { return }
+                    close("The graph WebSocket response timed out")
+                }
+                Task {
+                    do { try await socket.send(.string(body)) }
+                    catch {
+                        guard active?.attempt == attempt else { return }
+                        close(error.localizedDescription)
+                    }
+                }
+                if Task.isCancelled { close("WebSocket upload cancelled") }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                guard self.active?.attempt == attempt else { return }
+                self.close("WebSocket upload cancelled")
+            }
+        }
+    }
+
+    func complete(id: Int, body: String) {
+        guard active?.id == id else { return }
+        finish(LogseqPendingSyncResult(status: 200, body: body, error: nil))
+    }
+
+    func close(_ message: String = "The graph WebSocket closed") {
+        closed = true
+        socket.cancel(with: .goingAway, reason: nil)
+        finish(LogseqPendingSyncResult(status: nil, body: nil, error: message))
+    }
+
+    private func finish(_ result: LogseqPendingSyncResult) {
+        timeout?.cancel()
+        timeout = nil
+        let continuation = active?.continuation
+        active = nil
+        continuation?.resume(returning: result)
+    }
+}
+
 public enum LogseqPendingSyncFilePath {
     public static func resolve(
         _ path: String,

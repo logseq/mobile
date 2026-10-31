@@ -5,6 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -34,26 +37,38 @@ internal class AndroidGraphEventsSync(
 
     private var generation = -1
     private var graphId = ""
+    @Volatile private var pendingWebSocket: AndroidPendingWebSocket? = null
+
+    suspend fun sendPending(request: AndroidPendingSyncRequest): AndroidPendingSyncResult? =
+        pendingWebSocket?.send(request)
 
     private sealed class Frame {
         data class Text(val value: String) : Frame()
         data class Failure(val message: String) : Frame()
         object Closed : Frame()
+        object PumpFinished : Frame()
     }
 
-    suspend fun runSession(connection: Connection): SessionOutcome {
+    suspend fun runSession(connection: Connection): SessionOutcome = coroutineScope {
         graphId = connection.graphId
         val frames = Channel<Frame>(capacity = Channel.UNLIMITED)
+        val pendingSignals = Channel<Unit>(capacity = Channel.CONFLATED)
         val client = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
         var socket: WebSocket? = null
         var receivedFrame = false
+        val pendingJob: Job = launch {
+            for (signal in pendingSignals) {
+                onChangesApplied()
+                frames.send(Frame.PumpFinished)
+            }
+        }
         try {
             var transport = dispatch("beginSyncTransport", "{}")
             generation = transport.getInt("generation")
-            if (transport.getString("graphId") != graphId) return SessionOutcome.Stopped
+            if (transport.getString("graphId") != graphId) return@coroutineScope SessionOutcome.Stopped
             while (!isCancelled()) {
                 val commands = ArrayDeque<JSONObject>()
                 fun enqueue(state: JSONObject) {
@@ -68,37 +83,50 @@ internal class AndroidGraphEventsSync(
                             val request = Request.Builder().url(command.getString("url"))
                                 .header("Authorization", "Bearer ${connection.accessToken}").build()
                             socket = openSocket(client, request, frames, isCancelled)
+                            pendingWebSocket = AndroidPendingWebSocket(socket, command.getString("url"))
                             transport = event("opened")
                             enqueue(transport)
                         }
                         "send" -> check(socket?.send(command.getString("body")) == true) { "WebSocket send failed" }
+                        "pending-result" -> pendingWebSocket?.complete(command.getLong("id"), command.getString("body"))
                         "close" -> { socket?.cancel(); socket = null }
-                        "retry" -> return SessionOutcome.Retry(
+                        "retry" -> return@coroutineScope SessionOutcome.Retry(
                             command.getLong("delayMs"), transport.optString("error").takeIf { it.isNotEmpty() && it != "null" }
                         )
-                        "snapshot" -> return SessionOutcome.SnapshotRequired
+                        "snapshot" -> return@coroutineScope SessionOutcome.SnapshotRequired
                         "sync-pending" -> {
-                            onChangesApplied()
-                            if (stopAfterFirstPull && receivedFrame) {
-                                event("cancelled")
-                                return SessionOutcome.Completed
-                            }
+                            pendingSignals.trySend(Unit)
                         }
                         else -> error("Unsupported sync transport command")
                     }
                 }
-                if (socket == null) return SessionOutcome.Stopped
+                if (socket == null) return@coroutineScope SessionOutcome.Stopped
                 transport = when (val frame = frames.receive()) {
                     is Frame.Text -> {
-                        receivedFrame = true
-                        event("frame", body = frame.value)
+                        event("frame", body = frame.value).also { state ->
+                            val commands = state.getJSONArray("commands")
+                            if ((0 until commands.length()).any { commands.getJSONObject(it).getString("type") == "sync-pending" })
+                                receivedFrame = true
+                        }
                     }
                     is Frame.Failure -> event("failed", message = frame.message)
                     Frame.Closed -> event("closed")
+                    Frame.PumpFinished -> {
+                        if (stopAfterFirstPull && receivedFrame) {
+                            val response = callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
+                            applyResponse(response)
+                            val result = JSONObject(response).getJSONObject("result")
+                            if (!result.optBoolean("hasPendingSemanticOperations") && result.isNull("pendingSyncRequest")) {
+                                event("cancelled")
+                                return@coroutineScope SessionOutcome.Completed
+                            }
+                        }
+                        JSONObject(transport.toString()).put("commands", org.json.JSONArray())
+                    }
                 }
             }
             event("cancelled")
-            return SessionOutcome.Stopped
+            return@coroutineScope SessionOutcome.Stopped
         } catch (error: kotlinx.coroutines.CancellationException) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 if (generation >= 0) runCatching { event("cancelled") }
@@ -107,8 +135,12 @@ internal class AndroidGraphEventsSync(
         } catch (error: Throwable) {
             if (generation < 0) throw error
             val transport = event("failed", message = error.message ?: error.toString())
-            return retryOutcome(transport)
+            return@coroutineScope retryOutcome(transport)
         } finally {
+            pendingWebSocket?.close()
+            pendingWebSocket = null
+            pendingSignals.close()
+            pendingJob.cancel()
             socket?.cancel()
             frames.close()
             client.dispatcher.executorService.shutdown()

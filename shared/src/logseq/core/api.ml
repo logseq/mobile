@@ -77,6 +77,18 @@ let url_encode value =
     value;
   Buffer.contents result
 
+let sync_websocket_url config =
+  let root = api_root config in
+  let replace before after =
+    if String.starts_with ~prefix:before root then
+      Some (after ^ String.sub root (String.length before) (String.length root - String.length before))
+    else None in
+  let root =
+    if String.starts_with ~prefix:"ws://" root || String.starts_with ~prefix:"wss://" root then Some root
+    else match replace "https://" "wss://" with Some _ as root -> root | None -> replace "http://" "ws://" in
+  Option.map (fun root -> root ^ "/sync/" ^ url_encode config.graph_id) root
+
+
 let request config method_ path body =
   {
     method_;
@@ -311,23 +323,24 @@ let update_block_request config uuid title =
   request config "PATCH" (graph_path config ("/blocks/" ^ url_encode uuid))
     (json_body [ ("title", `String title) ])
 
+let tx_batch_fields t_before tx_id outliner_op tx =
+  [
+    ("t-before", `Int t_before);
+    ("txs", `List [`Assoc
+       ["tx-id", `String tx_id; "tx", `String tx; "outliner-op", `String outliner_op]]);
+  ]
+
 let tx_batch_request config t_before tx_id outliner_op tx =
   request config "POST"
     ("/sync/" ^ url_encode config.graph_id ^ "/tx/batch")
-    (json_body
-       [
-         ("t-before", `Int t_before);
-         ( "txs"
-         , `List
-             [
-               `Assoc
-                 [
-                   ("tx-id", `String tx_id);
-                   ("tx", `String tx);
-                   ("outliner-op", `String outliner_op);
-                 ];
-             ] );
-       ])
+    (json_body (tx_batch_fields t_before tx_id outliner_op tx))
+
+let tx_batch_websocket_request config t_before tx_id outliner_op tx =
+  let url = match sync_websocket_url config with
+    | Some url -> url
+    | None -> invalid_arg "Unsupported sync base URL" in
+  { method_ = "WS"; url; token = config.token;
+    body = json_body (("type", `String "tx/batch") :: tx_batch_fields t_before tx_id outliner_op tx) }
 
 let update_block_status_request config uuid status =
   request config "PUT"
