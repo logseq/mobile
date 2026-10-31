@@ -997,6 +997,7 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             controller.delegate = self
             controller.searchResultsUpdater = self
             controller.obscuresBackgroundDuringPresentation = false
+            controller.searchBar.searchTextField.accessibilityIdentifier = "field.native-search"
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
         override func loadView() { view = UIView() }
@@ -1037,7 +1038,7 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
                     needsInitialFocus = true
                     controller.isActive = true
                 }
-                if needsInitialFocus, controller.searchBar.becomeFirstResponder() { needsInitialFocus = false }
+                if needsInitialFocus, controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
             } else if !state.nativePresented, controller.isActive {
                 controller.isActive = false
             } else if !state.isVisible, !controller.isActive {
@@ -1056,7 +1057,10 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
         }
 
         func didPresentSearchController(_ searchController: UISearchController) {
-            if searchController.searchBar.becomeFirstResponder() { needsInitialFocus = false }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.state.nativePresented else { return }
+                if searchController.searchBar.searchTextField.becomeFirstResponder() { self.needsInitialFocus = false }
+            }
         }
         func willDismissSearchController(_ searchController: UISearchController) {
             needsInitialFocus = false

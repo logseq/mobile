@@ -152,6 +152,16 @@ if (( start_index < 0 || start_index >= ${#flows[@]} )); then
   exit 1
 fi
 
+# Keep the official XCTest driver on one free IPv4 port for this suite.
+export LOGSEQ_IOS_E2E_DRIVER_PORT=${LOGSEQ_IOS_E2E_DRIVER_PORT:-$(python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)}
+echo "[ios-e2e] Maestro driver port: $LOGSEQ_IOS_E2E_DRIVER_PORT (no reinstall)"
+
 for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
   flow=${flows[$flow_index]}
   flow_started=$SECONDS

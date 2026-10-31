@@ -9,7 +9,14 @@ appId: com.logseq.logseq
     id: "button.search"
 - assertVisible:
     id: "screen.search"
+- extendedWaitUntil:
+    visible:
+      id: "field.native-search"
+    timeout: 10000
 - inputText: "E2E Page Target"
+- assertVisible:
+    id: "field.native-search"
+    text: "E2E Page Target"
 - extendedWaitUntil:
     visible: "E2E Page Target"
     timeout: 10000
