@@ -474,6 +474,76 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
     check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "6*7\nlast*3"))))
     ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
 
+let temporal_command_inputs_open_empty () =
+  List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session _ _ ->
+    ignore (run session label);
+    let before = Natural_date.initialization_count () in
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let input = App_test.descendant_with_identifier host (Lui_app.root_node app) "view.edit.date.input.editor-command" in
+      check_eq ~msg:(label ^ " opens with an empty NLP input")
+        (App_test.property_string host input Lui_protocol.TextValue) "";
+      let calendar = App_test.extension_node app "native-property-date" in
+      check ~msg:"the calendar retains its initial selection"
+        (App_test.extension_property app calendar "value" <> Some (Lui_protocol.StringValue ""));
+      check_eq ~msg:"opening the picker does not initialize NLP"
+        (Natural_date.initialization_count ()) before))) ["Date picker"; "Scheduled"; "Deadline"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let temporal_command_previews_follow_valid_input () =
+  List.iter (fun backend -> List.iter (fun (label, expressions) -> R.with_runtime (fun session _ _ ->
+    ignore (run session label);
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let input = App_test.descendant_with_identifier host (Lui_app.root_node app) "view.edit.date.input.editor-command" in
+      let calendar = App_test.extension_node app "native-property-date" in
+      let preview () = App_test.extension_property app calendar "value" in
+      let type_ value = App_test.dispatch app (Lui_protocol.TextChanged (input, value)); App_test.flush app in
+      List.iter (fun (expression, expected) ->
+        type_ expression;
+        check_eq ~msg:(label ^ " previews " ^ expression) (preview ()) (Some (Lui_protocol.StringValue expected));
+        check_eq ~msg:"the NLP draft stays intact" (App_test.property_string host input Lui_protocol.TextValue) expression;
+        App_test.dispatch app (Lui_protocol.ExtensionEvent (calendar, "native-property-date", "change",
+          Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue expected)));
+        App_test.flush app;
+        check_eq ~msg:"programmatic picker echoes do not replace the NLP draft"
+          (App_test.property_string host input Lui_protocol.TextValue) expression) expressions;
+      let last = preview () in
+      List.iter (fun expression -> type_ expression;
+        check_eq ~msg:("invalid or unrepresentable input preserves the selection: " ^ expression) (preview ()) last)
+        ["not a date"; "2026-02-30"; "in 10000 years"; "1000000000000000"; "9999999999999999999999"; "NaN"; "";
+         String.make 4097 'x'];
+      type_ (fst (List.hd (List.rev expressions)));
+      App_test.dispatch app (Lui_protocol.ExtensionEvent (calendar, "native-property-date", "change",
+        Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue (snd (List.hd expressions)))));
+      App_test.flush app;
+      check_eq ~msg:"manual calendar selection does not populate the NLP input"
+        (App_test.property_string host input Lui_protocol.TextValue) "")))
+    ["Date picker", ["January 1, 2000", "2000-01-01"; "0044-03-15", "0044-03-15"];
+     "Scheduled", ["January 1, 2000 at 3:20pm", string_of_int (int_of_float (Natural_date_test.reference 2000 1 1 15 20));
+       "January 2, 2000 at 9:45:37am", string_of_int (int_of_float (Natural_date_test.reference 2000 1 2 9 45))];
+     "Deadline", ["January 1, 2000 at 3:20pm", string_of_int (int_of_float (Natural_date_test.reference 2000 1 1 15 20));
+       "January 2, 2000 at 9:45:37am", string_of_int (int_of_float (Natural_date_test.reference 2000 1 2 9 45))]])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let temporal_commands_submit_the_previewed_selection () =
+  List.iter (fun backend -> List.iter (fun (label, expression) -> R.with_runtime (fun session _ _ ->
+    ignore (run session label);
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      App_test.dispatch app (Lui_protocol.TextChanged (find "view.edit.date.input.editor-command", expression));
+      App_test.flush app;
+      let calendar = App_test.extension_node app "native-property-date" in
+      let expected = match App_test.extension_property app calendar "value" with
+        | Some (Lui_protocol.StringValue value) -> `String value | _ -> fail "Missing date selection" in
+      App_test.dispatch app (Lui_protocol.Press (find "button.outliner.autocomplete.submit")); App_test.flush app;
+      check ~msg:"submission uses the previewed instant instead of reparsing relative input later"
+        (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
+          member "value" (J.from_string payload) = expected | _ -> false) (App.model app).pending_effects))))
+    ["Date picker", "January 1, 2000"; "Scheduled", "in 3 hours"; "Deadline", "in 3 hours"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let natural_date_input_forwards_submit () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     ignore (run session "Date picker");
@@ -481,11 +551,13 @@ let natural_date_input_forwards_submit () =
       let host = Lui_app.runtime app in
       let input = App_test.descendant_with_identifier host (Lui_app.root_node app) "view.edit.date.input.editor-command" in
       App_test.dispatch app (Lui_protocol.TextChanged (input, "next Friday")); App_test.flush app;
+      let selected = match App_test.extension_property app (App_test.extension_node app "native-property-date") "value" with
+        | Some (Lui_protocol.StringValue value) -> value | _ -> fail "Missing date selection" in
       App_test.dispatch app (Lui_protocol.Submit input); App_test.flush app;
-      check ~msg:"Submit events forward the typed expression"
+      check ~msg:"Submit events forward the selected date"
         (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
           member "type" (J.from_string payload) = `String "submitAutocomplete"
-          && member "value" (J.from_string payload) = `String "next Friday" | _ -> false)
+          && member "value" (J.from_string payload) = `String selected | _ -> false)
           (App.model app).pending_effects))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
@@ -499,9 +571,9 @@ let date_command_accepts_natural_language () =
       App_test.flush app;
       App_test.dispatch app (Lui_protocol.Press (find "button.outliner.autocomplete.submit"));
       App_test.flush app;
-      check ~msg:"natural-language text reaches the shared command"
+      check ~msg:"natural-language input resolves the shared date selection"
         (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
-          member "value" (J.from_string payload) = `String "January 1, 2000" | _ -> false)
+          member "value" (J.from_string payload) = `String "2000-01-01" | _ -> false)
           (App.model app).pending_effects));
     ignore (submit session "January 1, 2000"); save session;
     check ~msg:"a natural-language date creates its Journal"
@@ -1031,6 +1103,9 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "date command NLP inputs open empty without initializing the engine" temporal_command_inputs_open_empty;
+  case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;
+  case "date commands submit the previewed selection" temporal_commands_submit_the_previewed_selection;
   case "natural date input forwards Submit events" natural_date_input_forwards_submit;
   case "date-time commands accept natural language" datetime_commands_accept_natural_language;
   case "date commands accept natural language on both hosts" date_command_accepts_natural_language;

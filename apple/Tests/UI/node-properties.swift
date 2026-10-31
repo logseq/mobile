@@ -136,6 +136,33 @@ import Vision
             guard let picker = window.findDatePicker(), picker.datePickerMode == (time ? .dateAndTime : .date) else {
                 throw NSError(domain: "NodeProperties", code: 12, userInfo: [NSLocalizedDescriptionKey: "Incorrect native date picker mode"])
             }
+            try await wait("The NLP date input must mount") { window.findNLPDateInput() != nil }
+            let input = window.findNLPDateInput()!
+            guard input.text?.isEmpty == true else {
+                throw NSError(domain: "NodeProperties", code: 17, userInfo: [NSLocalizedDescriptionKey: "NLP inputs must open empty"])
+            }
+            let expression = time ? "January 1, 2000 at 3:20pm" : "January 1, 2000"
+            input.text = expression
+            input.sendActions(for: .editingChanged)
+            let calendar = Calendar(identifier: .gregorian)
+            let components: Set<Calendar.Component> = time ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
+            try await wait("NLP input must update the native date and time selection") {
+                let selected = calendar.dateComponents(components, from: picker.date)
+                return selected.year == 2000 && selected.month == 1 && selected.day == 1
+                    && (!time || selected.hour == 15 && selected.minute == 20)
+            }
+            guard input.text == expression else {
+                throw NSError(domain: "NodeProperties", code: 18, userInfo: [NSLocalizedDescriptionKey: "Preview must preserve the typed expression"])
+            }
+            let preview = picker.date
+            for invalid in ["not a date", "in 10000 years"] {
+                input.text = invalid
+                input.sendActions(for: .editingChanged)
+                try await Task.sleep(for: .milliseconds(150))
+                guard picker.date == preview else {
+                    throw NSError(domain: "NodeProperties", code: 19, userInfo: [NSLocalizedDescriptionKey: "Invalid or unrepresentable input must preserve the native selection"])
+                }
+            }
             let chosen = Date(timeIntervalSince1970: 1792719000)
             picker.setDate(chosen, animated: false)
             picker.sendActions(for: .valueChanged)
@@ -177,6 +204,11 @@ import Vision
 }
 
 private extension UIView {
+    func findNLPDateInput() -> UITextField? {
+        if let input = self as? UITextField, input.placeholder?.contains("tomorrow") == true { return input }
+        return subviews.lazy.compactMap { $0.findNLPDateInput() }.first
+    }
+
     func findDatePicker() -> UIDatePicker? {
         if let picker = self as? UIDatePicker { return picker }
         return subviews.lazy.compactMap { $0.findDatePicker() }.first

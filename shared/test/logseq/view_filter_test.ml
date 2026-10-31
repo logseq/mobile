@@ -126,6 +126,23 @@ let native_inputs_follow_property_and_operator () =
       check_eq (clauses app) [clause "block/created-at" "before" (`Int 1792719000000)])))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let date_filters_preview_nlp_without_replacing_the_draft () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    with_sheet backend session [clause R.due "date-after" (`Assoc ["block/journal-day", `Int 20261023])] (fun app ->
+      let host = Lui_app.runtime app in
+      let identifier = "view.edit.date.input." ^ prefix "date" 0 in
+      check_eq ~msg:"filter NLP input opens empty"
+        (App_test.property_string host (find app identifier) Lui_protocol.TextValue) "";
+      input app identifier "January 1, 2000";
+      let calendar = App_test.extension_node app "native-property-date" in
+      check_eq ~msg:"filter input updates the calendar immediately"
+        (App_test.extension_property app calendar "value") (Some (Lui_protocol.StringValue "2000-01-01"));
+      check_eq ~msg:"normalizing the filter value preserves the typed expression"
+        (App_test.property_string host (find app identifier) Lui_protocol.TextValue) "January 1, 2000";
+      save app;
+      check_eq (clauses app) [clause R.due "date-after" (`Assoc ["block/journal-day", `Int 20000101])])))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let changing_properties_and_cancelling_preserve_the_saved_view () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     with_sheet backend session [clause R.score "number-gt" (`Int 10)] (fun app ->
@@ -139,6 +156,7 @@ let changing_properties_and_cancelling_preserve_the_saved_view () =
       check_eq saved [clause R.score "number-gt" (`Int 10)]))) [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "date filter NLP input previews without replacing its draft" date_filters_preview_nlp_without_replacing_the_draft;
   case "operators match every master property type" operators_match_every_master_property_type;
   case "recent objects stay relative to a calendar month" recent_objects_shortcut_persists_a_relative_calendar_month;
   case "native filter inputs follow property and operator" native_inputs_follow_property_and_operator;

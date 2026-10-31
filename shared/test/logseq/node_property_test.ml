@@ -233,6 +233,32 @@ let builtin_description_is_editable () = R.with_runtime (fun session runtime con
   ignore (result (edit session Q.page p "Page description" []));
   check_eq (member "text" (property "logseq.property/description" (result (read session Q.page)))) (`String "Page description"))
 
+let date_editor_opens_empty_and_preserves_the_selected_date () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app (Model.RequestAppNode Q.alpha);
+      let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+        | Ok value -> value | Error message -> fail message in
+      App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id = let node = find id in check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      if find ("properties.expand." ^ Q.alpha) <> -1 then click ("properties.expand." ^ Q.alpha);
+      click ("property.value." ^ Q.alpha ^ "." ^ R.due);
+      let editor = "property." ^ Q.alpha ^ "." ^ R.due in
+      check_eq ~msg:"an existing date does not prefill the NLP input"
+        (App_test.property_string host (find ("view.edit.date.input." ^ editor)) Lui_protocol.TextValue) "";
+      let calendar = App_test.extension_node app "native-property-date" in
+      check_eq ~msg:"the existing date stays selected"
+        (App_test.extension_property app calendar "value") (Some (Lui_protocol.StringValue "2026-10-01"));
+      click ("view.edit.save." ^ editor);
+      let body = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (J.from_string body) | _ -> None)
+        (List.rev (App.model app).pending_effects) |> Option.get in
+      check_eq ~msg:"Done without typing keeps the existing date" (member "value" body) (`String "2026-10-01"))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let date_properties_accept_natural_language () = R.with_runtime (fun session runtime _ ->
   let due = property R.due (result (read session Q.alpha)) in
   ignore (result (edit session Q.alpha due "January 1, 2000" []));
@@ -835,6 +861,7 @@ let text_property_references_create_journals_and_keep_partial_dates_literal () =
     ["2026-10-26", 20261026; "Oct 26th, 2026", 20261026; "0044-03-15", 440315]
 
 let cases = [
+  case "date editors open with empty NLP input and preserve existing values" date_editor_opens_empty_and_preserves_the_selected_date;
   case "Date properties accept natural language" date_properties_accept_natural_language;
   case "text property date references create Journals while partial dates remain Pages" text_property_references_create_journals_and_keep_partial_dates_literal;
   case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;

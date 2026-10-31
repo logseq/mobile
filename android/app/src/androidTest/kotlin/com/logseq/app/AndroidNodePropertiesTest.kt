@@ -23,6 +23,11 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.platform.app.InstrumentationRegistry
@@ -72,16 +77,20 @@ class AndroidNodePropertiesTest {
         val editor = "property.page.user.property/Due"
         ui.onNodeWithTag("property.value.page.user.property/Due").performScrollTo().performClick()
         fun input() = ui.onNodeWithTag("view.edit.date.input.$editor")
-        input().assertTextEquals("0044-03-15")
+        input().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         val calendar = hasAnyAncestor(hasTestTag("view.edit.date.$editor"))
         ui.onNode(hasText("March 15", substring = true) and calendar, useUnmergedTree = true).performScrollTo().performClick()
-        input().assertTextEquals("0044-03-15")
+        input().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         input().performTextReplacement("2026-10-26")
         closeSoftKeyboard()
         ui.onNode(hasText("October 23", substring = true) and calendar, useUnmergedTree = true).performScrollTo().performClick()
-        input().assertTextEquals("2026-10-23")
+        input().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         input().performTextReplacement("January 1, 2000")
         input().assertTextEquals("January 1, 2000")
+        ui.onNode(hasText("January 1,", substring = true) and calendar, useUnmergedTree = true).assertIsDisplayed()
+        input().performTextReplacement("not a date")
+        ui.onNode(hasText("January 1,", substring = true) and calendar, useUnmergedTree = true).assertIsDisplayed()
+        input().performTextReplacement("January 1, 2000")
         ui.onNodeWithTag("view.edit.save.$editor").performClick()
         ui.runOnIdle {
             var selected: JSONObject? = null
@@ -92,7 +101,7 @@ class AndroidNodePropertiesTest {
                     if (effect?.optString("kind") == "node-property") selected = JSONObject(effect.getString("text"))
                 }
             }
-            assertEquals("Natural-language input reaches the shared core unchanged", "January 1, 2000", selected?.getString("value"))
+            assertEquals("The previewed date reaches the shared core", "2000-01-01", selected?.getString("value"))
         }
     }
 
@@ -182,6 +191,21 @@ class AndroidNodePropertiesTest {
         for (attr in listOf("Due", "Deadline")) {
             ui.onNodeWithTag("property.value.page.user.property/$attr").performScrollTo().performClick()
             ui.onNodeWithTag("view.edit.date.property.page.user.property/$attr", useUnmergedTree = true).assertIsDisplayed()
+            val input = ui.onNodeWithTag("view.edit.date.input.property.page.user.property/$attr")
+            input.assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+            if (attr == "Deadline") {
+                val calendar = hasAnyAncestor(hasTestTag("view.edit.date.property.page.user.property/$attr"))
+                input.performTextReplacement("January 1, 2000 at 3:20pm")
+                ui.onNode(hasText("January 1,", substring = true) and calendar, useUnmergedTree = true).assertIsDisplayed()
+                closeSoftKeyboard()
+                ui.onNode((hasText("03") or hasText("3") or hasText("15")) and hasSetTextAction() and calendar,
+                    useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+                ui.onNode(hasText("20") and hasSetTextAction() and calendar, useUnmergedTree = true)
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("20")))
+                input.assertTextEquals("January 1, 2000 at 3:20pm")
+                input.performTextReplacement("2026-10-23 15:20")
+                closeSoftKeyboard()
+            }
             ui.onNodeWithText("October 23", substring = true, useUnmergedTree = true).performScrollTo().performClick()
             ui.onNodeWithTag("view.edit.save.property.page.user.property/$attr").performClick()
             ui.runOnIdle {

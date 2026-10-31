@@ -227,35 +227,57 @@ let filter_value_title col value = match value with
       | Some choice -> jtext (jfield "title" choice) | None -> text_value value) values)
   | value -> input_value value
 
+let temporal_default kind =
+  let now = Unix.gettimeofday () in
+  if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
+  else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
+
 let temporal_picker ?on_submit model_source kind id source set : t = fun context parent ->
-  let display value =
-    if kind = "date" then value
-    else match float_of_string_opt value with
-      | Some ms when Float.is_finite ms ->
-        let tm = Unix.localtime (ms /. 1000.) in
-        Printf.sprintf "%04d-%02d-%02d %02d:%02d"
-          (tm.Unix.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday tm.tm_hour tm.tm_min
-      | _ -> value in
+  let picker_value value =
+    try
+      if kind = "date" then Option.map (fun day ->
+        Printf.sprintf "%04d-%02d-%02d" (day / 10000) (day / 100 mod 100) (day mod 100))
+        (Natural_date.day value)
+      else Option.bind (Natural_date.timestamp value) (fun ms ->
+        let tm = Unix.localtime (float_of_int ms /. 1000.) in
+        let year = tm.Unix.tm_year + 1900 in
+        if year < 1 || year > 9999 then None
+        else Some (string_of_int (int_of_float (fst (Unix.mktime {tm with tm_sec = 0}) *. 1000.))))
+    with Failure _ | Invalid_argument _ | Unix.Unix_error _ -> None in
   let initial = Signal.sample source in
-  let input = Signal.state context.Lui_ui.ui_scheduler (display initial) in
-  let observed = ref initial and emitted = ref None in
+  let input = Signal.state context.Lui_ui.ui_scheduler "" in
+  let selection = Signal.state context.ui_scheduler
+    (Option.value ~default:(temporal_default kind) (picker_value initial)) in
+  let sync value =
+    let selected = picker_value value in
+    Option.iter (Signal.set selection) selected;
+    selected in
+  let observed = ref initial in
   ignore (Signal.own context.ui_scope (Signal.observe source (fun value ->
     if value <> !observed then (
       observed := value;
-      if !emitted <> Some value then Signal.set input (display value)))));
-  let update ~calendar value =
-    emitted := Some value;
-    Signal.set input (if calendar then display value else value);
+      ignore (sync value)))));
+  let update value =
+    observed := value;
     set value in
   let calendar : t = fun context parent ->
   let node = Lui_ui.extension context "native-property-date" in
   attach context parent node;
   Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
   Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue ("view.edit.date." ^ id));
-  Lui_ui.extension_property_signal context node "value" (Signal.map (fun value -> Lui_protocol.StringValue value) source);
+  Lui_ui.extension_property_signal context node "value"
+    (Signal.map (fun value -> Lui_protocol.StringValue value) (Signal.value selection));
   Lui_ui.on_event context node (function
     | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
-      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> update ~calendar:true value | _ -> ())
+      (match Lui_protocol.String_map.find_opt "value" fields with
+       | Some (Lui_protocol.StringValue value) ->
+         (match picker_value value with
+          | Some selected when selected <> Signal.sample (Signal.value selection) ->
+            Signal.set selection selected;
+            Signal.set input "";
+            update value
+          | _ -> ())
+       | _ -> ())
     | _ -> ());
   node in
   (column ~gap:8 [
@@ -263,14 +285,12 @@ let temporal_picker ?on_submit model_source kind id source set : t = fun context
         ~placeholder:"YYYY-MM-DD / tomorrow / next Friday"
         ~label:(View_base.tr (Signal.sample model_source) "Date picker")
         ~accessibility_identifier:("view.edit.date.input." ^ id)
-        ~on_input:(function Lui_protocol.TextChanged (_, value) -> update ~calendar:false value | _ -> ())
+        ~on_input:(function Lui_protocol.TextChanged (_, value) ->
+          Signal.set input value;
+          update (Option.value ~default:value (sync value))
+          | _ -> ())
         ?on_submit [];
       calendar]) context parent
-
-let temporal_default kind =
-  let now = Unix.gettimeofday () in
-  if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
-  else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
 
 let filter_transition op value =
   let number = function `Int _ | `Float _ -> true | _ -> false in
