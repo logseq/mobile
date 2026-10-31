@@ -111,7 +111,7 @@ internal class LogseqRuntime(
 
     @Volatile private var hasAuthenticatedSession = false
     @Volatile private var hasOpenGraph = false
-    @Volatile private var appIsForeground = true
+    @Volatile private var appIsForeground = false
     @Volatile private var pendingSyncRequested = false
     @Volatile private var appliedServerT = -1L
     @Volatile private var selectedGraphId = ""
@@ -120,8 +120,7 @@ internal class LogseqRuntime(
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
-    private var graphEventsJob: kotlinx.coroutines.Job? = null
-    private var graphEventsGraphId: String? = null
+    private val graphEventsSession = AndroidForegroundSyncSession(scope)
     private var graphLifecycle: AndroidGraphLifecycle? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
@@ -226,6 +225,7 @@ internal class LogseqRuntime(
     fun onLifecycleResumed(resumed: Boolean) {
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
+        ensureGraphEventsSync()
         if (resumed && hasOpenGraph) appEntries.markReady()
         journalDayJob?.cancel()
         journalDayJob = if (resumed) scope.launch {
@@ -332,14 +332,12 @@ internal class LogseqRuntime(
             "GraphEvents",
             "ensure open=$hasOpenGraph graph=$selectedGraphId " +
                 "base=$storageBaseUrl cursor=$appliedServerT " +
-                "job=${graphEventsJob?.isActive} jobGraph=$graphEventsGraphId",
+                "job=${graphEventsSession.isActive} foreground=$appIsForeground",
         )
-        if (!hasAuthenticatedSession || !hasOpenGraph || selectedGraphId.isEmpty() || storageBaseUrl.isEmpty()) return
-        if (graphEventsJob?.isActive == true && graphEventsGraphId == selectedGraphId) return
-        graphEventsJob?.cancel()
-        graphEventsGraphId = selectedGraphId
-        val graphId = selectedGraphId
-        graphEventsJob = scope.launch {
+        val sessionGraphId = selectedGraphId.takeIf {
+            hasAuthenticatedSession && hasOpenGraph && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
+        }
+        graphEventsSession.update(sessionGraphId, appIsForeground) { graphId ->
             while (isActive) {
                 val token = try {
                     platformEffects.restoreAccessToken()
@@ -470,12 +468,10 @@ internal class LogseqRuntime(
             if (storage.baseUrl != storageBaseUrl) {
                 graphCatalogAutoRefresh?.stopPeriodic()
                 hasOpenGraph = false
-                graphEventsJob?.cancel()
+                graphEventsSession.cancel()
                 pendingSyncJob?.cancel()
-                graphEventsJob?.join()
+                graphEventsSession.join()
                 pendingSyncJob?.join()
-                graphEventsJob = null
-                graphEventsGraphId = null
                 pendingSyncJob = null
                 pendingSyncRequested = false
                 selectedGraphId = ""
@@ -491,12 +487,10 @@ internal class LogseqRuntime(
         if (effect.kind == "sign-out" && resolution.succeeded) {
             hasAuthenticatedSession = false
             graphCatalogAutoRefresh?.stopPeriodic()
-            graphEventsJob?.cancel()
+            graphEventsSession.cancel()
             pendingSyncJob?.cancel()
-            graphEventsJob?.join()
+            graphEventsSession.join()
             pendingSyncJob?.join()
-            graphEventsJob = null
-            graphEventsGraphId = null
             pendingSyncJob = null
             pendingSyncRequested = false
             val payload = JSONObject()

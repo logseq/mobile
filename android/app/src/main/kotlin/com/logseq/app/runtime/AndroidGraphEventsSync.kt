@@ -1,6 +1,8 @@
 package com.logseq.app.runtime
 
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -8,6 +10,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -235,4 +239,38 @@ internal class AndroidGraphEventsSync(
         }
     }
 
+}
+
+internal class AndroidForegroundSyncSession(private val scope: CoroutineScope) {
+    private var job: Job? = null
+    private var key: String? = null
+    private val transport = Mutex()
+
+    val isActive: Boolean get() = job?.isActive == true
+
+    fun update(key: String?, foreground: Boolean, run: suspend CoroutineScope.(String) -> Unit) {
+        if (!foreground || key == null) {
+            cancel()
+            return
+        }
+        if (this.key == key && isActive) return
+        val previous = job
+        previous?.cancel()
+        this.key = key
+        val next = scope.launch(start = CoroutineStart.LAZY) {
+            transport.withLock { run(key) }
+        }
+        job = next
+        next.start()
+    }
+
+    fun cancel() {
+        key = null
+        job?.cancel()
+    }
+
+    suspend fun join() {
+        job?.join()
+        transport.withLock { }
+    }
 }
