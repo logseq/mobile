@@ -2,7 +2,6 @@ appId: com.logseq.logseq
 ---
 - runFlow:
     file: "__LOGSEQ_E2E_SETUP_FLOW__"
-- launchApp
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"
@@ -23,13 +22,16 @@ appId: com.logseq.logseq
     id: "button.composer.expand"
 - scrollUntilVisible:
     element:
-      text: "Search task __LOGSEQ_E2E_RUN_ID__"
+      id: "outliner.block-action.*"
+      text: "Edit block Search task __LOGSEQ_E2E_RUN_ID__"
     direction: DOWN
     timeout: 30000
     speed: 50
     visibilityPercentage: 50
     centerElement: true
-- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
+- assertVisible:
+    id: "outliner.block-action.*"
+    text: "Edit block Search task __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "button.block-task-status"
 - tapOn:
@@ -73,7 +75,9 @@ appId: com.logseq.logseq
     visible:
       id: "button.composer.expand"
     timeout: 10000
-- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
+- assertVisible:
+    id: "outliner.block-action.*"
+    text: "Edit block Search task __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "button.block-task-status"
 - takeScreenshot: "ios-search-status-regression"
