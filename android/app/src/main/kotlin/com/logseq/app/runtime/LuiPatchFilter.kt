@@ -5,6 +5,8 @@ import dev.lui.LuiNodeKind
 import dev.lui.LuiPatchBatch
 import dev.lui.LuiPatchOp
 import dev.lui.LuiWireValue
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Kotlin port of the former Dart patch applier.
 //
@@ -20,14 +22,22 @@ import dev.lui.LuiWireValue
 // so the glyph centers in the touch target.
 internal class LuiPatchFilter(private val backend: LuiBackend) {
     private val ignoredProperties = mutableSetOf<Pair<Long, String>>()
+    private var snapshotGeneration = 0
 
-    fun applyJson(patch: String): LuiPatchBatch {
+    fun applyJson(patch: String): LuiPatchBatch = applyJson(patch, snapshot = false)
+
+    fun applySnapshotJson(patch: String): LuiPatchBatch = applyJson(patch, snapshot = true)
+
+    private fun applyJson(patch: String, snapshot: Boolean): LuiPatchBatch {
         val document = LuiPatchBatch.parse(patch)
+        if (!snapshot && document.generation <= snapshotGeneration) return document
         val createdKinds = mutableMapOf<Long, LuiNodeKind>()
-        val nextIgnored = HashSet(ignoredProperties)
+        val nextIgnored = if (snapshot) hashSetOf() else HashSet(ignoredProperties)
         val compatible = ArrayList<LuiPatchOp>(document.ops.size)
+        val sourceOps = if (snapshot) JSONObject(patch).getJSONArray("ops") else null
+        val snapshotOps = if (snapshot) JSONArray() else null
 
-        for (operation in document.ops) {
+        for ((index, operation) in document.ops.withIndex()) {
             when (operation) {
                 is LuiPatchOp.CreateNode -> createdKinds[operation.id] = operation.kind
                 is LuiPatchOp.DropNode -> {
@@ -46,6 +56,9 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
                         kind in setOf("button", "toggle-button")) {
                         compatible.add(operation)
                         compatible.add(LuiPatchOp.SetProp(operation.id, "text-alignment", LuiWireValue.Str("center")))
+                        snapshotOps?.put(sourceOps!!.get(index))?.put(JSONObject()
+                            .put("op", "set-prop").put("id", operation.id)
+                            .put("property", "text-alignment").put("value", "center"))
                         continue
                     }
                 }
@@ -55,15 +68,20 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
                 else -> Unit
             }
             compatible.add(operation)
+            snapshotOps?.put(sourceOps!!.get(index))
         }
 
         val batch = LuiPatchBatch(document.generation, compatible)
-        check(backend.applyBatch(batch)) { "Could not apply UI update: ${backend.lastError}" }
+        val applied = if (snapshot) backend.applySnapshot(JSONObject()
+            .put("generation", document.generation).put("ops", snapshotOps).toString())
+            else backend.applyBatch(batch)
+        check(applied) { "Could not apply UI update: ${backend.lastError}" }
         // detach-subtree can remove descendants without individual drop ops.
         // Retain only live hints instead of copying historical node metadata.
         nextIgnored.removeIf { backend.nodeKind(it.first) == null }
         ignoredProperties.clear()
         ignoredProperties.addAll(nextIgnored)
+        if (snapshot) snapshotGeneration = document.generation
         return batch
     }
 
