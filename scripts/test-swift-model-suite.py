@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the Swift model suite directly with Swift Testing, without XCTest."""
+import json
 import pathlib
 import subprocess
 import tempfile
@@ -12,6 +13,8 @@ def main():
     subprocess.run(build + ["--target", "LogseqModelTests"], check=True)
     subprocess.run(build + ["--product", "LogseqModel"], check=True)
     output = pathlib.Path(subprocess.check_output(build + ["--show-bin-path"], text=True).strip())
+    object_map = json.loads((output / "LogseqModelTests.build/output-file-map.json").read_text())
+    test_objects = sorted(entry["object"] for entry in object_map.values() if "object" in entry)
     developer = pathlib.Path(subprocess.check_output(["xcode-select", "-p"], text=True).strip())
     frameworks = developer / "Platforms/MacOSX.platform/Developer/Library/Frameworks"
     with tempfile.TemporaryDirectory(prefix="logseq-model-suite-") as directory:
@@ -22,7 +25,7 @@ def main():
                         "-Xlinker", "-rpath", "-Xlinker", str(frameworks),
                         "-I", str(output / "Modules"), "-I", str(output / "LogseqCoreABI.build"),
                         "-L", str(output), "-lLogseqModel", "-Xlinker", "-rpath", "-Xlinker", str(output),
-                        str(source), *map(str, sorted((output / "LogseqModelTests.build").glob("*.o"))),
+                        str(source), *test_objects,
                         "-o", str(executable)], check=True)
         subprocess.run([str(executable), "--no-parallel"], check=True, timeout=180)
 
