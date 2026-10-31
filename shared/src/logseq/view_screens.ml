@@ -131,9 +131,9 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:58
-          ~height:58 ~background:"surface-container-low" ~corner_radius:12 ~label:(View_base.tr (Signal.sample model_source) "Search")
-          ~border_width:1 ~border_color:"border"
+        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:56
+          ~height:56 ~background:"surface-container-high" ~corner_radius:28
+          ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
