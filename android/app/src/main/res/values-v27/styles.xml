@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="SystemBarNavigationTheme" parent="SystemBarThemeBase">
+        <item name="android:windowLightNavigationBar">?android:windowLightStatusBar</item>
+    </style>
+</resources>

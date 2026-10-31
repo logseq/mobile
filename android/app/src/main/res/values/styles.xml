@@ -1,32 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <!-- Shown while the process starts; replaced by the first frame -->
-        <item name="android:windowBackground">@drawable/launch_background</item>
-        <!-- Transparent system bars with dark icons, matching iOS chrome. -->
+    <style name="SystemBarThemeBase" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:statusBarColor">#FCFCFC</item>
         <item name="android:navigationBarColor">#FCFCFC</item>
-        <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
-        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
-    <!-- Theme applied to the Android Window as soon as the process has
-         started: the background behind the Compose content. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+
+    <style name="SystemBarNavigationTheme" parent="SystemBarThemeBase" />
+    <style name="SystemBarContrastTheme" parent="SystemBarNavigationTheme" />
+    <style name="SystemBarCutoutTheme" parent="SystemBarContrastTheme" />
+    <style name="SystemBarTheme" parent="SystemBarCutoutTheme" />
+
+    <style name="LaunchTheme" parent="SystemBarTheme">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <style name="NormalTheme" parent="SystemBarTheme">
         <item name="android:windowBackground">?android:colorBackground</item>
-        <item name="android:statusBarColor">#FCFCFC</item>
-        <item name="android:navigationBarColor">#FCFCFC</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
-        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
