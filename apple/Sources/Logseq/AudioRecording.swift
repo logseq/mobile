@@ -36,7 +36,11 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
     @Published private(set) var isRecording = false
     @Published private(set) var elapsedSeconds = 0
     @Published private(set) var level: Float = 0
-    @Published private(set) var errorMessage: String?
+    @Published private(set) var errorMessage: String? {
+        didSet {
+            if let errorMessage, errorMessage != oldValue { logger.error(errorMessage) }
+        }
+    }
 
     private var recorder: AVAudioRecorder?
     private var outputURL: URL?
@@ -171,7 +175,6 @@ struct AudioRecorderSheet: View {
     @StateObject private var recorder = AudioRecorderController()
     @State private var transcriptionEnabled = true
     @State private var isSaving = false
-    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
@@ -185,9 +188,6 @@ struct AudioRecorderSheet: View {
                     Toggle("Transcribe recording", isOn: $transcriptionEnabled)
                         .accessibilityIdentifier("toggle.audio.transcription")
                 }
-                if let errorMessage = saveError ?? recorder.errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                }
                 Button {
                     Task {
                         isSaving = true
@@ -200,7 +200,7 @@ struct AudioRecorderSheet: View {
                                 try onSave(asset, targetBlockID, transcript)
                                 dismiss()
                             } catch {
-                                saveError = "Couldn't save the recording. \(error.localizedDescription)"
+                                logger.error("Couldn't save the recording. \(error.localizedDescription)")
                             }
                         }
                     }

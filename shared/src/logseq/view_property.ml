@@ -95,7 +95,7 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
             (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~min_height:44
               ~accessibility_identifier:(add_id ^ ".create") ~disabled_signal:(View_query.waiting model_source add_id)
               ~on_press:(fun _ -> add ["action", `String "create"; "title", `String (String.trim (Signal.sample (Signal.value search)))]) []]]);
-          View_query.action_error model_source add_id];
+          ];
         toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
           ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
     (render action picker) context parent)) context parent
@@ -126,7 +126,7 @@ let tag_properties model_source raw_source send close : t =
                     ~accessibility_identifier:id
                     ~on_press:(fun _ -> ignore (send (Model.SubmitNodeProperty (id, J.to_string (`Assoc [
                       "blockUuid", `String owner; "graphId", `String graph; "action", `String "remove"; "attr", `String attr]))))) []])];
-              View_query.action_error model_source id])];
+              ])];
         if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
           (list_section [list_item [add]])];
       picker;
@@ -253,7 +253,6 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                 View_query.property_editor ~owner ~send ~open_nodes ~id ~column:property
                 ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
                 model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
-            if_ ~test:(own (Signal.map Option.is_none (Signal.value editing))) (View_query.action_error model_source id);
           ]) context parent);
       if_ ~test:(own (Signal.map (fun values -> List.length values > 3) all_properties))
         (button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start ~min_height:32 ~padding:0

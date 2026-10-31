@@ -436,7 +436,13 @@ private struct CreateSyncGraphPayload: Encodable {
         relatedBlocks: nil
     )
     public private(set) var lastError: LogseqCoreError?
-    public private(set) var syncError: LogseqCoreError?
+    public private(set) var syncError: LogseqCoreError? {
+        didSet {
+            if let syncError, syncError != oldValue {
+                LogseqRuntimeLog.shared.append(level: .error, source: .core, message: syncError.message)
+            }
+        }
+    }
     public private(set) var graphEventsRetryDelayMilliseconds = 0
     private var syncTransport: LogseqSyncTransport?
     private var pendingWebSocket: LogseqPendingWebSocket?

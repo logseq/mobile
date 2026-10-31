@@ -341,6 +341,7 @@ type logseq_effect =
   | OpenExternalURLEffect of int * string
   | RefreshRuntimeLogEffect of int * string * bool * bool
   | CopyRuntimeLogEffect of int * runtime_log_record list
+  | ReportErrorEffect of int * string
   | SignInEffect of int
   | SignOutEffect of int
 
@@ -418,6 +419,7 @@ type logseq_model =
   ; runtime_log_errors_only : bool
   ; runtime_log_newest_first : bool
   ; runtime_log_records : runtime_log_record list
+  ; runtime_log_last_error : runtime_log_record option
   ; search_open : bool
   ; search_query : string
   ; search_result_pages : search_hit list list
@@ -602,7 +604,7 @@ type logseq_action =
   | ToggleRuntimeLogErrors
   | ToggleRuntimeLogOrder
   | ToggleRuntimeLogSource
-  | ApplyRuntimeLog of runtime_log_record list
+  | ApplyRuntimeLog of runtime_log_record list * runtime_log_record option
   | RefreshRuntimeLog
   | CopyRuntimeLog
   | RequestSignOut
@@ -775,6 +777,7 @@ let initial () =
     runtime_log_errors_only = false;
     runtime_log_newest_first = false;
     runtime_log_records = [];
+    runtime_log_last_error = None;
     search_open = false;
     search_query = "";
     search_result_pages = [];
@@ -908,6 +911,7 @@ let effect_id eff =
   | OpenExternalURLEffect (id, _) -> id
   | RefreshRuntimeLogEffect (id, _, _, _) -> id
   | CopyRuntimeLogEffect (id, _) -> id
+  | ReportErrorEffect (id, _) -> id
   | SignInEffect id -> id
   | SignOutEffect id -> id
 
@@ -2304,6 +2308,9 @@ let rec update (current : logseq_model) action =
          in_flight_effects = current.in_flight_effects @ [ eff ];
        }
      | None -> current)
+  | ResolveEffect (id, _, _) when (match effect_with_id current.in_flight_effects id with
+      | Some (ReportErrorEffect _) -> true | _ -> false) ->
+    { current with in_flight_effects = remove_effect current.in_flight_effects id }
   | ResolveEffect (id, succeeded, message) ->
     (match effect_with_id current.in_flight_effects id with
      | Some eff ->
@@ -2946,7 +2953,9 @@ let rec update (current : logseq_model) action =
          , updated.runtime_log_source
          , updated.runtime_log_errors_only
          , updated.runtime_log_newest_first ))
-  | ApplyRuntimeLog records -> { current with runtime_log_records = records }
+  | ApplyRuntimeLog (records, last_error) ->
+    { current with runtime_log_records = records;
+      runtime_log_last_error = (match last_error with Some _ -> last_error | None -> current.runtime_log_last_error) }
   | RefreshRuntimeLog ->
     let id = current.next_effect_id in
     enqueue_effect current
@@ -2958,7 +2967,11 @@ let rec update (current : logseq_model) action =
   | CopyRuntimeLog ->
     let id = current.next_effect_id in
     enqueue_effect current
-      (CopyRuntimeLogEffect (id, current.runtime_log_records))
+      (CopyRuntimeLogEffect (id,
+        match current.runtime_log_last_error with
+        | Some error when not (List.exists (fun (record : runtime_log_record) -> record.id = error.id && record.source = error.source) current.runtime_log_records) ->
+          error :: current.runtime_log_records
+        | _ -> current.runtime_log_records))
   | RequestSignOut ->
     { current with pending_sign_out = true; settings_open = false }
   | CancelSignOut ->

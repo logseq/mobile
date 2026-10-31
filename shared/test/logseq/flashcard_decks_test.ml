@@ -349,7 +349,8 @@ let native_failed_create_can_retry_or_cancel () =
       press app "button.flashcards.deck.create";
       check (not (finish_deck_effect app session));
       check (find app "sheet.flashcards.deck.create" <> -1);
-      check (find app "error.flashcards.deck" <> -1);
+      check_eq (find app "error.flashcards.deck") (-1);
+      check (App_test.reported_errors (App.model app) <> []);
       check_eq (Graph_runtime.pending_operations runtime) [];
       press app "button.flashcards.deck.create";
       check (not (finish_deck_effect app session));

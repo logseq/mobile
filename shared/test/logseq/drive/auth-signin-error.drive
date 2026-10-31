@@ -1,7 +1,7 @@
 # Signed-out mount with a failing host: pressing sign-in resolves the effect
-# with an error and the inline authentication error renders.
+# with an error that is reported through the host diagnostic path.
 expect prop:accessibility-identifier=screen.authentication
 press prop:accessibility-identifier=button.hosted-sign-in
-wait prop:accessibility-identifier=text.authentication-error
+expect-absent prop:accessibility-identifier=text.authentication-error
 expect prop:accessibility-identifier=screen.authentication
 expect-absent prop:accessibility-identifier=button.graph-add

@@ -160,9 +160,13 @@ struct CognitoTokenStore: Sendable {
     }
 
     func apiToken() async throws -> String? {
-        guard var tokens = try tokenStore.load() else { return nil }
+        guard var tokens = try tokenStore.load() else {
+            LogseqRuntimeLog.shared.append(level: .info, source: .ui, message: "Authentication restore found no saved Keychain session")
+            return nil
+        }
         guard tokens.requiresRefresh(at: Date()) else { return tokens.idToken }
         guard !tokens.refreshToken.isEmpty else {
+            LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Saved authentication session has no refresh token")
             try tokenStore.clear()
             return nil
         }
@@ -182,6 +186,7 @@ struct CognitoTokenStore: Sendable {
         } catch {
             if case CognitoAuthProviderError.tokenRequest(let code) = error,
                code == "invalid_grant" || code == "invalid_token" {
+                LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Cognito refresh returned \(code); clearing the invalid session")
                 try tokenStore.clear()
                 return nil
             }

@@ -17,12 +17,14 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.logseq.app.BuildConfig
+import logseq.app.AndroidRuntimeLogs
+import logseq.app.AndroidRuntimeLogLevel
+import logseq.app.AndroidRuntimeLogSource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,10 +60,12 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         androidx.compose.runtime.CompositionLocalProvider(
             dev.lui.LocalLuiThemeDark provides dark,
         ) {
-            val snackbarHostState = remember { SnackbarHostState() }
-            Scaffold(
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-            ) { padding ->
+            if (BuildConfig.DEBUG) {
+                LaunchedEffect(Unit) {
+                    AndroidRuntimeLogs.errors.collect { LogseqDialogs.notifyError(it) }
+                }
+            }
+            Scaffold { padding ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -78,12 +82,14 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                     }
                 }
             }
-            val error = LogseqDialogs.errorMessage
-            LaunchedEffect(error) {
-                if (error != null) {
-                    snackbarHostState.showSnackbar(error)
-                    LogseqDialogs.clearError()
-                }
+            val error = if (BuildConfig.DEBUG) LogseqDialogs.errorMessage else null
+            if (error != null) {
+                AlertDialog(
+                    onDismissRequest = LogseqDialogs::clearError,
+                    title = { Text("Error") },
+                    text = { Text(error) },
+                    confirmButton = { TextButton(onClick = LogseqDialogs::clearError) { Text("OK") } },
+                )
             }
             AudioRecordingDialog()
             DeleteConfirmationDialog()
@@ -98,13 +104,13 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
 private fun AudioRecordingDialog() {
     val request = LogseqDialogs.recordingRequest ?: return
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
-    var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
     LaunchedEffect(request) {
         try {
             request.recorder.start()
         } catch (failure: Throwable) {
+            AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
             request.result.complete(null)
             return@LaunchedEffect
         }
@@ -143,13 +149,7 @@ private fun AudioRecordingDialog() {
                         Text("Transcribe when finished")
                     }
                 }
-                error?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
+
             }
         },
         confirmButton = {
@@ -173,7 +173,7 @@ private fun AudioRecordingDialog() {
                         }
                         .onFailure { failure ->
                             busy = false
-                            error = failure.toString()
+                            AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
                         }
                 },
             ) { Text("Stop") }

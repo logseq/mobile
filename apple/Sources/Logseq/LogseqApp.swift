@@ -46,6 +46,7 @@ public struct LogseqRootView : View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let runtime = LogseqLogseqRuntime.shared
+    @State private var errorFeedback = LogseqErrorFeedback.shared
 
     public init() {
     }
@@ -62,6 +63,12 @@ public struct LogseqRootView : View {
         // OCaml view emits (adaptive light/dark tokens), not a host-side
         // dictionary — the shell keeps its palette for chrome below.
         .background(themePalette.background.ignoresSafeArea())
+        .alert("Error", isPresented: Binding(
+            get: { errorFeedback.message != nil },
+            set: { if !$0 { errorFeedback.dismiss() } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorFeedback.message ?? "") }
     }
 
     private var appContent: some View {

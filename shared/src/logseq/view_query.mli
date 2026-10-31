@@ -12,7 +12,6 @@ val property_editor : ?owner:string -> ?send:(Model.logseq_action -> bool) -> ?o
 val block_values : render_block:(Model.outline_row Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t) ->
   string -> Yojson.Basic.t Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 
-val action_error : Model.logseq_model Signal.signal -> string -> Lui_elements.t
 val waiting : Model.logseq_model Signal.signal -> string -> bool Signal.signal
 
 val temporal_picker : ?on_submit:(Lui_protocol.event -> unit) ->

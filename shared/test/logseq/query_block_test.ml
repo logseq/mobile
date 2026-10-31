@@ -191,7 +191,9 @@ let ui_states_and_disclosure () =
   List.iter (fun backend ->
     with_ui backend (ui_response ()) (fun app -> check (find app "empty" <> -1));
     with_ui backend (ui_response ~error:(`String "Invalid query") ())
-      (fun app -> check (find app "error" <> -1));
+      (fun app ->
+        check_eq (find app "error") (-1);
+        check (List.mem "Invalid query" (App_test.reported_errors (App.model app))));
     with_ui backend (ui_response ~collapsed:true ()) (fun app -> check_eq (find app "empty") (-1));
     let rows = List.init 25 (fun i -> `Assoc ["cells", `List [`String (string_of_int i)]]) in
     with_ui backend (ui_response ~rows ()) (fun app ->

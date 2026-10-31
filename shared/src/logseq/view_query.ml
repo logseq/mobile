@@ -96,9 +96,7 @@ let legacy_view ~render_block model_source row_source send : t =
             (own (Signal.map (fun query -> string_of_int (List.length query.rows) ^ " results") query))];
         if_ ~test:(Signal.value expanded)
           (column ~gap:4 ~accessibility_identifier:(identifier "rows") [
-            if_ ~test:(own (Signal.map (fun query -> query.error <> None) query))
-              (text ~value_signal:(own (Signal.map (fun query -> Option.value ~default:"" query.error) query))
-                ~foreground:"destructive" ~accessibility_identifier:(identifier "error") []);
+
             if_ ~test:(own (Signal.map (fun query -> query.error = None && query.rows = []) query))
               (text ~value_signal:(own (Signal.map (fun query ->
                 if String.trim query.source = "" then "No query defined" else "No results") query))
@@ -169,17 +167,9 @@ let payload owner feature view action extra =
     "viewUuid", `String view; "action", `String action] @ extra))
 let feedback source id = Signal.map (fun (model : Model.logseq_model) ->
   List.find_opt (fun (view, _, _) -> view = id) model.result_view_feedback) source
-let action_error source id = if_ ~test:(Signal.map (function Some (_, _, Some _) -> true | _ -> false) (feedback source id))
-  (text ~foreground:"destructive" ~style_class:"footnote" ~accessibility_identifier:("view.action.error." ^ id)
-    ~value_signal:(Signal.map2 (fun current -> function Some (_, _, Some message) -> View_base.tr current message | _ -> "")
-      source (feedback source id)) [])
 let waiting source id = Signal.map (fun (model : Model.logseq_model) ->
   List.exists (function Model.LoadPropertyValuesEffect (_, view, _) | Model.ResultViewEffect (_, view, _) | Model.NodePropertyEffect (_, view, _) -> view = id | _ -> false)
     (model.pending_effects @ model.in_flight_effects)) source
-let action_error_section source id =
-  if_ ~test:(Signal.map (function Some (_, _, Some _) -> true | _ -> false) (feedback source id))
-    (list_section [list_item [action_error source id]])
-
 let loaded_column context ~id ~owner ~mode ~feature column model_source send =
   let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
   let current = Signal.sample model_source in
@@ -446,7 +436,7 @@ let settings_sheet mode owner feature view_source model_source send close : t =
           ~accessibility_identifier:(id "remove") ~on_press:(fun _ -> Signal.set filters
             (List.filter (fun (draft : filter_draft) -> draft.key <> first.key) (Signal.sample (Signal.value filters)))) []]];
       if_ ~test:loading (list_item [spinner []]);
-      if_ ~test:(own (Signal.map ((<>) "") load_error)) (list_item [text ~value_signal:load_error ~foreground:"destructive" []]);
+
       list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [dyn (fun op -> match op with
         | "is" | "is-not" -> choose_values
         | "between" -> row ~gap:8 [number_input "minimum" "Minimum" (Some 0); number_input "maximum" "Maximum" (Some 1)]
@@ -505,7 +495,7 @@ let settings_sheet mode owner feature view_source model_source send close : t =
     ~accessibility_identifier:("view.settings.sheet." ^ initial.id)
     ~on_dismiss:(fun _ -> close ()) [
       list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view." ^ mode ^ ".list." ^ initial.id)
-        (action_error_section model_source initial.id ::
+        (
         (if mode = "filter" then [
           list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [menu ~label:(View_base.tr (Signal.sample model_source) "Match conditions")
             ~text_signal:(own (Signal.map (fun any -> if any then "Match any condition" else "Match all conditions") (Signal.value or_)))
@@ -646,7 +636,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
             ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) [];
           list_section [
             if_ ~test:loading (list_item [spinner ~accessibility_identifier:("view.edit.loading." ^ id) []]);
-            if_ ~test:(own (Signal.map ((<>) "") load_error)) (list_item [text ~value_signal:load_error ~foreground:"destructive" []]);
+
             keyed ~source:mounted_options ~key:fst ~cmp:String.compare ~mount:(fun source -> option_row (Signal.sample source));
             keyed ~source:(Signal.value created) ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
               let value = Signal.sample source in list_item ~height:44 ~padding_vertical:0 [menu_item ~height:44 ~padding_vertical:0 ~text:value ~selected:true
@@ -664,7 +654,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
         (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Clear") ~variant:`ghost ~min_height:44
           ~accessibility_identifier:("view.edit.clear." ^ view.id) ~disabled_signal:(waiting model_source view.id)
           ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]]);
-        action_error_section model_source view.id;
+
       ]);
     (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 controls
      else toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" controls);
@@ -981,14 +971,13 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
       if_ ~test:(Signal.value search_open)
         (row ~cross:`center [search_field ~grow:1.0 ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Search results") ~label:(View_base.tr (Signal.sample model_source) "Search results")
           ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) []]);
-      action_error model_source view.id;
+
       if_ ~test:rows_loading (spinner ~accessibility_identifier:("view.rows.loading." ^ view.id) []);
       if_ ~test:(own (Signal.map ((<>) "") rows_error)) (row ~gap:8 [
-        text ~value_signal:rows_error ~foreground:"destructive" ~grow:1.0 [];
+
         button ~text:(View_base.tr (Signal.sample model_source) "Refresh") ~variant:`ghost
           ~accessibility_identifier:("view.rows.retry." ^ view.id) ~on_press:(fun _ -> retry_rows ()) []]);
-      if_ ~test:(own (Signal.map ((<>) "") error))
-        (text ~value_signal:error ~foreground:"destructive" ~accessibility_identifier:("view.error." ^ view.id) []);
+
       if_ ~test:(own (Signal.map ((=) "") error))
         (column ~grow ~gap:8 [
           if_ ~test:(own (Signal.map2 (fun (view, rows) loading ->
@@ -1035,14 +1024,12 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
           value_sheet owner feature view model_source send item property (fun () -> Signal.set editing None)) (Signal.value editing));
     ]) context parent in
   (column ~grow ~gap:8 ~cross:`stretch ~accessibility_identifier:("query.block." ^ owner) [
-    if_ ~test:(own (Signal.map2 (fun json expanded -> expanded && jtext (jfield "error" json) <> "") parsed (Signal.value expanded)))
-      (text ~value_signal:(own (Signal.map (fun json -> jtext (jfield "error" json)) parsed))
-        ~foreground:"destructive" ~accessibility_identifier:("query.error." ^ owner) []);
+
     (if feature = "query-result" then
       if_ ~test:(own (Signal.map not (Signal.value expanded)))
         (row ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [results_toggle ()])
      else box []);
-    action_error model_source owner;
+
     if_ ~test:(Signal.value expanded) (column ~grow ~gap:8
       ([keyed ~source:chosen ~key:(fun view -> view.id) ~cmp:String.compare ~mount] @
        if fill_height then [] else [box ~height:24 ~accessibility_identifier:("view.results-gap." ^ owner) []]))]) context parent

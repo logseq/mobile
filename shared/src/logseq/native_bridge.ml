@@ -123,16 +123,11 @@ let host_action (update : Host_update.host_update) =
         base_url = settings.base_url;
         version = settings.version;
         revision = settings.revision }
-  | Runtime_log records ->
-    Model.ApplyRuntimeLog
-      (List.map
-         (fun (entry : Host_update.host_runtime_log_record) ->
-           { Model.id = entry.id;
-             level = entry.level;
-             source = entry.source;
-             timestamp = entry.timestamp;
-             message = entry.message })
-         records)
+  | Runtime_log (records, last_error) ->
+    let convert (entry : Host_update.host_runtime_log_record) : Model.runtime_log_record =
+      { Model.id = entry.id; level = entry.level; source = entry.source;
+        timestamp = entry.timestamp; message = entry.message } in
+    Model.ApplyRuntimeLog (List.map convert records, Option.map convert last_error)
   | Local_graph_ids ids -> Model.ApplyLocalGraphIds ids
   | Composer_asset asset -> Model.StageComposerAsset (session_asset asset)
   | Save_ui_session -> Model.SaveUISession
@@ -469,6 +464,8 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"copy-runtime-log\",\"text\":"
     ^ Lui_wire.quoted (encode_runtime_log_records records) ^ "}"
+  | ReportErrorEffect (id, message) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"report-error\",\"text\":" ^ Lui_wire.quoted message ^ "}"
   | SignInEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sign-in\",\"text\":\"\"}"
   | SignOutEffect id ->

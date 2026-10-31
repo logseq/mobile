@@ -303,6 +303,7 @@ private struct LGInlineCamera: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var camera = LGCameraSession()
     @State private var errorMessage: String?
+    @State private var permissionDenied = false
     @State private var visible = false
     @State private var ready = false
     @State private var capturing = false
@@ -312,9 +313,9 @@ private struct LGInlineCamera: View {
             LGCameraPreview(session: camera.session)
                 .background(.black)
                 .clipped()
-            if let errorMessage {
+            if permissionDenied {
                 VStack(spacing: 12) {
-                    Text(errorMessage).multilineTextAlignment(.center)
+                    Text("Allow camera access in Settings to take photos.").multilineTextAlignment(.center)
                     Button("Settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             UIApplication.shared.open(url)
@@ -339,6 +340,9 @@ private struct LGInlineCamera: View {
             .opacity(ready && !capturing ? 1 : 0.5)
             .padding(.bottom, 20)
         }
+        .onChange(of: errorMessage) { _, message in
+            if let message { logger.error(message) }
+        }
         .task { visible = true; await start() }
         .onDisappear { visible = false; camera.stop() }
         .onChange(of: scenePhase) { _, phase in
@@ -354,6 +358,7 @@ private struct LGInlineCamera: View {
     private func start() async {
         let allowed = await AVCaptureDevice.requestAccess(for: .video)
         guard visible, scenePhase == .active, !Task.isCancelled else { return }
+        permissionDenied = !allowed
         guard allowed else {
             errorMessage = "Allow camera access in Settings to take photos."
             return

@@ -49,7 +49,7 @@ type host_authentication =
 
 type host_update =
   | Settings of host_settings
-  | Runtime_log of host_runtime_log_record list
+  | Runtime_log of host_runtime_log_record list * host_runtime_log_record option
   | Local_graph_ids of string list
   | Save_ui_session
   | Restore_ui_session of host_ui_session
@@ -128,7 +128,13 @@ let decode kind payload =
     match kind with
     | "settings" -> Ok (settings value)
     | "runtime-log" ->
-      Ok (Runtime_log (List.map runtime_log_record (Util.to_list value)))
+      (match value with
+       | `List records -> Ok (Runtime_log (List.map runtime_log_record records, None))
+       | `Assoc _ ->
+         let records = List.map runtime_log_record (Util.to_list (Util.member "records" value)) in
+         let last = match Util.member "lastError" value with `Null -> None | error -> Some (runtime_log_record error) in
+         Ok (Runtime_log (records, last))
+       | _ -> Error "runtime log must contain records")
     | "local-graph-ids" -> Ok (Local_graph_ids (string_vector value))
     | "composer-asset" -> Ok (Composer_asset (composer_asset value payload))
     | "save-ui-session" -> Ok Save_ui_session

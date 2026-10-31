@@ -22,7 +22,7 @@ let runtime_log_preserves_unicode_and_newlines () =
     decode "runtime-log"
       "[{\"id\":\"7\",\"level\":\"ERROR\",\"source\":\"ui\",\"timestamp\":\"12:34\",\"message\":\"\xE7\xAC\xAC\xE4\xB8\x80\xE8\xA1\x8C\\nsecond line\"}]"
   with
-  | Ok (Runtime_log entries) ->
+  | Ok (Runtime_log (entries, _)) ->
     let entry = List.nth entries 0 in
     check_eq 1 (List.length entries);
     check_eq "7" entry.id;

@@ -491,7 +491,8 @@ let native_view_tabs_search_table_and_gallery () =
       check (find ("view.card." ^ gallery_view ^ "." ^ alpha) <> -1);
       check_eq (find ("view.card." ^ gallery_view ^ "." ^ beta)) (-1);
       App_test.dispatch app (Lui_protocol.Press (tab broken_view)); App_test.flush app;
-      check (find ("view.error." ^ broken_view) <> -1);
+      check_eq (find ("view.error." ^ broken_view)) (-1);
+      check (App_test.reported_errors (App.model app) <> []);
       App_test.dispatch app (Lui_protocol.Press (tab list_view)); App_test.flush app;
       check (find ("outliner.block." ^ alpha) <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
@@ -522,7 +523,8 @@ let native_view_settings_and_local_errors () =
       ignore (Lui_app.send app (Model.ResolveEffect (id, false, "This view changed")));
       App_test.flush app;
       check_eq ~msg:"view failures remain local" (App.model app).effect_error None;
-      check (find ("view.action.error." ^ table_view) <> -1);
+      check_eq (find ("view.action.error." ^ table_view)) (-1);
+      check (List.mem "This view changed" (App_test.reported_errors (App.model app)));
       click ("view.settings.cancel." ^ table_view);
       click ("view.sort." ^ table_view);
       check_sheet ();
@@ -589,7 +591,8 @@ let tuple_table_and_query_errors () =
       let projection = match Response_snapshot.decode_response (Session.snapshot_visible session) with
         | Ok value -> value | Error message -> fail message in
       App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app;
-      check ~msg:"query evaluation failures remain visible inside the query block" (find ("query.error." ^ owner) <> -1)))
+      check_eq ~msg:"query diagnostics do not render inside the query block" (find ("query.error." ^ owner)) (-1);
+      check ~msg:"query diagnostics enter the host log" (App_test.reported_errors (App.model app) <> [])))
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let typed_edits_restart_and_sync_acknowledgements () = with_runtime (fun session runtime conn ->
@@ -767,7 +770,7 @@ let native_direct_value_selection_and_creation () =
           (find ("view.edit.create." ^ table_view)) (-1)
         else check ~msg:"an open property offers explicit creation" (find ("view.edit.create." ^ table_view) <> -1);
         click ("view.edit.cancel." ^ table_view);
-        check_eq ~msg:"cancel never writes a property" (App.model app).pending_effects [];
+        check_eq ~msg:"cancel never writes a property" (List.filter (function Model.ReportErrorEffect _ -> false | _ -> true) (App.model app).pending_effects) [];
         click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ score);
         click ("view.edit.option." ^ table_view ^ "." ^ value_b);
         let pending = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
@@ -867,10 +870,10 @@ let native_many_selector_stages_choices_until_done () =
       click ("view.cell." ^ table_view ^ "." ^ alpha ^ "." ^ many_score);
       check (App_test.property_bool host (find ("view.edit.option." ^ table_view ^ "." ^ value_b)) Lui_protocol.Selected);
       click ("view.edit.option." ^ table_view ^ "." ^ value_b);
-      check_eq ~msg:"multiple selection waits for Done" (App.model app).pending_effects [];
+      check_eq ~msg:"multiple selection waits for Done" (List.filter (function Model.ReportErrorEffect _ -> false | _ -> true) (App.model app).pending_effects) [];
       App_test.dispatch app (Lui_protocol.TextChanged (find ("view.edit.value." ^ table_view), "35")); App_test.flush app;
       click ("view.edit.create." ^ table_view);
-      check_eq (App.model app).pending_effects [];
+      check_eq (List.filter (function Model.ReportErrorEffect _ -> false | _ -> true) (App.model app).pending_effects) [];
       click ("view.edit.save." ^ table_view);
       let pending = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
       let action, body = Result.get_ok (Core_effect.request ~now:(fun () -> 1) ~fresh_id:(fun () -> "unused")

@@ -176,7 +176,12 @@ let full_pending_responses_do_not_restart_a_completed_pump () = with_editor (fun
   let failed = dispatch "completePendingSync" (J.to_string (`Assoc [
     "id", id; "status", `Int 403; "body", `String "denied"; "error", `Null])) in
   ignore (Native_bridge.apply_response failed);
-  check_eq ~msg:"a permanent failure cannot bypass the retry budget through snapshot wakeups" (pending_kinds ()) [])
+  check_eq ~msg:"a permanent failure cannot bypass the retry budget through snapshot wakeups"
+    (List.filter ((<>) "report-error") (pending_kinds ())) [];
+  let report = take_ready () in
+  check_eq (kind report) "report-error";
+  ignore (Native_bridge.resolve_effect (effect_id report) true "");
+  check_eq ~msg:"reporting a failure cannot restart the upload pump" (pending_kinds ()) [])
 
 let toolbar_actions_that_keep_editing_preserve_autosave () =
   List.iter (fun action -> with_editor (fun session saved ->

@@ -166,6 +166,10 @@ internal class AndroidPlatformEffects(
 
     suspend fun execute(effect: NativeEffect): NativeEffectResolution = try {
         when (effect.kind) {
+            "report-error" -> {
+                platform.appendRuntimeLog("ERROR", "ui", effect.text)
+                NativeEffectResolution.Discard()
+            }
             "present-journal-calendar" -> presentJournalCalendar()
             "persist-composer-draft" -> {
                 platform.persistComposerDraft(effect.text)
