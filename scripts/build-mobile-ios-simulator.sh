@@ -171,14 +171,7 @@ python3 "$repo_root/scripts/configure-ios-resource-bundles.py" "$app_dir"
 
 logseq_resource_bundle="$app_dir/logseq_Logseq.bundle"
 if [[ -d $logseq_resource_bundle ]]; then
-  xcrun actool \
-    --compile "$logseq_resource_bundle" \
-    --platform iphonesimulator \
-    --minimum-deployment-target "$deployment_target" \
-    --target-device iphone \
-    --target-device ipad \
-    "$repo_root/apple/Sources/Logseq/Resources/Icons.xcassets" \
-    "$repo_root/apple/Sources/Logseq/Resources/Module.xcassets" >/dev/null
+  "$repo_root/scripts/compile-ios-app-assets.sh" "$logseq_resource_bundle" iphonesimulator "$deployment_target" resources
 fi
 
 "$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
