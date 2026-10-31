@@ -8,6 +8,8 @@ extern "C" {
 #endif
 
 const char *logseq_call(const char *request_json);
+/* Independent worker operation; the caller frees the returned JSON. */
+char *logseq_highlight_code(const char *request_json);
 void logseq_initialize(void);
 const char *logseq_lui_initialize(
     int32_t platform_code,

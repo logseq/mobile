@@ -44,8 +44,7 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "f90ee61c2460f7d67d6e169863ff096b50b34d0f"),
-        .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "f90ee61c2460f7d67d6e169863ff096b50b34d0f")
     ],
     targets: [
         .executableTarget(
@@ -56,12 +55,7 @@ let package = Package(
         ),
         .target(name: "Logseq", dependencies: [
             "LogseqModel",
-            .product(name: "LUIAppleBackendStatic", package: "lui"),
-            .product(
-                name: "HighlightSwift",
-                package: "highlightswift",
-                condition: .when(platforms: [.iOS])
-            )
+            .product(name: "LUIAppleBackendStatic", package: "lui")
         ],
         resources: [.process("Resources")],
         linkerSettings: logseqLinkerSettings),

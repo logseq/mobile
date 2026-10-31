@@ -123,8 +123,10 @@ let mutation db ~now ~fresh_uuid input =
         invalid_arg "Invalid code language";
       let expected = match G.value db id "logseq.property.code/lang" with
         | Some (Ds.String value) -> Some (Pending_ops.String_value value) | _ -> None in
-      Ok (Pending_ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected;
-        value = if language = "" then None else Some (Pending_ops.String_value language)}))
+      let value = if language = "" then None else Some (Pending_ops.String_value language) in
+      Ok (Pending_ops.Atomic [
+        Pending_ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected; value};
+        Pending_ops.Set_key_value {key = "logseq.kv/latest-code-lang"; value}]))
     else if action = `String "addTags" || action = `String "setTags" then (
       let owner = required "blockUuid" input in
       let owner_id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in

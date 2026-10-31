@@ -36,6 +36,12 @@ static pthread_once_t logseq_runtime_once = PTHREAD_ONCE_INIT;
 static pthread_t logseq_runtime_thread;
 static _Thread_local char *logseq_response = NULL;
 
+extern char *logseq_syntax_highlight(const char *request);
+
+char *logseq_highlight_code(const char *request_json) {
+  return logseq_syntax_highlight(request_json);
+}
+
 static void start_ocaml_runtime(void) {
   static char program_name[] = "logseq_mobile";
   char *argv[] = {program_name, NULL};

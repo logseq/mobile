@@ -1,6 +1,11 @@
 open Lui_protocol
 open Lui_elements
 
+let code_language row =
+    try match Yojson.Basic.from_string row.Model.markup_json with
+      | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
+      | _ -> "" with _ -> ""
+
 let outliner_editor_view model_source block_id_source title_source caret_source send : t
     =
  fun context parent ->
@@ -8,11 +13,12 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
    attach context parent node;
    Lui_ui.extension_property_signal context node "input-policy"
      (Signal.map2 (fun (current : Model.logseq_model) uuid ->
-       let display_type = List.find_map (fun (row : Model.outline_row) ->
-         if row.row_uuid = uuid then row.row_display_type else None) current.outliner_rows in
+       let row = List.find_opt (fun (row : Model.outline_row) -> row.row_uuid = uuid) current.outliner_rows in
+       let display_type = Option.bind row (fun row -> row.Model.row_display_type) in
        let special = List.mem display_type [Some "code"; Some "math"] in
        StringValue (if special then Yojson.Basic.to_string (`Assoc [
          "multiline", `Bool (display_type = Some "code"); "code", `Bool (display_type = Some "code");
+         "language", `String (Option.fold ~none:"" ~some:code_language row);
          "emptyPairs", `List [`Assoc ["text", `String "[[]]"; "deleteOffset", `Int 1]]])
          else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "focus-enabled"
@@ -343,11 +349,6 @@ let outliner_priority_control model_source row_source send : t =
             menu_item ~text:(View_base.tr (Signal.sample model_source) "Clear priority")
               ~accessibility_identifier:"button.block-task-priority-clear" ~on_press:(fun _ -> choose "") []
           ]]))]
-
-let code_language row =
-    try match Yojson.Basic.from_string row.Model.markup_json with
-      | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
-      | _ -> "" with _ -> ""
 
 let code_language_control model_source row_source send : t =
   let current_row = Signal.sample row_source in

@@ -46,6 +46,22 @@ class AndroidEditorKeyboardTest {
         }
     }
 
+    @Test fun codeEditingHighlightsDefinitionsAndPreservesSelectionAndInput() {
+        val source = "(def answer 42)\n(defn square [x] (* x x))"
+        val field = render(source, """{"multiline":true,"code":true,"language":"clojure"}""")
+        fun layout(): androidx.compose.ui.text.TextLayoutResult {
+            val values = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            field.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(values) }
+            return values.single()
+        }
+        ui.waitUntil(5_000) { layout().layoutInput.text.spanStyles.isNotEmpty() }
+        assertEquals(source, layout().layoutInput.text.text)
+        field.performTextInputSelection(TextRange(5, 11))
+        field.performTextInput("value")
+        ui.waitUntil(5_000) { layout().layoutInput.text.text.contains("(def value 42)") }
+        assertTrue(layout().layoutInput.text.spanStyles.any { it.start == 1 && it.end == 4 })
+    }
+
     @Test fun splitKeepsTextUntilTheEditorMovesToTheNewBlock() {
         val editor = render("Hello 中文 📝")
         editor.performTextInputSelection(TextRange(6))
