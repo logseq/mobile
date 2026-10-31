@@ -27,7 +27,7 @@ internal class NativeRuntimeScheduler {
         } finally {
             if (pendingCoreCalls.decrementAndGet() == 0) {
                 flushUiCalls()
-                onIdle?.invoke()
+                if (!isCoreBusy) onIdle?.invoke()
             }
         }
     }
@@ -41,7 +41,7 @@ internal class NativeRuntimeScheduler {
     }
 
     private fun flushUiCalls() {
-        while (deferredUiCalls.isNotEmpty()) {
+        while (!isCoreBusy && deferredUiCalls.isNotEmpty()) {
             deferredUiCalls.removeFirst()()
         }
     }
