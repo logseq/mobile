@@ -73,14 +73,13 @@ internal object AndroidBackgroundSync {
         if (restored.graphResponse == null) return BackgroundSyncResult.Skipped
         var lastResponse = JSONObject(restored.graphResponse)
         val job = currentCoroutineContext().job
+        lateinit var pull: AndroidGraphEventsSync
         val pump = AndroidPendingSyncPump(bridge::callCore, { response ->
             lastResponse = JSONObject(response)
             check(lastResponse.optBoolean("ok")) { "The native core rejected background sync" }
-        }, { !job.isActive })
+        }, { !job.isActive }, sendWebSocket = { pull.sendPending(it) })
         fun pendingFailed() = lastResponse.optJSONObject("result")?.let { !it.isNull("pendingSyncError") } == true
-        pump.run()
-        if (pendingFailed()) return BackgroundSyncResult.Retry
-        val pull = AndroidGraphEventsSync(bridge::callCore, { response ->
+        pull = AndroidGraphEventsSync(bridge::callCore, { response ->
             lastResponse = JSONObject(response)
         }, { pump.run() }, { !job.isActive }, stopAfterFirstPull = true)
         val result = pull.runSession(AndroidGraphEventsSync.Connection(storage.selectedGraphId, storage.baseUrl, token))

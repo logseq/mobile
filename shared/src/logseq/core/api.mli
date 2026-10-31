@@ -1,4 +1,4 @@
-(** HTTP request builders and JSON decoders for the Logseq sync API. *)
+(** Request builders and JSON decoders for the Logseq sync API. *)
 
 type api_config =
   { base_url : string
@@ -45,6 +45,7 @@ val epoch_ms : unit -> int
 val trim_slash : string -> string
 val api_root : api_config -> string
 val url_encode : string -> string
+val sync_websocket_url : api_config -> string option
 val request : api_config -> string -> string -> string option -> api_request
 val graph_path : api_config -> string -> string
 val json_body : (string * Yojson.Basic.t) list -> string option
@@ -99,6 +100,7 @@ val raw_asset_upload_request :
   api_config -> string -> string -> string -> string -> string -> api_file_upload
 val update_block_request : api_config -> string -> string -> api_request
 val tx_batch_request : api_config -> int -> string -> string -> string -> api_request
+val tx_batch_websocket_request : api_config -> int -> string -> string -> string -> api_request
 val update_block_status_request : api_config -> string -> string -> api_request
 val bool_member : bool -> string -> Yojson.Basic.t -> bool
 val nonempty_string_member : string -> Yojson.Basic.t -> string option

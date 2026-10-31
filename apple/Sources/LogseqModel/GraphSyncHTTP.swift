@@ -18,11 +18,12 @@ struct LogseqBootstrapEnvelope: Decodable {
 }
 
 struct LogseqSyncTransport: Decodable {
-    struct Command: Decodable {
+    struct Command: Decodable, Sendable {
         let type: String
         let url: String?
         let body: String?
         let delayMs: Int?
+        let id: Int?
     }
 
     let generation: Int

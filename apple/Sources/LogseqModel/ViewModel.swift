@@ -439,6 +439,7 @@ private struct CreateSyncGraphPayload: Encodable {
     public private(set) var syncError: LogseqCoreError?
     public private(set) var graphEventsRetryDelayMilliseconds = 0
     private var syncTransport: LogseqSyncTransport?
+    private var pendingWebSocket: LogseqPendingWebSocket?
     public private(set) var isRefreshing = false
     @ObservationIgnored public var graphDownloadProgressChanged: (@MainActor (LogseqGraphDownloadProgress?) -> Void)?
     private var graphDownloadProgress: LogseqGraphDownloadProgress?
@@ -780,72 +781,109 @@ private struct CreateSyncGraphPayload: Encodable {
         let generation = initial.generation
         let startedAt = Date()
         var socket: URLSessionWebSocketTask?
+        var uploadSocket: LogseqPendingWebSocket?
+        var receiver: Task<Void, Never>?
+        let (stream, continuation) = AsyncThrowingStream<LogseqSyncTransport.Command, Error>.makeStream()
         let cancellation = LogseqSocketCancellation()
-        var commands = initial.commands
+        for command in initial.commands { continuation.yield(command) }
         var receivedFrame = false
         func event(_ type: String, body: String? = nil, message: String? = nil) async -> [LogseqSyncTransport.Command] {
-            await dispatchEncodedAndWait("syncTransportEvent", LogseqSyncTransportEvent(
+            let payload = LogseqSyncTransportEvent(
                 generation: generation, graphId: graphID, type: type, body: body, message: message
-            ))
-            return syncTransport?.commands ?? []
+            )
+            guard let json = encodePayload(payload, action: "syncTransportEvent"),
+                  let request = encode(LogseqRPCRequest(method: "dispatch",
+                    params: LogseqRPCParams(action: "syncTransportEvent", payload: json))) else { return [] }
+            let response = await LogseqCoreExecutor.shared.call(callCore, requestJSON: request, priority: .maintenance)
+            apply(responseJSON: response, actionName: "syncTransportEvent")
+            return (try? JSONDecoder().decode(LogseqSyncTransportEnvelope.self,
+                from: Data(response.utf8)))?.result?.syncTransport?.commands ?? []
         }
         do {
             return try await withTaskCancellationHandler {
-                defer { socket?.cancel(with: .goingAway, reason: nil) }
-                while !Task.isCancelled {
-                    while !commands.isEmpty {
-                        let command = commands.removeFirst()
-                        switch command.type {
-                        case "connect":
-                            guard let address = command.url, let url = URL(string: address) else {
-                                throw URLError(.badURL)
-                            }
-                            var request = URLRequest(url: url)
-                            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-                            let task = URLSession.shared.webSocketTask(with: request)
-                            task.maximumMessageSize = 64 * 1024 * 1024
-                            socket = task
-                            cancellation.install(task)
-                            task.resume()
-                            commands += await event("opened")
-                            syncError = nil
-                        case "send":
-                            guard let socket, let body = command.body else { throw URLError(.cannotParseResponse) }
-                            try await socket.send(.string(body))
-                        case "close":
-                            socket?.cancel(with: .goingAway, reason: nil)
-                            socket = nil
-                        case "retry":
-                            graphEventsRetryDelayMilliseconds = command.delayMs ?? 0
-                            if let message = syncTransport?.error {
-                                syncError = LogseqCoreError(code: "websocket_connection_failed", message: message)
-                            }
-                            return false
-                        case "snapshot":
-                            syncError = nil
-                            return true
-                        case "sync-pending":
-                            syncPending()
-                            if stopAfterFirstFrame && receivedFrame {
-                                _ = await event("cancelled")
-                                return false
-                            }
-                        default:
-                            throw URLError(.cannotParseResponse)
+                defer {
+                    receiver?.cancel()
+                    continuation.finish()
+                    uploadSocket?.close()
+                    if pendingWebSocket === uploadSocket { pendingWebSocket = nil }
+                    socket?.cancel(with: .goingAway, reason: nil)
+                }
+                for try await command in stream {
+                    if Task.isCancelled { break }
+                    switch command.type {
+                    case "connect":
+                        guard let address = command.url, let url = URL(string: address) else {
+                            throw URLError(.badURL)
                         }
+                        var request = URLRequest(url: url)
+                        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                        let task = URLSession.shared.webSocketTask(with: request)
+                        task.maximumMessageSize = 64 * 1024 * 1024
+                        socket = task
+                        cancellation.install(task)
+                        task.resume()
+                        let uploads = LogseqPendingWebSocket(socket: task, url: address)
+                        uploadSocket = uploads
+                        pendingWebSocket = uploads
+                        receiver = Task {
+                            do {
+                                while !Task.isCancelled {
+                                    let message = try await task.receive()
+                                    let text: String
+                                    switch message {
+                                    case .string(let value): text = value
+                                    case .data(let data):
+                                        guard let value = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
+                                        text = value
+                                    @unknown default: throw URLError(.cannotParseResponse)
+                                    }
+                                    let next = await event("frame", body: text)
+                                    if next.contains(where: { $0.type == "sync-pending" }) { receivedFrame = true }
+                                    for command in next {
+                                        if command.type == "pending-result", let id = command.id, let body = command.body {
+                                            uploads.complete(id: id, body: body)
+                                        } else if command.type == "send", let body = command.body {
+                                            try await task.send(.string(body))
+                                        } else if command.type == "close" {
+                                            uploads.close()
+                                            if pendingWebSocket === uploads { pendingWebSocket = nil }
+                                            continuation.yield(command)
+                                        } else { continuation.yield(command) }
+                                    }
+                                }
+                            } catch {
+                                uploads.close(error.localizedDescription)
+                                continuation.finish(throwing: error)
+                            }
+                        }
+                        for command in await event("opened") { continuation.yield(command) }
+                        syncError = nil
+                    case "send":
+                        guard let socket, let body = command.body else { throw URLError(.cannotParseResponse) }
+                        try await socket.send(.string(body))
+                    case "close":
+                        socket?.cancel(with: .goingAway, reason: nil)
+                        socket = nil
+                    case "retry":
+                        graphEventsRetryDelayMilliseconds = command.delayMs ?? 0
+                        if let message = syncTransport?.error {
+                            syncError = LogseqCoreError(code: "websocket_connection_failed", message: message)
+                        }
+                        return false
+                    case "snapshot":
+                        syncError = nil
+                        return true
+                    case "sync-pending":
+                        syncPending()
+                        if stopAfterFirstFrame && receivedFrame {
+                            await syncPendingForBackground()
+                            if snapshot.hasPendingSemanticOperations && syncError == nil { continue }
+                            _ = await event("cancelled")
+                            return false
+                        }
+                    default:
+                        throw URLError(.cannotParseResponse)
                     }
-                    guard let socket else { return false }
-                    let message = try await socket.receive()
-                    let text: String
-                    switch message {
-                    case .string(let value): text = value
-                    case .data(let data):
-                        guard let value = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
-                        text = value
-                    @unknown default: throw URLError(.cannotParseResponse)
-                    }
-                    receivedFrame = true
-                    commands = await event("frame", body: text)
                 }
                 _ = await event("cancelled")
                 return false
@@ -1033,7 +1071,13 @@ private struct CreateSyncGraphPayload: Encodable {
             while let request = pending, !Task.isCancelled {
                 if request.delayMs > 0 { try? await Task.sleep(for: .milliseconds(request.delayMs)) }
                 guard !Task.isCancelled else { break }
-                let result = await pendingTransport(request)
+                let result: LogseqPendingSyncResult
+                if request.method == "WS" {
+                    guard let pendingWebSocket else { break }
+                    result = await pendingWebSocket.send(request)
+                } else {
+                    result = await pendingTransport(request)
+                }
                 if Task.isCancelled { break }
                 let completion = LogseqPendingSyncCompletion(
                     id: request.id,

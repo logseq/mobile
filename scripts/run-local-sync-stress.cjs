@@ -110,12 +110,24 @@ class Mobile extends Client {
         const socket = new WebSocket(command.url, { headers: { Authorization: `Bearer ${fixture.token}` } });
         this.socket = socket;
         socket.on('open', () => this.queueTransport(() => this.event('opened')));
-        socket.on('message', body => this.queueTransport(() => this.event('frame', { body: body.toString() })));
+        socket.on('message', body => this.queueTransport(async () => {
+          const frame = JSON.parse(body.toString());
+          if (this.upload && this.dropAcknowledgement && frame.type === 'tx/batch/ok') {
+            this.upload.resolve({ status: 200, body: body.toString(), ok: true });
+            return;
+          }
+          await this.event('frame', { body: body.toString() });
+        }));
         socket.on('error', error => { if (this.online) this.queueTransport(() => this.event('failed', { message: error.message })); });
-        socket.on('close', () => { if (this.online && this.socket === socket) this.queueTransport(() => this.event('closed')); });
+        socket.on('close', () => {
+          if (this.upload?.socket === socket) this.upload.reject(new Error('Upload socket closed'));
+          if (this.online && this.socket === socket) this.queueTransport(() => this.event('closed'));
+        });
       } else if (command.type === 'send' && this.socket?.readyState === WebSocket.OPEN) this.socket.send(command.body);
       else if (command.type === 'close') { this.socket?.terminate(); this.socket = null; }
       else if (command.type === 'snapshot') throw new Error('Unexpected snapshot reset during local randomized sync');
+      else if (command.type === 'pending-result' && this.upload?.id === command.id)
+        this.upload.resolve({ status: 200, body: command.body, ok: true });
       // Retries are driven explicitly by reconnect(), so every attempt is recorded.
     }
   }
@@ -142,18 +154,34 @@ class Mobile extends Client {
         await sleep(30); continue;
       }
       if (request.delayMs) await sleep(request.delayMs);
-      if (crashAfterAccept) { this.online = false; this.socket?.terminate(); this.socket = null; }
-      const response = await fetch(request.url, { method: request.method,
-        headers: { ...request.headers, Authorization: `Bearer ${request.token}`, 'Content-Type': request.contentType }, body: request.filePath ? fs.readFileSync(request.filePath) : request.body });
-      const body = await response.text();
-      trace({ event: 'http', status: response.status, requestId: request.id, response: body });
+      let response, body;
+      if (request.method === 'WS') {
+        this.dropAcknowledgement = loseReply || crashAfterAccept;
+        try {
+          response = await new Promise((resolve, reject) => {
+            assert.equal(this.socket?.readyState, WebSocket.OPEN, 'A graph upload needs its live subscription');
+            const timer = setTimeout(() => reject(new Error('Upload response timed out')), 10_000);
+            this.upload = { id: request.id, socket: this.socket,
+              resolve: value => { clearTimeout(timer); resolve(value); },
+              reject: error => { clearTimeout(timer); reject(error); } };
+            this.socket.send(request.body);
+          });
+          body = response.body;
+        } finally { this.upload = null; this.dropAcknowledgement = false; }
+      } else {
+        response = await fetch(request.url, { method: request.method,
+          headers: { ...request.headers, Authorization: `Bearer ${request.token}`, 'Content-Type': request.contentType }, body: request.filePath ? fs.readFileSync(request.filePath) : request.body });
+        body = await response.text();
+      }
+      trace({ event: request.method === 'WS' ? 'websocket' : 'http', status: response.status, requestId: request.id, response: body });
       let completion;
       if (crashAfterAccept && response.ok && JSON.parse(body).type === 'tx/batch/ok') {
+        this.online = false; this.socket?.terminate(); this.socket = null;
         scenarios.push('mobile crash after server acceptance before acknowledgement');
         await this.crash(); return { crashed: true };
       }
       if (loseReply && response.ok && JSON.parse(body).type === 'tx/batch/ok') {
-        loseReply = false; scenarios.push('server accepted but HTTP response was lost');
+        loseReply = false; scenarios.push('server accepted but WebSocket acknowledgement was lost');
         completion = { id: request.id, status: 503, body: 'Injected lost response', error: null };
       } else completion = { id: request.id, status: response.status, body, error: null };
       await this.rpc('completePendingSync', completion);
@@ -406,7 +434,7 @@ async function main() {
       assert(ready, 'The real sync server must recover after SIGKILL');
       await mobile.reconnect(); await mobile.flush(); scenarios.push('local sync server crash and restart');
     }
-    if (index === 120) await insert(page, 'Lost HTTP response must not lose this edit');
+    if (index === 120) await insert(page, 'Lost WebSocket acknowledgement must not lose this edit');
     if (mobile.online && index % 5 === 0) await mobile.flush({ loseReply: index === 120 });
     if (index % 16 === 15) console.log(`seed=${seed} operations=${index + 1}/${count} coverage=${Object.keys(coverage).length}`);
   }
@@ -453,7 +481,7 @@ async function main() {
   const mobileTitles = local.datoms.filter(([, attr]) => attr === 'block/title').map(([uuid, , title]) => [uuid, title]);
   assert.deepEqual(cliTitles.sort(), mobileTitles.sort(), 'CLI and mobile titles must converge');
   for (const type of types) assert(coverage[type] > 0, `Missing mobile operation coverage: ${type}`);
-  if (count >= 121) assert(scenarios.includes('server accepted but HTTP response was lost'));
+  if (count >= 121) assert(scenarios.includes('server accepted but WebSocket acknowledgement was lost'));
   const summary = { seed, operations: sequence, cliMutations, coverage, movements, scenarios, assetUploads: assets.length, serverT: local.serverT,
     datoms: local.datoms.length, pending: local.pending.length, graphId: fixture.graphId, tracePath };
   fs.writeFileSync(path.join(runRoot, `summary-${seed}.json`), JSON.stringify(summary, null, 2));

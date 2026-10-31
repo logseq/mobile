@@ -168,7 +168,7 @@ let assert_semantic_request session operation_id outliner_op cursor =
   let request = required_pending_request session in
   let body = member "bodyObject" request in
   let tx = List.hd (json_items "txs" body) in
-  check_eq (member "method" request) (`String "POST");
+  check_eq (member "method" request) (`String "WS");
   check_eq (member "t-before" body) (`Int cursor);
   check_eq (member "tx-id" tx) (`String operation_id);
   check_eq (member "outliner-op" tx) (`String outliner_op)
@@ -1919,10 +1919,10 @@ let semantic_capture_pump_never_calls_blocking_transport () =
        (member "hasPendingSemanticOperations" (member "result" response)));
   (match pending_request (dispatch_json session "beginPendingSync" "") with
    | Some request ->
-     check_eq (json_string (member "method" request)) "POST";
+     check_eq (json_string (member "method" request)) "WS";
      check_eq
        (json_string (member "url" request))
-       "http://127.0.0.1:8787/sync/plain-1/tx/batch";
+       "ws://127.0.0.1:8787/sync/plain-1";
      check_eq (Json_util.to_int (member "id" request)) 1
    | None -> check false);
   check_eq !legacy_send_count 0;
@@ -1977,7 +1977,7 @@ let encrypted_task_stages_journal_before_status_and_drains_both_requests () =
       | Some request ->
         check_eq
           (json_string (member "url" request))
-          "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+          "ws://127.0.0.1:8787/sync/encrypted-1"
       | None -> check false)
     [ begin_response; complete_response ];
   cursor := 93;
@@ -2229,7 +2229,7 @@ let projected_title_updates_stage_semantic_transactions () =
   | Some request ->
     let body = member "bodyObject" request in
     let tx = List.hd (json_items "txs" body) in
-    check_eq (member "method" request) (`String "POST");
+    check_eq (member "method" request) (`String "WS");
     check_eq (member "t-before" body) (`Int 42);
     check_eq (member "tx-id" tx) (`String "op-title");
     check_eq (member "outliner-op" tx) (`String "save-block")
@@ -4388,7 +4388,7 @@ let plain_assets_project_before_upload_and_queue_stable_datom_transactions () =
      let transactions = json_items "txs" (member "bodyObject" request) in
      check_eq
        (member "url" request)
-       (`String "http://127.0.0.1:8787/sync/plain-1/tx/batch");
+       (`String "ws://127.0.0.1:8787/sync/plain-1");
      check_eq (List.length transactions) 1;
      check_eq (member "tx-id" (List.hd transactions)) (`String uuid)
    | None -> check false);
@@ -4480,7 +4480,7 @@ let encrypted_capture_stages_persistent_insert_and_uses_datom_endpoint () =
   | Some request ->
     check_eq
       (member "url" request)
-      (`String "http://127.0.0.1:8787/sync/encrypted-1/tx/batch")
+      (`String "ws://127.0.0.1:8787/sync/encrypted-1")
   | None -> check false
 
 let page_favorite_updates_sidebar_and_preserves_operation_fields () =
@@ -5199,7 +5199,7 @@ let encrypted_asset_upload_stages_datoms_and_cleans_temporary_payload () =
    | Some request ->
      check_eq
        (json_string (member "url" request))
-       "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+       "ws://127.0.0.1:8787/sync/encrypted-1"
    | None -> check false);
   check_eq !staged [ "applied"; "queued" ];
   check_eq !cleaned [ "/tmp/photo.transit" ]

@@ -1786,8 +1786,25 @@ let sync_transport_event session _input fields =
           (match apply body with
            | Error _ as error -> error
            | Ok () -> reconcile_authoritative_blocks session; Ok (projection_server_t session)) in
-      let transport = Sync_driver.receive ~cursor:(projection_server_t session)
+      let receive event = Sync_driver.receive ~cursor:(projection_server_t session)
         ~editing:(sync_transport_editing session) ~apply_frame event previous in
+      let transport = match event, (state session).semantic_active with
+        | Sync_driver.Frame body, Some active when Sync_driver.connected previous ->
+          let frame = try Json.from_string body with Yojson.Json_error _ -> `Null in
+          let typ = match frame with `Assoc fields -> List.assoc_opt "type" fields | _ -> None in
+          if typ = Some (`String "tx/batch/ok") || typ = Some (`String "tx/reject") then
+            let baseline = match active.request.body with
+              | Some body -> Yojson.Basic.Util.member "t-before" (Json.from_string body)
+              | None -> `Null in
+            let incoming = Yojson.Basic.Util.member "t-before" frame in
+            if typ = Some (`String "tx/batch/ok") && incoming <> `Null && incoming <> baseline then
+              Sync_driver.without_commands previous
+            else
+              let server_t = match Yojson.Basic.Util.member "t" frame with
+                | `Int t when t >= 0 -> Some t | _ -> None in
+              receive (Sync_driver.Submission_response (active.id, body, server_t))
+          else receive event
+        | _ -> receive event in
       publish_sync_transport session transport
 
 let child_context session parent_id =

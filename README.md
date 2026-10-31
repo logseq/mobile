@@ -157,7 +157,7 @@ and isolated CLI configuration. The driver uses the real mobile session and CLI,
 generates all mobile semantic operation types plus capture, transcription, and
 flashcard reviews, and checks actual attachment uploads. Runs of at least 177
 iterations also exercise offline edits, process crashes, server restart, and lost
-HTTP acknowledgements. Successful runs require empty pending queues and identical
+WebSocket acknowledgements. Successful runs require empty pending queues and identical
 UUID-normalized synced datoms in the mobile database, CLI database, and a fresh
 server snapshot. The CLI comparison excludes its derived `block/refs` and local
 `block/tx-id`, matching the server checksum exclusions; the mobile/server comparison
@@ -169,7 +169,9 @@ uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
 in the platform secure store, so neither client depends on Amplify or the AWS
 SDK.
 
-Sync uses dev's `pull` / `pull/ok` journal and `tx/batch` protocol. Only canonical
+Graph sync uses one WebSocket connection for dev's `pull` / `pull/ok` journal
+and `tx/batch` uploads. Pending graph transactions never use the HTTP upload API;
+attachments and snapshot transfers still use HTTP. Only canonical
 server journal rows enter the persisted graph; pending edits store normalized
 datoms and replay on a display DB without durable storage. Snapshot bootstrap
 reads its cursor through the existing pull endpoint and its schema from the

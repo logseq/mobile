@@ -8,6 +8,7 @@ type command =
   | Retry of int
   | Snapshot
   | Sync_pending
+  | Pending_result of int * string
 
 type t =
   { generation : int
@@ -31,6 +32,7 @@ type event =
   | Cancelled
   | Snapshot_applied
   | Network of bool
+  | Submission_response of int * string * int option
 
 let empty =
   { generation = 0; graph_id = ""; phase = Idle; pull_in_flight = false;
@@ -61,16 +63,7 @@ let require_snapshot ~editing state =
   { state with phase = Waiting; snapshot_required = true; pull_in_flight = false;
     commands = [Close; (if editing then Retry 1000 else Snapshot)] }
 
-let socket_url config =
-  let root = Api.api_root config in
-  let replace before after =
-    if String.starts_with ~prefix:before root then
-      Some (after ^ String.sub root (String.length before) (String.length root - String.length before))
-    else None in
-  let root =
-    if String.starts_with ~prefix:"ws://" root || String.starts_with ~prefix:"wss://" root then Some root
-    else match replace "https://" "wss://" with Some _ as root -> root | None -> replace "http://" "ws://" in
-  Option.map (fun root -> root ^ "/sync/" ^ Api.url_encode config.Api.graph_id) root
+let socket_url = Api.sync_websocket_url
 
 let begin_connection config ~cursor ~editing previous =
   let state = if previous.graph_id = config.Api.graph_id then previous
@@ -101,17 +94,20 @@ let string_field name = function
   | `Assoc fields -> (match List.assoc_opt name fields with Some (`String value) -> Some value | _ -> None)
   | _ -> None
 
+let notify ~cursor server_t state =
+  let notified_t = max state.notified_t (Option.value ~default:state.notified_t server_t) in
+  let state = { state with notified_t } in
+  match cursor with
+  | Some cursor when not state.pull_in_flight && notified_t > cursor ->
+    { state with pull_in_flight = true; commands = [pull cursor] }
+  | _ -> state
+
 let receive_frame ~cursor ~editing ~apply_frame body state =
   try
     let frame = Json.from_string body in
     match string_field "type" frame with
     | Some ("hello" | "changed") ->
-      let notified_t = max state.notified_t (Option.value ~default:state.notified_t (int_field "t" frame)) in
-      let state = { state with notified_t } in
-      (match cursor with
-       | Some cursor when not state.pull_in_flight && notified_t > cursor ->
-         { state with pull_in_flight = true; commands = [pull cursor] }
-       | _ -> state)
+      notify ~cursor (int_field "t" frame) state
     | Some "pull/ok" ->
       if not state.pull_in_flight
          || (match state.response_t, int_field "t" frame with Some previous, Some incoming -> incoming <= previous | _ -> false)
@@ -155,6 +151,9 @@ let receive ~cursor ~editing ~apply_frame event previous =
          commands = [pull cursor; Sync_pending]; error = None }
      | None -> require_snapshot ~editing state)
   | Frame body when state.phase = Open -> receive_frame ~cursor ~editing ~apply_frame body state
+  | Submission_response (id, body, server_t) when state.phase = Open ->
+    let state = notify ~cursor server_t state in
+    { state with commands = Pending_result (id, body) :: state.commands }
   | Failed message when state.phase <> Stopped && state.phase <> Offline -> fail message state
   | Closed when state.phase = Open || state.phase = Connecting -> fail "WebSocket closed" state
   | _ -> state
@@ -166,6 +165,8 @@ let command_json = function
   | Retry delay -> `Assoc ["type", `String "retry"; "delayMs", `Int delay]
   | Snapshot -> `Assoc ["type", `String "snapshot"]
   | Sync_pending -> `Assoc ["type", `String "sync-pending"]
+  | Pending_result (id, body) ->
+    `Assoc ["type", `String "pending-result"; "id", `Int id; "body", `String body]
 
 let to_yojson state =
   `Assoc ["generation", `Int state.generation; "graphId", `String state.graph_id;
