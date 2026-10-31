@@ -510,6 +510,9 @@ let flush application = ignore (Lui_app.flush application)
 let dispatch application event =
   ignore (Lui_app.dispatch_event application event)
 
+let signed_in_model () =
+  { (Model.initial ()) with Model.authentication_state = "signedIn" }
+
 (* TESTS *)
 
 let contains sub s =
@@ -727,7 +730,7 @@ let empty_outliner_rows_use_the_main_untitled_accessibility_title () =
     "Edit block Untitled block"
 
 let synced_header_control_uses_the_main_accessibility_label () =
-  let current = { (Model.initial ()) with Model.sync_state = SyncedState } in
+  let current = { (signed_in_model ()) with Model.sync_state = SyncedState } in
   check_eq ~msg:"the compact header control matches main's spoken status"
     (View_base.sync_indicator_label current)
     "Synced";
@@ -738,14 +741,14 @@ let synced_header_control_uses_the_main_accessibility_label () =
 let sync_indicator_prioritizes_connectivity_before_pending_work () =
   let offline_pending =
     {
-      (Model.initial ()) with
+      (signed_in_model ()) with
       Model.sync_state = OfflineState;
       has_pending_semantic_operations = true;
     }
   in
   let connected_pending =
     {
-      (Model.initial ()) with
+      (signed_in_model ()) with
       Model.sync_state = SyncingState;
       has_pending_semantic_operations = true;
     }
@@ -782,7 +785,7 @@ let sync_indicator_uses_only_yellow_or_green () =
           List.iter
             (fun has_pending_sync_request ->
               let current =
-                { (Model.initial ()) with Model.sync_state;
+                { (signed_in_model ()) with Model.sync_state;
                   has_pending_semantic_operations; has_pending_sync_request }
               in
               let expected =
@@ -2517,6 +2520,7 @@ let kotlin_loading_and_errors_use_material_feedback_surfaces () =
 let graph_and_sync_actions_update_retained_status_in_place () =
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.SelectGraph "Work");
   flush application;
   let renderer = Lui_app.runtime application in
@@ -2624,6 +2628,7 @@ let sync_details_show_websocket_server_rejections () =
     | Ok value -> value | Error message -> fail message in
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.ApplyCoreSnapshot projection);
   send application Model.OpenSyncDetails;
   flush application;
@@ -2639,6 +2644,7 @@ let sync_details_show_every_server_rejection () =
     let session, _, _ = R.retry_asset_session () in
     let application = App.create (ios_backend ()) in
     start application;
+    send application (Model.ApplyAuthentication ("signedIn", None));
     let apply result =
       let response = Yojson.Basic.to_string (`Assoc ["ok", `Bool true; "result", result]) in
       let projection = match Response_snapshot.decode_response response with
@@ -2685,6 +2691,7 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
     }
   in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.SelectGraph "Work");
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
@@ -2760,6 +2767,7 @@ let automatic_pending_sync_never_requests_a_socket_restart () =
       (Yojson.Basic.from_string (Native_bridge.encode_effect eff)) in
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   let publish projection = send application (Model.ApplyCoreSnapshot projection); flush application in
   publish projection;
   for _ = 1 to 12 do
@@ -2790,6 +2798,7 @@ let automatic_pending_sync_never_requests_a_socket_restart () =
 let effect_completion_requests_uploads_without_restarting_the_socket () =
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application Model.SaveUISession;
   send application (Model.DequeueEffect 1);
   send application (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
@@ -2804,6 +2813,7 @@ let effect_completion_requests_uploads_without_restarting_the_socket () =
 let sync_details_show_the_last_sync_failure () =
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.SelectGraph "Work");
   send application (Model.SyncFailed "Network unavailable");
   send application Model.OpenSyncDetails;
@@ -2830,7 +2840,7 @@ let pending_sync_patches_preserve_the_current_screen_and_cursor () =
     }
   in
   let current =
-    Model.update (Model.initial ()) (Model.ApplyCoreSnapshot full)
+    Model.update (signed_in_model ()) (Model.ApplyCoreSnapshot full)
   in
   let patch =
     {
@@ -9146,6 +9156,7 @@ let native_toolbar_navigation_replay () =
         (Lui_app.root_node application) "sync.connected" <> -1)
   in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   List.iteri (fun index page -> project page []; record ("page-" ^ string_of_int index)) pages;
   let page = List.hd pages in
   send application (Model.RequestAppNode "child");

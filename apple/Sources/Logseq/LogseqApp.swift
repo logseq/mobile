@@ -193,11 +193,6 @@ public struct LogseqRootView : View {
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )
-        let responseRelay = LGCoreResponseRelay()
-        let store = LogseqStore(
-            call: { request in LogseqCore.shared.logseq_call(request) },
-            responseObserver: responseRelay.send
-        )
         let configuration = LogseqCognitoConfiguration.load()
         let authentication = LogseqAuthenticationStore(
             provider: CognitoAuthProvider(
@@ -209,6 +204,13 @@ public struct LogseqRootView : View {
                 logoutURI: configuration.logoutURI,
                 scopes: configuration.scopes
             )
+        )
+        let responseRelay = LGCoreResponseRelay()
+        let store = LogseqStore(
+            call: { request in LogseqCore.shared.logseq_call(request) },
+            pendingTransport: { await LogseqPendingSyncHTTPTransport.send($0) },
+            syncTokenProvider: { try await authentication.apiToken() },
+            responseObserver: responseRelay.send
         )
         let syncCoordinator = GraphSyncCoordinator()
         let presentationCoordinator = LGPlatformPresentationCoordinator()
@@ -303,8 +305,11 @@ public struct LogseqRootView : View {
             },
             syncPending: { store.syncPending() },
             syncNow: {
-                store.syncPending()
-                Task { await syncCoordinator.kickForeground() }
+                Task {
+                    guard (try? await authentication.apiToken()) != nil else { return }
+                    store.syncPending()
+                    await syncCoordinator.kickForeground()
+                }
             }
         )
         let platformCommandRouter = LGPlatformCommandRouter(

@@ -5442,6 +5442,8 @@ let dictionaries = [
     ("Server", "服务器");
     ("Settings", "设置");
     ("Sign in", "登录");
+    ("Sign in to sync", "登录以同步");
+    ("Sign in to connect to Logseq Sync.", "请登录以连接 Logseq 同步。");
     ("Sign out", "退出登录");
     ("Spell check", "拼写检查");
     ("Sync now", "立即同步");

@@ -113,6 +113,7 @@ internal class AndroidPendingSyncPump(
     private val applyResponse: suspend (String) -> Unit,
     private val isCancelled: () -> Boolean,
     private val log: (String, String) -> Unit = { _, _ -> },
+    private val accessTokenProvider: (suspend () -> String?)? = null,
 ) {
     suspend fun run() {
         val beginResponse = callCore(dispatchRequest("beginPendingSync"))
@@ -122,8 +123,21 @@ internal class AndroidPendingSyncPump(
             while (pending != null && !isCancelled()) {
                 if (pending.delayMs > 0) kotlinx.coroutines.delay(pending.delayMs)
                 if (isCancelled()) break
+                val authorized = if (accessTokenProvider != null) {
+                    val token = try {
+                        accessTokenProvider.invoke()
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (_: Exception) { null }
+                    if (token.isNullOrBlank()) {
+                        applyResponse(callCore(dispatchRequest("cancelPendingSync")))
+                        return
+                    }
+                    pending.copy(token = token)
+                } else pending
+                if (isCancelled()) break
                 val result = withContext(Dispatchers.IO) {
-                    AndroidPendingSyncTransport.send(pending)
+                    AndroidPendingSyncTransport.send(authorized)
                 }
                 if (isCancelled()) break
                 val completion = JSONObject()

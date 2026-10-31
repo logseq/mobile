@@ -456,6 +456,7 @@ private struct CreateSyncGraphPayload: Encodable {
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+    private let syncTokenProvider: (@MainActor () async throws -> String)?
     private let responseObserver: @MainActor (String) -> Void
     private var openedDatabasePath: String?
     public private(set) var graphSyncAllowed = false
@@ -484,10 +485,12 @@ private struct CreateSyncGraphPayload: Encodable {
     public init(
         call: @escaping @Sendable (String) -> String,
         pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult,
+        syncTokenProvider: (@MainActor () async throws -> String)? = nil,
         responseObserver: @escaping @MainActor (String) -> Void = { _ in }
     ) {
         self.callCore = call
         self.pendingTransport = pendingTransport
+        self.syncTokenProvider = syncTokenProvider
         self.responseObserver = responseObserver
     }
 
@@ -1033,7 +1036,24 @@ private struct CreateSyncGraphPayload: Encodable {
             while let request = pending, !Task.isCancelled {
                 if request.delayMs > 0 { try? await Task.sleep(for: .milliseconds(request.delayMs)) }
                 guard !Task.isCancelled else { break }
-                let result = await pendingTransport(request)
+                let authorized: LogseqPendingSyncRequest
+                do {
+                    if let syncTokenProvider {
+                        let token = try await syncTokenProvider()
+                        guard !token.isEmpty else { throw LogseqAuthenticationError.notSignedIn }
+                        authorized = LogseqPendingSyncRequest(
+                            id: request.id, method: request.method, url: request.url,
+                            body: request.body, token: token, filePath: request.filePath,
+                            contentType: request.contentType, headers: request.headers,
+                            delayMs: request.delayMs
+                        )
+                    } else { authorized = request }
+                } catch {
+                    await dispatchRawAndWait("cancelPendingSync")
+                    return
+                }
+                guard !Task.isCancelled else { break }
+                let result = await pendingTransport(authorized)
                 if Task.isCancelled { break }
                 let completion = LogseqPendingSyncCompletion(
                     id: request.id,

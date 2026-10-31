@@ -177,6 +177,7 @@ let sync_label (current : Model.logseq_model) =
        | _ -> "Syncing")
 
 let sync_indicator_label (current : Model.logseq_model) =
+  if current.authentication_state <> "signedIn" then tr current "Sign in to sync" else
   if current.pending_sync_error <> None then "Sync failed" else
   match current.sync_state with
   | OfflineState -> "Not connected"
@@ -193,6 +194,7 @@ let sync_indicator_label (current : Model.logseq_model) =
        | _ -> "Not connected")
 
 let sync_accessibility_identifier (current : Model.logseq_model) =
+  if current.authentication_state <> "signedIn" then "sync.disconnected" else
   if current.pending_sync_error <> None then "sync.failed" else
   match current.sync_state with
   | FailedState _ -> "sync.failed"
@@ -200,12 +202,19 @@ let sync_accessibility_identifier (current : Model.logseq_model) =
   | _ -> "sync.connected"
 
 let sync_indicator_foreground (current : Model.logseq_model) =
+  if current.authentication_state <> "signedIn" then "muted-foreground" else
   match current.sync_state with
   | SyncedState
     when not current.has_pending_semantic_operations
          && not current.has_pending_sync_request
          && current.pending_sync_error = None -> "success-foreground"
   | _ -> "warning-foreground"
+
+let sync_disabled_ (current : Model.logseq_model) =
+  current.authentication_state <> "signedIn"
+
+let sync_authentication_message (current : Model.logseq_model) =
+  Option.value ~default:(tr current "Sign in to connect to Logseq Sync.") current.authentication_error
 
 let sync_connection_label (current : Model.logseq_model) =
   match current.sync_state with

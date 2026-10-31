@@ -2032,7 +2032,8 @@ let rec update (current : logseq_model) action =
         projection.node_icons } in
     (* Uploads need the existing subscription to receive acknowledgements. *)
     let updated =
-      if not projection.is_pending_sync_patch && not projection.is_pending_sync_projection
+      if applied.authentication_state = "signedIn"
+        && not projection.is_pending_sync_patch && not projection.is_pending_sync_projection
         && (applied.has_pending_semantic_operations || applied.has_pending_sync_request)
         && not (List.exists (function SyncNowEffect _ | SyncPendingEffect _ -> true | _ -> false)
           (applied.pending_effects @ applied.in_flight_effects))
@@ -2365,7 +2366,8 @@ let rec update (current : logseq_model) action =
            let ready = cancel_outliner_autosave resolved in
            enqueue_effect ready (SaveOutlinerEditingEffect (ready.next_effect_id, uuid))
          | _ -> resolved in
-       let needs_sync = succeeded && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
+       let needs_sync = succeeded && saved.authentication_state = "signedIn"
+         && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
          && (match eff with SyncNowEffect _ | SyncPendingEffect _ -> false | _ -> true)
          && not (List.exists (function SyncNowEffect _ | SyncPendingEffect _ -> true | _ -> false)
               (saved.pending_effects @ saved.in_flight_effects)) in
@@ -2678,6 +2680,8 @@ let rec update (current : logseq_model) action =
           current with
           authentication_state = state;
           authentication_error = error;
+          sync_details_open = current.sync_details_open
+            || (state = "signedOut" && error <> None && current.selected_graph_id <> None);
         }
     else current
   | SignIn ->
@@ -2687,6 +2691,7 @@ let rec update (current : logseq_model) action =
           current with
           authentication_state = "signingIn";
           authentication_error = None;
+          sync_details_open = false;
         }
       in
       let id = updated.next_effect_id in
@@ -2709,10 +2714,14 @@ let rec update (current : logseq_model) action =
     }
   | OpenConnectionMenu -> { current with connection_menu_open = true }
   | CloseConnectionMenu -> { current with connection_menu_open = false }
-  | OpenSyncDetails -> { current with sync_details_open = true }
+  | OpenSyncDetails ->
+    if current.authentication_state = "signedOut" then update current SignIn
+    else if current.authentication_state = "signedIn" then { current with sync_details_open = true }
+    else current
   | CloseSyncDetails -> { current with sync_details_open = false }
   | SyncNow ->
-    if List.exists (function SyncNowEffect _ -> true | _ -> false)
+    if current.authentication_state <> "signedIn" then current
+    else if List.exists (function SyncNowEffect _ -> true | _ -> false)
       (current.pending_effects @ current.in_flight_effects) then current
     else enqueue_effect current (SyncNowEffect current.next_effect_id)
   | SetOutlinerTaskStatus (block_id, status_id) ->

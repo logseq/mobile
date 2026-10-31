@@ -1200,6 +1200,17 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
       ]
 
 let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
+  let authentication_prompt =
+    if_ ~test:(Signal.map View_base.sync_disabled_ model_source)
+      (column ~gap:12 [
+        text ~value_signal:(Signal.map View_base.sync_authentication_message model_source)
+          ~foreground:"secondary" ~accessibility_identifier:"sync.authentication-error" [];
+        button ~accessibility_identifier:"button.sync-sign-in"
+          ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
+          ~on_press:(press send Model.SignIn)
+          ~text:(View_base.tr (Signal.sample model_source) "Sign in") [];
+      ])
+  in
   let sync_row identifier label value_signal : t =
     list_item ~accessibility_identifier:identifier
       [
@@ -1222,6 +1233,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
             scroll ~grow:1.0
               [ column ~gap:12 ~cross:`stretch ~padding_horizontal:24 ~padding_vertical:16
                   [
+                    authentication_prompt;
                     sync_row "row.sync.status" "Status"
                       (Signal.map View_base.sync_label model_source);
                     sync_row "row.sync.graph" "Graph"
@@ -1278,6 +1290,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~text:(View_base.tr (Signal.sample model_source) "Done") [];
                 button ~variant:`primary
                   ~accessibility_identifier:"button.sync-now"
+                  ~disabled_signal:(Signal.map View_base.sync_disabled_ model_source)
                   ~on_press:(press send Model.SyncNow)
                   ~text:(View_base.tr (Signal.sample model_source) "Sync now") [];
               ];
@@ -1293,6 +1306,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
         column ~style_class:"form"
           ~accessibility_identifier:"form.sync-status"
           [
+            authentication_prompt;
             sync_row "row.sync.status" "Status"
               (Signal.map View_base.sync_label model_source);
           sync_row "row.sync.graph" "Graph"
@@ -1339,6 +1353,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                    [];
                ]);
           button ~accessibility_identifier:"button.sync-now"
+            ~disabled_signal:(Signal.map View_base.sync_disabled_ model_source)
             ~on_press:(press send Model.SyncNow)
             ~text:(View_base.tr (Signal.sample model_source) "Sync now") [];
         ];

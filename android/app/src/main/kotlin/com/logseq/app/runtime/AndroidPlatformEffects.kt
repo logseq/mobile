@@ -133,7 +133,7 @@ internal class AndroidPlatformEffects(
     private val authentication: AndroidAuthentication,
     private val platform: AndroidPlatformServices,
     private val attachmentsImporter: suspend (String) -> List<Map<String, Any>>,
-    private val syncNow: () -> Boolean = { false },
+    private val syncNow: suspend () -> Boolean = { false },
     private val presentJournalCalendar: suspend () -> NativeEffectResolution = {
         NativeEffectResolution.Discard(succeeded = false, message = "Journal calendar is unavailable")
     },

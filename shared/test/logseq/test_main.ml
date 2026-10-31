@@ -58,6 +58,7 @@ let () =
       "shared_capture", Shared_capture_test.cases;
       "native_media", Native_media_test.cases;
       "app", App_test.cases;
+      "sync_authentication", Sync_authentication_test.cases;
       "attachment_editing", Attachment_editing_test.cases;
       "catalog_responsiveness", Catalog_responsiveness_test.cases;
       "code_language", Code_language_test.cases;

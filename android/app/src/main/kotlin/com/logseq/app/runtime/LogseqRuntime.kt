@@ -59,7 +59,10 @@ internal class LogseqRuntime(
         authentication = CognitoAndroidAuthentication(authentication),
         platform = platformServices,
         attachmentsImporter = assetImporter::import,
-        syncNow = ::requestSyncNow,
+        syncNow = {
+            if (refreshSyncAccessToken().isNullOrBlank()) false
+            else { ensureGraphEventsSync(); requestSyncNow() }
+        },
         presentJournalCalendar = ::presentJournalCalendar,
     )
 
@@ -293,6 +296,28 @@ internal class LogseqRuntime(
 
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
 
+    private suspend fun refreshSyncAccessToken(): String? {
+        if (!hasAuthenticatedSession) return null
+        val token = try {
+            platformEffects.restoreAccessToken()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            logRuntime("warn", "core", "Could not refresh sync authorization: ${error.message}")
+            null
+        }
+        if (token.isNullOrBlank()) {
+            hasAuthenticatedSession = false
+            graphCatalogAutoRefresh?.stopPeriodic()
+            applyPatch(bridge.applyHostUpdate("authentication", JSONObject()
+                .put("state", "signedOut")
+                .put("errorMessage", "Sign in to connect to Logseq Sync.")
+                .toString()))
+            graphEventsJob?.cancel()
+        }
+        return token
+    }
+
     private fun ensureGraphEventsSync() {
         Log.d(
             "GraphEvents",
@@ -307,12 +332,7 @@ internal class LogseqRuntime(
         val graphId = selectedGraphId
         graphEventsJob = scope.launch {
             while (isActive) {
-                val token = try {
-                    platformEffects.restoreAccessToken()
-                } catch (error: Throwable) {
-                    logRuntime("warn", "core", "access token unavailable: $error")
-                    null
-                }
+                val token = refreshSyncAccessToken()
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
                     callCore = bridge::callCore,
@@ -375,6 +395,7 @@ internal class LogseqRuntime(
                 applyResponse = ::applyCoreResponse,
                 isCancelled = { !job.isActive },
                 log = { level, message -> logRuntime(level, "core", message) },
+                accessTokenProvider = ::refreshSyncAccessToken,
             ).run()
         } while (pendingSyncRequested && job.isActive)
     }
@@ -529,7 +550,7 @@ internal class LogseqRuntime(
                         kind = "authentication",
                         payload = JSONObject()
                             .put("state", "signedOut")
-                            .put("errorMessage", error.toString())
+                            .put("errorMessage", "Sign in to connect to Logseq Sync.\n${error.message}")
                             .toString(),
                     )
                 )

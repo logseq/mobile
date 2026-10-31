@@ -39,6 +39,8 @@ val sync_label : Model.logseq_model -> string
 val sync_indicator_label : Model.logseq_model -> string
 val sync_accessibility_identifier : Model.logseq_model -> string
 val sync_indicator_foreground : Model.logseq_model -> string
+val sync_disabled_ : Model.logseq_model -> bool
+val sync_authentication_message : Model.logseq_model -> string
 val sync_connection_label : Model.logseq_model -> string
 val sync_pending_label : Model.logseq_model -> string
 val sync_cursor_label : Model.logseq_model -> string

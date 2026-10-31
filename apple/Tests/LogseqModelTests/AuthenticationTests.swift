@@ -115,11 +115,12 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         } catch {
             #expect(auth.state == .signedOut)
             #expect(auth.errorMessage?.isEmpty == false)
+            #expect(auth.errorMessage?.contains("Sign in") == true)
             #expect(published == [nil])
         }
     }
 
-    @Test @MainActor func missingAccessTokenLeavesExpectedSignedOutStateWithoutAnError() async {
+    @Test @MainActor func missingAccessTokenPromptsForSignIn() async {
         var published: [String?] = []
         let auth = LogseqAuthenticationStore(provider: FakeCognitoProvider(token: nil)) { token in
             published.append(token)
@@ -130,8 +131,15 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
             #expect(1 == 0, "Expected a missing access token to throw")
         } catch {
             #expect(auth.state == .signedOut)
-            #expect(auth.errorMessage == nil)
+            #expect(auth.errorMessage == "Sign in to connect to Logseq Sync.")
             #expect(published == [nil])
         }
+    }
+
+    @Test @MainActor func failedSessionRefreshPromptsForSignInOnRestore() async {
+        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider())
+        await auth.restore()
+        #expect(auth.state == .signedOut)
+        #expect(auth.errorMessage?.contains("Sign in") == true)
     }
 }

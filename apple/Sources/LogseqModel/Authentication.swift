@@ -55,7 +55,7 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             onAccessToken(token)
         } catch {
             state = .signedOut
-            errorMessage = error.localizedDescription
+            errorMessage = LogseqAuthenticationError.notSignedIn.localizedDescription + "\n" + error.localizedDescription
             onAccessToken(nil)
         }
     }
@@ -95,13 +95,13 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             token = try await provider.apiToken()
         } catch {
             state = .signedOut
-            errorMessage = error.localizedDescription
+            errorMessage = LogseqAuthenticationError.notSignedIn.localizedDescription + "\n" + error.localizedDescription
             onAccessToken(nil)
             throw error
         }
         guard let token, !token.isEmpty else {
             state = .signedOut
-            errorMessage = nil
+            errorMessage = LogseqAuthenticationError.notSignedIn.localizedDescription
             onAccessToken(nil)
             throw LogseqAuthenticationError.notSignedIn
         }
