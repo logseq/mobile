@@ -35,6 +35,7 @@ const char *logseq_lui_scroll_completed(int64_t node, int64_t token,
                                              const char *outcome);
 int64_t logseq_lui_root_node(void);
 const char *logseq_lui_dispose(void);
+const char *logseq_lui_resync(void);
 const char *logseq_lui_take_effect(void);
 const char *logseq_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
                                            const char *message);

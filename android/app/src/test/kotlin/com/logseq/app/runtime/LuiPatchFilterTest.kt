@@ -116,6 +116,32 @@ class LuiPatchFilterTest {
         assertEquals("After empty", h.property("text"))
     }
 
+    @Test fun authoritativeSnapshotRecoversRejectedAndStaleDeltas() {
+        val h = Harness("button")
+        h.send("""{"op":"set-prop","id":3,"property":"icon-placement","value":"center"}""")
+        assertThrows(IllegalStateException::class.java) {
+            h.send("""{"op":"insert-child","parent":999,"child":3,"index":0}""")
+        }
+        h.filter.applySnapshotJson("""{"generation":8,"ops":[
+            {"op":"create-node","id":1,"kind":"root"},
+            {"op":"create-node","id":3,"kind":"button"},
+            {"op":"insert-child","parent":1,"child":3,"index":0},
+            {"op":"set-prop","id":3,"property":"icon-placement","value":"leading"},
+            {"op":"set-prop","id":3,"property":"container-relative-frame","value":"horizontal"},
+            {"op":"set-prop","id":3,"property":"size","value":"icon"},
+            {"op":"set-prop","id":3,"property":"text","value":"Restored"}]}""")
+        h.filter.applyJson("""{"generation":3,"ops":[
+            {"op":"set-prop","id":3,"property":"text","value":"Stale"}]}""")
+        assertEquals("Restored", h.property("text"))
+        assertEquals("center", h.property("text-alignment"))
+        assertNull(h.backend.node(2))
+        h.generation = 8
+        h.send("""{"op":"remove-prop","id":3,"property":"icon-placement"},
+            {"op":"set-prop","id":3,"property":"text","value":"Editing resumed"}""")
+        assertNull(h.property("icon-placement"))
+        assertEquals("Editing resumed", h.property("text"))
+    }
+
     @Test fun extensionRegistrationTextAndDefaultRestorationPassThrough() {
         val registry = LuiExtensionRegistry()
         registry.register("filter-test", "fp", properties = listOf(

@@ -48,6 +48,10 @@ internal class LogseqNativeBridge(
 
     fun close() = runtimeScheduler.runUi { apply(decode(NativeCore.luiDispose())) }
 
+    fun resync(onSnapshot: (String) -> Unit) = runtimeScheduler.runUi {
+        onSnapshot(decode(NativeCore.luiResync()))
+    }
+
     fun appear(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiAppear(node))) }
     fun press(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiPress(node))) }
     fun longPress(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiLongPress(node))) }

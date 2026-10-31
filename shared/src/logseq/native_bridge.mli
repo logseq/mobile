@@ -50,6 +50,8 @@ val start_application :
 
 val initialize : int -> int -> int -> string
 
+val resync : unit -> string
+
 val linked : unit -> bool
 
 val appear : int -> string

@@ -273,6 +273,12 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiDispose(
   return call_none(env, "logseq_lui_dispose");
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiResync(
+    JNIEnv *env, jclass clazz) {
+  (void)clazz;
+  return call_none(env, "logseq_lui_resync");
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiTakeEffect(
     JNIEnv *env, jclass clazz) {
   (void)clazz;

@@ -557,6 +557,10 @@ const char *logseq_lui_dispose(void) {
   LUI_RUNTIME_CALL("dispose", call_lui0("logseq_lui_dispose"));
 }
 
+const char *logseq_lui_resync(void) {
+  LUI_RUNTIME_CALL("resync", call_lui0("logseq_lui_resync"));
+}
+
 const char *logseq_lui_take_effect(void) {
   LUI_RUNTIME_CALL("take_effect", call_lui0("logseq_lui_take_effect"));
 }

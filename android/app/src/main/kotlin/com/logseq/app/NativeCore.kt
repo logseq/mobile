@@ -44,6 +44,7 @@ internal object NativeCore {
         value: Long,
     ): ByteArray?
     external fun luiDispose(): ByteArray?
+    external fun luiResync(): ByteArray?
     external fun luiTakeEffect(): ByteArray?
     external fun luiResolveEffect(effectId: Long, succeeded: Int, message: ByteArray): ByteArray?
     external fun luiApplySnapshot(response: ByteArray): ByteArray?

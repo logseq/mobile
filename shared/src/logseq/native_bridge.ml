@@ -635,6 +635,9 @@ let dispose () =
 
 let root_node () = Lui_app.root_node (app ())
 
+let resync () =
+  Lui_wire.encode_batch (Lui_runtime.resync_batch (Lui_app.runtime (app ())))
+
 let () =
   Callback.register "logseq_lui_init" initialize;
   Callback.register "logseq_lui_appear" appear;
@@ -652,6 +655,7 @@ let () =
   Callback.register "logseq_lui_scroll_completed" scroll_completed;
   Callback.register "logseq_lui_extension_event" extension_event;
   Callback.register "logseq_lui_dispose" dispose;
+  Callback.register "logseq_lui_resync" resync;
   Callback.register "logseq_lui_root_node" root_node;
   Callback.register "logseq_lui_take_effect" take_effect;
   Callback.register "logseq_lui_resolve_effect" resolve_effect;
