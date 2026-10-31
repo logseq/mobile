@@ -43,9 +43,16 @@ appId: com.logseq.logseq
 - assertNotVisible: "Cancel"
 - assertNotVisible:
     id: "BackButton"
+- extendedWaitUntil:
+    visible:
+      id: "field.native-search"
+    timeout: 10000
 - inputText: "x"
 - eraseText: 1
 - inputText: "Search task __LOGSEQ_E2E_RUN_ID__"
+- assertVisible:
+    id: "field.native-search"
+    text: "Search task __LOGSEQ_E2E_RUN_ID__"
 - pressKey: Enter
 - extendedWaitUntil:
     visible:

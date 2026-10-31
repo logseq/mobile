@@ -15,7 +15,14 @@ appId: com.logseq.logseq
     id: "button.search"
 - assertVisible:
     id: "screen.search"
+- extendedWaitUntil:
+    visible:
+      id: "field.native-search"
+    timeout: 10000
 - inputText: "Aug 24th, 2026"
+- assertVisible:
+    id: "field.native-search"
+    text: "Aug 24th, 2026"
 - pressKey: Enter
 - tapOn:
     id: "search.result.e2e00000-0000-4000-8000-000000000030"
