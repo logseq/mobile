@@ -412,12 +412,12 @@ let numeric text = match float_of_string_opt text with
     if Float.is_integer value && value < float_of_int max_int && value > float_of_int min_int
     then Ops.Int_value (int_of_float value) else Ops.Float_value value
   | _ -> invalid_arg "Enter a valid number"
-let calendar_day text =
+let calendar_day ?now_ms text =
   let digits text = String.for_all (fun c -> c >= '0' && c <= '9') text in
   let compact = if String.length text = 10 && text.[4] = '-' && text.[7] = '-' then
       String.sub text 0 4 ^ String.sub text 5 2 ^ String.sub text 8 2
     else text in
-  if String.length compact <> 8 || not (digits compact) then None
+  if String.length compact <> 8 || not (digits compact) then Natural_date.day ?now_ms text
   else let day = int_of_string compact in
     if not (Journal.valid_day day)
     then invalid_arg "Enter a valid calendar date";
@@ -464,7 +464,7 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
       else if p.typ = "checkbox" then (match String.lowercase_ascii text with
         | "true" -> Ops.Bool_value true | "false" -> Ops.Bool_value false
         | _ -> invalid_arg "Choose true or false")
-      else if p.typ = "date" then (match calendar_day text with
+      else if p.typ = "date" then (match calendar_day ~now_ms:(float_of_int now) text with
         | None -> resolve_reference db p text
         | Some day ->
           (match Seq.uncons (Ds.Db.datoms db Ds.Avet ~a:"block/journal-day" ~v:(Ds.Int64 (Int64.of_int day)) ()) with
@@ -475,7 +475,13 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
                title = Journal.title db day; journal_day = day; created_at = now} :: !created;
              Ops.Ref_uuid uuid))
       else if List.mem p.typ ["number"; "datetime"; "default"; "url"] then
-        let content = if p.typ = "number" || p.typ = "datetime" then numeric text else Ops.String_value text in
+        let content = if p.typ = "datetime" then
+          (match float_of_string_opt text with
+           | Some _ -> numeric text
+           | None -> match Natural_date.timestamp ~now_ms:(float_of_int now) text with
+             | Some value -> Ops.Int_value value
+             | None -> invalid_arg "Choose a date and time")
+          else if p.typ = "number" then numeric text else Ops.String_value text in
         if p.ref_ then (
           let uuid = fresh_uuid () in
           created := Ops.Create_property_value {uuid; owner_uuid = target; property_ident = attr; content; created_at = now} :: !created;

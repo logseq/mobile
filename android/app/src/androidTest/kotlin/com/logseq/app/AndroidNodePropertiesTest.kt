@@ -80,7 +80,8 @@ class AndroidNodePropertiesTest {
         closeSoftKeyboard()
         ui.onNode(hasText("October 23", substring = true) and calendar, useUnmergedTree = true).performScrollTo().performClick()
         input().assertTextEquals("2026-10-23")
-        input().performTextReplacement("0044-03-15")
+        input().performTextReplacement("January 1, 2000")
+        input().assertTextEquals("January 1, 2000")
         ui.onNodeWithTag("view.edit.save.$editor").performClick()
         ui.runOnIdle {
             var selected: JSONObject? = null
@@ -91,7 +92,7 @@ class AndroidNodePropertiesTest {
                     if (effect?.optString("kind") == "node-property") selected = JSONObject(effect.getString("text"))
                 }
             }
-            assertEquals("Historical dates remain calendar dates across the native bridge", "0044-03-15", selected?.getString("value"))
+            assertEquals("Natural-language input reaches the shared core unchanged", "January 1, 2000", selected?.getString("value"))
         }
     }
 

@@ -22,6 +22,7 @@
   melange-edn-native
   melange-transit-core
   melange-transit-native
+  logseq_nlp
   ocaml-fsrs
   yojson
   mldoc
@@ -102,6 +103,7 @@
  (name runtest)
  (deps
   (alias ../test/runtest)
+  (alias ../test/nlp-startup/runtest)
   logseq_e2e_seed.exe
   logseq_live_sync.exe
   logseq_sync_client.exe))

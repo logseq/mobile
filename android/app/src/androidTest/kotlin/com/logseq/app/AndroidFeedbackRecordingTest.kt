@@ -276,6 +276,37 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 }
                 pause()
             }
+            "natural-date" -> {
+                mount(1)
+                fun event(type: String, fields: JSONObject = JSONObject()): JSONObject {
+                    val response = request("outlinerEvent", fields.put("type", type).toString())
+                    assertTrue(response, JSONObject(response).optBoolean("ok"))
+                    return JSONObject(response).getJSONObject("result")
+                }
+                fun command(label: String) {
+                    event("tapBlock", JSONObject().put("uuid", uuid(11)))
+                    val result = event("textChanged", JSONObject().put("title", "/").put("caretUTF16Offset", 1))
+                    val options = result.getJSONArray("outlinerAutocompleteCandidates")
+                    val option = (0 until options.length()).map(options::getJSONObject).single { it.getString("label") == label }
+                    event("chooseAutocomplete", JSONObject().put("value", option.getString("value")))
+                }
+                command("Date picker")
+                event("submitAutocomplete", JSONObject().put("value", "January 1, 2000"))
+                event("saveEditing")
+                drain()
+                val saved = request("refresh")
+                assertTrue("The native date command creates a Journal reference", saved.contains("00000001-2000-0101-0000-000000000000"))
+                command("Scheduled")
+                event("submitAutocomplete", JSONObject().put("value", "January 1, 2000 at 3pm"))
+                event("saveEditing")
+                val properties = JSONObject(request("nodeProperties", uuid(11))).getJSONObject("result").getJSONObject("nodeProperties").getJSONArray("properties")
+                val scheduled = (0 until properties.length()).map(properties::getJSONObject)
+                    .single { it.getString("attr") == "logseq.property/scheduled" }
+                val expected = java.util.GregorianCalendar(2000, 0, 1, 15, 0, 0).apply {
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                assertEquals("NLP date-time input uses the device's local time", expected.toString(), scheduled.getString("editorValue"))
+            }
             "language" -> {
                 mount(1); host("settings", """{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}""")
                 ui.onNodeWithTag("button.sidebar").performClick(); pause()

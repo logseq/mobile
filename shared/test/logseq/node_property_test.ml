@@ -233,6 +233,13 @@ let builtin_description_is_editable () = R.with_runtime (fun session runtime con
   ignore (result (edit session Q.page p "Page description" []));
   check_eq (member "text" (property "logseq.property/description" (result (read session Q.page)))) (`String "Page description"))
 
+let date_properties_accept_natural_language () = R.with_runtime (fun session runtime _ ->
+  let due = property R.due (result (read session Q.alpha)) in
+  ignore (result (edit session Q.alpha due "January 1, 2000" []));
+  check_eq (member "editorValue" (property R.due (result (read session Q.alpha)))) (`String "2000-01-01");
+  check ~msg:"NLP Date values reference Journals"
+    (Graph_read.journal_page_uuid (Graph_runtime.db runtime) 20000101 <> None))
+
 let temporal_properties_display_and_edit () = R.with_runtime (fun session runtime conn ->
   let attr = "user.property/Appointment" in
   let def = "40000000-0000-4000-8000-000000000001" in
@@ -262,6 +269,12 @@ let temporal_properties_display_and_edit () = R.with_runtime (fun session runtim
   ignore (result (edit session Q.alpha p "1792719000000" []));
   let p = property attr (result (read session Q.alpha)) in
   check_eq (member "editorValue" p) (`String "1792719000000");
+  ignore (result (edit session Q.alpha p "January 1, 2000 at 3pm" []));
+  let p = property attr (result (read session Q.alpha)) in
+  let tm = {Unix.tm_year=100; tm_mon=0; tm_mday=1; tm_hour=15; tm_min=0; tm_sec=0;
+    tm_wday=0; tm_yday=0; tm_isdst=false} in
+  let expected = fst (Unix.mktime tm) *. 1000. |> int_of_float |> string_of_int in
+  check_eq (member "editorValue" p) (`String expected);
   check_eq (member "ok" (edit session Q.alpha p "NaN" [])) (`Bool false);
   ignore (result (edit session Q.alpha p "" []));
   check ~msg:"clearing removes the assigned date value" (not (List.exists (fun p -> member "attr" p = `String attr)
@@ -822,6 +835,7 @@ let text_property_references_create_journals_and_keep_partial_dates_literal () =
     ["2026-10-26", 20261026; "Oct 26th, 2026", 20261026; "0044-03-15", 440315]
 
 let cases = [
+  case "Date properties accept natural language" date_properties_accept_natural_language;
   case "text property date references create Journals while partial dates remain Pages" text_property_references_create_journals_and_keep_partial_dates_literal;
   case "page tags are added independently of Rename page" page_tags_use_a_separate_overflow_action;
   case "wrapped node values navigate to their actual target safely" wrapped_node_values_resolve_only_the_owning_property;

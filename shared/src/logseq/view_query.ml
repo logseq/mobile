@@ -227,7 +227,26 @@ let filter_value_title col value = match value with
       | Some choice -> jtext (jfield "title" choice) | None -> text_value value) values)
   | value -> input_value value
 
-let temporal_picker kind id source set : t =
+let temporal_picker ?on_submit model_source kind id source set : t = fun context parent ->
+  let display value =
+    if kind = "date" then value
+    else match float_of_string_opt value with
+      | Some ms when Float.is_finite ms ->
+        let tm = Unix.localtime (ms /. 1000.) in
+        Printf.sprintf "%04d-%02d-%02d %02d:%02d"
+          (tm.Unix.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday tm.tm_hour tm.tm_min
+      | _ -> value in
+  let initial = Signal.sample source in
+  let input = Signal.state context.Lui_ui.ui_scheduler (display initial) in
+  let observed = ref initial and emitted = ref None in
+  ignore (Signal.own context.ui_scope (Signal.observe source (fun value ->
+    if value <> !observed then (
+      observed := value;
+      if !emitted <> Some value then Signal.set input (display value)))));
+  let update ~calendar value =
+    emitted := Some value;
+    Signal.set input (if calendar then display value else value);
+    set value in
   let calendar : t = fun context parent ->
   let node = Lui_ui.extension context "native-property-date" in
   attach context parent node;
@@ -236,16 +255,17 @@ let temporal_picker kind id source set : t =
   Lui_ui.extension_property_signal context node "value" (Signal.map (fun value -> Lui_protocol.StringValue value) source);
   Lui_ui.on_event context node (function
     | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
-      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> set value | _ -> ())
+      (match Lui_protocol.String_map.find_opt "value" fields with Some (Lui_protocol.StringValue value) -> update ~calendar:true value | _ -> ())
     | _ -> ());
   node in
-  if kind = "date" then
-    column ~gap:8 [
-      text_field ~text_signal:source ~placeholder:"YYYY-MM-DD" ~label:"YYYY-MM-DD"
+  (column ~gap:8 [
+      text_field ~text_signal:(Signal.value input)
+        ~placeholder:"YYYY-MM-DD / tomorrow / next Friday"
+        ~label:(View_base.tr (Signal.sample model_source) "Date picker")
         ~accessibility_identifier:("view.edit.date.input." ^ id)
-        ~on_input:(function Lui_protocol.TextChanged (_, value) -> set value | _ -> ()) [];
-      calendar]
-  else calendar
+        ~on_input:(function Lui_protocol.TextChanged (_, value) -> update ~calendar:false value | _ -> ())
+        ?on_submit [];
+      calendar]) context parent
 
 let temporal_default kind =
   let now = Unix.gettimeofday () in
@@ -370,9 +390,9 @@ let settings_sheet mode owner feature view_source model_source send close : t =
     let temporal kind =
       let value = own (Signal.map (fun (draft : filter_draft) ->
         if draft.value = `Null then temporal_default kind else input_value draft.value) source) in
-      temporal_picker kind (id "date") value (fun value ->
-        if kind = "datetime" then (match int_of_string_opt value with Some value -> set_value (`Int value) | None -> ())
-        else match int_of_string_opt (String.concat "" (String.split_on_char '-' value)) with
+      temporal_picker model_source kind (id "date") value (fun value ->
+        if kind = "datetime" then (match Natural_date.timestamp value with Some value -> set_value (`Int value) | None -> ())
+        else match Natural_date.day value with
           | Some day -> set_value (`Assoc ["block/journal-day", `Int day]) | None -> ()) in
     let timestamp = column ~gap:0 ~cross:`stretch [
       menu ~label:(View_base.tr (Signal.sample model_source) "Date range") ~accessibility_identifier:(id "timestamp")
@@ -554,7 +574,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
   let create_visible = own (Signal.map2 (fun (options, loading) input -> not loading && can_create && String.trim input <> ""
     && not (List.exists (fun (_, title) -> Dev_query.Unicode.lowercase title = Dev_query.Unicode.lowercase (String.trim input)) options)
     && not (List.mem (String.trim input) (Signal.sample (Signal.value created)))) (own (Signal.map2 (fun options loading -> options, loading) options loading)) (Signal.value query)) in
-  let confirm _ = if plain || temporal then submit (Signal.sample (Signal.value query))
+  let confirm_input _ = if plain || temporal then submit (Signal.sample (Signal.value query))
     else if ref_ then submit ~selected_values:(Signal.sample (Signal.value selected))
       ~new_values:(Signal.sample (Signal.value created)) ~create:true ""
     else submit (String.concat ", " (Signal.sample (Signal.value selected) @ Signal.sample (Signal.value created))) in
@@ -562,7 +582,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
     ~accessibility_identifier:("view.edit.cancel." ^ view.id) ~on_press:(fun _ -> close ()) [] in
   let confirm = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
     ~accessibility_identifier:("view.edit.save." ^ view.id)
-    ~disabled_signal:(waiting model_source view.id) ~on_press:confirm [] in
+    ~disabled_signal:(waiting model_source view.id) ~on_press:confirm_input [] in
   let option_row (value, title) = list_item ~height:44 ~padding_vertical:0 [
     menu_item ~text:title ~height:44 ~padding_vertical:0
       ~selected_signal:(own (Signal.map (List.mem value) (Signal.value selected)))
@@ -587,7 +607,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
           list_item [menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id ^ "." ^ uuid)
             ~on_press:(fun _ -> close (); open_ ()) []]) open_nodes)]) @
        (if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
-        temporal_picker kind view.id (Signal.value query) (Signal.set query)]]]
+        temporal_picker ~on_submit:confirm_input model_source kind view.id (Signal.value query) (Signal.set query)]]]
         else if plain then [list_section [list_item [
         (if jbool (jfield "textLayout" property) then textarea ~min_height:120 ~max_height:260 ~submit_on_enter:false
           ~text_signal:(Signal.value query) ~label:(View_base.tr (Signal.sample model_source) "Set value") ~placeholder:(View_base.tr (Signal.sample model_source) "Set value") ~autofocus:true

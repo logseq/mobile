@@ -1017,7 +1017,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
         list ~grow:1.0 ~style:`inset_grouped [list_section (
           if temporal then [list_item ~padding_horizontal:0 ~padding_vertical:0 [
-            View_query.temporal_picker date_kind "editor-command" (Signal.value value) (Signal.set value)]]
+            View_query.temporal_picker ~on_submit:confirm model_source date_kind "editor-command" (Signal.value value) (Signal.set value)]]
           else [list_item [text_field ~text_signal:(Signal.value value) ~autofocus:true
             ~placeholder:(if kind = "youtube" then "1:32" else "https://example.com")
             ~label:(if kind = "youtube" then "Timestamp" else "URL")

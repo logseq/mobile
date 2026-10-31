@@ -13,6 +13,13 @@ in `shared/src/logseq/entry`. The `shared/native` directory contains Dune config
 native platform bridges; generated OCaml stays under `_build`. Core tests live
 in `shared/test/logseq`, one alcotest suite per core module. The core test gate also builds the seed and live-sync executables.
 
+Natural-language dates use chrono-node's English parser in an on-demand QuickJS
+runtime shared by iOS and Android. The first core build downloads checksum-pinned
+sources listed in `shared/native/nlp/dependencies.json`; Python 3 is required.
+Archives are cached in `$XDG_CACHE_HOME/logseq/native-dependencies` (defaulting to
+`~/.cache`) and generated sources stay under `_build`. Core startup and canonical
+date input do not initialize the JavaScript engine.
+
 ## Repository layout
 
 - `apple/`: Swift package, app, extensions, Xcode workspace, and Apple tests.
