@@ -64,10 +64,17 @@ fi
 # loaded runner. Retry the setup once so a driver flake does not fail the
 # whole suite; LOGSEQ_IOS_E2E_SETUP_RETRIES=0 disables the retry.
 setup_retries=${LOGSEQ_IOS_E2E_SETUP_RETRIES:-1}
+run_maestro_test() {
+  if [[ -n ${LOGSEQ_IOS_E2E_DRIVER_PORT:-} ]]; then
+    set -- --no-reinstall-driver --driver-host-port="$LOGSEQ_IOS_E2E_DRIVER_PORT" "$@"
+  fi
+  MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$@"
+}
+
 run_setup_flow() {
   local attempt=0
   while :; do
-    if MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"; then
+    if run_maestro_test "$rendered_setup"; then
       return 0
     fi
     attempt=$((attempt + 1))
@@ -215,10 +222,9 @@ EOF
 fi
 if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then
   run_setup_flow
-  MAESTRO_CLI_NO_ANALYTICS=1 \
-    "$maestro_bin" --device "$device" test "$rendered_graphs_lifecycle_fixture"
+  run_maestro_test "$rendered_graphs_lifecycle_fixture"
 fi
-MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_flow"
+run_maestro_test "$rendered_flow"
 xcrun simctl io "$device" screenshot "$screenshots_dir/ios-e2e-final.png" >/dev/null
 
 echo "$screenshots_dir/ios-e2e-final.png"
