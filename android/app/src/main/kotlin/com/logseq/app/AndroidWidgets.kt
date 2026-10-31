@@ -63,6 +63,7 @@ class CaptureWidgetProvider : AppWidgetProvider() {
     ) {
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_capture).apply {
+                setInt(R.id.widget_capture_audio, "setColorFilter", context.getColor(R.color.widget_on_surface))
                 setOnClickPendingIntent(
                     R.id.widget_capture_root,
                     entryPointIntent(context, "logseq://capture", captureRequestCode),
