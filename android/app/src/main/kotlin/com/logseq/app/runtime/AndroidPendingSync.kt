@@ -131,6 +131,7 @@ internal object AndroidPendingSyncTransport {
             connection.disconnect()
         }
     } catch (error: Throwable) {
+        android.util.Log.w("AndroidPendingSync", "HTTP request failed", error)
         AndroidPendingSyncResult(null, null, error.toString())
     }
 
