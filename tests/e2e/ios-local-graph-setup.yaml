@@ -29,33 +29,18 @@ appId: com.logseq.logseq
       # during it have stalled the XCTest driver on CI. Wait it out.
       - waitForAnimationToEnd:
           timeout: 30000
-- runFlow:
-    when:
-      visible: "Enter your username"
-    commands:
-      - tapOn: "Enter your username"
-      - inputText: "__LOGSEQ_E2E_USERNAME__"
-      - tapOn: "Enter your password"
-      - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - tapOn:
-          text: "Sign In"
-          index: 1
+      # Restart from the stored session instead of querying the transient
+      # post-login tree, which can crash the XCTest hierarchy driver.
+      - stopApp
+      - launchApp
 - runFlow:
     when:
       visible: "__LOGSEQ_E2E_GRAPH_NAME__"
     commands:
       - tapOn: "__LOGSEQ_E2E_GRAPH_NAME__"
-- waitForAnimationToEnd:
-    timeout: 5000
-- extendedWaitUntil:
-    visible:
-      id: "button.sidebar"
-    timeout: 20000
-    optional: true
 - runFlow:
     when:
-      notVisible:
-        id: "button.sidebar"
+      visible: "Choose a graph"
     commands:
       - extendedWaitUntil:
           visible: "Choose a graph"
@@ -75,13 +60,6 @@ appId: com.logseq.logseq
           checked: false
       - tapOn:
           id: "button.graph-add.confirm"
-- runFlow:
-    when:
-      visible: "Unlock encrypted graphs"
-    commands:
-      - tapOn: "E2EE password"
-      - inputText: "__LOGSEQ_E2EE_PASSWORD__"
-      - tapOn: "Unlock"
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"
