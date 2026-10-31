@@ -3,6 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+suite_started=$SECONDS
 
 all_flows=(
   tests/e2e/ios-capture-responsive.yaml
@@ -183,4 +184,4 @@ for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
   echo "[ios-e2e] $flow completed in $((SECONDS - flow_started))s"
 done
 
-echo "iOS Simulator E2E '$selector' passed ($((${#flows[@]} - start_index)) flows)"
+echo "iOS Simulator E2E '$selector' passed ($((${#flows[@]} - start_index)) flows) in $((SECONDS - suite_started))s"

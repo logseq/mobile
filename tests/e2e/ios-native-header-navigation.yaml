@@ -15,9 +15,8 @@ appId: com.logseq.logseq
     id: "button.search"
 - assertVisible:
     id: "screen.search"
-- tapOn: "Search pages and blocks"
 - inputText: "Aug 24th, 2026"
-- tapOn: "Search"
+- pressKey: Enter
 - tapOn:
     id: "search.result.e2e00000-0000-4000-8000-000000000030"
 - assertVisible: "Aug 24th, 2026"
