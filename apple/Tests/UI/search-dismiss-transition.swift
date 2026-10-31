@@ -20,13 +20,18 @@ import SwiftUI
     @MainActor static func main() async throws {
         try await check("")
         try await check("Needle")
-        print("PASS: empty and populated search close promptly, preserve outgoing content, and keep the toolbar at the bottom")
+        print("PASS: empty and populated search close promptly, preserve outgoing content, and retain the journal viewport")
     }
 
     @MainActor static func check(_ initialQuery: String) async throws {
         var query = ""
         func snapshot() -> String {
             let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work",
+                "outlinerRows": (0..<8).map { index in
+                    ["depth": 0, "block": ["uuid": "home-\(index)", "title": "Journal body \(index)",
+                        "pageId": "journal-\(index / 2)", "journalTitle": "Oct \(31 - index / 2), 2026",
+                        "journalDay": 20261031 - index / 2]] as [String: Any]
+                },
                 "searchQuery": query, "searchResults": query.isEmpty ? [] : [
                     ["uuid": "found", "title": "Needle result", "isPage": true]]]
             return String(decoding: try! JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
@@ -63,6 +68,15 @@ import SwiftUI
         window.makeKeyAndVisible()
         defer { window.isHidden = true; runtime.stop() }
         try await Task.sleep(for: .milliseconds(300))
+        guard let homeScroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
+            $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height
+        }) else { throw failure("Missing retained journal scroll view") }
+        let homeHeight = homeScroll.bounds.height
+        func journalFrame() -> CGRect? {
+            views(window).compactMap { $0 as? UILabel }.first { $0.text == "Journal body 2" }
+                .map { $0.convert($0.bounds, to: window) }
+        }
+        guard let homeJournalFrame = journalFrame() else { throw failure("Missing next-journal body") }
         try backend.performPress(node: find("button.search")!)
         try await wait("Search must accept native input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
@@ -84,10 +98,17 @@ import SwiftUI
             }
             return controller.presentedViewController.flatMap(searchController)
         }
-        guard let search = searchController(root), let delegate = search.searchBar.delegate else {
+        guard searchController(root) != nil else {
             throw failure("Missing active native search controller")
         }
-        let fieldTop = field.convert(field.bounds, to: window).minY
+        let fieldFrame = field.convert(field.bounds, to: window)
+        guard let cancel = views(window).compactMap({ $0 as? UIControl }).first(where: { control in
+            let frame = control.convert(control.bounds, to: window)
+            guard frame.minX >= fieldFrame.maxX - 1, abs(frame.midY - fieldFrame.midY) < 24,
+                  frame.width >= 20, frame.height >= 20, control.isEnabled, !control.isHidden else { return false }
+            guard let hit = window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil) else { return false }
+            return hit === control || hit.isDescendant(of: control)
+        }) else { throw failure("Missing visible native Cancel control") }
         let keyboard = SearchKeyboardDismissal()
         let closeStart = ProcessInfo.processInfo.systemUptime
         var closedAfter: Double?
@@ -100,7 +121,7 @@ import SwiftUI
             if closedAfter == nil { closedAfter = ProcessInfo.processInfo.systemUptime - closeStart }
             return true
         }
-        delegate.searchBarCancelButtonClicked?(search.searchBar)
+        cancel.sendActions(for: cancel.allControlEvents.contains(.primaryActionTriggered) ? .primaryActionTriggered : .touchUpInside)
         func retainsQuery() -> Bool {
             let node = backend.rootIDs.flatMap(descendants).first {
                 backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
@@ -114,12 +135,15 @@ import SwiftUI
         guard field.window == nil || retainsQuery() else {
             throw failure("The outgoing results must remain mounted during dismissal")
         }
-        for _ in 0..<6 {
+        for _ in 0..<40 {
             _ = isClosed()
-            guard field.window == nil || field.convert(field.bounds, to: window).minY >= fieldTop - 2 else {
-                throw failure("The outgoing search toolbar must not jump to the top during dismissal")
+            if closedAfter != nil, homeScroll.bounds.height < homeHeight - 1 {
+                throw failure("Returning to journals must preserve the full viewport while the outgoing search keyboard dismisses; before=\(homeHeight), during=\(homeScroll.bounds.height)")
             }
-            try await Task.sleep(for: .milliseconds(20))
+            if closedAfter != nil, let frame = journalFrame(), abs(frame.minY - homeJournalFrame.minY) > 2 {
+                throw failure("The returned journal layout must not shrink and expand with the outgoing keyboard; before=\(homeJournalFrame.minY), during=\(frame.minY)")
+            }
+            try await Task.sleep(for: .milliseconds(16))
         }
         try await wait("The search session must be cleared after dismissal") {
             isClosed()

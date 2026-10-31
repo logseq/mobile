@@ -388,6 +388,7 @@ private struct LGSearchPresentation: View {
                 .accessibilityHidden(nativePresented)
             if nativePresented {
                 LGSearchSession(context: context, close: closeSearch)
+                    .transition(.identity)
                     .zIndex(1)
             }
         }
@@ -442,11 +443,6 @@ private struct LGSearchSession: View {
                 if pendingQuery == query { pendingQuery = nil }
             }
             #if os(iOS)
-            .task(id: closing) {
-                // Finish the native cancel callback before retiring this layer,
-                // without waiting for the keyboard's dismissal animation.
-                if closing { close() }
-            }
             .onChange(of: depth) {
                 if depth == 0 && !closing { nativeSearchPresented = true }
             }
@@ -529,6 +525,8 @@ private struct LGSearchSession: View {
         guard !closing else { return }
         closing = true
         pendingQuery = query
+        // Retire the layer before a closing-state layout can resize its content.
+        close()
     }
 
     private var nativeSearchPresentedBinding: Binding<Bool> {
