@@ -2,7 +2,6 @@ appId: com.logseq.logseq
 ---
 - runFlow:
     file: "__LOGSEQ_E2E_SETUP_FLOW__"
-- launchApp
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"
