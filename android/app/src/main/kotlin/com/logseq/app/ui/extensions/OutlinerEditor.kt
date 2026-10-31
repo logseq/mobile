@@ -315,6 +315,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     fun submitPaste() {
         val payload = com.logseq.app.AndroidBlockClipboard.content(androidContext, value.text,
             value.selection.min, value.selection.max - value.selection.min) ?: return
+        val plain = org.json.JSONObject(payload).getString("plainText")
+            .replace("\r\n", "\n").replace('\r', '\n')
+        val start = value.selection.min.coerceIn(0, value.text.length)
+        val end = value.selection.max.coerceIn(start, value.text.length)
+        value = TextFieldValue(value.text.replaceRange(start, end, plain), TextRange(start + plain.length))
+        observedText = value.text
         debounceSeq++
         handoffRevision = selectionRevision
         awaitingHandoff = true
