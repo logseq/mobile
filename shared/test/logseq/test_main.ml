@@ -43,6 +43,7 @@ let () =
       "graph_read", Graph_read_test.cases;
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
+      "natural_date", Natural_date_test.cases;
       "editor_commands", Editor_command_test.cases;
       "flashcard_decks", Flashcard_decks_test.cases;
       "composer_tags", Composer_tag_test.cases;

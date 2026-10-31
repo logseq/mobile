@@ -1332,9 +1332,9 @@ let submit_completion context state value =
        | Ok day -> let next, commands = inserted (Ok (journal_reference_for_day context.db day)) in
          step next (commands @ [Execute_editor (Ensure_journal day)]))
      | Deadline | Scheduled ->
-       (match int_of_string_opt value with
-        | Some _ -> apply_editor_action context state editing
-            (Choice ((if picker = Deadline then "logseq.property/deadline" else "logseq.property/scheduled"), Some value))
+       (match Natural_date.timestamp value with
+        | Some timestamp -> apply_editor_action context state editing
+            (Choice ((if picker = Deadline then "logseq.property/deadline" else "logseq.property/scheduled"), Some (string_of_int timestamp)))
         | None -> step state [Editor_error "Choose a date and time"])
      | Youtube -> inserted (Result.map (fun seconds -> "{{youtube-timestamp " ^ string_of_int seconds ^ "}}") (timestamp value))
      | Embed | Template -> step state [])

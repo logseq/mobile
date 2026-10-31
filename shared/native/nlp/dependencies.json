@@ -1,0 +1,12 @@
+{
+  "quickjs": {
+    "version": "2026-06-04",
+    "url": "https://bellard.org/quickjs/quickjs-2026-06-04.tar.xz",
+    "sha256": "b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a"
+  },
+  "chrono-node": {
+    "version": "2.9.0",
+    "url": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.9.0.tgz",
+    "sha256": "28a6e556d8e3335ec16e5e7fb4172a7090d172111be370330ae2bd12bd5fdfbd"
+  }
+}

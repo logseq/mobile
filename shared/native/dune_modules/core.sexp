@@ -36,6 +36,7 @@
 "Journal"
 "Live_sync"
 "Markup"
+"Natural_date"
 "Outliner"
 "Editor_command"
 "Editor_command_effects"

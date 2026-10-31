@@ -78,7 +78,7 @@ let journal_reference_for_day db day =
 
 let journal_reference db ms = journal_reference_for_day db (Cache_model.journal_day_for_ms ms)
 
-let date_day value = match Journal.day_of_string value with
+let date_day value = match Natural_date.day value with
   | Some day -> Ok day
   | None -> Error "Choose a valid date"
 

@@ -1,0 +1,3 @@
+(test
+ (name main)
+ (libraries logseq_core logseq_app))

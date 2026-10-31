@@ -474,6 +474,54 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
     check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "6*7\nlast*3"))))
     ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
 
+let natural_date_input_forwards_submit () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    ignore (run session "Date picker");
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let input = App_test.descendant_with_identifier host (Lui_app.root_node app) "view.edit.date.input.editor-command" in
+      App_test.dispatch app (Lui_protocol.TextChanged (input, "next Friday")); App_test.flush app;
+      App_test.dispatch app (Lui_protocol.Submit input); App_test.flush app;
+      check ~msg:"Submit events forward the typed expression"
+        (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
+          member "type" (J.from_string payload) = `String "submitAutocomplete"
+          && member "value" (J.from_string payload) = `String "next Friday" | _ -> false)
+          (App.model app).pending_effects))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let date_command_accepts_natural_language () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
+    ignore (run session "Date picker");
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      App_test.dispatch app (Lui_protocol.TextChanged (find "view.edit.date.input.editor-command", "January 1, 2000"));
+      App_test.flush app;
+      App_test.dispatch app (Lui_protocol.Press (find "button.outliner.autocomplete.submit"));
+      App_test.flush app;
+      check ~msg:"natural-language text reaches the shared command"
+        (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
+          member "value" (J.from_string payload) = `String "January 1, 2000" | _ -> false)
+          (App.model app).pending_effects));
+    ignore (submit session "January 1, 2000"); save session;
+    check ~msg:"a natural-language date creates its Journal"
+      (Graph_read.journal_page_uuid (Graph_runtime.db runtime) 20000101 <> None)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let datetime_commands_accept_natural_language () =
+  List.iter (fun backend -> List.iter (fun (label, attr) -> R.with_runtime (fun session _ _ ->
+    ignore (run session label);
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      check ~msg:"date-time commands expose the shared text input" (find "view.edit.date.input.editor-command" <> -1));
+    ignore (submit session "January 1, 2000 at 3pm"); save session;
+    let prop = Node_property_test.property attr (Node_property_test.result (Node_property_test.read session Q.alpha)) in
+    let expected = Natural_date_test.reference 2000 1 1 15 0 |> int_of_float |> string_of_int in
+    check_eq (member "editorValue" prop) (`String expected)))
+    ["Deadline", "logseq.property/deadline"; "Scheduled", "logseq.property/scheduled"])
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let date_command_accepts_typed_historical_dates () =
   List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
     ignore (run session "Date picker");
@@ -983,6 +1031,9 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "natural date input forwards Submit events" natural_date_input_forwards_submit;
+  case "date-time commands accept natural language" datetime_commands_accept_natural_language;
+  case "date commands accept natural language on both hosts" date_command_accepts_natural_language;
   case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
   case "Code and Calculator toolbars create blocks with software keyboards" code_toolbar_creates_a_block_without_a_hardware_keyboard;
   case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;
