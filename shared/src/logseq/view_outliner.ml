@@ -961,6 +961,10 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
       | ExtensionEvent (_, _, ("open-node" | "edit"), _) -> choose ()
       | _ -> ());
     node in
+  let reference_label =
+    if Lui_ui.host context = KotlinHost then
+      row ~cross:`center [reference_label]
+    else reference_label in
   column ~gap:0 ~grow:0.0 ~cross:`stretch [
   dyn (fun (candidate : Model.outliner_autocomplete_candidate) -> match candidate.candidate_group with
     | None -> box []
