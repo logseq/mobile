@@ -157,6 +157,9 @@ jobs:
     timeout-minutes: 90
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      DUNE_CACHE: enabled
+      DUNE_CACHE_STORAGE_MODE: copy
+      HOMEBREW_NO_AUTO_UPDATE: "1"
       # SwiftPM clones lui over ssh://; rewrite to https (repos are public).
       GIT_CONFIG_COUNT: 3
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
@@ -282,9 +285,19 @@ jobs:
         id: ios-build-artifacts
         uses: actions/cache/restore@v4
         with:
-          path: apple/.build
-          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
-          restore-keys: ios-build-artifacts-${{ runner.os }}-xcode26.3-
+          path: |
+            apple/.build
+            _build/.db
+            _build/.digest-db
+            _build/default
+            _build/mobile_host
+            _build/ios_simulator
+            _build/ios-core
+            ~/.cache/dune
+          key: ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
+            ios-build-v2-${{ runner.os }}-xcode26.3-
 
       - name: Build iOS app for the simulator
         run: |
@@ -292,13 +305,22 @@ jobs:
           export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
           ./scripts/build-mobile-ios-simulator.sh
+          dune build shared/native/logseq_e2e_seed.exe
 
       - name: Save iOS build artifacts
-        if: always()
+        if: always() && steps.ios-build-artifacts.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: apple/.build
-          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
+          path: |
+            apple/.build
+            _build/.db
+            _build/.digest-db
+            _build/default
+            _build/mobile_host
+            _build/ios_simulator
+            _build/ios-core
+            ~/.cache/dune
+          key: ${{ steps.ios-build-artifacts.outputs.cache-primary-key }}
 
       - name: Save iOS OCaml toolchain
         # always(): even when e2e fails, preserve the expensive toolchain

@@ -29,17 +29,6 @@ appId: com.logseq.logseq
       # during it have stalled the XCTest driver on CI. Wait it out.
       - waitForAnimationToEnd:
           timeout: 30000
-# Cognito hosted UI lives in the system browser, where each hierarchy
-# query can stall tens of seconds on a loaded runner (and once crashed the
-# XCTest driver). Give the `when` below real headroom instead of burning
-# its whole budget on two stalled snapshots.
-- extendedWaitUntil:
-    visible: "Enter your username"
-    # Each system-browser snapshot can take ~90s+ on a loaded runner (the
-    # driver retries the WebView query several times), so the budget must
-    # cover multiple snapshot rounds, not just one.
-    timeout: 240000
-    optional: true
 - runFlow:
     when:
       visible: "Enter your username"
