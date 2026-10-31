@@ -783,7 +783,7 @@ internal class LogseqRuntime(
 
     private fun reportError(error: Throwable) {
         logRuntime("error", "ui", error.toString())
-        Log.e("LogseqRuntime", "Effect failed", error)
+        Log.e("LogseqRuntime", "Effect failed\n${error.stackTraceToString()}")
     }
 
     private fun traceNativeEffect(message: String) {
