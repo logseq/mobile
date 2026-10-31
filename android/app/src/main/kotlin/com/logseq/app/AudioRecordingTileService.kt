@@ -1,5 +1,6 @@
 package com.logseq.app
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
@@ -16,6 +17,7 @@ class AudioRecordingTileService : TileService() {
         }
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         unlockAndRun {
@@ -28,6 +30,7 @@ class AudioRecordingTileService : TileService() {
                 startActivityAndCollapse(PendingIntent.getActivity(this, 3, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             } else {
+                // The PendingIntent overload is unavailable before API 34.
                 @Suppress("DEPRECATION")
                 startActivityAndCollapse(intent)
             }
