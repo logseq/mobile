@@ -73,6 +73,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -492,7 +493,9 @@ private fun MarkupInlineText(
         if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
             for (link in links) {
                 addStyle(SpanStyle(color = linkColor), link.start, link.end)
-                addLink(LinkAnnotation.Clickable(link.tag, linkInteractionListener = {
+                addLink(LinkAnnotation.Clickable(link.tag,
+                    styles = if (link.tag == TAG_NODE) TextLinkStyles() else null,
+                    linkInteractionListener = {
                     when (link.tag) {
                         TAG_NODE -> openNode(link.item)
                         TAG_URL, TAG_TIMESTAMP -> openExternalUrl(context, link.item)
