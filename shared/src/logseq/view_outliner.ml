@@ -259,16 +259,19 @@ let outliner_status_icon identifier test name row_source : t =
 let outliner_status_control (context : Lui_ui.ui_context) model_source
     row_source send : t =
   let current_row = Signal.sample row_source in
-  let status_menu =
-    context_menu
+  let status_items =
       [
         keyed
-          ~source:(Signal.map View_base.model_task_statuses model_source)
+          ~source:(reactive View_base.model_task_statuses model_source)
           ~key:View_base.task_status_identifier ~cmp:compare
           ~mount:(fun status_source ->
             View_composer.outliner_task_status_row
               (View_base.outliner_row_uuid current_row) status_source send);
       ]
+  in
+  let status_menu =
+    if Lui_ui.host context = KotlinHost then dropdown_menu status_items
+    else context_menu status_items
   in
   if Lui_ui.host context = KotlinHost then
     stack ~width:24 ~height:24
@@ -311,7 +314,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
           ];
         View_base.with_label_signal
           (Signal.map View_base.outliner_row_status_title row_source)
-          (button ~variant:`ghost ~size:`icon ~width:24 ~height:24
+          (menu_trigger
              ~accessibility_identifier:"button.block-task-status"
              [ status_menu ]);
       ]
