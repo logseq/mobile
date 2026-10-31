@@ -357,17 +357,22 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
         (collapsed_composer model_source context send);
     ]
 
-let outliner_task_status_row block_id status_source send : t =
+let outliner_task_status_row row_source status_source send : t =
   let status = Signal.sample status_source in
   menu_item
-    ~text_signal:(reactive View_base.task_status_title status_source)
+    ~text:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
+    ~selected:(reactive (fun (row : Model.outline_row) ->
+      Option.fold ~none:false
+        ~some:(fun (selected : Model.task_status) -> selected.uuid = status.uuid)
+        row.row_status) row_source)
     ~accessibility_identifier:
       (View_base.outliner_task_status_option_identifier status)
     ~on_press:(fun _ ->
       ignore
         (send
            (Model.SetOutlinerTaskStatus
-              (block_id, (Signal.sample status_source).uuid))))
+              (View_base.outliner_row_uuid (Signal.sample row_source),
+               (Signal.sample status_source).uuid))))
     []

@@ -265,8 +265,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
           ~source:(reactive View_base.model_task_statuses model_source)
           ~key:View_base.task_status_identifier ~cmp:compare
           ~mount:(fun status_source ->
-            View_composer.outliner_task_status_row
-              (View_base.outliner_row_uuid current_row) status_source send);
+            View_composer.outliner_task_status_row row_source status_source send);
       ]
   in
   let status_menu =
