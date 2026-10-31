@@ -119,9 +119,9 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:58
-          ~height:58 ~background:"surface-container-low" ~corner_radius:12 ~label:(View_base.tr (Signal.sample model_source) "Search")
-          ~border_width:1 ~border_color:"border"
+        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:56
+          ~height:56 ~background:"surface-container-low" ~corner_radius:28
+          ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
@@ -878,6 +878,14 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
 
 let authentication_content (context : Lui_ui.ui_context) model_source
     send : t =
+  let sign_in =
+    button ~accessibility_identifier:"button.hosted-sign-in"
+      ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
+      ~disabled:(reactive View_base.authentication_signing_in_ model_source)
+      ~on_press:(press send Model.SignIn)
+      ~text:(View_base.tr (Signal.sample model_source) "Sign in")
+      [View_settings.sign_in_label model_source]
+  in
   column ~cross:`center ~gap:0 ~max_width:400
     [
       row ~width:96 ~height:96 ~corner_radius:22
@@ -896,13 +904,9 @@ let authentication_content (context : Lui_ui.ui_context) model_source
       text ~foreground:"muted-foreground" ~text_alignment:`center
         ~value:(View_base.tr (Signal.sample model_source) "Capture, sync, and review your notes anywhere.") [];
       box ~height:36 [];
-      button ~accessibility_identifier:"button.hosted-sign-in"
-        ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
-        ~disabled_signal:
-          (Signal.map View_base.authentication_signing_in_ model_source)
-        ~on_press:(press send Model.SignIn)
-        ~text:(View_base.tr (Signal.sample model_source) "Sign in") [View_settings.sign_in_label model_source];
-
+      (if Lui_ui.host context = KotlinHost then
+         row ~cross:`center [sign_in]
+       else sign_in);
     ]
 
 let authentication_screen (context : Lui_ui.ui_context) model_source send

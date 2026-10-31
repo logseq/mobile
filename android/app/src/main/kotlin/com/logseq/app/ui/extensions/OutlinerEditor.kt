@@ -3,7 +3,8 @@ package com.logseq.app.ui.extensions
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -15,6 +16,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -35,6 +38,7 @@ import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextRange
@@ -59,6 +63,24 @@ import kotlinx.coroutines.delay
 // emits a structural backspace. Model acknowledgements echo locally
 // published titles — those updates are swallowed so typing is never
 // reverted mid-keystroke.
+private sealed interface EditorHandoff {
+    data class Return(val title: String, val caret: Int) : EditorHandoff
+    data class Paste(val payload: String) : EditorHandoff
+}
+
+private class EditorFieldValue(private val state: TextFieldState) {
+    operator fun getValue(owner: Any?, property: kotlin.reflect.KProperty<*>): TextFieldValue =
+        TextFieldValue(state.text.toString(), state.selection, state.composition)
+
+    operator fun setValue(owner: Any?, property: kotlin.reflect.KProperty<*>, next: TextFieldValue) {
+        if (state.text.toString() == next.text && state.selection == next.selection) return
+        state.edit {
+            if (asCharSequence().toString() != next.text) replace(0, length, next.text)
+            selection = next.selection
+        }
+    }
+}
+
 @Composable
 internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
@@ -72,89 +94,109 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val codeLanguage = remember(inputPolicy) { runCatching { org.json.JSONObject(inputPolicy).optString("language") }.getOrDefault("") }
 
     val focusRequester = remember { FocusRequester() }
-    var value by remember {
-        mutableStateOf(
-            TextFieldValue(modelTitle, TextRange(modelCaret.coerceAtLeast(0)))
-        )
-    }
-    var observedText by remember { mutableStateOf(value.text) }
+    val fieldState = remember { TextFieldState(modelTitle, TextRange(modelCaret.coerceIn(0, modelTitle.length))) }
+    val nativeValue = remember { EditorFieldValue(fieldState) }
+    var value: TextFieldValue by nativeValue
+    var observedValue by remember { mutableStateOf(value) }
     var previousText by remember { mutableStateOf(modelTitle) }
     var previousSelection by remember { mutableStateOf(value.selection) }
     var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
-    var rememberedModelCaret by remember { mutableIntStateOf(modelCaret) }
     var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var rememberedBlockId by remember { mutableStateOf(blockId) }
     var awaitingHandoff by remember { mutableStateOf(false) }
-    // Each segment contains typing after one queued Enter, preserving input order.
-    val handoffSegments = remember { ArrayDeque<String>() }
+    // Each segment buffers native edits after a structural edit until acknowledgement.
+    val handoffSegments = remember { ArrayDeque<PendingEditorInput>() }
+    val queuedHandoffs = remember { ArrayDeque<EditorHandoff>() }
     var applyingModel by remember { mutableStateOf(false) }
     var debounceSeq by remember { mutableIntStateOf(0) }
-    var pasteRevision by remember { mutableStateOf<Int?>(null) }
+    var handoffRevision by remember { mutableStateOf<Int?>(null) }
     val nativeToolbar = LocalTextToolbar.current
     val androidContext = LocalContext.current
+    val pasteLabel = stringResource(android.R.string.paste)
     val clipboard = remember(androidContext) {
         androidContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     }
     val pasteKey = remember { Any() }
     val publishedTitles = remember { mutableStateListOf<String>() }
-    var handoffReturn by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
+
+    fun capturePendingInput(incoming: TextFieldValue) {
+        if (!awaitingHandoff) return
+        handoffSegments.lastOrNull()?.capture(incoming.text, incoming.selection.start, incoming.selection.end)
+        observedValue = incoming
+    }
 
     // Reconcile a structural handoff in this composition, so the IME sees the
     // new text, caret and identity together instead of waiting another frame.
-    val pasteAcknowledged = pasteRevision != null && selectionRevision != pasteRevision
-    if (awaitingHandoff && (blockId != rememberedBlockId || pasteAcknowledged)) {
-        pasteRevision = null
-        val typing = handoffSegments.removeFirstOrNull().orEmpty()
+    val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
+    if (awaitingHandoff && value.composition == null && (blockId != rememberedBlockId || handoffAcknowledged)) {
+        capturePendingInput(value)
+        handoffRevision = null
+        val pending = handoffSegments.removeFirstOrNull()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
-        val merged = modelTitle.substring(0, offset) + typing + modelTitle.substring(offset)
-        val caret = offset + typing.length
+        val snapshot = pending?.rebase(modelTitle, offset) ?: EditorInputSnapshot(modelTitle, offset)
+        val merged = snapshot.text
+        val caret = snapshot.selectionStart
+        val selection = TextRange(snapshot.selectionStart, snapshot.selectionEnd)
         rememberedBlockId = blockId
         rememberedModelTitle = modelTitle
-        rememberedModelCaret = modelCaret
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
-        value = TextFieldValue(merged, TextRange(caret))
-        observedText = merged
         awaitingHandoff = handoffSegments.isNotEmpty()
         if (awaitingHandoff) {
+            handoffRevision = selectionRevision
             publishedTitles.add(merged)
-            handoffReturn = merged to caret
-        } else if (typing.isNotEmpty()) {
-            debounceSeq++
+            handoffEvent = when (val queued = queuedHandoffs.removeFirst()) {
+                is EditorHandoff.Return -> EditorHandoff.Return(merged, caret)
+                is EditorHandoff.Paste -> EditorHandoff.Paste(
+                    rebasePastePayload(queued.payload, merged),
+                )
+            }
+        } else {
+            if (value.text != merged || value.selection != selection) {
+                value = TextFieldValue(merged, selection)
+            }
+            observedValue = value
+            if (merged != modelTitle) debounceSeq++
         }
     }
-    LaunchedEffect(blockId) {
-        handoffReturn?.let { (title, caret) ->
-            handoffReturn = null
-            context.emit("return", "title" to title, "caret-utf16-offset" to caret)
+    LaunchedEffect(blockId, selectionRevision) {
+        val event = handoffEvent
+        handoffEvent = null
+        when (event) {
+            is EditorHandoff.Return -> context.emit(
+                "return", "title" to event.title, "caret-utf16-offset" to event.caret,
+            )
+            is EditorHandoff.Paste -> context.emit("paste-content", "value" to event.payload)
+            null -> Unit
         }
     }
 
     // Model → field sync (didUpdateWidget equivalent).
     LaunchedEffect(blockId, modelTitle, modelCaret, selectionRevision) {
+        if (awaitingHandoff) return@LaunchedEffect
         val blockChanged = blockId != rememberedBlockId
-        if (awaitingHandoff && !blockChanged) return@LaunchedEffect
         rememberedBlockId = blockId
         val selectionRequested = selectionRevision != rememberedSelectionRevision
         rememberedSelectionRevision = selectionRevision
         val titleChanged = modelTitle != rememberedModelTitle
-        val caretChanged = modelCaret != rememberedModelCaret
         rememberedModelTitle = modelTitle
-        rememberedModelCaret = modelCaret
         val acknowledged = if (blockChanged) -1 else publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
-            if (!selectionRequested) return@LaunchedEffect
+            // An older echo must not replace newer typing or active IME composition.
+            if (!selectionRequested || value.text != modelTitle || value.composition != null) {
+                return@LaunchedEffect
+            }
         }
-        // Acknowledging our caret must preserve native selection and IME composition.
-        val externalCaret = caretChanged && modelCaret != value.selection.start
-        if (blockChanged || selectionRequested || titleChanged || (externalCaret && value.text == modelTitle)) {
+        // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
+        if (blockChanged || selectionRequested || titleChanged) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++
             val offset = modelCaret.coerceIn(0, modelTitle.length)
             value = TextFieldValue(modelTitle, TextRange(offset))
-            observedText = modelTitle
+            observedValue = value
             applyingModel = false
         }
     }
@@ -191,14 +233,20 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitReturn(title: String, caret: Int) {
+        capturePendingInput(TextFieldValue(title, TextRange(caret)))
+        // Rebase the native field before later IME commits can target the old block.
+        value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
+        observedValue = value
         if (awaitingHandoff) {
-            handoffSegments.addLast("")
+            queuedHandoffs.addLast(EditorHandoff.Return(title, caret))
+            handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
             return
         }
         debounceSeq++
         publishedTitles.add(title)
         awaitingHandoff = true
-        handoffSegments.addLast("")
+        handoffRevision = selectionRevision
+        handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
         context.emit("return", "title" to title, "caret-utf16-offset" to caret)
     }
 
@@ -217,43 +265,42 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun acceptValue(incoming: TextFieldValue) {
+            if (incoming == observedValue) return
+            val prior = observedValue
             if (awaitingHandoff) {
-                val prior = value.text
+                val priorText = prior.text
                 var prefix = 0
-                while (prefix < prior.length && prefix < incoming.text.length && prior[prefix] == incoming.text[prefix]) prefix++
+                while (prefix < priorText.length && prefix < incoming.text.length && priorText[prefix] == incoming.text[prefix]) prefix++
                 var suffix = 0
-                while (suffix < prior.length - prefix && suffix < incoming.text.length - prefix &&
-                    prior[prior.lastIndex - suffix] == incoming.text[incoming.text.lastIndex - suffix]) suffix++
+                while (suffix < priorText.length - prefix && suffix < incoming.text.length - prefix &&
+                    priorText[priorText.lastIndex - suffix] == incoming.text[incoming.text.lastIndex - suffix]) suffix++
                 val inserted = incoming.text.substring(prefix, incoming.text.length - suffix)
-                val removed = prior.length - prefix - suffix
+                val removed = priorText.length - prefix - suffix
                 if (inserted == "\n" && removed == 0) {
-                    handoffSegments.addLast("")
-                } else if (inserted.isNotEmpty() || removed > 0) {
-                    val last = handoffSegments.removeLastOrNull().orEmpty()
-                    handoffSegments.addLast(last.dropLast(removed.coerceAtMost(last.length)) + inserted)
+                    submitReturn(priorText, prefix)
+                    return
                 }
+                capturePendingInput(incoming)
                 value = incoming
-                observedText = incoming.text
                 return
             }
             val location = incoming.selection.start
-            val deletion = if (incoming.composition == null && value.selection.collapsed && location >= 0
-                && value.text.length == incoming.text.length + 1 && location < value.text.length
-                && value.text.removeRange(location, location + 1) == incoming.text) {
-                applyEmptyPairDeletion(inputPolicy, value.text, location, 1, "")
+            val deletion = if (incoming.composition == null && prior.selection.collapsed && location >= 0
+                && prior.text.length == incoming.text.length + 1 && location < prior.text.length
+                && prior.text.removeRange(location, location + 1) == incoming.text) {
+                applyEmptyPairDeletion(inputPolicy, prior.text, location, 1, "")
             } else null
             val next = deletion?.let { TextFieldValue(it.first, TextRange(it.second)) } ?: incoming
             if (applyingModel) {
                 value = next
                 return
             }
-            val textChanged = next.text != observedText
+            val textChanged = next.text != prior.text
             if (textChanged) {
-                previousText = observedText
-                previousSelection = value.selection
+                previousText = prior.text
+                previousSelection = prior.selection
             }
-            observedText = next.text
-            val prior = value
+            observedValue = next
             value = next
 
             if (!textChanged && next.selection != prior.selection && next.selection.start >= 0) {
@@ -279,19 +326,19 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     title.removeRange(newline, newline + 1) == previousText
             val replacedSelection =
                 !previousSelection.collapsed &&
-                    previousSelection.start >= 0 &&
+                    previousSelection.min >= 0 &&
                     previousText.replaceRange(
-                        previousSelection.start,
-                        previousSelection.end,
+                        previousSelection.min,
+                        previousSelection.max,
                         "\n",
                     ) == title
             if (!multiline && (singleInsertion || replacedSelection)) {
-                val splitAt = if (replacedSelection) previousSelection.start else newline
+                val splitAt = if (replacedSelection) previousSelection.min else newline
                 val submitted = title.removeRange(splitAt, splitAt + 1)
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
                 applyingModel = true
                 value = TextFieldValue(submitted, TextRange(submittedCaret))
-                observedText = submitted
+                observedValue = value
                 applyingModel = false
                 submitReturn(submitted, submittedCaret)
             } else {
@@ -300,13 +347,30 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitPaste() {
+        capturePendingInput(value)
         val payload = com.logseq.app.AndroidBlockClipboard.content(androidContext, value.text,
             value.selection.min, value.selection.max - value.selection.min) ?: return
+        val plain = org.json.JSONObject(payload).getString("plainText")
+            .replace("\r\n", "\n").replace('\r', '\n')
+        val start = value.selection.min.coerceIn(0, value.text.length)
+        val end = value.selection.max.coerceIn(start, value.text.length)
+        value = TextFieldValue(value.text.replaceRange(start, end, plain), TextRange(start + plain.length))
+        observedValue = value
         debounceSeq++
-        pasteRevision = selectionRevision
+        if (awaitingHandoff) {
+            queuedHandoffs.addLast(EditorHandoff.Paste(payload))
+            handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
+            return
+        }
+        handoffRevision = selectionRevision
         awaitingHandoff = true
-        handoffSegments.addLast("")
+        handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
         context.emit("paste-content", "value" to payload)
+    }
+    val onNativeChange by rememberUpdatedState(::acceptValue)
+    LaunchedEffect(fieldState) {
+        snapshotFlow { TextFieldValue(fieldState.text.toString(), fieldState.selection, fieldState.composition) }
+            .collect { onNativeChange(it) }
     }
     val completionToolbar = remember(nativeToolbar, value, selectionRevision) {
         object : TextToolbar {
@@ -324,20 +388,24 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
     val highlighted = if (code) rememberHighlightedCode(value.text, codeLanguage) else value.annotatedString
+    val highlightedState = rememberUpdatedState(highlighted)
+    val outputTransformation = remember {
+        OutputTransformation {
+            val styled = highlightedState.value
+            if (styled.text == asCharSequence().toString()) {
+                styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
+            }
+        }
+    }
     BasicTextField(
-        value = value,
-        onValueChange = ::acceptValue,
-        visualTransformation = androidx.compose.ui.text.input.VisualTransformation { original ->
-            androidx.compose.ui.text.input.TransformedText(
-                if (highlighted.text == original.text) highlighted else original,
-                androidx.compose.ui.text.input.OffsetMapping.Identity)
-        },
+        state = fieldState,
+        outputTransformation = outputTransformation,
         modifier = Modifier
             .fillMaxWidth()
             .appendTextContextMenuComponents {
                 val clip = clipboard.primaryClip
                 val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(androidContext)?.toString() else null
-                if (text != null) item(pasteKey, androidContext.getString(android.R.string.paste)) {
+                if (text != null) item(pasteKey, pasteLabel) {
                     submitPaste()
                     close()
                 }
@@ -360,14 +428,14 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     val start = value.selection.min.coerceIn(0, value.text.length)
                     val end = value.selection.max.coerceIn(start, value.text.length)
                     val title = value.text.replaceRange(start, end, "\n")
+                    val next = TextFieldValue(title, TextRange(start + 1))
                     if (awaitingHandoff) {
-                        val last = handoffSegments.removeLastOrNull().orEmpty()
-                        handoffSegments.addLast(last + "\n")
+                        capturePendingInput(next)
                     } else {
-                        value = TextFieldValue(title, TextRange(start + 1))
-                        observedText = title
                         debounceSeq++
                     }
+                    value = next
+                    observedValue = value
                     true
                 } else if (!multiline && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                     // Handle hardware Enter before the IME can batch several keys into pasted text.
@@ -396,7 +464,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             autoCorrectEnabled = if (code) false else null,
             imeAction = if (multiline) ImeAction.Default else ImeAction.Next,
         ),
-        keyboardActions = KeyboardActions(onNext = { returnAtSelection() }),
+        onKeyboardAction = { returnAtSelection() },
     )
     }
     }
@@ -404,3 +472,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
 private fun caretOffset(value: TextFieldValue, text: String): Int =
     if (value.selection.start < 0) text.length else value.selection.start
+
+private fun rebasePastePayload(payload: String, title: String): String {
+    val fields = org.json.JSONObject(payload)
+    val previous = fields.getString("beforeTitle")
+    val start = (fields.getInt("selectionStart") + title.length - previous.length).coerceIn(0, title.length)
+    val length = fields.getInt("selectionLength").coerceIn(0, title.length - start)
+    return fields.put("beforeTitle", title).put("selectionStart", start)
+        .put("selectionLength", length).toString()
+}

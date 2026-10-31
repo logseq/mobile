@@ -19,7 +19,7 @@
             android:layout_height="28dp"
             android:contentDescription="@string/widget_capture_title"
             android:src="@drawable/ic_widget_capture" />
-        <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
         <ImageButton
             android:id="@+id/widget_capture_audio"
             android:layout_width="48dp"
@@ -29,11 +29,10 @@
             android:clickable="true"
             android:focusable="true"
             android:padding="12dp"
-            android:tint="@color/widget_on_surface"
             android:src="@drawable/ic_record_audio" />
     </LinearLayout>
 
-    <Space
+    <FrameLayout
         android:layout_width="1dp"
         android:layout_height="0dp"
         android:layout_weight="1" />

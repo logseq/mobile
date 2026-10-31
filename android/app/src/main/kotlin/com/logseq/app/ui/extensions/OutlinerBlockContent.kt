@@ -73,6 +73,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -492,7 +493,9 @@ private fun MarkupInlineText(
         if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
             for (link in links) {
                 addStyle(SpanStyle(color = linkColor), link.start, link.end)
-                addLink(LinkAnnotation.Clickable(link.tag, linkInteractionListener = {
+                addLink(LinkAnnotation.Clickable(link.tag,
+                    styles = if (link.tag == TAG_NODE) TextLinkStyles() else null,
+                    linkInteractionListener = {
                     when (link.tag) {
                         TAG_NODE -> openNode(link.item)
                         TAG_URL, TAG_TIMESTAMP -> openExternalUrl(context, link.item)
@@ -616,7 +619,18 @@ private fun AndroidLinkedImage(url: String, alt: String) {
                     connectTimeout = 10_000
                     readTimeout = 10_000
                 }
-                val bytes = connection.getInputStream().use { it.readNBytes(20_000_001) }
+                val bytes = connection.getInputStream().use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var remaining = 20_000_001
+                    while (remaining > 0) {
+                        val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        remaining -= count
+                    }
+                    output.toByteArray()
+                }
                 require(bytes.size <= 20_000_000) { "Image is too large" }
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)

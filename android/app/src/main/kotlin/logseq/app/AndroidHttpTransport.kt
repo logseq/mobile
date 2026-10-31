@@ -27,7 +27,10 @@ object AndroidHttpTransport {
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         }
         response(connection)
-    }.getOrElse { "ERROR\n${it.message ?: it.javaClass.simpleName}" }
+    }.getOrElse {
+        android.util.Log.w("AndroidHttpTransport", "send failed\n${it.stackTraceToString()}")
+        "ERROR\n${it.message ?: it.javaClass.simpleName}"
+    }
 
     @JvmStatic
     fun uploadFile(
@@ -55,7 +58,10 @@ object AndroidHttpTransport {
             file.inputStream().use { input -> input.copyTo(output) }
         }
         response(connection)
-    }.getOrElse { "ERROR\n${it.message ?: it.javaClass.simpleName}" }
+    }.getOrElse {
+        android.util.Log.w("AndroidHttpTransport", "upload failed\n${it.stackTraceToString()}")
+        "ERROR\n${it.message ?: it.javaClass.simpleName}"
+    }
 
     private fun open(method: String, url: String, token: String): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {

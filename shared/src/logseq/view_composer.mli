@@ -17,6 +17,6 @@ val composer_view :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_task_status_row :
-  string ->
+  Model.outline_row Signal.signal ->
   Model.task_status Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t

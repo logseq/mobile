@@ -142,7 +142,8 @@ let composer_send_button model_source context ?send_icon send_disabled on_send :
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
-    button ~icon:android_icon ~variant:`primary ~label:(View_base.tr (Signal.sample model_source) "Send")
+    button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48 ~height:48
+      ~label:(View_base.tr (Signal.sample model_source) "Send")
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
   else
@@ -242,8 +243,8 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
   in
   let surface =
     if Lui_ui.host context = KotlinHost then
-      column ?key ?accessibility_identifier ~grow:1.0 ~gap:8 ~padding:8
-        ~background:"surface-container-low"
+      column ?key ?accessibility_identifier ~grow:1.0 ~gap:4 ~padding:8
+        ~background:"surface-container-highest" ~corner_radius:28
         (attachment_strip
          @ [ field;
              row ~gap:8 ~height:48 ~cross:`center
@@ -280,12 +281,15 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
-    row ~grow:1.0 ~gap:8 ~cross:`center ~padding:8
-      ~background:"surface-container-low" ~corner_radius:12
-      [ button ~icon:(`app "toolbar-camera") ~variant:`secondary ~label:(View_base.tr (Signal.sample model_source) "Camera")
+    row ~grow:1.0 ~height:56 ~gap:0 ~cross:`center
+      ~padding_horizontal:4 ~background:"surface-container-low" ~corner_radius:28
+      [ button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+          ~width:48 ~height:48 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")
           ~accessibility_identifier:"button.composer.camera"
           ~on_press:(press send (Model.ChooseAttachment "camera")) [];
-        button ~variant:`outline ~grow:1.0 ~text:(View_base.tr (Signal.sample model_source) "Capture") ~label:(View_base.tr (Signal.sample model_source) "Capture")
+        button ~variant:`ghost ~grow:1.0 ~height:56 ~padding_horizontal:4
+          ~foreground:"muted-foreground" ~text_alignment:`start ~style_class:"body"
+          ~text:(View_base.tr (Signal.sample model_source) "Capture") ~label:(View_base.tr (Signal.sample model_source) "Capture")
           ~accessibility_identifier:"button.composer.expand"
           ~on_press:(press send Model.ExpandComposer) [] ]
   else
@@ -353,17 +357,22 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
         (collapsed_composer model_source context send);
     ]
 
-let outliner_task_status_row block_id status_source send : t =
+let outliner_task_status_row row_source status_source send : t =
   let status = Signal.sample status_source in
   menu_item
-    ~text_signal:(reactive View_base.task_status_title status_source)
+    ~text:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
+    ~selected:(reactive (fun (row : Model.outline_row) ->
+      Option.fold ~none:false
+        ~some:(fun (selected : Model.task_status) -> selected.uuid = status.uuid)
+        row.row_status) row_source)
     ~accessibility_identifier:
       (View_base.outliner_task_status_option_identifier status)
     ~on_press:(fun _ ->
       ignore
         (send
            (Model.SetOutlinerTaskStatus
-              (block_id, (Signal.sample status_source).uuid))))
+              (View_base.outliner_row_uuid (Signal.sample row_source),
+               (Signal.sample status_source).uuid))))
     []
