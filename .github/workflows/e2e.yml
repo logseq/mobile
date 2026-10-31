@@ -298,6 +298,7 @@ jobs:
           restore-keys: |
             ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
             ios-build-v2-${{ runner.os }}-xcode26.3-
+            ios-build-artifacts-${{ runner.os }}-xcode26.3-
 
       - name: Build iOS app for the simulator
         run: |
@@ -349,6 +350,7 @@ jobs:
           xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR_UDID" -b
 
       - name: Run iOS e2e module
+        timeout-minutes: ${{ env.IOS_MODULE == 'smoke' && 10 || 60 }}
         run: |
           eval $(opam env)
           export LOGSEQ_OPAM_SWITCH="$(opam switch show)"

@@ -153,7 +153,8 @@ appId: com.logseq.logseq
 - tapOn:
     retryTapIfNoChange: false
     id: button.search
-- assertVisible: Search pages and blocks
+- assertVisible:
+    id: screen.search
 - takeScreenshot: native-search-close-button
 - tapOn:
     retryTapIfNoChange: false

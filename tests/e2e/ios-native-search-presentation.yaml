@@ -7,9 +7,9 @@ appId: com.logseq.logseq
     timeout: 30000
 - tapOn:
     id: "button.search"
-- assertVisible: "Search pages and blocks"
-- tapOn:
-    id: "button.search.close"
+- assertVisible:
+    id: "screen.search"
+- tapOn: "close"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"
