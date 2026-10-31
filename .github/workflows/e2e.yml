@@ -289,8 +289,7 @@ jobs:
           key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
 
       - name: Restore iOS build artifacts
-        # SwiftPM + xcodebuild products; stale objects are harmless — the
-        # build only reuses what still matches.
+        # Dune databases reference .actions dependency records; restore both.
         id: ios-build-artifacts
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
@@ -299,15 +298,16 @@ jobs:
             apple/.build
             _build/.db
             _build/.digest-db
+            _build/.actions
             _build/default
             _build/mobile_host
             _build/ios_simulator
             _build/ios-core
             ~/.cache/dune
-          key: ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-${{ github.sha }}
+          key: ios-build-v3-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            ios-build-v2-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
-            ios-build-v2-${{ runner.os }}-xcode26.3-
+            ios-build-v3-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
+            ios-build-v3-${{ runner.os }}-xcode26.3-
 
       - name: Restore legacy SwiftPM artifacts on a cold build cache
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && steps.ios-build-artifacts.outputs.cache-matched-key == ''
@@ -350,6 +350,7 @@ jobs:
             apple/.build
             _build/.db
             _build/.digest-db
+            _build/.actions
             _build/default
             _build/mobile_host
             _build/ios_simulator
