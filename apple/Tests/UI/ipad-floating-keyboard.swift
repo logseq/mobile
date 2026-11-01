@@ -59,12 +59,37 @@ import UIKit
                   abs(try toolbarFrame().maxY - keyboard.minY) < 24 else {
                 throw failure("The docked keyboard must keep the editor toolbar above it: keyboard=\(String(describing: samples.frames.last)) toolbar=\(String(describing: try? toolbarFrame()))")
             }
+            func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+            let nativeViews = views(window)
+            guard let titleID = backend.rootIDs.flatMap(nodes).first(where: {
+                backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue == "title.selected-page"
+            }), let title = frames[titleID],
+                  let editor = nativeViews.compactMap({ $0 as? UITextView }).first(where: {
+                      $0.accessibilityIdentifier == "field.outliner.block.editor" && $0.isFirstResponder
+                  }), let selection = editor.selectedTextRange else {
+                throw failure("The docked keyboard check requires a page title and focused outliner editor")
+            }
+            let editorFrame = editor.convert(editor.bounds, to: window)
+            let caret = editor.convert(editor.caretRect(for: selection.end), to: window)
+            guard let navigationBottom = nativeViews.compactMap({ $0 as? UINavigationBar })
+                .filter({ !$0.isHidden && $0.alpha > 0 })
+                .map({ $0.convert($0.bounds, to: window) })
+                .filter({ $0.height > 0 && $0.minX <= editorFrame.midX && $0.maxX >= editorFrame.midX })
+                .map(\.maxY).max() else {
+                throw failure("Missing native navigation bar above the focused editor")
+            }
+            let toolbar = try toolbarFrame()
+            guard [title, editorFrame, caret].allSatisfy({
+                $0.height > 0 && $0.minY >= navigationBottom - 1 && $0.maxY <= toolbar.minY + 1
+            }) else {
+                throw failure("Docked keyboard obscures title/editor/caret: title=\(title) editor=\(editorFrame) caret=\(caret) navigationBottom=\(navigationBottom) toolbar=\(toolbar)")
+            }
             window.endEditing(true)
             try await Task.sleep(for: .milliseconds(800))
             guard try toolbarFrame().maxY >= window.bounds.maxY - window.safeAreaInsets.bottom - 24 else {
                 throw failure("Hiding the keyboard must return the editor toolbar to the bottom")
             }
-            print("PASS: docked and dismissed keyboards preserve the editor toolbar position")
+            print("PASS: docked keyboard preserves title/editor/caret visibility and dismissed keyboard restores toolbar")
             return
         }
         print("READY: float the iPad software keyboard and move it twice")
