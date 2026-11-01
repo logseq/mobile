@@ -144,6 +144,8 @@ let local_input set = function Lui_protocol.TextChanged (_, value) -> set value 
 let list_take count values = List.filteri (fun index _ -> index < count) values
 
 type saved_view = {id : string; name : string; typ : string; data : Json.t}
+let saved_view_title current view =
+  if String.trim view.name = "" then View_base.tr current "New view" else view.name
 let saved_views_json json =
   try json |> jfield "views" |> jlist |> List.mapi (fun index data ->
     let id = jtext (jfield "uuid" data) in
@@ -932,11 +934,11 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
         (if feature = "query-result" then results_toggle () else
           row ~grow:1.0 ~cross:`center [
             View_base.with_string_prop TextAlignment "start"
-              (menu ~text_signal:(own (Signal.map (fun view -> view.name) view_source))
+              (menu ~text_signal:(own (Signal.map2 saved_view_title model_source view_source))
               ~label:(View_base.tr (Signal.sample model_source) "Views") ~accessibility_identifier:("view.select." ^ owner) [
               keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
                 let saved = Signal.sample source in
-                menu_item ~text_signal:(own (Signal.map (fun view -> view.name) source))
+                menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
                   ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
                   ~on_press:(fun _ -> Signal.set active saved.id) [])]);
             box ~grow:1.0 []]);
@@ -957,7 +959,7 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
             submenu ~text:(View_base.tr (Signal.sample model_source) "Saved views") [
               keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
                 let saved = Signal.sample source in
-                menu_item ~text_signal:(own (Signal.map (fun view -> view.name) source))
+                menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
                   ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
                   ~on_press:(fun _ -> Signal.set active saved.id) [])]
           ] else []) @ List.map (fun (typ, title) -> menu_item ~text:title ~icon:(`app ("view-" ^ typ))
