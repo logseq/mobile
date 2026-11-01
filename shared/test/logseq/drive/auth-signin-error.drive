@@ -1,7 +1,11 @@
-# Signed-out mount with a failing host: pressing sign-in resolves the effect
-# with an error that is reported through the host diagnostic path.
+# The shared LUI form submits credentials through the native HTTPS adapter.
 expect prop:accessibility-identifier=screen.authentication
-press prop:accessibility-identifier=button.hosted-sign-in
-expect-absent prop:accessibility-identifier=text.authentication-error
+press prop:accessibility-identifier=button.sign-in
+expect prop:accessibility-identifier=sheet.authentication
+type prop:accessibility-identifier=field.auth.email "test@example.com"
+type prop:accessibility-identifier=field.auth.password "fixture-password"
+press prop:accessibility-identifier=button.auth.submit
+expect prop:accessibility-identifier=auth.error
+expect prop:accessibility-identifier=sheet.authentication
 expect prop:accessibility-identifier=screen.authentication
 expect-absent prop:accessibility-identifier=button.graph-add

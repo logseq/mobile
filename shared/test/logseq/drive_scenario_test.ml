@@ -154,18 +154,14 @@ let host_responses host model =
              (List.map (fun (g : Model.graph) -> g.id) host.graphs)
         :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
         :: resolved
-      | Model.SignInEffect id ->
+      | Model.SignInEffect (id, _) ->
         if host.fail_sign_in then
-          [
-            Model.DequeueEffect id;
-            Model.ResolveEffect (id, false, "invalid credentials");
-          ]
+          [Model.DequeueEffect id; Model.ResolveEffect (id, true, "{\"__type\":\"NotAuthorizedException\"}")]
         else
-          Model.DequeueEffect id
-          :: Model.ApplyLocalGraphIds
-               (List.map (fun (g : Model.graph) -> g.id) host.graphs)
-          :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
-          :: resolved
+          [Model.DequeueEffect id;
+           Model.ApplyLocalGraphIds (List.map (fun (g : Model.graph) -> g.id) host.graphs);
+           Model.ApplyCoreSnapshot (catalog_projection host.graphs);
+           Model.ResolveEffect (id, true, "{\"signedIn\":true}")]
       | Model.SignOutEffect id -> Model.DequeueEffect id :: resolved
       | Model.SyncNowEffect id | Model.SyncPendingEffect id ->
         Model.DequeueEffect id

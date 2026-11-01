@@ -1509,7 +1509,7 @@ let graph_picker_screen_visible_ (current : Model.logseq_model) =
   && not (authentication_screen_visible_ current)
 
 let authentication_signing_in_ (current : Model.logseq_model) =
-  current.authentication_state = "signingIn"
+  current.authentication_state = "signingIn" || Model.sign_in_active_ current
 
 let authentication_error_present_ (current : Model.logseq_model) =
   match current.authentication_error with

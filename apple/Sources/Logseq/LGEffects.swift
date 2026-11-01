@@ -110,7 +110,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let persistComposerDraft: @MainActor (String) -> Void
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
-    private let signIn: (@MainActor () async -> String?)?
+    private let signIn: (@MainActor (String) async throws -> String)?
     private let signOut: @MainActor () async -> Void
     private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
@@ -127,7 +127,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         persistComposerDraft: @escaping @MainActor (String) -> Void = { _ in },
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
-        signIn: (@MainActor () async -> String?)? = nil,
+        signIn: (@MainActor (String) async throws -> String)? = nil,
         signOut: @escaping @MainActor () async -> Void,
         openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
@@ -230,22 +230,12 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                 guard let signIn else {
                     return LGEffectResolution(
                         succeeded: false,
-                        message: "Hosted sign-in is unavailable",
+                        message: "Authentication is unavailable",
                         output: .discard
                     )
                 }
-                if let message = await signIn() {
-                    return LGEffectResolution(
-                        succeeded: false,
-                        message: message,
-                        output: .discard
-                    )
-                }
-                return LGEffectResolution(
-                    succeeded: true,
-                    message: "",
-                    output: .discard
-                )
+                let response = try await signIn(effect.text)
+                return LGEffectResolution(succeeded: true, message: response, output: .discard)
             case "sign-out":
                 await signOut()
                 return LGEffectResolution(

@@ -35,7 +35,7 @@ else
   adb -s "$device" pull "$remote_png" "$png_file" >/dev/null
 fi
 
-button_node=$(rg -o 'resource-id="button.hosted-sign-in"[^>]*bounds="\[[^"]+' "$xml_file")
+button_node=$(rg -o 'resource-id="button.sign-in"[^>]*bounds="\[[^"]+' "$xml_file")
 [[ -n $button_node ]] || die "hosted sign-in button was not found in the Android UI tree"
 bounds=$(sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"$button_node")
 read -r left top right bottom <<<"$bounds"

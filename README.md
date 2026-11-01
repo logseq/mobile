@@ -175,10 +175,13 @@ server snapshot. The CLI comparison excludes its derived `block/refs` and local
 includes every datom. Each run retains its seed, operation trace, summary, and confirmed UI
 snapshot under the temporary fixture directory. Stop the fixture with Ctrl-C.
 
-Authentication uses Cognito Hosted UI authorization-code flow with PKCE. Apple
-uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
-in the platform secure store, so neither client depends on Amplify or the AWS
-SDK.
+Authentication uses shared LUI forms and a shared OCaml Cognito state machine
+for email/password login, sign-up and email confirmation, password recovery, and
+MFA challenges. The native adapters call the Cognito User Pools JSON HTTPS API
+and keep tokens in Keychain (Apple) or Keystore-backed encrypted storage
+(Android). Neither client uses Hosted UI, a browser callback, Amplify, or an AWS SDK.
+The public Cognito app client must enable `ALLOW_USER_PASSWORD_AUTH`; session
+refresh uses `GetTokensFromRefreshToken` and sign-out uses `RevokeToken`.
 
 Graph sync uses one WebSocket connection for dev's `pull` / `pull/ok` journal
 and `tx/batch` uploads. Pending graph transactions never use the HTTP upload API;
@@ -201,6 +204,5 @@ verbatim from Logseq dev commit `53952776ef10805cba03009d444cf021f0d2c3ce`.
 the same command without `--check` regenerates it. Mobile platform adapters are
 kept in `scripts/vendor-dev-sync-platform.ml`.
 
-The Cognito callback is `logseq://auth/callback`; sign-out uses
-`logseq://auth/logout`. Both URLs are registered in the Cognito app client's
-allowed callback and sign-out URLs.
+Cognito configuration contains only the region, user pool ID, and public app
+client ID. Hosted UI domains, OAuth scopes, and callback URLs are not required.

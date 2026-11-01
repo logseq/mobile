@@ -345,7 +345,7 @@ type logseq_effect =
   | RefreshRuntimeLogEffect of int * string * bool * bool
   | CopyRuntimeLogEffect of int * runtime_log_record list
   | ReportErrorEffect of int * string
-  | SignInEffect of int
+  | SignInEffect of int * string
   | SignOutEffect of int
 
 type logseq_model =
@@ -363,6 +363,7 @@ type logseq_model =
   ; graph_password : string
   ; authentication_state : string
   ; authentication_error : string option
+  ; authentication_form : Auth_flow.t
   ; sync_state : sync_state
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
@@ -572,6 +573,7 @@ type logseq_action =
   | ConfirmDeleteGraph
   | ApplyAuthentication of string * string option
   | SignIn
+  | AuthenticationForm of Auth_flow.action
   | ApplySettingsSnapshot of settings_projection
   | OpenConnectionMenu
   | CloseConnectionMenu
@@ -724,6 +726,7 @@ let initial () =
     graph_password = "";
     authentication_state = "restoring";
     authentication_error = None;
+    authentication_form = Auth_flow.initial;
     sync_state = OfflineState;
     applied_server_t = None;
     has_pending_semantic_operations = false;
@@ -920,7 +923,7 @@ let effect_id eff =
   | RefreshRuntimeLogEffect (id, _, _, _) -> id
   | CopyRuntimeLogEffect (id, _) -> id
   | ReportErrorEffect (id, _) -> id
-  | SignInEffect id -> id
+  | SignInEffect (id, _) -> id
   | SignOutEffect id -> id
 
 let effect_with_id effects target =
@@ -1643,11 +1646,9 @@ let composer_for_graph (current : logseq_model) graph_id =
 let resolve_failed_effect (current : logseq_model) eff message =
   match eff with
   | SignInEffect _ ->
-    {
-      current with
-      authentication_state = "signedOut";
-      authentication_error = Some message;
-    }
+    {current with authentication_state = "signedOut";
+      authentication_form = {current.authentication_form with pending = None;
+        error = Some "Could not connect. Check your connection and try again."}}
   | RefreshGraphsEffect _ ->
     { current with sync_state = FailedState message }
   | CreateGraphEffect _ when String.ends_with ~suffix:E2ee_keyring.password_required_message message ->
@@ -1698,11 +1699,12 @@ let resolve_successful_effect (current : logseq_model) eff message =
           current.composer_assets;
     }
   | SignInEffect _ ->
-    {
-      current with
-      authentication_state = "signedIn";
-      authentication_error = None;
-    }
+    let form, next, signed_in = Auth_flow.complete current.authentication_form message in
+    let updated = {current with authentication_form = form;
+      authentication_state = (if signed_in then "signedIn" else current.authentication_state);
+      authentication_error = None} in
+    (match next with None -> updated
+     | Some payload -> enqueue_effect updated (SignInEffect (updated.next_effect_id, payload)))
   | OpenGraphEffect (_, graph_id) ->
     let current = composer_for_graph current (Some graph_id) in
     (match graph_by_id current.graphs graph_id with
@@ -2434,12 +2436,13 @@ let rec update (current : logseq_model) action =
                :: List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback
            | _ -> resolved_current.result_view_feedback);
          effect_error =
-           (if succeeded || (match eff with LoadResultRowsEffect _ | LoadPropertyValuesEffect _ | ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
+           (if succeeded || (match eff with SignInEffect _ | LoadResultRowsEffect _ | LoadPropertyValuesEffect _ | ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
               | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message
               | _ -> false)
             then None else Some message);
          last_core_response =
-           (if succeeded then Some message else current.last_core_response);
+           (if (match eff with SignInEffect _ -> true | _ -> false) then current.last_core_response
+            else if succeeded then Some message else current.last_core_response);
        } in
        let resolved = match succeeded, eff, resolved.sync_state, resolved.outliner_editing with
          | true, SaveOutlinerEditingEffect (_, uuid), SyncingState, Some editing
@@ -2778,18 +2781,14 @@ let rec update (current : logseq_model) action =
         }
     else current
   | SignIn ->
-    if current.authentication_state = "signedOut" then begin
-      let updated =
-        {
-          current with
-          authentication_state = "signingIn";
-          authentication_error = None;
-        }
-      in
-      let id = updated.next_effect_id in
-      enqueue_effect updated (SignInEffect id)
-    end
-    else current
+    if current.authentication_state <> "signedOut" || sign_in_active_ current then current else
+    let form, _ = Auth_flow.update current.authentication_form Auth_flow.Open in
+    {current with authentication_form = form; settings_open = false; authentication_error = None}
+  | AuthenticationForm action ->
+    let form, request = Auth_flow.update current.authentication_form action in
+    let updated = {current with authentication_form = form} in
+    (match request with None -> updated
+     | Some payload -> enqueue_effect updated (SignInEffect (updated.next_effect_id, payload)))
   | ApplySettingsSnapshot settings ->
     {
       current with

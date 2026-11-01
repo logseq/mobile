@@ -150,7 +150,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose")
-    implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.pdf:pdf-compose:1.0.0-beta01")
     implementation("androidx.pdf:pdf-document-service:1.0.0-beta01")
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")

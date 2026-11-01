@@ -698,8 +698,8 @@ let settings_sign_out_row model_source (context : Lui_ui.ui_context) send : t =
       ~on_press:(press send Model.RequestSignOut)
       ~text:(View_base.tr (Signal.sample model_source) "Sign Out") []
 
-let sign_in_label model_source : t =
-  row ~gap:8 ~cross:`center [
+let sign_in_label ?(centered = false) model_source : t =
+  row ~main:(if centered then `center else `start) ~gap:8 ~cross:`center [
     if_ ~test:(Signal.map View_base.authentication_signing_in_ model_source)
       (spinner ~width:16 ~height:16 ~accessibility_identifier:"sign-in.loading" []);
     text ~value_signal:(Signal.map (fun current ->
@@ -710,7 +710,7 @@ let settings_account_row context model_source send : t =
   let signed_out = Signal.map View_base.authentication_required_ model_source in
   column ~gap:8 [
     if_ ~test:signed_out
-      (list_item ~accessibility_identifier:"button.hosted-sign-in"
+      (list_item ~accessibility_identifier:"button.sign-in"
          ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
          ~on_press:(press send Model.SignIn) [sign_in_label model_source]);
     if_ ~test:(Signal.map not signed_out) (settings_sign_out_row model_source context send);

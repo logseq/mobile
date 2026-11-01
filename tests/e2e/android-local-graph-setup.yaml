@@ -4,45 +4,27 @@ appId: com.logseq.app
 - runFlow:
     when:
       visible:
-        id: "button.hosted-sign-in"
+        id: "button.sign-in"
     commands:
       - tapOn:
-          id: "button.hosted-sign-in"
-      - runFlow:
-          when:
-            visible: "Use without an account"
-          commands:
-            - tapOn: "Use without an account"
+          id: "button.sign-in"
       - extendedWaitUntil:
           visible:
-            id: "signInFormUsername|screen.graph-picker|button.composer.expand"
-          timeout: 30000
-      # A retained browser session can complete sign-in without the form.
-      - runFlow:
-          when:
-            visible:
-              id: "signInFormUsername"
-          commands:
-            - tapOn:
-                id: "signInFormUsername"
-            - inputText: ${USERNAME}
-            - runFlow:
-                when:
-                  visible: "Try out your stylus"
-                commands:
-                  - tapOn: "Cancel"
-            - tapOn:
-                id: "signInFormPassword"
-            - inputText: ${PASSWORD}
-            - hideKeyboard
-            - extendedWaitUntil:
-                visible: "submit"
-                timeout: 10000
-            - tapOn: "submit"
-            - extendedWaitUntil:
-                visible:
-                  id: "screen.graph-picker|button.composer.expand"
-                timeout: 60000
+            id: "field.auth.email"
+          timeout: 10000
+      - tapOn:
+          id: "field.auth.email"
+      - inputText: ${USERNAME}
+      - tapOn:
+          id: "field.auth.password"
+      - inputText: ${PASSWORD}
+      - hideKeyboard
+      - tapOn:
+          id: "button.auth.submit"
+      - extendedWaitUntil:
+          visible:
+            id: "screen.graph-picker|button.composer.expand"
+          timeout: 60000
 - runFlow:
     when:
       visible:

@@ -16,11 +16,14 @@ let sign_in_resolve () =
   ignore (Lui_app.send app (Model.ApplyAuthentication ("signedOut", None)));
   ignore (Lui_app.flush app);
   ignore (Lui_app.send app Model.SignIn);
+  ignore (Lui_app.send app (Model.AuthenticationForm (Auth_flow.Edit ("email", "test@example.com"))));
+  ignore (Lui_app.send app (Model.AuthenticationForm (Auth_flow.Edit ("password", "password"))));
+  ignore (Lui_app.send app (Model.AuthenticationForm Auth_flow.Submit));
   ignore (Lui_app.flush app);
   let model = Drive.Session.read_model session in
   let sign_in_id =
     List.find_map
-      (fun eff -> match eff with Model.SignInEffect id -> Some id | _ -> None)
+      (fun eff -> match eff with Model.SignInEffect (id, _) -> Some id | _ -> None)
       (model.Model.pending_effects @ model.Model.in_flight_effects)
     |> Option.value ~default:(-1)
   in
@@ -34,7 +37,7 @@ let sign_in_resolve () =
           (Drive_scenario_test.catalog_projection graphs)));
   ignore (Lui_app.flush app);
   ignore (Lui_app.send app (Model.DequeueEffect sign_in_id));
-  ignore (Lui_app.send app (Model.ResolveEffect (sign_in_id, true, "")));
+  ignore (Lui_app.send app (Model.ResolveEffect (sign_in_id, true, "{\"signedIn\":true}")));
   ignore (Lui_app.flush app);
   Drive.Session.dispose session
 

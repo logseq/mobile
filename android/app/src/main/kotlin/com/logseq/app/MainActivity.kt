@@ -71,7 +71,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (runtime.authentication.handleCallback(intent.dataString)) return
         entryToken = java.util.UUID.randomUUID().toString()
         entryHandled = false
         enqueueIntent(intent)

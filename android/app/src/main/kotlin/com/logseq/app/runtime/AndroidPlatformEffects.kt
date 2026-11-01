@@ -13,7 +13,7 @@ import org.json.JSONObject
 internal interface AndroidAuthentication {
     fun hasStoredSession(): Boolean
     suspend fun restoreAccessToken(): String?
-    suspend fun signIn(): String
+    suspend fun signIn(request: String): String
     suspend fun signOut(): Unit
 }
 
@@ -22,7 +22,7 @@ internal class CognitoAndroidAuthentication(
 ) : AndroidAuthentication {
     override fun hasStoredSession(): Boolean = provider.hasStoredSession()
     override suspend fun restoreAccessToken(): String? = provider.apiToken()
-    override suspend fun signIn(): String = provider.signIn()
+    override suspend fun signIn(request: String): String = provider.authenticate(request)
     override suspend fun signOut() = provider.signOut()
 }
 
@@ -213,15 +213,7 @@ internal class AndroidPlatformEffects(
                 succeeded = platform.exportGraphDatabase(),
             )
             "sign-in" -> {
-                val token = authentication.signIn()
-                if (token.isBlank()) {
-                    NativeEffectResolution.Discard(
-                        succeeded = false,
-                        message = "Hosted sign-in did not return an access token",
-                    )
-                } else {
-                    NativeEffectResolution.Discard()
-                }
+                NativeEffectResolution.Discard(message = authentication.signIn(effect.text))
             }
             "sign-out" -> {
                 authentication.signOut()

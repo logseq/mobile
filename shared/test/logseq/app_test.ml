@@ -1930,52 +1930,18 @@ let settings_community_links_use_a_typed_platform_boundary () =
     "{\"id\":1,\"kind\":\"open-external-url\",\"text\":\"https://github.com/logseq/logseq\"}"
 
 let authentication_entry_is_lg_owned_and_idempotent () =
-  let signed_out =
-    Model.update (Model.initial ())
-      (Model.ApplyAuthentication ("signedOut", None))
-  in
-  let signing_in = Model.update signed_out Model.SignIn in
-  let duplicate = Model.update signing_in Model.SignIn in
-  let in_flight = Model.update signing_in (Model.DequeueEffect 1) in
-  let premature_host_failure =
-    Model.update in_flight
-      (Model.ApplyAuthentication
-         ("signedOut", Some "Authorization was cancelled"))
-  in
-  let failed =
-    Model.update in_flight
-      (Model.ResolveEffect (1, false, "Hosted sign-in was cancelled"))
-  in
-  let signed_in =
-    Model.update failed (Model.ApplyAuthentication ("signedIn", None))
-  in
-  let invalid =
-    Model.update signed_in
-      (Model.ApplyAuthentication ("unexpected", Some "bad"))
-  in
-  check_eq ~msg:"the platform can publish signed-out authentication"
-    signed_out.authentication_state "signedOut";
-  check_eq ~msg:"sign-in crosses one typed platform boundary"
-    signing_in.pending_effects
-    [ Model.SignInEffect 1 ];
-  check_eq ~msg:"LG disables repeated sign-in while Hosted UI is active"
-    signing_in.authentication_state "signingIn";
-  check_eq ~msg:"repeated sign-in requests are ignored" duplicate signing_in;
-  check_eq
-    ~msg:"host callbacks cannot re-enable sign-in before effect resolution"
-    premature_host_failure.authentication_state "signingIn";
-  check_eq ~msg:"failed Hosted UI returns to the signed-out screen"
-    failed.authentication_state "signedOut";
-  check_eq ~msg:"authentication failures remain visible in LG state"
-    failed.authentication_error
-    (Some "Hosted sign-in was cancelled");
-  check_eq ~msg:"successful authentication restores the application"
-    signed_in.authentication_state "signedIn";
-  check_eq ~msg:"unknown platform authentication states are rejected" invalid
-    signed_in;
-  check_eq ~msg:"Hosted UI uses a stable typed effect payload"
-    (Native_bridge.encode_effect (Model.SignInEffect 9))
-    "{\"id\":9,\"kind\":\"sign-in\",\"text\":\"\"}"
+  let signed_out = Model.update (Model.initial ()) (Model.ApplyAuthentication ("signedOut", None)) in
+  let opened = Model.update signed_out Model.SignIn in
+  let duplicate = Model.update opened Model.SignIn in
+  check ~msg:"LG opens the shared sign-in form" opened.authentication_form.opened;
+  check_eq ~msg:"opening the form does not call a browser" opened.pending_effects [];
+  check_eq ~msg:"repeated sign-in requests reuse the form" duplicate opened;
+  let signed_in = Model.update opened (Model.ApplyAuthentication ("signedIn", None)) in
+  let invalid = Model.update signed_in (Model.ApplyAuthentication ("unexpected", Some "bad")) in
+  check_eq ~msg:"unknown platform authentication states are rejected" invalid signed_in;
+  check_eq ~msg:"Cognito requests use a typed transport boundary"
+    (Native_bridge.encode_effect (Model.SignInEffect (9, "{}")))
+    "{\"id\":9,\"kind\":\"sign-in\",\"text\":\"{}\"}"
 
 let authentication_screen_renders_from_lg_state () =
   let application = App.create (ios_backend ()) in
@@ -1988,7 +1954,7 @@ let authentication_screen_renders_from_lg_state () =
     descendant_with_identifier renderer root "screen.authentication"
   in
   let sign_in =
-    descendant_with_identifier renderer root "button.hosted-sign-in"
+    descendant_with_identifier renderer root "button.sign-in"
   in
   check ~msg:"signed-out authentication renders the LG entry screen"
     (screen <> -1);
@@ -2032,27 +1998,14 @@ let authentication_screen_renders_from_lg_state () =
     (property_string renderer sign_in Lui_protocol.VariantValue)
     "primary";
   check_eq ~msg:"the signed-out action is enabled"
-    (descendant_enabled renderer root "button.hosted-sign-in")
+    (descendant_enabled renderer root "button.sign-in")
     (Some true);
   dispatch application (Lui_protocol.Press sign_in);
   flush application;
-  check_eq ~msg:"the button disables while Hosted UI is active"
-    (descendant_enabled renderer root "button.hosted-sign-in")
-    (Some false);
-  check ~msg:"the entry button shows progress while waiting for the auth callback"
-    (descendant_with_identifier renderer root "sign-in.loading" <> -1);
-  send application (Model.DequeueEffect 1);
-  send application
-    (Model.ResolveEffect (1, false, "Authorization was cancelled"));
-  flush application;
-  let error =
-    descendant_with_identifier renderer root "text.authentication-error"
-  in
-  check_eq ~msg:"authentication diagnostics do not render inside the page" error (-1);
-  check ~msg:"authentication diagnostics enter the host log"
-    (List.mem "Authorization was cancelled" (reported_errors (App.model application)));
-  check_eq ~msg:"a failed callback removes progress and allows retry"
-    (descendant_with_identifier renderer root "sign-in.loading") (-1);
+  check ~msg:"the entry presents a shared LUI form"
+    (descendant_with_identifier renderer root "sheet.authentication" <> -1);
+  check_eq ~msg:"opening a form does not start authentication" (App.model application).pending_effects [];
+  send application (Model.AuthenticationForm Auth_flow.Cancel);
   send application (Model.ApplyAuthentication ("signedIn", None));
   flush application;
   check_eq ~msg:"signed-in authentication dismisses the LG entry screen"
@@ -2087,34 +2040,19 @@ let local_graphs_remain_accessible_without_authentication () =
     flush application;
     let renderer = Lui_app.runtime application in
     let root = Lui_app.root_node application in
-    let sign_in = descendant_with_identifier renderer root "button.hosted-sign-in" in
+    let sign_in = descendant_with_identifier renderer root "button.sign-in" in
     check ~msg:"offline settings offer sign-in instead of sign-out" (sign_in <> -1);
     check_eq (descendant_with_identifier renderer root "button.sign-out") (-1);
-    let check_label expected =
-      let sign_in = descendant_with_identifier renderer root "button.hosted-sign-in" in
-      List.iter (fun label ->
-        check_eq ~msg:("the account action renders one current label: " ^ label)
-          (descendant_count_with_property_string renderer sign_in Lui_protocol.TextValue label)
-          (if label = expected then 1 else 0))
-        ["Sign in"; "Signing in…"]
-    in
-    check_label "Sign in";
     dispatch application (Lui_protocol.Press sign_in);
     flush application;
-    let id = List.find_map (function Model.SignInEffect id -> Some id | _ -> None)
-      (Lui_app.model application).pending_effects in
-    check ~msg:"sign-in remains reachable from an offline graph" (id <> None);
-    check ~msg:"settings show progress until the authentication callback arrives"
-      (descendant_with_identifier renderer root "sign-in.loading" <> -1);
-    check_eq (descendant_enabled renderer root "button.hosted-sign-in") (Some false);
-    check_label "Signing in…";
-    send application (Model.DequeueEffect (Option.get id));
-    send application (Model.ResolveEffect (Option.get id, false, "Authorization was cancelled"));
+    check ~msg:"offline graphs can open the shared login form"
+      (descendant_with_identifier renderer root "sheet.authentication" <> -1);
+    check ~msg:"opening the form does not authenticate"
+      (not (List.exists (function Model.SignInEffect _ -> true | _ -> false) (App.model application).pending_effects));
+    send application (Model.AuthenticationForm Auth_flow.Cancel);
     flush application;
-    check_eq (descendant_with_identifier renderer root "sign-in.loading") (-1);
-    check_eq ~msg:"a cancelled sign-in re-enables the settings button"
-      (descendant_enabled renderer root "button.hosted-sign-in") (Some true);
-    check_label "Sign in")
+    check ~msg:"dismissing sign-in leaves local journals mounted"
+      (descendant_with_identifier renderer root "pane.journals" <> -1))
     [ios_backend (); kotlin_backend ()]
 
 let sync_indicator_routes_to_sign_in_when_required () =
@@ -2136,7 +2074,7 @@ let sync_indicator_routes_to_sign_in_when_required () =
       dispatch application (Lui_protocol.Press indicator);
       flush application in
     let sign_in_ids () = List.filter_map (function
-      | Model.SignInEffect id -> Some id | _ -> None)
+      | Model.SignInEffect (id, _) -> Some id | _ -> None)
       (App.model application).pending_effects in
     List.iter (fun state ->
       send application (Model.ApplyAuthentication (state, None));
@@ -2147,23 +2085,20 @@ let sync_indicator_routes_to_sign_in_when_required () =
         (sign_in_ids ()) []) ["restoring"; "signingOut"; "signingIn"];
     send application (Model.ApplyAuthentication ("signedOut", None));
     press_indicator ();
-    check_eq ~msg:"the signed-out indicator starts hosted sign-in"
-      (App.model application).authentication_state "signingIn";
+    check ~msg:"the signed-out indicator opens the shared sign-in form"
+      (App.model application).authentication_form.opened;
     check ~msg:"sign-in replaces the sync status destination"
       (not (App.model application).sync_details_open);
-    let ids = sign_in_ids () in
-    check_eq ~msg:"one indicator press requests one authentication flow" (List.length ids) 1;
+    check_eq ~msg:"opening login does not call the host" (sign_in_ids ()) [];
     press_indicator ();
-    check_eq ~msg:"repeated indicator presses reuse the active authentication flow"
-      (sign_in_ids ()) ids;
-    let id = List.hd ids in
-    send application (Model.DequeueEffect id);
-    send application (Model.ResolveEffect (id, false, "Authorization was cancelled"));
-    press_indicator ();
-    check_eq ~msg:"cancelling sign-in permits another indicator retry" (List.length (sign_in_ids ())) 1;
+    check_eq (sign_in_ids ()) [];
+    send application (Model.AuthenticationForm (Auth_flow.Edit ("email", "test@example.com")));
+    send application (Model.AuthenticationForm (Auth_flow.Edit ("password", "password")));
+    send application (Model.AuthenticationForm Auth_flow.Submit);
+    flush application;
     let id = List.hd (sign_in_ids ()) in
     send application (Model.DequeueEffect id);
-    send application (Model.ResolveEffect (id, true, ""));
+    send application (Model.ResolveEffect (id, true, "{\"signedIn\":true}"));
     flush application;
     let ids = sign_in_ids () in
     press_indicator ();

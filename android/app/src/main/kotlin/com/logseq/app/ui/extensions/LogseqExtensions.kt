@@ -192,6 +192,13 @@ fun logseqExtensionRegistry(
     ) {
         OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
     }
+    register(
+        "native-auth-input",
+        "lui-extension-v1|17:native-auth-input|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:4:kind:string:required:none|events:",
+        acceptsStandardChildren = true,
+        properties = listOf(LuiExtensionProperty("kind", LuiExtensionValueKind.STRING, required = true)),
+        builder = { AuthInput(string("kind") ?: "text") { Children() } },
+    )
     registerTweak(
         "native-adaptive-insets",
         "lui-tweak-v1|22:native-adaptive-insets|profiles:android/kotlin,ios/swiftui|properties:10:breakpoint:int:required:none,10:wide-inset:int:required:none",

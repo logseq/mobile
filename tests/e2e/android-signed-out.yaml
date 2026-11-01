@@ -3,7 +3,7 @@ appId: com.logseq.app
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "button.hosted-sign-in"
+      id: "button.sign-in"
     # Cold-start on a CI emulator can take >5s for the core to boot.
     timeout: 30000
 - assertVisible: ".*Logseq.*"

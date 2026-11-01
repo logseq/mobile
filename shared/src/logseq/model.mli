@@ -342,7 +342,7 @@ type logseq_effect =
   | RefreshRuntimeLogEffect of int * string * bool * bool
   | CopyRuntimeLogEffect of int * runtime_log_record list
   | ReportErrorEffect of int * string
-  | SignInEffect of int
+  | SignInEffect of int * string
   | SignOutEffect of int
 
 type logseq_model =
@@ -360,6 +360,7 @@ type logseq_model =
   ; graph_password : string
   ; authentication_state : string
   ; authentication_error : string option
+  ; authentication_form : Auth_flow.t
   ; sync_state : sync_state
   ; applied_server_t : int option
   ; has_pending_semantic_operations : bool
@@ -569,6 +570,7 @@ type logseq_action =
   | ConfirmDeleteGraph
   | ApplyAuthentication of string * string option
   | SignIn
+  | AuthenticationForm of Auth_flow.action
   | ApplySettingsSnapshot of settings_projection
   | OpenConnectionMenu
   | CloseConnectionMenu

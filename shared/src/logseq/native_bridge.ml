@@ -469,8 +469,8 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted (encode_runtime_log_records records) ^ "}"
   | ReportErrorEffect (id, message) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"report-error\",\"text\":" ^ Lui_wire.quoted message ^ "}"
-  | SignInEffect id ->
-    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sign-in\",\"text\":\"\"}"
+  | SignInEffect (id, payload) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sign-in\",\"text\":" ^ Lui_wire.quoted payload ^ "}"
   | SignOutEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sign-out\",\"text\":\"\"}"
 

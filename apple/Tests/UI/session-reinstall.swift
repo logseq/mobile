@@ -21,8 +21,7 @@ import Security
             try store.save(CognitoStoredTokens(idToken: "reinstall-fixture", refreshToken: "fixture-refresh", expiresAt: .distantFuture))
         } else if phase == 2 {
             let provider = CognitoAuthProvider(region: "test", userPoolId: "test", appClientId: "test",
-                oauthDomain: "auth-test.invalid", redirectURI: "logseq://auth/callback",
-                logoutURI: "logseq://auth/logout", scopes: ["openid"], tokenStore: store)
+                tokenStore: store)
             let auth = LogseqAuthenticationStore(provider: provider)
             await auth.restore()
             guard auth.state == .signedIn, try await auth.apiToken() == "reinstall-fixture" else {

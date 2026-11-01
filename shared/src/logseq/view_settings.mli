@@ -49,7 +49,7 @@ val settings_editor_card : Model.logseq_model Signal.signal -> Lui_ui.ui_context
   bool Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val settings_export_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_runtime_log_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
-val sign_in_label : Model.logseq_model Signal.signal -> Lui_elements.t
+val sign_in_label : ?centered:bool -> Model.logseq_model Signal.signal -> Lui_elements.t
 val settings_sign_out_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_screen :
   Lui_ui.ui_context ->

@@ -5,7 +5,7 @@ public protocol LogseqCognitoProviding: Sendable {
     // Logseq APIs require Cognito ID-token identity claims, not access-token scopes.
     // Return nil for a missing or invalid session; throw when token retrieval fails.
     func apiToken() async throws -> String?
-    func signIn() async throws -> String
+    func authenticate(_ request: String) async throws -> String
     func signOut() async throws
 }
 
@@ -67,21 +67,17 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         }
     }
 
-    public func signIn() async {
-        state = .signingIn
-        errorMessage = nil
-        do {
-            let token = try await provider.signIn()
-            guard !token.isEmpty else {
-                throw LogseqAuthenticationError.notSignedIn
-            }
+    public func authenticate(_ request: String) async throws -> String {
+        let response = try await provider.authenticate(request)
+        if let value = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any],
+           value["signedIn"] as? Bool == true {
+            let token = try await provider.apiToken()
+            guard let token, !token.isEmpty else { throw LogseqAuthenticationError.notSignedIn }
             state = .signedIn
+            errorMessage = nil
             onAccessToken(token)
-        } catch {
-            state = .signedOut
-            errorMessage = error.localizedDescription
-            onAccessToken(nil)
         }
+        return response
     }
 
     public func signOut() async {

@@ -46,7 +46,7 @@ internal class LogseqRuntime(
     private var ownsCore = false
 
     val platformServices = AndroidPlatformServices(activity)
-    val authentication = CognitoAuthProvider(activity.applicationContext, activity)
+    val authentication = CognitoAuthProvider(activity.applicationContext)
     val assetImporter = AndroidAssetImporter(activity, scope)
     val audioRecorder = AndroidAudioRecorder(activity)
     val audioPlayer = AndroidAudioPlayer(activity)
@@ -481,7 +481,8 @@ internal class LogseqRuntime(
                 runCoreRestore(hasAuthenticatedSession, storage.copy(selectedGraphId = ""))
             }
         }
-        if (effect.kind == "sign-in" && resolution.succeeded) {
+        if (effect.kind == "sign-in" && resolution.succeeded &&
+            runCatching { JSONObject(resolution.message).optBoolean("signedIn") }.getOrDefault(false)) {
             restoreCore(hasStoredSession = true)
         }
         if (effect.kind == "sign-out" && resolution.succeeded) {

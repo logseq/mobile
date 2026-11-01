@@ -100,20 +100,9 @@ class AndroidBackgroundSyncTest {
         }
     }
 
-    @Suppress("DEPRECATION")
     @Test fun failedTokenRefreshKeepsStoredCredentialsForTheNextAttempt(): Unit = runBlocking {
         prepare(18790, expiresAtMillis = 0)
-        val json = base.resources.openRawResource(R.raw.logseq_auth).bufferedReader().use { JSONObject(it.readText()) }
-            .put("oauthDomain", "127.0.0.1:1").toString()
-        val resources = object : android.content.res.Resources(base.assets, base.resources.displayMetrics, base.resources.configuration) {
-            override fun openRawResource(id: Int): java.io.InputStream = if (id == R.raw.logseq_auth)
-                java.io.ByteArrayInputStream(json.toByteArray()) else base.resources.openRawResource(id)
-        }
-        val context = object : ContextWrapper(isolated) {
-            override fun getApplicationContext(): Context = this
-            override fun getResources() = resources
-        }
-        val auth = CognitoAuthProvider(context)
+        val auth = CognitoAuthProvider(isolated, CognitoUserPool("test", "test", "http://127.0.0.1:1/"))
         assertTrue(auth.hasStoredSession())
         try { auth.apiToken(); fail("The offline refresh should fail") } catch (_: java.io.IOException) { }
         assertTrue("A temporary network error must retain the encrypted refresh token", auth.hasStoredSession())

@@ -1,5 +1,6 @@
 """Link a Swift async check against the simulator app; never uses XCTest."""
 import os
+import json
 from pathlib import Path
 import plistlib
 import shutil
@@ -70,7 +71,9 @@ import SwiftUI
         testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
         testing_args = []
         if testing:
-            objects += [str(path) for path in sorted((BUILD / "LogseqTests.build").glob("*.o"))]
+            object_map = json.loads((BUILD / "LogseqTests.build/output-file-map.json").read_text())
+            objects += sorted(value["object"] for source, value in object_map.items()
+                              if source and "object" in value)
             developer = Path(subprocess.check_output(["xcode-select", "-p"], text=True).strip())
             frameworks = developer / "Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks"
             testing_args = ["-F", str(frameworks), "-framework", "Testing",

@@ -1,10 +1,10 @@
-# Signed-out mount: the authentication screen renders the logo/title/tagline
-# and the hosted sign-in button; pressing it resolves SignInEffect and lands
-# on the graph picker.
+# The shared LUI form submits credentials through the native HTTPS adapter.
 expect prop:accessibility-identifier=screen.authentication
-expect prop:accessibility-identifier=button.hosted-sign-in
-expect-absent prop:accessibility-identifier=button.graph-add
-expect-absent prop:accessibility-identifier=text.authentication-error
-press prop:accessibility-identifier=button.hosted-sign-in
+press prop:accessibility-identifier=button.sign-in
+expect prop:accessibility-identifier=sheet.authentication
+type prop:accessibility-identifier=field.auth.email "test@example.com"
+type prop:accessibility-identifier=field.auth.password "fixture-password"
+press prop:accessibility-identifier=button.auth.submit
 wait prop:accessibility-identifier=button.graph-add
 expect-absent prop:accessibility-identifier=screen.authentication
+expect-absent prop:accessibility-identifier=sheet.authentication
