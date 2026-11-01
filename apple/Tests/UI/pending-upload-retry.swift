@@ -73,6 +73,7 @@ private final class CoreHost: @unchecked Sendable {
             })
         }
         for name in ["interrupted", "lost-response"] {
+            let previousLogID = LogseqRuntimeLog.shared.records().last?.id ?? 0
             let pump = try store(name)
             await pump.syncPendingForBackground()
             precondition(pump.syncError == nil, "The shared retry must recover the upload")
@@ -81,7 +82,9 @@ private final class CoreHost: @unchecked Sendable {
             let (actual, response) = try await URLSession.shared.data(for: download)
             precondition((response as! HTTPURLResponse).statusCode == 200 && actual == bytes,
                          "Retry must preserve the original image bytes and asset UUID")
-            print("PASS: \(name) recovered through the shared core without recapturing the image")
+            let errors = LogseqRuntimeLog.shared.records(errorsOnly: true).filter { $0.id > previousLogID }
+            precondition(errors.isEmpty, "Recovered uploads must not emit failure toasts while retrying")
+            print("PASS: \(name) recovered through the shared core without failure feedback or recapturing the image")
         }
         let rejected = try store("forbidden")
         await rejected.syncPendingForBackground()

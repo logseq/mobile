@@ -255,8 +255,70 @@ let late_completions_after_server_confirmation_do_not_stall_sync () =
         check_eq (remaining ()) []
       end)) [true;false]) [1;3]
 
+let ten_composer_photos_recover_after_interrupted_upload encrypted () =
+  with_session (fun session graph runtime path conn ->
+    ignore (Datascript.reset_conn conn (Result_view_test.fixture ()));
+    Runtime.rebase runtime 42 [] [];
+    let session = {session with Session_types.host = {session.host with
+      import_asset_file = (fun _ path -> Ok path);
+      journal_page_id = Some (fun _ -> Some Query_block_test.page);
+      encrypt_asset_file = Some (fun _ path -> Ok (path ^ ".encrypted", 2048));
+      cleanup_file = (fun _ -> ())}} in
+    if encrypted then begin
+      let current = !(session.Session_types.state) in
+      session.state := {current with available_graphs = Api.graphs_from_graphs_body
+        {|{"graphs":[{"graph-id":"plain-1","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}}
+    end;
+    for index = 1 to 10 do
+      let response = dispatch_json session "addAsset" (Json.to_string (`Assoc [
+        "uuid", `String (uuid index); "title", `String "Photo.png";
+        "now", `Int (100 + index); "assetType", `String "png";
+        "assetSize", `Int 2048; "assetChecksum", `String (string_of_int index);
+        "localPath", `String ("Assets/" ^ uuid index ^ ".png")])) in
+      check_eq ~msg:(Json.to_string response) (member "ok" response) (`Bool true)
+    done;
+    let failed = ref None and uploaded = ref [] in
+    let rec drain response = match next response with
+      | `Null -> ()
+      | request ->
+        let after = if member "method" request = `String "WS" then
+            ack session (request_from response)
+          else if !failed = None then begin
+            failed := Some request;
+            let last = ref response in
+            for attempt = 1 to 4 do
+              last := pending_completion session request `Null `Null (`String "The network connection was lost.");
+              if attempt < 4 then begin
+                check_eq ~msg:"An upload awaiting automatic retry is still syncing, not failed"
+                  (member "pendingSyncError" !last) `Null;
+                check_eq ~msg:"Transient retries must not persist a graph failure"
+                  (Mobile_graph.sync_error graph) None
+              end
+            done;
+            !last
+          end else begin
+            uploaded := member "url" request :: !uploaded;
+            pending_completion session request (`Int 200) (`String "{}") `Null
+          end in
+        drain after
+    in
+    drain (response_result (dispatch_json session "beginPendingSync" ""));
+    check_eq ~msg:"One failed photo must not stop the other nine uploads" (List.length !uploaded) 9;
+    check_eq ~msg:"Only the failed photo remains unsynchronized" (List.length (Ops.list path)) 1;
+    let retry = response_result (dispatch_json session "beginPendingSync" "") in
+    let request = required_pending retry in
+    check_eq ~msg:"Retry uses the original photo identity" (member "url" request) (member "url" (Option.get !failed));
+    drain retry;
+    check_eq ~msg:"Retry clears the persisted error" (Mobile_graph.sync_error graph) None;
+    check_eq (Ops.list path) [];
+    for index = 1 to 10 do
+      check ~msg:"All ten photos remain in the graph" (Datascript.entid (Runtime.db runtime) "block/uuid" (Datascript.Uuid (uuid index)) <> None)
+    done)
+
 let cases =
-  [ case "late completions after server confirmation do not stall sync" late_completions_after_server_confirmation_do_not_stall_sync;
+  [ case "ten composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload false);
+    case "ten encrypted composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload true);
+    case "late completions after server confirmation do not stall sync" late_completions_after_server_confirmation_do_not_stall_sync;
     case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
     case "dependent creations share a batch" dependent_creations_share_a_batch;
     case "backlogs split at 50 operations" splits_backlogs_into_bounded_batches;

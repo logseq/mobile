@@ -152,7 +152,7 @@ public enum LogseqPendingSyncHTTPTransport {
             let responseBody = String(data: data, encoding: .utf8) ?? ""
             if !(200..<300).contains(http.statusCode) {
                 LogseqRuntimeLog.shared.append(
-                    level: .error,
+                    level: .info,
                     source: .core,
                     message: "Pending sync HTTP \(http.statusCode): \(responseBody)"
                 )
@@ -174,8 +174,10 @@ public enum LogseqPendingSyncHTTPTransport {
                 error: nil
             )
         } catch {
+            // The shared pump owns retries and reports terminal failures. A
+            // single interrupted attempt must not produce a failure toast.
             LogseqRuntimeLog.shared.append(
-                level: .error,
+                level: .info,
                 source: .core,
                 message: "Pending sync transport failed: \(error)"
             )

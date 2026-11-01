@@ -732,11 +732,12 @@ let complete_pending_sync (session : Types.session) payload =
     let attempt = match (Types.state session).pending_retry with
       | Some retry when retry.request_id = expected -> retry.attempt
       | _ -> 0 in
-    let result = if transient && attempt < 3 then begin
+    let retrying = transient && attempt < 3 in
+    let result = if retrying then begin
       session.state := { !(session.state) with
         pending_retry = Some { Types.request_id = expected; attempt = attempt + 1;
           delay_ms = 1000 lsl attempt };
-        pending_sync_error = completion_failure input };
+        pending_sync_error = None };
       Ok ()
     end else begin
       let* () = handle () in
@@ -744,7 +745,10 @@ let complete_pending_sync (session : Types.session) payload =
         pending_sync_error = completion_failure input };
       Ok ()
     end in
-    let failure = match result with Ok () -> completion_failure input | Error message -> Some message in
+    let failure = match result with
+      | Ok () when retrying -> None
+      | Ok () -> completion_failure input
+      | Error message -> Some message in
     session.state := { !(session.state) with pending_sync_error = failure };
     if not semantic || (transient && attempt < 3) || Result.is_error result then
       List.iter (fun failure_id ->
