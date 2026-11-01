@@ -53,7 +53,7 @@ import UIKit
             }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent(name + ".png"))
         }
-        guard let email = views(window).compactMap({ $0 as? UITextField }).first(where: { $0.placeholder == "Email" }),
+        guard let email = views(window).compactMap({ $0 as? UITextField }).first(where: { $0.keyboardType == .emailAddress }),
               let password = views(window).compactMap({ $0 as? UITextField }).first(where: { $0.isSecureTextEntry }) else {
             throw NSError(domain: "NativeAuthFieldsMissing", code: 1)
         }
@@ -93,6 +93,7 @@ import UIKit
         try await wait("Valid credentials enable submission") {
             find("button.auth.submit").flatMap { backend.model(id: $0) }?.isEnabled == true
         }
+        try save("auth-login-enabled")
         try backend.performPress(node: find("button.auth.submit")!)
         try await wait("The request must show progress and prevent duplicate submissions") {
             guard let button = find("button.auth.submit") else { return false }
