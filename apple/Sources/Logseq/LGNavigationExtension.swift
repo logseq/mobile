@@ -48,8 +48,8 @@ private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
             marker?.removeFromSuperview()
             marker = nil
             guard let host = window?.rootViewController?.view else { return }
-            // Observe the root view's docked guide; the rendered content may already
-            // have been resized by SwiftUI's floating-keyboard avoidance.
+            // Observe the root view's docked guide to distinguish full-size
+            // keyboards from floating keyboards without following the latter.
             host.keyboardLayoutGuide.followsUndockedKeyboard = false
             let marker = Marker { [weak self] inset in self?.update(inset) }
             marker.translatesAutoresizingMaskIntoConstraints = false
@@ -661,8 +661,9 @@ private struct LGNavigationContent: View {
                 }
             }
             #if os(iOS)
-            .padding(.bottom, hasCollapsedComposer ? 0 : dockedKeyboardInset)
-            .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer ? .bottom : [])
+            // Docked keyboards already resize the native navigation container.
+            // Only floating keyboards bypass avoidance to keep the toolbar fixed.
+            .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer && dockedKeyboardInset == 0 ? .bottom : [])
             .background {
                 if UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer {
                     LGDockedKeyboardInsetReader { dockedKeyboardInset = $0 }
