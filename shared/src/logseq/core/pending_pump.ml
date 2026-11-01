@@ -164,7 +164,9 @@ let prepare_pending_creation session (pump : Types.pending_sync) (block : Model.
        | None -> None)
 
 let prepare_pending_block session (pump : Types.pending_sync) (block : Model.block) =
-  if Hashtbl.mem pump.Types.authoritative block.uuid then begin
+  if block.Model.is_asset then
+    prepare_pending_create_request session pump block block.title (Some block.page_id)
+  else if Hashtbl.mem pump.Types.authoritative block.uuid then begin
     let ( let* ) = Result.bind in
     let* title =
       if So.selected_graph_is_encrypted session then
@@ -469,17 +471,7 @@ let rec complete_pending_active session (pump : Types.pending_sync)
                ^ " message=" ^ message);
             finish_pending_block session pump block false
           | Ok () ->
-            let queue = (Types.state session).semantic_queue in
-            let is_asset (pending : Types.semantic_pending) =
-              pending.operation.operation_id = operation.Ops.operation_id
-            in
-            session.state :=
-              {
-                !(session.state) with
-                semantic_queue =
-                  List.filter is_asset queue
-                  @ List.filter (fun p -> not (is_asset p)) queue;
-              };
+            restore_semantic_queue session;
             finish_pending_block session pump block true;
             activate_semantic_request session pump.config None))
     | Types.Create_block block ->
