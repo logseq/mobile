@@ -120,6 +120,8 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
       Graph_runtime.rebase runtime 44 [] [row];
       ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
       check ~msg:"a graph revision invalidates windows even when the first rows did not change" (pending () <> []);
+      check ~msg:"a same-query refresh keeps the presented viewport mounted until its replacement is ready"
+        (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
       drain ();
       check_eq ~msg:"the current viewport receives revised data without returning to the first row"
         (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue) "Revised far row";

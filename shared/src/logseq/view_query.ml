@@ -728,14 +728,22 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
     let start = jint (jfield "rowOffset" data) and count = row_count data in
     jtext (jfield "input" data) = input && start <= offset &&
     start + List.length (jlist (jfield "rows" data)) >= min count (offset + limit) in
+  let visible_overlap data =
+    let first, last = !viewport in
+    let start = jint (jfield "rowOffset" data) in
+    max 0 (min (last + 1) (start + List.length (jlist (jfield "rows" data))) - max first start) in
   let drive ((view, input), ((offset, limit), (model, _))) =
     if jfield "rowsDeferred" view.data <> `Bool true then Signal.set page view else (
       let reset = input <> !previous_input || jfield "sorting" view.data <> jfield "sorting" (!previous).data
         || jfield "filters" view.data <> jfield "filters" (!previous).data || view.typ <> (!previous).typ in
-      if reset then Signal.set range (0, 12);
+      if reset then (viewport := (0, 11); Signal.set range (0, 12));
       previous_input := input;
       if not (Json.equal view.data (!previous).data) then (
-        previous := view; incr generation; requested := None; Signal.set page view);
+        previous := view; incr generation; requested := None;
+        (* Keep the presented window during same-query revalidation. *)
+        if reset || initial_model.Model.selected_graph_id <> model.Model.selected_graph_id
+          || row_count view.data <= fst !viewport || jfield "error" view.data <> `Null
+        then Signal.set page view);
       let offset, limit = if reset then 0, 12 else offset, limit in
       let generation_prefix = prefix ^ string_of_int !generation ^ ":" in
       let key = generation_prefix ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
@@ -743,10 +751,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       let overlap data =
         if jtext (jfield "input" data) <> input
           || jfield "revision" data <> jfield "revision" view.data then 0
-        else
-          let first, last = !viewport in
-          let start = jint (jfield "rowOffset" data) in
-          max 0 (min (last + 1) (start + List.length (jlist (jfield "rows" data))) - max first start) in
+        else visible_overlap data in
       let candidate = match List.assoc_opt key model.Model.result_row_windows with
         | Some raw -> (try Some (Json.from_string raw) with _ -> None)
         | None when jfield "revision" current.data = jfield "revision" view.data
@@ -758,7 +763,8 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       Signal.set error failure;
       Signal.set loading (candidate = None && failure = "" && jlist (jfield "rows" current.data) = []);
       match candidate with
-      | Some data -> if overlap data >= overlap current.data && not (Json.equal data current.data)
+      | Some data -> if (overlap data > 0 || visible_overlap current.data = 0)
+          && overlap data >= overlap current.data && not (Json.equal data current.data)
         then Signal.set page {view with data}
       | None ->
         (match !requested with
