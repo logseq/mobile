@@ -115,6 +115,18 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
         (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
       check ~msg:"the first window no longer owns UI cells"
         (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") = -1);
+      let base = D.conn_db conn in
+      List.iter (fun title ->
+        ignore (D.reset_conn_bang conn (D.db_with [Q.put R.table_view "block/title" (D.String title);
+          Q.put row "block/title" (D.String title)] base));
+        Graph_runtime.rebase runtime 43 [] [R.table_view; row];
+        ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
+        check ~msg:"projection refresh keeps the presented rows mounted"
+          (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
+        drain ();
+        check_eq ~msg:"a changed projection updates visible cells even at the same transaction number"
+          (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue)
+          title) ["Projection A"; "Projection B"];
       let id = Option.get (D.entid (Graph_runtime.db runtime) "block/uuid" (D.Uuid row)) in
       ignore (D.transact_conn conn [D.Add (D.Entity_id id, "block/title", D.String "Revised far row")]);
       Graph_runtime.rebase runtime 44 [] [row];
