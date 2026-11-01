@@ -13,5 +13,10 @@
     "version": "2.9.0",
     "url": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.9.0.tgz",
     "sha256": "28a6e556d8e3335ec16e5e7fb4172a7090d172111be370330ae2bd12bd5fdfbd"
+  },
+  "bignumber.js": {
+    "version": "9.3.1",
+    "url": "https://registry.npmjs.org/bignumber.js/-/bignumber.js-9.3.1.tgz",
+    "sha256": "f5a943ea290e66f64cb9adaaed2ff1b7c4ee02a4cca9d709d9c9c6c222512e82"
   }
 }

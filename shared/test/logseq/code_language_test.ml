@@ -175,10 +175,46 @@ let calculator_results_follow_the_unsaved_editor () =
         check_eq ~msg:"A live calculation does not persist an intermediate draft"
           (Editor_command_test.value runtime Q.alpha "block/title") (Some (Ds.String "")))
         ["6*7\nlast*3", "42\n126"; "a=2\n\n# comment\na*3", "2\n\n\n6";
-         "2*3\ninvalid(2)\nlast*2\n4", "6\nError\nError\n4"; "", ""])))
+         "2*3\ninvalid(2)\nlast*2\n4", "6\nError\nError\n4";
+         ":fmt fix 3\n1/8\n:hex\n255", "\n0.125\n0x0.2\n0xff"; "", ""])))
     [App_test.ios_backend; App_test.kotlin_backend]
 
-let cases = [case "syntax matches master modes" syntax_matches_master_modes;
+let calculator_matches_master () =
+  let fixture = J.from_file "logseq/fixtures/calculator-master.json" in
+  let failures = Q.items "cases" fixture |> List.filter_map (fun test ->
+    let source = R.text (member "source" test) in
+    let expected = Q.items "expected" test |> List.map R.text in
+    let actual = Node_presentation.calculator_results source in
+    let actual = if R.text (member "kind" test) = "numeric" then
+      List.of_seq (Seq.drop (max 0 (List.length actual - List.length expected)) (List.to_seq actual)) else actual in
+    let equal = if R.text (member "kind" test) = "numeric" then
+      List.length actual = List.length expected && List.for_all2 (fun a b ->
+        match float_of_string_opt a, float_of_string_opt b with
+        | Some a, Some b -> abs_float (a -. b) <= 1e-12 *. max 1. (abs_float b)
+        | _ -> false) actual expected
+      else actual = expected in
+    if equal then None else Some (Printf.sprintf "%S: expected %s, got %s" source
+      (J.to_string (`List (List.map (fun s -> `String s) expected)))
+      (J.to_string (`List (List.map (fun s -> `String s) actual))))) in
+  if failures <> [] then fail (Printf.sprintf "%d master calculator cases failed:\n%s"
+    (List.length failures) (String.concat "\n" (List.of_seq (Seq.take 12 (List.to_seq failures)))))
+
+let calculator_preserves_decimal_precision_and_directive_aliases () =
+  List.iter (fun (source, expected) ->
+    check_eq ~msg:source (Node_presentation.calculator_results source) expected) [
+    "9007199254740993+1", ["9007199254740994"];
+    ":fmt FIXED 3\n1/8", [""; "0.125"];
+    ":format ScIeNtIfIc 2\nPI", [""; "3.14e+0"];
+    "1/8\n:fmt fix 3\n:DECIMAL\n:fmt normal", ["0.125"; "0.125"; "0.125"; "0.125"];
+    ":hex\n15\n:dec\n15", [""; "0xf"; "15"; "15"];
+    "2+3\n# preserve last\nlast*2", ["5"; ""; "10"];
+    "2+3\ninvalid(1)\nlast\n7", ["5"; "Error"; "Error"; "7"] ];
+  check_eq ~msg:"formatting and variables are scoped to one calculator block"
+    (Node_presentation.calculator_results "1/8") ["0.125"]
+
+let cases = [case "calculator preserves decimal precision and directive aliases" calculator_preserves_decimal_precision_and_directive_aliases;
+  case "calculator matches every master grammar and formatting test" calculator_matches_master;
+  case "syntax matches master modes" syntax_matches_master_modes;
   case "new code uses the graph's latest language" new_code_uses_the_graphs_latest_language;
   case "calculator results follow the unsaved editor" calculator_results_follow_the_unsaved_editor;
   case "code language" code_language_can_be_changed_and_cleared;

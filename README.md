@@ -20,7 +20,10 @@ native platform bridges; generated OCaml stays under `_build`. Core tests live
 in `shared/test/logseq`, one alcotest suite per core module. The core test gate also builds the seed and live-sync executables.
 
 Natural-language dates use chrono-node's English parser in an on-demand QuickJS
-runtime shared by iOS and Android. The first core build downloads checksum-pinned
+runtime shared by iOS and Android. Calculator blocks use BigNumber.js with the
+master calculator's operators, scientific functions, variables, format directives
+and base conversion; their independent runtime is also created only on demand.
+The first core build downloads checksum-pinned
 sources listed in `shared/native/nlp/dependencies.json`; Python 3 is required.
 Archives are cached in `$XDG_CACHE_HOME/logseq/native-dependencies` (defaulting to
 `~/.cache`) and generated sources stay under `_build`. Core startup and canonical

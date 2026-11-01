@@ -1,4 +1,4 @@
-"""Fetch checksum-pinned QuickJS, Chrono and CodeMirror build dependencies."""
+"""Fetch checksum-pinned QuickJS, Chrono, CodeMirror and BigNumber build dependencies."""
 import hashlib
 import io
 import json
@@ -41,6 +41,16 @@ def main():
         members = {Path(member.name).name: member for member in source.getmembers() if member.isfile()}
         for name in names:
             (output / name).write_bytes(source.extractfile(members[name]).read())
+    with archive(lock["bignumber.js"]) as source:
+        library = source.extractfile("package/bignumber.js").read().decode()
+        license_text = source.extractfile("package/LICENCE.md").read().decode()
+    calculator = "/*\n" + license_text + "\n*/\n(function(){const module={exports:{}};const exports=module.exports;\n" + library
+    calculator += "\nconst BigNumber=module.exports;\n" + Path(__file__).with_name("calculator.js").read_text() + "\n})();\n"
+    data = calculator.encode()
+    header = "/* Generated from checksum-pinned BigNumber.js (MIT) and Logseq calculator grammar. */\n"
+    header += "static const unsigned char logseq_calculator_bundle[] = {\n"
+    header += ",\n".join(",".join(str(byte) for byte in data[index:index + 32]) for index in range(0, len(data), 32))
+    (output / "calculator_bundle.h").write_text(header + ",0};\n")
     with archive(lock["chrono-node"]) as source:
         files = {member.name.removeprefix("package/"): source.extractfile(member).read().decode()
                  for member in source.getmembers() if member.isfile() and member.name.endswith(".js")}
