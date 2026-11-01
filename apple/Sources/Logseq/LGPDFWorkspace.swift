@@ -283,6 +283,8 @@ final class LGPDFReaderController: UIViewController {
     private let status = UILabel()
     private let highlightButton = UIButton(type: .system)
     private let copyButton = UIButton(type: .system)
+    private let copyFeedback = UIStackView()
+    private var copyFeedbackTask: Task<Void, Never>?
     private let deleteButton = UIButton(type: .system)
     private let colorButton = UIButton(type: .system)
     private let fullScreenButton = UIButton(type: .system)
@@ -328,8 +330,9 @@ final class LGPDFReaderController: UIViewController {
         })
         colorButton.tintColor = Self.highlightColor(color)
         configure(copyButton, title: "Copy annotation reference", image: "link", id: "pdf.copy-reference") { [weak self] in
-            guard let id = self?.selectedID else { return }
-            UIPasteboard.general.string = "((\(id)))"
+            guard let self, let id = selectedID else { return }
+            UIPasteboard.general.string = "[[\(id)]]"
+            showCopyFeedback()
         }
         configure(deleteButton, title: "Delete highlight", image: "trash", id: "pdf.delete") { [weak self] in
             guard let self, let selectedID else { return }
@@ -374,6 +377,29 @@ final class LGPDFReaderController: UIViewController {
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             scroller.heightAnchor.constraint(equalToConstant: 44),
         ])
+        let copyMessage = UILabel()
+        copyMessage.text = "Reference copied"
+        copyMessage.font = .preferredFont(forTextStyle: .subheadline)
+        copyMessage.adjustsFontForContentSizeCategory = true
+        copyMessage.numberOfLines = 0
+        copyMessage.textAlignment = .center
+        copyMessage.textColor = .systemBackground
+        copyFeedback.addArrangedSubview(copyMessage)
+        copyFeedback.isLayoutMarginsRelativeArrangement = true
+        copyFeedback.layoutMargins = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        copyFeedback.backgroundColor = .label
+        copyFeedback.layer.cornerRadius = 12
+        copyFeedback.isUserInteractionEnabled = false
+        copyFeedback.isHidden = true
+        copyFeedback.accessibilityIdentifier = "pdf.copy-feedback"
+        copyFeedback.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(copyFeedback)
+        NSLayoutConstraint.activate([
+            copyFeedback.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            copyFeedback.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            copyFeedback.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            copyFeedback.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+        ])
         pdfView.didSelectText = { [weak self] in self?.updateSelection() }
         pdfView.didSelectHighlight = { [weak self] id in
             self?.pdfView.clearSelection()
@@ -390,6 +416,7 @@ final class LGPDFReaderController: UIViewController {
     deinit {
         documentTask?.cancel()
         visitTask?.cancel()
+        copyFeedbackTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -417,6 +444,8 @@ final class LGPDFReaderController: UIViewController {
         let next = (payload["graphId"] as? String ?? "") + ":" + (payload["assetUuid"] as? String ?? "")
         if next != identity {
             identity = next
+            copyFeedbackTask?.cancel()
+            copyFeedback.isHidden = true
             fileError = nil
             selectedID = nil
             restoredPage = false
@@ -523,6 +552,17 @@ final class LGPDFReaderController: UIViewController {
         }
         pdfView.clearSelection()
         updateSelection()
+    }
+
+    private func showCopyFeedback() {
+        copyFeedbackTask?.cancel()
+        copyFeedback.isHidden = false
+        UIAccessibility.post(notification: .announcement, argument: "Reference copied")
+        copyFeedbackTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            self?.copyFeedback.isHidden = true
+        }
     }
 
     private func recolorSelection() {

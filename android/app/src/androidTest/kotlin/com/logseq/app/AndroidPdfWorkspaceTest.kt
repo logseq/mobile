@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.printToString
@@ -215,6 +216,17 @@ class AndroidPdfWorkspaceTest {
                 highlight.getJSONObject("content").getString("text"))
             assertEquals(1, highlight.getInt("page"))
             assertTrue(highlight.getJSONObject("position").getJSONArray("rects").length() > 0)
+            ui.onNodeWithText("Copy reference").performScrollTo().performClick()
+            ui.waitUntil(5_000) {
+                var copied = false
+                instrumentation.runOnMainSync {
+                    val clipboard = instrumentation.targetContext.getSystemService(android.content.ClipboardManager::class.java)
+                    copied = clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "[[${highlight.getString("id")}]]"
+                }
+                copied
+            }
+            ui.onNodeWithText("Reference copied").assertIsDisplayed()
+            ui.onNodeWithTag("pdf.highlight").performScrollTo()
             ui.onNodeWithText("Main remains available").assertIsDisplayed()
             instrumentation.uiAutomation.takeScreenshot().let { screenshot ->
                 File(instrumentation.targetContext.cacheDir, "pdf-workspace.png").outputStream().use {

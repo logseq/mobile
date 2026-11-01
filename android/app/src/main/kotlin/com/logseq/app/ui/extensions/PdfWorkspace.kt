@@ -154,6 +154,7 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
     LaunchedEffect(fullScreen) { if (fullScreen) { focus.clearFocus(); keyboard?.hide() } }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
+    val copyFeedback = remember { SnackbarHostState() }
     val viewer = rememberPdfViewerState()
     val latestSend by rememberUpdatedState<(JSONObject) -> Unit>({ value ->
         send(value.put("graphId", payload.getString("graphId")).put("assetUuid", payload.getString("assetUuid")))
@@ -319,7 +320,9 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
             }
             TextButton(onClick = { latestSend(JSONObject().put("action", "open-annotations")) }) { Text("Notes") }
             TextButton(enabled = selectedID != null, onClick = { selectedID?.let { id -> scope.launch {
-                clipboard.setClipEntry(android.content.ClipData.newPlainText("Annotation reference", "(($id))").toClipEntry())
+                clipboard.setClipEntry(android.content.ClipData.newPlainText("Annotation reference", "[[$id]]").toClipEntry())
+                copyFeedback.currentSnackbarData?.dismiss()
+                copyFeedback.showSnackbar("Reference copied", duration = SnackbarDuration.Short)
             } } }) { Text("Copy reference") }
             TextButton(enabled = selectedID != null, onClick = {
                 latestSend(JSONObject().put("action", "delete").put("id", selectedID)); selectedID = null
@@ -397,6 +400,7 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
                 PdfViewer(pdfDocument = doc, state = viewer, modifier = Modifier.fillMaxSize(),
                     appendContextMenuComponents = { item("logseq-highlight", "Highlight", "Highlight selected text") { save() } },
                     onFirstContentLoad = { contentLoaded = true })
+                SnackbarHost(copyFeedback, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
             }
         }
     }
