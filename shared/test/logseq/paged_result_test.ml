@@ -139,7 +139,12 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
       check ~msg:"failed range reads offer a local retry" (find ("view.rows.retry." ^ R.table_view) <> -1);
       click ("view.rows.retry." ^ R.table_view); drain ();
       check ~msg:"retry replaces the failed range with real rows"
-        (find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") <> -1))))
+        (find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") <> -1);
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.search." ^ R.owner), "No matching paged row")); App_test.flush app;
+      drain ();
+      check ~msg:"an empty search replaces previously visible results with the empty state"
+        (find ("query.empty." ^ R.owner) <> -1
+          && find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") = -1))))
     [2, 2; 3, 4]
 
 let list_and_resized_gallery_reach_the_final_page () =

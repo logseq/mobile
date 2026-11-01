@@ -763,7 +763,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       Signal.set error failure;
       Signal.set loading (candidate = None && failure = "" && jlist (jfield "rows" current.data) = []);
       match candidate with
-      | Some data -> if (overlap data > 0 || visible_overlap current.data = 0)
+      | Some data -> if (row_count data = 0 || overlap data > 0 || visible_overlap current.data = 0)
           && overlap data >= overlap current.data && not (Json.equal data current.data)
         then Signal.set page {view with data}
       | None ->
