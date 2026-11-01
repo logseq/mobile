@@ -21,9 +21,9 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
     func setToken(_ token: String?) { self.token = token }
     func failTokenRequests(_ error: URLError?) { tokenError = error }
 
-    func signIn() async throws -> String {
+    func authenticate(_ request: String) async throws -> String {
         token = signInToken
-        return signInToken
+        return "{\"signedIn\":true}"
     }
 
     func signOut() async throws {
@@ -37,15 +37,17 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
 }
 
 private struct FailingCognitoProvider: LogseqCognitoProviding {
+    var failRestore = true
     struct SessionError: Error, LocalizedError {
         var errorDescription: String? { "Could not restore the Cognito session." }
     }
 
     func apiToken() async throws -> String? {
-        throw SessionError()
+        if failRestore { throw SessionError() }
+        return nil
     }
 
-    func signIn() async throws -> String {
+    func authenticate(_ request: String) async throws -> String {
         throw SessionError()
     }
 
@@ -73,24 +75,27 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
             }
         }
 
-        await auth.signIn()
+        _ = try await auth.authenticate("{}")
 
         #expect(auth.state == .signedIn)
         #expect(published == ["signed-in-access-token"])
         #expect(auth.errorMessage == nil)
     }
 
-    @Test @MainActor func hostedSignInFailureLeavesAuthenticationSignedOut() async {
+    @Test @MainActor func requestFailureLeavesAuthenticationSignedOut() async {
         var published: [String?] = []
-        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { token in
+        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider(failRestore: false)) { token in
             published.append(token)
         }
 
-        await auth.signIn()
-
-        #expect(auth.state == .signedOut)
-        #expect(auth.errorMessage == "Could not restore the Cognito session.")
-        #expect(published == [nil])
+        await auth.restore()
+        do {
+            _ = try await auth.authenticate("{}")
+            Issue.record("Expected request failure")
+        } catch {
+            #expect(auth.state == .signedOut)
+            #expect(published == [nil])
+        }
     }
 
     @Test @MainActor func signsOutAndClearsPublishedAuthorization() async throws {

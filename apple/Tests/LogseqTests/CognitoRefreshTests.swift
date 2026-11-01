@@ -11,7 +11,6 @@ private enum RefreshReply {
 private final class RefreshReplies: @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [String: [RefreshReply]] = [:]
-
     func register(_ host: String, _ values: [RefreshReply]) {
         lock.withLock { replies[host] = values }
     }
@@ -43,6 +42,10 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         let url = request.url!
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/x-amz-json-1.1")
+        #expect(request.value(forHTTPHeaderField: "X-Amz-Target")?.hasPrefix("AWSCognitoIdentityProviderService.") == true)
+        #expect(url.path == "/")
         switch Self.replies.take(url.host!) {
         case .network(let code):
             client?.urlProtocol(self, didFailWithError: URLError(code))
@@ -58,7 +61,7 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Suite struct CognitoRefreshTests {
     private static let success = RefreshReply.http(200,
-        #"{"id_token":"renewed-id-token","refresh_token":"rotated-refresh-token","expires_in":3600}"#)
+        #"{"AuthenticationResult":{"IdToken":"renewed-id-token","RefreshToken":"rotated-refresh-token","ExpiresIn":3600}}"#)
 
     @MainActor private func withProvider(
         replies: [RefreshReply],
@@ -80,8 +83,7 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
             try? store.clear()
         }
         let provider = CognitoAuthProvider(region: "test", userPoolId: "test", appClientId: "test",
-            oauthDomain: host, redirectURI: "logseq://auth/callback", logoutURI: "logseq://auth/logout",
-            scopes: ["openid"], tokenStore: store, urlSession: session)
+            tokenStore: store, urlSession: session, endpoint: URL(string: "https://\(host)/")!)
         try await check(provider, store)
     }
 
@@ -93,7 +95,7 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
             .http(401, #"{"error":"unauthorized"}"#),
             .http(400, #"{"error":"invalid_client"}"#),
             .http(200, "malformed JSON"),
-            .http(200, #"{"id_token":"","expires_in":3600}"#),
+            .http(200, #"{"AuthenticationResult":{"IdToken":"","ExpiresIn":3600}}"#),
         ]
         for failure in failures {
             try await withProvider(replies: [failure, Self.success]) { (provider, store) async throws in
@@ -112,8 +114,8 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     @Test @MainActor func invalidRefreshTokensClearCredentialsAndRequireSignIn() async throws {
-        for code in ["invalid_grant", "invalid_token"] {
-            try await withProvider(replies: [.http(400, "{\"error\":\"\(code)\"}")]) { (provider, store) async throws in
+        for code in ["NotAuthorizedException", "RefreshTokenReuseException"] {
+            try await withProvider(replies: [.http(400, "{\"__type\":\"\(code)\"}")]) { (provider, store) async throws in
                 let auth = LogseqAuthenticationStore(provider: provider)
                 await auth.restore()
                 #expect(auth.state == .signedOut)
@@ -133,6 +135,42 @@ private final class RefreshURLProtocol: URLProtocol, @unchecked Sendable {
         try await withProvider(replies: [], refreshToken: "") { (provider, store) async throws in
             #expect(try await provider.apiToken() == nil)
             #expect(try store.load() == nil)
+        }
+    }
+
+    @Test @MainActor func directAuthenticationStoresTokensAndReturnsOnlyCompletion() async throws {
+        try await withProvider(replies: [Self.success]) { (provider, store) async throws in
+            let reply = try await provider.authenticate(#"{"operation":"InitiateAuth","body":{"AuthFlow":"USER_PASSWORD_AUTH","AuthParameters":{"USERNAME":"test@example.com","PASSWORD":"fixture-password"}}}"#)
+            let result = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as! [String: Any]
+            #expect(result["signedIn"] as? Bool == true)
+            #expect(!reply.contains("renewed-id-token"))
+            #expect(!reply.contains("rotated-refresh-token"))
+            #expect(try store.load()?.idToken == "renewed-id-token")
+        }
+    }
+
+    @Test @MainActor func challengesAndServiceErrorsNeverReplaceTokens() async throws {
+        for reply in [
+            RefreshReply.http(200, #"{"ChallengeName":"SMS_MFA","Session":"challenge-session","ChallengeParameters":{}}"#),
+            RefreshReply.http(400, #"{"__type":"NotAuthorizedException","message":"raw service details"}"#),
+        ] {
+            try await withProvider(replies: [reply]) { (provider, store) async throws in
+                let response = try await provider.authenticate(#"{"operation":"InitiateAuth","body":{}}"#)
+                #expect(!response.contains("signedIn"))
+                #expect(!response.contains("raw service details"))
+                #expect(try store.load()?.idToken == "expired-id-token")
+            }
+        }
+    }
+
+    @Test @MainActor func incompleteAuthenticationCannotOverwriteStoredSession() async throws {
+        try await withProvider(replies: [.http(200, #"{"AuthenticationResult":{"IdToken":"incomplete","ExpiresIn":3600}}"#)]) { (provider, store) async throws in
+            do {
+                _ = try await provider.authenticate(#"{"operation":"InitiateAuth","body":{}}"#)
+                Issue.record("An initial login requires a refresh token")
+            } catch {
+                #expect(try store.load()?.idToken == "expired-id-token")
+            }
         }
     }
 }

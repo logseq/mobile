@@ -252,6 +252,11 @@ let pdf_workspace_schema () =
 
 let extension_registry () =
   let registry = Lui_extension.registry () in
+  Lui_extension.register_component registry
+    (Lui_extension.component "native-auth-input"
+       [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;
+        Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost]
+       true [] [Lui_extension.property "kind" Lui_extension.StringScalar true None] []);
   Lui_extension.register_component registry (pdf_workspace_schema ());
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());

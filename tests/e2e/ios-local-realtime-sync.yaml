@@ -5,32 +5,27 @@ appId: com.logseq.logseq
 - runFlow:
     when:
       visible:
-        id: "button.hosted-sign-in"
+        id: "button.sign-in"
     commands:
       - tapOn:
-          id: "button.hosted-sign-in"
+          id: "button.sign-in"
       - extendedWaitUntil:
-          visible: "Sign in with your username and password"
-          timeout: 30000
-      - tapOn: "Username Username"
+          visible:
+            id: "field.auth.email"
+          timeout: 10000
+      - tapOn:
+          id: "field.auth.email"
       - inputText: "__LOGSEQ_E2E_USERNAME__"
-      - pressKey: Enter
+      - tapOn:
+          id: "field.auth.password"
       - inputText: "__LOGSEQ_E2E_PASSWORD__"
       - hideKeyboard
-      - tapOn: "submit"
-- runFlow:
-    when:
-      visible: "Enter your username"
-    commands:
       - tapOn:
-          text: "Enter your username"
-      - inputText: "__LOGSEQ_E2E_USERNAME__"
-      - tapOn:
-          text: "Enter your password"
-      - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - tapOn:
-          text: "Sign In"
-          index: 1
+          id: "button.auth.submit"
+      - extendedWaitUntil:
+          visible:
+            id: "screen.graph-picker|button.composer.expand"
+          timeout: 60000
 - extendedWaitUntil:
     visible:
       id: "screen.graph-picker"

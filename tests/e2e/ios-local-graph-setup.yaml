@@ -4,37 +4,27 @@ appId: com.logseq.logseq
 - runFlow:
     when:
       visible:
-        id: "button.hosted-sign-in"
+        id: "button.sign-in"
     commands:
       - tapOn:
-          id: "button.hosted-sign-in"
-      - runFlow:
-          when:
-            visible: "Use without an account"
-          commands:
-            - tapOn: "Use without an account"
+          id: "button.sign-in"
       - extendedWaitUntil:
-          visible: "Sign in with your username and password"
-          timeout: 30000
-      - tapOn: "Username Username"
-      - inputText: "__LOGSEQ_E2E_USERNAME__"
-      - pressKey: Enter
-      - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - tapOn: "Sign in with your username and password"
-      - extendedWaitUntil:
-          visible: "submit"
+          visible:
+            id: "field.auth.email"
           timeout: 10000
-      - tapOn: "submit"
-      # Post-login bootstrap churns the view tree; hierarchy snapshots taken
-      # during it have stalled the XCTest driver on CI. Wait it out.
-      - waitForAnimationToEnd:
-          timeout: 30000
-      # Restart from the stored session instead of querying the transient
-      # post-login tree, which can crash the XCTest hierarchy driver.
-      - stopApp
-      # Do not snapshot the completed hosted browser session after relaunch.
-      - stopApp: com.apple.SafariViewService
-      - launchApp
+      - tapOn:
+          id: "field.auth.email"
+      - inputText: "__LOGSEQ_E2E_USERNAME__"
+      - tapOn:
+          id: "field.auth.password"
+      - inputText: "__LOGSEQ_E2E_PASSWORD__"
+      - hideKeyboard
+      - tapOn:
+          id: "button.auth.submit"
+      - extendedWaitUntil:
+          visible:
+            id: "screen.graph-picker|button.composer.expand"
+          timeout: 60000
 - runFlow:
     when:
       visible: "__LOGSEQ_E2E_GRAPH_NAME__"

@@ -1,35 +1,23 @@
-
 import Foundation
 import LogseqModel
-
-import AuthenticationServices
 import Security
-#if os(iOS)
-import UIKit
-#endif
 
 enum CognitoAuthProviderError: Error, LocalizedError {
     case invalidConfiguration
+    case invalidResponse
     case missingIDToken
     case missingRefreshToken
     case secureStorage(Int32)
-    case tokenRequest(String)
-    case webAuthenticationUnavailable
+    case service(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidConfiguration:
-            return "Cognito Hosted UI is not configured."
-        case .missingIDToken:
-            return "Cognito did not return an ID token."
-        case .missingRefreshToken:
-            return "Cognito did not return a refresh token."
-        case .secureStorage(let status):
-            return "Secure authentication storage failed (\(status))."
-        case .tokenRequest(let reason):
-            return "Cognito token request failed: \(reason)"
-        case .webAuthenticationUnavailable:
-            return "Could not open the secure sign-in page."
+        case .invalidConfiguration: "Cognito authentication is not configured."
+        case .invalidResponse: "The authentication service returned an invalid response."
+        case .missingIDToken: "Cognito did not return an ID token."
+        case .missingRefreshToken: "Cognito did not return a refresh token."
+        case .secureStorage: "Could not access the saved authentication session."
+        case .service(let code): "Authentication request failed: \(code)"
         }
     }
 }
@@ -92,208 +80,115 @@ struct CognitoTokenStore: Sendable {
     }
 }
 
-@MainActor private final class CognitoWebAuthenticationSession:
-    NSObject, ASWebAuthenticationPresentationContextProviding
-{
-    private var session: ASWebAuthenticationSession?
-
-    func authenticate(at url: URL, callbackURLScheme: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url,
-                callbackURLScheme: callbackURLScheme
-            ) { [weak self] callbackURL, error in
-                self?.session = nil
-                if let callbackURL {
-                    continuation.resume(returning: callbackURL)
-                } else if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(throwing: CognitoAuthProviderError.webAuthenticationUnavailable)
-                }
-            }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = true
-            self.session = session
-            guard session.start() else {
-                self.session = nil
-                continuation.resume(throwing: CognitoAuthProviderError.webAuthenticationUnavailable)
-                return
-            }
-        }
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
-    }
-}
-
 @MainActor final class CognitoAuthProvider: LogseqCognitoProviding {
-    private let configuration: CognitoOAuthConfiguration
+    private let clientID: String
     private let tokenStore: CognitoTokenStore
     private let urlSession: URLSession
-    private let webAuthentication = CognitoWebAuthenticationSession()
+    private let endpoint: URL
 
-    init(
-        region: String,
-        userPoolId: String,
-        appClientId: String,
-        oauthDomain: String,
-        redirectURI: String,
-        logoutURI: String,
-        scopes: [String],
-        tokenStore: CognitoTokenStore = CognitoTokenStore(),
-        urlSession: URLSession = .shared
-    ) {
+    init(region: String, userPoolId: String, appClientId: String,
+         tokenStore: CognitoTokenStore = CognitoTokenStore(), urlSession: URLSession = .shared,
+         endpoint: URL? = nil) {
+        self.clientID = appClientId
         self.tokenStore = tokenStore
         self.urlSession = urlSession
-        _ = region
-        _ = userPoolId
-        configuration = CognitoOAuthConfiguration(
-            domain: oauthDomain,
-            clientID: appClientId,
-            redirectURI: redirectURI,
-            logoutURI: logoutURI,
-            scopes: scopes
-        )
+        self.endpoint = endpoint ?? URL(string: "https://cognito-idp.\(region).amazonaws.com/")!
     }
 
     func apiToken() async throws -> String? {
-        guard var tokens = try tokenStore.load() else {
-            LogseqRuntimeLog.shared.append(level: .info, source: .ui, message: "Authentication restore found no saved Keychain session")
-            return nil
-        }
+        guard let tokens = try tokenStore.load() else { return nil }
+        guard !tokens.refreshToken.isEmpty else { try tokenStore.clear(); return nil }
         guard tokens.requiresRefresh(at: Date()) else { return tokens.idToken }
-        guard !tokens.refreshToken.isEmpty else {
-            LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Saved authentication session has no refresh token")
+        do {
+            let response = try await post("GetTokensFromRefreshToken", ["RefreshToken": tokens.refreshToken])
+            try checkServiceError(response)
+            let refreshed = try storedTokens(response, previousRefreshToken: tokens.refreshToken)
+            try tokenStore.save(refreshed)
+            return refreshed.idToken
+        } catch CognitoAuthProviderError.service(let code)
+            where code == "NotAuthorizedException" || code == "RefreshTokenReuseException" {
             try tokenStore.clear()
             return nil
         }
-        do {
-            let response = try await requestTokens(
-                body: CognitoOAuthRequest.refreshTokenForm(
-                    configuration: configuration,
-                    refreshToken: tokens.refreshToken
-                )
-            )
-            tokens = response.storedTokens(
-                previousRefreshToken: tokens.refreshToken,
-                now: Date()
-            )
-            try tokenStore.save(tokens)
-            return tokens.idToken
-        } catch {
-            if case CognitoAuthProviderError.tokenRequest(let code) = error,
-               code == "invalid_grant" || code == "invalid_token" {
-                LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Cognito refresh returned \(code); clearing the invalid session")
-                try tokenStore.clear()
-                return nil
-            }
-            throw error
-        }
     }
 
-    func signIn() async throws -> String {
-        try validateConfiguration()
-        guard let callbackScheme = URL(string: configuration.redirectURI)?.scheme else {
-            throw CognitoAuthProviderError.invalidConfiguration
+    // OCaml owns form state and the Cognito challenge protocol. The adapter only
+    // sends requests and commits complete sessions to Keychain before publishing success.
+    func authenticate(_ encoded: String) async throws -> String {
+        guard let request = try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any],
+              let operation = request["operation"] as? String,
+              let body = request["body"] as? [String: Any],
+              Self.interactiveOperations.contains(operation)
+        else { throw CognitoAuthProviderError.invalidResponse }
+        let response = try await post(operation, body)
+        if response["AuthenticationResult"] != nil {
+            guard operation == "InitiateAuth" || operation == "RespondToAuthChallenge" else {
+                throw CognitoAuthProviderError.invalidResponse
+            }
+            let tokens = try storedTokens(response, previousRefreshToken: nil)
+            try tokenStore.save(tokens)
+            return "{\"signedIn\":true}"
         }
-        let state = try randomURLSafeString(byteCount: 24)
-        let codeVerifier = try randomURLSafeString(byteCount: 64)
-        let authorizationURL = try CognitoOAuthRequest.authorizationURL(
-            configuration: configuration,
-            state: state,
-            codeChallenge: CognitoPKCE.codeChallenge(for: codeVerifier)
-        )
-        let callbackURL = try await webAuthentication.authenticate(
-            at: authorizationURL,
-            callbackURLScheme: callbackScheme
-        )
-        let code = try CognitoOAuthCallback.authorizationCode(
-            from: callbackURL,
-            expectedState: state
-        )
-        let response = try await requestTokens(
-            body: CognitoOAuthRequest.authorizationCodeForm(
-                configuration: configuration,
-                code: code,
-                codeVerifier: codeVerifier
-            )
-        )
-        let tokens = response.storedTokens(previousRefreshToken: nil, now: Date())
-        guard let idToken = tokens.idToken, !idToken.isEmpty else {
-            throw CognitoAuthProviderError.missingIDToken
-        }
-        guard !tokens.refreshToken.isEmpty else {
-            throw CognitoAuthProviderError.missingRefreshToken
-        }
-        try tokenStore.save(tokens)
-        return idToken
+        // Never forward raw service messages or tokens into the UI model/logs.
+        let allowed = Set(["__type", "ChallengeName", "ChallengeParameters", "Session",
+                           "UserConfirmed", "CodeDeliveryDetails", "SecretCode", "Status"])
+        let sanitized = response.filter { allowed.contains($0.key) }
+        return String(decoding: try JSONSerialization.data(withJSONObject: sanitized), as: UTF8.self)
     }
 
     func signOut() async throws {
-        let tokens = try tokenStore.load()
+        let refreshToken = try tokenStore.load()?.refreshToken
         try tokenStore.clear()
-        guard let refreshToken = tokens?.refreshToken, !refreshToken.isEmpty else { return }
-        try? await revoke(refreshToken: refreshToken)
+        guard let refreshToken, !refreshToken.isEmpty else { return }
+        _ = try? await post("RevokeToken", ["Token": refreshToken])
     }
 
-    private func validateConfiguration() throws {
-        guard
-            !configuration.domain.isEmpty,
-            !configuration.clientID.isEmpty,
-            URL(string: configuration.redirectURI) != nil
-        else {
-            throw CognitoAuthProviderError.invalidConfiguration
+    private static let interactiveOperations: Set<String> = [
+        "InitiateAuth", "RespondToAuthChallenge", "SignUp", "ConfirmSignUp",
+        "ResendConfirmationCode", "ForgotPassword", "ConfirmForgotPassword",
+        "AssociateSoftwareToken", "VerifySoftwareToken",
+    ]
+
+    private func post(_ operation: String, _ body: [String: Any]) async throws -> [String: Any] {
+        guard !clientID.isEmpty else { throw CognitoAuthProviderError.invalidConfiguration }
+        var body = body
+        if operation != "AssociateSoftwareToken" && operation != "VerifySoftwareToken" {
+            body["ClientId"] = clientID
         }
-    }
-
-    private func requestTokens(body: String) async throws -> CognitoOAuthTokenResponse {
-        let url = URL(string: "https://\(configuration.domain)/oauth2/token")!
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data(body.utf8)
+        request.timeoutInterval = 30
+        request.setValue("application/x-amz-json-1.1", forHTTPHeaderField: "Content-Type")
+        request.setValue("AWSCognitoIdentityProviderService." + operation, forHTTPHeaderField: "X-Amz-Target")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let reason = (try? JSONDecoder().decode(CognitoOAuthFailureResponse.self, from: data).error)
-                ?? "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"
-            throw CognitoAuthProviderError.tokenRequest(reason)
+        guard let http = response as? HTTPURLResponse,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CognitoAuthProviderError.invalidResponse
         }
-        let tokens = try JSONDecoder().decode(CognitoOAuthTokenResponse.self, from: data)
-        guard !tokens.idToken.isEmpty else {
+        if !(200..<300).contains(http.statusCode), json["__type"] == nil {
+            throw CognitoAuthProviderError.service("HTTP \(http.statusCode)")
+        }
+        return json
+    }
+
+    private func checkServiceError(_ response: [String: Any]) throws {
+        if let value = response["__type"] as? String {
+            throw CognitoAuthProviderError.service(String(value.split(separator: "#").last ?? "Unknown"))
+        }
+    }
+
+    private func storedTokens(_ response: [String: Any], previousRefreshToken: String?) throws -> CognitoStoredTokens {
+        guard let result = response["AuthenticationResult"] as? [String: Any],
+              let idToken = result["IdToken"] as? String, !idToken.isEmpty else {
             throw CognitoAuthProviderError.missingIDToken
         }
-        return tokens
-    }
-
-    private func revoke(refreshToken: String) async throws {
-        let body = CognitoOAuthRequest.formEncoded([
-            "client_id": configuration.clientID,
-            "token": refreshToken,
-        ])
-        let url = URL(string: "https://\(configuration.domain)/oauth2/revoke")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data(body.utf8)
-        _ = try await urlSession.data(for: request)
-    }
-
-    private func randomURLSafeString(byteCount: Int) throws -> String {
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            throw CognitoAuthProviderError.secureStorage(errSecAllocate)
+        let refreshToken = result["RefreshToken"] as? String ?? previousRefreshToken ?? ""
+        guard !refreshToken.isEmpty else { throw CognitoAuthProviderError.missingRefreshToken }
+        guard let expiresIn = result["ExpiresIn"] as? Double, expiresIn > 0 else {
+            throw CognitoAuthProviderError.invalidResponse
         }
-        return Data(bytes)
-            .base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        return CognitoStoredTokens(idToken: idToken, refreshToken: refreshToken,
+                                  expiresAt: Date().addingTimeInterval(expiresIn))
     }
-}
-
-private struct CognitoOAuthFailureResponse: Decodable {
-    let error: String
 }

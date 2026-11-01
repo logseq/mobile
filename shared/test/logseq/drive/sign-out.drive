@@ -15,4 +15,4 @@ wait prop:accessibility-identifier=application.shell
 expect-absent prop:accessibility-identifier=screen.authentication
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
-expect prop:accessibility-identifier=button.hosted-sign-in
+expect prop:accessibility-identifier=button.sign-in

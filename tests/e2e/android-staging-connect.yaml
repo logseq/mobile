@@ -2,35 +2,23 @@ appId: com.logseq.app
 ---
 - launchApp
 - tapOn:
-    id: "button.hosted-sign-in"
-- runFlow:
-    when:
-      visible: "Use without an account"
-    commands:
-      - tapOn: "Use without an account"
+    id: "button.sign-in"
 - extendedWaitUntil:
     visible:
-      id: "signInFormUsername"
-    timeout: 30000
+      id: "field.auth.email"
+    timeout: 10000
 - tapOn:
-    id: "signInFormUsername"
+    id: "field.auth.email"
 - inputText: ${USERNAME}
-- runFlow:
-    when:
-      visible: "Try out your stylus"
-    commands:
-      - tapOn: "Cancel"
 - tapOn:
-    id: "signInFormPassword"
+    id: "field.auth.password"
 - inputText: ${PASSWORD}
 - hideKeyboard
-- extendedWaitUntil:
-    visible: "submit"
-    timeout: 10000
-- tapOn: "submit"
+- tapOn:
+    id: "button.auth.submit"
 - extendedWaitUntil:
     visible:
-      id: "screen.graph-picker"
+      id: "screen.graph-picker|button.composer.expand"
     timeout: 60000
 - runFlow:
     file: "android-graph-picker-sheet.yaml"

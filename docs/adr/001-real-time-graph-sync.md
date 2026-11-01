@@ -52,8 +52,8 @@ support:
 
 | Area | Current state |
 | --- | --- |
-| Apple authentication | Cognito Hosted UI authorization-code flow with PKCE through `ASWebAuthenticationSession`; refresh tokens are stored in Keychain |
-| Android authentication | Cognito Hosted UI authorization-code flow with PKCE through Custom Tabs; refresh tokens are encrypted with an Android Keystore key |
+| Apple authentication | Shared LUI/OCaml forms and direct Cognito User Pools HTTPS requests; tokens are stored in Keychain |
+| Android authentication | The same shared LUI/OCaml forms; tokens are encrypted with an Android Keystore key |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client WebSocket sync, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
@@ -69,35 +69,31 @@ support:
 
 ### 1. Authenticate inside the app with Amazon Cognito
 
-Logseq uses Cognito Hosted UI instead of implementing password, challenge,
-account-recovery, and federated sign-in screens. Apple opens the authorization
-endpoint with `ASWebAuthenticationSession`; Android uses Custom Tabs. Both use the
-authorization-code flow with S256 PKCE and a public app client without a secret.
+Logseq presents mobile-friendly LUI forms matching the Web app's login, sign-up,
+and password-reset fields. `Auth_flow` owns validation, registration confirmation,
+password recovery, MFA selection and codes, TOTP enrollment, and temporary-password
+challenges. Both native platforms reuse this OCaml state machine and view code.
 
-Authentication is exposed to the shared application model through a small platform
-service implemented independently by SwiftUI and Android. OAuth state and tokens do
-not cross the OCaml graph boundary; the adapter supplies an access token only when
-the OCaml core requests an authenticated transport operation.
+A small platform adapter sends the shared operation/body to the regional Cognito
+User Pools JSON HTTPS API. `InitiateAuth` uses `USER_PASSWORD_AUTH`; the public
+app client has no secret and must enable `ALLOW_USER_PASSWORD_AUTH`. There is no
+Hosted UI domain, browser session, authorization-code flow, or callback URL.
 
-The Cognito app client is a public native client with no client secret and allows
-authorization-code and refresh-token grants. Cognito Hosted UI owns sign-in and
-challenge presentation. Logseq persists tokens in Keychain or an Android
-Keystore-backed encrypted store and refreshes them shortly before expiry. Every
-Graph API, db-sync, asset, and key-management request will use:
+The adapter persists complete sessions before reporting successful sign-in. Tokens
+stay in Keychain or Android Keystore-backed encrypted storage; only a completion
+marker and non-token challenge data return to the shared form. Passwords and codes
+are transient, cleared after submission or dismissal, and never written to settings,
+UI-session persistence, or logs. Service errors become actionable inline messages.
 
-```http
-Authorization: Bearer <cognito-access-token>
-```
+Session refresh uses `GetTokensFromRefreshToken`, preserving the saved refresh token
+when Cognito does not rotate it. Temporary network failures retain the session;
+invalid refresh tokens clear it. Sign-out clears local credentials and attempts
+`RevokeToken`, including when no Hosted UI domain is configured.
 
-The db-sync HTTP layer validates the JWT issuer, signature, expiry,
-`token_use=access`, and Cognito `client_id`, then apply the same graph membership and
-permission checks used by existing sync clients. A token identifies a user, not a graph. Graph
-selection therefore happens only after the app calls the authenticated db-sync
-`GET /graphs` operation. Semantic reads and writes remain under `/api/v1/graphs/...`;
-graph discovery does not use the semantic graph-list route.
-
-Authentication depends only on platform browser, secure-storage, cryptography, and
-HTTP APIs. Amplify and the AWS SDK are not app dependencies.
+The existing Logseq API transport continues to use the Cognito ID token required by
+the service. Graph selection follows authenticated graph discovery. Authentication
+depends only on platform secure-storage and HTTP APIs; Amplify and the AWS SDK are
+not app dependencies.
 
 PAT configuration and the PAT input screen will be removed after Cognito login is
 available. PATs may remain supported by existing APIs during migration, but Logseq
@@ -464,7 +460,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 
 ## End-to-end flow
 
-1. Log in through Cognito Hosted UI using authorization code with S256 PKCE.
+1. Log in through the shared LUI form using the Cognito User Pools API.
 2. List authorized graphs and select one.
 3. Resolve the graph's schema version and encryption flag.
 4. If encrypted, unlock the graph key locally.
@@ -504,7 +500,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 
 ## Required Logseq changes
 
-- Replace PAT configuration with Cognito Hosted UI login, OAuth refresh and logout,
+- Replace PAT configuration with shared Cognito login forms, API refresh and logout,
   and platform secure storage.
 - Add pinned `melange-transit-native` and `melange-edn-native` dependencies to the
   OCaml build.
@@ -575,9 +571,15 @@ a reliable contiguous cursor.
 
 ### Embed Cognito SDK authentication screens
 
-Embedding separate native authentication screens duplicates Cognito challenge and
-recovery behavior and adds a large SDK dependency. Hosted UI keeps those flows in
-Cognito while the app retains a small OAuth adapter.
+Embedding separate SDK authentication screens adds a large dependency and duplicates
+form and challenge behavior across platforms. Shared LUI forms and an OCaml state
+machine provide the same in-app experience with small HTTP/secure-storage adapters.
+
+### Cognito Hosted UI
+
+Hosted pages delegate authentication UI to Cognito, but introduce a browser surface
+and callback handling. They do not meet the in-app login requirement or the desired
+Web-compatible forms, so the app uses the User Pools API directly.
 
 ### Add a new full-snapshot endpoint
 

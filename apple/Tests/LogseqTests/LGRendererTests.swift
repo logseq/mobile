@@ -536,16 +536,16 @@ struct LGRendererTests {
         #expect(coreCallCount == 0)
     }
 
-    @Test("Hosted sign-in stays on the platform authentication boundary")
+    @Test("Shared authentication requests stay on the platform transport boundary")
     func signInEffectsUseAuthenticationService() async {
         var signInCount = 0
         let handler = LGPlatformEffectHandler(
             saveSettings: { _ in },
             runtimeLog: LogseqRuntimeLog(capacity: 1),
             copyText: { _ in },
-            signIn: {
+            signIn: { _ in
                 signInCount += 1
-                return nil
+                return "{\"signedIn\":true}"
             },
             signOut: {}
         )
@@ -556,7 +556,7 @@ struct LGRendererTests {
             saveSettings: { _ in },
             runtimeLog: LogseqRuntimeLog(capacity: 1),
             copyText: { _ in },
-            signIn: { "Authorization was cancelled" },
+            signIn: { _ in throw URLError(.notConnectedToInternet) },
             signOut: {}
         )
         let failed = await failingHandler.execute(
@@ -567,7 +567,7 @@ struct LGRendererTests {
         #expect(succeeded.succeeded)
         #expect(succeeded.output == .discard)
         #expect(!failed.succeeded)
-        #expect(failed.message == "Authorization was cancelled")
+        #expect(!failed.message.isEmpty)
     }
 
     @Test("attachment effects preserve the selected system service")
@@ -850,10 +850,14 @@ struct LGRendererTests {
             text: "ui",
             value: 1
         ))
+        struct LogSnapshot: Decodable {
+            let records: [LGRuntimeLogPayload]
+        }
+        let records = try JSONDecoder().decode(LogSnapshot.self, from: Data(refresh.message.utf8)).records
         let copy = await handler.execute(LGEffect(
             id: 42,
             kind: "copy-runtime-log",
-            text: refresh.message
+            text: String(decoding: try JSONEncoder().encode(records), as: UTF8.self)
         ))
         let signOut = await handler.execute(
             LGEffect(id: 43, kind: "sign-out", text: "")
@@ -864,10 +868,6 @@ struct LGRendererTests {
         #expect(saved?.sidebarTabs == ["journals", "graphs"])
         #expect(save.output == .discard)
         #expect(refresh.output == LGEffectOutput.hostUpdate("runtime-log"))
-        let records = try JSONDecoder().decode(
-            [LGRuntimeLogPayload].self,
-            from: Data(refresh.message.utf8)
-        )
         #expect(records.map(\.message) == ["第一行\nsecond line"])
         #expect(records.first?.timestamp != "1000")
         #expect(copied.contains("第一行\nsecond line"))
@@ -1278,7 +1278,7 @@ private final class LGEffectExecutorProbe: LGEffectExecuting {
 
 private struct LGGraphLifecycleCognitoProbe: LogseqCognitoProviding {
     func apiToken() async throws -> String? { nil }
-    func signIn() async throws -> String { "" }
+    func authenticate(_ request: String) async throws -> String { "" }
     func signOut() async throws {}
 }
 

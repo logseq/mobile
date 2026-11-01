@@ -5,15 +5,14 @@ let reports (model : M.logseq_model) = List.filter_map (function
   | M.ReportErrorEffect (_, message) -> Some message | _ -> None) model.pending_effects
 
 let errors_are_reported_without_changing_failure_state () =
-  let message = "com.apple.AuthenticationServices.WebAuthenticationSession error 1" in
-  let initial = { (M.initial ()) with in_flight_effects = [M.SignInEffect 7]; next_effect_id = 8 } in
+  let message = "Connection failed" in
+  let initial = { (M.initial ()) with in_flight_effects = [M.RefreshGraphsEffect 7]; next_effect_id = 8 } in
   let failed = App.update initial (M.ResolveEffect (7, false, message)) in
   check_eq (reports failed) [message];
-  check_eq failed.authentication_error (Some message);
+  check_eq failed.sync_state (M.FailedState message);
   let reporting = App.update failed (M.DequeueEffect 8) in
   let finished = App.update reporting (M.ResolveEffect (8, true, "")) in
-  check_eq ~msg:"logging cannot clear or resolve the original failure" finished.effect_error failed.effect_error;
-  check_eq finished.authentication_error failed.authentication_error;
+  check_eq ~msg:"logging cannot clear the original failure" finished.effect_error failed.effect_error;
   check_eq ~msg:"logging never creates another report" (reports finished) []
 
 let host_and_snapshot_errors_are_reported_once () =

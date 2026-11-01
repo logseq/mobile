@@ -1,213 +1,80 @@
 package com.logseq.app
 
-import android.app.Activity
 import android.content.Context
-import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import androidx.browser.customtabs.CustomTabsIntent
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
-import java.security.MessageDigest
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-internal class CognitoAuthProvider(
-    context: Context,
-    private val activity: Activity? = null
-) {
+internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool? = null) {
     private val applicationContext = context.applicationContext
     private val configuration = CognitoConfiguration.load(applicationContext)
-    private val callbackLock = Any()
-    private var pendingLogin: PendingLogin? = null
+    private val transport = transport ?: CognitoUserPool(configuration.region, configuration.appClientID)
 
-    fun hasStoredSession(): Boolean = hasStoredToken(
-        preferences().getString(tokenPreference, null),
-    )
+    fun hasStoredSession(): Boolean = hasStoredToken(preferences().getString(tokenPreference, null))
 
     suspend fun apiToken(): String? {
         val current = loadTokens() ?: return null
-        if (!current.idToken.isNullOrBlank() &&
-            current.expiresAtMillis - System.currentTimeMillis() > refreshLeewayMillis
-        ) {
+        if (current.refreshToken.isBlank()) { clearTokens(); return null }
+        if (!current.idToken.isNullOrBlank() && current.expiresAtMillis - System.currentTimeMillis() > refreshLeewayMillis) {
             return current.idToken
         }
-        return try {
-            val refreshed = tokenRequest(
-                mapOf(
-                    "grant_type" to "refresh_token",
-                    "client_id" to configuration.appClientID,
-                    "refresh_token" to current.refreshToken
-                ),
-                previousRefreshToken = current.refreshToken
-            )
-            saveTokens(refreshed)
-            refreshed.idToken
-        } catch (error: Throwable) {
-            android.util.Log.w("CognitoAuthProvider", "token refresh failed\n${error.stackTraceToString()}")
-            if (error is TokenRequestException && error.code in setOf("invalid_grant", "invalid_token")) clearTokens()
-            throw error
+        val response = transport.post("GetTokensFromRefreshToken", JSONObject().put("RefreshToken", current.refreshToken))
+        val error = response.optString("__type").substringAfterLast('#')
+        if (error in setOf("NotAuthorizedException", "RefreshTokenReuseException")) {
+            clearTokens()
+            return null
         }
+        check(error.isEmpty()) { "Authentication request failed: $error" }
+        val refreshed = tokens(response, current.refreshToken)
+        saveTokens(refreshed)
+        return refreshed.idToken
     }
 
-    suspend fun signIn(): String {
-        val activity = requireNotNull(activity) { "Sign-in requires an activity" }
-        val state = randomURLSafeString(24)
-        val verifier = randomURLSafeString(64)
-        val challenge = base64URL(
-            MessageDigest.getInstance("SHA-256")
-                .digest(verifier.toByteArray(StandardCharsets.UTF_8))
-        )
-        val code = suspendCancellableCoroutine { continuation ->
-            synchronized(callbackLock) {
-                if (pendingLogin != null) {
-                    continuation.resumeWithException(
-                        IllegalStateException("A sign-in request is already active")
-                    )
-                    return@suspendCancellableCoroutine
-                }
-                pendingLogin = PendingLogin(state, continuation)
-            }
-            continuation.invokeOnCancellation {
-                synchronized(callbackLock) {
-                    if (pendingLogin?.continuation === continuation) pendingLogin = null
-                }
-            }
-            val authorizationURL = CognitoOAuth.authorizationURL(
-                domain = configuration.oauthDomain,
-                clientID = configuration.appClientID,
-                redirectURI = configuration.redirectURI,
-                scopes = configuration.scopes,
-                state = state,
-                challenge = challenge
-            )
-            runCatching {
-                CustomTabsIntent.Builder().build().launchUrl(
-                    activity,
-                    Uri.parse(authorizationURL)
-                )
-            }.onFailure { error ->
-                synchronized(callbackLock) { pendingLogin = null }
-                if (continuation.isActive) continuation.resumeWithException(error)
-            }
+    // The shared OCaml form owns all challenge and recovery decisions.
+    suspend fun authenticate(encoded: String): String {
+        val request = JSONObject(encoded)
+        val operation = request.getString("operation")
+        require(operation in interactiveOperations) { "Unsupported authentication operation" }
+        val response = transport.post(operation, request.getJSONObject("body"))
+        if (response.has("AuthenticationResult")) {
+            require(operation == "InitiateAuth" || operation == "RespondToAuthChallenge")
+            saveTokens(tokens(response, null))
+            return "{\"signedIn\":true}"
         }
-        val tokens = tokenRequest(
-            mapOf(
-                "grant_type" to "authorization_code",
-                "client_id" to configuration.appClientID,
-                "code" to code,
-                "redirect_uri" to configuration.redirectURI,
-                "code_verifier" to verifier
-            ),
-            previousRefreshToken = null
-        )
-        require(tokens.refreshToken.isNotBlank()) {
-            "Cognito did not return a refresh token"
+        val sanitized = JSONObject()
+        for (key in listOf("__type", "ChallengeName", "ChallengeParameters", "Session", "UserConfirmed",
+            "CodeDeliveryDetails", "SecretCode", "Status")) {
+            if (response.has(key)) sanitized.put(key, response.get(key))
         }
-        saveTokens(tokens)
-        return requireNotNull(tokens.idToken)
+        return sanitized.toString()
     }
 
     suspend fun signOut() {
         val refreshToken = loadTokens()?.refreshToken
         clearTokens()
         if (!refreshToken.isNullOrBlank()) {
-            runCatching {
-                tokenPost(
-                    endpoint("/oauth2/revoke"),
-                    mapOf("client_id" to configuration.appClientID, "token" to refreshToken)
-                )
-            }
+            try { transport.post("RevokeToken", JSONObject().put("Token", refreshToken)) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Local sign-out succeeds even while offline. */ }
         }
     }
 
-    fun handleCallback(url: String?): Boolean {
-        if (url.isNullOrBlank()) return false
-        val uri = Uri.parse(url)
-        val redirect = Uri.parse(configuration.redirectURI)
-        if (!uri.scheme.equals(redirect.scheme, ignoreCase = true) ||
-            !uri.host.equals(redirect.host, ignoreCase = true) ||
-            uri.path != redirect.path
-        ) {
-            return false
-        }
-        val pending = synchronized(callbackLock) {
-            pendingLogin.also { pendingLogin = null }
-        } ?: return true
-        runCatching { CognitoOAuth.authorizationCode(url, pending.state, configuration.redirectURI) }
-            .onSuccess { code ->
-                if (pending.continuation.isActive) pending.continuation.resume(code)
-            }
-            .onFailure { error ->
-                if (pending.continuation.isActive) {
-                    pending.continuation.resumeWithException(error)
-                }
-            }
-        return true
-    }
-
-    private suspend fun tokenRequest(
-        values: Map<String, String>,
-        previousRefreshToken: String?
-    ): StoredTokens {
-        val response = tokenPost(endpoint("/oauth2/token"), values)
-        val idToken = response.optString("id_token")
+    private fun tokens(response: JSONObject, previousRefreshToken: String?): StoredTokens {
+        val result = response.getJSONObject("AuthenticationResult")
+        val idToken = result.optString("IdToken")
         require(idToken.isNotBlank()) { "Cognito did not return an ID token" }
-        val refreshToken = response.optString("refresh_token").ifBlank {
-            previousRefreshToken.orEmpty()
-        }
-        return StoredTokens(
-            idToken = idToken,
-            refreshToken = refreshToken,
-            expiresAtMillis = System.currentTimeMillis() +
-                response.optLong("expires_in", 3600) * 1000
-        )
-    }
-
-    private suspend fun tokenPost(
-        url: String,
-        values: Map<String, String>
-    ): JSONObject = withContext(Dispatchers.IO) {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 15_000
-            connection.doOutput = true
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/x-www-form-urlencoded"
-            )
-            connection.outputStream.use { output ->
-                output.write(
-                    CognitoOAuth.formEncoded(values).toByteArray(StandardCharsets.UTF_8)
-                )
-            }
-            val succeeded = connection.responseCode in 200..299
-            val body = (if (succeeded) connection.inputStream else connection.errorStream)
-                ?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (!succeeded) {
-                val reason = runCatching { JSONObject(body).optString("error") }
-                    .getOrNull().orEmpty().ifBlank { "HTTP ${connection.responseCode}" }
-                throw TokenRequestException(reason)
-            }
-            if (body.isBlank()) JSONObject() else JSONObject(body)
-        } finally {
-            connection.disconnect()
-        }
+        val refreshToken = result.optString("RefreshToken").ifBlank { previousRefreshToken.orEmpty() }
+        require(refreshToken.isNotBlank()) { "Cognito did not return a refresh token" }
+        val expiresIn = result.optLong("ExpiresIn", 0)
+        require(expiresIn > 0) { "Cognito returned an invalid token expiry" }
+        return StoredTokens(idToken, refreshToken, System.currentTimeMillis() + expiresIn * 1000)
     }
 
     private fun saveTokens(tokens: StoredTokens) {
@@ -289,68 +156,25 @@ internal class CognitoAuthProvider(
         return generator.generateKey()
     }
 
-    private fun endpoint(path: String) = "https://${configuration.oauthDomain}$path"
-
-    private class TokenRequestException(val code: String) :
-        IllegalStateException("Cognito token request failed: $code")
-
-    private data class StoredTokens(
-        val idToken: String?,
-        val refreshToken: String,
-        val expiresAtMillis: Long
-    )
-
-    private data class PendingLogin(
-        val state: String,
-        val continuation: CancellableContinuation<String>
-    )
+    private data class StoredTokens(val idToken: String?, val refreshToken: String, val expiresAtMillis: Long)
 
     private companion object {
         const val refreshLeewayMillis = 60_000L
         const val tokenPreference = "tokens"
         const val keyAlias = "com.logseq.app.cognito.tokens"
-        val random = SecureRandom()
-
-        fun randomURLSafeString(byteCount: Int): String {
-            val bytes = ByteArray(byteCount)
-            random.nextBytes(bytes)
-            return base64URL(bytes)
-        }
-
-        fun base64URL(bytes: ByteArray): String = Base64.encodeToString(
-            bytes,
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-        )
+        val interactiveOperations = setOf("InitiateAuth", "RespondToAuthChallenge", "SignUp", "ConfirmSignUp",
+            "ResendConfirmationCode", "ForgotPassword", "ConfirmForgotPassword", "AssociateSoftwareToken", "VerifySoftwareToken")
     }
 }
 
 internal fun hasStoredToken(value: String?): Boolean = !value.isNullOrBlank()
 
-private data class CognitoConfiguration(
-    val region: String,
-    val userPoolID: String,
-    val appClientID: String,
-    val oauthDomain: String,
-    val redirectURI: String,
-    val logoutURI: String,
-    val scopes: List<String>
-) {
+private data class CognitoConfiguration(val region: String, val appClientID: String) {
     companion object {
         fun load(context: Context): CognitoConfiguration {
             val json = context.resources.openRawResource(R.raw.logseq_auth)
                 .bufferedReader().use { JSONObject(it.readText()) }
-            val encodedScopes = json.getJSONArray("scopes")
-            return CognitoConfiguration(
-                region = json.getString("region"),
-                userPoolID = json.getString("userPoolId"),
-                appClientID = json.getString("appClientId"),
-                oauthDomain = json.getString("oauthDomain"),
-                redirectURI = json.getString("redirectURI"),
-                logoutURI = json.getString("logoutURI"),
-                scopes = List(encodedScopes.length()) { index ->
-                    encodedScopes.getString(index)
-                }
-            )
+            return CognitoConfiguration(json.getString("region"), json.getString("appClientId"))
         }
     }
 }

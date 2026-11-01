@@ -94,6 +94,30 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try registry.register(
+            LUIAppleExtension(
+                identifier: "native-auth-input",
+                fingerprint: "lui-extension-v1|17:native-auth-input|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:4:kind:string:required:none|events:",
+                acceptsStandardChildren: true,
+                properties: [.init(name: "kind", kind: .string, isRequired: true)]
+            ) { context in
+                let content = context.childIDs.first.map { context.content(for: $0) } ?? AnyView(EmptyView())
+                let kind: String
+                if case let .string(value) = context.property("kind") { kind = value }
+                else { kind = "text" }
+                #if os(iOS)
+                return AnyView(content
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(kind == "email" ? .emailAddress : kind == "code" ? .numberPad : .default)
+                    .textContentType(kind == "email" ? .username : kind == "code" ? .oneTimeCode :
+                        kind == "password" ? .password : kind == "new-password" ? .newPassword : nil)
+                    .submitLabel(.done))
+                #else
+                return AnyView(content.autocorrectionDisabled())
+                #endif
+            }
+        )
         try registry.registerTweak(
             LUIAppleTweak(
                 identifier: "native-control-tint",

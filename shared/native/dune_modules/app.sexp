@@ -1,1 +1,1 @@
-("Localization" "Model" "View_base" "View_rows" "View_sidebar" "View_composer" "View_flashcards" "View_query" "View_property" "View_outliner" "View_graphs" "View_settings" "View_screens" "View" "App" "Response_snapshot" "Native_bridge" "Native_crypto")
+("Localization" "Auth_flow" "Model" "View_base" "View_rows" "View_sidebar" "View_composer" "View_flashcards" "View_query" "View_property" "View_outliner" "View_graphs" "View_settings" "View_authentication" "View_screens" "View" "App" "Response_snapshot" "Native_bridge" "Native_crypto")

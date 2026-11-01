@@ -210,11 +210,7 @@ public struct LogseqRootView : View {
             provider: CognitoAuthProvider(
                 region: configuration.region,
                 userPoolId: configuration.userPoolId,
-                appClientId: configuration.appClientId,
-                oauthDomain: configuration.oauthDomain,
-                redirectURI: configuration.redirectURI,
-                logoutURI: configuration.logoutURI,
-                scopes: configuration.scopes
+                appClientId: configuration.appClientId
             )
         )
         let syncCoordinator = GraphSyncCoordinator()
@@ -256,13 +252,7 @@ public struct LogseqRootView : View {
             },
             runtimeLog: .shared,
             copyText: { text in Self.copyText(text) },
-            signIn: {
-                await authentication.signIn()
-                let message = authentication.state == .signedIn
-                    ? nil
-                    : authentication.errorMessage ?? "Hosted sign-in failed"
-                return message
-            },
+            signIn: { request in try await authentication.authenticate(request) },
             signOut: {
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
@@ -886,10 +876,6 @@ struct LogseqCognitoConfiguration: Decodable {
     let region: String
     let userPoolId: String
     let appClientId: String
-    let oauthDomain: String
-    let redirectURI: String
-    let logoutURI: String
-    let scopes: [String]
 
     static func load() -> LogseqCognitoConfiguration {
         guard
@@ -900,11 +886,7 @@ struct LogseqCognitoConfiguration: Decodable {
             return LogseqCognitoConfiguration(
                 region: "",
                 userPoolId: "",
-                appClientId: "",
-                oauthDomain: "",
-                redirectURI: "",
-                logoutURI: "",
-                scopes: []
+                appClientId: ""
             )
         }
         return configuration

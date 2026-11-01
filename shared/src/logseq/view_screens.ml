@@ -879,12 +879,12 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
 let authentication_content (context : Lui_ui.ui_context) model_source
     send : t =
   let sign_in =
-    button ~accessibility_identifier:"button.hosted-sign-in"
+    button ~accessibility_identifier:"button.sign-in"
       ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
       ~disabled:(reactive View_base.authentication_signing_in_ model_source)
       ~on_press:(press send Model.SignIn)
       ~text:(View_base.tr (Signal.sample model_source) "Sign in")
-      [View_settings.sign_in_label model_source]
+      [View_settings.sign_in_label ~centered:true model_source]
   in
   column ~cross:`center ~gap:0 ~max_width:400
     [
@@ -1113,7 +1113,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
         | _ -> ())
       drawer_main drawer_panel
 
-let logseq_view (context : Lui_ui.ui_context) model_source send : t =
+let application_view (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context <> SwiftUIHost && Lui_ui.host context <> KotlinHost then
     application_drawer_view context model_source send
   else fun context parent ->
@@ -1130,3 +1130,8 @@ let logseq_view (context : Lui_ui.ui_context) model_source send : t =
       | _ -> ());
     ignore ((application_drawer_view context model_source send) context (Some node));
     node
+
+let logseq_view context model_source send : t =
+  stack ~grow:1.0 [application_view context model_source send;
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)
+      (View_authentication.sheet model_source send)]

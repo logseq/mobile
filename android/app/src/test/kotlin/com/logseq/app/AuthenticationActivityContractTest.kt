@@ -22,7 +22,7 @@ class AuthenticationActivityContractTest {
     }
 
     @Test
-    fun `oauth callback returns to the existing authentication activity`() {
+    fun `incoming app entries reuse the existing activity`() {
         val activity = mainActivity()
 
         assertEquals(
@@ -32,7 +32,7 @@ class AuthenticationActivityContractTest {
     }
 
     @Test
-    fun `oauth callback remains routed to the authentication activity`() {
+    fun `password login does not expose an OAuth callback`() {
         val activity = mainActivity()
         val dataElements = activity.getElementsByTagName("data")
         val hasOAuthCallback = (0 until dataElements.length).any { index ->
@@ -42,7 +42,7 @@ class AuthenticationActivityContractTest {
                 data.getAttributeNS(androidNamespace, "pathPrefix") == "/callback"
         }
 
-        assertTrue("MainActivity must receive the Cognito OAuth callback", hasOAuthCallback)
+        org.junit.Assert.assertFalse("Password login does not use browser callbacks", hasOAuthCallback)
     }
 
     @Test
