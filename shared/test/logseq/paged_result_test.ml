@@ -99,12 +99,17 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
         (find ("view.rows.loading." ^ R.table_view) = -1);
       check ~msg:"existing rows remain mounted while the next window is pending"
         (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") <> -1);
-      scroll 900 908;
+      scroll 960 968;
       check_eq ~msg:"rapid scrolling coalesces while a read is pending" (List.length (pending ())) 1;
       let before = (App.model app).outliner_rows in
+      drain ();
+      let desired = R.find_view R.table_view (R.read session) |> items "rows" |> List.nth_opt in
+      let visible = Option.get (desired 960) |> member "block" |> member "uuid" |> text in
+      check ~msg:"a completed window displays visible rows even after its prefetch target moved"
+        (find ("view.cell." ^ R.table_view ^ "." ^ visible ^ ".block/title") <> -1);
+      scroll 900 908;
       drain (); drain ();
       check_eq ~msg:"window replies do not replace the surrounding page" (App.model app).outliner_rows before;
-      let desired = R.find_view R.table_view (R.read session) |> items "rows" |> List.nth_opt in
       let row = Option.get (desired 900) |> member "block" |> member "uuid" |> text in
       check ~msg:"the latest visible range replaces the old window"
         (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
