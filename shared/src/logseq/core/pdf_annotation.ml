@@ -37,9 +37,12 @@ let live db id = value db id "logseq.property/deleted-at" = None
 
 let asset db asset_uuid = match eid db asset_uuid with
   | Some id when live db id && Read.entity_is_instance_of db id "logseq.class/Asset"
-      && (match value db id "logseq.property.asset/type" with
+      && ((match value db id "logseq.property.asset/type" with
         | Some (Ds.String kind) -> List.mem (String.lowercase_ascii kind) ["pdf"; "application/pdf"]
-        | _ -> false) -> Ok id
+        | _ -> false)
+        || (match value db id "block/title" with
+          | Some (Ds.String title) -> String.ends_with ~suffix:".pdf" (String.lowercase_ascii title)
+          | _ -> false)) -> Ok id
   | _ -> Error "The PDF asset is unavailable"
 
 let rec json = function
@@ -63,22 +66,40 @@ let annotation db asset_id id = live db id
   && Read.entity_is_instance_of db id "logseq.class/Pdf-annotation"
   && ref_id db id "logseq.property/asset" = Some asset_id
 
+let highlight_values db asset_id =
+  Datascript_value.datoms_by_ref db Ds.Avet "logseq.property/asset" asset_id
+  |> Seq.filter_map (fun (datom : Ds.datom) ->
+    if not (annotation db asset_id datom.e) then None else
+    match value db datom.e "logseq.property.pdf/hl-value" with
+    | Some (Ds.Map _ as highlight) ->
+      let color = Option.bind (ref_id db datom.e "logseq.property.pdf/hl-color")
+        (fun id -> value db id "block/title") in
+      Some (datom.e, highlight, color)
+    | _ -> None)
+
+let unchanged before after ~asset_uuid =
+  let same_value left right = left == right || Ds.Db.value_equal left right in
+  let same_optional = Option.equal same_value in
+  before == after || match asset before asset_uuid, asset after asset_uuid with
+  | Ok left, Ok right when left = right ->
+    same_optional (value before left "logseq.property.asset/last-visit-page")
+      (value after right "logseq.property.asset/last-visit-page")
+    && Seq.equal (fun (left_id, left_value, left_color) (right_id, right_value, right_color) ->
+      left_id = right_id && same_value left_value right_value && same_optional left_color right_color)
+      (highlight_values before left) (highlight_values after right)
+  | Error left, Error right -> left = right
+  | _ -> false
+
 let read db ~asset_uuid =
   let* asset_id = asset db asset_uuid in
-  let highlights = Datascript_value.datoms_by_ref db Ds.Avet "logseq.property/asset" asset_id
-    |> Seq.filter_map (fun (datom : Ds.datom) ->
-      if annotation db asset_id datom.e then
-        match value db datom.e "logseq.property.pdf/hl-value" with
-        | Some (Ds.Map _ as highlight) ->
-          let highlight = json highlight in
-          let color = Option.bind (ref_id db datom.e "logseq.property.pdf/hl-color")
-            (fun id -> match value db id "block/title" with Some (Ds.String color) -> Some color | _ -> None) in
-          let properties = match field "properties" highlight with `Assoc fields -> fields | _ -> [] in
-          let properties = match color with Some color -> ("color", `String color) :: List.remove_assoc "color" properties | None -> properties in
-          (match highlight with `Assoc fields -> Some (`Assoc
-            (("properties", `Assoc properties) :: List.remove_assoc "properties" fields)) | _ -> None)
-        | _ -> None
-      else None) |> List.of_seq in
+  let highlights = highlight_values db asset_id |> Seq.map (fun (_, highlight, color) ->
+    let highlight = json highlight in
+    let properties = match field "properties" highlight with `Assoc fields -> fields | _ -> [] in
+    let properties = match color with Some (Ds.String color) ->
+      ("color", `String color) :: List.remove_assoc "color" properties | _ -> properties in
+    match highlight with `Assoc fields -> `Assoc
+      (("properties", `Assoc properties) :: List.remove_assoc "properties" fields) | _ -> assert false)
+    |> List.of_seq in
   let highlights = List.sort (fun a b ->
     let pages = compare (integer (field "page" a)) (integer (field "page" b)) in
     if pages <> 0 then pages else compare (text (field "id" a)) (text (field "id" b))) highlights in

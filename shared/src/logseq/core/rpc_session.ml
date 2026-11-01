@@ -218,9 +218,27 @@ let with_local_assets session result =
     | value -> value in
   decorate result
 
+let with_pdf_update session result =
+  match !(session.Types.pdf_workspace), (state session).config with
+  | Some (graph_id, asset_uuid, previous), Some config when graph_id = config.graph_id ->
+    (match query_db session, result with
+     | Some db, `Assoc fields ->
+       session.pdf_workspace := Some (graph_id, asset_uuid, db);
+       if Pdf_annotation.unchanged previous db ~asset_uuid then result else
+         let pdf_fields = match Pdf_annotation.read db ~asset_uuid with
+           | Ok (`Assoc fields) -> fields
+           | Error message -> ["assetUuid", `String asset_uuid; "highlights", `List [];
+               "error", `String message]
+           | Ok _ -> assert false in
+         `Assoc (("pdfWorkspace", `Assoc (("graphId", `String graph_id) :: pdf_fields))
+           :: List.remove_assoc "pdfWorkspace" fields)
+     | _ -> result)
+  | Some _, _ -> session.pdf_workspace := None; result
+  | _ -> result
+
 let success session result =
   Rpc.success (Rpc.with_node_icons (node_icon session)
-    (with_local_assets session (with_queries session result)))
+    (with_local_assets session (with_queries session (with_pdf_update session result))))
 
 let take count values =
   let rec loop count result = function
@@ -2115,6 +2133,7 @@ let rec dispatch session action payload =
            | Some current -> (match Pdf_annotation.read current ~asset_uuid with
              | Error message -> Rpc.failure "invalid_pdf_annotation" message
              | Ok (`Assoc fields) ->
+               session.Types.pdf_workspace := Some (config.graph_id, asset_uuid, current);
                let pdf = `Assoc (("graphId", `String config.graph_id) :: fields) in
                (match snapshot with
                 | None -> Rpc.success (`Assoc ["isPdfPatch", `Bool true; "pdfWorkspace", pdf])
@@ -2122,12 +2141,19 @@ let rec dispatch session action payload =
                   | `Assoc envelope ->
                     (match List.assoc_opt "result" envelope with
                      | Some (`Assoc fields) -> Json.to_string (`Assoc
-                       (("result", `Assoc (("pdfWorkspace", pdf) :: fields)) :: List.remove_assoc "result" envelope))
+                       (("result", `Assoc (("pdfWorkspace", pdf) :: List.remove_assoc "pdfWorkspace" fields)) :: List.remove_assoc "result" envelope))
                      | _ -> body)
                   | _ -> body))
              | Ok _ -> assert false) in
          if get "graphId" <> `String config.graph_id then
            Rpc.failure "stale_graph" "The active graph changed. Reopen the PDF"
+         else if get "action" = `String "close" then begin
+           (match !(session.Types.pdf_workspace) with
+            | Some (graph_id, watched_asset, _) when graph_id = config.graph_id && watched_asset = asset_uuid ->
+              session.pdf_workspace := None
+            | _ -> ());
+           Rpc.success (`Assoc ["isPdfPatch", `Bool true])
+         end
          else if get "action" = `String "load" then respond ()
          else (match editing_cursor session with
            | Error (code, message) -> Rpc.failure code message

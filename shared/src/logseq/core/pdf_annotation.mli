@@ -1,3 +1,4 @@
+val unchanged : Datascript.db -> Datascript.db -> asset_uuid:string -> bool
 val read : Datascript.db -> asset_uuid:string -> (Yojson.Basic.t, string) result
 val reference : Datascript.db -> string -> Yojson.Basic.t option
 val mutation : Datascript.db -> now:int -> Yojson.Basic.t ->
