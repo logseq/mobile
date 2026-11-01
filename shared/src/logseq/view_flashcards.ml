@@ -1,5 +1,20 @@
 open Lui_elements
 
+let json_field key = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
+  | _ -> `Null
+let json_text = function `String value -> value | _ -> ""
+let json_items = function `List values -> values | _ -> []
+let deck_metadata (model : Model.logseq_model) =
+  try Yojson.Basic.from_string model.flashcard_decks_json with _ -> `Null
+let review_completed model = json_field "completed" (deck_metadata model) = `Bool true
+let has_cards model = match json_field "totalCards" (deck_metadata model) with
+  | `Int count -> count > 0 | _ -> false
+let deck_request model_source send fields =
+  let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
+  ignore (send (Model.FlashcardDeckAction
+    (Yojson.Basic.to_string (`Assoc (("graphId", `String graph) :: fields)))))
+
 let flashcard_answer_row answer_source : t =
   let answer = Signal.sample answer_source in
   text
@@ -28,7 +43,8 @@ let flashcard_review_content model_source send : t =
           row ~accessibility_identifier:"row.flashcards.status"
             [
               text ~style_class:"footnote" ~foreground:"muted-foreground"
-                ~value:(View_base.tr (Signal.sample model_source) "Due now") [];
+                ~value_signal:(Signal.map (fun model -> View_base.tr model
+                  (if json_field "practicing" (deck_metadata model) = `Bool true then "Practice" else "Due now")) model_source) [];
               spacer ~grow:1.0 [];
               text ~style_class:"footnote" ~foreground:"muted-foreground"
                 ~value_signal:
@@ -116,18 +132,6 @@ let flashcard_review_content model_source send : t =
       box ~height:24 ~accessibility_identifier:"spacer.flashcards.bottom"
         [];
     ]
-
-let json_field key = function
-  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
-  | _ -> `Null
-let json_text = function `String value -> value | _ -> ""
-let json_items = function `List values -> values | _ -> []
-let deck_metadata (model : Model.logseq_model) =
-  try Yojson.Basic.from_string model.flashcard_decks_json with _ -> `Null
-let deck_request model_source send fields =
-  let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
-  ignore (send (Model.FlashcardDeckAction
-    (Yojson.Basic.to_string (`Assoc (("graphId", `String graph) :: fields)))))
 
 let flashcard_group_controls model_source send : t = fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
@@ -259,12 +263,32 @@ let flashcard_screen model_source send : t =
         (column ~accessibility_identifier:"layout.flashcards.empty"
            ~grow:1.0 ~main:`center ~cross:`center ~gap:10 ~padding:32
            [
-             icon ~name:(`app "flashcards") ~width:48 ~height:48
-               ~foreground:"muted-foreground" [];
-             heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "No cards due")
-               ~accessibility_identifier:"flashcards.empty" [];
-             text ~text_alignment:`center ~foreground:"muted-foreground"
-               ~value:(View_base.tr (Signal.sample model_source) "Tag any block with #Card to review it here.") [];
+             if_ ~test:(Signal.map review_completed model_source)
+               (column ~main:`center ~cross:`center ~gap:12
+                  ~accessibility_identifier:"flashcards.complete"
+                  [text ~value:"🎉" ~font_size:"48" ~accessibility_identifier:"flashcards.celebration" [];
+                   heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "Review complete") [];
+                   text ~text_alignment:`center ~foreground:"muted-foreground"
+                     ~value:(View_base.tr (Signal.sample model_source) "You've completed this review.") []]);
+             if_ ~test:(Signal.map (fun model -> not (review_completed model)) model_source)
+               (column ~main:`center ~cross:`center ~gap:10
+                  [icon ~name:(`app "flashcards") ~width:48 ~height:48 ~accessibility_identifier:"flashcards.empty-icon"
+                     ~foreground:"muted-foreground" [];
+                   heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "No cards due")
+                     ~accessibility_identifier:"flashcards.empty" [];
+                   text ~text_alignment:`center ~foreground:"muted-foreground"
+                     ~accessibility_identifier:"flashcards.empty-description"
+                     ~value_signal:(Signal.map (fun model -> View_base.tr model
+                       (if has_cards model then "Come back later or practice again now."
+                        else "Tag any block with #Card to review it here.")) model_source) [];
+                   if_ ~test:(Signal.map has_cards model_source)
+                     (button ~variant:`outline ~min_height:48 ~padding_horizontal:20 ~corner_radius:14
+                        ~text:(View_base.tr (Signal.sample model_source) "Practice again")
+                        ~accessibility_identifier:"button.flashcards.practice-again"
+                        ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) ->
+                          List.exists (function Model.FlashcardDeckEffect _ -> true | _ -> false)
+                            (model.pending_effects @ model.in_flight_effects)) model_source)
+                        ~on_press:(fun _ -> deck_request model_source send ["action", `String "practice"]) [])]);
            ]);
       if_
         ~test:(Signal.map View_base.flashcards_present_ model_source)

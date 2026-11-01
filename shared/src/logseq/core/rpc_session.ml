@@ -1691,10 +1691,13 @@ let flashcard_deck_state session =
   Flashcard_decks.for_graph (Option.map (fun c -> c.Api.graph_id) (state session).config)
     (state session).flashcard_decks
 
-let flashcards_in_scope session now = function
+let flashcards_in_scope ?(all = false) session now = function
+  | None when all -> (match query_db session with
+      | Some db -> Ok (Flashcards.all_cards db now)
+      | None -> Ok (match (host session).graph_due_flashcards with Some load -> load now | None -> []))
   | None -> Ok (match (host session).graph_due_flashcards with Some load -> load now | None -> [])
   | Some uuid -> (match query_db session with
-      | Some db -> Flashcard_decks.due_cards db now uuid
+      | Some db -> (if all then Flashcard_decks.all_cards else Flashcard_decks.due_cards) db now uuid
       | None -> Error "Open a graph before selecting a card group")
 
 let publish_flashcards session (decks : Flashcard_decks.state) cards error =
@@ -1704,9 +1707,19 @@ let publish_flashcards session (decks : Flashcard_decks.state) cards error =
 
 let reload_flashcards session now =
   let decks = flashcard_deck_state session in
-  match flashcards_in_scope session now decks.selected with
-  | Ok cards -> publish_flashcards session decks cards None
-  | Error message -> publish_flashcards session decks [] (Some message)
+  match flashcards_in_scope ~all:true session now decks.selected with
+  | Error message -> publish_flashcards session {decks with total_cards = 0} [] (Some message)
+  | Ok all ->
+    let decks = {decks with total_cards = List.length all} in
+    let cards = match decks.practice_remaining with
+      | None -> flashcards_in_scope session now decks.selected
+      | Some remaining ->
+        let by_uuid = Hashtbl.create (List.length all) in
+        List.iter (fun (card : Flashcards.due_card) -> Hashtbl.replace by_uuid card.block.uuid card) all;
+        Ok (List.filter_map (Hashtbl.find_opt by_uuid) remaining) in
+    (match cards with
+     | Ok cards -> publish_flashcards session decks cards None
+     | Error message -> publish_flashcards session decks [] (Some message))
 
 let flashcard_deck_action session fields =
   let string key = match List.assoc_opt key fields with Some (`String s) -> Some s | _ -> None in
@@ -1726,9 +1739,18 @@ let flashcard_deck_action session fields =
          (match flashcards_in_scope session now selected with
           | Error message -> failure message
           | Ok cards ->
-            publish_flashcards session {decks with selected} cards None;
+            publish_flashcards session {decks with selected; practice_remaining = None; completed = false} cards None;
+            reload_flashcards session now;
             snapshot_visible session)
        | _ -> failure "Choose a card group or All cards")
+    | Some "practice" ->
+      (match flashcards_in_scope ~all:true session now decks.selected with
+       | Error message -> failure message
+       | Ok cards ->
+         let remaining = List.map (fun (card : Flashcards.due_card) -> card.block.uuid) cards in
+         publish_flashcards session {decks with practice_remaining = Some remaining;
+           total_cards = List.length cards; completed = false} cards None;
+         snapshot_visible session)
     | Some "search" ->
       let kind = Option.value ~default:"page" (string "kind") in
       if not (List.mem kind ["page"; "tag"]) then failure "Choose a page reference or tag"
@@ -1749,7 +1771,8 @@ let flashcard_deck_action session fields =
              | Error message -> failure message
              | Ok () ->
                session.Types.state := {(state session) with flashcard_decks =
-                 {decks with selected = Some uuid; created = Some uuid}};
+                 {decks with selected = Some uuid; created = Some uuid;
+                   practice_remaining = None; completed = false}};
                reload_flashcards session now;
                snapshot_visible session))
        | _, _, _, Error (_, message) -> failure message
@@ -2275,6 +2298,8 @@ let rec dispatch session action payload =
          | None -> now_ms ())
       | None -> now_ms ()
     in
+    session.Types.state := {(state session) with flashcard_decks =
+      {(flashcard_deck_state session) with practice_remaining = None; completed = false}};
     reload_flashcards session now;
     debug
       ("loadFlashcards count="
@@ -2284,10 +2309,17 @@ let rec dispatch session action payload =
   | "flashcardDeck" -> object_action (fun _ fields -> flashcard_deck_action session fields)
   | "reviewFlashcard" ->
     Rpc.review_flashcard payload h.Types.graph_review_flashcard now_ms
-      (fun now ->
+      (fun now uuid ->
+        let had_cards = (state session).flashcards <> [] in
+        let decks = flashcard_deck_state session in
+        session.Types.state := {(state session) with flashcard_decks =
+          {decks with practice_remaining = Option.map (List.filter ((<>) uuid)) decks.practice_remaining}};
         if (state session).config <> None then
           restore_semantic_queue session;
         reload_flashcards session now;
+        let decks = flashcard_deck_state session in
+        session.Types.state := {(state session) with flashcard_decks =
+          {decks with completed = had_cards && (state session).flashcards = [] && decks.error = None}};
         snapshot_visible session)
   | "setPageFavorite" ->
     Rpc.set_page_favorite payload h.Types.graph_set_page_favorite

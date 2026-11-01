@@ -727,7 +727,7 @@ let review_flashcard payload review clock completed =
          Wire.graph_workflow_result "flashcard_review_failed"
            (review uuid rating now operation_id)
        in
-       Ok (completed now))
+       Ok (completed now uuid))
 
 let set_page_favorite payload set_favorite configured clock completed =
   match (payload, set_favorite, configured) with

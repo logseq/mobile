@@ -361,7 +361,121 @@ let native_failed_create_can_retry_or_cancel () =
       check_eq (member "selectedUuid" (metadata (snapshot session))) `Null)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let finish_review_effect app session =
+  let eff = List.find (function Model.ReviewFlashcardEffect _ -> true | _ -> false)
+    (App.model app).pending_effects in
+  let id = Model.effect_id eff in
+  App_test.send app (Model.DequeueEffect id); App_test.flush app;
+  let response = match eff with
+    | Model.ReviewFlashcardEffect (_, uuid, rating) ->
+      Core_effect_test.execute session "review-flashcard" ["uuid", `String uuid; "text", `String rating]
+    | _ -> assert false in
+  ignore (result response);
+  App_test.send app (Model.ResolveEffect (id, true, Yojson.Basic.to_string response));
+  (match Response_snapshot.decode_response (Yojson.Basic.to_string response) with
+   | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection)
+   | Error message -> fail message);
+  App_test.flush app
+
+let review_current app session rating =
+  if find app "button.flashcard.show-cloze" <> -1 then press app "button.flashcard.show-cloze";
+  press app "button.flashcard.show-answer";
+  press app ("button.flashcard.rating." ^ rating);
+  finish_review_effect app session
+
+let reopen_review app session =
+  let response = Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())) in
+  ignore (result response);
+  match Response_snapshot.decode_response (Yojson.Basic.to_string response) with
+  | Ok projection ->
+    App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app
+  | Error message -> fail message
+
+let native_practice_again_repeats_the_whole_selected_group () =
+  List.iter (fun backend -> with_runtime (fun session runtime _ ->
+    ignore (select session (`String tag_deck));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app Model.ShowFlashcards; App_test.flush app;
+      check_eq (find app "button.flashcards.practice-again") (-1);
+      review_current app session "good";
+      review_current app session "good";
+      check_eq (App.model app).flashcards [];
+      check ~msg:"Completing a card group celebrates the finished review" (find app "flashcards.complete" <> -1);
+      check_eq ~msg:"The finished round celebrates without asking to restart immediately"
+        (find app "button.flashcards.practice-again") (-1);
+      List.iter (fun rating ->
+        reopen_review app session;
+        check_eq (find app "flashcards.complete") (-1);
+        check ~msg:"Reopening without due cards offers Practice again" (find app "button.flashcards.practice-again" <> -1);
+        let before = Graph_runtime.db runtime in
+        let pending = List.length (Graph_runtime.pending_operations runtime) in
+        press app "button.flashcards.practice-again";
+        check (finish_deck_effect app session);
+        check_eq (find app "flashcards.complete") (-1);
+        check ~msg:"Starting practice never resets stored FSRS state" (before == Graph_runtime.db runtime);
+        check_eq (List.length (Graph_runtime.pending_operations runtime)) pending;
+        check_eq ~msg:"Practice includes future cards and inherited cards in this group only"
+          (List.sort compare (List.map (fun (card : Model.flashcard) -> card.flashcard_uuid) (App.model app).flashcards))
+          (List.sort compare [Q.beta; R.gamma; future]);
+        for remaining = 3 downto 1 do
+          check_eq (List.length (App.model app).flashcards) remaining;
+          check ~msg:"Each practice card starts with its answer hidden" (not (App.model app).flashcard_answer_revealed);
+          review_current app session rating
+        done;
+        check_eq ~msg:"Each card is practiced once even when rated Again" (App.model app).flashcards [];
+        check ~msg:"Finishing another practice round celebrates again" (find app "flashcards.complete" <> -1);
+        check_eq (find app "button.flashcards.practice-again") (-1);
+        check_eq (List.length (Graph_runtime.pending_operations runtime)) (pending + 3)) ["again"; "good"];
+      let reloaded = result (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ()))) in
+      expect [] reloaded))) [App_test.ios_backend; App_test.kotlin_backend]
+
+let practice_when_nothing_is_due_preserves_scope_and_resets_on_navigation () =
+  with_runtime (fun session runtime conn ->
+    ignore (D.transact_conn conn (List.map (fun uuid ->
+      put uuid "logseq.property.fsrs/due" (D.Int64 (Int64.of_int (now () + 86400000)))) [Q.alpha; Q.beta; R.gamma]));
+    Graph_runtime.rebase runtime 42 [] [];
+    ignore (select session (`String page_deck));
+    Q.with_ui App_test.ios_backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app Model.ShowFlashcards; App_test.flush app;
+      check_eq ~msg:"No due cards on entry is not a completed session" (find app "flashcards.complete") (-1);
+      press app "button.flashcards.practice-again";
+      check (finish_deck_effect app session);
+      expect [Q.alpha; R.gamma; future] (snapshot session));
+    let searched = result (deck session ["action", `String "search"; "kind", `String "page"; "query", `String "Topic"]) in
+    expect [Q.alpha; R.gamma; future] searched;
+    expect [] (select session (`String tag_deck));
+    check_eq (member "completed" (metadata (snapshot session))) (`Bool false);
+    expect [Q.beta; R.gamma; future] (result (deck session ["action", `String "practice"]));
+    ignore (D.transact_conn conn [D.RetractEntity (Q.ref_uuid future)]);
+    Graph_runtime.rebase runtime 42 [] [];
+    let reviewed = result (dispatch session "reviewFlashcard" ["uuid", `String Q.beta;
+      "rating", `String "good"; "operationId", `String "94000000-0000-4000-8000-000000000098"; "now", `Int (now ())]) in
+    expect [R.gamma] reviewed;
+    expect [] (result (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ()))));
+    ignore (deck session ["action", `String "practice"]);
+    ignore (Rpc_test.dispatch_json session "configure" {|{"graphId":"other","baseUrl":"https://api.logseq.io","token":"test-token"}|});
+    check_eq (member "ok" (deck session ["action", `String "practice"; "graphId", `String "graph"])) (`Bool false);
+    check_eq (member "selectedUuid" (metadata (snapshot session))) `Null)
+
+let empty_and_unavailable_groups_do_not_offer_unrelated_practice () =
+  List.iter (fun backend -> with_runtime (fun session runtime conn ->
+    ignore (select session (`String page_deck));
+    ignore (D.transact_conn conn [put page_query "block/title" (D.String "(tags [[missing]])")]);
+    Graph_runtime.rebase runtime 42 [] [];
+    ignore (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      App_test.send app Model.ShowFlashcards; App_test.flush app;
+      check_eq ~msg:"Empty groups do not offer practice" (find app "button.flashcards.practice-again") (-1));
+    expect [] (result (deck session ["action", `String "practice"]));
+    ignore (D.transact_conn conn [put page_query "block/title" (D.String "(")]);
+    Graph_runtime.rebase runtime 42 [] [];
+    check_eq (member "ok" (deck session ["action", `String "practice"])) (`Bool false);
+    check_eq (Graph_runtime.pending_operations runtime) [])) [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "both native hosts can repeatedly practice all cards in the completed group" native_practice_again_repeats_the_whole_selected_group;
+  case "practice works without due cards and resets safely across groups and graphs" practice_when_nothing_is_due_preserves_scope_and_resets_on_navigation;
+  case "empty and unavailable groups never practice unrelated cards" empty_and_unavailable_groups_do_not_offer_unrelated_practice;
   case "saved card groups filter due cards without dropping nested or inherited cards" selects_saved_cards_queries;
   case "new groups store the canonical Cards tag and query property" creates_canonical_persistent_groups;
   case "invalid selections and failed creates leave graph and selection intact" invalid_requests_do_not_mutate;

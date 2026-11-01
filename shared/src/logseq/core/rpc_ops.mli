@@ -142,7 +142,7 @@ val review_flashcard :
   string option ->
   (string -> Flashcards.flashcard_rating -> int -> string -> (unit, string) result) option ->
   (unit -> int) ->
-  (int -> string) ->
+  (int -> string -> string) ->
   string
 
 val set_page_favorite :

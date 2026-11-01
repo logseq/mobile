@@ -3954,10 +3954,9 @@ let flashcards_render_empty_and_non_cloze_control_states () =
   let empty_state =
     descendant_with_identifier renderer screen "layout.flashcards.empty"
   in
-  let empty_children = children renderer empty_state in
-  let empty_icon = List.nth empty_children 0 in
-  let empty_title = List.nth empty_children 1 in
-  let empty_description = List.nth empty_children 2 in
+  let empty_icon = descendant_with_identifier renderer empty_state "flashcards.empty-icon" in
+  let empty_title = descendant_with_identifier renderer empty_state "flashcards.empty" in
+  let empty_description = descendant_with_identifier renderer empty_state "flashcards.empty-description" in
   check ~msg:"an empty due queue preserves the existing empty state"
     (empty_state <> -1);
   check_eq ~msg:"empty and review layouts share a gap-free root container"
