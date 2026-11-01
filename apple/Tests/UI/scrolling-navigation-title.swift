@@ -6,20 +6,35 @@ import Vision
 
 @main struct ScrollingNavigationTitleCheck {
     @MainActor static func main() async throws {
+        let tracker = LUIScrollSectionTitleTracker()
+        let oldRow = UUID(), replacement = UUID()
+        tracker.update(index: 0, title: "Today", startsSection: true, registration: oldRow)
+        tracker.update(index: 0, title: "Today", startsSection: true, registration: replacement)
+        tracker.update(index: 0, title: nil, registration: oldRow)
+        tracker.update(index: 1, title: "Today", registration: UUID())
+        guard tracker.title == nil else { throw failure("An old row must not unregister its visible replacement") }
+        tracker.updateHeading(title: "Today", isPastTop: true)
+        guard tracker.title == "Today" else { throw failure("The replacement must still track its heading") }
         for delayedLoad in [true, false] {
             for isPage in [false, true] {
                 try await check(isPage: isPage, delayedLoad: delayedLoad)
             }
+            try await check(isPage: false, delayedLoad: delayedLoad, groupedJournal: true)
         }
         print("PASS: native journal and page titles follow scrolling after warm and delayed cold loads, and clear on return")
     }
 
-    @MainActor static func check(isPage: Bool, delayedLoad: Bool) async throws {
+    @MainActor static func check(isPage: Bool, delayedLoad: Bool, groupedJournal: Bool = false) async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let title = isPage ? "Project page" : "Oct 21st, 2026"
         let rows: [[String: Any]] = (0..<60).map { index in
             var block: [String: Any] = ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"]
-            if !isPage { block["journalTitle"] = title; block["journalDay"] = 20261021 }
+            if !isPage {
+                let first = !groupedJournal || index < 10
+                block["pageId"] = first ? "page" : "older"
+                block["journalTitle"] = first ? title : "Oct 20th, 2026"
+                block["journalDay"] = first ? 20261021 : 20261020
+            }
             return ["block": block, "depth": 0]
         }
         var result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
@@ -58,7 +73,11 @@ import Vision
             }
             return false
         }) else { throw failure("Missing native outliner scroll view") }
-        guard observed == nil else { throw failure("The toolbar title must stay hidden while its content heading is visible") }
+        if observed != nil {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("title-initial-failure.png"))
+            throw failure("The toolbar title must stay hidden while its content heading is visible")
+        }
         let top = -scroll.adjustedContentInset.top
         scroll.setContentOffset(CGPoint(x: 0, y: top + 180), animated: false)
         try await Task.sleep(for: .milliseconds(700))
