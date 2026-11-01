@@ -204,7 +204,20 @@ let sync_error (host : mobile_graph) =
   | None -> None
   | Some opened ->
     let path = opened.read_runtime.path in
-    let recorded = Graph_sqlite.sync_failures path in
+    let pending = Pending_ops.list path in
+    let pending_assets = Hashtbl.create (List.length pending) in
+    List.iter (fun (operation : Pending_ops.pending_operation) -> match operation.intent with
+      | Pending_ops.Create_asset asset -> Hashtbl.replace pending_assets asset.uuid ()
+      | _ -> ()) pending;
+    let recorded = Graph_sqlite.sync_failures path |> List.filter (fun (id, _) ->
+      let pending_asset = Hashtbl.mem pending_assets id in
+      let confirmed_asset = match Ds.entid (Ds.conn_db opened.conn) "block/uuid" (Ds.Uuid id) with
+        | Some eid -> Read.value (Ds.conn_db opened.conn) eid "logseq.property.asset/type" <> None
+        | None -> false in
+      if confirmed_asset && not pending_asset then begin
+        Graph_sqlite.record_sync_failure path id None;
+        false
+      end else true) in
     let recorded_ids = Hashtbl.create (List.length recorded) in
     List.iter (fun (id, _) -> Hashtbl.replace recorded_ids id ()) recorded;
     let conflicts = List.filter_map (fun (operation : Pending_ops.pending_operation) ->
