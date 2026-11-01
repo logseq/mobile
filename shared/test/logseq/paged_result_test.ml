@@ -126,13 +126,23 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
         check_eq ~msg:"a changed projection updates visible cells even at the same transaction number"
           (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue)
           title) ["Projection A"; "Projection B"];
+      scroll 923 931;
       let id = Option.get (D.entid (Graph_runtime.db runtime) "block/uuid" (D.Uuid row)) in
       ignore (D.transact_conn conn [D.Add (D.Entity_id id, "block/title", D.String "Revised far row")]);
       Graph_runtime.rebase runtime 44 [] [row];
       ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
       check ~msg:"a graph revision invalidates windows even when the first rows did not change" (pending () <> []);
+      let retained = Option.get (desired 925) |> member "block" |> member "uuid" |> text in
       check ~msg:"a same-query refresh keeps the presented viewport mounted until its replacement is ready"
-        (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
+        (find ("view.cell." ^ R.table_view ^ "." ^ retained ^ ".block/title") <> -1);
+      drain ();
+      scroll 889 897;
+      let retained = Option.get (desired 895) |> member "block" |> member "uuid" |> text in
+      drain ();
+      check ~msg:"a partial fresh window cannot displace the retained complete viewport"
+        (find ("view.cell." ^ R.table_view ^ "." ^ retained ^ ".block/title") <> -1);
+      drain ();
+      scroll 900 908;
       drain ();
       check_eq ~msg:"the current viewport receives revised data without returning to the first row"
         (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue) "Revised far row";

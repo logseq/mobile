@@ -725,8 +725,9 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
   let previous_input = ref (Signal.sample input) in
   let viewport = ref (0, 11) in
   let trace_enabled = Sys.getenv_opt "LOGSEQ_TRACE_RESULT_WINDOWS" = Some "1" in
-  let trace phase data = if trace_enabled then (
-    let first, last = !viewport and offset, limit = Signal.sample (Signal.value range) in
+  let trace ?requested_range phase data = if trace_enabled then (
+    let first, last = !viewport in
+    let offset, limit = match requested_range with Some range -> range | None -> Signal.sample (Signal.value range) in
     Printf.eprintf "result-window phase=%s view=%s generation=%d page-generation=%d revision=%s projection=%s viewport=%d:%d range=%d:%d rows=%d:%d\n%!"
       phase (jtext (jfield "uuid" data)) !generation !page_generation
       (Json.to_string (jfield "revision" data)) (Json.to_string (jfield "projectionRevision" data))
@@ -760,7 +761,12 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
         && jfield "revision" data = jfield "revision" view.data
         && jfield "projectionRevision" data = jfield "projectionRevision" view.data in
       let overlap data = if current_projection data then visible_overlap data else 0 in
-      let current_overlap = if !page_generation = !generation then overlap current.data else 0 in
+      let presented_overlap data =
+        if jtext (jfield "input" current.data) <> input then 0 else
+        let first, last = !viewport in
+        let start = jint (jfield "rowOffset" current.data) in
+        max 0 (min (min (last + 1) (row_count data))
+          (start + List.length (jlist (jfield "rows" current.data))) - max first start) in
       let candidate = match List.assoc_opt key model.Model.result_row_windows with
         | Some raw -> (try let data = Json.from_string raw in
           if current_projection data then Some data else None with _ -> None)
@@ -774,7 +780,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       Signal.set loading (candidate = None && failure = "" && jlist (jfield "rows" current.data) = []);
       match candidate with
       | Some data -> if (row_count data = 0 || overlap data > 0 || visible_overlap current.data = 0)
-          && overlap data >= current_overlap
+          && overlap data >= presented_overlap data
         then (page_generation := !generation;
           if not (Json.equal data current.data) then (trace "accept" data; Signal.set page {view with data}))
       | None ->
@@ -783,7 +789,8 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
            Option.iter (fun raw ->
              try
                let data = Json.from_string raw in
-               if overlap data > current_overlap then (
+               let coverage = overlap data and presented = presented_overlap data in
+               if coverage > presented || !page_generation <> !generation && coverage > 0 && coverage >= presented then (
                  page_generation := !generation; trace "accept-reuse" data; Signal.set page {view with data})
              with Yojson.Json_error _ -> ())
              (List.assoc_opt previous_key model.result_row_windows)
@@ -792,7 +799,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
           (model.pending_effects @ model.in_flight_effects) in
         if not busy && !requested <> Some key then (
           requested := Some key;
-          trace "request" view.data;
+          trace ~requested_range:(offset, limit) "request" view.data;
           ignore (send (Model.LoadResultRows (key, Json.to_string (`Assoc ([
             "key", `String key; "ownerUuid", `String owner; "featureType", `String feature; "viewUuid", `String view.id;
             "input", `String input; "offset", `Int offset; "limit", `Int limit] @
@@ -809,8 +816,10 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       viewport := first, last;
       let current = (Signal.sample (Signal.value page)).data in
       let start = jint (jfield "rowOffset" current) and length = List.length (jlist (jfield "rows" current)) in
+      let offset, limit = Signal.sample (Signal.value range) in
       let margin = max 8 (last - first + 1) in
-      if first < start + margin && start > 0 || last >= start + length - margin && start + length < row_count current then (
+      if first < offset || min last (row_count current - 1) >= offset + limit
+        || first < start + margin && start > 0 || last >= start + length - margin && start + length < row_count current then (
         let limit = max columns (64 / columns * columns) in
         let maximum = (max 0 (row_count current - limit) + columns - 1) / columns * columns in
         let offset = min maximum (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
