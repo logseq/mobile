@@ -44,6 +44,9 @@ import UIKit
                let data = text.data(using: .utf8),
                let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 requests.append(command)
+                if command["action"] as? String == "close" {
+                    return "{\"ok\":true,\"result\":{\"isPdfPatch\":true}}"
+                }
                 if command["action"] as? String == "load" { try? await Task.sleep(for: .milliseconds(600)) }
                 if command["action"] as? String == "save", let highlight = command["highlight"] as? [String: Any] {
                     saved.append(highlight)
@@ -153,6 +156,25 @@ import UIKit
             }
             try await wait("Saved highlights must render on their original PDF page") {
                 page.annotations.contains { $0.userName == "logseq:" + (saved.last?["id"] as? String ?? "") }
+            }
+            guard let copy = views(window).compactMap({ $0 as? UIButton }).first(where: {
+                $0.accessibilityIdentifier == "pdf.copy-reference"
+            }), copy.isEnabled, let annotationID = saved.last?["id"] as? String else {
+                throw failure("A saved highlight must enable copying its reference")
+            }
+            let documentFrame = pdf.convert(pdf.bounds, to: window)
+            copy.sendActions(for: .touchUpInside)
+            guard UIPasteboard.general.string == "[[\(annotationID)]]" else {
+                throw failure("Copying a PDF annotation must use the DB node reference syntax [[UUID]], received \(UIPasteboard.general.string ?? "nil")")
+            }
+            try await wait("Copying a reference must show a visible confirmation") {
+                views(window).contains { $0.accessibilityIdentifier == "pdf.copy-feedback" && !$0.isHidden }
+            }
+            guard pdf.convert(pdf.bounds, to: window) == documentFrame else {
+                throw failure("Copy confirmation must overlay the document without changing its layout")
+            }
+            try await wait("Copy confirmation must dismiss automatically") {
+                !views(window).contains { $0.accessibilityIdentifier == "pdf.copy-feedback" && !$0.isHidden }
             }
             let annotation = page.annotations.first { $0.userName == "logseq:" + (saved.last?["id"] as? String ?? "") }!
             for rect in [annotation.bounds, expectedBounds] {
