@@ -222,8 +222,42 @@ let exhausting_retries_stops_without_losing_batch_members () =
       [Ops.Retryable; Ops.Retryable; Ops.Retryable];
     check_eq (ids (required_pending_request session)) ["edit-0"; "edit-1"; "edit-2"])
 
+let late_completions_after_server_confirmation_do_not_stall_sync () =
+  List.iter (fun confirmed ->
+    List.iter (fun failure -> with_session (fun session graph runtime path _ ->
+      titles session 3;
+      let request = required_pending_request session in
+      require (Mobile_graph.apply_sync_event graph (journal request ~count:confirmed ()));
+      let remaining () = List.map (fun (op : Ops.pending_operation) -> op.operation_id) (Ops.list path) in
+      check_eq (remaining ()) (if confirmed = 3 then [] else ["edit-1"; "edit-2"]);
+      for _attempt = 0 to (if failure then 3 else 0) do
+        let fields = if failure then ["error", `String "Socket is not connected"] else
+          ["status", `Int 200; "body", `String {|{"type":"tx/reject","reason":"db transact failed","retryable":false}|}] in
+        let response = dispatch_json session "completePendingSync" (Json.to_string (`Assoc
+          (("id", member "id" request) :: fields))) in
+        check_eq ~msg:"late responses must settle after confirmed operations leave the durable queue"
+          (member "ok" response) (`Bool true)
+      done;
+      check ~msg:"confirmation must never resurrect the first operation"
+        (not (List.mem "edit-0" (remaining ())));
+      if confirmed = 3 then begin
+        check_eq (remaining ()) [];
+        check_eq (Mobile_graph.sync_error graph) None;
+        stage session "after-confirmation" (Ops.Save_title {uuid=uuid 101;expected_title="2";title="After confirmation"});
+        let next = required_pending_request session in
+        check_eq ~msg:"new edits must sync without restarting the app" (ids next) ["after-confirmation"];
+        ignore (ack session next);
+        check_eq (Fixture.title (Runtime.db runtime) (uuid 101)) "After confirmation"
+      end else if failure then begin
+        let next = required_pending_request session in
+        check_eq ~msg:"unconfirmed members retain their order and remain retryable" (ids next) ["edit-1";"edit-2"];
+        ignore (ack session next);
+        check_eq (remaining ()) []
+      end)) [true;false]) [1;3]
+
 let cases =
-  [ case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
+  [ case "late completions after server confirmation do not stall sync" late_completions_after_server_confirmation_do_not_stall_sync;
+    case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
     case "dependent creations share a batch" dependent_creations_share_a_batch;
     case "backlogs split at 50 operations" splits_backlogs_into_bounded_batches;
     case "byte budget counts the JSON encoded frame" size_budget_measures_the_encoded_frame;

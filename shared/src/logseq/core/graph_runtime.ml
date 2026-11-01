@@ -552,7 +552,12 @@ let stage runtime (operation : Ops.pending_operation) =
     Ops.save runtime.path { previous with state = operation.state };
     rebase runtime (state runtime).server_t [] [];
     Ok ()
-  | None when (match operation.state with Ops.Accepted t -> t <= (state runtime).server_t | _ -> false) ->
+  | None when (match operation.state with Ops.Accepted t -> t <= (state runtime).server_t | _ -> false)
+      || (operation.base_t < (state runtime).server_t
+          && (transport_state operation.state
+              || (match operation.state with Ops.Conflicted _ -> true | _ -> false))) ->
+    (* A server journal can confirm and remove an operation before its request
+       completes. Late transport outcomes must not recreate that operation. *)
     Ok ()
   | Some previous when transport_state operation.state
       || (match previous.state, operation.state, previous.intent, operation.intent with
