@@ -23,10 +23,12 @@ let field source send key label kind =
         (String.sub key 10 (String.length key - 10)) t.attributes) in
   let input = if kind = "password" || kind = "new-password" then secure_field else text_field in
   column ~key:("auth." ^ key) ~gap:8 ~cross:`stretch [
-    text ~value:(tr source label) [];
+    row ~padding_horizontal:16 [text ~value:(tr source label) ~foreground:"muted-foreground" ~style_class:"subheadline" []];
     mobile_input kind
       (input ~accessibility_identifier:("field.auth." ^ key)
-        ~label:(tr source label) ~placeholder:(tr source label) ~min_height:48
+        ~label:(tr source label) ~placeholder:"" ~min_height:54
+        ~style_class:"plain-input" ~padding_horizontal:18 ~padding_vertical:14
+        ~border_width:1 ~border_color:"auth-border" ~corner_radius:28
         ~text_signal:(Signal.map value source)
         ~disabled_signal:(Signal.map (fun current -> Auth_flow.busy (form current)) source)
         ~on_input:(on_input send (fun value -> Model.AuthenticationForm (Auth_flow.Edit (key, value))))
@@ -59,6 +61,17 @@ let sheet source send : t =
   let busy = Signal.map (fun current -> Auth_flow.busy (form current)) source in
   let link id label event = button ~variant:`ghost ~text:(tr source label) ~min_height:44
       ~text_alignment:`center ~accessibility_identifier:id ~disabled_signal:busy ~on_press:(action send event) [] in
+  let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
+  themed ~tokens:Lui_ui.[
+    "background", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
+    "surface", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
+    "muted-foreground", Adaptive { light = "#686E6B"; dark = "#ADBDBD" };
+    "auth-border", Adaptive { light = "#CCD2CE"; dark = "#4D686D" };
+    "auth-action", Adaptive { light = "#101312"; dark = "#EDF2EF" };
+    "auth-action-text", Adaptive { light = "#FFFFFF"; dark = "#102E33" };
+    "auth-disabled", Adaptive { light = "#E2E6E2"; dark = "#24434A" };
+    "auth-disabled-text", Adaptive { light = "#5D655F"; dark = "#AABBB9" };
+  ] (
   sheet ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.title (form current))) source)
     ~height:680 ~style_class:"navigation-content navigation-inline-title"
     ~detents_signal:(Signal.map (fun current -> match (form current).stage with
@@ -69,13 +82,13 @@ let sheet source send : t =
     ~on_dismiss:(action send Auth_flow.Dismiss)
     [
       scroll ~grow:1.0 ~accessibility_identifier:"scroll.authentication" [
-        column ~gap:24 ~padding:24 ~max_width:480 ~cross:`stretch [
+        column ~gap:28 ~padding_horizontal:20 ~padding_vertical:28 ~max_width:480 ~cross:`stretch [
           if_ ~test:(Signal.map (fun current -> match (form current).stage with
             | Auth_flow.Login | Register | ForgotPassword -> false | _ -> true) source)
             (text ~foreground:"muted-foreground" ~style_class:"footnote"
               ~value_signal:(Signal.map (fun current -> tr source (Auth_flow.description (form current))) source) []);
           dyn (fun (stage, attributes, choices) ->
-            column ~gap:20 ~cross:`stretch (fields source send stage attributes choices))
+            column ~gap:24 ~cross:`stretch (fields source send stage attributes choices))
             (Signal.map (fun current -> let t = form current in
               t.stage, List.map fst t.attributes, t.mfa_choices) source);
           if_ ~test:(Signal.map (fun current -> (form current).error <> None) source)
@@ -86,11 +99,17 @@ let sheet source send : t =
               ~value_signal:(Signal.map (fun current -> tr source (Option.value ~default:"" (form current).notice)) source) []);
           if_ ~test:busy (spinner ~accessibility_identifier:"auth.loading" []);
           if_ ~test:(Signal.map (fun current -> (form current).stage <> Auth_flow.SelectMfa) source)
-            (row ~cross:`center [button ~variant:`primary ~min_height:48 ~size:`lg ~grow:1.0
-              ~accessibility_identifier:"button.auth.submit" ~text_alignment:`center
-              ~disabled_signal:(Signal.map (fun current -> not (Auth_flow.can_submit (form current))) source)
-              ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source)
-              ~on_press:(action send Auth_flow.Submit) []]);
+            (row ~cross:`center ~corner_radius:28
+              ~background_signal:(Signal.map (fun enabled -> if enabled then "auth-action" else "auth-disabled") can_submit)
+              [button ~variant:`ghost ~min_height:54 ~size:`lg ~grow:1.0
+                ~accessibility_identifier:"button.auth.submit" ~text_alignment:`center
+                ~disabled_signal:(Signal.map not can_submit)
+                ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source)
+                ~on_press:(action send Auth_flow.Submit) [
+                  text ~grow:1.0 ~text_alignment:`center ~style_class:"headline"
+                    ~foreground_signal:(Signal.map (fun enabled -> if enabled then "auth-action-text" else "auth-disabled-text") can_submit)
+                    ~value_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source) [];
+                ]]);
           dyn (fun stage -> row ~main:`center ~cross:`center ~gap:8 (match stage with
             | Auth_flow.Login -> [link "button.auth.create-account" "Sign up" (Auth_flow.Navigate Register);
                 text ~value:"·" ~foreground:"muted-foreground" [];
@@ -103,9 +122,9 @@ let sheet source send : t =
       ];
       toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
         spacer ~grow:1.0 [];
-        button ~text:(tr source "Close") ~icon:(`app "close") ~variant:`ghost
-          ~style_class:"confirmation-action" ~min_height:44
+        button ~icon:(`app "close") ~label:(tr source "Close") ~variant:`ghost
+          ~style_class:"confirmation-action plain-action" ~min_width:44 ~min_height:44
           ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
           ~on_press:(action send Auth_flow.Cancel) [];
       ];
-    ]
+    ])
