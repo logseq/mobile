@@ -56,7 +56,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.close_connection = True
             return
-        if scenario in ["unavailable", "cancelled"] or (scenario == "interrupted" and counts[scenario] == 1):
+        if scenario in ["unavailable", "cancelled"] or (scenario in ["interrupted", "bulk-interrupted"] and counts[scenario] == 1):
             self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 1024))
             self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             self.connection.close()
@@ -68,7 +68,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         connection.request("PUT", "/" + path, body, dict(self.headers))
         response = connection.getresponse()
         data = response.read()
-        if scenario == "lost-response" and counts[scenario] == 1:
+        if (scenario == "lost-response" and counts[scenario] == 1) or (scenario == "bulk-interrupted" and counts[scenario] == 6):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
             return
@@ -96,6 +96,7 @@ try:
             str(root / "apple/Tests/UI/pending-upload-retry.swift"), "-o", str(binary)], check=True)
         subprocess.run([str(binary), str(config)], check=True)
         assert all(counts.get(s, 0) >= 2 for s in ["interrupted", "lost-response"]), counts
+        assert counts.get("bulk-interrupted", 0) >= 12, counts
         assert counts["forbidden"] == 1, counts
         assert counts["unavailable"] == 4, counts
         assert counts["cancelled"] == 1, counts

@@ -214,7 +214,9 @@ let activate_semantic_request (session : Types.session) config accepted =
   let s = Types.state session in
   let caught_up = match Types.projection_server_t session, s.accepted_server_t with
     | Some local, Some latest -> local >= latest | _ -> true in
-  if s.semantic_active = None && caught_up then
+  (* Drain the file queue before waiting for the graph socket. This also lets
+     metadata for a photo selection share one transaction batch. *)
+  if s.semantic_active = None && s.pending_sync = None && caught_up then
     match s.semantic_queue with
     | [] -> ()
     | first :: _ ->
@@ -404,7 +406,9 @@ let rec finish_pending_block session (pump : Types.pending_sync) (block : Model.
             block.uuid))
   else mark_pending_failed session block;
   pump.Types.active := None;
-  prepare_pending_next session pump
+  prepare_pending_next session pump;
+  if (Types.state session).pending_sync = None then
+    activate_semantic_request session pump.config None
 
 let asset_datoms_operation session block status =
   Rpc.asset_datoms_operation
@@ -472,8 +476,7 @@ let rec complete_pending_active session (pump : Types.pending_sync)
             finish_pending_block session pump block false
           | Ok () ->
             restore_semantic_queue session;
-            finish_pending_block session pump block true;
-            activate_semantic_request session pump.config None))
+            finish_pending_block session pump block true))
     | Types.Create_block block ->
       (match
          try Ok (Api.created_block_uuid_from_body response.body)
@@ -737,7 +740,7 @@ let complete_pending_sync (session : Types.session) payload =
       session.state := { !(session.state) with
         pending_retry = Some { Types.request_id = expected; attempt = attempt + 1;
           delay_ms = 1000 lsl attempt };
-        pending_sync_error = None };
+        pending_sync_error = (if semantic then completion_failure input else None) };
       Ok ()
     end else begin
       let* () = handle () in
@@ -746,7 +749,7 @@ let complete_pending_sync (session : Types.session) payload =
       Ok ()
     end in
     let failure = match result with
-      | Ok () when retrying -> None
+      | Ok () when retrying && not semantic -> None
       | Ok () -> completion_failure input
       | Error message -> Some message in
     session.state := { !(session.state) with pending_sync_error = failure };

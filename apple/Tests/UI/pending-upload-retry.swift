@@ -58,12 +58,17 @@ private final class CoreHost: @unchecked Sendable {
         let parts = config["assetPath"]!.split(separator: "/")
         let graphID = String(parts[1])
         let assetID = String(parts[2].split(separator: ".")[0])
-        func store(_ scenario: String) throws -> LogseqStore {
+        var paths: [String: [String]] = [:]
+        func store(_ scenario: String, count: Int = 1) throws -> LogseqStore {
             let host = try CoreHost(executable: config["coreHarness"]!, graphID: graphID)
             host.dispatch("configure", ["baseUrl": config["baseURL"]! + "/" + scenario,
                 "graphId": graphID, "token": config["token"]!])
-            host.dispatch("addAsset", ["uuid": assetID, "title": "Retry.png", "now": 2,
-                "assetType": "png", "assetSize": bytes.count, "assetChecksum": "retry-check", "localPath": file.path])
+            for index in 0..<count {
+                let id = index == 0 ? assetID : UUID().uuidString.lowercased()
+                paths[scenario, default: []].append("/assets/" + graphID + "/" + id + ".png")
+                host.dispatch("addAsset", ["uuid": id, "title": "Retry.png", "now": 2 + index,
+                    "assetType": "png", "assetSize": bytes.count, "assetChecksum": "retry-check", "localPath": file.path])
+            }
             return LogseqStore(call: { host.call($0) }, pendingTransport: { request in
                 // This check exercises file transport. Graph transactions are covered by the live core gate.
                 if request.filePath == nil {
@@ -72,19 +77,21 @@ private final class CoreHost: @unchecked Sendable {
                 return await LogseqPendingSyncHTTPTransport.send(request)
             })
         }
-        for name in ["interrupted", "lost-response"] {
+        for name in ["interrupted", "lost-response", "bulk-interrupted"] {
             let previousLogID = LogseqRuntimeLog.shared.records().last?.id ?? 0
-            let pump = try store(name)
+            let pump = try store(name, count: name == "bulk-interrupted" ? 10 : 1)
             await pump.syncPendingForBackground()
             precondition(pump.syncError == nil, "The shared retry must recover the upload")
-            var download = URLRequest(url: URL(string: config["serverURL"]! + config["assetPath"]!)!)
-            download.setValue("Bearer " + config["token"]!, forHTTPHeaderField: "Authorization")
-            let (actual, response) = try await URLSession.shared.data(for: download)
-            precondition((response as! HTTPURLResponse).statusCode == 200 && actual == bytes,
-                         "Retry must preserve the original image bytes and asset UUID")
+            for path in paths[name]! {
+                var download = URLRequest(url: URL(string: config["serverURL"]! + path)!)
+                download.setValue("Bearer " + config["token"]!, forHTTPHeaderField: "Authorization")
+                let (actual, response) = try await URLSession.shared.data(for: download)
+                precondition((response as! HTTPURLResponse).statusCode == 200 && actual == bytes,
+                             "Retry must preserve the original image bytes and asset UUID")
+            }
             let errors = LogseqRuntimeLog.shared.records(errorsOnly: true).filter { $0.id > previousLogID }
-            precondition(errors.isEmpty, "Recovered uploads must not emit failure toasts while retrying")
-            print("PASS: \(name) recovered through the shared core without failure feedback or recapturing the image")
+            precondition(errors.isEmpty, "Recovered uploads must not emit failure toasts while retrying: \(errors.map(\.message))")
+            print("PASS: \(name) recovered \(paths[name]!.count) photos through the shared core without failure feedback or recapturing")
         }
         let rejected = try store("forbidden")
         await rejected.syncPendingForBackground()

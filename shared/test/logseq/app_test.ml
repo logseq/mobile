@@ -2711,6 +2711,13 @@ let sync_details_show_every_server_rejection () =
       R.required_pending (R.pending_completion session request (`Int 200) (`String "{}") `Null)
       else request in
     apply (R.pending_completion session request (`Int status) (`String body) `Null);
+    if not semantic && (status = 429 || status >= 500) then begin
+      check ~msg:"A retryable upload stays in progress until its retries are exhausted"
+        (View_base.sync_label (App.model application) <> "Sync failed");
+      for _ = 1 to 3 do
+        apply (R.pending_completion session request (`Int status) (`String body) `Null)
+      done
+    end;
     send application Model.OpenSyncDetails;
     flush application;
     let assert_error () =

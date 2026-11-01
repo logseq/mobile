@@ -255,7 +255,7 @@ let late_completions_after_server_confirmation_do_not_stall_sync () =
         check_eq (remaining ()) []
       end)) [true;false]) [1;3]
 
-let ten_composer_photos_recover_after_interrupted_upload encrypted () =
+let ten_composer_photos_recover_after_interrupted_upload encrypted failed_index () =
   with_session (fun session graph runtime path conn ->
     ignore (Datascript.reset_conn conn (Result_view_test.fixture ()));
     Runtime.rebase runtime 42 [] [];
@@ -277,13 +277,18 @@ let ten_composer_photos_recover_after_interrupted_upload encrypted () =
         "localPath", `String ("Assets/" ^ uuid index ^ ".png")])) in
       check_eq ~msg:(Json.to_string response) (member "ok" response) (`Bool true)
     done;
-    let failed = ref None and uploaded = ref [] in
+    let failed = ref None and uploaded = ref [] and position = ref 0 in
     let rec drain response = match next response with
       | `Null -> ()
       | request ->
-        let after = if member "method" request = `String "WS" then
+        let after = if member "method" request = `String "WS" then begin
+            check_eq ~msg:"All remaining photos upload before waiting for the graph socket"
+              (List.length !uploaded) (if !position <= 10 then 9 else 10);
             ack session (request_from response)
-          else if !failed = None then begin
+          end else begin
+            incr position;
+            check_eq (member "contentType" request) (`String (if encrypted then "text/plain" else "image/png"));
+            if !failed = None && !position = failed_index then begin
             failed := Some request;
             let last = ref response in
             for attempt = 1 to 4 do
@@ -299,7 +304,7 @@ let ten_composer_photos_recover_after_interrupted_upload encrypted () =
           end else begin
             uploaded := member "url" request :: !uploaded;
             pending_completion session request (`Int 200) (`String "{}") `Null
-          end in
+          end end in
         drain after
     in
     drain (response_result (dispatch_json session "beginPendingSync" ""));
@@ -316,8 +321,10 @@ let ten_composer_photos_recover_after_interrupted_upload encrypted () =
     done)
 
 let cases =
-  [ case "ten composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload false);
-    case "ten encrypted composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload true);
+  [ case "ten composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload false 1);
+    case "ten encrypted composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload true 1);
+    case "last composer photo failure still submits the successful nine" (ten_composer_photos_recover_after_interrupted_upload false 10);
+    case "last encrypted photo failure still submits the successful nine" (ten_composer_photos_recover_after_interrupted_upload true 10);
     case "late completions after server confirmation do not stall sync" late_completions_after_server_confirmation_do_not_stall_sync;
     case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
     case "dependent creations share a batch" dependent_creations_share_a_batch;
