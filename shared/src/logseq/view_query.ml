@@ -721,7 +721,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
   let retry_count = Signal.state context.ui_scheduler 0 in
   let page = Signal.state context.ui_scheduler initial in
   let loading = Signal.state context.ui_scheduler false and error = Signal.state context.ui_scheduler "" in
-  let previous = ref initial and generation = ref 0 and requested = ref None in
+  let previous = ref initial and generation = ref 0 and page_generation = ref 0 and requested = ref None in
   let previous_input = ref (Signal.sample input) in
   let viewport = ref (0, 11) in
   let has_range data input offset limit =
@@ -743,7 +743,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
         (* Keep the presented window during same-query revalidation. *)
         if reset || initial_model.Model.selected_graph_id <> model.Model.selected_graph_id
           || row_count view.data <= fst !viewport || jfield "error" view.data <> `Null
-        then Signal.set page view);
+        then (page_generation := !generation; Signal.set page view));
       let offset, limit = if reset then 0, 12 else offset, limit in
       let generation_prefix = prefix ^ string_of_int !generation ^ ":" in
       let key = generation_prefix ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
@@ -752,9 +752,10 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
         if jtext (jfield "input" data) <> input
           || jfield "revision" data <> jfield "revision" view.data then 0
         else visible_overlap data in
+      let current_overlap = if !page_generation = !generation then overlap current.data else 0 in
       let candidate = match List.assoc_opt key model.Model.result_row_windows with
         | Some raw -> (try Some (Json.from_string raw) with _ -> None)
-        | None when jfield "revision" current.data = jfield "revision" view.data
+        | None when !page_generation = !generation && jfield "revision" current.data = jfield "revision" view.data
           && has_range current.data input offset limit -> Some current.data
         | None when has_range view.data input offset limit -> Some view.data
         | _ -> None in
@@ -764,15 +765,17 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       Signal.set loading (candidate = None && failure = "" && jlist (jfield "rows" current.data) = []);
       match candidate with
       | Some data -> if (row_count data = 0 || overlap data > 0 || visible_overlap current.data = 0)
-          && overlap data >= overlap current.data && not (Json.equal data current.data)
-        then Signal.set page {view with data}
+          && overlap data >= current_overlap
+        then (page_generation := !generation;
+          if not (Json.equal data current.data) then Signal.set page {view with data})
       | None ->
         (match !requested with
          | Some previous_key when String.starts_with ~prefix:generation_prefix previous_key ->
            Option.iter (fun raw ->
              try
                let data = Json.from_string raw in
-               if overlap data > overlap current.data then Signal.set page {view with data}
+               if overlap data > current_overlap then (
+                 page_generation := !generation; Signal.set page {view with data})
              with Yojson.Json_error _ -> ())
              (List.assoc_opt previous_key model.result_row_windows)
          | _ -> ());
