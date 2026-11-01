@@ -11,10 +11,20 @@ import UIKit
 
 @main struct OutlinerScrollingEditorCheck {
     @MainActor static func main() async throws {
+        for groupedJournal in [false, true] { try await check(groupedJournal: groupedJournal) }
+        print("PASS: flat and minimum-height journal sections preserve the native editor while scrolling")
+    }
+
+    @MainActor private static func check(groupedJournal: Bool) async throws {
         let secret = "Diagnostic privacy fixture"
         let rows: [[String: Any]] = (0..<200).map { index in
-            ["depth": index % 3, "hasChildren": index % 3 < 2, "isCollapsed": false,
-             "block": ["uuid": "row-\(index)", "title": index == 8 ? secret : "Row \(index)", "pageId": "page"]]
+            var block: [String: Any] = ["uuid": "row-\(index)", "title": index == 8 ? secret : "Row \(index)", "pageId": "page"]
+            if groupedJournal {
+                block["pageId"] = index < 10 ? "today" : "older"
+                block["journalTitle"] = index < 10 ? "Today" : "Yesterday"
+                block["journalDay"] = index < 10 ? 20261101 : 20261031
+            }
+            return ["depth": index % 3, "hasChildren": index % 3 < 2, "isCollapsed": false, "block": block]
         }
         func snapshot(_ editing: Bool) throws -> String {
             let result: [String: Any] = ["selectedGraphId": "demo", "graphName": "Demo", "outlinerRows": rows,

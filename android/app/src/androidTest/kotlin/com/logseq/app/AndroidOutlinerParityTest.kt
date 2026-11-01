@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.logseq.app.runtime.LogseqNativeBridge
 import com.logseq.app.runtime.LuiPatchFilter
@@ -37,6 +38,50 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AndroidOutlinerParityTest {
     @get:Rule val ui = createComposeRule()
+
+    @Test fun currentJournalHeightStaysStableAcrossScrollWindowEviction() {
+        lateinit var bridge: LogseqNativeBridge
+        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
+            extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
+        val filter = LuiPatchFilter(backend)
+        bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
+        val root = bridge.initialize(authenticationCode = 3)
+        fun snapshot(empty: Boolean): String {
+            val rows = JSONArray()
+            repeat(70) { day ->
+                val date = java.time.LocalDate.of(2026, 11, 1).minusDays(day.toLong())
+                val journalDay = date.year * 10000 + date.monthValue * 100 + date.dayOfMonth
+                rows.put(JSONObject().put("depth", 0).put("hasChildren", false)
+                .put("block", JSONObject().put("uuid", "entry-$day").put("pageId", "journal-$day")
+                    .put("title", if (day == 0) { if (empty) "" else "A short note for today" } else "Earlier journal $day")
+                    .put("journalTitle", if (day == 0) "Today" else "Earlier day $day").put("journalDay", journalDay)))
+            }
+            return JSONObject().put("ok", true).put("result", JSONObject().put("graphName", "Journal sizing")
+                .put("selectedGraphId", "journal-height-$empty").put("isGraphUnlocked", true).put("outlinerRows", rows)).toString()
+        }
+        filter.applyJson(bridge.applySnapshot(snapshot(false)))
+        bridge.applyHostUpdate("graph-loading", "false").takeIf(String::isNotEmpty)?.let(filter::applyJson)
+        ui.setContent { MaterialTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) { backend.Content(root) } }
+        try {
+            for (empty in listOf(false, true)) {
+                if (empty) ui.runOnIdle { bridge.applySnapshot(snapshot(true)).takeIf(String::isNotEmpty)?.let(filter::applyJson) }
+                ui.waitForIdle()
+                val heading = ui.onNodeWithTag("button.journal.journal-1")
+                val initial = heading.getUnclippedBoundsInRoot().top
+                val positions = mutableListOf(initial)
+                repeat(3) {
+                    ui.onNodeWithTag("list.outliner").performScrollToIndex(100)
+                    ui.waitForIdle()
+                    ui.onNodeWithTag("list.outliner").performScrollToIndex(0)
+                    ui.waitForIdle()
+                    positions.add(heading.getUnclippedBoundsInRoot().top)
+                }
+                println("JOURNAL_HEIGHT_ANDROID empty=$empty positions=$positions")
+                assertTrue("Today's journal must not expand after scrolling away and back: $positions",
+                    positions.all { kotlin.math.abs(it.value - initial.value) <= 1f })
+            }
+        } finally { ui.runOnIdle { bridge.close() } }
+    }
 
     @Test fun editorRetainsItsNativeIdentityWhenAnInsertionMovesItToTheNextRow() {
         lateinit var bridge: LogseqNativeBridge
