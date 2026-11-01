@@ -658,6 +658,11 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         OutlinerEditorViewport.editors.add(self)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+        if window != nil {
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidChangeFrame),
+                name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+        }
         LGInteractionDiagnostics.event("editor.window", "view=\(ObjectIdentifier(self)) attached=\(window != nil) responder=\(isFirstResponder)")
         fulfillPendingFocus()
     }
@@ -665,7 +670,14 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         LGInteractionDiagnostics.event("editor.becomeFirstResponder", "view=\(ObjectIdentifier(self)) result=\(result) attached=\(window != nil)")
+        if result { revealCaretAfterLayout() }
         return result
+    }
+
+    @objc private func keyboardDidChangeFrame() {
+        // Keyboard avoidance can move the scroll viewport without changing the
+        // editor's local caret or size. Reveal after the final native layout.
+        revealCaretAfterLayout()
     }
 
     override func resignFirstResponder() -> Bool {
