@@ -101,6 +101,37 @@ The full core test alias checks regressions in synchronization, projection, hydr
 - Surface unsupported custom Hiccup views explicitly; do not execute browser rendering code.
 - Preserve pre-existing workspace edits and avoid unrelated changes.
 
+### Deferred-result projection identity
+
+Cached result views include an optional integer `projectionRevision` in both
+snapshot views and `resultRows.view`. It changes when the session's immutable
+database identity or local journal day changes, even if `revision` (the database
+transaction number), the first 12 rows, and the view configuration are unchanged.
+For example, replacing a far-row projection may change
+`{"revision": 100, "projectionRevision": 7}` to
+`{"revision": 100, "projectionRevision": 8}`.
+
+Clients must match both revisions, the input, and the graph before reusing a row
+window. During same-query revalidation, the previous page may stay visible but
+cannot satisfy the new generation's cache. The initial read remains 12 rows and
+deferred reads remain bounded to 64. The token is session-local: compare it for
+equality, never persist it or compare it across recreated sessions. The field is
+additive; uncached renders and older cores may omit it, in which case clients
+retain the legacy transaction-revision check. Older clients can ignore the field.
+`Result_view.render_rows` accepts an optional `~cache` without changing existing
+uncached callers; query snapshots pass the same session cache as `resultRows`
+reads so both paths share the projection token. Supplied snapshot rows remain
+authoritative and are not reused from the prepared-view cache: they can depend
+on the active page as well as the database.
+
+For opt-in release diagnostics, set `LOGSEQ_TRACE_RESULT_WINDOWS=1` at launch
+(`SIMCTL_CHILD_LOGSEQ_TRACE_RESULT_WINDOWS=1` with `simctl`). Stderr records
+`init`, `source`, `request`, `accept`/`accept-reuse`, and `reset` with the view UUID,
+generation, transaction/projection revisions, inclusive viewport endpoints,
+requested offset/limit, and row offset/length. It never records row content or
+search text. These are shared page-state events, not native mount completion or
+render-latency measurements. Logging is disabled by default.
+
 ## Question
 
 No user input is required to begin.
