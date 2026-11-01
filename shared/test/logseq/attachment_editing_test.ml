@@ -115,7 +115,64 @@ let imported_asset_preview_is_local_even_when_the_block_uuid_is_reused () =
     check ~msg:"A missing local file must remain downloadable"
       (U.member "request" (preview ()) <> `Null))
 
+let toolbar_image_upload_reaches_the_transaction_queue persisted encrypted () =
+  Result_view_test.with_runtime (fun session runtime conn ->
+    let module Q = Query_block_test in
+    let session = {session with Session_types.host = {session.host with
+      prepare_operations = Some (Graph_runtime.prepare_sync_batch runtime);
+      record_sync_failure = Some (fun ~semantic:_ uuid error ->
+        Graph_sqlite.record_sync_failure runtime.path uuid error);
+      load_sync_error = Some (fun () ->
+        Option.map snd (List.nth_opt (Graph_sqlite.sync_failures runtime.path) 0))}} in
+    let session = if not encrypted then session else
+      let current = !(session.Session_types.state) in
+      session.state := {current with available_graphs = Api.graphs_from_graphs_body
+        {|{"graphs":[{"graph-id":"plain-1","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}};
+      {session with Session_types.host = {session.host with
+        encrypt_title = Some (fun _ title -> Ok title);
+        encrypt_asset_file = Some (fun _ path -> Ok (path ^ ".encrypted", 84));
+        cleanup_file = (fun _ -> ())}} in
+    let uuid = "f1000000-0000-4000-8000-000000000010" in
+    if persisted then Editor_command_test.rebase runtime conn [
+      Ds.Add (Ds.Entity_id 990010, "block/uuid", Ds.Uuid uuid);
+      Q.put uuid "block/title" (Ds.String "");
+      Q.put uuid "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+      Q.put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page));
+      Q.put uuid "block/order" (Ds.String "a9") ]
+    else check_ok (Rpc_session.enqueue_semantic session {
+      Pending_ops.operation_id = "insert-empty"; base_t = 42; state = Pending_ops.Queued;
+      intent = Pending_ops.Insert_block {uuid; title = ""; page_uuid = Q.page;
+        parent_uuid = Q.page; order = "a9"; created_at = 10} });
+    let response = Rpc_test.dispatch_json session "addAsset" (Yojson.Basic.to_string (`Assoc [
+      "uuid", `String "f1000000-0000-4000-8000-000000000011";
+      "title", `String "Photo.png"; "assetType", `String "png"; "assetSize", `Int 42;
+      "assetChecksum", `String "checksum"; "localPath", `String "Assets/photo.png";
+      "targetBlockId", `String uuid; "now", `Int 100 ])) in
+    check_eq ~msg:(Yojson.Basic.to_string response) (U.member "ok" response) (`Bool true);
+    let cache = (Rpc_session.state session).Session_types.model in
+    ignore (Cache.mark_block_sync_failed cache uuid);
+    Graph_sqlite.record_sync_failure runtime.path uuid (Some "Update block failed on build 45");
+    let upload = Rpc_test.required_pending_request session in
+    check_eq ~msg:("toolbar images upload their binary first: " ^ Yojson.Basic.to_string upload) (Q.member "method" upload) (`String "PUT");
+    check_eq ~msg:"encrypted graphs upload encrypted image bytes"
+      (Q.member "contentType" upload) (`String (if encrypted then "text/plain" else "image/png"));
+    let after = Rpc_test.complete_request session upload {|{"ok":true}|} in
+    check_eq ~msg:"retrying clears the persisted failure without deleting the graph"
+      (Graph_sqlite.sync_failures runtime.path) [];
+    let request = Q.member "pendingSyncRequest" after in
+    check ~msg:("the transaction must not get stuck after the photo upload: " ^ Yojson.Basic.to_string after)
+      (request <> `Null);
+    let txs = Q.member "body" request |> U.to_string |> Yojson.Basic.from_string |> Q.items "txs" in
+    check ~msg:"the asset conversion reaches the sync transaction"
+      (List.exists (fun tx -> Q.member "tx-id" tx = `String uuid) txs);
+    if not persisted then check_eq ~msg:"the empty block must be created before its asset conversion"
+      (Q.member "tx-id" (List.hd txs)) (`String "insert-empty"))
+
 let cases = [
+  case "encrypted toolbar image uploads resume transactions for existing empty blocks" (toolbar_image_upload_reaches_the_transaction_queue true true);
+  case "encrypted toolbar image uploads preserve pending block creation order" (toolbar_image_upload_reaches_the_transaction_queue false true);
+  case "toolbar image uploads resume transactions for existing empty blocks" (toolbar_image_upload_reaches_the_transaction_queue true false);
+  case "toolbar image uploads preserve pending block creation order" (toolbar_image_upload_reaches_the_transaction_queue false false);
   case "imported asset previews stay local while offline" imported_asset_preview_is_local_even_when_the_block_uuid_is_reused;
   case "retrying image import keeps one live asset" importing_twice_keeps_one_asset_in_the_live_projection;
   case "empty image target projection preserves existing identity" empty_image_target_is_projected_without_losing_its_identity;

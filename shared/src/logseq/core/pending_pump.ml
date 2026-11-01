@@ -164,7 +164,9 @@ let prepare_pending_creation session (pump : Types.pending_sync) (block : Model.
        | None -> None)
 
 let prepare_pending_block session (pump : Types.pending_sync) (block : Model.block) =
-  if Hashtbl.mem pump.Types.authoritative block.uuid then begin
+  if block.Model.is_asset then
+    prepare_pending_create_request session pump block block.title (Some block.page_id)
+  else if Hashtbl.mem pump.Types.authoritative block.uuid then begin
     let ( let* ) = Result.bind in
     let* title =
       if So.selected_graph_is_encrypted session then
@@ -212,7 +214,9 @@ let activate_semantic_request (session : Types.session) config accepted =
   let s = Types.state session in
   let caught_up = match Types.projection_server_t session, s.accepted_server_t with
     | Some local, Some latest -> local >= latest | _ -> true in
-  if s.semantic_active = None && caught_up then
+  (* Drain the file queue before waiting for the graph socket. This also lets
+     metadata for a photo selection share one transaction batch. *)
+  if s.semantic_active = None && s.pending_sync = None && caught_up then
     match s.semantic_queue with
     | [] -> ()
     | first :: _ ->
@@ -402,7 +406,9 @@ let rec finish_pending_block session (pump : Types.pending_sync) (block : Model.
             block.uuid))
   else mark_pending_failed session block;
   pump.Types.active := None;
-  prepare_pending_next session pump
+  prepare_pending_next session pump;
+  if (Types.state session).pending_sync = None then
+    activate_semantic_request session pump.config None
 
 let asset_datoms_operation session block status =
   Rpc.asset_datoms_operation
@@ -469,19 +475,8 @@ let rec complete_pending_active session (pump : Types.pending_sync)
                ^ " message=" ^ message);
             finish_pending_block session pump block false
           | Ok () ->
-            let queue = (Types.state session).semantic_queue in
-            let is_asset (pending : Types.semantic_pending) =
-              pending.operation.operation_id = operation.Ops.operation_id
-            in
-            session.state :=
-              {
-                !(session.state) with
-                semantic_queue =
-                  List.filter is_asset queue
-                  @ List.filter (fun p -> not (is_asset p)) queue;
-              };
-            finish_pending_block session pump block true;
-            activate_semantic_request session pump.config None))
+            restore_semantic_queue session;
+            finish_pending_block session pump block true))
     | Types.Create_block block ->
       (match
          try Ok (Api.created_block_uuid_from_body response.body)
@@ -700,7 +695,16 @@ let complete_semantic_response session (active : Types.semantic_active) input =
       Option.iter (fun record -> record ~semantic:true pending.operation.operation_id failure)
         (Types.host session).record_sync_failure) settlements;
     restore_semantic_queue session;
-    let continue = succeeded || List.exists (fun (_, state, _) ->
+    let caught_up_stale = match Json_util.member "body" input with
+      | `String body ->
+        let body = try Json.from_string body with Yojson.Json_error _ -> `Null in
+        json_field "type" body = `String "tx/reject"
+        && json_field "reason" body = `String "stale"
+        && (match Types.projection_server_t session, json_field "t" body with
+            | Some local, `Int server -> local >= server
+            | _ -> false)
+      | _ -> false in
+    let continue = succeeded || caught_up_stale || List.exists (fun (_, state, _) ->
       match state with Ops.Conflicted _ -> true | _ -> false) settlements in
     if continue then
       (match (Types.state session).config with
@@ -740,11 +744,12 @@ let complete_pending_sync (session : Types.session) payload =
     let attempt = match (Types.state session).pending_retry with
       | Some retry when retry.request_id = expected -> retry.attempt
       | _ -> 0 in
-    let result = if transient && attempt < 3 then begin
+    let retrying = transient && attempt < 3 in
+    let result = if retrying then begin
       session.state := { !(session.state) with
         pending_retry = Some { Types.request_id = expected; attempt = attempt + 1;
           delay_ms = 1000 lsl attempt };
-        pending_sync_error = completion_failure input };
+        pending_sync_error = (if semantic then completion_failure input else None) };
       Ok ()
     end else begin
       let* () = handle () in
@@ -752,7 +757,10 @@ let complete_pending_sync (session : Types.session) payload =
         pending_sync_error = completion_failure input };
       Ok ()
     end in
-    let failure = match result with Ok () -> completion_failure input | Error message -> Some message in
+    let failure = match result with
+      | Ok () when retrying && not semantic -> None
+      | Ok () -> completion_failure input
+      | Error message -> Some message in
     session.state := { !(session.state) with pending_sync_error = failure };
     if not semantic || (transient && attempt < 3) || Result.is_error result then
       List.iter (fun failure_id ->

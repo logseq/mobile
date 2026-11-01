@@ -272,6 +272,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
         context.coordinator.highlight(textView)
+        if !isSameBlock {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
+        }
         if !focusEnabled {
             (textView as? FocusRetainingTextView)?.cancelPendingFocus()
         } else if InlineEditorFocusPolicy.shouldRequestFocus(
@@ -406,6 +409,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
             LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.input")
             localText = textView.text
             guard textView.markedTextRange == nil else { return }
@@ -418,6 +422,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
             if InlineEditorCaretEmissionPolicy.shouldEmit(
                 textMatchesModel: textView.text == parent.text,
                 isApplyingModel: isApplyingModel
@@ -503,11 +508,109 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 }
 
+// The navigation stack's floating chrome is outside the scroll view's UIKit
+// adjusted insets. Measure it in the same window as the native caret.
+struct OutlinerEditorToolbarGuide: UIViewRepresentable {
+    func makeUIView(context: Context) -> Probe { Probe() }
+    func updateUIView(_ view: Probe, context: Context) {}
+
+    final class Probe: UIView {
+        private var previousFrame: CGRect?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            previousFrame = nil
+            OutlinerEditorViewport.toolbars.add(self)
+            isUserInteractionEnabled = false
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let window else { return }
+            let frame = convert(bounds, to: window)
+            guard frame != previousFrame else { return }
+            previousFrame = frame
+            for editor in OutlinerEditorViewport.editors.allObjects where editor.window === window {
+                editor.revealCaretAfterLayout()
+            }
+        }
+    }
+}
+
+@MainActor
+private enum OutlinerEditorViewport {
+    static let toolbars = NSHashTable<OutlinerEditorToolbarGuide.Probe>.weakObjects()
+    static let editors = NSHashTable<FocusRetainingTextView>.weakObjects()
+
+    static func obstruction(in window: UIWindow, intersecting caret: CGRect) -> CGRect? {
+        toolbars.allObjects.compactMap { toolbar -> CGRect? in
+            guard toolbar.window === window else { return nil }
+            var ancestor: UIView? = toolbar
+            while let view = ancestor {
+                if view.isHidden || view.alpha < 0.01 { return nil }
+                ancestor = view.superview
+            }
+            let frame = toolbar.convert(toolbar.bounds, to: window)
+            guard frame.height > 0, frame.intersects(window.bounds),
+                  frame.minX < caret.maxX, frame.maxX > caret.minX else { return nil }
+            return frame
+        }.min { $0.minY < $1.minY }
+    }
+}
+
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
     var onPasteContent: ((String) -> Bool)?
     private var focusPending = false
+    private var caretRevealScheduled = false
+    private var previousCaretLayout: CGRect?
+    private var previousEditorSize: CGSize?
     private(set) var isInsertingLineBreak = false
     private(set) var isPasting = false
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard isFirstResponder, let selection = selectedTextRange else { return }
+        let caret = caretRect(for: selection.end)
+        if caret != previousCaretLayout || bounds.size != previousEditorSize {
+            previousCaretLayout = caret
+            previousEditorSize = bounds.size
+            revealCaretAfterLayout()
+        }
+    }
+
+    func revealCaretAfterLayout() {
+        guard isFirstResponder, !caretRevealScheduled else { return }
+        caretRevealScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.caretRevealScheduled = false
+            guard self.isFirstResponder, let selection = self.selectedTextRange else { return }
+            self.window?.layoutIfNeeded()
+            let caret = self.caretRect(for: selection.end).insetBy(dx: -8, dy: -8)
+            guard !caret.isNull, !caret.isInfinite, caret.height > 0 else { return }
+            var ancestor = self.superview
+            while let view = ancestor {
+                if let scroll = view as? UIScrollView, scroll.isScrollEnabled {
+                    let target = self.convert(caret, to: scroll)
+                    let viewport = scroll.bounds.inset(by: scroll.adjustedContentInset)
+                    var visible = viewport
+                    var reveal = target
+                    if let window = self.window,
+                       let obstruction = OutlinerEditorViewport.obstruction(in: window, intersecting: self.convert(caret, to: window)) {
+                        let toolbar = scroll.convert(obstruction, from: window)
+                        if toolbar.maxY > viewport.minY {
+                            let covered = max(0, viewport.maxY - max(viewport.minY, toolbar.minY))
+                            visible.size.height -= covered
+                            reveal.size.height += covered
+                        }
+                    }
+                    if !visible.contains(target) { scroll.scrollRectToVisible(reveal, animated: false) }
+                }
+                ancestor = view.superview
+            }
+        }
+    }
 
     override func paste(_ sender: Any?) {
         if let payload = LGBlockClipboard.content(before: text ?? "", selection: selectedRange),
@@ -554,6 +657,12 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        OutlinerEditorViewport.editors.add(self)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+        if window != nil {
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidChangeFrame),
+                name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+        }
         LGInteractionDiagnostics.event("editor.window", "view=\(ObjectIdentifier(self)) attached=\(window != nil) responder=\(isFirstResponder)")
         fulfillPendingFocus()
     }
@@ -561,7 +670,14 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         LGInteractionDiagnostics.event("editor.becomeFirstResponder", "view=\(ObjectIdentifier(self)) result=\(result) attached=\(window != nil)")
+        if result { revealCaretAfterLayout() }
         return result
+    }
+
+    @objc private func keyboardDidChangeFrame() {
+        // Keyboard avoidance can move the scroll viewport without changing the
+        // editor's local caret or size. Reveal after the final native layout.
+        revealCaretAfterLayout()
     }
 
     override func resignFirstResponder() -> Bool {

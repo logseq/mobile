@@ -336,6 +336,19 @@ let first_empty_page_block_backspace_only_removes_a_leaf () =
   check_eq ~msg:"backspace cannot delete the first block's subtree" commands [];
   check_eq (State.editing_uuid after) (Some "empty")
 
+let backspace_preserves_parents_with_children () =
+  List.iter (fun title -> List.iter (fun collapsed ->
+    let ctx = context_for [block "previous" "Before";
+      { (block "parent" title) with order = Some "a1" };
+      row "child" "parent" "a0"] in
+    let initial = if collapsed then fst (step ctx State.empty (State.Toggle_collapsed "parent")) else State.empty in
+    let editing = advance ctx initial [State.Tap_block "parent"; State.Text_changed (text title 0)] in
+    List.iter (fun message ->
+      let after, commands = step ctx editing message in
+      check_eq ~msg:"Backspace must preserve a parent and its children" commands [];
+      check_eq (State.editing_uuid after) (Some "parent"))
+      [backspace 0; atomic_backspace title 0]) [false; true]) [""; "Parent"; "中文🙂"]
+
 let return_only_outdents_the_final_empty_child () =
   let ctx =
     context_for
@@ -1251,6 +1264,7 @@ let cases =
       backspace_merges_current_or_atomic_text;
     case "first block backspace preserves content and journal boundaries"
       first_block_backspace_preserves_content_and_journal_boundaries;
+    case "backspace preserves parents with children" backspace_preserves_parents_with_children;
     case "first empty page block backspace only removes a leaf"
       first_empty_page_block_backspace_only_removes_a_leaf;
     case "return only outdents the final empty child"

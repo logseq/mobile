@@ -1012,28 +1012,37 @@ let enter_on_a_parent_matches_master_placement () =
     [false, 5, Q.alpha, ""; false, 2, Q.alpha, "llo"; true, 5, Q.page, ""; false, 0, Q.page, ""]
 
 let backspace_at_start_keeps_the_caret_at_the_merge_boundary () =
-  List.iter (fun (previous_title, nested, collapsed) -> R.with_runtime (fun session runtime conn ->
+  List.iter (fun (previous_title, nested, collapsed, has_children) -> R.with_runtime (fun session runtime conn ->
     let descendant = "70000000-0000-4000-8000-000000000002" in
     rebase runtime conn ([put Q.alpha "block/title" (Ds.String previous_title);
       put Q.beta "block/title" (Ds.String "Hello")]
       @ (if nested then [put Q.beta "block/parent" (Ds.Ref_to (Q.ref_uuid Q.alpha))] else [])
-      @ R.entity 221 descendant "Preserved child" @ [
+      @ (if has_children then R.entity 221 descendant "Preserved child" @ [
         put descendant "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
         put descendant "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta));
-        put descendant "block/order" (Ds.String "a0")]);
+        put descendant "block/order" (Ds.String "a0")] else []));
     if collapsed then ignore (event session "toggleCollapsed" ["uuid", `String Q.beta]);
     ignore (event session "tapBlock" ["uuid", `String Q.beta]);
     ignore (type_at session "Hello" 0);
     let response = event session "backspacePressed" ["title", `String "Hello"; "selectionLength", `Int 0] in
-    check_eq ~msg:"Backspace edits the surviving previous block" (member "uuid" (draft response)) (`String Q.alpha);
-    check_eq ~msg:"merged text is preserved" (member "title" (draft response)) (`String (previous_title ^ "Hello"));
-    check_eq ~msg:"caret stays between the previous title and Hello, in native UTF-16 units"
-      (member "caretUTF16Offset" (draft response)) (`Int (Outliner_state.utf16_length previous_title));
     let blocks = Graph_runtime.blocks_for_page runtime Q.page in
-    check ~msg:"only the merged source is removed" (not (List.exists (fun (b : Cache_model.block) -> b.uuid = Q.beta) blocks));
-    check_eq ~msg:"source children survive under the merged block"
-      (List.find (fun (b : Cache_model.block) -> b.uuid = descendant) blocks).parent_id (Some Q.alpha)))
-    ["World", false, false; "中文🙂", false, true; "Parent", true, false]
+    if has_children then begin
+      check_eq ~msg:"A parent remains in edit mode" (member "uuid" (draft response)) (`String Q.beta);
+      check_eq (member "title" (draft response)) (`String "Hello");
+      check_eq (member "caretUTF16Offset" (draft response)) (`Int 0);
+      check_eq ~msg:"Backspace stages no destructive operation" (Graph_runtime.pending_operations runtime) [];
+      check (List.exists (fun (b : Cache_model.block) -> b.uuid = Q.beta) blocks);
+      check_eq ~msg:"The child keeps its original parent"
+        (List.find (fun (b : Cache_model.block) -> b.uuid = descendant) blocks).parent_id (Some Q.beta)
+    end else begin
+      check_eq ~msg:"A leaf still merges into the previous block" (member "uuid" (draft response)) (`String Q.alpha);
+      check_eq (member "title" (draft response)) (`String (previous_title ^ "Hello"));
+      check_eq ~msg:"Caret remains at the native UTF-16 merge boundary"
+        (member "caretUTF16Offset" (draft response)) (`Int (Outliner_state.utf16_length previous_title));
+      check (not (List.exists (fun (b : Cache_model.block) -> b.uuid = Q.beta) blocks))
+    end))
+    ["World", false, false, false; "中文🙂", false, true, false; "Parent", true, false, false;
+     "World", false, false, true; "中文🙂", false, true, true; "Parent", true, false, true]
 
 let unrelated_edit_does_not_create_issue_number_tags () = R.with_runtime (fun session runtime conn ->
   let source = {|Design question (reporter asks A vs B), not auto-fixed: A = text export writes the deprecated macro as text ("- Groceries {{embed [[Shopping]]}}") so export→paste round-trips (3 export-test assertions change); B = keep expanding as now. Reporter offers the PR for A. Related umbrella db-test#1442 (reporter withdrew symptom patches incl. #13730/#[[13732)]]. Needs Tienson decision before a code PR.|} in

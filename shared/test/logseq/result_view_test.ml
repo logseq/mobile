@@ -1451,7 +1451,40 @@ let readable_names_roundtrip_without_retargeting_references () = with_runtime (f
   let name = Result_view.property_json (Graph_runtime.db runtime) ~owner:alpha ~attr:"block/title" ~encode_block:(fun _ -> `Null) in
   check_eq ~msg:"ambiguous display names keep identity-preserving syntax" (member "editorValue" name) (`String stored))
 
+let unnamed_saved_views_keep_native_navigation_usable () =
+  List.iter (fun title ->
+    List.iter (fun (owner, feature) ->
+      let base = fixture () in
+      let changes = [put list_view "logseq.property/view-for" (Ds.Ref_to (ref_uuid owner));
+        put list_view "logseq.property.view/feature-type" (Ds.Keyword feature)] @
+        (match title with None -> [Ds.Retract (ref_uuid list_view, "block/title", None)]
+         | Some title -> [put list_view "block/title" (Ds.String title)]) in
+      let db = Ds.db_with changes base in
+      let session, _ = make_session ~configured:true db in
+      Q.open_results session;
+      let response = if feature = "query-result" then Session.snapshot_visible session else
+        Json.to_string (Rpc_test.dispatch_json session "openNode" (Json.to_string (`Assoc ["uuid", `String owner]))) in
+      List.iter (fun backend -> Q.with_ui backend response (fun app ->
+        if feature <> "query-result" then begin
+          App_test.send app (Model.RequestAppNode owner);
+          let projection = match Response_snapshot.decode_response response with Ok p -> p | Error e -> fail e in
+          App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app
+        end;
+        let runtime = Lui_app.runtime app in
+        let node = App_test.descendant_with_identifier runtime (Lui_app.root_node app) ("view.tab." ^ list_view) in
+        check ~msg:"the saved view must actually mount" (node <> -1);
+        check_eq ~msg:"legacy unnamed views need a visible menu label, as on master"
+          (App_test.property_string runtime node Lui_protocol.TextValue)
+          (match title with Some title when String.trim title <> "" -> title | _ -> "New view");
+        check_eq ~msg:"displaying an unnamed view must not rename stored data"
+          (Graph_read.value db (Option.get (Ds.entid db "block/uuid" (Ds.Uuid list_view))) "block/title")
+          (Option.map (fun title -> Ds.String title) title)))
+        [App_test.ios_backend; App_test.kotlin_backend])
+      [Q.owner, "query-result"; Q.project, "class-objects"; score_property, "property-objects"])
+    [None; Some ""; Some "   "; Some "Personal view"]
+
 let cases = [
+  case "unnamed saved views keep native navigation usable" unnamed_saved_views_keep_native_navigation_usable;
   case "deferred cell editors load candidates without replacing the page" deferred_cell_editor_loads_without_replacing_the_page;
   case "wide tables mount only cells intersecting the viewport" wide_tables_mount_only_visible_cells;
   case "table Name editors show readable refs and provide navigation" table_name_editors_resolve_page_names_and_offer_navigation;

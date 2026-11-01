@@ -1367,6 +1367,11 @@ let dictionaries = [
     ("Name", "Name");
     ("Navigation", "Navigation");
     ("No cards due", "No cards due");
+    ("Practice", "Practice");
+    ("Practice again", "Practice again");
+    ("Review complete", "Review complete");
+    ("You've completed this review.", "You've completed this review.");
+    ("Come back later or practice again now.", "Come back later or practice again now.");
     ("Number", "Number");
     ("Offline", "Offline");
     ("Outdent", "Outdent");
@@ -5517,6 +5522,11 @@ let dictionaries = [
     ("Name", "名称");
     ("Navigation", "移动");
     ("No cards due", "没有待复习的卡片");
+    ("Practice", "练习");
+    ("Practice again", "再次练习");
+    ("Review complete", "复习完成");
+    ("You've completed this review.", "本轮复习已完成。");
+    ("Come back later or practice again now.", "稍后再来，或现在再次练习。");
     ("Number", "数字");
     ("Offline", "离线");
     ("Outdent", "取消缩进");

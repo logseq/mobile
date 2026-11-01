@@ -193,6 +193,18 @@ let stale_rejection_rebases_and_retries_all_members () =
     ignore (ack session retry);
     check_eq (Ops.list path) [])
 
+let stale_rejection_after_catchup_resumes_without_another_kick () =
+  with_session (fun session graph _ path _ ->
+    titles session 3;
+    let request = required_pending_request session in
+    require (Mobile_graph.apply_sync_event graph {|{"type":"pull/ok","t":44,"txs":[]}|});
+    let rejected = complete_request session request {|{"type":"tx/reject","reason":"stale","t":44}|} in
+    let retry = request_from rejected in
+    check_eq ~msg:"A completed catch-up must immediately resume the rejected batch" (baseline retry) 44;
+    check_eq (ids retry) ["edit-0"; "edit-1"; "edit-2"];
+    ignore (ack session retry);
+    check_eq (Ops.list path) [])
+
 let malformed_partial_rejection_preserves_the_active_batch () =
   List.iter (fun body ->
     with_session (fun session _ _ path _ ->
@@ -222,8 +234,130 @@ let exhausting_retries_stops_without_losing_batch_members () =
       [Ops.Retryable; Ops.Retryable; Ops.Retryable];
     check_eq (ids (required_pending_request session)) ["edit-0"; "edit-1"; "edit-2"])
 
+let late_completions_after_server_confirmation_do_not_stall_sync () =
+  List.iter (fun confirmed ->
+    List.iter (fun failure -> with_session (fun session graph runtime path _ ->
+      titles session 3;
+      let request = required_pending_request session in
+      require (Mobile_graph.apply_sync_event graph (journal request ~count:confirmed ()));
+      let remaining () = List.map (fun (op : Ops.pending_operation) -> op.operation_id) (Ops.list path) in
+      check_eq (remaining ()) (if confirmed = 3 then [] else ["edit-1"; "edit-2"]);
+      for _attempt = 0 to (if failure then 3 else 0) do
+        let fields = if failure then ["error", `String "Socket is not connected"] else
+          ["status", `Int 200; "body", `String {|{"type":"tx/reject","reason":"db transact failed","retryable":false}|}] in
+        let response = dispatch_json session "completePendingSync" (Json.to_string (`Assoc
+          (("id", member "id" request) :: fields))) in
+        check_eq ~msg:"late responses must settle after confirmed operations leave the durable queue"
+          (member "ok" response) (`Bool true)
+      done;
+      check ~msg:"confirmation must never resurrect the first operation"
+        (not (List.mem "edit-0" (remaining ())));
+      if confirmed = 3 then begin
+        check_eq (remaining ()) [];
+        check_eq (Mobile_graph.sync_error graph) None;
+        stage session "after-confirmation" (Ops.Save_title {uuid=uuid 101;expected_title="2";title="After confirmation"});
+        let next = required_pending_request session in
+        check_eq ~msg:"new edits must sync without restarting the app" (ids next) ["after-confirmation"];
+        ignore (ack session next);
+        check_eq (Fixture.title (Runtime.db runtime) (uuid 101)) "After confirmation"
+      end else if failure then begin
+        let next = required_pending_request session in
+        check_eq ~msg:"unconfirmed members retain their order and remain retryable" (ids next) ["edit-1";"edit-2"];
+        ignore (ack session next);
+        check_eq (remaining ()) []
+      end)) [true;false]) [1;3]
+
+let ten_composer_photos_recover_after_interrupted_upload encrypted failed_index () =
+  with_session (fun session graph runtime path conn ->
+    ignore (Datascript.reset_conn conn (Result_view_test.fixture ()));
+    Runtime.rebase runtime 42 [] [];
+    let session = {session with Session_types.host = {session.host with
+      import_asset_file = (fun _ path -> Ok path);
+      journal_page_id = Some (fun _ -> Some Query_block_test.page);
+      encrypt_asset_file = Some (fun _ path -> Ok (path ^ ".encrypted", 2048));
+      cleanup_file = (fun _ -> ())}} in
+    if encrypted then begin
+      let current = !(session.Session_types.state) in
+      session.state := {current with available_graphs = Api.graphs_from_graphs_body
+        {|{"graphs":[{"graph-id":"plain-1","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}}
+    end;
+    for index = 1 to 10 do
+      let response = dispatch_json session "addAsset" (Json.to_string (`Assoc [
+        "uuid", `String (uuid index); "title", `String "Photo.png";
+        "now", `Int (100 + index); "assetType", `String "png";
+        "assetSize", `Int 2048; "assetChecksum", `String (string_of_int index);
+        "localPath", `String ("Assets/" ^ uuid index ^ ".png")])) in
+      check_eq ~msg:(Json.to_string response) (member "ok" response) (`Bool true)
+    done;
+    let failed = ref None and uploaded = ref [] and position = ref 0 in
+    let rec drain response = match next response with
+      | `Null -> ()
+      | request ->
+        let after = if member "method" request = `String "WS" then begin
+            check_eq ~msg:"All remaining photos upload before waiting for the graph socket"
+              (List.length !uploaded) (if !position <= 10 then 9 else 10);
+            ack session (request_from response)
+          end else begin
+            incr position;
+            check_eq (member "contentType" request) (`String (if encrypted then "text/plain" else "image/png"));
+            if !failed = None && !position = failed_index then begin
+            failed := Some request;
+            let last = ref response in
+            for attempt = 1 to 4 do
+              last := pending_completion session request `Null `Null (`String "The network connection was lost.");
+              if attempt < 4 then begin
+                check_eq ~msg:"An upload awaiting automatic retry is still syncing, not failed"
+                  (member "pendingSyncError" !last) `Null;
+                check_eq ~msg:"Transient retries must not persist a graph failure"
+                  (Mobile_graph.sync_error graph) None
+              end
+            done;
+            !last
+          end else begin
+            uploaded := member "url" request :: !uploaded;
+            pending_completion session request (`Int 200) (`String "{}") `Null
+          end end in
+        drain after
+    in
+    drain (response_result (dispatch_json session "beginPendingSync" ""));
+    check_eq ~msg:"One failed photo must not stop the other nine uploads" (List.length !uploaded) 9;
+    check_eq ~msg:"Only the failed photo remains unsynchronized" (List.length (Ops.list path)) 1;
+    let retry = response_result (dispatch_json session "beginPendingSync" "") in
+    let request = required_pending retry in
+    check_eq ~msg:"Retry uses the original photo identity" (member "url" request) (member "url" (Option.get !failed));
+    drain retry;
+    check_eq ~msg:"Retry clears the persisted error" (Mobile_graph.sync_error graph) None;
+    check_eq (Ops.list path) [];
+    for index = 1 to 10 do
+      check ~msg:"All ten photos remain in the graph" (Datascript.entid (Runtime.db runtime) "block/uuid" (Datascript.Uuid (uuid index)) <> None)
+    done)
+
+let confirmed_assets_clear_only_their_old_upload_errors () =
+  with_session (fun session graph runtime path conn ->
+    ignore (Datascript.reset_conn conn (Result_view_test.fixture ()));
+    Runtime.rebase runtime 42 [] [];
+    let asset n = Ops.Create_asset { uuid = uuid n; title = "Photo.png";
+      page_uuid = Query_block_test.page; parent_uuid = Query_block_test.page;
+      order = "a" ^ string_of_int n; created_at = 100; asset_type = "png";
+      asset_size = 20; asset_checksum = "checksum"; transcript = None } in
+    stage session "confirmed-photo" (asset 1);
+    ignore (ack session (required_pending_request session));
+    require (Runtime.stage runtime {Ops.operation_id = "asset:" ^ uuid 2;
+      base_t = 43; state = Ops.Applied; intent = asset 2});
+    Graph_sqlite.record_sync_failure path (uuid 1) (Some "Old upload timeout");
+    Graph_sqlite.record_sync_failure path (uuid 2) (Some "Pending upload timeout");
+    check_eq ~msg:"Server confirmation clears old upload errors without hiding an unuploaded photo"
+      (Mobile_graph.sync_error graph) (Some "Pending upload timeout");
+    check_eq (Graph_sqlite.sync_failures path) [uuid 2, "Pending upload timeout"])
+
 let cases =
-  [ case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
+  [ case "confirmed assets clear old upload errors" confirmed_assets_clear_only_their_old_upload_errors;
+    case "ten composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload false 1);
+    case "ten encrypted composer photos recover after interrupted upload" (ten_composer_photos_recover_after_interrupted_upload true 1);
+    case "last composer photo failure still submits the successful nine" (ten_composer_photos_recover_after_interrupted_upload false 10);
+    case "last encrypted photo failure still submits the successful nine" (ten_composer_photos_recover_after_interrupted_upload true 10);
+    case "late completions after server confirmation do not stall sync" late_completions_after_server_confirmation_do_not_stall_sync;
+    case "queued edits share a batch and ACK" batches_queued_edits_and_acknowledges_every_member;
     case "dependent creations share a batch" dependent_creations_share_a_batch;
     case "backlogs split at 50 operations" splits_backlogs_into_bounded_batches;
     case "byte budget counts the JSON encoded frame" size_budget_measures_the_encoded_frame;
@@ -232,5 +366,6 @@ let cases =
     case "retries and cancellation retain every member" retries_and_cancellation_keep_the_whole_batch;
     case "partial rejection settles the accepted prefix" partial_rejection_only_conflicts_the_failed_member;
     case "stale rejection retries the whole batch" stale_rejection_rebases_and_retries_all_members;
+    case "stale rejection after catch-up resumes immediately" stale_rejection_after_catchup_resumes_without_another_kick;
     case "malformed rejection preserves the active batch" malformed_partial_rejection_preserves_the_active_batch;
     case "exhausted retries preserve the stopped batch" exhausting_retries_stops_without_losing_batch_members ]

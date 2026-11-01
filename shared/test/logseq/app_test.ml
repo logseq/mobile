@@ -2711,6 +2711,13 @@ let sync_details_show_every_server_rejection () =
       R.required_pending (R.pending_completion session request (`Int 200) (`String "{}") `Null)
       else request in
     apply (R.pending_completion session request (`Int status) (`String body) `Null);
+    if not semantic && (status = 429 || status >= 500) then begin
+      check ~msg:"A retryable upload stays in progress until its retries are exhausted"
+        (View_base.sync_label (App.model application) <> "Sync failed");
+      for _ = 1 to 3 do
+        apply (R.pending_completion session request (`Int status) (`String body) `Null)
+      done
+    end;
     send application Model.OpenSyncDetails;
     flush application;
     let assert_error () =
@@ -3954,10 +3961,9 @@ let flashcards_render_empty_and_non_cloze_control_states () =
   let empty_state =
     descendant_with_identifier renderer screen "layout.flashcards.empty"
   in
-  let empty_children = children renderer empty_state in
-  let empty_icon = List.nth empty_children 0 in
-  let empty_title = List.nth empty_children 1 in
-  let empty_description = List.nth empty_children 2 in
+  let empty_icon = descendant_with_identifier renderer empty_state "flashcards.empty-icon" in
+  let empty_title = descendant_with_identifier renderer empty_state "flashcards.empty" in
+  let empty_description = descendant_with_identifier renderer empty_state "flashcards.empty-description" in
   check ~msg:"an empty due queue preserves the existing empty state"
     (empty_state <> -1);
   check_eq ~msg:"empty and review layouts share a gap-free root container"

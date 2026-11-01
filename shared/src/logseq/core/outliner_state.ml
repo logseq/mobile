@@ -1141,6 +1141,8 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
       loop 0 rows
     in
     (match index with
+    | _ when List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid) context.blocks ->
+      step state []
     | Some index when index > 0 ->
       let previous = (List.nth rows (index - 1)).block in
       step state
@@ -1157,7 +1159,6 @@ let merge_backward context (state : outliner_state) (editing : editor_draft) =
             };
         ])
     | Some index when String.trim editing.title = "" && block.journal = None
-            && not (List.exists (fun (child : Model.block) -> child.parent_id = Some block.uuid) context.blocks)
             && index + 1 < List.length rows ->
       step
         (start_editing context state (List.nth rows (index + 1)).block 0)

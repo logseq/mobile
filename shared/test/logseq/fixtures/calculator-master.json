@@ -1,0 +1,766 @@
+{
+  "upstream" : "logseq/logseq",
+  "revision" : "ed2270d0aa65172a9aabcf141d3c7e1eb303a234",
+  "testFile" : "src/test/frontend/extensions/calc_test.cljc",
+  "cases" : [ {
+    "kind" : "numeric",
+    "source" : "1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "   1  ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "98123",
+    "expected" : [ "98123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 1.0 ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "22.1124131",
+    "expected" : [ "22.1124131" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 100.01231 ",
+    "expected" : [ "100.01231" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " .01231 ",
+    "expected" : [ "0.01231" ]
+  }, {
+    "kind" : "numeric",
+    "source" : ".015 ",
+    "expected" : [ "0.015" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-.2",
+    "expected" : [ "-0.2" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "- .3",
+    "expected" : [ "-0.3" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "9812,3",
+    "expected" : [ "98123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "98,123",
+    "expected" : [ "98123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "9,8,123",
+    "expected" : [ "98123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 112,3.0 ",
+    "expected" : [ "1123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2,2.1124131",
+    "expected" : [ "22.1124131" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 1,00.01231 ",
+    "expected" : [ "100.01231" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-98123",
+    "expected" : [ "-98123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " -112,3.0 ",
+    "expected" : [ "-1123.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-2,2.1124131",
+    "expected" : [ "-22.1124131" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1%",
+    "expected" : [ "0.01" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 100.00% ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0.169781231%",
+    "expected" : [ "0.00169781231" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 + 0",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 + 1 - 1 ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1+2",
+    "expected" : [ "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 1 +2 ",
+    "expected" : [ "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "(2-1 ) ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "100  + 111",
+    "expected" : [ "211.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1,000  + 11,11",
+    "expected" : [ "2111.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1,000  + -11,11",
+    "expected" : [ "-111.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 + 2 + 3 + 4 + 5 -1-2-3-4-5",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 * 1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 * -1",
+    "expected" : [ "-1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1*2",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-1*2",
+    "expected" : [ "-2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 3 *3",
+    "expected" : [ "9.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 2 * 3 / 3 / 2",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 2 * 3 / 3 / -2",
+    "expected" : [ "-1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 1 / 2",
+    "expected" : [ "0.5" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 1/ 2.0",
+    "expected" : [ "0.5" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2*100%",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2%/2",
+    "expected" : [ "0.01" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "50% * 1e6",
+    "expected" : [ "500000.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 + 0 * 2",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 * 1 - 1 ",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "8 / 4 + 2 * 1 - 25 * 0 / 1",
+    "expected" : [ "4.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "3 *2 ^ 2 + 1 * 2",
+    "expected" : [ "14.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "((3*2) ^ 2 + 1) * 2",
+    "expected" : [ "74.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "((3*2) ^ 2 + 1) * -2",
+    "expected" : [ "-74.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-((3*2) ^ 2 + 1) * -2",
+    "expected" : [ "74.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "(3*2) ^ (2 + 1) * 2",
+    "expected" : [ "432.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "(2 * 3) * 2 ^ (2 * 2) + 1",
+    "expected" : [ "97.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 * 3 / 2 ^ 2 * 2 + 1",
+    "expected" : [ "4.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1.0e01",
+    "expected" : [ "10.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "123.0e-12",
+    "expected" : [ "1.23E-10" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "123.0e-1",
+    "expected" : [ "12.3" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-123.0e-1",
+    "expected" : [ "-12.3" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "123.0E-1",
+    "expected" : [ "12.3" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "123.0E+2",
+    "expected" : [ "12300.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1e0 + 1e0",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : ".1e2",
+    "expected" : [ "10.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : ".1e-2",
+    "expected" : [ "0.001" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-.45e-1",
+    "expected" : [ "-0.045" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-.21e3",
+    "expected" : [ "-210.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1.1 + 2.2",
+    "expected" : [ "3.3" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "3.3 - 1.1",
+    "expected" : [ "2.2" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1/10000",
+    "expected" : [ "1.0E-4" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1/10000000",
+    "expected" : [ "1.0E-7" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 ^ 0",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2^2 ",
+    "expected" : [ "4.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-3^2 ",
+    "expected" : [ "-9.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "(-3)^2 ",
+    "expected" : [ "9.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 3^ 3",
+    "expected" : [ "27.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : " 2^ -3",
+    "expected" : [ "0.125" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 ^ 3 ^ 2",
+    "expected" : [ "512.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "4.000 ^ 4.0",
+    "expected" : [ "256.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "4^0.5",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "100^(-0.5)",
+    "expected" : [ "0.1" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "25^(3/2)",
+    "expected" : [ "125.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "200% ^ 12",
+    "expected" : [ "4096.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "sqrt( 4 )",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "abs( 3 )",
+    "expected" : [ "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "abs( -3 )",
+    "expected" : [ "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "cos( 0 * 1 )",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "sin( 1 -1 )",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "atan(tan(0))",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "sin(asin(0)) + 1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-sin(asin(0)) + 1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "acos(cos(0))",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 * log(10) + 3",
+    "expected" : [ "5.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-2 * log(10) + 3",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "ln(1) + 10",
+    "expected" : [ "10.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "exp(0)",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "ln(exp(2))",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 mod 1",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "7 mod 3",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "7 mod 4",
+    "expected" : [ "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "4.5 mod 2",
+    "expected" : [ "0.5" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-7 mod 4",
+    "expected" : [ "-3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0!",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1!",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "3.0!",
+    "expected" : [ "6.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-5!",
+    "expected" : [ "-120.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "(2+3)!+4",
+    "expected" : [ "124.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "10 * 4!",
+    "expected" : [ "240.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\na",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = -1\na",
+    "expected" : [ "-1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "k9 = 27\nk9",
+    "expected" : [ "27.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "variable = 1 + 0 * 2\nvariable",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "x= 2 * 1 - 1 \nx",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "y =8 / 4 + 2 * 1 - 25 * 0 / 1\ny",
+    "expected" : [ "4.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "y =8 / 4 + 2 * 1 - 25 * 0 / 1\ny",
+    "expected" : [ "4.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "zzz=3 *2 ^ 2 + 1 * 2\nzzz",
+    "expected" : [ "14.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "foo = (((3*2) ^ 2 + 1) * 2)\nfoo",
+    "expected" : [ "74.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a_a = 1\na_a",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "_foo = 1\n_foo",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "x_yy_zzz= 1\nx_yy_zzz",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "foo_bar_baz = 1 + -0 * 2\nfoo_bar_baz",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\nb = a + 1\na\nb",
+    "expected" : [ "1.0", "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\nb = -a + 1\na\nb",
+    "expected" : [ "1.0", "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\nb=a*2+1\na\nb",
+    "expected" : [ "1.0", "3.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a_a = 1\nb_b = a_a + 1\na_a\nb_b",
+    "expected" : [ "1.0", "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "variable = 1 + 0 * 2\nx = log(variable)\nvariable\nx",
+    "expected" : [ "1.0", "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "x= 2 * 1 - 1 \n23 + 54\nu= 23\nv = x + u\nu\nv\nx",
+    "expected" : [ "23.0", "24.0", "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\na = 2\na",
+    "expected" : [ "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "a = 1\nb = a + 1\na = b\na\nb",
+    "expected" : [ "2.0", "2.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "variable = 1 + 0 * 2\nx = log(variable)\nx = variable - 1\nvariable\nx",
+    "expected" : [ "1.0", "0.0" ]
+  }, {
+    "kind" : "exact",
+    "source" : "6*7\nlast*3",
+    "expected" : [ "42", "126" ]
+  }, {
+    "kind" : "exact",
+    "source" : "3^2+4^2\nsqrt(last)",
+    "expected" : [ "25", "5" ]
+  }, {
+    "kind" : "exact",
+    "source" : "2*3\n# a comment\n\n   \nlast*2",
+    "expected" : [ "6", "", "", "", "12" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm\n1e6",
+    "expected" : [ "", "1000000" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 7\n1e6",
+    "expected" : [ "", "1000000" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 6\n1e6",
+    "expected" : [ "", "1e+6" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 3\nPI",
+    "expected" : [ "", "3.14" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 1\nE",
+    "expected" : [ "", "3" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 5\n0.000123",
+    "expected" : [ "", "0.000123" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format norm 4\n0.000123",
+    "expected" : [ "", "1.23e-4" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format normal 9\n1.234e8",
+    "expected" : [ "", "123400000" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format normal 8\n1.234e8",
+    "expected" : [ "", "1.234e+8" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fix 6\n0.12345",
+    "expected" : [ "", "0.123450" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fix 4\n0.12345",
+    "expected" : [ "", "0.1235" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fixed 4\nE",
+    "expected" : [ "", "2.7183" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fix 3\n0.0005",
+    "expected" : [ "", "0.001" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fix 3\n0.0004",
+    "expected" : [ "", "4.000e-4" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fixed 2\n1e21+0.1",
+    "expected" : [ "", "1.00e+21" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format sci\n1e6",
+    "expected" : [ "", "1e+6" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format sci 3\nPI",
+    "expected" : [ "", "3.142e+0" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format scientific\n3.14*10^2",
+    "expected" : [ "", "3.14e+2" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0 0/1",
+    "expected" : [ "0.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0 1/1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "1 0/1",
+    "expected" : [ "1.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 1/2",
+    "expected" : [ "2.5" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 1/2",
+    "expected" : [ "2.5" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-4 7/25",
+    "expected" : [ "-4.28" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2 101/100000",
+    "expected" : [ "2.00101" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "-99 8/40",
+    "expected" : [ "-99.2" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format frac\n4.375",
+    "expected" : [ "", "4 3/8" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fraction\n-7.25",
+    "expected" : [ "", "-7 1/4" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format fractions\n19/20 + 1 1/20",
+    "expected" : [ "", "2" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format frac\n19/17 - 3 2/17",
+    "expected" : [ "", "-2" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format frac\n3.14157",
+    "expected" : [ "", "3.14157" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format frac 100000\n3.14157",
+    "expected" : [ "", "3 14157/100000" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format improper\n4.375",
+    "expected" : [ "", "35/8" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format imp\n-7.25",
+    "expected" : [ "", "-29/4" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format improper\n3.14157",
+    "expected" : [ "", "3.14157" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":format imp 100000\n3.14157",
+    "expected" : [ "", "314157/100000" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0xff",
+    "expected" : [ "255.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0x0A + 0xF5 + 0x100",
+    "expected" : [ "511.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0o123",
+    "expected" : [ "83.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0x100 + 0o100 + 0b100",
+    "expected" : [ "324.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "0b100 * 0b1000",
+    "expected" : [ "32.0" ]
+  }, {
+    "kind" : "exact",
+    "source" : "12345\n:hex",
+    "expected" : [ "12345", "0x3039" ]
+  }, {
+    "kind" : "exact",
+    "source" : "12345\n:oct",
+    "expected" : [ "12345", "0o30071" ]
+  }, {
+    "kind" : "exact",
+    "source" : "12345\n:bin",
+    "expected" : [ "12345", "0b11000000111001" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":bin\n0b10000 * 0b10000",
+    "expected" : [ "", "0b100000000" ]
+  }, {
+    "kind" : "exact",
+    "source" : ":hex\n-255",
+    "expected" : [ "", "-0xff" ]
+  }, {
+    "kind" : "exact",
+    "source" : "# this comment is ignored",
+    "expected" : [ "" ]
+  }, {
+    "kind" : "exact",
+    "source" : "    # this comment is ignored   ",
+    "expected" : [ "" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2*4# double 4",
+    "expected" : [ "8.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2*5 # double 5",
+    "expected" : [ "10.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2*6  # double 6",
+    "expected" : [ "12.0" ]
+  }, {
+    "kind" : "numeric",
+    "source" : "2*7  # 99",
+    "expected" : [ "14.0" ]
+  }, {
+    "kind" : "error",
+    "source" : "foo_ =",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "foo__ =",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "oo___ =",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : " . ",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "_ = 2",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "__ = 4",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "PI = 3.14",
+    "expected" : [ "Error" ]
+  }, {
+    "kind" : "error",
+    "source" : "foo_3  = _",
+    "expected" : [ "Error" ]
+  } ]
+}

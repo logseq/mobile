@@ -3638,23 +3638,12 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
       in
       List.iter
         (fun index ->
-          ignore
-            (response_result
-               (dispatch_json session "addAsset"
-                  (Json.to_string
-                     (Rpc.json_object
-                        [
-                          ("uuid", `String (asset_replay_uuid index));
-                          ("title", `String "photo.jpg");
-                          ("now", `Int (1788000000000 + index));
-                          ("assetType", `String "jpg");
-                          ("assetSize", `Int 4);
-                          ("assetChecksum", `String "abcd");
-                          ("localPath", `String "Assets/photo.jpg");
-                        ])))))
-        [ 1; 2; 3 ];
-      List.iter
-        (fun index ->
+          ignore (response_result (dispatch_json session "addAsset"
+            (Json.to_string (Rpc.json_object [
+              "uuid", `String (asset_replay_uuid index); "title", `String "photo.jpg";
+              "now", `Int (1788000000000 + index); "assetType", `String "jpg";
+              "assetSize", `Int 4; "assetChecksum", `String "abcd";
+              "localPath", `String "Assets/photo.jpg" ]))));
           let upload = required_pending_request session in
           check_eq (member "method" upload) (`String "PUT");
           let transaction =

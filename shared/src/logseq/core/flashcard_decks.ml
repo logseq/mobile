@@ -11,10 +11,14 @@ type state = {
   targets : Cache_model.entity_summary list;
   created : string option;
   error : string option;
+  total_cards : int;
+  practice_remaining : string list option;
+  completed : bool;
 }
 
 let empty = {graph_id = None; selected = None; choices = []; target_kind = "page";
-  target_query = ""; targets = []; created = None; error = None}
+  target_query = ""; targets = []; created = None; error = None;
+  total_cards = 0; practice_remaining = None; completed = false}
 let for_graph graph_id state = if state.graph_id = graph_id then state else {empty with graph_id}
 let to_yojson state =
   let optional = function Some value -> `String value | None -> `Null in
@@ -22,6 +26,8 @@ let to_yojson state =
     `Assoc ["uuid", `String v.uuid; "title", `String v.title]) values) in
   `Assoc ["selectedUuid", optional state.selected; "items", summaries state.choices;
     "createdUuid", optional state.created; "error", optional state.error;
+    "totalCards", `Int state.total_cards; "completed", `Bool state.completed;
+    "practicing", `Bool (Option.is_some state.practice_remaining);
     "targetSearch", `Assoc ["kind", `String state.target_kind; "query", `String state.target_query;
       "items", summaries state.targets]]
 
@@ -44,7 +50,8 @@ let choices db =
         end) |> List.of_seq)
     |> List.sort (fun (a : Cache_model.entity_summary) b -> compare (a.title, a.uuid) (b.title, b.uuid))
 
-let due_cards db now uuid =
+let cards ~due_only db now uuid =
+  let load = if due_only then Flashcards.due_cards else Flashcards.all_cards in
   match D.entid db "block/uuid" (D.Uuid uuid) with
   | None -> Error "This card group is no longer available"
   | Some id when not (G.entity_is_instance_of db id "logseq.class/Cards") || G.page_is_hidden db id ->
@@ -53,7 +60,7 @@ let due_cards db now uuid =
     let source = match G.ref_eids db id "logseq.property/query" with
       | definition :: _ -> Option.value ~default:"" (G.entity_title (fun s -> Ok s) db definition)
       | [] -> "" in
-    if String.trim source = "" then Ok (Flashcards.due_cards db now)
+    if String.trim source = "" then Ok (load db now)
     else try
       let opts : Dev_query.Db_query_dsl.exec_opts = {
         opt_cards = true; opt_block_attrs = Some "[:db/id]"; opt_current_page_title = None;
@@ -67,9 +74,12 @@ let due_cards db now uuid =
           | [D.Result_entity eid] -> Hashtbl.replace matched eid ()
           | [D.Result_pull entity] -> Hashtbl.replace matched entity.D.pulled_id ()
           | _ -> ()) rows;
-        Ok (Flashcards.due_cards ~include_eid:(Hashtbl.mem matched) db now)
+        Ok (load ~include_eid:(Hashtbl.mem matched) db now)
     with Invalid_argument message | Failure message -> Error message
        | _ -> Error "This card group's query could not be evaluated"
+
+let due_cards db now uuid = cards ~due_only:true db now uuid
+let all_cards db now uuid = cards ~due_only:false db now uuid
 
 let target_allowed db kind id =
   not (G.page_is_hidden db id) && match kind with

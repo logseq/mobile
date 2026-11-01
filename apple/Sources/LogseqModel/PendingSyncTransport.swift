@@ -127,7 +127,9 @@ public enum LogseqPendingSyncHTTPTransport {
                 )
             }
             #endif
-            var request = URLRequest(url: url, timeoutInterval: 30)
+            // Image encryption and slow mobile uplinks need a longer transfer
+            // budget than the small JSON requests used by the sync protocol.
+            var request = URLRequest(url: url, timeoutInterval: uploadURL == nil ? 30 : 120)
             request.httpMethod = pending.method
             request.setValue("Bearer \(pending.token)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -152,7 +154,7 @@ public enum LogseqPendingSyncHTTPTransport {
             let responseBody = String(data: data, encoding: .utf8) ?? ""
             if !(200..<300).contains(http.statusCode) {
                 LogseqRuntimeLog.shared.append(
-                    level: .error,
+                    level: .info,
                     source: .core,
                     message: "Pending sync HTTP \(http.statusCode): \(responseBody)"
                 )
@@ -174,8 +176,10 @@ public enum LogseqPendingSyncHTTPTransport {
                 error: nil
             )
         } catch {
+            // The shared pump owns retries and reports terminal failures. A
+            // single interrupted attempt must not produce a failure toast.
             LogseqRuntimeLog.shared.append(
-                level: .error,
+                level: .info,
                 source: .core,
                 message: "Pending sync transport failed: \(error)"
             )

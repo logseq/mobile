@@ -28,6 +28,28 @@ appId: com.logseq.logseq
     id: "button.flashcard.rating.good"
 - extendedWaitUntil:
     visible:
-      id: "flashcards.empty"
+      id: "flashcards.complete"
     timeout: 10000
-- assertVisible: "No cards due"
+- assertVisible: "🎉"
+- assertVisible: "Review complete"
+- assertNotVisible:
+    id: "button.flashcards.practice-again"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
+- extendedWaitUntil:
+    visible:
+      id: "button.flashcards.practice-again"
+    timeout: 10000
+- tapOn:
+    id: "button.flashcards.practice-again"
+- extendedWaitUntil:
+    visible:
+      id: "flashcard.question"
+    timeout: 10000
+- assertVisible: 'The capital of France is \[…\]'

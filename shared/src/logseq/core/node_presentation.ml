@@ -2,53 +2,16 @@ module Ds = Datascript
 module Read = Graph_read
 module M = Markup
 
+external calculate_native : string -> string = "logseq_calculator_results"
+
 let calculator_results source =
-  let vars = Hashtbl.create 8 in
-  let tokenize line =
-    let re = Str.regexp "[0-9]+\\.?[0-9]*\\([eE][-+]?[0-9]+\\)?\\|[A-Za-z_][A-Za-z_0-9]*\\|[+*/^()=-]" in
-    let rec loop index acc =
-      if index >= String.length line then ref (List.rev acc)
-      else if line.[index] = ' ' || line.[index] = '\t' then loop (index + 1) acc
-      else if Str.string_match re line index then
-        let token = Str.matched_string line in loop (index + String.length token) (token :: acc)
-      else failwith "Unexpected input" in loop 0 [] in
-  let peek s = match !s with x :: _ -> x | [] -> "" in
-  let take s = match !s with x :: xs -> s := xs; x | [] -> failwith "Expected a number" in
-  let rec expression s = sum (product s) s
-  and sum left s = match peek s with
-    | "+" -> ignore (take s); sum (left +. product s) s
-    | "-" -> ignore (take s); sum (left -. product s) s
-    | _ -> left
-  and product s = factor (power s) s
-  and factor left s = match peek s with
-    | "*" -> ignore (take s); factor (left *. power s) s
-    | "/" -> ignore (take s); factor (left /. power s) s
-    | _ -> left
-  and power s = let left = atom s in match peek s with
-    | "^" -> ignore (take s); left ** power s | _ -> left
-  and atom s = match take s with
-    | "-" -> -. atom s | "+" -> atom s
-    | "(" -> let n = expression s in if take s = ")" then n else failwith "Expected )"
-    | token -> (match float_of_string_opt token with
-      | Some n -> n
-      | None -> if peek s = "(" then begin
-          ignore (take s); let n = expression s in
-          if take s <> ")" then failwith "Expected )";
-          match token with "sqrt" -> sqrt n | "sin" -> sin n | "cos" -> cos n | "tan" -> tan n
-          | "abs" -> abs_float n | "round" -> Float.round n | "log" -> log n | _ -> failwith "Unknown function"
-        end else if token = "pi" then Float.pi else if token = "e" then exp 1. else Hashtbl.find vars token) in
-  String.split_on_char '\n' source |> List.map (fun line ->
-    let expression_source = match String.index_opt line '#' with
-      | Some index -> String.sub line 0 index | None -> line in
-    if String.trim expression_source = "" then "" else try
-      let s = tokenize expression_source in
-      let name = match !s with name :: "=" :: rest -> s := rest; Some name | _ -> None in
-      let n = expression s in
-      if !s <> [] || not (Float.is_finite n) then failwith "Invalid expression";
-      Option.iter (fun name -> Hashtbl.replace vars name n) name;
-      Hashtbl.replace vars "last" n;
-      Printf.sprintf "%.10g" n
-    with _ -> Hashtbl.remove vars "last"; "Error")
+  let fallback () = String.split_on_char '\n' source |> List.map (fun line ->
+    if String.trim line = "" then "" else "Error") in
+  try match Yojson.Basic.from_string (calculate_native source) with
+    | `List results when List.length results = List.length (String.split_on_char '\n' source) ->
+      List.map (function `String value -> value | _ -> "Error") results
+    | _ -> fallback ()
+  with _ -> fallback ()
 
 let calculator source =
   List.map2 (fun line result -> if result = "" then line else line ^ "  = " ^ result)

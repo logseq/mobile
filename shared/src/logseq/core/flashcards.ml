@@ -280,7 +280,7 @@ let due_card_for_eid page_blocks_cache db now eid =
      | _ -> None)
   | None -> None
 
-let due_cards ?(include_eid = fun _ -> true) db now =
+let cards ~due_only ?(include_eid = fun _ -> true) db now =
   match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Card") with
   | None -> []
   | Some card_class_eid ->
@@ -298,9 +298,15 @@ let due_cards ?(include_eid = fun _ -> true) db now =
         (List.map (fun (datom : Ds.datom) -> datom.e) tagged_datoms)
     in
     List.filter include_eid unique_eids
-    |> List.filter_map (due_card_for_eid page_blocks_cache db now)
+    |> List.filter_map (fun eid ->
+         if due_only then due_card_for_eid page_blocks_cache db now eid
+         else Option.bind (Graph.uuid_for_eid db eid)
+           (fun uuid -> card_for_eid page_blocks_cache db now uuid eid))
     |> List.sort
          (fun left right ->
            compare
              (left.card.due, left.block.uuid)
              (right.card.due, right.block.uuid))
+
+let due_cards ?include_eid db now = cards ~due_only:true ?include_eid db now
+let all_cards ?include_eid db now = cards ~due_only:false ?include_eid db now

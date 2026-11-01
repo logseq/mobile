@@ -133,6 +133,14 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @Environment(\.openURL) private var openURL
     @Environment(\.lgOpenPDFAnnotation) private var openPDFAnnotation
 
+    private var bulletForeground: Color {
+        #if os(iOS)
+        Color(uiColor: UIColor.secondaryLabel.withAlphaComponent(0.4))
+        #else
+        Color.secondary.opacity(0.4)
+        #endif
+    }
+
     private var hasCustomContent: Bool {
         row.hasCustomContent ?? !context.childIDs.isEmpty
     }
@@ -181,7 +189,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
             Group {
                 if row.journalBullet {
                     IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
-                        .foregroundStyle(Color.secondary.opacity(0.4))
+                        .foregroundStyle(bulletForeground)
                         .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 } else {
                     Button { emit("open-node") } label: {
@@ -195,7 +203,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         }
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.secondary.opacity(0.4))
+                    .foregroundStyle(bulletForeground)
                     .accessibilityLabel("Open block")
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
