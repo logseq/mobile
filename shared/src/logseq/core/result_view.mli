@@ -3,7 +3,7 @@ type cache
 val create_cache : unit -> cache
 val initial_window : row_window
 val render_rows :
-  ?input:string -> ?include_values:bool -> ?window:row_window -> Datascript.db -> owner:string -> feature:string ->
+  ?cache:cache -> ?input:string -> ?include_values:bool -> ?window:row_window -> Datascript.db -> owner:string -> feature:string ->
   encode_block:(Cache_model.block -> Yojson.Basic.t) -> Query_block.row list -> Yojson.Basic.t
 
 val render :

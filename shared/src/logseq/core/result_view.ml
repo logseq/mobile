@@ -287,15 +287,18 @@ type prepared_view = {
 }
 type cache = {
   mutable database : (Ds.db * int) option;
+  mutable projection_revision : int;
   mutable scopes : ((string * string) * Query_block.row list) list;
   mutable views : ((string * string * string * bool * string) * prepared_view) list;
 }
-let create_cache () = {database = None; scopes = []; views = []}
+let create_cache () = {database = None; projection_revision = 0; scopes = []; views = []}
 let validate_cache db cache =
   let day = Cache_model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
   match cache.database with
   | Some (previous, previous_day) when previous == db && previous_day = day -> ()
-  | _ -> cache.database <- Some (db, day); cache.scopes <- []; cache.views <- []
+  | _ -> cache.database <- Some (db, day);
+    cache.projection_revision <- cache.projection_revision + 1;
+    cache.scopes <- []; cache.views <- []
 let initial_window = {view_uuid = None; offset = 0; limit = 12}
 let slice offset limit rows =
   let rec drop offset rows = if offset <= 0 then rows else match rows with [] -> [] | _ :: rest -> drop (offset - 1) rest in
@@ -303,7 +306,7 @@ let slice offset limit rows =
     | _ when limit <= 0 -> List.rev acc | [] -> List.rev acc
     | row :: rest -> take (limit - 1) (row :: acc) rest in
   take limit [] (drop offset rows)
-let render_rows_cached ?cache ?(input = "") ?(include_values = true) ?window db ~owner ~feature ~encode_block rows =
+let render_rows_cached ?cache ~reuse_prepared ?(input = "") ?(include_values = true) ?window db ~owner ~feature ~encode_block rows =
   Option.iter (validate_cache db) cache;
   let views = saved_views db owner feature in
   let views = if views = [] then [None] else List.map Option.some views in
@@ -331,7 +334,8 @@ let render_rows_cached ?cache ?(input = "") ?(include_values = true) ?window db 
       | Some "logseq.property.view/type.list" | None -> "list" | _ -> "invalid" in
     let fields = ["uuid", `String id; "name", `String name; "type", `String typ;
       "persisted", `Bool (view <> None); "sorting", plain (setting "logseq.property.table/sorting");
-      "filters", plain (setting "logseq.property.table/filters")] in
+      "filters", plain (setting "logseq.property.table/filters")] @
+      Option.fold ~none:[] ~some:(fun cache -> ["projectionRevision", `Int cache.projection_revision]) cache in
     try
       if typ = "invalid" then invalid_arg "Unsupported view type";
       let prepare () =
@@ -353,6 +357,7 @@ let render_rows_cached ?cache ?(input = "") ?(include_values = true) ?window db 
           catalog = `List (List.map (column (typ <> "list")) catalog)} in
       let prepared = match cache with
         | None -> prepare ()
+        | Some _ when not reuse_prepared -> prepare ()
         | Some cache ->
           let key = owner, feature, input, include_values, id in
           match List.assoc_opt key cache.views with
@@ -375,8 +380,8 @@ let render_rows_cached ?cache ?(input = "") ?(include_values = true) ?window db 
       "rows", `List []; "columns", `List []]) in
   `Assoc ["ownerUuid", `String owner; "featureType", `String feature; "views", `List (List.map view_json views)]
 
-let render_rows ?input ?include_values ?window db ~owner ~feature ~encode_block rows =
-  render_rows_cached ?input ?include_values ?window db ~owner ~feature ~encode_block rows
+let render_rows ?cache ?input ?include_values ?window db ~owner ~feature ~encode_block rows =
+  render_rows_cached ?cache ~reuse_prepared:false ?input ?include_values ?window db ~owner ~feature ~encode_block rows
 
 let scope db owner feature = match feature with
   | "query-result" -> (match Query_block.render db owner with Some result -> result.rows | None -> invalid_arg "This object has no query")
@@ -402,7 +407,7 @@ let render ?cache ?input ?include_values ?window db ~owner ~feature ~encode_bloc
         | Some rows -> rows
         | None -> let rows = scope db owner feature in
           cache.scopes <- slice 0 8 ((key, rows) :: cache.scopes); rows in
-    Ok (render_rows_cached ?cache ?input ?include_values ?window db ~owner ~feature ~encode_block rows)
+    Ok (render_rows_cached ?cache ~reuse_prepared:true ?input ?include_values ?window db ~owner ~feature ~encode_block rows)
   with error -> Error (match error with Invalid_argument message -> message | _ -> Printexc.to_string error)
 
 let filter_values db ~owner ~feature ~attr =

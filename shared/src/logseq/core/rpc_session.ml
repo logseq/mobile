@@ -137,7 +137,7 @@ let query_for session db uuid =
   Query_block.render ?current_page db uuid
   |> Option.map (fun result ->
       try
-        let views = Result_view.render_rows ~include_values:false ~window:Result_view.initial_window db ~owner:uuid ~feature:"query-result" ~encode_block:encode_tree result.Query_block.rows in
+        let views = Result_view.render_rows ~cache:session.result_view_cache ~include_values:false ~window:Result_view.initial_window db ~owner:uuid ~feature:"query-result" ~encode_block:encode_tree result.Query_block.rows in
         let preview = {result with Query_block.rows = List.of_seq (Seq.take 12 (List.to_seq result.rows))} in
         (match Query_block.to_yojson encode_tree preview, views with
          | `Assoc fields, `Assoc view_fields -> `Assoc (fields @ view_fields)

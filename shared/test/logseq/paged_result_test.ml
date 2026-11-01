@@ -117,9 +117,8 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
         (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") = -1);
       let base = D.conn_db conn in
       List.iter (fun title ->
-        ignore (D.reset_conn_bang conn (D.db_with [Q.put R.table_view "block/title" (D.String title);
-          Q.put row "block/title" (D.String title)] base));
-        Graph_runtime.rebase runtime 43 [] [R.table_view; row];
+        ignore (D.reset_conn_bang conn (D.db_with [Q.put row "block/title" (D.String title)] base));
+        Graph_runtime.rebase runtime 43 [] [row];
         ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
         check ~msg:"projection refresh keeps the presented rows mounted"
           (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
