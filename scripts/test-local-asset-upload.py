@@ -10,6 +10,7 @@ import struct
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 import urllib.parse
 import uuid
@@ -72,6 +73,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
             return
+        if scenario == "delayed-response":
+            time.sleep(31)
         self.send_response(response.status)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -86,7 +89,8 @@ try:
         subprocess.run(["dune", "build", "shared/test/transport_host.exe"], cwd=root, check=True)
         subprocess.run(["swift", "build", "--package-path", str(root / "apple"), "--product", "LogseqModel", "--disable-sandbox"], check=True)
         config.write_text(json.dumps({"coreHarness": str(root / "_build/default/shared/test/transport_host.exe"), "baseURL": "http://127.0.0.1:" + str(proxy.server_port),
-            "serverURL": server, "assetPath": asset_path, "token": token}))
+            "serverURL": server, "assetPath": asset_path, "token": token,
+            "slowResponse": "true" if os.environ.get("LOGSEQ_TEST_SLOW_ASSET") == "1" else "false"}))
         config.chmod(0o600)
         build = root / "apple/.build/arm64-apple-macosx/debug"
         binary = tmp / "retry-check"
@@ -95,6 +99,10 @@ try:
             "-Xlinker", "-rpath", "-Xlinker", str(build),
             str(root / "apple/Tests/UI/pending-upload-retry.swift"), "-o", str(binary)], check=True)
         subprocess.run([str(binary), str(config)], check=True)
+        if os.environ.get("LOGSEQ_TEST_SLOW_ASSET") == "1":
+            assert counts.get("delayed-response") == 1, counts
+            print("PASS: one slow upload used a single HTTP attempt")
+            raise SystemExit(0)
         assert all(counts.get(s, 0) >= 2 for s in ["interrupted", "lost-response"]), counts
         assert counts.get("bulk-interrupted", 0) >= 12, counts
         assert counts["forbidden"] == 1, counts

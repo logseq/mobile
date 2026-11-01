@@ -55,6 +55,15 @@ private final class CoreHost: @unchecked Sendable {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try bytes.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
+        if config["slowResponse"] == "true" {
+            let request = LogseqPendingSyncRequest(id: 1, method: "PUT",
+                url: config["baseURL"]! + "/delayed-response" + config["assetPath"]!, body: nil,
+                token: config["token"]!, filePath: file.path, contentType: "image/png")
+            let response = await LogseqPendingSyncHTTPTransport.send(request)
+            precondition(response.status == 200, "A file upload must allow a slow server response beyond 30 seconds")
+            print("PASS: slow asset upload completed without restarting its body")
+            return
+        }
         let parts = config["assetPath"]!.split(separator: "/")
         let graphID = String(parts[1])
         let assetID = String(parts[2].split(separator: ".")[0])
