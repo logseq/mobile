@@ -151,7 +151,7 @@ let object_views_for session owner is_tag is_property =
   | None -> `Null
   | Some db ->
     let feature = if is_tag then "class-objects" else "property-objects" in
-    match Result_view.render ~include_values:false ~window:Result_view.initial_window db ~owner ~feature ~encode_block:(result_block_encoder db) with
+    match Result_view.render ~cache:session.result_view_cache ~include_values:false ~window:Result_view.initial_window db ~owner ~feature ~encode_block:(result_block_encoder db) with
     | Ok value -> value
     | Error message -> `Assoc ["ownerUuid", `String owner; "featureType", `String feature;
         "views", `List [`Assoc ["uuid", `String (owner ^ ":default"); "name", `String "All";
@@ -2082,7 +2082,7 @@ let rec dispatch session action payload =
            let window = {Result_view.view_uuid = Some view_uuid; offset = max 0 (integer "offset" 0);
              limit = min 64 (max 1 (integer "limit" 12))} in
            let search = match member "input" input with `String value -> value | _ -> "" in
-           match Result_view.render ~input:search ~include_values:false ~window db ~owner ~feature
+           match Result_view.render ~cache:session.result_view_cache ~input:search ~include_values:false ~window db ~owner ~feature
              ~encode_block:(result_block_encoder db) with
            | Error message -> Rpc.failure "invalid_view" message
            | Ok result -> (match member "views" result with
