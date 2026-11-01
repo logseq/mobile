@@ -684,12 +684,13 @@ let table_column_width column = if jfield "attr" column = `String "block/title" 
 let table_column_window columns (offset, width) =
   let total = List.fold_left (fun sum col -> sum + table_column_width col + 1) (-1) columns |> max 0 in
   let offset = min (max 0 offset) (max 0 (total - width)) in
+  let first = max 0 (offset - width) and last = offset + width * 2 in
   let rec collect position before visible after = function
     | [] -> before, List.rev visible, after
     | col :: rest ->
       let extent = table_column_width col in
       let stop = position + extent in
-      if stop > offset && position < offset + width then
+      if stop > first && position < last then
         collect (stop + 1) (if visible = [] then position else before) (col :: visible) (total - stop) rest
       else collect (stop + 1) before visible after rest in
   collect 0 0 [] total columns
@@ -734,7 +735,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       previous_input := input;
       if not (Json.equal view.data (!previous).data) then (
         previous := view; incr generation; requested := None; Signal.set page view);
-      let offset = if reset then 0 else offset in
+      let offset, limit = if reset then 0, 12 else offset, limit in
       let key = prefix ^ string_of_int !generation ^ ":" ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
       let current = Signal.sample (Signal.value page) in
       let candidate = match List.assoc_opt key model.Model.result_row_windows with
@@ -768,9 +769,11 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
     if first >= 0 && last >= first then (
       let current = (Signal.sample (Signal.value page)).data in
       let start = jint (jfield "rowOffset" current) and length = List.length (jlist (jfield "rows" current)) in
-      if first < start + 2 && start > 0 || last >= start + length - 2 && start + length < row_count current then (
-        let limit = min 64 (max 12 (((last - first + columns) / columns) * columns)) in
-        let offset = min (max 0 (row_count current - 1)) (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
+      let margin = max 8 (last - first + 1) in
+      if first < start + margin && start > 0 || last >= start + length - margin && start + length < row_count current then (
+        let limit = max columns (64 / columns * columns) in
+        let maximum = (max 0 (row_count current - limit) + columns - 1) / columns * columns in
+        let offset = min maximum (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
         Signal.set range (offset / columns * columns, limit))) in
   let retry () = requested := None; Signal.set retry_count (1 + Signal.sample (Signal.value retry_count)) in
   own (Signal.cutoff (=) (Signal.value page)), visible, Signal.value loading, Signal.value error, retry

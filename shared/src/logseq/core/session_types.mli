@@ -172,6 +172,7 @@ type session =
   ; state : session_state ref
   ; collapsed_nodes : (string, Outliner_state.Sset.t) Hashtbl.t
   ; reference_cache : (string, Cache_model.block list) Hashtbl.t
+  ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; reference_generation : (string option * int option * int) option ref
   }

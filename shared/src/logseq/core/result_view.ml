@@ -279,6 +279,22 @@ let row_json ~compact_block db encode properties = function
         "references", `List (property_references db p (attr_values db id p.attr));
         "raw", semantic_json db (raw db id p.attr)])) properties)]
 type row_window = {view_uuid : string option; offset : int; limit : int}
+type prepared_view = {
+  rows : Query_block.row array;
+  properties : property list;
+  columns : J.t;
+  catalog : J.t;
+}
+type cache = {
+  mutable database : Ds.db option;
+  mutable scopes : ((string * string) * Query_block.row list) list;
+  mutable views : ((string * string * string * bool * string) * prepared_view) list;
+}
+let create_cache () = {database = None; scopes = []; views = []}
+let validate_cache db cache =
+  match cache.database with
+  | Some previous when previous == db -> ()
+  | _ -> cache.database <- Some db; cache.scopes <- []; cache.views <- []
 let initial_window = {view_uuid = None; offset = 0; limit = 12}
 let slice offset limit rows =
   let rec drop offset rows = if offset <= 0 then rows else match rows with [] -> [] | _ :: rest -> drop (offset - 1) rest in
@@ -286,7 +302,8 @@ let slice offset limit rows =
     | _ when limit <= 0 -> List.rev acc | [] -> List.rev acc
     | row :: rest -> take (limit - 1) (row :: acc) rest in
   take limit [] (drop offset rows)
-let render_rows ?(input = "") ?(include_values = true) ?window db ~owner ~feature ~encode_block rows =
+let render_rows_cached ?cache ?(input = "") ?(include_values = true) ?window db ~owner ~feature ~encode_block rows =
+  Option.iter (validate_cache db) cache;
   let views = saved_views db owner feature in
   let views = if views = [] then [None] else List.map Option.some views in
   let view_id view = Option.fold ~none:(owner ^ ":default") ~some:(uuid db) view in
@@ -316,34 +333,49 @@ let render_rows ?(input = "") ?(include_values = true) ?window db ~owner ~featur
       "filters", plain (setting "logseq.property.table/filters")] in
     try
       if typ = "invalid" then invalid_arg "Unsupported view type";
-      let rows = apply_view db feature (setting "logseq.property.table/sorting")
-          (setting "logseq.property.table/filters") input rows in
-      let row_count = List.length rows in
-      let offset, rows = match window with
-        | None -> 0, rows
+      let prepare () =
+        let rows = apply_view db feature (setting "logseq.property.table/sorting")
+            (setting "logseq.property.table/filters") input rows in
+        let properties = columns db view original_rows in
+        let properties = if typ <> "table" then properties else
+          let visible = List.filter (fun p -> p.attr <> "block/updated-at") properties in
+          let ordinary, created = List.partition (fun p -> p.attr <> "block/created-at") visible in
+          ordinary @ created in
+        let available = columns db None original_rows in
+        let known = Ds.Db.datoms db Ds.Aevt ~a:"db/ident" ()
+          |> Seq.filter_map (fun (d : Ds.datom) -> match d.v with
+            | Ds.Keyword attr when public_attr attr -> Some attr | _ -> None) |> List.of_seq in
+        let catalog = List.sort_uniq String.compare (known @ List.map (fun p -> p.attr) available)
+          |> List.map (property db) in
+        {rows = Array.of_list rows; properties = (if typ = "list" then [] else properties);
+          columns = `List (List.map (column (typ <> "list")) properties);
+          catalog = `List (List.map (column (typ <> "list")) catalog)} in
+      let prepared = match cache with
+        | None -> prepare ()
+        | Some cache ->
+          let key = owner, feature, input, include_values, id in
+          match List.assoc_opt key cache.views with
+          | Some prepared -> prepared
+          | None -> let prepared = prepare () in
+            cache.views <- slice 0 8 ((key, prepared) :: cache.views); prepared in
+      let row_count = Array.length prepared.rows in
+      let offset, length = match window with
+        | None -> 0, row_count
         | Some window when id = selected -> let offset = min row_count (max 0 window.offset) in
-          offset, slice offset (min 64 (max 1 window.limit)) rows
-        | Some _ -> 0, [] in
-      let properties = columns db view original_rows in
-      let properties = if typ <> "table" then properties else
-        let visible = List.filter (fun p -> p.attr <> "block/updated-at") properties in
-        let ordinary, created = List.partition (fun p -> p.attr <> "block/created-at") visible in
-        ordinary @ created in
-      let available = columns db None original_rows in
-      let known = Ds.Db.datoms db Ds.Aevt ~a:"db/ident" ()
-        |> Seq.filter_map (fun (d : Ds.datom) -> match d.v with
-          | Ds.Keyword attr when public_attr attr -> Some attr | _ -> None) |> List.of_seq in
-      let catalog = List.sort_uniq String.compare (known @ List.map (fun p -> p.attr) available)
-        |> List.map (property db) in
-      let cell_properties = if typ = "list" then [] else properties in
+          offset, min (row_count - offset) (min 64 (max 1 window.limit))
+        | Some _ -> 0, 0 in
+      let rows = Array.sub prepared.rows offset length |> Array.to_list in
       `Assoc (fields @ ["error", `Null; "revision", `Int db.max_tx; "rowCount", `Int row_count; "rowOffset", `Int offset;
         "rowsDeferred", `Bool (window <> None); "input", `String input;
-        "columns", `List (List.map (column (typ <> "list")) properties);
-        "properties", `List (List.map (column (typ <> "list")) catalog);
-        "rows", `List (List.map (row_json ~compact_block:(typ <> "list") db encode_block cell_properties) rows)])
+        "columns", prepared.columns;
+        "properties", prepared.catalog;
+        "rows", `List (List.map (row_json ~compact_block:(typ <> "list") db encode_block prepared.properties) rows)])
     with error -> `Assoc (fields @ ["error", `String (match error with Invalid_argument message -> message | _ -> Printexc.to_string error);
       "rows", `List []; "columns", `List []]) in
   `Assoc ["ownerUuid", `String owner; "featureType", `String feature; "views", `List (List.map view_json views)]
+
+let render_rows ?input ?include_values ?window db ~owner ~feature ~encode_block rows =
+  render_rows_cached ?input ?include_values ?window db ~owner ~feature ~encode_block rows
 
 let scope db owner feature = match feature with
   | "query-result" -> (match Query_block.render db owner with Some result -> result.rows | None -> invalid_arg "This object has no query")
@@ -358,8 +390,18 @@ let scope db owner feature = match feature with
         (match G.page_block (fun text -> Ok text) db id with Some _ as block -> block
          | None -> G.block ~with_breadcrumbs:true (fun text -> Ok text) db id))
   | _ -> invalid_arg "Views are only available for queries, tag objects, and property objects"
-let render ?input ?include_values ?window db ~owner ~feature ~encode_block =
-  try Ok (render_rows ?input ?include_values ?window db ~owner ~feature ~encode_block (scope db owner feature))
+let render ?cache ?input ?include_values ?window db ~owner ~feature ~encode_block =
+  try
+    let rows = match cache with
+      | None -> scope db owner feature
+      | Some cache ->
+        validate_cache db cache;
+        let key = owner, feature in
+        match List.assoc_opt key cache.scopes with
+        | Some rows -> rows
+        | None -> let rows = scope db owner feature in
+          cache.scopes <- slice 0 8 ((key, rows) :: cache.scopes); rows in
+    Ok (render_rows_cached ?cache ?input ?include_values ?window db ~owner ~feature ~encode_block rows)
   with error -> Error (match error with Invalid_argument message -> message | _ -> Printexc.to_string error)
 
 let filter_values db ~owner ~feature ~attr =

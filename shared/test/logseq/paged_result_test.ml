@@ -53,6 +53,23 @@ let snapshots_and_reads_are_bounded_and_keep_master_membership () = with_rows (f
     (member "ok" (read_window session ["graphId", `String "another-graph"])) (`Bool false);
   check_eq ~msg:"window reads never stage graph writes" (Graph_runtime.pending_operations runtime) [])
 
+let cached_windows_follow_the_current_projection () =
+  let base = R.fixture () in
+  let project title = D.db_with [Q.put R.alpha "block/title" (D.String title)] base in
+  let first = project "Graph A" and second = project "Graph B" in
+  check_eq ~msg:"independent graph projections can share a transaction number" first.D.max_tx second.D.max_tx;
+  let session, current = R.make_session first in
+  List.iter (fun (db, input, view) ->
+    current := db;
+    let actual = window (read_window session ~input ~view ~limit:64 []) in
+    let fresh, _ = R.make_session db in
+    let expected = window (read_window fresh ~input ~view ~limit:64 []) in
+    List.iter (fun field -> check_eq ~msg:("cached windows preserve current " ^ field)
+      (member field actual) (member field expected)) ["rows"; "rowCount"; "columns"; "properties"])
+    [first, "", R.table_view; first, "Graph A", R.table_view;
+     second, "", R.table_view; second, "Graph B", R.list_view;
+     first, "", R.table_view]
+
 let native_ranges_load_rows_and_ignore_obsolete_requests () =
   List.iter (fun (platform, host) -> with_rows (fun session runtime conn ->
     ignore (Native_bridge.initialize platform host 3);
@@ -218,4 +235,5 @@ let cases = [
   case "paged lists and resized galleries reach the final unpaired result" list_and_resized_gallery_reach_the_final_page;
   case "tag route snapshots omit hidden legacy member payloads" tag_routes_do_not_duplicate_members_in_legacy_payloads;
   case "tag and property views mount on root and pushed pages on both hosts" object_page_views_mount_on_both_hosts;
+  case "cached row windows follow the current graph projection and search" cached_windows_follow_the_current_projection;
 ]
