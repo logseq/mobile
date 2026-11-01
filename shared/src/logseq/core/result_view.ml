@@ -286,15 +286,16 @@ type prepared_view = {
   catalog : J.t;
 }
 type cache = {
-  mutable database : Ds.db option;
+  mutable database : (Ds.db * int) option;
   mutable scopes : ((string * string) * Query_block.row list) list;
   mutable views : ((string * string * string * bool * string) * prepared_view) list;
 }
 let create_cache () = {database = None; scopes = []; views = []}
 let validate_cache db cache =
+  let day = Cache_model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
   match cache.database with
-  | Some previous when previous == db -> ()
-  | _ -> cache.database <- Some db; cache.scopes <- []; cache.views <- []
+  | Some (previous, previous_day) when previous == db && previous_day = day -> ()
+  | _ -> cache.database <- Some (db, day); cache.scopes <- []; cache.views <- []
 let initial_window = {view_uuid = None; offset = 0; limit = 12}
 let slice offset limit rows =
   let rec drop offset rows = if offset <= 0 then rows else match rows with [] -> [] | _ :: rest -> drop (offset - 1) rest in
