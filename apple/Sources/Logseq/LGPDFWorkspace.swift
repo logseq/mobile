@@ -310,7 +310,10 @@ final class LGPDFReaderController: UIViewController {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         configure(fullScreenButton, title: "Full-screen PDF", image: "arrow.up.left.and.arrow.down.right", id: "pdf.toggle-fullscreen") { [weak self] in
             guard let self else { return }
-            send(["action": "set-fullscreen", "fullScreen": !(payload["fullScreen"] as? Bool ?? false)])
+            let fullScreen = !(payload["fullScreen"] as? Bool ?? false)
+            // Dismiss the keyboard before SwiftUI starts updating the pane size.
+            if fullScreen { view.window?.endEditing(true) }
+            send(["action": "set-fullscreen", "fullScreen": fullScreen])
         }
         let header = UIStackView(arrangedSubviews: [close, titleLabel, fullScreenButton])
         header.alignment = .center
@@ -432,14 +435,12 @@ final class LGPDFReaderController: UIViewController {
     }
 
     func apply(_ payload: [String: Any]) {
-        let wasFullScreen = self.payload["fullScreen"] as? Bool ?? false
         self.payload = payload
         loadViewIfNeeded()
         titleLabel.text = payload["title"] as? String
         let fullScreen = payload["fullScreen"] as? Bool ?? false
         fullScreenButton.setImage(UIImage(systemName: fullScreen ? "rectangle.split.2x1" : "arrow.up.left.and.arrow.down.right"), for: .normal)
         fullScreenButton.accessibilityLabel = fullScreen ? "Show PDF and notes" : "Full-screen PDF"
-        if fullScreen && !wasFullScreen { view.window?.endEditing(true) }
         highlights = payload["highlights"] as? [[String: Any]] ?? []
         let next = (payload["graphId"] as? String ?? "") + ":" + (payload["assetUuid"] as? String ?? "")
         if next != identity {
