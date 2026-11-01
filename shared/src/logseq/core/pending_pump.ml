@@ -695,7 +695,16 @@ let complete_semantic_response session (active : Types.semantic_active) input =
       Option.iter (fun record -> record ~semantic:true pending.operation.operation_id failure)
         (Types.host session).record_sync_failure) settlements;
     restore_semantic_queue session;
-    let continue = succeeded || List.exists (fun (_, state, _) ->
+    let caught_up_stale = match Json_util.member "body" input with
+      | `String body ->
+        let body = try Json.from_string body with Yojson.Json_error _ -> `Null in
+        json_field "type" body = `String "tx/reject"
+        && json_field "reason" body = `String "stale"
+        && (match Types.projection_server_t session, json_field "t" body with
+            | Some local, `Int server -> local >= server
+            | _ -> false)
+      | _ -> false in
+    let continue = succeeded || caught_up_stale || List.exists (fun (_, state, _) ->
       match state with Ops.Conflicted _ -> true | _ -> false) settlements in
     if continue then
       (match (Types.state session).config with

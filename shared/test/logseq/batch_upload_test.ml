@@ -193,6 +193,18 @@ let stale_rejection_rebases_and_retries_all_members () =
     ignore (ack session retry);
     check_eq (Ops.list path) [])
 
+let stale_rejection_after_catchup_resumes_without_another_kick () =
+  with_session (fun session graph _ path _ ->
+    titles session 3;
+    let request = required_pending_request session in
+    require (Mobile_graph.apply_sync_event graph {|{"type":"pull/ok","t":44,"txs":[]}|});
+    let rejected = complete_request session request {|{"type":"tx/reject","reason":"stale","t":44}|} in
+    let retry = request_from rejected in
+    check_eq ~msg:"A completed catch-up must immediately resume the rejected batch" (baseline retry) 44;
+    check_eq (ids retry) ["edit-0"; "edit-1"; "edit-2"];
+    ignore (ack session retry);
+    check_eq (Ops.list path) [])
+
 let malformed_partial_rejection_preserves_the_active_batch () =
   List.iter (fun body ->
     with_session (fun session _ _ path _ ->
@@ -335,5 +347,6 @@ let cases =
     case "retries and cancellation retain every member" retries_and_cancellation_keep_the_whole_batch;
     case "partial rejection settles the accepted prefix" partial_rejection_only_conflicts_the_failed_member;
     case "stale rejection retries the whole batch" stale_rejection_rebases_and_retries_all_members;
+    case "stale rejection after catch-up resumes immediately" stale_rejection_after_catchup_resumes_without_another_kick;
     case "malformed rejection preserves the active batch" malformed_partial_rejection_preserves_the_active_batch;
     case "exhausted retries preserve the stopped batch" exhausting_retries_stops_without_losing_batch_members ]
