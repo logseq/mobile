@@ -2004,7 +2004,7 @@ let rec update (current : logseq_model) action =
        {opened with pdf_workspace = Option.map (fun workspace -> pdf_merge workspace
          ["targetPage", `Int page; "targetAnnotation", `String (pdf_string reference "id");
           "navigationToken", `Int current.next_effect_id]) opened.pdf_workspace}
-     | "close" -> {current with pdf_workspace = None}
+     | "close" -> {(pdf_request current ["action", `String "close"]) with pdf_workspace = None}
      | "set-fullscreen" ->
        (match List.assoc_opt "fullScreen" fields with
         | Some (`Bool _ as full_screen) -> {current with pdf_workspace =
@@ -2107,11 +2107,8 @@ let rec update (current : logseq_model) action =
         if pdf_string before "graphId" <> pdf_string next "graphId"
            || pdf_string before "assetUuid" <> pdf_string next "assetUuid" then applied
         else {applied with pdf_workspace = Some (pdf_merge workspace
-          (["loading", `Bool false; "error", `Null] @ next))}
-      | Some _, None when not projection.is_pdf_patch
-          && not (List.exists (function PdfAnnotationEffect _ -> true | _ -> false)
-            (applied.pending_effects @ applied.in_flight_effects)) ->
-        pdf_request applied ["action", `String "load"]
+          (["loading", `Bool false; "error", (match List.assoc_opt "error" next with
+             | Some error -> error | None -> `Null)] @ List.remove_assoc "error" next))}
       | _ -> applied in
     let applied =
       if applied == current then current

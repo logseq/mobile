@@ -247,7 +247,112 @@ let fullscreen_reading_preserves_main_and_exposes_notes () =
   check_eq (event "set-fullscreen" ["fullScreen", `String "invalid"] opened).pdf_workspace opened.pdf_workspace;
   check_eq (event "set-fullscreen" ["fullScreen", `Bool true] initial).pdf_workspace None
 
+let apply_response model response =
+  match Response_snapshot.decode_response (J.to_string response) with
+  | Ok projection -> Model.update model (Model.ApplyCoreSnapshot projection)
+  | Error message -> fail message
+
+let loaded_workspace session =
+  let initial = apply_response (Model.initial ()) (J.from_string (Rpc_session.snapshot_visible session)) in
+  let opened = Model.update initial (Model.OpenPdf (asset, "Research.pdf", "")) in
+  let id = List.find_map (function Model.PdfAnnotationEffect (id, _) -> Some id | _ -> None)
+    opened.pending_effects |> Option.get in
+  let loading = Model.update opened (Model.DequeueEffect id) in
+  let loaded = apply_response loading (call session "load" []) in
+  Model.update loaded (Model.ResolveEffect (id, true, ""))
+
+let generic_pdf_assets_support_annotations () =
+  List.iter (fun (kind, title) -> with_pdf (fun session runtime conn ->
+    Editor_command_test.rebase runtime conn [Q.put asset "block/title" (Ds.String title);
+      Q.put asset "logseq.property.asset/type" (Ds.String kind)];
+    check_eq (annotations (call session "load" [])) [];
+    check_eq (annotations (save session (highlight ()))) [canonical (highlight ())];
+    check_eq (U.member "page" (result (call session "visit" ["page", `Int 4]))) (`Int 4);
+    check (Pdf_annotation.reference (Graph_runtime.db runtime) highlight_id <> None);
+    check_eq (annotations (call session "delete" ["id", `String highlight_id])) []))
+    ["bin", "Research.pdf"; "application/octet-stream", "Research.PDF"];
+  List.iter (fun (kind, title) -> with_pdf (fun session runtime conn ->
+    Editor_command_test.rebase runtime conn [Q.put asset "block/title" (Ds.String title);
+      Q.put asset "logseq.property.asset/type" (Ds.String kind)];
+    check_eq (U.member "ok" (call session "load" [])) (`Bool false);
+    check_eq (U.member "ok" (save session (highlight ()))) (`Bool false);
+    check_eq (Graph_runtime.pending_operations runtime) []))
+    ["bin", "Research.txt"; "png", "Photo.png"; "bin", "Research.pdf.exe"]
+
+let ordinary_edits_do_not_reload_pdf_annotations () = with_pdf (fun session _ _ ->
+  let loaded = loaded_workspace session in
+  let current = ref loaded in
+  ignore (Editor_command_test.event session "tapBlock" ["uuid", `String Q.alpha]);
+  List.iter (fun title ->
+    let response = Editor_command_test.type_at session title (String.length title) in
+    check_eq (U.member "pdfWorkspace" response) `Null;
+    current := apply_response !current (`Assoc ["ok", `Bool true; "result", response]);
+    check ~msg:"Typing beside a loaded PDF must not enqueue another annotation load"
+      (not (List.exists (function Model.PdfAnnotationEffect _ -> true | _ -> false) (!current).pending_effects));
+    check_eq (!current).pdf_workspace loaded.pdf_workspace) ["A"; "Ab"; "Abc"];
+  let retry = Model.update !current (Model.PdfWorkspaceEvent {|{"action":"load"}|}) in
+  check ~msg:"Explicit Retry must still load annotations"
+    (List.exists (function Model.PdfAnnotationEffect _ -> true | _ -> false) retry.pending_effects))
+
+let graph_changes_refresh_only_the_open_pdf () = with_pdf (fun session runtime conn ->
+  ignore (result (save session (highlight ())));
+  ignore (Ds.reset_conn conn (Graph_runtime.db runtime));
+  let accepted = List.map (fun (op : Pending_ops.pending_operation) -> op.operation_id)
+    (Graph_runtime.pending_operations runtime) in
+  Graph_runtime.rebase runtime 43 accepted [];
+  let loaded = loaded_workspace session in
+  let snapshot () = J.from_string (Rpc_session.snapshot_visible session) in
+  check_eq (U.member "pdfWorkspace" (U.member "result" (snapshot ()))) `Null;
+  Editor_command_test.rebase runtime conn [Q.put Q.alpha "block/title" (Ds.String "Unrelated edit")];
+  check_eq (U.member "pdfWorkspace" (U.member "result" (snapshot ()))) `Null;
+  Editor_command_test.rebase runtime conn [Q.put other_asset "logseq.property.asset/last-visit-page" (Ds.Int64 8L)];
+  check_eq (U.member "pdfWorkspace" (U.member "result" (snapshot ()))) `Null;
+  Editor_command_test.rebase runtime conn [Q.put highlight_id "logseq.property.pdf/hl-color"
+    (Ds.Ref_to (Ds.Ident "logseq.property/color.blue"))];
+  let changed = snapshot () in
+  let highlights = annotations changed in
+  check_eq ~msg:"An external recolor must push the updated highlights into the current snapshot" (List.length highlights) 1;
+  check_eq (U.member "color" (U.member "properties" (List.hd highlights))) (`String "blue");
+  let updated = apply_response loaded changed in
+  check_eq (U.member "highlights" (J.from_string (Option.get updated.pdf_workspace)))
+    (U.member "highlights" (result changed));
+  check_eq (U.member "pdfWorkspace" (U.member "result" (snapshot ()))) `Null;
+  Editor_command_test.rebase runtime conn [Q.put highlight_id "logseq.property/deleted-at" (Ds.Int64 100L)];
+  check_eq (annotations (snapshot ())) [];
+  ignore (call session "close" []);
+  Editor_command_test.rebase runtime conn [Q.put asset "logseq.property.asset/last-visit-page" (Ds.Int64 3L)];
+  check_eq ~msg:"Closed readers must stop watching the old asset"
+    (U.member "pdfWorkspace" (U.member "result" (snapshot ()))) `Null)
+
+let pdf_responses_preserve_and_refresh_sync_status () = with_pdf (fun session _ _ ->
+  let loaded = loaded_workspace session in
+  let offline = {loaded with Model.sync_state = Model.OfflineState} in
+  let response = save session (highlight ()) in
+  check_eq ~msg:"A saved highlight returns a full snapshot, not a read-only PDF patch"
+    (U.member "isPdfPatch" (U.member "result" response)) `Null;
+  let saved = apply_response offline response in
+  check saved.has_pending_semantic_operations;
+  check_eq saved.sync_state Model.OfflineState;
+  check ~msg:"Saved annotations must schedule the normal sync pump"
+    (List.exists (function Model.SyncPendingEffect _ -> true | _ -> false) saved.pending_effects);
+  let read = apply_response saved (call session "load" []) in
+  check read.has_pending_semantic_operations;
+  check_eq read.sync_state saved.sync_state;
+  let request = Rpc_test.required_pending_request session in
+  let completion = Rpc_test.complete_request session request {|{"type":"tx/batch/ok","t":43}|} in
+  let completed = apply_response {read with Model.sync_state = Model.SyncingState}
+    (`Assoc ["ok", `Bool true; "result", completion]) in
+  check_eq completed.sync_state Model.SyncedState;
+  check (not completed.has_pending_semantic_operations);
+  let refreshed = apply_response completed (call session "load" []) in
+  check_eq refreshed.sync_state Model.SyncedState;
+  check_eq refreshed.pdf_workspace completed.pdf_workspace)
+
 let cases = [
+  case "generic MIME PDF filenames support annotation reads and writes" generic_pdf_assets_support_annotations;
+  case "ordinary editor snapshots do not reload PDF highlights" ordinary_edits_do_not_reload_pdf_annotations;
+  case "graph updates refresh only changed metadata of the open PDF" graph_changes_refresh_only_the_open_pdf;
+  case "PDF saves and read-only patches preserve normal sync status" pdf_responses_preserve_and_refresh_sync_status;
   case "full-screen reading preserves main and reveals notes on request" fullscreen_reading_preserves_main_and_exposes_notes;
   case "annotation projections retain the desktop PDF page link" annotation_projection_keeps_the_pdf_page_link;
   case "annotation page links open and navigate PDFs without replacing main" annotation_page_links_open_without_replacing_main;
