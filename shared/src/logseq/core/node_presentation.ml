@@ -123,8 +123,11 @@ let decorate db =
     let summaries attr = Read.entity_summaries (fun x -> Ok x) db eid attr in
     let parsed = match Read.ref_eids db eid "block/link" with
       | source :: _ ->
-        let children = Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" source |> List.of_seq
-          |> List.map (fun (d : Ds.datom) -> d.e)
+        let definitions = Read.ref_eids db source "logseq.property/query" in
+        let children = Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" source
+          |> Seq.filter_map (fun (d : Ds.datom) ->
+            if List.mem d.e definitions then None else Some d.e)
+          |> List.of_seq
           |> List.sort (fun a b -> compare (Read.string_value (Read.value db a "block/order"), a)
             (Read.string_value (Read.value db b "block/order"), b)) in
         markup (eid :: seen) (budget - 1) source @

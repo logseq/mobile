@@ -22,7 +22,7 @@ import Vision
 
 @main struct QueryDisclosureLifecycleCheck {
     @MainActor static func main() async throws {
-        for zoomed in [false, true] {
+        for (zoomed, embedded) in [(false, false), (true, false), (false, true), (true, true)] {
             func snapshot(_ expanded: Bool) throws -> String {
                 let rows: [[String: Any]] = expanded ? (0..<2).map { index in
                     ["block": ["uuid": "result-\(index)", "title": "Project item \(index + 1)", "pageId": "page"]]
@@ -33,8 +33,14 @@ import Vision
                     query["views"] = [["uuid": "query-owner:default", "name": "All", "type": "list", "rows": rows,
                                        "columns": [], "error": NSNull()]]
                 }
-                let outline: [[String: Any]] = [["depth": 0, "hasChildren": false, "isCollapsed": false,
-                    "block": ["uuid": "query-owner", "title": "Project query", "pageId": "page", "query": query]]]
+                var block: [String: Any] = ["uuid": "query-owner", "title": "Project query", "pageId": "page", "query": query]
+                if embedded {
+                    block["title"] = ""
+                    block["isEmbed"] = true
+                    block["sourceTitle"] = "Project query"
+                    block["markup"] = [["type": "text", "text": "Project query"]]
+                }
+                let outline: [[String: Any]] = [["depth": 0, "hasChildren": false, "isCollapsed": false, "block": block]]
                 var result: [String: Any] = ["selectedGraphId": "query-disclosure", "graphName": "Queries"]
                 if zoomed {
                     result["nodeRoutes"] = [["uuid": "query-owner", "page": ["uuid": "page", "title": "Workspace"],
@@ -78,7 +84,7 @@ import Vision
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
                 }
-                try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("query-disclosure-\(zoomed)-\(phase).png"))
+                try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("query-disclosure-\(embedded)-\(zoomed)-\(phase).png"))
                 guard let icon = find("query.disclosure.query-owner"), let frame = frames[icon],
                       abs(frame.width - 10) < 0.5, abs(frame.height - 10) < 0.5 else {
                     throw failure("The query disclosure must actually render at the block's 10pt icon size")
@@ -106,7 +112,7 @@ import Vision
             try backend.performPress(node: find("query.toggle.query-owner")!)
             try await wait("Reopening executes again") { effects.expansions == [true, false, true] && find("query.result.query-owner.1") != nil }
         }
-        print("PASS: deferred queries show native Results labels, expand, update counts, fold and rerun in pages and zoomed blocks")
+        print("PASS: direct and embedded queries show native Results labels, expand, update counts, fold and rerun in pages and zoomed blocks")
     }
     private static func failure(_ message: String) -> NSError {
         NSError(domain: "QueryDisclosureLifecycleCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: message])

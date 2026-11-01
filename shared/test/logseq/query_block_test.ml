@@ -670,7 +670,130 @@ let tapped_caret_resolves_reference_lengths () =
       (member "caretUTF16Offset" (member "editing" (member "outlinerState" result))) (`Int expected))
     [("[[" ^ project ^ "]]", 13); ("#[[" ^ project ^ "]]", 10)]
 
+let contains text fragment =
+  try ignore (Str.search_forward (Str.regexp_string fragment) text 0); true with Not_found -> false
+
+let embedded = "10000000-0000-4000-8000-000000000007"
+let nested_embed = "10000000-0000-4000-8000-000000000008"
+let note = "10000000-0000-4000-8000-000000000009"
+
+let embedded_fixture source =
+  Ds.db_with [
+    Ds.Add (Ds.Entity_id 900007, "block/uuid", Ds.Uuid embedded);
+    put embedded "block/title" (Ds.String "");
+    put embedded "block/link" (Ds.Ref_to (ref_uuid owner));
+    put embedded "block/page" (Ds.Ref_to (ref_uuid page));
+    put embedded "block/parent" (Ds.Ref_to (ref_uuid page));
+    put embedded "block/order" (Ds.String "a4");
+    put definition "block/parent" (Ds.Ref_to (ref_uuid owner));
+    put definition "logseq.property.code/lang" (Ds.String "clojure");
+    Ds.Add (Ds.Entity_id 900009, "block/uuid", Ds.Uuid note);
+    put note "block/title" (Ds.String "Ordinary child code");
+    put note "logseq.property.code/lang" (Ds.String "clojure");
+    put note "block/page" (Ds.Ref_to (ref_uuid page));
+    put note "block/parent" (Ds.Ref_to (ref_uuid owner));
+    put note "block/order" (Ds.String "a2")] (fixture source)
+
+let expand_query session uuid expanded =
+  dispatch session "resultView" (Json.to_string (`Assoc [
+    "ownerUuid", `String uuid; "featureType", `String "query-result";
+    "action", `String "setExpanded"; "expanded", `Bool expanded]))
+
+let embedded_queries_execute_and_render () =
+  List.iter (fun (source, expected) ->
+    let session, _ = make_session (embedded_fixture source) in
+    ignore (Rpc_test.configure_plain_session session);
+    let q = member "query" (dispatch session "queryBlock" embedded) in
+    check_eq ~msg:(Json.to_string q) (row_ids q) expected;
+    check_eq (member "error" q) `Null;
+    let patch = expand_query session embedded true in
+    check_eq (member "queryOwnerUuid" patch) (`String embedded);
+    check_eq (member "ownerUuid" (member "query" patch)) (`String embedded);
+    let response = Json.from_string (Session.snapshot_visible session) |> Rpc_test.response_result in
+    let block = List.find (fun b -> member "uuid" b = `String embedded) (items "blocks" response) in
+    check_eq (row_ids (member "query" block)) expected;
+    let markup = Json.to_string (member "markup" block) in
+    check ~msg:"embedded queries must not display their definition as code"
+      (not (contains markup source));
+    check ~msg:"ordinary embedded child code remains visible"
+      (contains markup "Ordinary child code");
+    let collapsed = expand_query session embedded false in
+    check_eq (member "expanded" (member "query" collapsed)) (`Bool false);
+    List.iter (fun backend -> with_ui backend (Json.to_string (`Assoc ["ok", `Bool true; "result", response])) (fun app ->
+      let runtime = Lui_app.runtime app in
+      check ~msg:"embedded query results mount on both native hosts"
+        (App_test.descendant_with_identifier runtime (Lui_app.root_node app)
+          ("query.result." ^ embedded ^ ".0") <> -1)))
+      [App_test.ios_backend; App_test.kotlin_backend])
+    ["(property :user.property/score)", [alpha; beta];
+     "{:query [:find (pull ?b [*]) :where [?b :user.property/score ?s] [(> ?s 1)]]}", [alpha]]
+
+let embedded_query_context_and_interactive_updates () =
+  let source = "{:query [:find ?p . :in $ ?p :where] :inputs [:current-page]}" in
+  let destination = "10000000-0000-4000-8000-000000000011" in
+  let db = Ds.db_with [
+    Ds.Add (Ds.Entity_id 900011, "block/uuid", Ds.Uuid destination);
+    put destination "block/title" (Ds.String "Journal");
+    put destination "block/name" (Ds.String "journal");
+    put embedded "block/page" (Ds.Ref_to (ref_uuid destination));
+    put embedded "block/parent" (Ds.Ref_to (ref_uuid destination))] (embedded_fixture source) in
+  let session, set_db = make_session db in
+  let q () = member "query" (dispatch session "queryBlock" embedded) in
+  check_eq (cells (q ())) [`String "journal"];
+  set_db (Ds.db_with [put definition "block/title" (Ds.String
+    "{:query [:find ?p . :in $ ?p :where] :inputs [:query-page]}")] db);
+  check_eq (cells (q ())) [`String "workspace"];
+  let db = embedded_fixture "\"Beta\"" in
+  let session, set_db = make_session db in
+  ignore (expand_query session embedded true);
+  let before = match Response_snapshot.decode_response (Session.snapshot_visible session) with
+    | Ok value -> Model.update (Model.initial ()) (Model.ApplyCoreSnapshot value)
+    | Error message -> fail message in
+  let row_query model =
+    let row = List.find (fun row -> row.Model.row_uuid = embedded) model.Model.outliner_rows in
+    Json.from_string row.query_json in
+  check_eq (row_ids (row_query before)) [beta];
+  set_db (Ds.db_with [put beta "block/title" (Ds.String "Gamma result")] db);
+  let patch = Session.outliner_patch session (Session.outliner_context session) [beta] in
+  let after = match Response_snapshot.decode_response patch with
+    | Ok value -> Model.update before (Model.ApplyCoreSnapshot value)
+    | Error message -> fail message in
+  check_eq ~msg:"embedded results refresh when another row changes" (row_ids (row_query after)) []
+
+let embedded_queries_follow_live_source_and_links () =
+  let db = embedded_fixture "\"Beta\"" in
+  let db = Ds.db_with [
+    Ds.Add (Ds.Entity_id 900008, "block/uuid", Ds.Uuid nested_embed);
+    put nested_embed "block/title" (Ds.String "");
+    put nested_embed "block/link" (Ds.Ref_to (ref_uuid embedded));
+    put nested_embed "block/page" (Ds.Ref_to (ref_uuid page));
+    put nested_embed "block/parent" (Ds.Ref_to (ref_uuid page));
+    put nested_embed "block/order" (Ds.String "a5")] db in
+  let session, set_db = make_session ~limit:(Some 1) db in
+  ignore (expand_query session nested_embed true);
+  let q () = member "query" (dispatch session "queryBlock" nested_embed) in
+  check_eq (row_ids (q ())) [beta];
+  let owners = Query_block.owner_uuids db in
+  check ~msg:"interactive refresh includes transitive embedded query owners"
+    (List.mem embedded owners && List.mem nested_embed owners);
+  let hydrated = dispatch session "hydrateOutlinerRows" (Json.to_string (`List [`String nested_embed])) in
+  check_eq (row_ids (member "query" (List.hd (items "hydratedBlocks" hydrated)))) [beta];
+  set_db (Ds.db_with [put definition "block/title" (Ds.String "#Project")] db);
+  check_eq (row_ids (q ())) [alpha];
+  let missing = Ds.db_with [Ds.RetractEntity (ref_uuid definition)] db in
+  set_db missing;
+  check ~msg:"missing embedded definitions produce a query-local error"
+    (match member "error" (q ()) with `String _ -> true | _ -> false);
+  let cycle = Ds.db_with [put owner "block/link" (Ds.Ref_to (ref_uuid nested_embed))] db in
+  set_db cycle;
+  check_eq ~msg:"cyclic embeds terminate without executing an unrelated query" (q ()) `Null;
+  set_db (Ds.db_with [Ds.RetractEntity (ref_uuid owner)] db);
+  check_eq ~msg:"missing embedded sources remain isolated" (q ()) `Null
+
 let cases = [
+  case "embedded queries retain context and refresh through interactive patches" embedded_query_context_and_interactive_updates;
+  case "embedded simple and advanced queries render results on both native hosts" embedded_queries_execute_and_render;
+  case "embedded queries follow live source definitions and isolate broken links" embedded_queries_follow_live_source_and_links;
   case "block taps account for resolved reference lengths" tapped_caret_resolves_reference_lengths;
   case "query disclosure patches do not reload the page" disclosure_only_projects_its_query;
   case "query patches preserve navigation drafts and graph isolation" query_patch_preserves_page_and_editing;

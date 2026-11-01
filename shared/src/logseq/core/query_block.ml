@@ -154,43 +154,68 @@ let execute ?current_page db owner definition source =
       | None -> List.map (fun row -> Wire.Array (List.map wire_cell row)) rows in
     {kind; source; rows = normalize_rows db wire_rows; error = None}
 
+let source_eid db eid =
+  let rec resolve seen budget eid =
+    if budget = 0 || List.mem eid seen then None
+    else match Graph.ref_eids db eid "block/link" with
+      | source :: _ -> resolve (eid :: seen) (budget - 1) source
+      | [] -> Some eid in
+  resolve [] 16 eid
+
+let query_eid db eid =
+  Graph.ref_eids db eid "logseq.property/query" <> []
+  || Graph.entity_is_instance_of db eid "logseq.class/Query"
+
 let is_query db uuid =
-  match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+  match Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (source_eid db) with
+  | Some eid -> query_eid db eid
   | None -> false
-  | Some eid -> Graph.ref_eids db eid "logseq.property/query" <> []
-      || Graph.entity_is_instance_of db eid "logseq.class/Query"
 
 let render ?current_page db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
   | None -> None
-  | Some eid ->
-    let definitions = Graph.ref_eids db eid "logseq.property/query" in
-    if definitions = [] && not (Graph.entity_is_instance_of db eid "logseq.class/Query") then None
-    else
-      let source = ref "" in
-      try
-        let definition = match definitions with
-          | id :: _ -> id | [] -> invalid_arg "Query definition is missing" in
-        source := source_for db definition;
-        let current_page = match current_page with Some _ -> current_page | None ->
-          Option.bind (List.nth_opt (Graph.ref_eids db eid "block/page") 0)
-            (fun page -> Graph.string_value (Graph.value db page "block/title")) in
-        Some (execute ?current_page db eid definition !source)
-      with error ->
-        let message = match error with Invalid_argument message | Failure message -> message
-          | _ -> Printexc.to_string error in
-        Some {kind = "error"; source = !source; rows = []; error = Some message}
+  | Some instance ->
+    match source_eid db instance with
+    | None -> None
+    | Some eid ->
+      let definitions = Graph.ref_eids db eid "logseq.property/query" in
+      if not (query_eid db eid) then None
+      else
+        let source = ref "" in
+        try
+          let definition = match definitions with
+            | id :: _ -> id | [] -> invalid_arg "Query definition is missing" in
+          source := source_for db definition;
+          let current_page = match current_page with Some _ -> current_page | None ->
+            Option.bind (List.nth_opt (Graph.ref_eids db instance "block/page") 0)
+              (fun page -> Graph.string_value (Graph.value db page "block/title")) in
+          Some (execute ?current_page db eid definition !source)
+        with error ->
+          let message = match error with Invalid_argument message | Failure message -> message
+            | _ -> Printexc.to_string error in
+          Some {kind = "error"; source = !source; rows = []; error = Some message}
 
 let owner_uuids db =
   let ids = Hashtbl.create 8 in
-  let add (datom : Ds.datom) = Hashtbl.replace ids datom.e () in
-  Seq.iter add (Ds.Db.datoms db Ds.Aevt ~a:"logseq.property/query" ());
+  let pending = Queue.create () in
+  let add depth eid = if not (Hashtbl.mem ids eid) then begin
+    Hashtbl.add ids eid ();
+    Queue.add (eid, depth) pending
+  end in
+  Seq.iter (fun (datom : Ds.datom) -> add 0 datom.e)
+    (Ds.Db.datoms db Ds.Aevt ~a:"logseq.property/query" ());
   Option.iter (fun query_class ->
-    List.iter (fun id -> Seq.iter add (Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" id))
+    List.iter (fun id -> Seq.iter (fun (datom : Ds.datom) -> add 0 datom.e)
+      (Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" id))
       (Graph.class_descendants db query_class))
     (Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Query"));
+  while not (Queue.is_empty pending) do
+    let eid, depth = Queue.take pending in
+    if depth < 15 then Seq.iter (fun (datom : Ds.datom) -> add (depth + 1) datom.e)
+      (Datascript_value.datoms_by_ref db Ds.Aevt "block/link" eid)
+  done;
   Hashtbl.fold (fun eid () values -> match Graph.uuid_for_eid db eid with
-    | Some uuid -> uuid :: values | None -> values) ids []
+    | Some uuid when is_query db uuid -> uuid :: values | _ -> values) ids []
 
 let to_yojson encode result =
   `Assoc ["kind", `String result.kind; "source", `String result.source;
