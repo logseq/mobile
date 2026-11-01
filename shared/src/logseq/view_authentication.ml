@@ -123,7 +123,7 @@ let sheet source send : t =
       toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
         spacer ~grow:1.0 [];
         button ~icon:(`app "close") ~label:(tr source "Close") ~variant:`ghost
-          ~style_class:"confirmation-action plain-action" ~min_width:44 ~min_height:44
+          ~style_class:"confirmation-action" ~min_height:44
           ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
           ~on_press:(action send Auth_flow.Cancel) [];
       ];
