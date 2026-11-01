@@ -272,6 +272,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
         context.coordinator.highlight(textView)
+        if !isSameBlock {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
+        }
         if !focusEnabled {
             (textView as? FocusRetainingTextView)?.cancelPendingFocus()
         } else if InlineEditorFocusPolicy.shouldRequestFocus(
@@ -406,6 +409,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
             LGInteractionDiagnostics.editor(textView, blockID: activeBlockID, event: "editor.input")
             localText = textView.text
             guard textView.markedTextRange == nil else { return }
@@ -418,6 +422,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
+            (textView as? FocusRetainingTextView)?.revealCaretAfterLayout()
             if InlineEditorCaretEmissionPolicy.shouldEmit(
                 textMatchesModel: textView.text == parent.text,
                 isApplyingModel: isApplyingModel
@@ -506,8 +511,45 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
     var onPasteContent: ((String) -> Bool)?
     private var focusPending = false
+    private var caretRevealScheduled = false
+    private var previousCaretLayout: CGRect?
+    private var previousEditorSize: CGSize?
     private(set) var isInsertingLineBreak = false
     private(set) var isPasting = false
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard isFirstResponder, let selection = selectedTextRange else { return }
+        let caret = caretRect(for: selection.end)
+        if caret != previousCaretLayout || bounds.size != previousEditorSize {
+            previousCaretLayout = caret
+            previousEditorSize = bounds.size
+            revealCaretAfterLayout()
+        }
+    }
+
+    func revealCaretAfterLayout() {
+        guard isFirstResponder, !caretRevealScheduled else { return }
+        caretRevealScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.caretRevealScheduled = false
+            guard self.isFirstResponder, let selection = self.selectedTextRange else { return }
+            self.window?.layoutIfNeeded()
+            let caret = self.caretRect(for: selection.end).insetBy(dx: -8, dy: -8)
+            guard !caret.isNull, !caret.isInfinite, caret.height > 0 else { return }
+            var ancestor = self.superview
+            while let view = ancestor {
+                if let scroll = view as? UIScrollView, scroll.isScrollEnabled {
+                    let target = self.convert(caret, to: scroll)
+                    let viewport = scroll.bounds.inset(by: scroll.adjustedContentInset)
+                    if !viewport.contains(target) { scroll.scrollRectToVisible(target, animated: false) }
+                    return
+                }
+                ancestor = view.superview
+            }
+        }
+    }
 
     override func paste(_ sender: Any?) {
         if let payload = LGBlockClipboard.content(before: text ?? "", selection: selectedRange),
