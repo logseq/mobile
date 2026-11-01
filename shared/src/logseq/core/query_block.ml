@@ -71,10 +71,10 @@ let normalize_rows db wire_rows =
        | None -> Cells [cell_text db cell])
     | _ -> Cells (List.map (cell_text db) cells)) wire_rows
 
-let filter_rows db owner definition remove_children rows =
+let filter_rows db ~instance owner definition remove_children rows =
   let rows = List.filter (function
     | [cell] -> (match eid_of_result cell with
-        | Some eid -> eid <> owner && eid <> definition && not (hidden db eid)
+        | Some eid -> eid <> owner && eid <> instance && eid <> definition && not (hidden db eid)
         | None -> true)
     | _ -> true) rows in
   let ids = Hashtbl.create (List.length rows) in
@@ -101,7 +101,7 @@ let filter_rows db owner definition remove_children rows =
 let source_for db definition =
   Option.value ~default:"" (Graph.string_value (Graph.value db definition "block/title"))
 
-let execute ?current_page db owner definition source =
+let execute ?current_page ~instance db owner definition source =
   let day = Cache_model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
   let opts : Dev.Db_query_dsl.exec_opts = {
     opt_cards = Graph.entity_is_instance_of db owner "logseq.class/Cards";
@@ -141,7 +141,7 @@ let execute ?current_page db owner definition source =
         (match Dev.Db_query_dsl.execute_query db source {opts with opt_block_attrs = Some "[:db/id]"} with
          | Some rows -> rows, None, true
          | None -> invalid_arg "Invalid query DSL") in
-    let rows = filter_rows db owner definition remove_children query_rows in
+    let rows = filter_rows db ~instance owner definition remove_children query_rows in
     let block_results = List.for_all (function [cell] -> Option.is_some (eid_of_result cell) | _ -> false) rows in
     let wire_rows = match transform with
       | Some form ->
@@ -189,7 +189,7 @@ let render ?current_page db uuid =
           let current_page = match current_page with Some _ -> current_page | None ->
             Option.bind (List.nth_opt (Graph.ref_eids db instance "block/page") 0)
               (fun page -> Graph.string_value (Graph.value db page "block/title")) in
-          Some (execute ?current_page db eid definition !source)
+          Some (execute ?current_page ~instance db eid definition !source)
         with error ->
           let message = match error with Invalid_argument message | Failure message -> message
             | _ -> Printexc.to_string error in

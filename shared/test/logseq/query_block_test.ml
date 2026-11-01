@@ -790,7 +790,46 @@ let embedded_queries_follow_live_source_and_links () =
   set_db (Ds.db_with [Ds.RetractEntity (ref_uuid owner)] db);
   check_eq ~msg:"missing embedded sources remain isolated" (q ()) `Null
 
+let embedded_query_excludes_its_visible_instance source () =
+  let journal = "10000000-0000-4000-8000-000000000011" in
+  let db = Ds.db_with [
+    Ds.Add (Ds.Entity_id 900011, "block/uuid", Ds.Uuid journal);
+    put journal "block/title" (Ds.String "Journal");
+    put journal "block/name" (Ds.String "journal");
+    put embedded "block/title" (Ds.String "A self-matching embedded query");
+    put embedded "block/page" (Ds.Ref_to (ref_uuid journal));
+    put embedded "block/parent" (Ds.Ref_to (ref_uuid journal));
+    put beta "block/page" (Ds.Ref_to (ref_uuid journal));
+    put beta "block/parent" (Ds.Ref_to (ref_uuid journal))] (embedded_fixture source) in
+  let session, _ = make_session db in
+  let result = member "query" (dispatch session "queryBlock" embedded) in
+  check_eq ~msg:(Json.to_string result) (member "error" result) `Null;
+  check_eq ~msg:("the embed must be excluded before transforms: " ^ Json.to_string result)
+    (row_ids result) [beta];
+  let expanded = member "query" (expand_query session embedded true) in
+  check_eq ~msg:"disclosure retains the embedded owner" (member "ownerUuid" expanded) (`String embedded);
+  let view_rows = List.hd (items "views" expanded) |> items "rows" in
+  check_eq ~msg:"expanded views exclude the visible query instance"
+    (List.map (fun row -> member "uuid" (member "block" row)) view_rows) [`String beta]
+
+let embedded_query_excludes_source_definition_and_instance () =
+  let session, _ = make_session (embedded_fixture "(page Workspace)") in
+  let result = member "query" (dispatch session "queryBlock" embedded) in
+  check_eq ~msg:(Json.to_string result) (member "error" result) `Null;
+  check_eq ~msg:"same-page queries exclude both owners and the definition, retaining ordinary children"
+    (row_ids result) [alpha; beta; note]
+
 let cases = [
+  case "embedded simple queries exclude their visible instance"
+    (embedded_query_excludes_its_visible_instance "(page Journal)");
+  case "embedded advanced queries exclude their visible instance"
+    (embedded_query_excludes_its_visible_instance
+      "{:query [:find (pull ?b [*]) :where [?b :block/page ?p] [?p :block/name \"journal\"]]}");
+  case "embedded transforms receive results without the visible query instance"
+    (embedded_query_excludes_its_visible_instance
+      "{:query [:find (pull ?b [*]) :where [?b :block/page ?p] [?p :block/name \"journal\"]] :result-transform (fn [rows] (take 1 (sort-by :block/title rows)))}");
+  case "embedded queries exclude the source definition and visible instance together"
+    embedded_query_excludes_source_definition_and_instance;
   case "embedded queries retain context and refresh through interactive patches" embedded_query_context_and_interactive_updates;
   case "embedded simple and advanced queries render results on both native hosts" embedded_queries_execute_and_render;
   case "embedded queries follow live source definitions and isolate broken links" embedded_queries_follow_live_source_and_links;
