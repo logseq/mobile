@@ -684,7 +684,7 @@ let table_column_width column = if jfield "attr" column = `String "block/title" 
 let table_column_window columns (offset, width) =
   let total = List.fold_left (fun sum col -> sum + table_column_width col + 1) (-1) columns |> max 0 in
   let offset = min (max 0 offset) (max 0 (total - width)) in
-  let first = max 0 (offset - width) and last = offset + width * 2 in
+  let first = offset and last = offset + width in
   let rec collect position before visible after = function
     | [] -> before, List.rev visible, after
     | col :: rest ->
