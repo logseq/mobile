@@ -78,15 +78,25 @@ let retained_row_editing_caret (retained : retained_row) =
    lightweight collection metadata keeps the entire outline scrollable. *)
 let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~source ~key ~cmp ~mount : Lui_elements.t =
  fun context parent ->
-  let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
-  let metadata = own (Signal.map2 (fun (count, offset) rows ->
-    ["data-virtual-count", string_of_int count; "data-virtual-start", string_of_int offset;
-     "data-virtual-length", string_of_int (List.length rows); "data-item-extent", string_of_int item_extent;
-     "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
-    (own (Signal.map2 (fun count offset -> count, offset) count offset)) source) in
-  (Lui_elements.list ~accessibility_identifier:identifier ~data_attrs_signal:metadata ~track_visible_range:true
-    ~on_visible_range:(function Lui_protocol.VisibleRange (_, first, last) -> on_visible_range first last | _ -> ())
-    [Lui_elements.keyed ~source ~key ~cmp ~mount]) context parent
+  let viewport = Signal.state context.Lui_ui.ui_scheduler (0, 11) in
+  let window offset rows (first, last) =
+    let overscan = 2 in
+    let length = max 1 (last - first + 1) + 2 * overscan in
+    let start = max offset (min (first - overscan) (offset + List.length rows - length)) in
+    start, List.filteri (fun index _ -> index + offset >= start && index + offset < start + length) rows in
+  (Lui_elements.list ~accessibility_identifier:identifier
+    ~data_attrs:(reactive (fun count offset rows viewport ->
+      let start, rows = window offset rows viewport in
+      ["data-virtual-count", string_of_int count; "data-virtual-start", string_of_int start;
+       "data-virtual-length", string_of_int (List.length rows); "data-item-extent", string_of_int item_extent;
+       "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
+      count offset source (Signal.value viewport)) ~track_visible_range:true
+    ~on_visible_range:(function
+      | Lui_protocol.VisibleRange (_, first, last) when first >= 0 && last >= first ->
+        Signal.set viewport (first, last); on_visible_range first last
+      | _ -> ())
+    [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
+      offset source (Signal.value viewport)) ~key ~cmp ~mount]) context parent
 
 let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)

@@ -686,12 +686,13 @@ let table_column_width column = if jfield "attr" column = `String "block/title" 
 let table_column_window columns (offset, width) =
   let total = List.fold_left (fun sum col -> sum + table_column_width col + 1) (-1) columns |> max 0 in
   let offset = min (max 0 offset) (max 0 (total - width)) in
+  let first = offset and last = offset + width in
   let rec collect position before visible after = function
     | [] -> before, List.rev visible, after
     | col :: rest ->
       let extent = table_column_width col in
       let stop = position + extent in
-      if stop > offset && position < offset + width then
+      if stop > first && position < last then
         collect (stop + 1) (if visible = [] then position else before) (col :: visible) (total - stop) rest
       else collect (stop + 1) before visible after rest in
   collect 0 0 [] total columns
@@ -722,26 +723,56 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
   let retry_count = Signal.state context.ui_scheduler 0 in
   let page = Signal.state context.ui_scheduler initial in
   let loading = Signal.state context.ui_scheduler false and error = Signal.state context.ui_scheduler "" in
-  let previous = ref initial and generation = ref 0 and requested = ref None in
+  let previous = ref initial and generation = ref 0 and page_generation = ref 0 and requested = ref None in
   let previous_input = ref (Signal.sample input) in
+  let viewport = ref (0, 11) in
+  let trace_enabled = Sys.getenv_opt "LOGSEQ_TRACE_RESULT_WINDOWS" = Some "1" in
+  let trace ?requested_range phase data = if trace_enabled then (
+    let first, last = !viewport in
+    let offset, limit = match requested_range with Some range -> range | None -> Signal.sample (Signal.value range) in
+    Printf.eprintf "result-window phase=%s view=%s generation=%d page-generation=%d revision=%s projection=%s viewport=%d:%d range=%d:%d rows=%d:%d\n%!"
+      phase (jtext (jfield "uuid" data)) !generation !page_generation
+      (Json.to_string (jfield "revision" data)) (Json.to_string (jfield "projectionRevision" data))
+      first last offset limit (jint (jfield "rowOffset" data)) (List.length (jlist (jfield "rows" data)))) in
   let has_range data input offset limit =
     let start = jint (jfield "rowOffset" data) and count = row_count data in
     jtext (jfield "input" data) = input && start <= offset &&
     start + List.length (jlist (jfield "rows" data)) >= min count (offset + limit) in
+  let visible_overlap data =
+    let first, last = !viewport in
+    let start = jint (jfield "rowOffset" data) in
+    max 0 (min (last + 1) (start + List.length (jlist (jfield "rows" data))) - max first start) in
   let drive ((view, input), ((offset, limit), (model, _))) =
     if jfield "rowsDeferred" view.data <> `Bool true then Signal.set page view else (
       let reset = input <> !previous_input || jfield "sorting" view.data <> jfield "sorting" (!previous).data
         || jfield "filters" view.data <> jfield "filters" (!previous).data || view.typ <> (!previous).typ in
-      if reset then Signal.set range (0, 12);
+      if reset then (viewport := (0, 11); Signal.set range (0, 12));
       previous_input := input;
       if not (Json.equal view.data (!previous).data) then (
-        previous := view; incr generation; requested := None; Signal.set page view);
-      let offset = if reset then 0 else offset in
-      let key = prefix ^ string_of_int !generation ^ ":" ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
+        previous := view; incr generation; requested := None;
+        trace "source" view.data;
+        (* Keep the presented window during same-query revalidation. *)
+        if reset || initial_model.Model.selected_graph_id <> model.Model.selected_graph_id
+          || row_count view.data <= fst !viewport || jfield "error" view.data <> `Null
+        then (page_generation := !generation; trace "reset" view.data; Signal.set page view));
+      let offset, limit = if reset then 0, 12 else offset, limit in
+      let generation_prefix = prefix ^ string_of_int !generation ^ ":" in
+      let key = generation_prefix ^ Json.to_string (`List [`String input; `Int offset; `Int limit]) in
       let current = Signal.sample (Signal.value page) in
+      let current_projection data = jtext (jfield "input" data) = input
+        && jfield "revision" data = jfield "revision" view.data
+        && jfield "projectionRevision" data = jfield "projectionRevision" view.data in
+      let overlap data = if current_projection data then visible_overlap data else 0 in
+      let presented_overlap data =
+        if jtext (jfield "input" current.data) <> input then 0 else
+        let first, last = !viewport in
+        let start = jint (jfield "rowOffset" current.data) in
+        max 0 (min (min (last + 1) (row_count data))
+          (start + List.length (jlist (jfield "rows" current.data))) - max first start) in
       let candidate = match List.assoc_opt key model.Model.result_row_windows with
-        | Some raw -> (try Some (Json.from_string raw) with _ -> None)
-        | None when jfield "revision" current.data = jfield "revision" view.data
+        | Some raw -> (try let data = Json.from_string raw in
+          if current_projection data then Some data else None with _ -> None)
+        | None when !page_generation = !generation && current_projection current.data
           && has_range current.data input offset limit -> Some current.data
         | None when has_range view.data input offset limit -> Some view.data
         | _ -> None in
@@ -750,12 +781,27 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
       Signal.set error failure;
       Signal.set loading (candidate = None && failure = "" && jlist (jfield "rows" current.data) = []);
       match candidate with
-      | Some data -> if not (Json.equal data current.data) then Signal.set page {view with data}
+      | Some data -> if (row_count data = 0 || overlap data > 0 || visible_overlap current.data = 0)
+          && overlap data >= presented_overlap data
+        then (page_generation := !generation;
+          if not (Json.equal data current.data) then (trace "accept" data; Signal.set page {view with data}))
       | None ->
+        (match !requested with
+         | Some previous_key when String.starts_with ~prefix:generation_prefix previous_key ->
+           Option.iter (fun raw ->
+             try
+               let data = Json.from_string raw in
+               let coverage = overlap data and presented = presented_overlap data in
+               if coverage > presented || !page_generation <> !generation && coverage > 0 && coverage >= presented then (
+                 page_generation := !generation; trace "accept-reuse" data; Signal.set page {view with data})
+             with Yojson.Json_error _ -> ())
+             (List.assoc_opt previous_key model.result_row_windows)
+         | _ -> ());
         let busy = List.exists (function Model.LoadResultRowsEffect (_, key, _) -> String.starts_with ~prefix key | _ -> false)
           (model.pending_effects @ model.in_flight_effects) in
         if not busy && !requested <> Some key then (
           requested := Some key;
+          trace ~requested_range:(offset, limit) "request" view.data;
           ignore (send (Model.LoadResultRows (key, Json.to_string (`Assoc ([
             "key", `String key; "ownerUuid", `String owner; "featureType", `String feature; "viewUuid", `String view.id;
             "input", `String input; "offset", `Int offset; "limit", `Int limit] @
@@ -765,14 +811,20 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
     (own (Signal.map2 (fun range model -> range, model) (Signal.value range)
       (own (Signal.map2 (fun model retry -> model, retry) model_source (Signal.value retry_count)))))) in
   ignore (Signal.own context.ui_scope (Signal.observe request drive));
+  trace "init" initial.data;
   drive (Signal.sample request);
   let visible columns first last =
     if first >= 0 && last >= first then (
+      viewport := first, last;
       let current = (Signal.sample (Signal.value page)).data in
       let start = jint (jfield "rowOffset" current) and length = List.length (jlist (jfield "rows" current)) in
-      if first < start + 2 && start > 0 || last >= start + length - 2 && start + length < row_count current then (
-        let limit = min 64 (max 12 (((last - first + columns) / columns) * columns)) in
-        let offset = min (max 0 (row_count current - 1)) (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
+      let offset, limit = Signal.sample (Signal.value range) in
+      let margin = max 8 (last - first + 1) in
+      if first < offset || min last (row_count current - 1) >= offset + limit
+        || first < start + margin && start > 0 || last >= start + length - margin && start + length < row_count current then (
+        let limit = max columns (64 / columns * columns) in
+        let maximum = (max 0 (row_count current - limit) + columns - 1) / columns * columns in
+        let offset = min maximum (max 0 (first - max 0 ((limit - (last - first + 1)) / 2))) in
         Signal.set range (offset / columns * columns, limit))) in
   let retry () = requested := None; Signal.set retry_count (1 + Signal.sample (Signal.value retry_count)) in
   own (Signal.cutoff (=) (Signal.value page)), visible, Signal.value loading, Signal.value error, retry

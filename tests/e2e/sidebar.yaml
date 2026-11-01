@@ -19,18 +19,18 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "section.sidebar.recent"
 - tapOn:
-    id: "button.sidebar.dismiss"
+    id: "button.sidebar"
 - assertNotVisible:
-    id: "button.sidebar.dismiss"
+    id: "link.sidebar.graphs"
 - swipe:
     start: "0%,50%"
     end: "75%,50%"
     duration: 500
 - assertVisible:
-    id: "button.sidebar.dismiss"
+    id: "link.sidebar.graphs"
 - swipe:
     start: "75%,50%"
     end: "0%,50%"
     duration: 500
 - assertNotVisible:
-    id: "button.sidebar.dismiss"
+    id: "link.sidebar.graphs"

@@ -53,6 +53,23 @@ let snapshots_and_reads_are_bounded_and_keep_master_membership () = with_rows (f
     (member "ok" (read_window session ["graphId", `String "another-graph"])) (`Bool false);
   check_eq ~msg:"window reads never stage graph writes" (Graph_runtime.pending_operations runtime) [])
 
+let cached_windows_follow_the_current_projection () =
+  let base = R.fixture () in
+  let project title = D.db_with [Q.put R.alpha "block/title" (D.String title)] base in
+  let first = project "Graph A" and second = project "Graph B" in
+  check_eq ~msg:"independent graph projections can share a transaction number" first.D.max_tx second.D.max_tx;
+  let session, current = R.make_session first in
+  List.iter (fun (db, input, view) ->
+    current := db;
+    let actual = window (read_window session ~input ~view ~limit:64 []) in
+    let fresh, _ = R.make_session db in
+    let expected = window (read_window fresh ~input ~view ~limit:64 []) in
+    List.iter (fun field -> check_eq ~msg:("cached windows preserve current " ^ field)
+      (member field actual) (member field expected)) ["rows"; "rowCount"; "columns"; "properties"])
+    [first, "", R.table_view; first, "Graph A", R.table_view;
+     second, "", R.table_view; second, "Graph B", R.list_view;
+     first, "", R.table_view]
+
 let native_ranges_load_rows_and_ignore_obsolete_requests () =
   List.iter (fun (platform, host) -> with_rows (fun session runtime conn ->
     ignore (Native_bridge.initialize platform host 3);
@@ -82,22 +99,50 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
         (find ("view.rows.loading." ^ R.table_view) = -1);
       check ~msg:"existing rows remain mounted while the next window is pending"
         (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") <> -1);
-      scroll 900 908;
+      scroll 960 968;
       check_eq ~msg:"rapid scrolling coalesces while a read is pending" (List.length (pending ())) 1;
       let before = (App.model app).outliner_rows in
+      drain ();
+      let desired = R.find_view R.table_view (R.read session) |> items "rows" |> List.nth_opt in
+      let visible = Option.get (desired 960) |> member "block" |> member "uuid" |> text in
+      check ~msg:"a completed window displays visible rows even after its prefetch target moved"
+        (find ("view.cell." ^ R.table_view ^ "." ^ visible ^ ".block/title") <> -1);
+      scroll 900 908;
       drain (); drain ();
       check_eq ~msg:"window replies do not replace the surrounding page" (App.model app).outliner_rows before;
-      let desired = R.find_view R.table_view (R.read session) |> items "rows" |> List.nth_opt in
       let row = Option.get (desired 900) |> member "block" |> member "uuid" |> text in
       check ~msg:"the latest visible range replaces the old window"
         (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
       check ~msg:"the first window no longer owns UI cells"
         (find ("view.cell." ^ R.table_view ^ "." ^ R.alpha ^ ".block/title") = -1);
+      let base = D.conn_db conn in
+      List.iter (fun title ->
+        ignore (D.reset_conn_bang conn (D.db_with [Q.put row "block/title" (D.String title)] base));
+        Graph_runtime.rebase runtime 43 [] [row];
+        ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
+        check ~msg:"projection refresh keeps the presented rows mounted"
+          (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title") <> -1);
+        drain ();
+        check_eq ~msg:"a changed projection updates visible cells even at the same transaction number"
+          (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue)
+          title) ["Projection A"; "Projection B"];
+      scroll 923 931;
       let id = Option.get (D.entid (Graph_runtime.db runtime) "block/uuid" (D.Uuid row)) in
       ignore (D.transact_conn conn [D.Add (D.Entity_id id, "block/title", D.String "Revised far row")]);
       Graph_runtime.rebase runtime 44 [] [row];
       ignore (Native_bridge.apply_response (Rpc_session.snapshot_visible session));
       check ~msg:"a graph revision invalidates windows even when the first rows did not change" (pending () <> []);
+      let retained = Option.get (desired 925) |> member "block" |> member "uuid" |> text in
+      check ~msg:"a same-query refresh keeps the presented viewport mounted until its replacement is ready"
+        (find ("view.cell." ^ R.table_view ^ "." ^ retained ^ ".block/title") <> -1);
+      drain ();
+      scroll 889 897;
+      let retained = Option.get (desired 895) |> member "block" |> member "uuid" |> text in
+      drain ();
+      check ~msg:"a partial fresh window cannot displace the retained complete viewport"
+        (find ("view.cell." ^ R.table_view ^ "." ^ retained ^ ".block/title") <> -1);
+      drain ();
+      scroll 900 908;
       drain ();
       check_eq ~msg:"the current viewport receives revised data without returning to the first row"
         (App_test.property_string backend (find ("view.cell." ^ R.table_view ^ "." ^ row ^ ".block/title")) Lui_protocol.TextValue) "Revised far row";
@@ -115,7 +160,12 @@ let native_ranges_load_rows_and_ignore_obsolete_requests () =
       check ~msg:"failed range reads offer a local retry" (find ("view.rows.retry." ^ R.table_view) <> -1);
       click ("view.rows.retry." ^ R.table_view); drain ();
       check ~msg:"retry replaces the failed range with real rows"
-        (find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") <> -1))))
+        (find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") <> -1);
+      App_test.dispatch app (Lui_protocol.TextChanged (find ("view.search." ^ R.owner), "No matching paged row")); App_test.flush app;
+      drain ();
+      check ~msg:"an empty search replaces previously visible results with the empty state"
+        (find ("query.empty." ^ R.owner) <> -1
+          && find ("view.cell." ^ R.table_view ^ "." ^ uuid 888 ^ ".block/title") = -1))))
     [2, 2; 3, 4]
 
 let list_and_resized_gallery_reach_the_final_page () =
@@ -218,4 +268,5 @@ let cases = [
   case "paged lists and resized galleries reach the final unpaired result" list_and_resized_gallery_reach_the_final_page;
   case "tag route snapshots omit hidden legacy member payloads" tag_routes_do_not_duplicate_members_in_legacy_payloads;
   case "tag and property views mount on root and pushed pages on both hosts" object_page_views_mount_on_both_hosts;
+  case "cached row windows follow the current graph projection and search" cached_windows_follow_the_current_projection;
 ]
