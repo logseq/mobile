@@ -124,6 +124,12 @@ reads so both paths share the projection token. Supplied snapshot rows remain
 authoritative and are not reused from the prepared-view cache: they can depend
 on the active page as well as the database.
 
+Retained rows still count toward presentation coverage, not cache freshness:
+a partial fresh reply must not displace a more complete visible page. Compare
+coverage within the replacement's row count so shrinking/empty results can
+remove obsolete rows. Keep the requested range covering the current viewport,
+including when it moves back inside a retained page during an outstanding read.
+
 For opt-in release diagnostics, set `LOGSEQ_TRACE_RESULT_WINDOWS=1` at launch
 (`SIMCTL_CHILD_LOGSEQ_TRACE_RESULT_WINDOWS=1` with `simctl`). Stderr records
 `init`, `source`, `request`, `accept`/`accept-reuse`, and `reset` with the view UUID,
