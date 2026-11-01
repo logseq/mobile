@@ -914,6 +914,9 @@ private struct LGNavigationContent: View {
         if bottomOccupiesLayoutSpace {
             bottomChrome
                 .fixedSize(horizontal: false, vertical: true)
+                #if os(iOS)
+                .background(OutlinerEditorToolbarGuide())
+                #endif
                 .modifier(LGBottomChromeSurface())
                 .modifier(LGBottomChromeHitTarget(isRounded: true))
                 .padding(.horizontal, 16)
