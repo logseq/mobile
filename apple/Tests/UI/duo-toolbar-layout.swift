@@ -46,6 +46,9 @@ import LogseqModel
             throw failure("Missing check window scene")
         }
         let window = UIWindow(windowScene: scene)
+        if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REGULAR_WIDTH"] == "1" {
+            window.traitOverrides.horizontalSizeClass = .regular
+        }
         let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -140,6 +143,18 @@ import LogseqModel
             }.joined(separator: "\n")
             return "window=\(window.bounds) screen=\(scene.screen.bounds) host=\(host.view.frame) scene=\(scene.activationState.rawValue) scenes=\n\(sceneDetails)\nnativeViews=\n" + relevant.joined(separator: "\n")
         }
+        func nativeControlFrames(vertical: Bool) -> (CGRect, CGRect)? {
+            // Hoisted toolbar nodes can lose their shared frame-cache entries
+            // when an outgoing SwiftUI copy disappears. Read UIKit's live pair.
+            guard let pair = views(window).first(where: { view in
+                guard String(describing: type(of: view)).hasPrefix("UIKitBarItemHost"), !view.isHidden else { return false }
+                return abs(view.bounds.width - (vertical ? 44 : 88)) < 1
+                    && abs(view.bounds.height - (vertical ? 88 : 44)) < 1
+            }) else { return nil }
+            let first = CGRect(origin: .zero, size: CGSize(width: 44, height: 44))
+            let second = first.offsetBy(dx: vertical ? 0 : 44, dy: vertical ? 44 : 0)
+            return (pair.convert(first, to: window), pair.convert(second, to: window))
+        }
 
         let seconds = Double(ProcessInfo.processInfo.environment["LOGSEQ_DUO_CHECK_SECONDS"] ?? "40") ?? 40
         let deadline = Date().addingTimeInterval(seconds)
@@ -154,8 +169,16 @@ import LogseqModel
         print("DUO_CHECK_READY: change poses in Device Hub for \(seconds) seconds")
         while Date() < deadline {
             try await Task.sleep(for: .milliseconds(200))
-            guard let sync = syncNode(), let calendar = node("button.journal-calendar"),
-                  let first = frames[sync], let second = frames[calendar],
+            let vertical: Bool
+            if #available(iOS 27.1, *) {
+                vertical = host.view.traitCollection.verticalBarEdge != .unspecified
+            } else { vertical = false }
+            let reported = syncNode().flatMap { sync in
+                node("button.journal-calendar").flatMap { calendar in
+                    frames[sync].flatMap { first in frames[calendar].map { (first, $0) } }
+                }
+            }
+            guard let (first, second) = nativeControlFrames(vertical: vertical) ?? reported,
                   first.width > 0, first.height > 0, second.width > 0, second.height > 0 else {
                 let relevant = backend.rootIDs.flatMap(descendants).compactMap { id -> String? in
                     guard let identifier = backend.model(id: id)?.property(.accessibilityIdentifier)?.stringValue,
@@ -174,11 +197,6 @@ import LogseqModel
                 }
                 continue
             }
-            let vertical: Bool
-            if #available(iOS 27.1, *) {
-                // UIKit's local counterpart of SwiftUI's toolbarVerticalEdge.
-                vertical = host.view.traitCollection.verticalBarEdge != .unspecified
-            } else { vertical = false }
             let axis = vertical ? "vertical" : "horizontal"
             let signature = "\(Int(window.bounds.width))x\(Int(window.bounds.height))-\(axis)-\(Int(first.minX)),\(Int(first.minY))-\(Int(second.minX)),\(Int(second.minY))"
             if previous != signature {
@@ -214,6 +232,20 @@ import LogseqModel
                 }
             }
             if vertical {
+                guard actionFrames.allSatisfy({ abs($0.midX - first.midX) < 2 }) else {
+                    try saveScreenshot("duo-rail-misaligned.png")
+                    throw failure("Capture rail must align with the native side controls: sync=\(first), actions=\(actionFrames), safeArea=\(host.view.safeAreaInsets)")
+                }
+                guard let last = actionFrames.last,
+                      window.bounds.maxY - last.maxY <= max(44, window.safeAreaInsets.bottom + 10) else {
+                    throw failure("Capture rail must stay near the bottom edge, without a duplicate safe-area inset: \(actionFrames)")
+                }
+                guard let rail = views(window).first(where: { $0.accessibilityIdentifier == "navigation.capture-rail" }),
+                      actionFrames.allSatisfy({ frame in
+                          window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil)?.isDescendant(of: rail) == true
+                      }) else {
+                    throw failure("The visible side actions must receive touches at their rendered positions")
+                }
                 guard actionFrames.allSatisfy({ abs($0.midX - actionFrames[0].midX) < 2 }),
                       zip(actionFrames, actionFrames.dropFirst()).allSatisfy({ pair in pair.0.minY < pair.1.minY }),
                       node("button.composer.expand") == nil else {

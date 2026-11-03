@@ -48,11 +48,13 @@ import UIKit
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
+        if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REGULAR_WIDTH"] == "1" {
+            window.traitOverrides.horizontalSizeClass = .regular
+        }
         let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer).preferredColorScheme(.dark))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
-        func controllers(_ controller: UIViewController) -> [UIViewController] { [controller] + controller.children.flatMap(controllers) }
         func wait(_ message: String, until condition: () -> Bool) async throws {
             for _ in 0..<150 {
                 if condition() { return }
@@ -64,6 +66,7 @@ import UIKit
         // Read the rendered glass surface in window coordinates. Shared node-frame
         // caches can be cleared by the outgoing page during a native transition.
         func actionFrames() -> [CGRect] {
+            guard views(window).filter({ $0.accessibilityIdentifier == "navigation.capture-rail" && !$0.isHidden }).count == 1 else { return [] }
             var frames: [CGRect] = []
             for view in views(window) where view is UIVisualEffectView || String(describing: type(of: view)).contains("Glass") {
                 guard view.window === window, !view.isHidden, view.alpha > 0.01 else { continue }
@@ -76,7 +79,20 @@ import UIKit
             return frames
         }
         try await wait("Duo capture rail must mount") { actionFrames().count == 1 && actionFrames()[0].minX > 300 }
-        let navigation = controllers(host).compactMap { $0 as? UINavigationController }.first!
+        // The expanded drawer adds its own sidebar/detail navigation controllers.
+        // Follow the journal's responder chain to the stack that owns its pages.
+        try await wait("The journal row must mount") { views(window).contains { $0.accessibilityIdentifier == "outliner.block-action.Journal-row-0" } }
+        let row = views(window).first { $0.accessibilityIdentifier == "outliner.block-action.Journal-row-0" }
+        var responder: UIResponder? = row
+        var pageNavigation: UINavigationController?
+        while let current = responder {
+            if let controller = current as? UIViewController, let navigation = controller.navigationController {
+                pageNavigation = navigation
+                break
+            }
+            responder = current.next
+        }
+        guard let navigation = pageNavigation else { throw failure("The visible journal must own a native navigation stack") }
         var pageWidth: CGFloat?
         func waitForDepth(_ depth: Int) async throws {
             try await wait("Navigation must settle at depth \(depth)") {
@@ -108,6 +124,9 @@ import UIKit
             _ = navigation.popViewController(animated: true)
             try await waitForDepth(2)
         }
+        sampler.phase = "pop-journal"
+        _ = navigation.popViewController(animated: true)
+        try await waitForDepth(1)
         sampler.stop()
         var maximumX: CGFloat = 0
         var maximumY: CGFloat = 0

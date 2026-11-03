@@ -10,6 +10,7 @@ extension EnvironmentValues {
     @Entry var lgOpenPDF: ((String, String, URL) -> Void)?
     @Entry var lgOpenPDFAnnotation: ((String) -> Void)?
     @Entry var lgPDFWorkspaceOpen = false
+    @Entry var lgPDFMainHidden = false
 }
 
 @MainActor
@@ -92,6 +93,7 @@ private struct LGPDFSplitContent: View {
                 .allowsHitTesting(!fullScreen)
                 .accessibilityHidden(fullScreen)
                 .environment(\.lgPDFWorkspaceOpen, open)
+                .environment(\.lgPDFMainHidden, fullScreen)
                 .environment(\.lgOpenPDF, { uuid, title, url in
                     send(["action": "open", "uuid": uuid, "title": title, "path": url.path])
                 })

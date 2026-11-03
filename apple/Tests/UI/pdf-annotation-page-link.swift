@@ -1,7 +1,6 @@
 import PDFKit
 import SwiftUI
 import UIKit
-@testable import LUIAppleBackend
 @testable import Logseq
 
 @main struct PDFAnnotationPageLinkCheck {
@@ -44,26 +43,35 @@ import UIKit
         try runtime.applyCoreResponse(snapshot())
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
-        let backend = runtime.renderer.backend
-        var frames: [Int: CGRect] = [:]
-        backend.frameReportingEnabled = true
-        backend.onFramesReport = { frames = $0 }
-        func descendants(_ id: Int) -> [Int] {
-            [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
-        }
-        func sidebarVisible() -> Bool {
-            backend.rootIDs.flatMap(descendants).contains { id in
-                backend.model(id: id)?.property(.accessibilityIdentifier)?.stringValue == "button.sidebar"
-                    && frames[id].map { !$0.isEmpty } == true
-            }
-        }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
+        if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REGULAR_WIDTH"] == "1" {
+            window.traitOverrides.horizontalSizeClass = .regular
+        }
         let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+        func sidebarVisible() -> Bool {
+            // Inspect the live leading navigation control; shared node-frame
+            // entries can be removed by an outgoing hoisted toolbar copy.
+            views(window).compactMap { $0 as? UIControl }.contains { control in
+                let frame = control.convert(control.bounds, to: window)
+                guard frame.midX < window.bounds.midX, frame.width >= 24, frame.height >= 24,
+                      let hit = window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil),
+                      hit === control || hit.isDescendant(of: control) else { return false }
+                var ancestor = control.superview
+                while let current = ancestor {
+                    if current is UINavigationBar { return true }
+                    ancestor = current.superview
+                }
+                return false
+            }
+        }
+        func railVisible() -> Bool {
+            views(window).contains { $0.accessibilityIdentifier == "navigation.capture-rail" && !$0.isHidden }
+        }
         func wait(_ description: String, until condition: () -> Bool) async throws {
             for _ in 0..<100 {
                 if condition() { return }
@@ -72,6 +80,10 @@ import UIKit
             throw failure(description)
         }
         try await wait("The journal starts with its sidebar button") { sidebarVisible() }
+        let hasSideRail: Bool
+        if #available(iOS 27.1, *) { hasSideRail = host.traitCollection.verticalBarEdge != .unspecified }
+        else { hasSideRail = false }
+        if hasSideRail { try await wait("The journal starts with its capture rail") { railVisible() } }
         for (id, page) in annotations {
             guard let prefix = views(window).compactMap({ $0 as? UIButton }).first(where: { $0.accessibilityIdentifier == "pdf.annotation-page." + id }) else {
                 throw failure("Annotation blocks must show a clickable page prefix")
@@ -84,6 +96,7 @@ import UIKit
                 return pdf.currentPage.map { document.index(for: $0) } == page - 1
             }
             try await wait("PDF workspace must hide the sidebar button") { !sidebarVisible() }
+            if hasSideRail { try await wait("Fullscreen PDF must hide the capture rail") { !railVisible() } }
             guard host.presentedViewController == nil else { throw failure("Page links must open the split workspace") }
             let current = views(window).compactMap { $0 as? PDFView }.first!
             guard current.document?.pageCount == 3 else { throw failure("The linked PDF must remain open") }
@@ -94,6 +107,7 @@ import UIKit
             guard let pdf = views(window).compactMap({ $0 as? PDFView }).first else { return false }
             return pdf.bounds.width < window.bounds.width * 0.7 && !sidebarVisible()
         }
+        if hasSideRail { try await wait("Split PDF must restore the main pane's capture rail") { railVisible() } }
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -101,6 +115,7 @@ import UIKit
         let close = views(window).compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "pdf.close" }!
         close.sendActions(for: .touchUpInside)
         try await wait("Closing PDF must restore the sidebar button") { sidebarVisible() && !views(window).contains { $0 is PDFView } }
+        if hasSideRail { try await wait("Closing PDF must retain one visible capture rail") { railVisible() } }
         print("PASS: annotation page prefixes open the PDF and navigate between highlights while preserving main; sidebar is hidden until PDF closes")
     }
 
