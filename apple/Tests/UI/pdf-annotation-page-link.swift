@@ -36,7 +36,7 @@ import UIKit
                effect["kind"] as? String == "pdf-annotation",
                let text = effect["text"] as? String,
                let data = text.data(using: .utf8),
-               let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+               (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) != nil {
                 return snapshot(pdf: true, patch: true)
             }
             return snapshot()
@@ -44,6 +44,19 @@ import UIKit
         try runtime.applyCoreResponse(snapshot())
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
+        let backend = runtime.renderer.backend
+        var frames: [Int: CGRect] = [:]
+        backend.frameReportingEnabled = true
+        backend.onFramesReport = { frames = $0 }
+        func descendants(_ id: Int) -> [Int] {
+            [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
+        }
+        func sidebarVisible() -> Bool {
+            backend.rootIDs.flatMap(descendants).contains { id in
+                backend.model(id: id)?.property(.accessibilityIdentifier)?.stringValue == "button.sidebar"
+                    && frames[id].map { !$0.isEmpty } == true
+            }
+        }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
         let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
@@ -58,7 +71,7 @@ import UIKit
             }
             throw failure(description)
         }
-        try await Task.sleep(for: .milliseconds(350))
+        try await wait("The journal starts with its sidebar button") { sidebarVisible() }
         for (id, page) in annotations {
             guard let prefix = views(window).compactMap({ $0 as? UIButton }).first(where: { $0.accessibilityIdentifier == "pdf.annotation-page." + id }) else {
                 throw failure("Annotation blocks must show a clickable page prefix")
@@ -70,11 +83,25 @@ import UIKit
                 guard let pdf = views(window).compactMap({ $0 as? PDFView }).first, let document = pdf.document else { return false }
                 return pdf.currentPage.map { document.index(for: $0) } == page - 1
             }
+            try await wait("PDF workspace must hide the sidebar button") { !sidebarVisible() }
             guard host.presentedViewController == nil else { throw failure("Page links must open the split workspace") }
             let current = views(window).compactMap { $0 as? PDFView }.first!
             guard current.document?.pageCount == 3 else { throw failure("The linked PDF must remain open") }
         }
-        print("PASS: annotation page prefixes open the PDF and navigate between highlights while preserving main")
+        let toggle = views(window).compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "pdf.toggle-fullscreen" }!
+        toggle.sendActions(for: .touchUpInside)
+        try await wait("The split PDF workspace must also hide the sidebar button") {
+            guard let pdf = views(window).compactMap({ $0 as? PDFView }).first else { return false }
+            return pdf.bounds.width < window.bounds.width * 0.7 && !sidebarVisible()
+        }
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("pdf-sidebar-hidden.png"))
+        let close = views(window).compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "pdf.close" }!
+        close.sendActions(for: .touchUpInside)
+        try await wait("Closing PDF must restore the sidebar button") { sidebarVisible() && !views(window).contains { $0 is PDFView } }
+        print("PASS: annotation page prefixes open the PDF and navigate between highlights while preserving main; sidebar is hidden until PDF closes")
     }
 
     static func failure(_ message: String) -> NSError {

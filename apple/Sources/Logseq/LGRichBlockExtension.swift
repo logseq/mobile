@@ -421,7 +421,7 @@ struct LGAssetPreview: View {
                 if let local = LocalAssetPath.resolve(localPath, title: title, assetType: assetType) {
                     url = local
                 } else {
-                    url = try await LGGraphAssetLoader.load(uuid: uuid, assetType: assetType)
+                    url = try await LGGraphAssetLoader.load(uuid: uuid, assetType: assetType, feedbackTitle: title)
                 }
                 try Task.checkCancellation()
                 guard allowsInteraction() else { return }

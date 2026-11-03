@@ -46,7 +46,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
     private var outputURL: URL?
     private var meterTask: Task<Void, Never>?
 
-    func start() async {
+    func start(locale: Locale = .current) async {
         guard !isRecording else { return }
         let granted = await withCheckedContinuation { continuation in
             AVAudioApplication.requestRecordPermission {
@@ -54,7 +54,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
             }
         }
         guard granted else {
-            errorMessage = "Microphone access is required to record audio."
+            errorMessage = CaptureLocalization.text("Microphone access is required to record audio.", locale: locale)
             return
         }
         do {
@@ -85,7 +85,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
             isRecording = true
             startMetering()
         } catch {
-            errorMessage = "Couldn't start recording. \(error.localizedDescription)"
+            errorMessage = CaptureLocalization.text("Couldn't start recording.", locale: locale) + " " + error.localizedDescription
         }
     }
 
@@ -172,6 +172,7 @@ struct AudioRecorderSheet: View {
     let targetBlockID: String?
     let onSave: (RecordedAudioAsset, String?, String?) throws -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
     @StateObject private var recorder = AudioRecorderController()
     @State private var transcriptionEnabled = true
     @State private var isSaving = false
@@ -185,7 +186,7 @@ struct AudioRecorderSheet: View {
                 waveform
                     .frame(height: 72)
                 if #available(iOS 26.0, *) {
-                    Toggle("Transcribe recording", isOn: $transcriptionEnabled)
+                    Toggle(CaptureLocalization.text("Transcribe recording", locale: locale), isOn: $transcriptionEnabled)
                         .accessibilityIdentifier("toggle.audio.transcription")
                 }
                 Button {
@@ -200,7 +201,7 @@ struct AudioRecorderSheet: View {
                                 try onSave(asset, targetBlockID, transcript)
                                 dismiss()
                             } catch {
-                                logger.error("Couldn't save the recording. \(error.localizedDescription)")
+                                logger.error(CaptureLocalization.text("Couldn't save the recording.", locale: locale) + " " + error.localizedDescription)
                             }
                         }
                     }
@@ -211,15 +212,19 @@ struct AudioRecorderSheet: View {
                     }
                 }
                 .disabled(!recorder.isRecording || isSaving)
-                .accessibilityLabel("Stop recording")
+                .accessibilityLabel(CaptureLocalization.text("Stop recording", locale: locale))
+                if let error = recorder.errorMessage {
+                    Text(error).foregroundStyle(.red)
+                        .accessibilityIdentifier("audio.recording.error")
+                }
                 Spacer()
             }
             .padding(24)
-            .navigationTitle("Audio recording")
+            .navigationTitle(CaptureLocalization.text("Audio recording", locale: locale))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button(CaptureLocalization.text("Cancel", locale: locale)) {
                         recorder.cancel()
                         dismiss()
                     }
@@ -227,7 +232,7 @@ struct AudioRecorderSheet: View {
             }
         }
         .interactiveDismissDisabled(recorder.isRecording)
-        .task { await recorder.start() }
+        .task { await recorder.start(locale: locale) }
     }
 
     private var waveform: some View {

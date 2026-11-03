@@ -24,6 +24,88 @@ enum LGNavigationSurfacePolicy {
     }
 }
 
+private extension ToolbarContent {
+    @ToolbarContentBuilder
+    func lgPrefersVerticalAxis() -> some ToolbarContent {
+        #if os(iOS)
+        if #available(iOS 27.1, *) {
+            self.axisBehavior(.verticalPreferred)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+private extension EnvironmentValues {
+    @Entry var lgVerticalToolbar = false
+}
+
+private struct LGToolbarAxisEnvironment: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 27.1, *) {
+            LGVerticalToolbarContent(content: content)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+#if os(iOS)
+@available(iOS 27.1, *)
+private struct LGVerticalToolbarContent<Content: View>: View {
+    let content: Content
+    @Environment(\.toolbarVerticalEdge) private var verticalEdge
+
+    var body: some View {
+        content.environment(\.lgVerticalToolbar, verticalEdge != nil)
+    }
+}
+#endif
+
+private struct LGToolbarControlPair: View {
+    let first: AnyView
+    let second: AnyView
+
+    @ViewBuilder var body: some View {
+        #if os(iOS)
+        if #available(iOS 27.1, *) {
+            LGAdaptiveToolbarControlPair(first: first, second: second)
+        } else {
+            horizontalContent
+        }
+        #else
+        horizontalContent
+        #endif
+    }
+
+    private var horizontalContent: some View {
+        HStack(spacing: 0) { first; second }
+    }
+}
+
+#if os(iOS)
+@available(iOS 27.1, *)
+private struct LGAdaptiveToolbarControlPair: View {
+    let first: AnyView
+    let second: AnyView
+    @Environment(\.toolbarVerticalEdge) private var verticalEdge
+
+    var body: some View {
+        let layout = verticalEdge == nil
+            ? AnyLayout(HStackLayout(spacing: 0))
+            : AnyLayout(VStackLayout(spacing: 0))
+        layout { first; second }
+    }
+}
+#endif
+
 #if os(iOS)
 private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
     let update: (CGFloat) -> Void
@@ -227,7 +309,7 @@ private struct LGTopNotification: View {
 }
 
 #if os(iOS)
-private struct LGNotificationSafeAreaReader: UIViewRepresentable {
+struct LGNotificationSafeAreaReader: UIViewRepresentable {
     let update: (CGFloat) -> Void
 
     func makeUIView(context: Context) -> Probe { Probe(update: update) }
@@ -288,6 +370,7 @@ private struct LGSidebarNavigation: View {
                         .sharedBackgroundVisibility(.hidden)
                         ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
                             .sharedBackgroundVisibility(.hidden)
+                            .lgPrefersVerticalAxis()
                     } else {
                         ToolbarItem(placement: .topBarLeading) {
                             child(at: 1).lineLimit(1).truncationMode(.middle)
@@ -332,6 +415,7 @@ private struct LGNavigationStack: View {
         } action: { width in
             try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
         }
+        .modifier(LGToolbarAxisEnvironment())
     }
 
 }
@@ -535,6 +619,7 @@ private struct LGSearchPresentation: View {
 
 private struct LGNativeSearchHost: ViewModifier {
     let search: LGNativeSearchState?
+    @Environment(\.lgVerticalToolbar) private var verticalToolbar
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -545,7 +630,10 @@ private struct LGNativeSearchHost: ViewModifier {
                 let _ = search.nativePresented
                 if #available(iOS 26.0, *) {
                     content
-                        .scrollEdgeEffectHidden(true, for: .bottom)
+                        // Duo's vertical bar needs no horizontal edge effect. In dark
+                        // mode its automatic top-edge luminance can oscillate during
+                        // scrolling, continuously invalidating UIKit's layout.
+                        .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
                     content.background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
@@ -556,7 +644,7 @@ private struct LGNativeSearchHost: ViewModifier {
                 #endif
             }
             .toolbar {
-                if search.isVisible {
+                if search.isVisible && !verticalToolbar {
                     ToolbarItem(placement: .principal) {
                         Text(search.statusTitle)
                             .font(.headline)
@@ -598,6 +686,8 @@ private struct LGNavigationContent: View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqNativeSearch) private var inheritedSearch
+    @Environment(\.lgVerticalToolbar) private var verticalToolbar
+    @Environment(\.lgPDFWorkspaceOpen) private var pdfWorkspaceOpen
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private var searchVisible: Bool { search?.isVisible == true }
@@ -609,6 +699,19 @@ private struct LGNavigationContent: View {
     private var chromeContext: LUIAppleExtensionViewContext { showsSearchPage ? search!.context : context }
     private var showsBottomChrome: Bool { !searchVisible || showsSearchPage || hasCollapsedComposer }
 
+    private var captureActionIDs: [Int] {
+        // The final child owns the shared camera/audio/search/capture actions; routes
+        // retain their existing slots before this stable container.
+        guard toolbarStartIndex != nil, context.childIDs.count >= 7,
+              let container = context.childIDs.last else { return [] }
+        let _ = context.measureStamp(of: container)
+        let actions = context.childIDs(of: container)
+        return actions.count == 4 ? actions : []
+    }
+
+    private var usesSideCaptureActions: Bool {
+        verticalToolbar && hasCollapsedComposer && captureActionIDs.count == 4
+    }
 
 
     // This view observes the extension independently of its parent. Read the
@@ -669,7 +772,7 @@ private struct LGNavigationContent: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if !bottomOccupiesLayoutSpace && showsBottomChrome {
+                if !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
                     if hasCollapsedComposer {
                         VStack {
                             Spacer(minLength: 0)
@@ -740,20 +843,23 @@ private struct LGNavigationContent: View {
                 .toolbar {
                     if let toolbarStartIndex,
                        let leadingID = childID(at: toolbarStartIndex) {
-                        if #available(iOS 26.0, *) {
-                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: leadingID)
-                                    .id(context.contentRevision(for: leadingID))
-                                    .modifier(LGLiquidGlassSurface(shape: .circle))
-                                    .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
-                                        iconWidth: 24,
-                                        minimumHitTarget: 44
-                                    ))
-                            }
-                            .sharedBackgroundVisibility(.hidden)
-                        } else {
-                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: leadingID)
+                        if !pdfWorkspaceOpen {
+                            if #available(iOS 26.0, *) {
+                                ToolbarItem(placement: rootLeadingToolbarPlacement) {
+                                    context.content(for: leadingID)
+                                        .id(context.contentRevision(for: leadingID))
+                                        .modifier(LGLiquidGlassSurface(shape: .circle))
+                                        .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
+                                            iconWidth: 24,
+                                            minimumHitTarget: 44
+                                        ))
+                                }
+                                .sharedBackgroundVisibility(.hidden)
+                                .lgPrefersVerticalAxis()
+                            } else {
+                                ToolbarItem(placement: rootLeadingToolbarPlacement) {
+                                    context.content(for: leadingID)
+                                }
                             }
                         }
                         trailingToolbar(searchPage: false)
@@ -831,6 +937,20 @@ private struct LGNavigationContent: View {
                         .environment(\.luiTextHighlightQuery, search.query)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(routeBackground)
+                        // A principal text item creates a horizontal title bar
+                        // alongside Duo's vertical controls. Keep the status in
+                        // the search surface so dismissing it cannot reflow home.
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if verticalToolbar {
+                                Text(search.statusTitle)
+                                    .font(.headline)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(routeBackground)
+                                    .accessibilityIdentifier("search.status")
+                            }
+                        }
                         .opacity(search.resultsAreVisible ? 1 : 0)
                         .accessibilityHidden(!search.resultsAreVisible)
                         .animation(nil, value: search.resultsAreVisible)
@@ -890,20 +1010,22 @@ private struct LGNavigationContent: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
+            .lgPrefersVerticalAxis()
         } else if let toolbarStartIndex {
             ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
                 // Keep these controls in one item so the system cannot replace
                 // one of them with its own overflow menu as the title changes.
-                HStack(spacing: 0) {
-                    childContent(at: toolbarStartIndex + 2)
-                        .frame(width: 44, height: 44)
-                    childContent(at: toolbarStartIndex + 3)
-                        .frame(width: 44, height: 44)
-                }
+                LGToolbarControlPair(
+                    first: AnyView(childContent(at: toolbarStartIndex + 2)
+                        .frame(width: 44, height: 44)),
+                    second: AnyView(childContent(at: toolbarStartIndex + 3)
+                        .frame(width: 44, height: 44))
+                )
                 .fixedSize()
                 .menuStyle(.button)
                 .buttonStyle(.plain)
             }
+            .lgPrefersVerticalAxis()
         } else if let trailingMenuIndex {
             ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
                 childContent(at: trailingMenuIndex)
@@ -911,7 +1033,20 @@ private struct LGNavigationContent: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
+            .lgPrefersVerticalAxis()
         }
+        #if os(iOS)
+        if usesSideCaptureActions && !searchVisible {
+            ForEach(captureActionIDs, id: \.self) { actionID in
+                ToolbarItem(id: "logseq.capture.\(actionID)", placement: .bottomBar) {
+                    context.nodeView(of: actionID)
+                        .frame(width: 44, height: 44)
+                        .buttonStyle(.plain)
+                }
+                .lgPrefersVerticalAxis()
+            }
+        }
+        #endif
     }
 
     private var bottomChrome: AnyView {

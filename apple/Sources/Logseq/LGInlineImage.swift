@@ -3,7 +3,7 @@ import LogseqModel
 import SwiftUI
 
 #if os(iOS)
-enum LGGraphAssetLoader {
+@MainActor enum LGGraphAssetLoader {
     private struct Response: Decodable {
         let ok: Bool
         let result: Result?
@@ -15,11 +15,15 @@ enum LGGraphAssetLoader {
         }
     }
 
-    static func load(uuid: String, assetType: String) async throws -> URL {
+    static func load(uuid: String, assetType: String, feedbackTitle: String? = nil,
+                     callCore: (LogseqRPCRequest) async -> String = { await LogseqCore.callAsync($0) },
+                     downloadFile: (URLRequest) async throws -> (URL, URLResponse) = {
+                         try await URLSession.shared.download(for: $0)
+                     }) async throws -> URL {
         var metadata = ["uuid": uuid, "assetType": assetType]
         func call(_ action: String, _ fields: [String: String]) async throws -> Response.Result {
             let payload = String(decoding: try JSONEncoder().encode(fields), as: UTF8.self)
-            let encoded = await LogseqCore.callAsync(LogseqRPCRequest(method: "dispatch",
+            let encoded = await callCore(LogseqRPCRequest(method: "dispatch",
                 params: LogseqRPCParams(action: action, payload: payload)))
             let response = try JSONDecoder().decode(Response.self, from: Data(encoded.utf8))
             guard response.ok, let result = response.result else {
@@ -31,25 +35,34 @@ enum LGGraphAssetLoader {
         }
         let prepared = try await call("prepareAssetDownload", metadata)
         if let path = prepared.localPath { return URL(fileURLWithPath: path) }
-        guard let pending = prepared.request, let url = URL(string: pending.url) else {
-            throw URLError(.badURL)
+        if let feedbackTitle {
+            return try await LGFileDownloadFeedback.shared.download(title: feedbackTitle) {
+                try await download()
+            }
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = pending.method
-        request.setValue("Bearer " + pending.token, forHTTPHeaderField: "Authorization")
-        let (download, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
+        return try await download()
+
+        func download() async throws -> URL {
+            guard let pending = prepared.request, let url = URL(string: pending.url) else {
+                throw URLError(.badURL)
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = pending.method
+            request.setValue("Bearer " + pending.token, forHTTPHeaderField: "Authorization")
+            let (download, response) = try await downloadFile(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw URLError(.badServerResponse)
+            }
+            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.moveItem(at: download, to: temporary)
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try Task.checkCancellation()
+            metadata["graphId"] = prepared.graphId
+            metadata["path"] = temporary.path
+            let cached = try await call("cacheDownloadedAsset", metadata)
+            guard let path = cached.localPath else { throw URLError(.cannotCreateFile) }
+            return URL(fileURLWithPath: path)
         }
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.moveItem(at: download, to: temporary)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try Task.checkCancellation()
-        metadata["graphId"] = prepared.graphId
-        metadata["path"] = temporary.path
-        let cached = try await call("cacheDownloadedAsset", metadata)
-        guard let path = cached.localPath else { throw URLError(.cannotCreateFile) }
-        return URL(fileURLWithPath: path)
     }
 }
 

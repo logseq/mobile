@@ -9,6 +9,7 @@ import UIKit
 extension EnvironmentValues {
     @Entry var lgOpenPDF: ((String, String, URL) -> Void)?
     @Entry var lgOpenPDFAnnotation: ((String) -> Void)?
+    @Entry var lgPDFWorkspaceOpen = false
 }
 
 @MainActor
@@ -90,6 +91,7 @@ private struct LGPDFSplitContent: View {
                 .opacity(fullScreen ? 0 : 1)
                 .allowsHitTesting(!fullScreen)
                 .accessibilityHidden(fullScreen)
+                .environment(\.lgPDFWorkspaceOpen, open)
                 .environment(\.lgOpenPDF, { uuid, title, url in
                     send(["action": "open", "uuid": uuid, "title": title, "path": url.path])
                 })
@@ -272,6 +274,9 @@ final class LGPDFSelectionView: PDFView {
 final class LGPDFReaderController: UIViewController {
     let pdfView = LGPDFSelectionView()
     var send: ([String: Any]) -> Void = { _ in }
+    var loadAsset: (String, String) async throws -> URL = { uuid, title in
+        try await LGGraphAssetLoader.load(uuid: uuid, assetType: "pdf", feedbackTitle: title)
+    }
     private var payload: [String: Any] = [:]
     private var identity = ""
     private var highlights: [[String: Any]] = []
@@ -457,11 +462,13 @@ final class LGPDFReaderController: UIViewController {
             documentTask?.cancel()
             let uuid = payload["assetUuid"] as? String ?? ""
             let localPath = payload["path"] as? String ?? ""
+            let title = payload["title"] as? String ?? ""
+            let loadAsset = self.loadAsset
             documentTask = Task { [weak self] in
                 do {
                     let url: URL
                     if let local = LocalAssetPath.resolve(localPath, title: "Document.pdf", assetType: "pdf") { url = local }
-                    else { url = try await LGGraphAssetLoader.load(uuid: uuid, assetType: "pdf") }
+                    else { url = try await loadAsset(uuid, title) }
                     try Task.checkCancellation()
                     guard let self, identity == next else { return }
                     let document = PDFDocument(url: url)
@@ -473,7 +480,11 @@ final class LGPDFReaderController: UIViewController {
                     restorePageIfReady()
                     updateSelection()
                 } catch is CancellationError { return }
-                catch { self?.fileError = "Unable to open PDF: \(error.localizedDescription)"; self?.updateSelection() }
+                catch {
+                    guard !Task.isCancelled, let self, identity == next else { return }
+                    fileError = "Unable to open PDF: \(error.localizedDescription)"
+                    updateSelection()
+                }
             }
         } else { renderHighlights() }
         restorePageIfReady()

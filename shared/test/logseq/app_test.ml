@@ -5574,6 +5574,60 @@ let collapsed_capture_camera_opens_directly () =
       (App.model application).composer_expanded)
     [ios_backend; kotlin_backend]
 
+let ios_navigation_capture_controls_preserve_drafts_and_actions () =
+  let application = App.create (ios_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  send application (Model.ChangeComposerDraft "Unsent side capture");
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let navigation = extension_node application "native-navigation-stack" in
+  let controls () = List.hd (List.rev (children renderer navigation)) in
+  let retained = controls () in
+  check_eq ~msg:"the native host receives a stable final capture container"
+    (property_string renderer retained Lui_protocol.AccessibilityIdentifier)
+    "navigation.capture-controls";
+  let camera = descendant_with_identifier renderer retained "button.navigation.camera" in
+  let audio = descendant_with_identifier renderer retained "button.navigation.audio" in
+  let capture = descendant_with_identifier renderer retained "button.navigation.capture" in
+  let search = descendant_with_identifier renderer retained "button.navigation.search" in
+  check_eq ~msg:"side actions follow photo, recording, search, capture order"
+    (children renderer retained) [camera; audio; search; capture];
+  let before = App.model application in
+  dispatch application (Lui_protocol.Press camera);
+  flush application;
+  check_eq ~msg:"the navigation camera uses the existing direct attachment flow"
+    (App.model application).pending_effects
+    (before.pending_effects
+     @ [Model.PresentAttachmentEffect (before.next_effect_id, "camera")]);
+  check ~msg:"opening the camera leaves the text composer collapsed"
+    (not (App.model application).composer_expanded);
+  let before_audio = App.model application in
+  dispatch application (Lui_protocol.Press audio);
+  flush application;
+  check_eq ~msg:"recording uses the existing native recorder without expanding the composer"
+    (App.model application).pending_effects
+    (before_audio.pending_effects
+     @ [Model.PresentAttachmentEffect (before_audio.next_effect_id, "audio")]);
+  check ~msg:"recording leaves the capture draft collapsed and intact"
+    (not (App.model application).composer_expanded
+     && (App.model application).composer_draft = "Unsent side capture");
+  dispatch application (Lui_protocol.Press capture);
+  flush application;
+  check ~msg:"the navigation capture action opens and focuses the text composer"
+    ((App.model application).composer_expanded && (App.model application).composer_autofocus);
+  check_eq ~msg:"expansion retains the native capture container" (controls ()) retained;
+  check_eq ~msg:"switching from the side control preserves the unsent draft"
+    (App.model application).composer_draft "Unsent side capture";
+  send application Model.DismissComposer;
+  dispatch application (Lui_protocol.Press search);
+  flush application;
+  check ~msg:"the navigation search action opens the existing search presentation"
+    (App.model application).search_open;
+  check_eq ~msg:"search retains the same native capture controls" (controls ()) retained;
+  check_eq ~msg:"search preserves the unsent capture draft"
+    (App.model application).composer_draft "Unsent side capture"
+
 let composer_attachment_selection_is_owned_by_lg () =
   let opened =
     Model.update (Model.initial ()) Model.OpenAttachmentPicker
@@ -6747,7 +6801,7 @@ let native_navigation_retains_the_journal_and_every_node_route () =
     (Some (Lui_protocol.IntValue 2));
   let nav_children = children renderer navigation in
   check_eq ~msg:"native chrome slots remain separate from retained routes"
-    (List.length nav_children) 8;
+    (List.length nav_children) 9;
   check ~msg:"the navigation root retains the journal Outliner"
     (descendant_with_identifier renderer (List.nth nav_children 0)
        "outliner.block.journal"
@@ -7046,7 +7100,7 @@ let app_and_search_routes_are_retained_by_distinct_native_stacks () =
     (extension_property application search_navigation "depth")
     (Some (Lui_protocol.IntValue 1));
   check_eq ~msg:"the app stack retains chrome, its root, and app route"
-    (List.length app_children) 7;
+    (List.length app_children) 8;
   check_eq
     ~msg:"search retains its app surface, search root, editor chrome, page menu, and search route"
     (List.length search_children) 5;
@@ -10854,6 +10908,7 @@ let cases =
     case "search-lifecycle-keeps-query-owned-by-the-lg-model" search_lifecycle_keeps_query_owned_by_the_lg_model;
     case "bottom-chrome-presentation-is-mutually-exclusive" bottom_chrome_presentation_is_mutually_exclusive;
     case "composer-matches-the-main-branch-expand-draft-and-send-contract" composer_matches_the_main_branch_expand_draft_and_send_contract;
+    case "ios-navigation-capture-controls-preserve-drafts-and-actions" ios_navigation_capture_controls_preserve_drafts_and_actions;
     case "quick-capture-confirms-only-successful-local-saves" quick_capture_confirms_only_successful_local_saves;
     case "quick-capture-restarts-confirmation-for-each-save" quick_capture_restarts_confirmation_for_each_save;
     case "ios-capture-and-search-match-main-native-metrics" ios_capture_and_search_match_main_native_metrics;

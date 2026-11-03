@@ -288,6 +288,9 @@ public struct LGRendererRoot: View {
                 // Preserve the declared item order even when a menu opens upward.
                 .menuOrder(.fixed)
                 .modifier(LGImagePreviewModifier(store: renderer.imagePreviews))
+                #if os(iOS)
+                .modifier(LGFileDownloadFeedbackHost())
+                #endif
         } else {
             EmptyView()
         }

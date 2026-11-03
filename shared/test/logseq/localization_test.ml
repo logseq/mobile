@@ -128,7 +128,28 @@ let confirmation_cancel_actions_are_semantic_and_localized () =
        "button.sign-out.cancel", Model.RequestSignOut])
     ["en"; "zh-CN"; "ja"]) [ios_backend; kotlin_backend]
 
-let cases = [case "confirmation cancel actions are semantic and localized" confirmation_cancel_actions_are_semantic_and_localized;
+let capture_actions_are_localized_in_every_supported_language () =
+  List.iter (fun (choice : Model.settings_language_choice) ->
+    if choice.id <> "system" then begin
+      let app = App.create (ios_backend ()) in
+      start app;
+      send app (Model.SelectGraph "Work");
+      send app (Model.ApplySettingsSnapshot { (settings []) with Model.language = choice.id });
+      flush app;
+      let runtime = Lui_app.runtime app in
+      let navigation = extension_node app "native-navigation-stack" in
+      List.iter (fun (identifier, source) ->
+        let expected = Localization.translate ~language:choice.id ~system_language:"en" source in
+        if choice.id <> "en" then check ~msg:(choice.id ^ " must translate " ^ source) (expected <> source);
+        let button = descendant_with_identifier runtime navigation identifier in
+        check_eq ~msg:(choice.id ^ " action label: " ^ source)
+          (property_string runtime button Lui_protocol.AccessibilityLabel) expected)
+        ["button.navigation.camera", "Take photo"; "button.navigation.audio", "Audio recording";
+         "button.navigation.search", "Search"; "button.navigation.capture", "Capture"]
+    end) (Model.settings_language_choices ())
+
+let cases = [case "capture actions localize every supported language" capture_actions_are_localized_in_every_supported_language;
+  case "confirmation cancel actions are semantic and localized" confirmation_cancel_actions_are_semantic_and_localized;
   case "native search controls receive translated labels" native_search_controls_receive_translated_labels;
   case "localization" language_settings_translate_controls_without_translating_notes;
   case "tag and property editors use desktop translations" tag_and_property_editors_use_desktop_translations;

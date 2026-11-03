@@ -98,6 +98,10 @@ native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$oca
 printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
 
 swift_build_args=(
+  # The bundle assembler and runtime checks use the native SwiftPM layout.
+  # Xcode 27 defaults to swiftbuild, which writes products under .build/out.
+  --build-system native
+  --disable-sandbox
   --configuration "$configuration"
   --disable-keychain
   --package-path "$repo_root/apple"

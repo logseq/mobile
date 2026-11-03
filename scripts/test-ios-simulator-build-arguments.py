@@ -22,7 +22,8 @@ def main():
               "native_link_inputs": "runtime.o:crypto.o", "simulator_entitlements": "/tmp/entitlements.plist"}
     preamble = "set -euo pipefail\n" + "\n".join(name + "=" + shlex.quote(value) for name, value in values.items())
     preamble += "\nprune_stale_swift_resource_bundles() { :; }\n"
-    expected = ["build", "--configuration", "release", "--disable-keychain", "--package-path",
+    expected = ["build", "--build-system", "native", "--disable-sandbox",
+                "--configuration", "release", "--disable-keychain", "--package-path",
                 values["repo_root"] + "/apple", "--product", "LogseqShell", "--triple", values["triple"],
                 "--sdk", values["sdk_path"]]
     shells = list(dict.fromkeys(["/bin/bash", shutil.which("bash")]))

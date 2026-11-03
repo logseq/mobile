@@ -48,6 +48,9 @@ Open `apple/Project.xcworkspace` and run the `Logseq App` scheme in Xcode.
 The Apple backend comes from the `LUIAppleBackendStatic` product of the LUI
 Swift package, pinned by Git revision in `apple/Package.swift` and `apple/Package.resolved`.
 Use Swift 6.2 or later. Backend changes belong in the LUI repository.
+To test a local backend checkout, run
+`swift package --package-path apple edit lui --path ../lui` before building.
+Use `swift package --package-path apple unedit lui` to return to the pinned version.
 
 The first iOS build creates a deployment-targeted OCaml 5.5 toolchain under
 `_build/apple-toolchains`. Native dependencies and core objects are keyed by
@@ -131,6 +134,32 @@ Run the model suite without that bridge using `python3 scripts/test-swift-model-
 It builds `LogseqModelTests` and launches Swift Testing directly.
 Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
 after building the simulator core. This also invokes Swift Testing directly.
+For iPhone Duo, build with Xcode 27.1 or later. Custom navigation controls follow
+the system toolbar axis, including the vertical bar on the outer display.
+Collapsed photo, audio recording, search and capture actions move into that bar
+in that order, with matching SF Symbols; the expanded
+composer stays above the keyboard. Build
+with `LOGSEQ_IOS_ENABLE_TESTING=1 scripts/build-mobile-ios-simulator.sh`, then run
+`LOGSEQ_RUNTIME_CHECK_TIMEOUT=65 python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/duo-toolbar-layout.swift DuoToolbarLayoutCheck`.
+Select the device with `LOGSEQ_IOS_SIMULATOR=<UDID>` when multiple simulators are
+booted. Change poses in Device Hub during the 40-second check; it verifies visible,
+separate sync/calendar and capture targets and saves a screenshot for each stable layout.
+Set `SIMCTL_CHILD_LOGSEQ_DUO_REQUIRE_POSE_CHANGE=1` to require both toolbar axes,
+and `LOGSEQ_RUNTIME_CHECK_ARTIFACTS=/path/to/output` to retain the screenshots.
+Set `SIMCTL_CHILD_LOGSEQ_DUO_CHECK_INTERACTIONS=1` to also verify capture/search
+focus, keyboard avoidance and unsent draft retention on the vertical layout.
+Capture controls, the native recording sheet and file download notices share all 25 supported languages
+in `apple/Sources/Logseq/Resources/CaptureLocalizations.json`. After editing it,
+run `python3 scripts/generate-capture-localizations.py` to update the shared
+dictionary; `--check` verifies language coverage and generated output.
+Run `apple/Tests/UI/duo-search-dismiss-stability.swift` with the runtime runner to
+check journal position on every display frame while dismissing native search.
+`duo-appearance-responsiveness.swift` switches appearance, rotates the display and
+scrolls the journal, checking that input remains responsive and idle CPU settles.
+`pdf-download-feedback.swift` covers an uncached annotation PDF, progress through
+cache persistence, completion, target-page restoration, cache hits, errors and cancellation.
+`pdf-annotation-page-link.swift` also verifies that opening a PDF hides the sidebar
+button and closing it restores the button.
 Run `LOGSEQ_IOS_CONFIGURATION=release python3 scripts/test-ios-native-menus.py`
 after a Release simulator build to exercise native composer menus with Maestro.
 It checks every attachment presenter, recording import, repeated cancellation,

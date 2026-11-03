@@ -109,12 +109,15 @@ import SwiftUI
              "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
+        orientations = plistlib.loads((ROOT / "apple/.build/Logseq.app/Info.plist").read_bytes()).get(
+            "UISupportedInterfaceOrientations", ["UIInterfaceOrientationPortrait"])
         (app / "Info.plist").write_bytes(plistlib.dumps({
             **privacy,
             "CFBundleIdentifier": bundle, "CFBundleExecutable": "RuntimeCheck",
             "CFBundleName": "Runtime check", "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "MinimumOSVersion": "17.0",
             "UIDeviceFamily": [1, 2], "UILaunchScreen": {},
+            "UISupportedInterfaceOrientations": orientations,
         }))
         for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)

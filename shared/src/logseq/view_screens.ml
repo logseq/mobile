@@ -874,6 +874,36 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
               ~on_dismiss:(press send Model.DismissAssetPreview)
               []))
           context (Some node));
+     if Lui_ui.host context = SwiftUIHost then
+       ignore
+         ((column ~gap:0 ~width:44
+             ~accessibility_identifier:"navigation.capture-controls"
+             [
+               button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+                 ~style_class:"system-toolbar-icon"
+                 ~width:44 ~height:44 ~foreground:"foreground"
+                 ~label:(View_base.tr (Signal.sample model_source) "Take photo")
+                 ~accessibility_identifier:"button.navigation.camera"
+                 ~on_press:(press send (Model.ChooseAttachment "camera")) [];
+               button ~icon:(`app "toolbar-audio") ~variant:`ghost ~size:`icon
+                 ~style_class:"system-toolbar-icon"
+                 ~width:44 ~height:44 ~foreground:"foreground"
+                 ~label:(View_base.tr (Signal.sample model_source) "Audio recording")
+                 ~accessibility_identifier:"button.navigation.audio"
+                 ~on_press:(press send (Model.ChooseAttachment "audio")) [];
+               button ~icon:(`app "search") ~variant:`ghost ~size:`icon
+                 ~style_class:"system-toolbar-icon"
+                 ~width:44 ~height:44 ~foreground:"foreground"
+                 ~label:(View_base.tr (Signal.sample model_source) "Search")
+                 ~accessibility_identifier:"button.navigation.search"
+                 ~on_press:(press send Model.OpenSearch) [];
+               button ~icon:(`app "composer-add") ~variant:`ghost ~size:`icon
+                 ~style_class:"system-toolbar-icon"
+                 ~width:44 ~height:44 ~foreground:"foreground"
+                 ~label:(View_base.tr (Signal.sample model_source) "Capture")
+                 ~accessibility_identifier:"button.navigation.capture"
+                 ~on_press:(press send Model.ExpandComposer) [];
+             ]) context (Some node));
      node)
 
 let authentication_content (context : Lui_ui.ui_context) model_source
