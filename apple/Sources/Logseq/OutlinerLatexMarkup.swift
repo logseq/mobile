@@ -19,7 +19,7 @@ enum LatexMarkupDocument {
     }
 
     static func markup(_ nodes: [LogseqMarkupNode]) -> String {
-        nodes.map { node in
+        nodes.map { node -> String in
             let content = markup(node.children)
             switch node.type {
             case .math:
@@ -41,9 +41,11 @@ enum LatexMarkupDocument {
                 return "<\(tag)>\(content)</\(tag)>"
             case .quote: return "<blockquote>" + content + "</blockquote>"
             case .table:
-                return "<table>" + node.tableRows.map { row in
-                    "<tr>" + row.map { "<td>" + markup($0) + "</td>" }.joined() + "</tr>"
-                }.joined() + "</table>"
+                let rows = node.tableRows.map { row -> String in
+                    let cells = row.map { cell -> String in "<td>\(markup(cell))</td>" }
+                    return "<tr>\(cells.joined())</tr>"
+                }
+                return "<table>\(rows.joined())</table>"
             case .nodeReference, .tagReference:
                 let title = node.title ?? ""
                 let label = node.type == .tagReference ? "#" + title : "[[" + title + "]]"
