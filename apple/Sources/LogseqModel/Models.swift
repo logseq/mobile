@@ -18,6 +18,7 @@ public enum LogseqMarkupNodeType: String, Codable, Hashable, Sendable {
     case code
     case codeBlock
     case quote
+    case table
     case math
     case video
     case iframe
@@ -42,6 +43,12 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
     public let uuid: String?
     public let title: String?
     public let children: [LogseqMarkupNode]
+    public let header: [[LogseqMarkupNode]]?
+    public let rows: [[[LogseqMarkupNode]]]
+
+    public var tableRows: [[[LogseqMarkupNode]]] {
+        (header.map { [$0] } ?? []) + rows
+    }
 
     public init(
         type: LogseqMarkupNodeType,
@@ -54,7 +61,9 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         seconds: Int? = nil,
         uuid: String? = nil,
         title: String? = nil,
-        children: [LogseqMarkupNode] = []
+        children: [LogseqMarkupNode] = [],
+        header: [[LogseqMarkupNode]]? = nil,
+        rows: [[[LogseqMarkupNode]]] = []
     ) {
         self.type = type
         self.text = text
@@ -67,10 +76,12 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         self.uuid = uuid
         self.title = title
         self.children = children
+        self.header = header
+        self.rows = rows
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, text, style, url, uuid, title, children, embedURL, mediaHeaders, positionParameter, seconds
+        case type, text, style, url, uuid, title, children, embedURL, mediaHeaders, positionParameter, seconds, header, rows
     }
 
     public init(from decoder: Decoder) throws {
@@ -86,6 +97,8 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         uuid = try values.decodeIfPresent(String.self, forKey: .uuid)
         title = try values.decodeIfPresent(String.self, forKey: .title)
         children = try values.decodeIfPresent([LogseqMarkupNode].self, forKey: .children) ?? []
+        header = try values.decodeIfPresent([[LogseqMarkupNode]].self, forKey: .header)
+        rows = try values.decodeIfPresent([[[LogseqMarkupNode]]].self, forKey: .rows) ?? []
     }
 }
 

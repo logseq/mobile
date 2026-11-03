@@ -7,6 +7,7 @@ type markup_node =
   | Markup_code of string
   | Markup_code_block of string option * string
   | Markup_quote of markup_node list
+  | Markup_table of markup_node list list option * markup_node list list list
   | Markup_math of string * bool
   | Markup_video of string
   | Markup_iframe of string
@@ -35,6 +36,11 @@ let rec debug_string node =
     ^ Printf.sprintf "%S" code ^ ")"
   | Markup_quote children ->
     "Quote([" ^ String.concat ";" (List.map debug_string children) ^ "])"
+  | Markup_table (header, rows) ->
+    let row cells = "[" ^ String.concat ";" (List.map (fun nodes ->
+      "[" ^ String.concat ";" (List.map debug_string nodes) ^ "]") cells) ^ "]" in
+    "Table(" ^ (match header with None -> "None" | Some cells -> row cells)
+    ^ ",[" ^ String.concat ";" (List.map row rows) ^ "])"
   | Markup_math (expression, display) ->
     "Math(" ^ string_of_bool display ^ "," ^ Printf.sprintf "%S" expression ^ ")"
   | Markup_video url -> "Video(" ^ Printf.sprintf "%S" url ^ ")"
@@ -74,6 +80,12 @@ let rec node_to_yojson node =
         ("type", `String "quote");
         ("children", `List (List.map node_to_yojson children));
       ]
+    | Markup_table (header, rows) ->
+      let row cells = `List (List.map (fun nodes ->
+        `List (List.map node_to_yojson nodes)) cells) in
+      [ "type", `String "table";
+        "header", (match header with None -> `Null | Some cells -> row cells);
+        "rows", `List (List.map row rows) ]
     | Markup_math (expression, display) ->
       [
         ("type", `String "math");
@@ -309,7 +321,9 @@ and convert_nodes source references tags nodes =
   collect [] nodes
 
 and convert_node source references tags node position =
-  let raw = [ Markup_text (source_slice source position) ] in
+  let raw = [ Markup_text (match position with
+    | None -> Inline.ascii node
+    | Some _ -> source_slice source position) ] in
   match node with
   | Inline.Plain value -> [ Markup_text value ]
   | Inline.Spaces value -> [ Markup_text value ]
@@ -398,6 +412,33 @@ let parse_inline references tags source =
   | Ok nodes -> convert_nodes source references tags nodes
   | Error _ -> [ Markup_text source ]
 
+let parse_tables references tags source =
+  let rec has_table_row index line_start =
+    if index = String.length source then false
+    else match source.[index] with
+      | '|' when line_start -> true
+      | ' ' | '\t' | '\026' | '\012' when line_start -> has_table_row (index + 1) true
+      | '\n' | '\r' -> has_table_row (index + 1) true
+      | _ -> has_table_row (index + 1) false in
+  if not (has_table_row 0 true) then parse_inline references tags source
+  else
+    let tables = Mldoc.Parser.parse config source |> List.filter_map (function
+      | Mldoc.Type.Table table, position -> Some (table, position)
+      | _ -> None) in
+    let inline start finish =
+      parse_inline references tags (String.sub source start (finish - start)) in
+    let rec collect offset reversed = function
+      | [] -> List.rev_append reversed (inline offset (String.length source))
+      | ((table : Mldoc.Type.table), (position : Mldoc.Pos.pos_meta)) :: rest ->
+        let cell nodes = convert_nodes source references tags
+          (List.map (fun node -> node, None) nodes) in
+        let row cells = List.map cell cells in
+        let header = Option.map row table.header in
+        let rows = List.concat_map (List.map row) table.groups in
+        let reversed = List.rev_append (inline offset position.start_pos) reversed in
+        collect position.end_pos (Markup_table (header, rows) :: reversed) rest in
+    collect 0 [] tables
+
 let parse references tags source =
   if source = "" then []
   else
@@ -412,7 +453,7 @@ let parse references tags source =
           Markup_quote
             (parse_inline references tags (S.trim (String.sub source 1 (String.length source - 1))));
         ]
-      else parse_inline references tags source
+      else parse_tables references tags source
 
 let plain_text nodes =
   let result = Buffer.create 64 in
@@ -422,6 +463,14 @@ let plain_text nodes =
     | Markup_node_ref (_, label) -> Buffer.add_string result label
     | Markup_tag_ref (_, label) -> Buffer.add_char result '#'; Buffer.add_string result label
     | Markup_emphasis (_, nodes) | Markup_quote nodes | Markup_link (_, nodes) -> List.iter append nodes
+    | Markup_table (header, rows) ->
+      let row cells =
+        List.iteri (fun index nodes ->
+          if index > 0 then Buffer.add_char result '\t';
+          List.iter append nodes) cells;
+        Buffer.add_char result '\n' in
+      Option.iter row header;
+      List.iter row rows
     | Markup_image (_, label) -> Buffer.add_string result label
     | Markup_video _ | Markup_iframe _ | Markup_html _ | Markup_youtube_timestamp _ -> ()
   in

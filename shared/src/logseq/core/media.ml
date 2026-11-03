@@ -103,10 +103,13 @@ let resolve_markup ?preceding input =
             | _ -> fields in
           fields, current
         else fields, current in
-      let fields, current = match member fields "children" with
-        | `List children -> let children, current = nodes current children in put "children" (`List children) fields, current
-        | _ -> fields, current in
+      let containers = if kind = `String "table" then ["header"; "rows"] else ["children"] in
+      let fields, current = List.fold_left (fun (fields, current) key ->
+        match member fields key with
+        | `List children -> let children, current = nodes current children in put key (`List children) fields, current
+        | _ -> fields, current) (fields, current) containers in
       `Assoc fields, current
+    | `List values -> let values, current = nodes current values in `List values, current
     | value -> value, current in
   match input with `List values -> let values, current = nodes preceding values in `List values, current
     | _ -> input, preceding
@@ -116,8 +119,8 @@ let first_timestamp_target input =
     | [] -> None
     | `Assoc fields :: rest ->
       if member fields "type" = `String "youtubeTimestamp" then Some (string (member fields "url"))
-      else (match member fields "children" with
-        | `List children -> (match first children with Some _ as value -> value | None -> first rest)
-        | _ -> first rest)
+      else (match first [member fields "children"; member fields "header"; member fields "rows"] with
+        | Some _ as value -> value | None -> first rest)
+    | `List values :: rest -> (match first values with Some _ as value -> value | None -> first rest)
     | _ :: rest -> first rest in
   match input with `List values -> Option.join (first values) | _ -> None

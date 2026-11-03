@@ -12,13 +12,18 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -328,7 +333,7 @@ private fun decodeMarkup(encoded: String): List<JSONObject> {
 
 private fun isRichNode(node: JSONObject): Boolean =
     !(node.optString("type") == "math" && node.optString("style") == "inline") && node.optString("type") in setOf(
-    "quote", "math", "codeBlock", "video", "iframe", "html", "image", "youtubeTimestamp", "cloze",
+    "quote", "table", "math", "codeBlock", "video", "iframe", "html", "image", "youtubeTimestamp", "cloze",
 )
 
 private fun markupChunks(nodes: List<JSONObject>): List<List<JSONObject>> {
@@ -529,6 +534,7 @@ private fun MarkupRichNode(
     youtubeStarts: MutableMap<String, Int>,
 ) {
     when (node.optString("type")) {
+        "table" -> MarkupTable(node, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
         "quote" -> {
             val annotated = remember(node, completedDecoration) {
                 buildAnnotatedString { appendChildren(node, completedDecoration) }
@@ -587,6 +593,45 @@ private fun MarkupRichNode(
         }
         "cloze" -> AndroidCloze(node.optString("text"))
         else -> Text(node.optString("text"), style = outlinerBodyStyle)
+    }
+}
+
+@Composable
+private fun MarkupTable(
+    node: JSONObject,
+    completedDecoration: TextDecoration?,
+    onOpenNode: (String) -> Unit,
+    onTapFallback: () -> Unit,
+    youtubeStarts: MutableMap<String, Int>,
+) {
+    val header = node.optJSONArray("header")
+    val rows = buildList {
+        if (header != null) add(header)
+        val body = node.optJSONArray("rows")
+        if (body != null) for (index in 0 until body.length()) {
+            body.optJSONArray(index)?.let { add(it) }
+        }
+    }
+    val columns = rows.maxOfOrNull { it.length() } ?: 0
+    Column(Modifier.horizontalScroll(rememberScrollState()).testTag("block.rich.table")) {
+        for ((rowIndex, row) in rows.withIndex()) {
+            Row(Modifier.height(IntrinsicSize.Min)) {
+                for (column in 0 until columns) {
+                    Box(Modifier.width(220.dp).fillMaxHeight()
+                        .background(if (header != null && rowIndex == 0)
+                            MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                        .padding(10.dp)) {
+                        ProjectedMarkup(
+                            youtubeStarts = youtubeStarts,
+                            encoded = row.optJSONArray(column)?.toString() ?: "[]",
+                            fallback = "", completedDecoration = completedDecoration,
+                            onOpenNode = onOpenNode, onTapFallback = onTapFallback,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
