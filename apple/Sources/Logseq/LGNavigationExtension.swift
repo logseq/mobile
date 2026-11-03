@@ -788,6 +788,24 @@ private struct LGNavigationContent: View {
                 }
             }
             #if os(iOS)
+            // One retained rail avoids reparenting the same action views between
+            // outgoing and incoming native toolbars during page transitions.
+            .overlay(alignment: .bottomTrailing) {
+                if usesSideCaptureActions && !searchVisible {
+                    VStack(spacing: 14) {
+                        ForEach(captureActionIDs, id: \.self) { actionID in
+                            context.nodeView(of: actionID)
+                                .frame(width: 44, height: 44)
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 6)
+                    .modifier(LGLiquidGlassSurface(shape: .capsule))
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
+                }
+            }
             // Docked keyboards already resize the native navigation container.
             // Only floating keyboards bypass avoidance to keep the toolbar fixed.
             .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer && dockedKeyboardInset == 0 ? .bottom : [])
@@ -1035,18 +1053,6 @@ private struct LGNavigationContent: View {
             }
             .lgPrefersVerticalAxis()
         }
-        #if os(iOS)
-        if usesSideCaptureActions && !searchVisible {
-            ForEach(captureActionIDs, id: \.self) { actionID in
-                ToolbarItem(id: "logseq.capture.\(actionID)", placement: .bottomBar) {
-                    context.nodeView(of: actionID)
-                        .frame(width: 44, height: 44)
-                        .buttonStyle(.plain)
-                }
-                .lgPrefersVerticalAxis()
-            }
-        }
-        #endif
     }
 
     private var bottomChrome: AnyView {

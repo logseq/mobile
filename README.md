@@ -136,8 +136,9 @@ Run the native UI suite in a simulator app host with `python3 scripts/test-swift
 after building the simulator core. This also invokes Swift Testing directly.
 For iPhone Duo, build with Xcode 27.1 or later. Custom navigation controls follow
 the system toolbar axis, including the vertical bar on the outer display.
-Collapsed photo, audio recording, search and capture actions move into that bar
-in that order, with matching SF Symbols; the expanded
+Collapsed photo, audio recording, search and capture actions stay in a shared
+trailing rail in that order, with matching SF Symbols. The rail stays outside
+page transitions so navigation cannot relocate its buttons; the expanded
 composer stays above the keyboard. Build
 with `LOGSEQ_IOS_ENABLE_TESTING=1 scripts/build-mobile-ios-simulator.sh`, then run
 `LOGSEQ_RUNTIME_CHECK_TIMEOUT=65 python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/duo-toolbar-layout.swift DuoToolbarLayoutCheck`.
@@ -154,6 +155,8 @@ run `python3 scripts/generate-capture-localizations.py` to update the shared
 dictionary; `--check` verifies language coverage and generated output.
 Run `apple/Tests/UI/duo-search-dismiss-stability.swift` with the runtime runner to
 check journal position on every display frame while dismissing native search.
+`duo-page-navigation-chrome.swift` checks the native glass rail bounds during
+repeated nested page pushes and native back transitions.
 `duo-appearance-responsiveness.swift` switches appearance, rotates the display and
 scrolls the journal, checking that input remains responsive and idle CPU settles.
 `pdf-download-feedback.swift` covers an uncached annotation PDF, progress through
