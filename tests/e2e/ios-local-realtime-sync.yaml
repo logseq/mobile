@@ -19,7 +19,12 @@ appId: com.logseq.logseq
       - tapOn:
           id: "field.auth.password"
       - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: "button.auth.submit"
+            enabled: true
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: "button.auth.submit"
       - extendedWaitUntil:
