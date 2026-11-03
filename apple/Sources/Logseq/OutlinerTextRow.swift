@@ -91,6 +91,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let failure = UILabel()
     private var tags: [UIButton] = []
     private var row: OutlinerRowPayload?
+    private var layoutWidth: CGFloat?
     private var semanticColors: [String: Color] = [:]
     private var emit: ((String, String?, [String: LUIExtensionValue]) -> Void)?
     private var onOpenLink: ((URL) -> Void)?
@@ -312,10 +313,19 @@ struct OutlinerTextRow: UIViewRepresentable {
             || (!disclosure.isHidden && disclosure.frame.contains(point))
     }
     override func sizeThatFits(_ size: CGSize) -> CGSize { CGSize(width: size.width, height: layout(width: size.width, apply: false)) }
+    override var intrinsicContentSize: CGSize {
+        // Payload updates invalidate this height even when SwiftUI retains the row.
+        guard bounds.width > 0 else { return super.intrinsicContentSize }
+        return CGSize(width: UIView.noIntrinsicMetric, height: layout(width: bounds.width, apply: false))
+    }
     override func layoutSubviews() {
         super.layoutSubviews()
         guides.frame = bounds
         _ = layout(width: bounds.width, apply: true)
+        if layoutWidth != bounds.width {
+            layoutWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
     }
     @objc private func tapTitle(_ gesture: UITapGestureRecognizer) {
         activateTitle(at: gesture.location(in: title))

@@ -10,6 +10,32 @@ struct LGImportedAsset: Sendable {
     let path: String
 }
 
+struct LGStagedAssetPayload: Encodable {
+    let uuid: String
+    let title: String
+    let now: Int64
+    let assetType: String
+    let assetSize: Int
+    let assetChecksum: String
+    let localPath: String
+    let targetBlockId: String?
+    let transcript: String?
+    let transcriptUUID: String?
+
+    init(_ asset: LGImportedAsset, targetBlockID: String? = nil, transcript: String? = nil) {
+        uuid = UUID().uuidString.lowercased()
+        title = asset.title
+        now = Int64(Date().timeIntervalSince1970 * 1_000)
+        assetType = asset.assetType
+        assetSize = asset.size
+        assetChecksum = asset.checksum
+        localPath = LocalAssetPath.storedPath(asset.path)
+        targetBlockId = targetBlockID
+        self.transcript = transcript
+        transcriptUUID = transcript == nil ? nil : UUID().uuidString.lowercased()
+    }
+}
+
 enum LGAssetImporter {
     nonisolated static func persist(_ sourceURL: URL) async throws -> LGImportedAsset {
         try await Task.detached(priority: .utility) {

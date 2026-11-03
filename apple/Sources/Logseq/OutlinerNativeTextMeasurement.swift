@@ -4,7 +4,7 @@ import UIKit
 // SwiftUI Text excludes the final line's font leading. UITextView's fitting
 // height includes it, so measure the same glyph bounds as the display text.
 enum OutlinerNativeTextMeasurement {
-    static func configureTextContainer(_ textView: UITextView) {
+    @MainActor static func configureTextContainer(_ textView: UITextView) {
         textView.isScrollEnabled = false
         textView.textContainer.lineFragmentPadding = 0
     }
@@ -25,6 +25,8 @@ enum OutlinerNativeTextMeasurement {
 }
 
 class OutlinerLayoutTextView: UITextView {
+    private var layoutWidth: CGFloat?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         // UIKit resets the container height when its bounds change. The visible
@@ -33,6 +35,10 @@ class OutlinerLayoutTextView: UITextView {
         if textContainer.size.height != .greatestFiniteMagnitude {
             textContainer.heightTracksTextView = false
             textContainer.size.height = .greatestFiniteMagnitude
+        }
+        if layoutWidth != bounds.width {
+            layoutWidth = bounds.width
+            invalidateIntrinsicContentSize()
         }
     }
 }

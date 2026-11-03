@@ -1989,7 +1989,54 @@ let rec dispatch session action payload =
      | Error message -> Rpc.failure "invalid_effect" message)
   | "outlinerEvent" ->
     (match payload with
-     | Some payload -> dispatch_outliner_event session payload
+     | Some payload ->
+       let fields = try match Json.from_string payload with `Assoc fields -> fields | _ -> [] with _ -> [] in
+       if List.assoc_opt "type" fields <> Some (`String "pasteContent") || not (List.mem_assoc "assets" fields)
+       then dispatch_outliner_event session payload
+       else
+         let ( let* ) = Result.bind in
+         let prepared =
+           let* uuid = Rpc.required_string fields "uuid" in
+           let* title = Rpc.required_string fields "beforeTitle" in
+           let* caret = Rpc.event_int fields "selectionStart" in
+           let* () = match List.assoc_opt "targetBlockId" fields with
+             | None -> Ok ()
+             | Some (`String target) when target = uuid -> Ok ()
+             | _ -> Error "The image paste belongs to a previous editor" in
+           let* () = match s.outliner_state.editing with
+             | Some editing when editing.uuid = uuid -> Ok ()
+             | _ -> Error "The image paste target is no longer being edited" in
+           let* assets = match List.assoc_opt "assets" fields with
+             | Some (`List (_ :: _ as assets)) -> Ok assets
+             | _ -> Error "Image paste requires at least one image" in
+           let* assets = List.fold_left (fun result asset ->
+             let* prepared = result in
+             match asset with
+             | `Assoc fields ->
+               (match Rpc.asset_metadata fields with
+                | Error (_, message) -> Error message
+                | Ok _ -> Ok (`Assoc (("targetBlockId", `String uuid) :: List.remove_assoc "targetBlockId" fields) :: prepared))
+             | _ -> Error "Invalid pasted image metadata") (Ok []) assets in
+           Ok (title, caret, List.rev assets) in
+         (match prepared with
+          | Error message -> Rpc.failure "invalid_image_paste" message
+          | Ok (title, caret, assets) ->
+            let event fields = dispatch_outliner_event session (Json.to_string (`Assoc fields)) in
+            let succeeded response = try Json.Util.member "ok" (Json.from_string response) = `Bool true with _ -> false in
+            let changed = event ["type", `String "textChanged"; "title", `String title; "caretUTF16Offset", `Int caret] in
+            if not (succeeded changed) then changed else
+            let saved = event ["type", `String "saveEditing"] in
+            if not (succeeded saved) then saved else
+            let imported = List.fold_left (fun response asset ->
+              if succeeded response then dispatch session "addAsset" (Some (Json.to_string asset)) else response) saved assets in
+            if not (succeeded imported) then imported else (
+              (* The saved empty target is now an image. Dismiss its editor
+                 after import succeeds without committing an empty asset title. *)
+              if String_kit.is_blank title then (
+                let current = state session in
+                session.state := {current with outliner_state =
+                  {current.outliner_state with editing = None; autocomplete = None}});
+              snapshot_visible session))
      | None ->
        Rpc.failure "invalid_params"
          "outlinerEvent requires a JSON payload")

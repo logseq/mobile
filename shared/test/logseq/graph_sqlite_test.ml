@@ -119,10 +119,13 @@ let app_table_copy_retains_pending_metadata () =
       Sql.prepare_staging destination;
       Sql.store_pending source "first" 7 "queued" "intent";
       Sql.store_pending source "second" 8 "queued" "intent two";
+      Sql.store_local_properties source ["view", "logseq.property.table/sorting", "[]"];
       execute source
         "INSERT INTO logseq_pending_op_dependencies VALUES ('second', \
          'first'); INSERT INTO logseq_sync_state VALUES ('cursor', '8')";
       Sql.copy_app_tables source destination;
+      check_eq ~msg:"Replacing a server snapshot preserves device-local view settings"
+        (Sql.local_properties source) (Sql.local_properties destination);
       check_eq (Sql.list_pending source) (Sql.list_pending destination);
       check_eq [ "first" ]
         (query_text destination

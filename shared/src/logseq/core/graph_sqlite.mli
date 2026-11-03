@@ -21,7 +21,9 @@ val record_sync_failure : string -> string -> string option -> unit
 val sync_failures : string -> (string * string) list
 val remove_pending : string -> string -> unit
 val store_pending_tx : string -> string -> string -> string -> unit
-val store_resolved_pending : string -> string -> int -> string -> string -> string -> string -> unit
+val store_local_properties : string -> (string * string * string) list -> unit
+val local_properties : string -> (string * string * string) list
+val store_resolved_pending : ?local_properties:(string * string * string) list -> string -> string -> int -> string -> string -> string -> string -> unit
 val pending_tx : string -> string -> (string * string) option
 
 val with_app_db : string -> (Sqlite3.db -> 'a) -> 'a

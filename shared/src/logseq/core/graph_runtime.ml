@@ -243,6 +243,29 @@ let rebase_operation runtime server_t projected operation =
                         ^ " error=" ^ Printexc.to_string error);
        Ops.Queued)
 
+let local_property_changes intent =
+  (* RTC intentionally omits device preferences, including table sorting.
+     Keep them by UUID so acknowledgements and replacement snapshots cannot
+     discard them with the pending transaction overlay. *)
+  let rec collect acc = function
+    | Ops.Set_properties properties ->
+      List.fold_left (fun acc (change : Ops.property_change) ->
+        if List.mem change.attr Dev_sync.Sync_const.ignore_attrs_when_syncing then
+          (properties.uuid, change.attr, Yojson.Basic.to_string
+            (Option.fold ~none:`Null ~some:Ops.semantic_value_json change.value)) :: acc
+        else acc) acc properties.changes
+    | Ops.Atomic intents -> List.fold_left collect acc intents
+    | _ -> acc in
+  List.rev (collect [] intent)
+
+let apply_local_properties runtime database =
+  let operations = Graph_sqlite.local_properties runtime.path |> List.filter_map (fun (uuid, attr, encoded) ->
+    if Ds.entid database "block/uuid" (Ds.Uuid uuid) = None then None else
+    let value = match Yojson.Basic.from_string encoded with
+      | `Null -> None | value -> Some (Ops.semantic_value_of_json value) in
+    Some (Projection.property_tx uuid attr value)) in
+  if operations = [] then database else Ds.db_with operations database
+
 let rebase runtime server_t operation_ids changed_uuids =
   let started = Unix.gettimeofday () in
   let before = db runtime in
@@ -270,6 +293,7 @@ let rebase runtime server_t operation_ids changed_uuids =
         , rebase_operation runtime server_t projected operation ))
       operations
   in
+  projected := apply_local_properties runtime !projected;
   (* Publish the projection already built during reconciliation, without
      replaying it. *)
   runtime.state :=
@@ -584,16 +608,19 @@ let stage runtime (operation : Ops.pending_operation) =
       let* normalized = Ops.normalize_operation before operation in
       let* operations = Projection.compile before normalized.intent in
       let projected, tx, reversed = Journal_sync.capture ?creator:(runtime.current_creator ()) before operations in
-      Graph_sqlite.store_resolved_pending runtime.path normalized.operation_id normalized.base_t
-        (Ops.state_string normalized.state)
-        (Yojson.Basic.to_string (Ops.intent_json normalized.intent)) tx reversed;
+      let local_properties = local_property_changes normalized.intent in
+      let local_only = local_properties <> [] && tx = "[]" in
+      if local_only then Graph_sqlite.store_local_properties runtime.path local_properties
+      else Graph_sqlite.store_resolved_pending ~local_properties runtime.path normalized.operation_id normalized.base_t
+          (Ops.state_string normalized.state)
+          (Yojson.Basic.to_string (Ops.intent_json normalized.intent)) tx reversed;
       (match previous with
        | Some _ -> rebase runtime s.server_t [] []
        | None ->
          runtime.state :=
            { !(runtime.state) with snapshot =
                { s.snapshot with Projection.db = projected;
-                 statuses = s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
+                 statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
       refresh_search_affected runtime before normalized.intent operations;
       (match previous with None -> refresh_split_page_cache runtime before normalized.intent | Some _ -> ());
       Ok ()

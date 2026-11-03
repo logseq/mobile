@@ -541,6 +541,63 @@ let native_view_settings_and_local_errors () =
       check (find ("outliner.block." ^ alpha) <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let native_sort_settings_survive_save_and_refresh () =
+  List.iter (fun backend -> with_runtime (fun session graph conn ->
+    Q.with_ui backend (Session.snapshot_visible session) (fun app ->
+      let find id = find_visible session app id in
+      let click id = let node = find id in check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      click ("view.tab." ^ table_view);
+      click ("view.sort." ^ table_view);
+      click ("view.sort.add." ^ table_view);
+      click ("view.settings.save." ^ table_view);
+      let pending = List.find (function Model.ResultViewEffect _ -> true | _ -> false) (App.model app).pending_effects in
+      let id = Model.effect_id pending in
+      let payload = match pending with Model.ResultViewEffect (_, _, payload) -> payload | _ -> assert false in
+      let submitted = Json.from_string payload in
+      check_eq ~msg:"Done submits both existing and added sorts"
+        (List.length (items "sorting" (member "config" submitted))) 2;
+      App_test.send app (Model.DequeueEffect id);
+      let response = Rpc_test.dispatch_json session "resultView" payload in
+      check_eq ~msg:"Sort settings save successfully" (member "ok" response) (`Bool true);
+      let apply response = match Response_snapshot.decode_response response with
+        | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app
+        | Error message -> fail message in
+      apply (Json.to_string response);
+      App_test.send app (Model.ResolveEffect (id, true, "")); App_test.flush app;
+      apply (Session.snapshot_visible session);
+      check_eq ~msg:"The saved sorts survive the next core refresh"
+        (List.length (items "sorting" (find_view table_view (read session)))) 2;
+      click ("view.sort." ^ table_view);
+      click ("view.settings.save." ^ table_view);
+      let resubmitted = List.find_map (function Model.ResultViewEffect (_, _, payload) -> Some (Json.from_string payload) | _ -> None)
+          (App.model app).pending_effects |> Option.get in
+      check_eq ~msg:"Reopening sort settings retains both sorts"
+        (List.length (items "sorting" (member "config" resubmitted))) 2;
+      check_eq ~msg:"A device-local sort must not enqueue an empty server transaction"
+        (Graph_runtime.pending_operations graph) [];
+      let mixed = action session (base_action "save" table_view @ ["config", `Assoc [
+        "name", `String "Sorted results"; "sorting", member "sorting" (member "config" submitted)]]) in
+      check_eq ~msg:"Local sorting can be saved with synchronized view settings" (member "ok" mixed) (`Bool true);
+      List.iter (fun operation ->
+        let before = (Graph_runtime.state graph).server_t in
+        let _, tx = match Graph_runtime.prepare_sync graph operation with Ok value -> value | Error message -> fail message in
+        let journal = match Journal_sync.decode (Json.to_string (`Assoc ["type", `String "tx/batch/ok";
+          "t-before", `Int before; "t", `Int (before + 1); "txs", `List [`Assoc ["t", `Int (before + 1);
+            "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
+          | Ok value -> value | Error message -> fail message in
+        let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+          | Ok value -> value | Error message -> fail message in
+        Graph_runtime.rebase graph journal.t ids changed) (Graph_runtime.pending_operations graph);
+      check_eq ~msg:"Sorts remain after the server acknowledges the transaction"
+        (List.length (items "sorting" (find_view table_view (read session)))) 2;
+      let restored = Graph_runtime.create graph.path (Graph_runtime.state graph).server_t conn
+          {Graph_runtime.default_options with auto_create_today = false} in
+      let restarted, _ = make_session (Graph_runtime.db restored) in
+      check_eq ~msg:"Local sorting survives restart after acknowledgement"
+        (List.length (items "sorting" (find_view table_view (read restarted)))) 2)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let native_cells_refresh_and_object_collections_mount () =
   List.iter (fun backend ->
     with_runtime (fun session _ _ ->
@@ -1514,6 +1571,7 @@ let cases = [
   case "table edits assign owner values with validation and conflict checks" editable_cells_use_owner_values_and_conflicts;
   case "both native hosts expose tabs search table editing and gallery" native_view_tabs_search_table_and_gallery;
   case "native settings expose filters sorting and local action errors" native_view_settings_and_local_errors;
+  case "native sorting survives Done and subsequent core refreshes" native_sort_settings_survive_save_and_refresh;
   case "native cells refresh and tag property collections mount views" native_cells_refresh_and_object_collections_mount;
   case "tuple tables and query evaluation failures render on both hosts" tuple_table_and_query_errors;
   case "typed edits survive restart and clear after real sync acknowledgements" typed_edits_restart_and_sync_acknowledgements;
