@@ -413,7 +413,14 @@ let parse_inline references tags source =
   | Error _ -> [ Markup_text source ]
 
 let parse_tables references tags source =
-  if not (String.contains source '|') then parse_inline references tags source
+  let rec has_table_row index line_start =
+    if index = String.length source then false
+    else match source.[index] with
+      | '|' when line_start -> true
+      | ' ' | '\t' | '\026' | '\012' when line_start -> has_table_row (index + 1) true
+      | '\n' | '\r' -> has_table_row (index + 1) true
+      | _ -> has_table_row (index + 1) false in
+  if not (has_table_row 0 true) then parse_inline references tags source
   else
     let tables = Mldoc.Parser.parse config source |> List.filter_map (function
       | Mldoc.Type.Table table, position -> Some (table, position)
