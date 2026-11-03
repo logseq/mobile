@@ -1,4 +1,4 @@
-(** Markdown inline markup parsing to a compact node model. *)
+(** Markdown markup parsing to a compact node model. *)
 
 type markup_node =
   | Markup_text of string
@@ -6,6 +6,7 @@ type markup_node =
   | Markup_code of string
   | Markup_code_block of string option * string
   | Markup_quote of markup_node list
+  | Markup_table of markup_node list list option * markup_node list list list
   | Markup_math of string * bool
   | Markup_video of string
   | Markup_iframe of string

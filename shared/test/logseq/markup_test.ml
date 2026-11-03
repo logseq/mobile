@@ -194,6 +194,25 @@ let mixed_embeds_retain_surrounding_text () =
        "[{\"type\":\"text\",\"text\":\"Before \"},{\"type\":\"video\",\"url\":\"https://cdn.example.com/demo.mp4\"},{\"type\":\"text\",\"text\":\" after\"}]")
     (markup_json "Before {{video https://cdn.example.com/demo.mp4}} after")
 
+let tables_preserve_cells_and_surrounding_content () =
+  let references = [summary "target" "Target"] in
+  let expected = Yojson.Basic.from_string
+    {|[{"type":"text","text":"Hypotheses\n"},
+       {"type":"table","header":[[{"type":"text","text":"Explanation"}],[{"type":"text","text":"Path"}]],
+        "rows":[[[{"type":"emphasis","style":"bold","children":[{"type":"text","text":"Compensation"}]}],[{"type":"math","text":"ab \\to AB","style":"inline"}]],
+                [[{"type":"nodeReference","uuid":"target","title":"Target"}],[{"type":"code","text":"A"}]]]},
+       {"type":"text","text":"After"}]|} in
+  List.iter (fun separator ->
+    let source = "Hypotheses\n| Explanation | Path |\n" ^ separator
+      ^ "| **Compensation** | $ab \\to AB$ |\n| [[target]] | `A` |\nAfter" in
+    let nodes = parse references [] source in
+    check_eq expected (to_yojson nodes);
+    check_eq "Hypotheses\nExplanation\tPath\nCompensation\tab \\to AB\nTarget\tA\nAfter"
+      (plain_text nodes)) [""; "| --- | --- |\n"];
+  let source = "```\n| Not | a table |\n| --- | --- |\n```" in
+  check_eq [Markup_code_block (None, "| Not | a table |\n| --- | --- |\n")]
+    (parse_bare source)
+
 let cases =
   [
     case "rich node semantics" rich_node_semantics;
@@ -210,4 +229,5 @@ let cases =
     case "block markup boundaries" block_markup_boundaries;
     case "playable and web embeds" playable_and_web_embeds;
     case "mixed embeds retain surrounding text" mixed_embeds_retain_surrounding_text;
+    case "tables preserve cells and surrounding content" tables_preserve_cells_and_surrounding_content;
   ]

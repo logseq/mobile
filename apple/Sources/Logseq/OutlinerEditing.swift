@@ -22,7 +22,7 @@ enum OutlinerMarkupLink: Equatable {
 enum OutlinerRichMarkupPolicy {
     static func isRich(_ type: LogseqMarkupNodeType) -> Bool {
         switch type {
-        case .quote, .math, .codeBlock, .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
+        case .quote, .table, .math, .codeBlock, .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
             return true
         default:
             return false
@@ -36,7 +36,7 @@ enum OutlinerRichMarkupPolicy {
     static func containsInteractive(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
+            case .table, .video, .iframe, .html, .image, .youtubeTimestamp, .cloze:
                 return true
             default:
                 return containsInteractive(node.children)

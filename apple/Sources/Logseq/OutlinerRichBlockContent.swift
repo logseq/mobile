@@ -78,7 +78,7 @@ enum OutlinerMarkupMarkdown {
     static func requiresAttributedText(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .text, .codeBlock, .math, .cloze, .youtubeTimestamp, .video, .iframe, .html, .image:
+            case .text, .table, .codeBlock, .math, .cloze, .youtubeTimestamp, .video, .iframe, .html, .image:
                 return false
             case .code, .emphasis, .quote, .link, .nodeReference, .tagReference:
                 return true
@@ -99,6 +99,8 @@ enum OutlinerMarkupMarkdown {
             return "`" + (node.text ?? "").replacingOccurrences(of: "`", with: "\\`") + "`"
         case .codeBlock, .math, .cloze:
             return escape(node.text ?? "")
+        case .table:
+            return node.tableRows.map { $0.map { make(nodes: $0, fallback: "") }.joined(separator: "\t") }.joined(separator: "\n")
         case .youtubeTimestamp:
             return escape("◷ " + (node.text ?? ""))
         case .emphasis, .quote:
@@ -150,7 +152,7 @@ enum OutlinerMarkupInteractionPolicy {
     static func hasInteractiveContent(_ nodes: [LogseqMarkupNode]) -> Bool {
         nodes.contains { node in
             switch node.type {
-            case .link, .nodeReference, .tagReference, .video, .iframe, .html, .image,
+            case .table, .link, .nodeReference, .tagReference, .video, .iframe, .html, .image,
                  .youtubeTimestamp, .cloze:
                 return true
             case .emphasis, .quote:
@@ -183,6 +185,16 @@ enum OutlinerMarkupAttributedString {
             return value
         case .codeBlock, .math, .cloze:
             return AttributedString(node.text ?? "")
+        case .table:
+            var result = AttributedString()
+            for (rowIndex, row) in node.tableRows.enumerated() {
+                if rowIndex > 0 { result.append(AttributedString("\n")) }
+                for (cellIndex, cell) in row.enumerated() {
+                    if cellIndex > 0 { result.append(AttributedString("\t")) }
+                    result.append(make(nodes: cell, fallback: "", textStyle: textStyle))
+                }
+            }
+            return result
         case .youtubeTimestamp:
             return AttributedString("◷ " + (node.text ?? ""))
         case .emphasis, .quote:
@@ -251,6 +263,14 @@ struct OutlinerRichBlockContent: View {
                     code: node.text ?? "",
                     language: node.style
                 )
+            case .table:
+                OutlinerMarkupTable(
+                    node: node,
+                    onSeekYouTube: onSeekYouTube,
+                    allowsLinkInteraction: allowsLinkInteraction,
+                    onOpenMarkupLink: onOpenMarkupLink,
+                    onEdit: onEdit
+                )
             case .video:
                 EmbeddedVideo(
                     node: node,
@@ -311,6 +331,42 @@ struct OutlinerRichBlockContent: View {
                 onOpenMarkupLink(link)
                 return .handled
             })
+    }
+}
+
+private struct OutlinerMarkupTable: View {
+    @ScaledMetric(relativeTo: .body) private var cellWidth = 220.0
+    let node: LogseqMarkupNode
+    let onSeekYouTube: (String, Int) -> Void
+    let allowsLinkInteraction: () -> Bool
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    let onEdit: (() -> Void)?
+
+    var body: some View {
+        let rows = node.tableRows
+        let columns = rows.map(\.count).max() ?? 0
+        ScrollView(.horizontal) {
+            Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+                ForEach(rows.indices, id: \.self) { rowIndex in
+                    GridRow(alignment: .top) {
+                        ForEach(0..<columns, id: \.self) { column in
+                            let cell = column < rows[rowIndex].count ? rows[rowIndex][column] : []
+                            OutlinerMixedRichMarkupContent(
+                                nodes: cell, fallback: "", youtubePlaybackStarts: [:],
+                                onSeekYouTube: onSeekYouTube, allowsLinkInteraction: allowsLinkInteraction,
+                                onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit
+                            )
+                            .fontWeight(rowIndex == 0 && node.header != nil ? .semibold : .regular)
+                            .padding(10)
+                            .frame(width: cellWidth, alignment: .topLeading)
+                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                            .background(rowIndex == 0 && node.header != nil ? Color.secondary.opacity(0.1) : Color.clear)
+                            .overlay(Rectangle().strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
