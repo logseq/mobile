@@ -38,6 +38,24 @@ let timestamp_zero_overrides_the_source_start_time () =
   check_eq (U.member "embedURL" (List.nth nodes 1))
     (`String "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?playsinline=1&start=0")
 
+let table_media_preserves_resolution_and_order () =
+  let source = "https://youtu.be/dQw4w9WgXcQ" in
+  let nodes = Markup.to_yojson [Markup.Markup_table (
+    Some [[Markup.Markup_video source]],
+    [[[Markup.Markup_iframe "https://example.com/embed"];
+      [Markup.Markup_youtube_timestamp (83, "01:23")]]])] in
+  let table = nodes |> U.to_list |> List.hd in
+  let player = U.member "header" table |> U.to_list |> List.hd |> U.to_list |> List.hd in
+  check_eq (U.member "embedURL" player)
+    (`String "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?playsinline=1");
+  let row = U.member "rows" table |> U.to_list |> List.hd |> U.to_list in
+  let iframe = List.hd row |> U.to_list |> List.hd in
+  check_eq (U.member "embedURL" iframe) (`String "https://example.com/embed");
+  let timestamp = List.nth row 1 |> U.to_list |> List.hd in
+  check_eq (U.member "url" timestamp) (`String source);
+  check_eq (U.member "seconds" timestamp) (`Int 83);
+  check_eq (Media.first_timestamp_target nodes) (Some source)
+
 let bare_youtube_links_render_as_players () =
   List.iter (fun source ->
     let nodes = Markup.parse [] [] source |> Markup.to_yojson |> U.to_list in
@@ -49,6 +67,7 @@ let bare_youtube_links_render_as_players () =
   check_eq ~msg:"Explicitly labelled links stay links" (U.member "type" (List.hd nodes)) (`String "link")
 
 let cases = [
+  case "table media preserves resolution and order" table_media_preserves_resolution_and_order;
   case "bare YouTube links render as players" bare_youtube_links_render_as_players;
   case "timestamp zero overrides the source start time" timestamp_zero_overrides_the_source_start_time;
   case "shared video requests canonicalize supported sources" shared_video_requests_canonicalize_supported_sources;
