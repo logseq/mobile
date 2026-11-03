@@ -10,6 +10,10 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-interactions-") as tempor
     directory = Path(temporary)
     for filename, entry in [("native-menu-projection.swift", "NativeMenuProjectionCheck"),
                             ("outliner-caret-layout.swift", "OutlinerCaretLayoutCheck"),
+                            ("outliner-wrap-height.swift", "OutlinerWrapHeightCheck"),
+                            ("outliner-save-indentation.swift", "OutlinerSaveIndentationCheck"),
+                            ("outliner-clipboard.swift", "OutlinerClipboardCheck"),
+                            ("outliner-image-clipboard.swift", "OutlinerImageClipboardCheck"),
                             ("outliner-return-handoff.swift", "ReturnHandoffCheck"),
                             ("outliner-backspace-boundary.swift", "OutlinerBackspaceBoundaryCheck"),
                             ("outliner-subtree-selection.swift", "OutlinerSubtreeSelectionCheck"),

@@ -92,6 +92,8 @@ let ensure_app_schema connection =
        KEY, value TEXT NOT NULL)";
       "CREATE TABLE IF NOT EXISTS logseq_pending_txs (operation_id TEXT \
        PRIMARY KEY, tx TEXT NOT NULL, reversed_tx TEXT NOT NULL)";
+      "CREATE TABLE IF NOT EXISTS logseq_local_properties (uuid TEXT NOT NULL, \
+       attr TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (uuid, attr))";
     ]
 
 let with_app_db path f =
@@ -129,6 +131,8 @@ let copy_app_tables source destination =
                key, value FROM app_source.logseq_sync_state";
               "INSERT INTO main.logseq_pending_txs (operation_id, tx, reversed_tx) \
                SELECT operation_id, tx, reversed_tx FROM app_source.logseq_pending_txs";
+              "INSERT INTO main.logseq_local_properties (uuid, attr, value) \
+               SELECT uuid, attr, value FROM app_source.logseq_local_properties";
             ])))
 
 let nullable_text value =
@@ -284,11 +288,27 @@ let write_pending_tx connection operation_id tx reversed_tx =
 let store_pending_tx path operation_id tx reversed_tx =
   with_app_db path (fun connection -> write_pending_tx connection operation_id tx reversed_tx)
 
-let store_resolved_pending path operation_id base_t state intent tx reversed_tx =
+let write_local_properties connection properties =
+  List.iter (fun (uuid, attr, value) -> command connection
+    "INSERT INTO logseq_local_properties (uuid, attr, value) VALUES (?, ?, ?) \
+     ON CONFLICT(uuid, attr) DO UPDATE SET value = excluded.value"
+    [Db.Data.TEXT uuid; Db.Data.TEXT attr; Db.Data.TEXT value]) properties
+
+let store_local_properties path properties =
+  with_app_db path (fun connection ->
+    transaction connection (fun () -> write_local_properties connection properties))
+
+let local_properties path =
+  with_app_db path (fun connection -> query connection
+    "SELECT uuid, attr, value FROM logseq_local_properties ORDER BY uuid, attr" []
+    (fun statement -> Db.column_text statement 0, Db.column_text statement 1, Db.column_text statement 2))
+
+let store_resolved_pending ?(local_properties = []) path operation_id base_t state intent tx reversed_tx =
   with_app_db path (fun connection ->
     transaction connection (fun () ->
       write_pending connection operation_id base_t state intent;
-      write_pending_tx connection operation_id tx reversed_tx))
+      write_pending_tx connection operation_id tx reversed_tx;
+      write_local_properties connection local_properties))
 
 let pending_tx path operation_id =
   with_app_db path (fun connection ->

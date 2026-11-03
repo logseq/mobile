@@ -170,6 +170,36 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             paste(payload)
             return true
         }
+        textView.onPasteImages = { [weak coordinator, weak textView] images in
+            guard let coordinator, let textView, coordinator.parent.onPasteContent != nil,
+                  !coordinator.isAwaitingBlockHandoff else { return false }
+            let blockID = coordinator.parent.blockID
+            let revision = coordinator.parent.selectionRevision
+            Task { @MainActor [weak coordinator, weak textView] in
+                do {
+                    let assets = try await LGImageClipboard.importImages(images)
+                    guard let coordinator, let textView, textView.window != nil,
+                          coordinator.parent.blockID == blockID,
+                          coordinator.parent.selectionRevision == revision,
+                          !coordinator.isAwaitingBlockHandoff else {
+                        for asset in assets { try? FileManager.default.removeItem(atPath: asset.localPath) }
+                        return
+                    }
+                    let payload = try LGImageClipboard.content(assets, blockID: blockID,
+                        before: textView.text ?? "", selection: textView.selectedRange)
+                    _ = textView.onPasteContent?(payload)
+                } catch {
+                    guard let textView, let controller = textView.window?.rootViewController else { return }
+                    let alert = UIAlertController(title: String(localized: "Unable to paste image"),
+                        message: error.localizedDescription, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
+                    var presenter = controller
+                    while let presented = presenter.presentedViewController { presenter = presented }
+                    presenter.present(alert, animated: true)
+                }
+            }
+            return true
+        }
         textView.backgroundColor = .clear
         OutlinerNativeTextMeasurement.configureTextContainer(textView)
         textView.adjustsFontForContentSizeCategory = true
@@ -561,6 +591,7 @@ private enum OutlinerEditorViewport {
 
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
     var onPasteContent: ((String) -> Bool)?
+    var onPasteImages: (([LGImageClipboard.Image]) -> Bool)?
     private var focusPending = false
     private var caretRevealScheduled = false
     private var previousCaretLayout: CGRect?
@@ -613,6 +644,8 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     }
 
     override func paste(_ sender: Any?) {
+        let images = LGImageClipboard.images()
+        if !images.isEmpty, onPasteImages?(images) == true { return }
         if let payload = LGBlockClipboard.content(before: text ?? "", selection: selectedRange),
            onPasteContent?(payload) == true { return }
         guard let text = UIPasteboard.general.string else {
@@ -624,6 +657,11 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
         // This editor stores plain text. Insert it in the same input transaction
         // so the delegate receives an explicit paste origin, including newlines.
         insertText(text)
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), onPasteImages != nil, UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
     }
 
     override var keyCommands: [UIKeyCommand]? {

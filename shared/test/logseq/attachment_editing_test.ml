@@ -168,7 +168,102 @@ let toolbar_image_upload_reaches_the_transaction_queue persisted encrypted () =
     if not persisted then check_eq ~msg:"the empty block must be created before its asset conversion"
       (Q.member "tx-id" (List.hd txs)) (`String "insert-empty"))
 
+let clipboard_images_preserve_the_target_page_and_draft empty () =
+  Result_view_test.with_runtime (fun session runtime conn ->
+    let module Q = Query_block_test in
+    let page = "f1000000-0000-4000-8000-000000000020" in
+    let target = "f1000000-0000-4000-8000-000000000021" in
+    Editor_command_test.rebase runtime conn [
+      Ds.Add (Ds.Entity_id 990020, "block/uuid", Ds.Uuid page);
+      Q.put page "block/title" (Ds.String "October 1st, 2026");
+      Q.put page "block/name" (Ds.String "october 1st, 2026");
+      Q.put page "block/journal-day" (Ds.Int64 20261001L);
+      Ds.Add (Ds.Entity_id 990021, "block/uuid", Ds.Uuid target);
+      Q.put target "block/title" (Ds.String "");
+      Q.put target "block/page" (Ds.Ref_to (Q.ref_uuid page));
+      Q.put target "block/parent" (Ds.Ref_to (Q.ref_uuid page));
+      Q.put target "block/order" (Ds.String "a0") ];
+    let session = {session with Session_types.host = {session.host with
+      graph_blocks = Some (fun () -> Some (Graph_runtime.blocks_for_page runtime page))}} in
+    let opened = Rpc_test.dispatch_json session "openNode"
+      (Yojson.Basic.to_string (`Assoc ["uuid", `String page])) in
+    check_eq ~msg:"Open the previous journal" (U.member "ok" opened) (`Bool true);
+    let tap = Rpc_test.dispatch_json session "outlinerEvent"
+      (Yojson.Basic.to_string (`Assoc ["type", `String "tapBlock"; "uuid", `String target])) in
+    check_eq ~msg:(Yojson.Basic.to_string tap) (U.member "ok" tap) (`Bool true);
+    let draft = if empty then "" else "Unsaved text from yesterday" in
+    let asset id typ = `Assoc [
+      "uuid", `String id; "title", `String ("Photo." ^ typ); "assetType", `String typ;
+      "assetSize", `Int 42; "assetChecksum", `String id;
+      "localPath", `String ("Assets/" ^ id ^ "." ^ typ); "now", `Int 100 ] in
+    let first = "f1000000-0000-4000-8000-000000000022" in
+    let second = "f1000000-0000-4000-8000-000000000023" in
+    let fields = ["type", `String "pasteContent"; "uuid", `String target;
+      "beforeTitle", `String draft; "selectionStart", `Int (String.length draft);
+      "selectionLength", `Int 0; "plainText", `String ""; "blocksEDN", `String "";
+      "assets", `List [asset first "png"; asset second "jpg"]] in
+    let response = Rpc_test.dispatch_json session "outlinerEvent" (Yojson.Basic.to_string (`Assoc fields)) in
+    check_eq ~msg:(Yojson.Basic.to_string response) (U.member "ok" response) (`Bool true);
+    let db = Graph_runtime.db runtime in
+    let image_id = if empty then target else first in
+    List.iter (fun uuid ->
+      check ~msg:("Pasted image must exist: " ^ uuid) (Ds.entid db "block/uuid" (Ds.Uuid uuid) <> None);
+      let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+      check_eq ~msg:"Clipboard images stay on the edited journal page" (Graph_read.value db eid "block/page")
+        (Some (Ds.Ref (Option.get (Ds.entid db "block/uuid" (Ds.Uuid page)))));
+      check ~msg:"Clipboard data must become an asset, not empty pasted text"
+        (Graph_read.value db eid "logseq.property.asset/type" <> None)
+    ) [image_id; second];
+    if not empty then (
+      let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid target)) in
+      check_eq ~msg:"Save the native draft before importing its child images"
+        (Graph_read.value db eid "block/title") (Some (Ds.String draft))) else
+      check_eq ~msg:"The empty target becomes the first image without a blank parent"
+        (Ds.entid db "block/uuid" (Ds.Uuid first)) None)
+
+let failed_clipboard_image_import_keeps_the_editor_and_can_retry () =
+  Result_view_test.with_runtime (fun session runtime conn ->
+    let module Q = Query_block_test in
+    let target = "f1000000-0000-4000-8000-000000000030" in
+    Editor_command_test.rebase runtime conn [
+      Ds.Add (Ds.Entity_id 990030, "block/uuid", Ds.Uuid target);
+      Q.put target "block/title" (Ds.String "");
+      Q.put target "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+      Q.put target "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page));
+      Q.put target "block/order" (Ds.String "a9") ];
+    let fails = ref true in
+    let session = {session with Session_types.host = {session.host with
+      import_asset_file = (fun _ path -> if !fails then Error "Disk full" else Ok path)}} in
+    ignore (Rpc_test.dispatch_json session "outlinerEvent" (Yojson.Basic.to_string (`Assoc [
+      "type", `String "tapBlock"; "uuid", `String target])));
+    let asset = `Assoc ["uuid", `String "f1000000-0000-4000-8000-000000000031";
+      "title", `String "Photo.png"; "assetType", `String "png"; "assetSize", `Int 42;
+      "assetChecksum", `String "checksum"; "localPath", `String "Assets/photo.png"] in
+    let paste ?(original_target = target) uuid assets = Rpc_test.dispatch_json session "outlinerEvent" (Yojson.Basic.to_string (`Assoc [
+      "type", `String "pasteContent"; "uuid", `String uuid; "beforeTitle", `String "";
+      "targetBlockId", `String original_target;
+      "selectionStart", `Int 0; "selectionLength", `Int 0; "assets", `List assets])) in
+    fails := false;
+    let stale = paste ~original_target:"previous-editor" target [asset] in
+    check_eq ~msg:"A paste captured by a previous editor cannot be rebound to the new block"
+      (U.member "ok" stale) (`Bool false);
+    fails := true;
+    List.iter (fun (uuid, assets) ->
+      let response = paste uuid assets in
+      check_eq ~msg:"Invalid or failed image imports are reported" (U.member "ok" response) (`Bool false);
+      check_eq ~msg:"A rejected paste leaves the original editor usable"
+        (State.editing_uuid (Rpc_session.state session).outliner_state) (Some target))
+      ["stale-target", [asset]; target, []; target, [`Assoc []]; target, [asset]];
+    fails := false;
+    let retried = paste target [asset] in
+    check_eq ~msg:"The same native editor can retry after an import failure" (U.member "ok" retried) (`Bool true);
+    check_eq ~msg:"An imported image must not retain an empty text editor over its preview"
+      (State.editing_uuid (Rpc_session.state session).outliner_state) None)
+
 let cases = [
+  case "failed clipboard images retain their editor and can retry" failed_clipboard_image_import_keeps_the_editor_and_can_retry;
+  case "clipboard images preserve a previous journal and its unsaved draft" (clipboard_images_preserve_the_target_page_and_draft false);
+  case "clipboard images reuse an empty target on a previous journal" (clipboard_images_preserve_the_target_page_and_draft true);
   case "encrypted toolbar image uploads resume transactions for existing empty blocks" (toolbar_image_upload_reaches_the_transaction_queue true true);
   case "encrypted toolbar image uploads preserve pending block creation order" (toolbar_image_upload_reaches_the_transaction_queue false true);
   case "toolbar image uploads resume transactions for existing empty blocks" (toolbar_image_upload_reaches_the_transaction_queue true false);

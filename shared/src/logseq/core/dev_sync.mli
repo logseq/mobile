@@ -22,7 +22,10 @@ end
 
 module Db_normalize : sig type memo end
 
-module Sync_const : sig val is_encrypt_attr : string -> bool end
+module Sync_const : sig
+  val is_encrypt_attr : string -> bool
+  val ignore_attrs_when_syncing : string list
+end
 
 module Sync_apply : sig
   val normalize_tx_data :
