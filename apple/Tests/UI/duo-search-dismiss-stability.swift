@@ -55,6 +55,9 @@ import UIKit
             throw failure("Missing simulator window scene")
         }
         let window = UIWindow(windowScene: scene)
+        if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REGULAR_WIDTH"] == "1" {
+            window.traitOverrides.horizontalSizeClass = .regular
+        }
         window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }

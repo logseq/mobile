@@ -149,6 +149,10 @@ Set `SIMCTL_CHILD_LOGSEQ_DUO_REQUIRE_POSE_CHANGE=1` to require both toolbar axes
 and `LOGSEQ_RUNTIME_CHECK_ARTIFACTS=/path/to/output` to retain the screenshots.
 Set `SIMCTL_CHILD_LOGSEQ_DUO_CHECK_INTERACTIONS=1` to also verify capture/search
 focus, keyboard avoidance and unsent draft retention on the vertical layout.
+Set `SIMCTL_CHILD_LOGSEQ_DUO_REGULAR_WIDTH=1` to exercise the expanded split-view
+container on a Duo test window. The toolbar check also requires the capture rail
+to align with the native side controls and avoid duplicate safe-area insets.
+The navigation, search, appearance and PDF annotation checks accept the same setting.
 Capture controls, the native recording sheet and file download notices share all 25 supported languages
 in `apple/Sources/Logseq/Resources/CaptureLocalizations.json`. After editing it,
 run `python3 scripts/generate-capture-localizations.py` to update the shared

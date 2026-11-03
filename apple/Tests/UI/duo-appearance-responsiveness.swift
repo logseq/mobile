@@ -34,6 +34,9 @@ private struct AppearanceCheckRoot: View {
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
+        if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REGULAR_WIDTH"] == "1" {
+            window.traitOverrides.horizontalSizeClass = .regular
+        }
         let host = UIHostingController(rootView: AppearanceCheckRoot(renderer: runtime.renderer))
         window.rootViewController = host
         window.makeKeyAndVisible()
