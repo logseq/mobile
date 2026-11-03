@@ -42,7 +42,7 @@ struct OutlinerMixedRichMarkupContent: View {
                    OutlinerRichMarkupPolicy.isRich(node.type) {
                     OutlinerRichBlockContent(
                         node: node,
-                        youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
+                        youtubePlaybackStarts: youtubePlaybackStarts,
                         onSeekYouTube: onSeekYouTube,
                         allowsLinkInteraction: allowsLinkInteraction,
                         onOpenMarkupLink: onOpenMarkupLink,
@@ -237,11 +237,15 @@ enum OutlinerMarkupAttributedString {
 struct OutlinerRichBlockContent: View {
     @Environment(\.lgPropertyValue) private var propertyValue
     let node: LogseqMarkupNode
-    let youtubeStartSeconds: Int?
+    let youtubePlaybackStarts: [String: Int]
     let onSeekYouTube: (String, Int) -> Void
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
     var onEdit: (() -> Void)? = nil
+
+    private var youtubeStartSeconds: Int? {
+        node.url.flatMap { youtubePlaybackStarts[$0] }
+    }
 
     @ViewBuilder var body: some View {
         Group {
@@ -266,6 +270,7 @@ struct OutlinerRichBlockContent: View {
             case .table:
                 OutlinerMarkupTable(
                     node: node,
+                    youtubePlaybackStarts: youtubePlaybackStarts,
                     onSeekYouTube: onSeekYouTube,
                     allowsLinkInteraction: allowsLinkInteraction,
                     onOpenMarkupLink: onOpenMarkupLink,
@@ -337,6 +342,7 @@ struct OutlinerRichBlockContent: View {
 private struct OutlinerMarkupTable: View {
     @ScaledMetric(relativeTo: .body) private var cellWidth = 220.0
     let node: LogseqMarkupNode
+    let youtubePlaybackStarts: [String: Int]
     let onSeekYouTube: (String, Int) -> Void
     let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
@@ -352,7 +358,7 @@ private struct OutlinerMarkupTable: View {
                         ForEach(0..<columns, id: \.self) { column in
                             let cell = column < rows[rowIndex].count ? rows[rowIndex][column] : []
                             OutlinerMixedRichMarkupContent(
-                                nodes: cell, fallback: "", youtubePlaybackStarts: [:],
+                                nodes: cell, fallback: "", youtubePlaybackStarts: youtubePlaybackStarts,
                                 onSeekYouTube: onSeekYouTube, allowsLinkInteraction: allowsLinkInteraction,
                                 onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit
                             )
