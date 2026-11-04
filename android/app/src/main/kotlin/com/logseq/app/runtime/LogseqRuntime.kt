@@ -509,15 +509,22 @@ internal class LogseqRuntime(
                 .toString())
             val response = JSONObject(closed)
             if (!response.optBoolean("ok")) {
+                runCoreRestore(hasAuthenticatedSession, platformEffects.loadStorageState())
                 return NativeEffectResolution.Failure(response.optJSONObject("error")?.optString("message").orEmpty())
             }
-            platformEffects.persistSelectedGraphId("")
-            selectedGraphId = ""
             appliedServerT = -1L
             applyCoreResponse(closed)
         }
         val resolution = executor.execute(effect)
-        if (deletingOpenGraph) updateCatalogPolling("delete-local-graph")
+        if (deletingOpenGraph) {
+            if (resolution.succeeded) {
+                platformEffects.persistSelectedGraphId("")
+                selectedGraphId = ""
+            } else {
+                runCoreRestore(hasAuthenticatedSession, platformEffects.loadStorageState())
+            }
+            updateCatalogPolling("delete-local-graph")
+        }
         if (effect.kind == "save-settings" && resolution.succeeded) {
             val storage = platformEffects.loadStorageState()
             appearance = storage.settings.appearance
