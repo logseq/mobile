@@ -3,14 +3,21 @@ package com.logseq.logseq.ui.extensions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.logseq.logseq.AndroidAudioRecorder
 import com.logseq.logseq.runtime.RecordedAudioAsset
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 internal class AudioRecordingRequest(
     val result: CompletableDeferred<RecordedAudioAsset?>,
-    val recorder: AndroidAudioRecorder,
+    val targetBlockId: String?,
+    val graphId: String,
 ) {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    var busy by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
     var transcriptionEnabled by mutableStateOf(false)
     var transcript: String? = null
 }
@@ -44,22 +51,25 @@ internal object LogseqDialogs {
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
-    suspend fun recordAudio(
-        recorder: AndroidAudioRecorder,
-    ): Pair<RecordedAudioAsset, String?>? {
-        if (recordingRequest != null) return null
+    fun beginAudioRecording(targetBlockId: String?, graphId: String) {
+        if (recordingRequest != null) return
         val result = CompletableDeferred<RecordedAudioAsset?>()
         val request = AudioRecordingRequest(
             result = result,
-            recorder = recorder,
+            targetBlockId = targetBlockId,
+            graphId = graphId,
         )
         recordingRequest = request
-        val asset = try {
-            result.await()
-        } finally {
-            recordingRequest = null
-        }
+    }
+
+    suspend fun awaitAudioRecording(request: AudioRecordingRequest): Pair<RecordedAudioAsset, String?>? {
+        val asset = request.result.await()
         return asset?.let { it to request.transcript }
+    }
+
+    fun finishAudioRecording(request: AudioRecordingRequest) {
+        if (recordingRequest === request) recordingRequest = null
+        request.scope.cancel()
     }
 
     suspend fun confirmDeletion(multiple: Boolean): Boolean {
