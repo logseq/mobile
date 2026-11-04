@@ -441,7 +441,11 @@ let main_header_leading context model_source send =
     ~source:(reactive (main_header_model context) model_source) send
 
 let main_header_title (context : Lui_ui.ui_context) model_source : t =
+  let android = Lui_ui.host context = KotlinHost in
   text
+    ?grow:(if android then Some 1.0 else None)
+    ?white_space:(if android then Some "nowrap" else None)
+    ?text_overflow:(if android then Some "ellipsis" else None)
     ~value:
       (reactive
          (fun current ->
@@ -814,7 +818,6 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
                        ~background:"glass" ~main:`center ~cross:`center
                        [ main_header_leading context model_source send ];
                      main_header_title context model_source;
-                     spacer ~grow:1.0 [];
                      box ~corner_radius:22 ~background:"glass"
                        ~padding_horizontal:6
                        [
