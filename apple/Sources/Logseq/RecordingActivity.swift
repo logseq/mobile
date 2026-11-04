@@ -34,13 +34,18 @@ struct RecordingActivityTimer: View {
     var body: some View {
         Group {
             if state.isRecording {
-                Text(timerInterval: attributes.timerRange, countsDown: false)
+                // A live timer has no finite ideal width in WidgetKit's
+                // archived renderer. Let static text size the row instead.
+                Text("00:00")
+                    .hidden()
+                    .overlay(alignment: .trailing) {
+                        Text(timerInterval: attributes.timerRange, countsDown: false, showsHours: false)
+                    }
             } else {
                 Text(String(format: "%02d:%02d", state.elapsedSeconds / 60, state.elapsedSeconds % 60))
             }
         }
         .monospacedDigit()
-        .fixedSize()
     }
 }
 

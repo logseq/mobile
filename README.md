@@ -168,6 +168,10 @@ Run the model suite without that bridge using `python3 scripts/test-swift-model-
 It builds `LogseqModelTests` and launches Swift Testing directly.
 Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
 after building the simulator core. This also invokes Swift Testing directly.
+For recording Live Activities, build with `LOGSEQ_IOS_ENABLE_TESTING=1
+scripts/build-mobile-ios-simulator.sh`, then run
+`python3 scripts/test-ios-recording-live-activity.py`. It checks the system's
+archived lock-screen and Dynamic Island layouts, including timer dimensions.
 For iPhone Duo, build with Xcode 27.1 or later. Custom navigation controls follow
 the system toolbar axis, including the vertical bar on the outer display.
 Collapsed photo, audio recording, search and capture actions stay in a shared
