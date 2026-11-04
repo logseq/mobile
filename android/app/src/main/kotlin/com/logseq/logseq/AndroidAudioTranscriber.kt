@@ -16,14 +16,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 
 internal fun speechRecognitionLocale(locale: Locale): Locale {
     if (locale.language != "zh") return locale
@@ -132,6 +133,7 @@ internal class AndroidLiveTranscription(
     private val chunks = Channel<ByteArray>(20)
     private val accumulator = AndroidTranscriptAccumulator()
     private val failed = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
     private val writer = scope.launch(Dispatchers.IO) {
         try {
             ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { output ->
@@ -181,12 +183,14 @@ internal class AndroidLiveTranscription(
         }
     }
 
-    suspend fun close() {
+    suspend fun close() = withContext(NonCancellable) {
+        if (!closed.compareAndSet(false, true)) return@withContext
         chunks.cancel()
-        pipe[0].close()
-        pipe[1].close()
-        writer.cancelAndJoin()
-        results.cancelAndJoin()
-        recognizer.close()
+        writer.cancel()
+        results.cancel()
+        releaseAudioResources({ pipe[0].close() }, { pipe[1].close() }, { recognizer.close() })
+            ?.let { if (failed.compareAndSet(false, true)) onError(it) }
+        writer.join()
+        results.join()
     }
 }

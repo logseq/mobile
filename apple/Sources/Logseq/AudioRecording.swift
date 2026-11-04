@@ -32,7 +32,7 @@ struct RecordedAudioAsset: Sendable {
 }
 
 // The tap is serial. Stop the engine and remove the tap before closing its file.
-private final class RecordingAudioSink: @unchecked Sendable {
+final class RecordingAudioSink: @unchecked Sendable {
     private let lock = NSLock()
     var file: AVAudioFile?
     var consume: (@Sendable (AVAudioPCMBuffer) -> Void)?
@@ -43,6 +43,12 @@ private final class RecordingAudioSink: @unchecked Sendable {
     init(file: AVAudioFile, onUpdate: @escaping @Sendable (Int, Float, String?) -> Void) {
         self.file = file
         self.onUpdate = onUpdate
+    }
+
+    // AVAudioEngine invokes taps off the main actor. Keep callback creation
+    // outside the controller's actor context, including in Swift 6 builds.
+    func makeTapHandler() -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { [self] buffer, _ in append(buffer) }
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -154,7 +160,7 @@ private final class LiveAudioTranscription {
                 }
                 let input = ConverterInput(buffer)
                 var error: NSError?
-                converter.convert(to: converted, error: &error) { _, status in
+                converter.convert(to: converted, error: &error) { @Sendable _, status in
                     input.take(status)
                 }
                 if let error { throw error }
@@ -247,9 +253,8 @@ final class AudioRecorderController: NSObject, ObservableObject {
                 )
             }
             try Task.checkCancellation()
-            engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-                sink.append(buffer)
-            }
+            engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format,
+                                        block: sink.makeTapHandler())
             self.engine = engine
             engine.prepare()
             try engine.start()

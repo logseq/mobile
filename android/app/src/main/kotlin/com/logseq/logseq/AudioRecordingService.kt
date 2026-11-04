@@ -54,6 +54,7 @@ class AudioRecordingService : Service() {
     private var finishing = false
     private var cancelled = false
     private var preparation: Job? = null
+    @Volatile private var captureFailure: Throwable? = null
     private val destroyed = CompletableDeferred<Unit>()
 
     override fun onCreate() {
@@ -95,7 +96,10 @@ class AudioRecordingService : Service() {
                             mutableState.update { state -> state.copy(seconds = seconds, level = level) }
                             if (seconds >= MAXIMUM_SECONDS) scope.launch { pauseCapture() }
                         },
-                        onError = { failure -> mutableState.update { state -> state.copy(recording = false, error = failure.localizedMessage) } },
+                        onError = { failure ->
+                            captureFailure = failure
+                            mutableState.update { state -> state.copy(recording = false, error = failure.localizedMessage) }
+                        },
                     )
                     mutableState.update { it.copy(preparing = false, recording = true, hasRecording = true) }
                     started?.complete(Unit)
@@ -139,6 +143,7 @@ class AudioRecordingService : Service() {
         finishing = true
         try {
             pauseCapture()
+            captureFailure?.let { throw it }
             // Recognition failure must never discard the audio recording.
             try { transcription?.finish() } catch (failure: Exception) {
                 mutableState.update { it.copy(error = failure.localizedMessage) }
@@ -193,7 +198,11 @@ class AudioRecordingService : Service() {
     private suspend fun pauseCapture() {
         val active = microphone
         microphone = null
-        active?.stop()
+        val failure = stopAudioCapture { active?.stop() }
+        if (failure != null) {
+            captureFailure = failure
+            mutableState.update { it.copy(error = failure.localizedMessage) }
+        }
         mutableState.update { it.copy(recording = false, level = 0f) }
     }
 

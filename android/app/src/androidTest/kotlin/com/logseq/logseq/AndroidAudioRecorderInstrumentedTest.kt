@@ -11,6 +11,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @RunWith(AndroidJUnit4::class)
 class AndroidAudioRecorderInstrumentedTest {
@@ -21,11 +24,12 @@ class AndroidAudioRecorderInstrumentedTest {
     @Test
     fun recordsNonEmptyM4aWithStableMetadata() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { activity ->
-                val recorder = AndroidAudioRecorder(activity)
-                runBlocking { recorder.start() }
-                Thread.sleep(800)
-                val metadata = recorder.stop()
+            lateinit var recorder: AndroidAudioRecorder
+            scenario.onActivity { recorder = AndroidAudioRecorder(it) }
+            runBlocking {
+                withContext(Dispatchers.Main) { recorder.start() }
+                delay(800)
+                val metadata = withContext(Dispatchers.Main) { recorder.stop() }.asset
                 val file = File(metadata.getValue("localPath") as String)
                 try {
                     assertEquals("m4a", metadata["assetType"])

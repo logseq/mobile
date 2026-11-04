@@ -62,9 +62,8 @@ internal class AndroidMicrophoneCapture(
             recorder.startRecording()
             check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone could not start recording." }
         } catch (failure: Throwable) {
-            input?.release()
-            codec.release()
-            muxer.release()
+            releaseAudioResources({ input?.release() }, { codec.release() }, { muxer.release() })
+                ?.let(failure::addSuppressed)
             throw failure
         }
     }
@@ -116,11 +115,13 @@ internal class AndroidMicrophoneCapture(
             onError(failure)
             throw failure
         } finally {
-            recorder.release()
-            codec.stop()
-            codec.release()
-            if (muxerStarted) muxer.stop()
-            muxer.release()
+            releaseAudioResources(
+                { recorder.release() },
+                { codec.stop() },
+                { codec.release() },
+                { if (muxerStarted) muxer.stop() },
+                { muxer.release() },
+            )?.let(onError)
         }
     }
 
