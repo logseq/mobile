@@ -169,6 +169,7 @@ fi
 prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 swift build \
+  --build-system native \
   -c "$build_configuration" \
   --scratch-path "$swift_scratch_dir" \
   --disable-keychain \
