@@ -245,6 +245,10 @@ final class AudioRecorderController: NSObject, ObservableObject {
             outputURL = url
             let engine = AVAudioEngine()
             let format = engine.inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate.isFinite, format.sampleRate > 0, format.channelCount > 0 else {
+                throw NSError(domain: "LogseqAudioRecording", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "The microphone input is unavailable."])
+            }
             let file = try AVAudioFile(forWriting: url, settings: [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
                 AVSampleRateKey: format.sampleRate,
@@ -434,40 +438,32 @@ struct AudioRecorderSheet: View {
                     }
                     .disabled(recorder.isPreparing || isSaving)
                 }
-                if recorder.isPreparingTranscription {
-                    ProgressView(CaptureLocalization.text("Preparing transcription…", locale: locale))
-                }
-                if recorder.hasRecording, transcriptionEnabled, !languages.isEmpty {
+                if recorder.hasRecording, transcriptionEnabled, !languages.isEmpty || recorder.isPreparingTranscription {
                     ScrollView {
-                        Text(recorder.liveTranscript.isEmpty
-                             ? CaptureLocalization.text("Listening…", locale: locale) : recorder.liveTranscript)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .accessibilityIdentifier("audio.transcript")
+                        VStack(alignment: .leading, spacing: 12) {
+                            if recorder.isPreparingTranscription {
+                                ProgressView(CaptureLocalization.text("Preparing transcription…", locale: locale))
+                            }
+                            if !recorder.liveTranscript.isEmpty || !recorder.isPreparingTranscription {
+                                Text(recorder.liveTranscript.isEmpty
+                                     ? CaptureLocalization.text("Listening…", locale: locale) : recorder.liveTranscript)
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("audio.transcript")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .defaultScrollAnchor(.bottom)
                 }
-                Button {
-                    if recorder.hasRecording {
-                        Task { await save() }
-                    } else {
-                        startRecording()
-                    }
-                } label: {
-                    ZStack {
-                        Circle().fill(Color.red).frame(width: 72, height: 72)
-                        Image(systemName: recorder.hasRecording ? "stop.fill" : "mic.fill").foregroundStyle(.white)
-                    }
-                }
-                .disabled(recorder.isPreparing || isSaving)
-                .accessibilityIdentifier(recorder.hasRecording ? "button.audio.stop" : "button.audio.start")
-                .accessibilityLabel(CaptureLocalization.text(recorder.hasRecording ? "Stop recording" : "Start recording", locale: locale))
                 if let error = saveError ?? recorder.errorMessage {
                     Text(error).foregroundStyle(.red).accessibilityIdentifier("audio.recording.error")
                 }
-                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(24)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                recordingButton.padding(.horizontal, 24).padding(.bottom, 24)
+            }
             .navigationTitle(CaptureLocalization.text("Audio recording", locale: locale))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -506,6 +502,24 @@ struct AudioRecorderSheet: View {
 
     private var selectedTranscriptionLocale: Locale {
         AudioRecordingPolicy.transcriptionLocale(lastUsed: language)
+    }
+
+    private var recordingButton: some View {
+        Button {
+            if recorder.hasRecording {
+                Task { await save() }
+            } else {
+                startRecording()
+            }
+        } label: {
+            ZStack {
+                Circle().fill(Color.red).frame(width: 72, height: 72)
+                Image(systemName: recorder.hasRecording ? "stop.fill" : "mic.fill").foregroundStyle(.white)
+            }
+        }
+        .disabled(recorder.isPreparing || isSaving)
+        .accessibilityIdentifier(recorder.hasRecording ? "button.audio.stop" : "button.audio.start")
+        .accessibilityLabel(CaptureLocalization.text(recorder.hasRecording ? "Stop recording" : "Start recording", locale: locale))
     }
 
     private func startRecording() {
