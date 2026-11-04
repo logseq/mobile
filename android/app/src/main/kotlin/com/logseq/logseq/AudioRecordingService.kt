@@ -217,6 +217,7 @@ class AudioRecordingService : Service() {
         finishing = true
         try {
             pauseCapture()
+            removeRecordingNotification()
             captureFailure?.let { throw it }
             // Recognition failure must never discard the audio recording.
             try { transcription?.finish() } catch (failure: Exception) {

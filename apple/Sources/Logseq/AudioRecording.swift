@@ -363,6 +363,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
         transcriptionTask?.cancel()
         isPreparingTranscription = false
         pauseCapture()
+        liveActivity.end()
         if #available(iOS 26.0, *), let transcription = transcription as? LiveAudioTranscription {
             do { try await transcription.finish() }
             catch {
@@ -372,7 +373,6 @@ final class AudioRecorderController: NSObject, ObservableObject {
         }
         transcription = nil
         transcriptionGeneration += 1
-        liveActivity.end()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         let data = try Data(contentsOf: outputURL)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
