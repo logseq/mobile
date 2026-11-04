@@ -77,7 +77,8 @@ Audio capture continues when the phone is locked. On iOS, a Live Activity shows
 the recording timer and recent transcription on the Lock Screen and Dynamic
 Island; tapping it returns to the current recording. On Android, the ongoing
 recording notification shows a timer and recent transcription when notification
-permission is granted. Stopping or cancelling the recording removes its status.
+permission is granted. Stopping or cancelling the recording immediately removes
+its status, including while the final transcription is still being saved.
 
 ## Android
 
