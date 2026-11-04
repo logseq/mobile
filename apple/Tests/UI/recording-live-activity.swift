@@ -44,6 +44,17 @@ import UIKit
         guard let active = Activity<RecordingActivityAttributes>.activities.first(where: { $0.attributes.startedAt >= started }) else {
             preconditionFailure("The recording Live Activity was not registered with the widget extension")
         }
+        print("SYSTEM_ACTIVITY_ID=\(active.id)")
+        var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+        if ProcessInfo.processInfo.environment["LOGSEQ_ACTIVITY_SYSTEM_RENDER"] == "1" {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Recording activity rendering")
+            // Simulator-only probe: show the system-hosted activity rather
+            // than relying solely on an in-process SwiftUI image preview.
+            _ = UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        }
+        defer {
+            if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
+        }
         defer { live.end() }
         live.update(elapsedSeconds: 2, isRecording: true, transcript: "First words")
         live.update(elapsedSeconds: 3, isRecording: true, transcript: "Latest words")
