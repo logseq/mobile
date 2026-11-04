@@ -14,6 +14,7 @@ on:
 
 env:
   JAVA_VERSION: '21'
+  ANDROID_BUILD_TOOLS_VERSION: '37.0.0'
   LOGSEQ_ANDROID_ABI: arm64-v8a
 
 jobs:
@@ -43,6 +44,21 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Prepare Android signing key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$ANDROID_KEYSTORE" || -z "$ANDROID_KEYSTORE_PASSWORD" ]]; then
+            echo "::error::Configure ANDROID_KEYSTORE (base64) and ANDROID_KEYSTORE_PASSWORD in repository Actions secrets."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/android-keystore.jks"
+          keytool -list -keystore "$RUNNER_TEMP/android-keystore.jks" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD > /dev/null
 
       - name: Restore opam root
         id: opam-root
@@ -153,7 +169,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3.2.2
         with:
-          packages: platform-tools
+          packages: platform-tools build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}
 
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
@@ -211,12 +227,20 @@ jobs:
           key: android-native-${{ runner.os }}-${{ github.sha }}
 
       - name: Sign Android APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          echo ${{ secrets.ANDROID_KEYSTORE }} | base64 -d > keystore.jks
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
-            --ks keystore.jks --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            --in app/build/outputs/apk/release/app-release-unsigned.apk \
+          set -euo pipefail
+          trap 'rm -f "$RUNNER_TEMP/android-keystore.jks"' EXIT
+          build_tools="$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION"
+          "$build_tools/zipalign" -P 16 -f 4 \
+            app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/app-aligned.apk"
+          "$build_tools/apksigner" sign \
+            --ks "$RUNNER_TEMP/android-keystore.jks" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --in "$RUNNER_TEMP/app-aligned.apk" \
             --out app-signed.apk
+          "$build_tools/apksigner" verify --verbose app-signed.apk
+          "$build_tools/zipalign" -c -P 16 4 app-signed.apk
         working-directory: android
 
       - name: Rename APK
