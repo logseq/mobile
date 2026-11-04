@@ -17,6 +17,14 @@ let close_projection database =
    | None -> ());
   database.projection := None
 
+let close_graph database graph_id =
+  (match !(database.graph.current) with
+   | Some opened when opened.graph_id = graph_id ->
+     close_projection database;
+     database.graph.current := None
+   | _ -> ());
+  Ok ()
+
 let close database =
   (match !(database.catalog) with
    | Some catalog -> Sqlite.close catalog

@@ -460,7 +460,32 @@ internal class LogseqRuntime(
                 succeeded = false,
                 message = "The native core effect executor is unavailable",
             )
+        val deletingOpenGraph = effect.kind == "delete-local-graph" && effect.text == selectedGraphId
+        if (deletingOpenGraph) {
+            hasOpenGraph = false
+            graphCatalogAutoRefresh?.stopPeriodic()
+            graphEventsSession.cancel()
+            pendingSyncJob?.cancel()
+            graphEventsSession.join()
+            pendingSyncJob?.join()
+            pendingSyncJob = null
+            pendingSyncRequested = false
+            val closed = bridge.callCore(JSONObject()
+                .put("apiVersion", 1).put("method", "dispatch")
+                .put("params", JSONObject().put("action", "closeGraph")
+                    .put("payload", JSONObject().put("graphId", effect.text).toString()))
+                .toString())
+            val response = JSONObject(closed)
+            if (!response.optBoolean("ok")) {
+                return NativeEffectResolution.Failure(response.optJSONObject("error")?.optString("message").orEmpty())
+            }
+            platformEffects.persistSelectedGraphId("")
+            selectedGraphId = ""
+            appliedServerT = -1L
+            applyCoreResponse(closed)
+        }
         val resolution = executor.execute(effect)
+        if (deletingOpenGraph) updateCatalogPolling("delete-local-graph")
         if (effect.kind == "save-settings" && resolution.succeeded) {
             val storage = platformEffects.loadStorageState()
             appearance = storage.settings.appearance

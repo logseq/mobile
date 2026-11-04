@@ -72,6 +72,7 @@ type host_options =
   ; storage : Datascript.storage option
   ; outliner_projection_limit : int option
   ; open_graph : (string -> (unit, string) result) option
+  ; close_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (string -> Cache_model.model) option
   ; apply_sync_event : (string -> (unit, string) result) option

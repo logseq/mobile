@@ -464,8 +464,14 @@ let route snapshot dispatch (input : Json.t) =
   | _ -> failure "invalid_request" "request must be an object"
 
 let call snapshot dispatch request =
-  try route snapshot dispatch (Json.from_string request)
-  with _ -> failure "invalid_json" "request must be valid JSON"
+  let parsed = try Some (Json.from_string request) with Yojson.Json_error _ -> None in
+  match parsed with
+  | None -> failure "invalid_json" "request must be valid JSON"
+  | Some input ->
+    (try route snapshot dispatch input
+     with error ->
+       debug ("request failed: " ^ Printexc.exn_slot_name error);
+       failure "internal_error" "The request could not be completed")
 
 let request_json id (request : Api.api_request) file_path content_type
     headers =
