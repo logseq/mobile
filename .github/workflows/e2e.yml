@@ -417,6 +417,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space for the emulator
+        if: runner.environment == 'github-hosted'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/.ghcup
+          df -h /
+
       - name: System dependencies
         run: |
           sudo apt-get update
