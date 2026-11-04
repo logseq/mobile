@@ -14,6 +14,7 @@ import com.logseq.app.AndroidAudioRecorder
 import com.logseq.app.AndroidAudioTranscriber
 import com.logseq.app.AndroidPlatformServices
 import com.logseq.app.CognitoAuthProvider
+import com.logseq.app.isNetworkUnavailable
 import com.logseq.app.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
@@ -558,32 +559,26 @@ internal class LogseqRuntime(
     }
 
     private suspend fun runCoreRestore(hasStoredSession: Boolean, storage: AndroidStorageState?) {
-        var accessToken = ""
-        if (hasStoredSession) {
-            try {
-                accessToken = platformEffects.restoreAccessToken() ?: ""
-                if (accessToken.isBlank()) {
-                    error("The stored session did not return an access token")
-                }
-            } catch (error: Throwable) {
-                hasAuthenticatedSession = false
+        try {
+            val restoredAuthentication = restoreAndroidAuthentication(hasStoredSession, platformEffects::restoreAccessToken)
+            hasAuthenticatedSession = restoredAuthentication.hasSession
+            if (hasStoredSession && !restoredAuthentication.hasSession) {
                 applyPatch(
                     bridge.applyHostUpdate(
                         kind = "authentication",
                         payload = JSONObject()
                             .put("state", "signedOut")
-                            .put("errorMessage", error.toString())
+                            .put("errorMessage", JSONObject.NULL)
                             .toString(),
                     )
                 )
                 AndroidLaunchMetrics.report("authentication_published")
-                reportError(error)
             }
-        }
-        hasAuthenticatedSession = accessToken.isNotBlank()
-        try {
+            if (restoredAuthentication.unavailable) {
+                logRuntime("info", "core", "Authentication refresh unavailable; restoring cached state without a network token")
+            }
             logRuntime("info", "core", "Restoring core state")
-            val state = platformEffects.coreStartupState(accessToken, storage)
+            val state = platformEffects.coreStartupState(restoredAuthentication.accessToken, storage)
             val restored = CoreBootstrap(
                 callCore = bridge::callCore,
                 trace = { traceGraphLifecycle("bootstrap $it") },
@@ -609,8 +604,9 @@ internal class LogseqRuntime(
             }
             appEntries.markReady()
             updateCatalogPolling("restore")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
-            logRuntime("error", "core", error.toString())
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
         }
@@ -789,6 +785,11 @@ internal class LogseqRuntime(
     // --- Tracing / logging ---
 
     private fun reportError(error: Throwable) {
+        if (isNetworkUnavailable(error)) {
+            logRuntime("info", "ui", "Network temporarily unavailable (${error.javaClass.simpleName})")
+            Log.w("LogseqRuntime", "Network temporarily unavailable", error)
+            return
+        }
         logRuntime("error", "ui", error.toString())
         Log.e("LogseqRuntime", "Effect failed\n${error.stackTraceToString()}")
     }
