@@ -2040,6 +2040,17 @@ let rec dispatch session action payload =
        Rpc.failure "invalid_params"
          "outlinerEvent requires a JSON payload")
   | "configure" -> object_action (configure session)
+  | "setAccessToken" ->
+    (match s.config, payload with
+     | Some config, Some token when config.Api.token = token -> snapshot_visible session
+     | Some config, Some token ->
+       configure session `Null
+         [ "baseUrl", `String config.Api.base_url;
+           "graphId", `String config.graph_id;
+           "graphName", (match config.graph_name with Some name -> `String name | None -> `Null);
+           "token", `String token ]
+     | None, _ -> Rpc.failure "not_configured" "Configure the session before updating authentication"
+     | _, None -> Rpc.failure "invalid_params" "setAccessToken requires a token")
   | "beginSyncTransport" -> object_action (begin_sync_transport session)
   | "syncTransportEvent" -> object_action (sync_transport_event session)
   | "refresh" ->

@@ -1304,7 +1304,14 @@ let clearing_authentication_cancels_requests_without_dropping_local_edits () =
   check_eq ~msg:"temporary encrypted upload data is cleaned" !cleaned ["/tmp/encrypted-retry-asset"];
   check_eq ~msg:"local changes stay queued for a future login" (List.length !staged) 1;
   ignore (pending_completion session upload (`Int 200) (`String "{}") `Null);
-  check_eq ~msg:"late upload completion cannot consume local edits" (List.length !staged) 1
+  check_eq ~msg:"late upload completion cannot consume local edits" (List.length !staged) 1;
+  let refreshed = response_result (dispatch_json session "setAccessToken" "fresh-access") in
+  check_eq ~msg:"refreshing authentication keeps the selected graph"
+    (member "selectedGraphId" refreshed) (`String "encrypted-1");
+  let resumed = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  check_eq ~msg:"queued uploads resume with the refreshed credential"
+    (member "token" resumed) (`String "fresh-access");
+  check_eq ~msg:"refreshing authentication preserves the queued edit" (List.length !staged) 1
 
 let websocket_lifecycle_applies_events_exactly_once () =
   let applied = ref [] in
