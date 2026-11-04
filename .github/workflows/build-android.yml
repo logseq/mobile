@@ -75,7 +75,9 @@ jobs:
           echo "LOGSEQ_ANDROID_REVISION=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_ENV"
 
       - name: System dependencies
-        run: sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
 
       - name: Validate Android release wiring
         run: |
