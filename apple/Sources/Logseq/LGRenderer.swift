@@ -264,11 +264,11 @@ public final class LGRenderer {
                 extensionName: name,
                 extensionValues: values
             )
-        // The Logseq core ABI exports no pointer-level or context-menu
-        // entries (see shared/native/logseq_core_ffi.h), so these
+        // The Logseq core ABI exports no pointer-level, context-menu or sparse
+        // virtual-window entries (see shared/native/logseq_core_ffi.h), so these
         // events are dropped — matching the Kotlin LuiDispatch.
         case .pressDetail, .pointerDown, .pointerUp, .pointerEnter,
-             .pointerLeave, .contextMenuPress:
+             .pointerLeave, .contextMenuPress, .virtualWindow:
             return nil
         }
     }
