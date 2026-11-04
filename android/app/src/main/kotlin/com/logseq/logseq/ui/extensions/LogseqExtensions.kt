@@ -379,24 +379,26 @@ private fun SearchPresentation(context: LuiExtensionContext) {
     Surface(modifier = Modifier.fillMaxSize().testTag("native-search-presentation"),
         color = MaterialTheme.colorScheme.background) {
         Column {
-            androidx.compose.material3.TopAppBar(
-                title = { Text(if (depth > 0) title else context.string("status-title") ?: title, maxLines = 1) },
-                navigationIcon = {
-                    if (depth > 0) IconButton(onClick = { context.emit("back", "count" to 1) },
-                        modifier = Modifier.testTag("button.search.back")) {
-                        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, context.string("back-title") ?: "Back")
-                    }
-                },
-                actions = {
-                    if (depth > 0) {
-                        context.children.getOrNull(1)?.let { context.child(it) }
-                        IconButton(onClick = { context.emit("dismiss") }) {
-                            Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
+            Column(Modifier.weight(1f)) {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(if (depth > 0) title else context.string("status-title") ?: title, maxLines = 1) },
+                    navigationIcon = {
+                        if (depth > 0) IconButton(onClick = { context.emit("back", "count" to 1) },
+                            modifier = Modifier.testTag("button.search.back")) {
+                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, context.string("back-title") ?: "Back")
                         }
-                    }
-                },
-            )
-            Box(Modifier.weight(1f)) { context.children.firstOrNull()?.let { context.child(it) } }
+                    },
+                    actions = {
+                        if (depth > 0) {
+                            context.children.getOrNull(1)?.let { context.child(it) }
+                            IconButton(onClick = { context.emit("dismiss") }) {
+                                Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
+                            }
+                        }
+                    },
+                )
+                Box(Modifier.weight(1f)) { context.children.firstOrNull()?.let { context.child(it) } }
+            }
             if (depth == 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {

@@ -56,6 +56,7 @@ let host_options (database : Database.mobile_database) ring catalog =
              Sqlite.store_string catalog graph_catalog_address body)
        | None -> None);
     open_graph = Some (fun body -> Graph.open_graph graph body);
+    close_graph = Some (Database.close_graph database);
     import_snapshot = Some (fun body -> Graph.import_snapshot graph body);
     model_for_graph =
       Some (fun graph_id -> Database.model_for_graph database graph_id);

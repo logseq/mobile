@@ -3,6 +3,8 @@ package com.logseq.logseq
 import androidx.annotation.Keep
 
 import android.content.Context
+import com.logseq.logseq.NETWORK_UNAVAILABLE
+import com.logseq.logseq.isNetworkUnavailable
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -29,7 +31,7 @@ object AndroidHttpTransport {
         response(connection)
     }.getOrElse {
         android.util.Log.w("AndroidHttpTransport", "send failed\n${it.stackTraceToString()}")
-        "ERROR\n${it.message ?: it.javaClass.simpleName}"
+        "ERROR\n${if (isNetworkUnavailable(it)) NETWORK_UNAVAILABLE else it.message ?: it.javaClass.simpleName}"
     }
 
     @JvmStatic
@@ -60,7 +62,7 @@ object AndroidHttpTransport {
         response(connection)
     }.getOrElse {
         android.util.Log.w("AndroidHttpTransport", "upload failed\n${it.stackTraceToString()}")
-        "ERROR\n${it.message ?: it.javaClass.simpleName}"
+        "ERROR\n${if (isNetworkUnavailable(it)) NETWORK_UNAVAILABLE else it.message ?: it.javaClass.simpleName}"
     }
 
     private fun open(method: String, url: String, token: String): HttpURLConnection =

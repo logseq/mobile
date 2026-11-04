@@ -1,5 +1,8 @@
 package com.logseq.logseq.runtime
 
+import com.logseq.logseq.NETWORK_UNAVAILABLE
+import com.logseq.logseq.isNetworkUnavailable
+
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -138,7 +141,8 @@ internal class AndroidGraphEventsSync(
             throw error
         } catch (error: Throwable) {
             if (generation < 0) throw error
-            val transport = event("failed", message = error.message ?: error.toString())
+            val transport = event("failed", message = if (isNetworkUnavailable(error)) NETWORK_UNAVAILABLE
+                else error.message ?: error.toString())
             return@coroutineScope retryOutcome(transport)
         } finally {
             pendingWebSocket?.close()
@@ -226,7 +230,7 @@ internal class AndroidGraphEventsSync(
                     frames.trySend(
                         Frame.Failure(
                             response?.let { "HTTP ${it.code}" }
-                                ?: (t.message ?: t.toString())
+                                ?: (if (isNetworkUnavailable(t)) NETWORK_UNAVAILABLE else t.message ?: t.toString())
                         )
                     )
                     if (continuation.isActive) {

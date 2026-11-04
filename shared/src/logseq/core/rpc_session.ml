@@ -2040,6 +2040,17 @@ let rec dispatch session action payload =
        Rpc.failure "invalid_params"
          "outlinerEvent requires a JSON payload")
   | "configure" -> object_action (configure session)
+  | "setAccessToken" ->
+    (match s.config, payload with
+     | Some config, Some token when config.Api.token = token -> snapshot_visible session
+     | Some config, Some token ->
+       configure session `Null
+         [ "baseUrl", `String config.Api.base_url;
+           "graphId", `String config.graph_id;
+           "graphName", (match config.graph_name with Some name -> `String name | None -> `Null);
+           "token", `String token ]
+     | None, _ -> Rpc.failure "not_configured" "Configure the session before updating authentication"
+     | _, None -> Rpc.failure "invalid_params" "setAccessToken requires a token")
   | "beginSyncTransport" -> object_action (begin_sync_transport session)
   | "syncTransportEvent" -> object_action (sync_transport_event session)
   | "refresh" ->
@@ -2373,7 +2384,7 @@ let rec dispatch session action payload =
       (fun () ->
         if (state session).config <> None then
           restore_semantic_queue session;
-        snapshot_visible session)
+        sidebar_snapshot session)
   | "deletePage" ->
     Rpc.delete_page payload h.Types.graph_delete_page
       (s.config <> None) now_ms
@@ -2417,6 +2428,32 @@ let rec dispatch session action payload =
     else Rpc.import_snapshot payload h.Types.import_snapshot
       (fun payload -> switch_graph_model session payload)
       (fun () -> sidebar_snapshot session)
+  | "closeGraph" -> object_action (fun _ fields ->
+    match Rpc.required_string fields "graphId", h.Types.close_graph with
+    | Ok graph_id, Some close ->
+      (match close graph_id with
+       | Error message -> Rpc.failure "graph_close_failed" message
+       | Ok () ->
+         if s.active_graph_id = Some graph_id
+            || Option.exists (fun (config : Api.api_config) -> config.graph_id = graph_id) s.config
+         then begin
+           cancel_pending_sync session;
+           let empty = Types.create_session h in
+           session.state := { (state empty) with
+             config = Option.map (fun (config : Api.api_config) ->
+               { config with graph_id = ""; graph_name = None }) s.config;
+             available_graphs = s.available_graphs;
+             bootstrap_generation = s.bootstrap_generation + 1;
+             next_pending_request_id = s.next_pending_request_id;
+             outliner_revision = s.outliner_revision + 1 };
+           Hashtbl.clear session.reference_cache;
+           Hashtbl.clear session.collapsed_nodes;
+           session.reference_generation := None;
+           session.pdf_workspace := None
+         end;
+         snapshot_visible session)
+    | Error message, _ -> Rpc.failure "invalid_params" message
+    | _, None -> Rpc.failure "graph_close_unavailable" "Graph close is unavailable")
   | "openGraph" ->
     Rpc.open_graph payload h.Types.open_graph
       (fun payload -> switch_graph_model session payload)

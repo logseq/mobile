@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -25,11 +26,18 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
         if (!current.idToken.isNullOrBlank() && current.expiresAtMillis - System.currentTimeMillis() > refreshLeewayMillis) {
             return current.idToken
         }
-        val response = transport.post("GetTokensFromRefreshToken", JSONObject().put("RefreshToken", current.refreshToken))
+        val response = try {
+            transport.post("GetTokensFromRefreshToken", JSONObject().put("RefreshToken", current.refreshToken))
+        } catch (error: IOException) {
+            throw CognitoSessionUnavailableException(error)
+        }
         val error = response.optString("__type").substringAfterLast('#')
         if (error in setOf("NotAuthorizedException", "RefreshTokenReuseException")) {
             clearTokens()
             return null
+        }
+        if (error in setOf("TooManyRequestsException", "InternalErrorException", "ServiceUnavailableException")) {
+            throw CognitoSessionUnavailableException()
         }
         check(error.isEmpty()) { "Authentication request failed: $error" }
         val refreshed = tokens(response, current.refreshToken)
@@ -168,6 +176,9 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
 }
 
 internal fun hasStoredToken(value: String?): Boolean = !value.isNullOrBlank()
+
+internal class CognitoSessionUnavailableException(cause: IOException? = null) :
+    IOException("Authentication is temporarily unavailable", cause)
 
 private data class CognitoConfiguration(val region: String, val appClientID: String) {
     companion object {

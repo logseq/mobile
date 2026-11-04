@@ -14,6 +14,7 @@ import com.logseq.logseq.AndroidAudioRecorder
 import com.logseq.logseq.AndroidAudioTranscriber
 import com.logseq.logseq.AndroidPlatformServices
 import com.logseq.logseq.CognitoAuthProvider
+import com.logseq.logseq.isNetworkUnavailable
 import com.logseq.logseq.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
@@ -110,6 +111,8 @@ internal class LogseqRuntime(
         private set
 
     @Volatile private var hasAuthenticatedSession = false
+    private var configuredAccessToken = ""
+    private var restartingGraphEvents = false
     @Volatile private var hasOpenGraph = false
     @Volatile private var appIsForeground = false
     @Volatile private var pendingSyncRequested = false
@@ -325,6 +328,28 @@ internal class LogseqRuntime(
 
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
 
+    private suspend fun restoreCoreAccessToken(): String? {
+        val token = platformEffects.restoreAccessToken()?.takeIf { it.isNotBlank() } ?: return null
+        if (token == configuredAccessToken) return token
+        val response = bridge.callCore(JSONObject()
+            .put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", "setAccessToken").put("payload", token))
+            .toString())
+        check(JSONObject(response).optBoolean("ok")) { "Core authentication refresh failed" }
+        configuredAccessToken = token
+        if (graphEventsSync != null) {
+            restartingGraphEvents = true
+            try {
+                graphEventsSession.cancel()
+                graphEventsSession.join()
+            } finally {
+                restartingGraphEvents = false
+            }
+        }
+        applyCoreResponse(response)
+        return token
+    }
+
     private fun ensureGraphEventsSync() {
         Log.d(
             "GraphEvents",
@@ -333,15 +358,22 @@ internal class LogseqRuntime(
                 "job=${graphEventsSession.isActive} foreground=$appIsForeground",
         )
         val sessionGraphId = selectedGraphId.takeIf {
-            hasAuthenticatedSession && hasOpenGraph && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
+            hasAuthenticatedSession && hasOpenGraph && !restartingGraphEvents && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
         }
         graphEventsSession.update(sessionGraphId, appIsForeground) { graphId ->
             while (isActive) {
                 val token = try {
-                    platformEffects.restoreAccessToken()
+                    restoreCoreAccessToken()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (error: Throwable) {
-                    logRuntime("warn", "core", "access token unavailable: $error")
-                    null
+                    if (isNetworkUnavailable(error)) {
+                        logRuntime("info", "core", "Authentication refresh unavailable; retrying")
+                        kotlinx.coroutines.delay(5_000)
+                        continue
+                    }
+                    logRuntime("warn", "core", "access token unavailable: ${error.javaClass.simpleName}")
+                    break
                 }
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
@@ -403,6 +435,7 @@ internal class LogseqRuntime(
         val job = kotlinx.coroutines.currentCoroutineContext().job
         do {
             pendingSyncRequested = false
+            if (restoreCoreAccessToken().isNullOrBlank()) return
             AndroidPendingSyncPump(
                 callCore = bridge::callCore,
                 applyResponse = ::applyCoreResponse,
@@ -459,7 +492,39 @@ internal class LogseqRuntime(
                 succeeded = false,
                 message = "The native core effect executor is unavailable",
             )
+        val deletingOpenGraph = effect.kind == "delete-local-graph" && effect.text == selectedGraphId
+        if (deletingOpenGraph) {
+            hasOpenGraph = false
+            graphCatalogAutoRefresh?.stopPeriodic()
+            graphEventsSession.cancel()
+            pendingSyncJob?.cancel()
+            graphEventsSession.join()
+            pendingSyncJob?.join()
+            pendingSyncJob = null
+            pendingSyncRequested = false
+            val closed = bridge.callCore(JSONObject()
+                .put("apiVersion", 1).put("method", "dispatch")
+                .put("params", JSONObject().put("action", "closeGraph")
+                    .put("payload", JSONObject().put("graphId", effect.text).toString()))
+                .toString())
+            val response = JSONObject(closed)
+            if (!response.optBoolean("ok")) {
+                runCoreRestore(hasAuthenticatedSession, platformEffects.loadStorageState())
+                return NativeEffectResolution.Failure(response.optJSONObject("error")?.optString("message").orEmpty())
+            }
+            appliedServerT = -1L
+            applyCoreResponse(closed)
+        }
         val resolution = executor.execute(effect)
+        if (deletingOpenGraph) {
+            if (resolution.succeeded) {
+                platformEffects.persistSelectedGraphId("")
+                selectedGraphId = ""
+            } else {
+                runCoreRestore(hasAuthenticatedSession, platformEffects.loadStorageState())
+            }
+            updateCatalogPolling("delete-local-graph")
+        }
         if (effect.kind == "save-settings" && resolution.succeeded) {
             val storage = platformEffects.loadStorageState()
             appearance = storage.settings.appearance
@@ -501,6 +566,7 @@ internal class LogseqRuntime(
                 .put("apiVersion", 1).put("method", "dispatch")
                 .put("params", JSONObject().put("action", "configure").put("payload", payload))
                 .toString())
+            configuredAccessToken = ""
             applyCoreResponse(cleared)
         }
         if (resolution.succeeded &&
@@ -512,7 +578,7 @@ internal class LogseqRuntime(
             requestSyncNow()
             // First post-open snapshots ship an empty sidebar; fill it
             // off the launch path once the journal is up.
-            scope.launch { runCatching { graphLifecycle?.loadSidebar() } }
+            loadSidebarAfterOpen()
         }
         if (resolution.succeeded &&
             effect.kind in setOf("send-capture", "send-task", "send-tagged", "sync-now")
@@ -523,6 +589,18 @@ internal class LogseqRuntime(
     }
 
     // --- Bootstrap / restore ---
+
+    private fun loadSidebarAfterOpen() {
+        scope.launch {
+            try {
+                graphLifecycle?.loadSidebar()?.let { applyCoreResponse(it) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
 
     private fun restoreCore(hasStoredSession: Boolean, storage: AndroidStorageState? = null) {
         val active = activeBootstrap
@@ -546,36 +624,31 @@ internal class LogseqRuntime(
     }
 
     private suspend fun runCoreRestore(hasStoredSession: Boolean, storage: AndroidStorageState?) {
-        var accessToken = ""
-        if (hasStoredSession) {
-            try {
-                accessToken = platformEffects.restoreAccessToken() ?: ""
-                if (accessToken.isBlank()) {
-                    error("The stored session did not return an access token")
-                }
-            } catch (error: Throwable) {
-                hasAuthenticatedSession = false
+        try {
+            val restoredAuthentication = restoreAndroidAuthentication(hasStoredSession, platformEffects::restoreAccessToken)
+            hasAuthenticatedSession = restoredAuthentication.hasSession
+            if (hasStoredSession && !restoredAuthentication.hasSession) {
                 applyPatch(
                     bridge.applyHostUpdate(
                         kind = "authentication",
                         payload = JSONObject()
                             .put("state", "signedOut")
-                            .put("errorMessage", error.toString())
+                            .put("errorMessage", JSONObject.NULL)
                             .toString(),
                     )
                 )
                 AndroidLaunchMetrics.report("authentication_published")
-                reportError(error)
             }
-        }
-        hasAuthenticatedSession = accessToken.isNotBlank()
-        try {
+            if (restoredAuthentication.unavailable) {
+                logRuntime("info", "core", "Authentication refresh unavailable; restoring cached state without a network token")
+            }
             logRuntime("info", "core", "Restoring core state")
-            val state = platformEffects.coreStartupState(accessToken, storage)
+            val state = platformEffects.coreStartupState(restoredAuthentication.accessToken, storage)
             val restored = CoreBootstrap(
                 callCore = bridge::callCore,
                 trace = { traceGraphLifecycle("bootstrap $it") },
             ).restore(state)
+            configuredAccessToken = restoredAuthentication.accessToken
             applyCoreResponse(restored.catalogResponse)
             graphCatalogAutoRefresh?.rememberCatalog(restored.catalogResponse)
             applyPatch(
@@ -591,11 +664,15 @@ internal class LogseqRuntime(
             // renders against; by now auth state is published either way.
             AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
-            if (hasOpenGraph) requestSyncNow()
+            if (hasOpenGraph) {
+                requestSyncNow()
+                loadSidebarAfterOpen()
+            }
             appEntries.markReady()
             updateCatalogPolling("restore")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
-            logRuntime("error", "core", error.toString())
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
         }
@@ -774,6 +851,11 @@ internal class LogseqRuntime(
     // --- Tracing / logging ---
 
     private fun reportError(error: Throwable) {
+        if (isNetworkUnavailable(error)) {
+            logRuntime("info", "ui", "Network temporarily unavailable (${error.javaClass.simpleName})")
+            Log.w("LogseqRuntime", "Network temporarily unavailable", error)
+            return
+        }
         logRuntime("error", "ui", error.toString())
         Log.e("LogseqRuntime", "Effect failed\n${error.stackTraceToString()}")
     }

@@ -115,16 +115,16 @@ let flashcard_review_content model_source send : t =
                [
                  row ~gap:10
                    [
-                     flashcard_rating_button "again" "Again" "red"
+                     flashcard_rating_button "again" "Again" "flashcard-again-foreground"
                        "flashcard-again-background" send;
                      flashcard_rating_button "hard" "Hard"
-                       "warning-foreground" "flashcard-hard-background" send;
+                       "flashcard-hard-foreground" "flashcard-hard-background" send;
                    ];
                  row ~gap:10
                    [
-                     flashcard_rating_button "good" "Good" "blue"
+                     flashcard_rating_button "good" "Good" "flashcard-good-foreground"
                        "flashcard-good-background" send;
-                     flashcard_rating_button "easy" "Easy" "green"
+                     flashcard_rating_button "easy" "Easy" "flashcard-easy-foreground"
                        "flashcard-easy-background" send;
                    ];
                ]);

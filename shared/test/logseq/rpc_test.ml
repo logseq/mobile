@@ -1304,7 +1304,14 @@ let clearing_authentication_cancels_requests_without_dropping_local_edits () =
   check_eq ~msg:"temporary encrypted upload data is cleaned" !cleaned ["/tmp/encrypted-retry-asset"];
   check_eq ~msg:"local changes stay queued for a future login" (List.length !staged) 1;
   ignore (pending_completion session upload (`Int 200) (`String "{}") `Null);
-  check_eq ~msg:"late upload completion cannot consume local edits" (List.length !staged) 1
+  check_eq ~msg:"late upload completion cannot consume local edits" (List.length !staged) 1;
+  let refreshed = response_result (dispatch_json session "setAccessToken" "fresh-access") in
+  check_eq ~msg:"refreshing authentication keeps the selected graph"
+    (member "selectedGraphId" refreshed) (`String "encrypted-1");
+  let resumed = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  check_eq ~msg:"queued uploads resume with the refreshed credential"
+    (member "token" resumed) (`String "fresh-access");
+  check_eq ~msg:"refreshing authentication preserves the queued edit" (List.length !staged) 1
 
 let websocket_lifecycle_applies_events_exactly_once () =
   let applied = ref [] in
@@ -4754,10 +4761,10 @@ let page_service_exceptions_are_not_reclassified_as_payload_json_errors () =
   let response =
     dispatch_json session "deletePage" "{\"pageUuid\":\"p\",\"operationId\":\"op\"}"
   in
-  check_eq (response_error_code response) "invalid_json";
+  check_eq (response_error_code response) "internal_error";
   check_eq
     (json_string (member "message" (member "error" response)))
-    "request must be valid JSON"
+    "The request could not be completed"
 
 let refresh_reads_local_graph_without_http () =
   List.iter
@@ -5515,7 +5522,7 @@ let rpc_routing_keeps_first_fields_and_catches_handler_errors () =
        (fun () -> Json.to_string (Json.from_string "{"))
        dispatch
        "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")
-    (Rpc.failure "invalid_json" "request must be valid JSON")
+    (Rpc.failure "internal_error" "The request could not be completed")
 
 let capture_payload_supports_plain_text_and_validated_json () =
   List.iter
