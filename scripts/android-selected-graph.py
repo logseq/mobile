@@ -9,7 +9,7 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True)
-    parser.add_argument("--app", default="com.logseq.app")
+    parser.add_argument("--app", default="com.logseq.logseq")
     parser.add_argument("--graph-id", required=True)
     options = parser.parse_args()
 

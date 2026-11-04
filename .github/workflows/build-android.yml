@@ -1,6 +1,5 @@
-# Builds the Logseq Android app as a signed release APK and uploads it as a
-# workflow artifact for download. Modeled on logseq/logseq's build-android.yml;
-# the Play upload steps are intentionally left out for now.
+# Builds signed Android APK/AAB artifacts and publishes the bundle to Google
+# Play internal testing. Disable upload-play for the first manual Play upload.
 
 name: Build-Android
 
@@ -11,6 +10,24 @@ on:
         description: "Release Git Ref (Which branch or tag to build?)"
         required: true
         default: "main"
+      upload-play:
+        description: "Publish to Google Play internal testing (disable for first manual upload)"
+        type: boolean
+        default: true
+      release-status:
+        description: "Use draft until the app's first release has been published in Play Console"
+        type: choice
+        options:
+          - completed
+          - draft
+        default: completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-play-internal
+  cancel-in-progress: false
 
 env:
   JAVA_VERSION: '21'
@@ -36,8 +53,36 @@ jobs:
         with:
           ref: ${{ github.event.inputs.git-ref }}
 
+      - name: Check Google Play credentials
+        if: inputs.upload-play
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [[ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]]; then
+            echo "::error::Set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in repository Actions secrets, or disable upload-play to build the first AAB for manual upload."
+            exit 1
+          fi
+
+      - name: Set release version code
+        run: |
+          # A rerun needs a fresh version code, too. The workflow run number
+          # remains stable across reruns; run_attempt increases on each retry.
+          if (( GITHUB_RUN_ATTEMPT >= 100 )); then
+            echo "::error::Start a new workflow run after 99 attempts."
+            exit 1
+          fi
+          echo "LOGSEQ_ANDROID_VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))" >> "$GITHUB_ENV"
+          echo "LOGSEQ_ANDROID_REVISION=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_ENV"
+
       - name: System dependencies
         run: sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config
+
+      - name: Validate Android release wiring
+        run: |
+          bash scripts/test-android-native-script.sh
+          bash scripts/test-no-skip-support.sh
+          bash scripts/test-android-e2e-runner.sh
+          python3 -m unittest discover -s scripts -p test_android_measurement.py
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
@@ -82,7 +127,7 @@ jobs:
           curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
           chmod +x ~/.local/bin/opam
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          eval $(opam env)
+          eval "$(opam env)"
           opam --version && ocaml -version
 
       - uses: ocaml/setup-ocaml@v3
@@ -101,7 +146,7 @@ jobs:
       - name: Install opam dependencies
         if: steps.opam-switch.outputs.cache-hit != 'true'
         run: |
-          eval $(opam env)
+          eval "$(opam env)"
           opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
           opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
           opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
@@ -134,7 +179,7 @@ jobs:
         if: steps.duniverse.outputs.cache-hit != 'true'
         run: |
           set -e
-          eval $(opam env)
+          eval "$(opam env)"
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
@@ -144,7 +189,7 @@ jobs:
             echo "opam-monorepo pull failed (attempt $attempt); retrying" >&2
             sleep 10
           done
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u); do
+          while IFS= read -r pin; do
             url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
             if [ -d "duniverse/$name" ]; then
               continue
@@ -154,7 +199,7 @@ jobs:
               git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
               git -C "duniverse/$name" checkout --quiet FETCH_HEAD
             fi
-          done
+          done < <(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u)
 
       - name: Save duniverse
         if: steps.duniverse.outputs.cache-hit != 'true'
@@ -196,15 +241,17 @@ jobs:
           restore-keys: |
             android-native-${{ runner.os }}-
 
-      - name: Build Android release APK
+      - name: Build Android release APK and app bundle
         # assembleRelease depends on buildAndroidNativeCore, which runs
         # scripts/build-android-native.sh for $LOGSEQ_ANDROID_ABI; the Kotlin
         # :lui module resolves to duniverse/lui/platform/android/lui.
         run: |
-          eval $(opam env)
-          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
-          export DUNE="$(command -v dune)"
-          ./gradlew :app:assembleRelease
+          eval "$(opam env)"
+          LOGSEQ_OPAM_SWITCH="$(opam switch show)"
+          DUNE="$(command -v dune)"
+          export LOGSEQ_OPAM_SWITCH DUNE
+          ./gradlew :app:testReleaseUnitTest :app:compileReleaseAndroidTestKotlin \
+            :app:assembleRelease :app:bundleRelease -PlogseqTestBuildType=release
         working-directory: android
 
       - name: Save Android OCaml toolchain
@@ -226,7 +273,7 @@ jobs:
             android/app/build/intermediates
           key: android-native-${{ runner.os }}-${{ github.sha }}
 
-      - name: Sign Android APK
+      - name: Sign Android APK and app bundle
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
@@ -241,15 +288,59 @@ jobs:
             --out app-signed.apk
           "$build_tools/apksigner" verify --verbose app-signed.apk
           "$build_tools/zipalign" -c -P 16 4 app-signed.apk
+
+          # apksigner handles APKs; AABs use JAR signing with the same upload key.
+          mapfile -t key_aliases < <(
+            keytool -J-Duser.language=en -J-Duser.country=US -list -v \
+              -keystore "$RUNNER_TEMP/android-keystore.jks" \
+              -storepass:env ANDROID_KEYSTORE_PASSWORD \
+              | awk '/^Alias name: / { alias = substr($0, 13) } /^Entry type: PrivateKeyEntry$/ { print alias }'
+          )
+          if (( ${#key_aliases[@]} != 1 )); then
+            echo "::error::The Android keystore must contain exactly one private key."
+            exit 1
+          fi
+          jarsigner -keystore "$RUNNER_TEMP/android-keystore.jks" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEYSTORE_PASSWORD \
+            -signedjar app-signed.aab app/build/outputs/bundle/release/app-release.aab "${key_aliases[0]}"
+          jarsigner -verify app-signed.aab
         working-directory: android
 
-      - name: Rename APK
+      - name: Collect release artifacts
         run: |
           mkdir builds
-          mv android/app-signed.apk "./builds/Logseq-android-${GITHUB_SHA::7}.apk"
+          mv android/app-signed.apk "builds/Logseq-android-${LOGSEQ_ANDROID_REVISION}-${LOGSEQ_ANDROID_VERSION_CODE}.apk"
+          mv android/app-signed.aab "builds/Logseq-android-${LOGSEQ_ANDROID_REVISION}-${LOGSEQ_ANDROID_VERSION_CODE}.aab"
+          cp android/app/build/outputs/mapping/release/mapping.txt builds/mapping.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: logseq-android-builds
           path: builds
+          if-no-files-found: error
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/android-keystore.jks"
+
+  publish-internal:
+    if: inputs.upload-play
+    needs: build-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: logseq-android-builds
+          path: builds
+
+      - name: Publish to Google Play internal testing
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.logseq.logseq
+          releaseFiles: builds/*.aab
+          track: internal
+          status: ${{ inputs.release-status }}
+          mappingFile: builds/mapping.txt

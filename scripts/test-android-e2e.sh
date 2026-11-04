@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-app_id=com.logseq.app
+app_id=com.logseq.logseq
 signed_out_flow=tests/e2e/android-signed-out.yaml
 local_setup_flow=tests/e2e/android-local-graph-setup.yaml
 connect_flow=tests/e2e/android-staging-connect.yaml

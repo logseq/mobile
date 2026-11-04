@@ -15,7 +15,7 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
 
-app_id=com.logseq.app
+app_id=com.logseq.logseq
 adb -s "$device" shell dumpsys gfxinfo "$app_id" reset >/dev/null
 sleep 3
 

@@ -8,8 +8,8 @@
         android:shortcutLongLabel="@string/shortcut_capture_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.app"
-            android:targetClass="com.logseq.app.MainActivity"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
             android:data="logseq://capture" />
     </shortcut>
     <shortcut
@@ -20,8 +20,8 @@
         android:shortcutLongLabel="@string/shortcut_journal_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.app"
-            android:targetClass="com.logseq.app.MainActivity"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
             android:data="logseq://journal" />
     </shortcut>
     <shortcut
@@ -32,8 +32,8 @@
         android:shortcutLongLabel="@string/record_audio">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.app"
-            android:targetClass="com.logseq.app.MainActivity"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
             android:data="logseq://audio" />
     </shortcut>
 </shortcuts>

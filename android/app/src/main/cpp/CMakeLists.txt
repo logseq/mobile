@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(logseq_jni C)
 
-# Thin JNI shim between com.logseq.app.NativeCore and the
+# Thin JNI shim between com.logseq.logseq.NativeCore and the
 # liblogseq_core.so C ABI (shared/native/logseq_core_ffi.h).
 # The OCaml core is delivered as a prebuilt shared library per ABI; this
 # shim forwards every call and converts between jbyteArray (raw UTF-8

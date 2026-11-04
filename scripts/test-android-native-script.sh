@@ -54,24 +54,24 @@ require_text "shared/native/dune" "link_deps"
 require_text "shared/native/dune" '%{env:LOGSEQ_SQLITE_LINK_FILE=./libsqlite3.a}'
 require_text "scripts/build-android-native.sh" 'LOGSEQ_SQLITE_LINK_FILE="$build_dir/libsqlite3.a"'
 require_file "shared/native/logseq_crypto_android.c"
-require_file "android/app/src/main/kotlin/logseq/app/AndroidE2EECrypto.kt"
+require_file "android/app/src/main/kotlin/com/logseq/logseq/AndroidE2EECrypto.kt"
 require_text "shared/native/logseq_https_android.c" "logseq_crypto_jni_init"
-require_text "android/app/src/main/kotlin/logseq/app/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
 reject_text "shared/native/logseq_crypto_android.c" "Android crypto is not implemented"
 for forbidden in ".cmx" "ocamlopt" "output-complete-obj" "link-objects.txt" "build-mobile-ocaml-deps.sh"; do
   reject_text "scripts/build-android-native.sh" "$forbidden"
 done
 require_text "shared/native/logseq_https_android.c" "JNI_OnLoad"
 require_text "shared/native/logseq_https_android.c" "AndroidHttpTransport"
-require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "connectTimeout = 30_000"
-require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "outputStream.use"
-require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "resolveAndroidFile"
-require_text "android/app/src/main/kotlin/com/logseq/app/MainActivity.kt" "AndroidHttpTransport.initialize(applicationContext)"
-require_text "android/app/src/main/kotlin/com/logseq/app/NativeCore.kt" 'System.loadLibrary("logseq_jni")'
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidHttpTransport.kt" "connectTimeout = 30_000"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidHttpTransport.kt" "outputStream.use"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidHttpTransport.kt" "resolveAndroidFile"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/MainActivity.kt" "AndroidHttpTransport.initialize(applicationContext)"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/NativeCore.kt" 'System.loadLibrary("logseq_jni")'
 require_text "android/app/src/main/cpp/logseq_jni.c" 'dlopen("liblogseq_core.so"'
-require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "Intent.ACTION_OPEN_DOCUMENT"
-require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "Intent.EXTRA_ALLOW_MULTIPLE"
-require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "contentResolver.openInputStream"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidAssetImporter.kt" "Intent.ACTION_OPEN_DOCUMENT"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidAssetImporter.kt" "Intent.EXTRA_ALLOW_MULTIPLE"
+require_text "android/app/src/main/kotlin/com/logseq/logseq/AndroidAssetImporter.kt" "contentResolver.openInputStream"
 reject_text "scripts/build-android-native.sh" "logseq_https_stub.c"
 require_text "android/app/build.gradle.kts" "buildAndroidNativeCore"
 require_text "android/app/build.gradle.kts" "scripts/build-android-native.sh"

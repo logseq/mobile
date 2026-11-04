@@ -33,7 +33,7 @@ With an Android emulator/device connected, use Java 21 and run from `android/`:
 ```sh
 ./gradlew :app:connectedDebugAndroidTest :app:testDebugUnitTest :app:compileReleaseKotlin \
   -PlogseqRequireNativeCore=false \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.app.AndroidImageCompressionInstrumentedTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.logseq.AndroidImageCompressionInstrumentedTest
 ```
 
 The eleven instrumented tests exercise real Android `BitmapFactory`, `Bitmap`,
@@ -65,7 +65,7 @@ PSNR uses the decoded source resized by Android to the output dimensions as the
 reference, separating JPEG encoding error from intentional photo downscaling.
 The landscape is an optional local system-wallpaper fixture, not a bundled asset.
 To reproduce that measurement, install the generated APKs, stream the JPEG into
-the app's private files directory with `adb shell -T run-as com.logseq.app tee`,
+the app's private files directory with `adb shell -T run-as com.logseq.logseq tee`,
 then pass its absolute device path as `-e landscape PATH` to `am instrument`.
 Writing an external directory as the shell user does not grant the app access.
 

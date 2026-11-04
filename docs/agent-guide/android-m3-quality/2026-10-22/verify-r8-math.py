@@ -32,7 +32,7 @@ def replace(text):
 def capture(name):
     data=subprocess.check_output([ADB,'-s',DEVICE,'exec-out','screencap','-p'])
     OUT.joinpath(name+'.png').write_bytes(data)
-prefs=ET.fromstring(adb('exec-out','cat','/data/user/0/com.logseq.app/shared_prefs/logseq.xml'))
+prefs=ET.fromstring(adb('exec-out','cat','/data/user/0/com.logseq.logseq/shared_prefs/logseq.xml'))
 assert next(n.text for n in prefs if n.get('name')=='logseq.selectedGraphId')=='uiregression'
 root=hierarchy()
 for _ in range(5):

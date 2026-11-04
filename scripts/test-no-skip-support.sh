@@ -45,7 +45,7 @@ fi
 
 manifest="$repo_root/android/app/src/main/AndroidManifest.xml"
 shortcuts="$repo_root/android/app/src/main/res/xml/shortcuts.xml"
-widgets="$repo_root/android/app/src/main/kotlin/com/logseq/app/AndroidWidgets.kt"
+widgets="$repo_root/android/app/src/main/kotlin/com/logseq/logseq/AndroidWidgets.kt"
 
 grep -Fq 'android.app.shortcuts' "$manifest" \
   || die "Android manifest lost app shortcuts"

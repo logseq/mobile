@@ -90,6 +90,31 @@ profile APK used by `scripts/test-android-e2e.sh` is `:app:assembleProfile`
 (`app/build/outputs/apk/profile/app-profile.apk`). JVM unit tests run with
 `./gradlew test`.
 
+Run the **Build-Android** GitHub Actions workflow to build signed release APK
+and AAB artifacts and publish the AAB to Google Play **Internal testing**.
+`git-ref` selects the source branch or tag. CI assigns an increasing Android
+version code using the workflow run number and retry attempt; local builds
+default to `1` (override with `-PlogseqVersionCode=123`). Start a new workflow
+run when publishing newer code rather than rerunning an older release.
+
+The workflow uses these repository Actions secrets:
+
+- `ANDROID_KEYSTORE`: base64-encoded upload keystore with one private key.
+- `ANDROID_KEYSTORE_PASSWORD`: the keystore and private-key password.
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`: service-account JSON credentials for
+  Google Play uploads. Enable the Google Play Android Developer API in its
+  Google Cloud project, and give this account access to the Logseq app with
+  **View app information** and **Release apps to testing tracks** permissions
+  in Play Console.
+
+For the first release, run with `upload-play=false`, download the signed AAB
+from the `logseq-android-builds` artifact, and upload it manually in Play Console
+to register `com.logseq.logseq` and configure Play App Signing. Select the internal
+tester list and publish the first internal release there. Later runs upload
+and release automatically with `upload-play=true` and `release-status=completed`.
+Use `release-status=draft` to upload without rolling out to testers. Play may
+require this status while the app is still a draft.
+
 Instrumented tests default to the Debug build. To test an optimized Release,
 build its matching test APK in the same invocation:
 

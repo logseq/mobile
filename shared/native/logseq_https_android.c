@@ -16,7 +16,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   (void)reserved;
   java_vm = vm;
   if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
-  local_class = (*env)->FindClass(env, "logseq/app/AndroidHttpTransport");
+  local_class = (*env)->FindClass(env, "com/logseq/logseq/AndroidHttpTransport");
   if (local_class == NULL) return JNI_ERR;
   transport_class = (*env)->NewGlobalRef(env, local_class);
   (*env)->DeleteLocalRef(env, local_class);

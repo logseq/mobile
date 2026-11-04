@@ -170,7 +170,7 @@ cat >"$mock_bin/gradle" <<'GMOCK'
 printf '%s\n' "$*" >"$LOGSEQ_GRADLE_ARGS"
 GMOCK
 chmod +x "$mock_bin/adb" "$mock_bin/maestro" "$mock_bin/gradle"
-printf 'appId: com.logseq.app\n---\n- launchApp\n' >"$custom_flow"
+printf 'appId: com.logseq.logseq\n---\n- launchApp\n' >"$custom_flow"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
@@ -259,7 +259,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" connect >/dev/null
 grep -Fxq -- '-s test-device reverse tcp:8787 tcp:8787' "$adb_args" \
   || die "Android E2E runner did not expose the host-local backend to the device"
-grep -Eq 'run-as com\.logseq\.app cp .* shared_prefs/logseq\.xml$' "$adb_args" \
+grep -Eq 'run-as com\.logseq\.logseq cp .* shared_prefs/logseq\.xml$' "$adb_args" \
   || die "Android E2E server override did not use the app's SharedPreferences file"
 
 PATH="$mock_bin:$PATH" \
