@@ -1,4 +1,4 @@
-// Thin JNI shim between com.logseq.app.NativeCore and the
+// Thin JNI shim between com.logseq.logseq.NativeCore and the
 // liblogseq_core.so C ABI (shared/native/logseq_core_ffi.h).
 //
 // Symbols are resolved with dlopen/dlsym at first use so this shim links
@@ -90,7 +90,7 @@ static void graph_import_progress(const char *graph_id, const char *phase,
   if (attached) (*progress_vm)->DetachCurrentThread(progress_vm);
 }
 
-JNIEXPORT jboolean JNICALL Java_com_logseq_app_NativeCore_installGraphImportProgressCallback(
+JNIEXPORT jboolean JNICALL Java_com_logseq_logseq_NativeCore_installGraphImportProgressCallback(
     JNIEnv *env, jclass clazz, jclass receiver) {
   (void)clazz;
   typedef void (*callback_fn)(const char *, const char *, int64_t, int64_t);
@@ -148,14 +148,14 @@ static jbyteArray call_ss(JNIEnv *env, const char *symbol, jbyteArray a, jbyteAr
   return out;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiInitialize(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiInitialize(
     JNIEnv *env, jclass clazz, jint platform, jint host, jint authentication) {
   (void)clazz;
   lui_fn_iii fn = (lui_fn_iii)core_symbol("logseq_lui_initialize");
   return fn ? cstr_to_jbytes(env, fn(platform, host, authentication)) : NULL;
 }
 
-JNIEXPORT jlong JNICALL Java_com_logseq_app_NativeCore_luiRootNode(
+JNIEXPORT jlong JNICALL Java_com_logseq_logseq_NativeCore_luiRootNode(
     JNIEnv *env, jclass clazz) {
   (void)env; (void)clazz;
   typedef long long (*root_fn)(void);
@@ -163,82 +163,82 @@ JNIEXPORT jlong JNICALL Java_com_logseq_app_NativeCore_luiRootNode(
   return fn ? (jlong)fn() : 0;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiAppear(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiAppear(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_appear", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiPress(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiPress(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_press", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiLongPress(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiLongPress(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_long_press", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiSubmit(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiSubmit(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_submit", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiChange(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiChange(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_change", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiDismiss(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiDismiss(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_dismiss", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiDoublePress(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiDoublePress(
     JNIEnv *env, jclass clazz, jlong node) {
   (void)clazz;
   return call_l(env, "logseq_lui_double_press", node);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiTextChanged(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiTextChanged(
     JNIEnv *env, jclass clazz, jlong node, jbyteArray text) {
   (void)clazz;
   return call_ls(env, "logseq_lui_text_changed", node, text);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiToggleChanged(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiToggleChanged(
     JNIEnv *env, jclass clazz, jlong node, jint checked) {
   (void)clazz;
   lui_fn_li fn = (lui_fn_li)core_symbol("logseq_lui_toggle_changed");
   return fn ? cstr_to_jbytes(env, fn(node, checked)) : NULL;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiValueChanged(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiValueChanged(
     JNIEnv *env, jclass clazz, jlong node, jdouble value) {
   (void)clazz;
   lui_fn_ld fn = (lui_fn_ld)core_symbol("logseq_lui_value_changed");
   return fn ? cstr_to_jbytes(env, fn(node, value)) : NULL;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiPicked(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiPicked(
     JNIEnv *env, jclass clazz, jlong node, jbyteArray payload) {
   (void)clazz;
   return call_ls(env, "logseq_lui_picked", node, payload);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiVisibleRange(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiVisibleRange(
     JNIEnv *env, jclass clazz, jlong node, jlong first, jlong last) {
   (void)clazz;
   lui_fn_lll fn = (lui_fn_lll)core_symbol("logseq_lui_visible_range");
   return fn ? cstr_to_jbytes(env, fn(node, first, last)) : NULL;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiScrollCompleted(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiScrollCompleted(
     JNIEnv *env, jclass clazz, jlong node, jlong token, jbyteArray outcome) {
   (void)clazz;
   lui_fn_lls fn = (lui_fn_lls)core_symbol("logseq_lui_scroll_completed");
@@ -250,7 +250,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiScrollCompleted(
   return out;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiExtensionEvent(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiExtensionEvent(
     JNIEnv *env, jclass clazz, jlong node, jbyteArray identifier, jbyteArray name,
     jbyteArray text, jlong value) {
   (void)clazz;
@@ -267,25 +267,25 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiExtensionEvent(
   return out;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiDispose(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiDispose(
     JNIEnv *env, jclass clazz) {
   (void)clazz;
   return call_none(env, "logseq_lui_dispose");
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiResync(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiResync(
     JNIEnv *env, jclass clazz) {
   (void)clazz;
   return call_none(env, "logseq_lui_resync");
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiTakeEffect(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiTakeEffect(
     JNIEnv *env, jclass clazz) {
   (void)clazz;
   return call_none(env, "logseq_lui_take_effect");
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiResolveEffect(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiResolveEffect(
     JNIEnv *env, jclass clazz, jlong effectId, jint succeeded, jbyteArray message) {
   (void)clazz;
   lui_fn_lis fn = (lui_fn_lis)core_symbol("logseq_lui_resolve_effect");
@@ -297,25 +297,25 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiResolveEffect(
   return out;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiApplySnapshot(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiApplySnapshot(
     JNIEnv *env, jclass clazz, jbyteArray response) {
   (void)clazz;
   return call_s(env, "logseq_lui_apply_snapshot", response);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_luiApplyHostUpdate(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiApplyHostUpdate(
     JNIEnv *env, jclass clazz, jbyteArray kind, jbyteArray payload) {
   (void)clazz;
   return call_ss(env, "logseq_lui_apply_host_update", kind, payload);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_logseqCall(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_logseqCall(
     JNIEnv *env, jclass clazz, jbyteArray request) {
   (void)clazz;
   return call_s(env, "logseq_call", request);
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_logseq_app_NativeCore_highlightCode(
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_highlightCode(
     JNIEnv *env, jclass clazz, jbyteArray request) {
   (void)clazz;
   typedef char *(*highlight_fn)(const char *);

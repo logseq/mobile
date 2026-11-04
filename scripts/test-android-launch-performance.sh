@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-app_id=com.logseq.app
-activity="$app_id/logseq.app.MainActivity"
+app_id=com.logseq.logseq
+activity="$app_id/com.logseq.logseq.MainActivity"
 device=${ANDROID_SERIAL:-}
 total_budget_ms=${LOGSEQ_ANDROID_TOTAL_TIME_BUDGET_MS:-2000}
 first_ui_budget_ms=${LOGSEQ_ANDROID_FIRST_UI_BUDGET_MS:-1200}

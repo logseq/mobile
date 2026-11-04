@@ -14,7 +14,7 @@ static jmethodID crypto_call_method;
 extern JavaVM *logseq_android_java_vm(void);
 
 int logseq_crypto_jni_init(JNIEnv *env) {
-  jclass local_class = (*env)->FindClass(env, "logseq/app/AndroidE2EECrypto");
+  jclass local_class = (*env)->FindClass(env, "com/logseq/logseq/AndroidE2EECrypto");
   if (local_class == NULL) return 0;
   crypto_class = (*env)->NewGlobalRef(env, local_class);
   (*env)->DeleteLocalRef(env, local_class);

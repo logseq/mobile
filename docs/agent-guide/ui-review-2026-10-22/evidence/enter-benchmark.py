@@ -11,7 +11,7 @@ assert label in ['before','after']
 mode=sys.argv[2] if len(sys.argv)>2 else 'key'
 assert mode in ['key','ime']
 name=label if mode=='key' else label+'-'+mode
-serial='emulator-5556';app='com.logseq.app'
+serial='emulator-5556';app='com.logseq.logseq'
 base=Path(__file__).resolve().parents[4]
 evidence=base/'docs/agent-guide/ui-review-2026-10-22/evidence/enter-performance-artifacts'
 evidence.mkdir(parents=True,exist_ok=True)
@@ -44,7 +44,7 @@ def install(file):
 try:
     install(fixture)
     adb('shell','run-as',app,'rm','-f','files/enter-benchmark-500-'+label+'-'+mode+'.json')
-    r=adb('shell','am','instrument','-w','-r','-e','verifyEnterPerformance','true','-e','enterFixtureBlocks','500','-e','benchmarkLabel',label,'-e','enterInputMode',mode,'-e','class','com.logseq.app.AndroidEnterPerformanceTest',app+'.test/androidx.test.runner.AndroidJUnitRunner',capture_output=True,text=True)
+    r=adb('shell','am','instrument','-w','-r','-e','verifyEnterPerformance','true','-e','enterFixtureBlocks','500','-e','benchmarkLabel',label,'-e','enterInputMode',mode,'-e','class','com.logseq.logseq.AndroidEnterPerformanceTest',app+'.test/androidx.test.runner.AndroidJUnitRunner',capture_output=True,text=True)
     (evidence/(name+'.log')).write_text(r.stdout+r.stderr)
     for artifact in ['enter-failure.png','enter-failure.txt']:
         failure=subprocess.run(['rtk','proxy','adb','-s',serial,'exec-out','run-as',app,'cat','files/'+artifact],capture_output=True)

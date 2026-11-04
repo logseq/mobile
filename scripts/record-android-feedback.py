@@ -43,7 +43,7 @@ lines = []
 def start(scenario):
     global recorder, active, lines
     active, lines = scenario, []
-    subprocess.run(["adb", "shell", "rm", "-f", f"/sdcard/Android/data/com.logseq.app/files/feedback-{scenario}-*.png"], check=True)
+    subprocess.run(["adb", "shell", "rm", "-f", f"/sdcard/Android/data/com.logseq.logseq/files/feedback-{scenario}-*.png"], check=True)
     for old in output.glob(f"feedback-{scenario}-*.png"):
         old.unlink()
     remote = f"/sdcard/feedback-{args.phase}-{scenario}.mp4"
@@ -62,7 +62,7 @@ def finish(succeeded):
         recorder.terminate(); recorder.wait(timeout=5)
     subprocess.run(["adb", "pull", remote, str(output / f"{scenario}.mp4")], check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["adb", "shell", "rm", remote], check=True)
-    files = subprocess.run(["adb", "shell", "ls", f"/sdcard/Android/data/com.logseq.app/files/feedback-{scenario}-*.png"], capture_output=True, text=True)
+    files = subprocess.run(["adb", "shell", "ls", f"/sdcard/Android/data/com.logseq.logseq/files/feedback-{scenario}-*.png"], capture_output=True, text=True)
     for file in files.stdout.splitlines():
         if file.startswith("/sdcard/"):
             subprocess.run(["adb", "pull", file, str(output / Path(file).name)], check=True, stdout=subprocess.DEVNULL)
@@ -82,9 +82,9 @@ def finish(succeeded):
     active = recorder = None
 
 command = ["adb", "shell", "am", "instrument", "-w", "-r", "-e", "class",
-    "com.logseq.app.AndroidFeedbackRecordingTest", "-e", "feedbackScenarios", ",".join(args.scenarios),
+    "com.logseq.logseq.AndroidFeedbackRecordingTest", "-e", "feedbackScenarios", ",".join(args.scenarios),
     "-e", "feedbackPhase", args.phase, *catalog_args,
-    "com.logseq.app.test/androidx.test.runner.AndroidJUnitRunner"]
+    "com.logseq.logseq.test/androidx.test.runner.AndroidJUnitRunner"]
 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 status = {}
 all_lines = []

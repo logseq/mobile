@@ -16,7 +16,7 @@ options = parser.parse_args()
 OUT = options.output.resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 DEVICE = options.device
-APP = "com.logseq.app"
+APP = "com.logseq.logseq"
 
 def require_idle_host():
     processes = subprocess.check_output(["ps", "-axo", "command="], text=True)

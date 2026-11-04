@@ -51,16 +51,20 @@ val nativeCoreRequired =
     providers.gradleProperty("logseqRequireNativeCore").map(String::toBoolean).orElse(true)
 
 android {
-    namespace = "com.logseq.app"
+    namespace = "com.logseq.logseq"
     testBuildType = providers.gradleProperty("logseqTestBuildType").getOrElse("debug")
     compileSdk { version = release(37) { minorApiLevel = 0 } }
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = providers.gradleProperty("logseqApplicationId").getOrElse("com.logseq.app")
+        applicationId = providers.gradleProperty("logseqApplicationId").getOrElse("com.logseq.logseq")
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
+        versionCode = providers.gradleProperty("logseqVersionCode")
+            .orElse(providers.environmentVariable("LOGSEQ_ANDROID_VERSION_CODE"))
+            .map { value ->
+                value.toInt().also { require(it in 1..2_100_000_000) { "Invalid Android version code: $value" } }
+            }.getOrElse(1)
         versionName = appVersion
         buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

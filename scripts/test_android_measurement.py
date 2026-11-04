@@ -36,16 +36,16 @@ class AndroidMeasurementTest(unittest.TestCase):
             if "dumpsys window" in text:
                 if mode == "api36" and "windows" in args:
                     return "mTopFocusedDisplayId=0\n"
-                package = "com.android.launcher3/.Launcher" if mode == "wrong-foreground" else "com.logseq.app/.MainActivity"
+                package = "com.android.launcher3/.Launcher" if mode == "wrong-foreground" else "com.logseq.logseq/.MainActivity"
                 return f"mCurrentFocus=Window{{123 u0 {package}}}\n"
             if "dumpsys activity activities" in text:
-                return "topResumedActivity=ActivityRecord{123 u0 com.logseq.app/.MainActivity}"
+                return "topResumedActivity=ActivityRecord{123 u0 com.logseq.logseq/.MainActivity}"
             if "uiautomator" in text or "hierarchy.xml" in text:
                 row = 0 if mode == "stationary" else gestures
                 dialog = '<node text="System UI isn’t responding" />' if mode == "anr" else ""
                 if mode == "responding-text":
-                    dialog = '<node package="com.logseq.app" text="The colleague is responding" />'
-                return f'<hierarchy><node package="com.logseq.app" resource-id="list.outliner"><node text="Block {row}" resource-id="outliner.block.{row}" /></node>{dialog}</hierarchy>'
+                    dialog = '<node package="com.logseq.logseq" text="The colleague is responding" />'
+                return f'<hierarchy><node package="com.logseq.logseq" resource-id="list.outliner"><node text="Block {row}" resource-id="outliner.block.{row}" /></node>{dialog}</hierarchy>'
             if "gfxinfo" in text:
                 frames = 0 if mode == "zero-frames" else 120
                 return f"Total frames rendered: {frames}\nJanky frames: 6\n50th percentile: 12ms\n95th percentile: 32ms\n99th percentile: 48ms\n"

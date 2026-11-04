@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 serial=${1:-emulator-5556}
 [[ $serial == emulator-* ]] || { echo "This isolated QA flow only accepts an emulator" >&2; exit 1; }
 adb=(adb -s "$serial")
-app_id=com.logseq.app
+app_id=com.logseq.logseq
 seed="$repo_root/_build/default/shared/native/logseq_e2e_seed.exe"
 [[ -x $seed ]] || { echo "Build shared/native/logseq_e2e_seed.exe before this flow" >&2; exit 1; }
 
@@ -38,7 +38,7 @@ PYTHON
 "$seed" "$task_dir/graph.sqlite" --composer
 "${adb[@]}" push "$task_dir/graph.sqlite" /data/local/tmp/logseq-background-sync.sqlite
 "${adb[@]}" shell am instrument -w -r \
-    -e class com.logseq.app.AndroidBackgroundSyncTest \
+    -e class com.logseq.logseq.AndroidBackgroundSyncTest \
     -e backgroundGraphFixture /data/local/tmp/logseq-background-sync.sqlite \
     "$app_id.test/androidx.test.runner.AndroidJUnitRunner" | tee "$task_dir/result.log"
 python3 - "$task_dir/result.log" <<'PYTHON'
