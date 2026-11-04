@@ -57,21 +57,32 @@ let fields source send stage attributes choices =
   | VerifyMfa -> [text ~accessibility_identifier:"auth.setup-secret"
       ~value_signal:(Signal.map (fun current -> (form current).setup_secret) source) []; code]
 
-let sheet source send : t =
-  let busy = Signal.map (fun current -> Auth_flow.busy (form current)) source in
-  let link id label event = button ~variant:`ghost ~text:(tr source label) ~min_height:44
-      ~text_alignment:`center ~accessibility_identifier:id ~disabled_signal:busy ~on_press:(action send event) [] in
-  let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
-  themed ~tokens:Lui_ui.[
-    "background", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
-    "surface", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
+let theme_tokens ui_context =
+  let open Lui_ui in
+  let surfaces =
+    match Lui_ui.platform ui_context, Lui_ui.host ui_context with
+    | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
+    | _ -> [
+      "background", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
+      "surface", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
+    ]
+  in
+  surfaces @ [
     "muted-foreground", Adaptive { light = "#686E6B"; dark = "#ADBDBD" };
     "auth-border", Adaptive { light = "#CCD2CE"; dark = "#4D686D" };
     "auth-action", Adaptive { light = "#101312"; dark = "#EDF2EF" };
     "auth-action-text", Adaptive { light = "#FFFFFF"; dark = "#102E33" };
     "auth-disabled", Adaptive { light = "#E2E6E2"; dark = "#24434A" };
     "auth-disabled-text", Adaptive { light = "#5D655F"; dark = "#AABBB9" };
-  ] (
+  ]
+
+let sheet source send : t =
+  let busy = Signal.map (fun current -> Auth_flow.busy (form current)) source in
+  let link id label event = button ~variant:`ghost ~text:(tr source label) ~min_height:44
+      ~text_alignment:`center ~accessibility_identifier:id ~disabled_signal:busy ~on_press:(action send event) [] in
+  let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
+  fun context parent ->
+  themed ~tokens:(theme_tokens context) (
   sheet ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.title (form current))) source)
     ~height:680 ~style_class:"navigation-content navigation-inline-title"
     ~detents_signal:(Signal.map (fun current -> match (form current).stage with
@@ -127,4 +138,4 @@ let sheet source send : t =
           ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
           ~on_press:(action send Auth_flow.Cancel) [];
       ];
-    ])
+    ]) context parent
