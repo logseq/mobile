@@ -2374,7 +2374,7 @@ let rec dispatch session action payload =
       (fun () ->
         if (state session).config <> None then
           restore_semantic_queue session;
-        snapshot_visible session)
+        sidebar_snapshot session)
   | "deletePage" ->
     Rpc.delete_page payload h.Types.graph_delete_page
       (s.config <> None) now_ms
