@@ -20,22 +20,40 @@ jobs:
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
       GIT_TERMINAL_PROMPT: "0"
-      GIT_CONFIG_COUNT: 3
+      GIT_CONFIG_COUNT: 4
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
       GIT_CONFIG_VALUE_0: "git@github.com:"
       GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
       GIT_CONFIG_VALUE_1: "ssh://git@github.com/"
       GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
       GIT_CONFIG_VALUE_2: "git+ssh://git@github.com/"
+      # Keep the signing repository on SSH for its read-only deploy key.
+      GIT_CONFIG_KEY_3: url.ssh://git@github.com/logseq/certificates.git.insteadOf
+      GIT_CONFIG_VALUE_3: "ssh://git@github.com/logseq/certificates.git"
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.git-ref }}
 
+      - name: Prepare signing repository access
+        run: |
+          set -o pipefail
+          : "${IOS_SIGNING_SSH_PRIVATE_KEY:?IOS_SIGNING_SSH_PRIVATE_KEY is required}"
+          umask 077
+          printf '%s\n' "$IOS_SIGNING_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/logseq-signing-ci"
+          mkdir -p "$HOME/.ssh"
+          curl --fail --silent --show-error https://api.github.com/meta \
+            | jq -r '.ssh_keys[] | "github.com " + .' >> "$HOME/.ssh/known_hosts"
+          GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/logseq-signing-ci -o IdentitiesOnly=yes -o BatchMode=yes" \
+            git ls-remote ssh://git@github.com/logseq/certificates.git HEAD > /dev/null
+        env:
+          IOS_SIGNING_SSH_PRIVATE_KEY: ${{ secrets.IOS_SIGNING_SSH_PRIVATE_KEY }}
+
       - name: Select Xcode 27.2
         run: |
           sudo xcode-select --switch /Applications/Xcode_27.2.app
           xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
 
       - name: System dependencies
         run: brew install sdl2 sdl2_ttf
@@ -106,9 +124,6 @@ jobs:
       - name: Require vendored dependencies
         if: steps.duniverse.outputs.cache-hit != 'true'
         run: echo "duniverse cache miss; run CI for this ref first so the duniverse cache is populated" >&2 && exit 1
-
-      - name: Install iOS platform
-        run: xcodebuild -downloadPlatform iOS || true
 
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain
@@ -186,12 +201,7 @@ jobs:
           key: bundler-${{ hashFiles('apple/App/Gemfile', 'apple/App/Gemfile.lock', '.github/workflows/build-ios-release.yml') }}
 
       - name: Build and upload iOS app
-        run: |
-          : "${LOGSEQ_GITHUB_PAT:?LOGSEQ_GITHUB_PAT is required for the certificates repository}"
-          MATCH_GIT_BASIC_AUTHORIZATION="$(printf '%s' "x-access-token:${LOGSEQ_GITHUB_PAT}" | base64 | tr -d '\n')"
-          echo "::add-mask::${MATCH_GIT_BASIC_AUTHORIZATION}"
-          export MATCH_GIT_BASIC_AUTHORIZATION
-          bundle exec fastlane beta
+        run: bundle exec fastlane beta
         working-directory: ./apple/App
         env:
           APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
@@ -200,8 +210,8 @@ jobs:
           APP_STORE_CONNECT_API_KEY_IS_KEY_CONTENT_BASE64: true
           SLACK_URL: ${{ secrets.SLACK_URL }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_URL: https://github.com/logseq/certificates.git
-          LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+          MATCH_GIT_URL: ssh://git@github.com/logseq/certificates.git
+          MATCH_GIT_PRIVATE_KEY: ${{ runner.temp }}/logseq-signing-ci
           XCODE_XCARGS: "-allowProvisioningUpdates"
 
       - name: Save Xcode build caches
