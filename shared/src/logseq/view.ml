@@ -22,9 +22,13 @@ let logseq_theme_tokens : (string * Lui_ui.theme_token_value) list =
     ("task-done", Adaptive { light = "#5BB98C"; dark = "#236E4A" });
     ("task-canceled", Adaptive { light = "#EB9091"; dark = "#AA2429" });
     ("flashcard-again-background", Fixed "#FF3B301F");
+    ("flashcard-again-foreground", Adaptive { light = "#B42318"; dark = "#FFB4AB" });
     ("flashcard-hard-background", Fixed "#FF95001F");
+    ("flashcard-hard-foreground", Adaptive { light = "#8A4B00"; dark = "#FFD180" });
     ("flashcard-good-background", Fixed "#007AFF1F");
+    ("flashcard-good-foreground", Adaptive { light = "#005BB5"; dark = "#A8C7FA" });
     ("flashcard-easy-background", Fixed "#34C7591F");
+    ("flashcard-easy-foreground", Adaptive { light = "#146C2E"; dark = "#A6DAB2" });
   ]
 
 let logseq_theme_mode (model : Model.logseq_model) : Lui_ui.theme_mode =
