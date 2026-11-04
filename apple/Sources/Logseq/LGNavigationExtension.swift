@@ -1062,7 +1062,10 @@ private struct LGNavigationContent: View {
         } else {
             return nil
         }
-        return ("logseq.search.page-actions", AnyView(pageActions.frame(width: 44, height: 44)))
+        return (
+            "logseq.search.page-actions",
+            AnyView(pageActions.frame(width: 44, height: 44))
+        )
     }
 
     private var bottomChrome: AnyView {
