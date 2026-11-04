@@ -41,7 +41,6 @@ val outliner_command_json :
   Outliner_effects.outliner_platform_command -> Yojson.Basic.t
 val with_node_icons : (string -> Yojson.Basic.t option) -> Yojson.Basic.t -> Yojson.Basic.t
 val outliner_patch_result :
-  ?node_icon:(string -> Yojson.Basic.t option) ->
   ?sync_error:string ->
   int ->
   Outliner_state.outliner_context ->

@@ -420,10 +420,10 @@ let with_node_icons resolve result =
       (uuid, Option.value ~default:`Null (resolve uuid)) :: icons) ids [])) :: fields)
   | _ -> result
 
-let outliner_patch_result ?(node_icon = fun _ -> None) ?sync_error revision context state command_revision commands
+let outliner_patch_result ?sync_error revision context state command_revision commands
     pending blocks deleted splices =
   Wire.success
-    (with_node_icons node_icon (Wire.json_object
+    (Wire.json_object
        [
          ("revision", `Int revision)
        ; ("blocks", Wire.json_list (List.map visible_block_json blocks))
@@ -440,4 +440,4 @@ let outliner_patch_result ?(node_icon = fun _ -> None) ?sync_error revision cont
        ; ("hasPendingSemanticOperations", `Bool pending)
        ; ("pendingSyncError", match sync_error with Some message -> `String message | None -> `Null)
        ; ("isOutlinerPatch", `Bool true)
-       ]))
+       ])

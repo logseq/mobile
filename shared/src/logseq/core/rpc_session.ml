@@ -513,7 +513,6 @@ let outliner_patch_result session context blocks deleted splices =
           Hashtbl.mem queries block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
         List.rev_append (List.rev blocks) refreshed in
   let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
-    ~node_icon:(node_icon session)
     ?sync_error:(Pump.pending_sync_error session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)

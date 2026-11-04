@@ -73,6 +73,7 @@ android {
 
     buildTypes {
         release {
+            proguardFiles("proguard-rules.pro")
             optimization {
                 enable = true
             }
@@ -155,13 +156,12 @@ dependencies {
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.json:json:20260814")
     implementation("ru.noties:jlatexmath-android:0.2.0")
 
+    // Android provides org.json; only host JVM tests need the separate library.
     testImplementation("org.json:json:20260814")
     testImplementation("junit:junit:4.13.2")
 
-    androidTestImplementation("org.json:json:20260814")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")

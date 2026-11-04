@@ -625,6 +625,13 @@ let existing_graph_icons_reach_favorites_headers_and_hydrated_nodes () =
     let opened = call "openNode" ["uuid", `String "graph-a-page"] in
     expect opened "graph-a-page" "Rocket" "#fb434c";
     expect opened "icon-block" "wave" "#00b55b";
+    ignore (Rpc_session.select_page !(host.Mobile_session.session) (Some "graph-a-page"));
+    let editing = call "outlinerEvent" ["type", `String "tapBlock"; "uuid", `String "icon-block"] in
+    check_eq ~msg:"editing uses a partial outliner response" (U.member "isOutlinerPatch" editing) (`Bool true);
+    let patch_fields = match editing with `Assoc fields -> fields | _ -> fail "Expected an outliner patch" in
+    check_eq ~msg:"partial outliner responses contain one icon projection"
+      (List.length (List.filter (fun (key, _) -> key = "nodeIcons") patch_fields)) 1;
+    expect editing "icon-block" "wave" "#00b55b";
     (* A fresh immutable read verifies the same precedence used on reopening. *)
     let db = Ds.db_with [Ds.Retract (Ds.Entity_id 4, "logseq.property/icon", Some (icon "emoji" "wave" "#00b55b"))] db in
     check_eq ~msg:"the fixture removes only the explicit node icon"
