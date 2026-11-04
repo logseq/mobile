@@ -1,6 +1,41 @@
 import SwiftUI
 import WidgetKit
 import AppIntents
+import ActivityKit
+
+struct RecordingLiveActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: RecordingActivityAttributes.self) { context in
+            RecordingActivityCard(attributes: context.attributes, state: context.state)
+                .activityBackgroundTint(Color(uiColor: .secondarySystemBackground))
+                .widgetURL(URL(string: "logseq://audio"))
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label("Recording", systemImage: "waveform").foregroundStyle(.red)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    RecordingActivityTimer(attributes: context.attributes, state: context.state)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    Text(context.state.transcript.isEmpty ? "Listening…" : context.state.transcript)
+                        .lineLimit(2)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .privacySensitive()
+                }
+            } compactLeading: {
+                Image(systemName: "waveform").foregroundStyle(.red)
+            } compactTrailing: {
+                RecordingActivityTimer(attributes: context.attributes, state: context.state)
+                    .font(.caption2).frame(width: 48)
+            } minimal: {
+                Image(systemName: "waveform").foregroundStyle(.red)
+            }
+            .widgetURL(URL(string: "logseq://audio"))
+        }
+    }
+}
 
 private struct JournalEntry: TimelineEntry {
     let date: Date
@@ -148,6 +183,7 @@ private struct CaptureWidget: Widget {
     var body: some Widget {
         TodayJournalWidget()
         CaptureWidget()
+        RecordingLiveActivityWidget()
         if #available(iOS 18.0, *) {
             QuickAddControl()
             RecordAudioControl()

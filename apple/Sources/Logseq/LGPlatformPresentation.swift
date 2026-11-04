@@ -52,6 +52,8 @@ public final class LGPlatformPresentationCoordinator {
         guard let service = LGAttachmentService(rawValue: rawValue) else {
             return false
         }
+        // Returning from a lock-screen activity must keep the current capture.
+        if service == .audio, attachmentService == .audio { return true }
         attachmentRequestID = UUID()
         attachmentService = service
         attachmentTargetBlockID = targetBlockID

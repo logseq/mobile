@@ -5846,6 +5846,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Downloading file…");
     ("File downloaded", "File downloaded");
     ("File download failed", "File download failed");
+    ("Transcription language", "Transcription language");
+    ("Preparing transcription…", "Preparing transcription…");
+    ("Listening…", "Listening…");
+    ("Start recording", "Start recording");
   ]);
   ("af", [
     ("Camera", "Kamera");
@@ -5862,6 +5866,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Lêer word afgelaai…");
     ("File downloaded", "Lêer afgelaai");
     ("File download failed", "Lêeraflaai het misluk");
+    ("Transcription language", "Transkripsietaal");
+    ("Preparing transcription…", "Berei transkripsie voor…");
+    ("Listening…", "Luister…");
+    ("Start recording", "Begin opname");
   ]);
   ("ar", [
     ("Camera", "الكاميرا");
@@ -5878,6 +5886,10 @@ let capture_dictionaries = [
     ("Downloading file…", "جارٍ تنزيل الملف…");
     ("File downloaded", "تم تنزيل الملف");
     ("File download failed", "تعذر تنزيل الملف");
+    ("Transcription language", "لغة التفريغ النصي");
+    ("Preparing transcription…", "جارٍ تجهيز التفريغ النصي…");
+    ("Listening…", "جارٍ الاستماع…");
+    ("Start recording", "بدء التسجيل");
   ]);
   ("ca", [
     ("Camera", "Càmera");
@@ -5894,6 +5906,10 @@ let capture_dictionaries = [
     ("Downloading file…", "S’està baixant el fitxer…");
     ("File downloaded", "Fitxer baixat");
     ("File download failed", "No s’ha pogut baixar el fitxer");
+    ("Transcription language", "Idioma de transcripció");
+    ("Preparing transcription…", "S’està preparant la transcripció…");
+    ("Listening…", "S’està escoltant…");
+    ("Start recording", "Inicia la gravació");
   ]);
   ("cs", [
     ("Camera", "Fotoaparát");
@@ -5910,6 +5926,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Stahování souboru…");
     ("File downloaded", "Soubor stažen");
     ("File download failed", "Stažení souboru se nezdařilo");
+    ("Transcription language", "Jazyk přepisu");
+    ("Preparing transcription…", "Příprava přepisu…");
+    ("Listening…", "Poslouchám…");
+    ("Start recording", "Spustit nahrávání");
   ]);
   ("de", [
     ("Camera", "Kamera");
@@ -5926,6 +5946,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Datei wird heruntergeladen…");
     ("File downloaded", "Datei heruntergeladen");
     ("File download failed", "Dateidownload fehlgeschlagen");
+    ("Transcription language", "Transkriptionssprache");
+    ("Preparing transcription…", "Transkription wird vorbereitet…");
+    ("Listening…", "Hört zu…");
+    ("Start recording", "Aufnahme starten");
   ]);
   ("es", [
     ("Camera", "Cámara");
@@ -5942,6 +5966,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Descargando archivo…");
     ("File downloaded", "Archivo descargado");
     ("File download failed", "No se pudo descargar el archivo");
+    ("Transcription language", "Idioma de transcripción");
+    ("Preparing transcription…", "Preparando la transcripción…");
+    ("Listening…", "Escuchando…");
+    ("Start recording", "Iniciar grabación");
   ]);
   ("fa", [
     ("Camera", "دوربین");
@@ -5958,6 +5986,10 @@ let capture_dictionaries = [
     ("Downloading file…", "در حال بارگیری پرونده…");
     ("File downloaded", "پرونده بارگیری شد");
     ("File download failed", "بارگیری پرونده ناموفق بود");
+    ("Transcription language", "زبان رونویسی");
+    ("Preparing transcription…", "در حال آماده‌سازی رونویسی…");
+    ("Listening…", "در حال گوش دادن…");
+    ("Start recording", "شروع ضبط");
   ]);
   ("fr", [
     ("Camera", "Appareil photo");
@@ -5974,6 +6006,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Téléchargement du fichier…");
     ("File downloaded", "Fichier téléchargé");
     ("File download failed", "Échec du téléchargement du fichier");
+    ("Transcription language", "Langue de transcription");
+    ("Preparing transcription…", "Préparation de la transcription…");
+    ("Listening…", "Écoute en cours…");
+    ("Start recording", "Démarrer l’enregistrement");
   ]);
   ("id", [
     ("Camera", "Kamera");
@@ -5990,6 +6026,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Mengunduh berkas…");
     ("File downloaded", "Berkas diunduh");
     ("File download failed", "Gagal mengunduh berkas");
+    ("Transcription language", "Bahasa transkripsi");
+    ("Preparing transcription…", "Menyiapkan transkripsi…");
+    ("Listening…", "Mendengarkan…");
+    ("Start recording", "Mulai merekam");
   ]);
   ("it", [
     ("Camera", "Fotocamera");
@@ -6006,6 +6046,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Download del file…");
     ("File downloaded", "File scaricato");
     ("File download failed", "Download del file non riuscito");
+    ("Transcription language", "Lingua di trascrizione");
+    ("Preparing transcription…", "Preparazione della trascrizione…");
+    ("Listening…", "In ascolto…");
+    ("Start recording", "Avvia registrazione");
   ]);
   ("ja", [
     ("Camera", "カメラ");
@@ -6022,6 +6066,10 @@ let capture_dictionaries = [
     ("Downloading file…", "ファイルをダウンロード中…");
     ("File downloaded", "ファイルをダウンロードしました");
     ("File download failed", "ファイルをダウンロードできませんでした");
+    ("Transcription language", "文字起こしの言語");
+    ("Preparing transcription…", "文字起こしを準備中…");
+    ("Listening…", "聞き取り中…");
+    ("Start recording", "録音を開始");
   ]);
   ("ko", [
     ("Camera", "카메라");
@@ -6038,6 +6086,10 @@ let capture_dictionaries = [
     ("Downloading file…", "파일 다운로드 중…");
     ("File downloaded", "파일 다운로드 완료");
     ("File download failed", "파일 다운로드 실패");
+    ("Transcription language", "받아쓰기 언어");
+    ("Preparing transcription…", "받아쓰기 준비 중…");
+    ("Listening…", "듣는 중…");
+    ("Start recording", "녹음 시작");
   ]);
   ("nb-no", [
     ("Camera", "Kamera");
@@ -6054,6 +6106,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Laster ned fil…");
     ("File downloaded", "Fil lastet ned");
     ("File download failed", "Nedlasting av fil mislyktes");
+    ("Transcription language", "Transkripsjonsspråk");
+    ("Preparing transcription…", "Forbereder transkripsjon…");
+    ("Listening…", "Lytter…");
+    ("Start recording", "Start opptak");
   ]);
   ("nl", [
     ("Camera", "Camera");
@@ -6070,6 +6126,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Bestand downloaden…");
     ("File downloaded", "Bestand gedownload");
     ("File download failed", "Bestand downloaden mislukt");
+    ("Transcription language", "Transcriptietaal");
+    ("Preparing transcription…", "Transcriptie voorbereiden…");
+    ("Listening…", "Luisteren…");
+    ("Start recording", "Opname starten");
   ]);
   ("pl", [
     ("Camera", "Aparat");
@@ -6086,6 +6146,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Pobieranie pliku…");
     ("File downloaded", "Plik pobrany");
     ("File download failed", "Nie udało się pobrać pliku");
+    ("Transcription language", "Język transkrypcji");
+    ("Preparing transcription…", "Przygotowywanie transkrypcji…");
+    ("Listening…", "Słuchanie…");
+    ("Start recording", "Rozpocznij nagrywanie");
   ]);
   ("pt-br", [
     ("Camera", "Câmera");
@@ -6102,6 +6166,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Baixando arquivo…");
     ("File downloaded", "Arquivo baixado");
     ("File download failed", "Falha ao baixar o arquivo");
+    ("Transcription language", "Idioma da transcrição");
+    ("Preparing transcription…", "Preparando a transcrição…");
+    ("Listening…", "Ouvindo…");
+    ("Start recording", "Iniciar gravação");
   ]);
   ("pt-pt", [
     ("Camera", "Câmara");
@@ -6118,6 +6186,10 @@ let capture_dictionaries = [
     ("Downloading file…", "A transferir ficheiro…");
     ("File downloaded", "Ficheiro transferido");
     ("File download failed", "Falha ao transferir o ficheiro");
+    ("Transcription language", "Idioma da transcrição");
+    ("Preparing transcription…", "A preparar a transcrição…");
+    ("Listening…", "A ouvir…");
+    ("Start recording", "Iniciar gravação");
   ]);
   ("ru", [
     ("Camera", "Камера");
@@ -6134,6 +6206,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Загрузка файла…");
     ("File downloaded", "Файл загружен");
     ("File download failed", "Не удалось загрузить файл");
+    ("Transcription language", "Язык расшифровки");
+    ("Preparing transcription…", "Подготовка расшифровки…");
+    ("Listening…", "Слушаю…");
+    ("Start recording", "Начать запись");
   ]);
   ("sk", [
     ("Camera", "Fotoaparát");
@@ -6150,6 +6226,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Sťahovanie súboru…");
     ("File downloaded", "Súbor stiahnutý");
     ("File download failed", "Súbor sa nepodarilo stiahnuť");
+    ("Transcription language", "Jazyk prepisu");
+    ("Preparing transcription…", "Príprava prepisu…");
+    ("Listening…", "Počúvam…");
+    ("Start recording", "Spustiť nahrávanie");
   ]);
   ("tr", [
     ("Camera", "Kamera");
@@ -6166,6 +6246,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Dosya indiriliyor…");
     ("File downloaded", "Dosya indirildi");
     ("File download failed", "Dosya indirilemedi");
+    ("Transcription language", "Transkripsiyon dili");
+    ("Preparing transcription…", "Transkripsiyon hazırlanıyor…");
+    ("Listening…", "Dinleniyor…");
+    ("Start recording", "Kaydı başlat");
   ]);
   ("uk", [
     ("Camera", "Камера");
@@ -6182,6 +6266,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Завантаження файлу…");
     ("File downloaded", "Файл завантажено");
     ("File download failed", "Не вдалося завантажити файл");
+    ("Transcription language", "Мова транскрипції");
+    ("Preparing transcription…", "Підготовка транскрипції…");
+    ("Listening…", "Слухаю…");
+    ("Start recording", "Почати запис");
   ]);
   ("vi", [
     ("Camera", "Máy ảnh");
@@ -6198,6 +6286,10 @@ let capture_dictionaries = [
     ("Downloading file…", "Đang tải tệp…");
     ("File downloaded", "Đã tải tệp");
     ("File download failed", "Không thể tải tệp");
+    ("Transcription language", "Ngôn ngữ phiên âm");
+    ("Preparing transcription…", "Đang chuẩn bị phiên âm…");
+    ("Listening…", "Đang nghe…");
+    ("Start recording", "Bắt đầu ghi âm");
   ]);
   ("zh-CN", [
     ("Camera", "相机");
@@ -6214,6 +6306,10 @@ let capture_dictionaries = [
     ("Downloading file…", "正在下载文件…");
     ("File downloaded", "文件下载完成");
     ("File download failed", "文件下载失败");
+    ("Transcription language", "转写语言");
+    ("Preparing transcription…", "正在准备转写…");
+    ("Listening…", "正在聆听…");
+    ("Start recording", "开始录音");
   ]);
   ("zh-Hant", [
     ("Camera", "相機");
@@ -6230,6 +6326,10 @@ let capture_dictionaries = [
     ("Downloading file…", "正在下載檔案…");
     ("File downloaded", "檔案下載完成");
     ("File download failed", "檔案下載失敗");
+    ("Transcription language", "轉寫語言");
+    ("Preparing transcription…", "正在準備轉寫…");
+    ("Listening…", "正在聆聽…");
+    ("Start recording", "開始錄音");
   ]);
 ]
 let dictionaries = capture_dictionaries @ dictionaries

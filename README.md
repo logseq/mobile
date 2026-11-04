@@ -73,6 +73,13 @@ Device builds embed both the widget and share extensions. Matching development
 profiles are selected automatically; set `LOGSEQ_IOS_WIDGET_PROFILE` or
 `LOGSEQ_IOS_SHARE_PROFILE` to select a profile explicitly.
 
+Audio capture continues when the phone is locked. On iOS, a Live Activity shows
+the recording timer and recent transcription on the Lock Screen and Dynamic
+Island; tapping it returns to the current recording. On Android, the ongoing
+recording notification shows a timer and recent transcription when notification
+permission is granted. Stopping or cancelling the recording immediately removes
+its status, including while the final transcription is still being saved.
+
 ## Android
 
 Android 9 (API 28) or later is required.
@@ -161,6 +168,10 @@ Run the model suite without that bridge using `python3 scripts/test-swift-model-
 It builds `LogseqModelTests` and launches Swift Testing directly.
 Run the native UI suite in a simulator app host with `python3 scripts/test-swift-ui-suite.py`
 after building the simulator core. This also invokes Swift Testing directly.
+For recording Live Activities, build with `LOGSEQ_IOS_ENABLE_TESTING=1
+scripts/build-mobile-ios-simulator.sh`, then run
+`python3 scripts/test-ios-recording-live-activity.py`. It checks the system's
+archived lock-screen and Dynamic Island layouts, including timer dimensions.
 For iPhone Duo, build with Xcode 27.1 or later. Custom navigation controls follow
 the system toolbar axis, including the vertical bar on the outer display.
 Collapsed photo, audio recording, search and capture actions stay in a shared

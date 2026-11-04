@@ -731,6 +731,9 @@ public struct LogseqRootView : View {
     }
 
     public func acceptSharedCaptureURL(_ url: URL) {
+        if url.scheme == "logseq", url.host == "audio", presentationCoordinator.attachmentService == .audio {
+            return
+        }
         SharedCaptureInbox.shared.enqueue(SharedCaptureItem(
             id: UUID().uuidString.lowercased(), kind: .deepLink, captureLink: SharedDeepLink(url)
         ))
@@ -995,6 +998,9 @@ public final class LogseqAppDelegate : Sendable {
     }
 
     @MainActor public func onInit() {
+        #if os(iOS)
+        RecordingLiveActivity.dismissStaleActivities()
+        #endif
         let runtime = LogseqLogseqRuntime.shared
         runtime.startLocalLaunchLoad()
         runtime.startAuthenticationRestore()

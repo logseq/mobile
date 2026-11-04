@@ -118,7 +118,18 @@ import SwiftUI
             "CFBundleVersion": "1", "MinimumOSVersion": "17.0",
             "UIDeviceFamily": [1, 2], "UILaunchScreen": {},
             "UISupportedInterfaceOrientations": orientations,
+            **({"NSSupportsLiveActivities": True, "CFBundleShortVersionString": "1.0"}
+               if os.environ.get("LOGSEQ_RUNTIME_CHECK_WIDGETS") == "1" else {}),
         }))
+        if os.environ.get("LOGSEQ_RUNTIME_CHECK_WIDGETS") == "1":
+            widget = app / "PlugIns/LogseqWidgets.appex"
+            shutil.copytree(ROOT / "apple/.build/Logseq.app/PlugIns/LogseqWidgets.appex", widget)
+            info_path = widget / "Info.plist"
+            info = plistlib.loads(info_path.read_bytes())
+            info.update({"CFBundleIdentifier": bundle + ".shortcuts",
+                         "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"})
+            info_path.write_bytes(plistlib.dumps(info))
+            run(["codesign", "--force", "--sign", "-", str(widget)])
         for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)
         assets = ROOT / "apple/.build/Logseq.app/Assets.car"

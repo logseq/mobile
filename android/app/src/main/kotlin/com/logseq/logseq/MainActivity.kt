@@ -168,7 +168,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::runtime.isInitialized) {
-            runtime.audioRecorder.cancel()
+            runtime.audioRecorder.detach()
             runtime.audioPlayer.release()
             runtime.dispose()
         }

@@ -123,6 +123,7 @@ internal class LogseqRuntime(
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
+    private var audioRecordingJob: kotlinx.coroutines.Job? = null
     private val graphEventsSession = AndroidForegroundSyncSession(scope)
     private var graphLifecycle: AndroidGraphLifecycle? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
@@ -573,6 +574,7 @@ internal class LogseqRuntime(
             effect.kind in setOf("open-graph", "unlock-graph", "create-graph")
         ) {
             hasOpenGraph = true
+            resumeAudioRecording()
             appEntries.markReady()
             graphCatalogAutoRefresh?.stopPeriodic()
             requestSyncNow()
@@ -664,6 +666,7 @@ internal class LogseqRuntime(
             // renders against; by now auth state is published either way.
             AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
+            resumeAudioRecording()
             if (hasOpenGraph) {
                 requestSyncNow()
                 loadSidebarAfterOpen()
@@ -773,34 +776,41 @@ internal class LogseqRuntime(
     }
 
     suspend fun presentAudioRecording(targetBlockId: String?) {
-        // The recording sheet UI is presented by the app composable layer
-        // (ui/extensions/LogseqDialogs + LogseqApp's dialog host).
-        val (asset, transcriptionEnabled) =
-            com.logseq.logseq.ui.extensions.LogseqDialogs.recordAudio(
-                audioRecorder,
-            ) ?: return
-        val response = bridge.callCore(asset.coreRequest(targetBlockId))
-        if (!JSONObject(response).optBoolean("ok")) {
-            error("The native core rejected the recorded audio asset")
-        }
-        applyCoreResponse(response)
-        if (transcriptionEnabled) {
-            scope.launch { transcribeRecording(asset) }
-        }
+        com.logseq.logseq.ui.extensions.LogseqDialogs.beginAudioRecording(targetBlockId, selectedGraphId)
+        resumeAudioRecording()
     }
 
-    private suspend fun transcribeRecording(asset: RecordedAudioAsset) {
-        try {
-            logRuntime("info", "ui", "Audio transcription started")
-            val transcript = AndroidAudioTranscriber.transcribe(asset.localPath).trim()
-            if (transcript.isEmpty()) return
-            val response = bridge.callCore(
-                asset.transcriptCoreRequest(transcript)
-            )
-            applyCoreResponse(response)
-            logRuntime("info", "ui", "Audio transcription completed")
-        } catch (error: Throwable) {
-            reportError(error)
+    private fun resumeAudioRecording() {
+        val request = com.logseq.logseq.ui.extensions.LogseqDialogs.recordingRequest ?: return
+        if (audioRecordingJob?.isActive == true) return
+        audioRecordingJob = scope.launch {
+            try {
+                val recording = com.logseq.logseq.ui.extensions.LogseqDialogs.awaitAudioRecording(request)
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    try {
+                        if (recording != null) {
+                            val (asset, transcript) = recording
+                            check(hasOpenGraph && request.graphId == selectedGraphId) {
+                                "The recording cannot be attached because its original graph is no longer open. Audio retained at ${asset.localPath}"
+                            }
+                            val response = bridge.callCore(asset.coreRequest(request.targetBlockId))
+                            check(JSONObject(response).optBoolean("ok")) { "The native core rejected the recorded audio asset" }
+                            applyCoreResponse(response)
+                            if (!transcript.isNullOrBlank()) {
+                                val transcriptResponse = bridge.callCore(asset.transcriptCoreRequest(transcript))
+                                check(JSONObject(transcriptResponse).optBoolean("ok")) { "The native core rejected the recording transcript" }
+                                applyCoreResponse(transcriptResponse)
+                            }
+                        }
+                    } finally {
+                        com.logseq.logseq.ui.extensions.LogseqDialogs.finishAudioRecording(request)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportError(error)
+            }
         }
     }
 

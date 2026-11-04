@@ -63,12 +63,16 @@ def verify_app(app, args):
     shortcuts = {shortcut["actionIdentifier"] for shortcut in app_intents.get("autoShortcuts", [])}
     require(APP_ACTIONS <= shortcuts, f"Missing registered App Shortcuts: {sorted(APP_ACTIONS - shortcuts)}")
     home_shortcuts = {item["UIApplicationShortcutItemType"] for item in info.get("UIApplicationShortcutItems", [])}
+    require(info.get("NSSupportsLiveActivities") is True, "Live Activities are not enabled in the app")
+    require("audio" in info.get("UIBackgroundModes", []), "Background recording is not enabled")
     require({"logseq://audio", "logseq://capture"} <= home_shortcuts, "Missing home screen quick actions")
     widget = app / "PlugIns/LogseqWidgets.appex"
     read_intents(widget, WIDGET_ACTIONS)
     widget_binary = widget / read_info(widget)["CFBundleExecutable"]
     widget_data = widget_binary.read_bytes()
     missing_kinds = {kind for kind in WIDGET_KINDS if kind.encode() not in widget_data}
+    require(all(name in widget_data for name in (b"RecordingActivityAttributes", b"RecordingLiveActivityWidget")),
+            "Missing recording Live Activity in widget extension")
     require(not missing_kinds, f"Missing widget/control registrations: {sorted(missing_kinds)}")
 
     components = []
@@ -105,7 +109,8 @@ def verify_app(app, args):
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     subprocess.run([sys.executable, str(Path(__file__).with_name("verify-ios-native-symbols.py")), str(app)], check=True)
     return {"version": version, "build": build, "revision": info.get("LogseqRevision"),
-            "components": components, "app_shortcuts": sorted(shortcuts), "widget_kinds": sorted(WIDGET_KINDS)}
+            "components": components, "app_shortcuts": sorted(shortcuts), "widget_kinds": sorted(WIDGET_KINDS),
+            "live_activities": ["RecordingActivityAttributes"]}
 
 
 def main():
@@ -129,7 +134,7 @@ def main():
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print("Verified complete release: app, two widgets, two controls, four App Shortcuts, share extension and native core")
+    print("Verified complete release: app, recording Live Activity, two widgets, two controls, four App Shortcuts, share extension and native core")
 
 
 if __name__ == "__main__":
