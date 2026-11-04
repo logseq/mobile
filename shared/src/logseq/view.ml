@@ -4,13 +4,20 @@ type retained_outline_row = View_rows.retained_row
    colors ride the wire as adaptive {light,dark} pairs picked by each
    backend's effective color scheme, and `theme-mode` follows the
    appearance setting so every platform hot-switches with one patch. *)
-let logseq_theme_tokens : (string * Lui_ui.theme_token_value) list =
+let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
   let open Lui_ui in
-  [
-    ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
-    ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
-    ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
-    ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
+  let surfaces =
+    match Lui_ui.platform ui_context, Lui_ui.host ui_context with
+    | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
+    | _ ->
+      [
+        ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
+        ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
+        ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
+        ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
+      ]
+  in
+  surfaces @ [
     ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
@@ -38,10 +45,13 @@ let logseq_theme_mode (model : Model.logseq_model) : Lui_ui.theme_mode =
   | _ -> `system
 
 let logseq_view (context : Lui_ui.ui_context) model_source send =
-  Lui_elements.themed ~tokens:logseq_theme_tokens
-    ~mode_signal:(Signal.map logseq_theme_mode model_source)
-    (Lui_elements.dyn (fun _ -> View_screens.logseq_view context model_source send)
-      (Signal.map (fun (model : Model.logseq_model) -> Localization.resolve model.language model.system_language) model_source))
+  let language (model : Model.logseq_model) =
+    Localization.resolve model.language model.system_language
+  in
+  Lui_elements.themed ~tokens:(logseq_theme_tokens context)
+    ~mode:(reactive logseq_theme_mode model_source)
+    (reactive ~equal:(fun left right -> language left = language right)
+      (fun _ -> View_screens.logseq_view context model_source send) model_source)
 
 let outliner_editor_schema () =
   let open Lui_protocol in
