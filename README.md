@@ -73,6 +73,12 @@ Device builds embed both the widget and share extensions. Matching development
 profiles are selected automatically; set `LOGSEQ_IOS_WIDGET_PROFILE` or
 `LOGSEQ_IOS_SHARE_PROFILE` to select a profile explicitly.
 
+Audio capture continues when the phone is locked. On iOS, a Live Activity shows
+the recording timer and recent transcription on the Lock Screen and Dynamic
+Island; tapping it returns to the current recording. On Android, the ongoing
+recording notification shows a timer and recent transcription when notification
+permission is granted. Stopping or cancelling the recording removes its status.
+
 ## Android
 
 Android 9 (API 28) or later is required.

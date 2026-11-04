@@ -59,6 +59,9 @@ class AudioRecordingService : Service() {
     private var cancelled = false
     private var preparation: Job? = null
     @Volatile private var captureFailure: Throwable? = null
+    private var recordingStartedAt = System.currentTimeMillis()
+    private var lastNotificationSecond = -1
+    private var notificationActive = false
     private val destroyed = CompletableDeferred<Unit>()
 
     override fun onCreate() {
@@ -88,14 +91,18 @@ class AudioRecordingService : Service() {
                         onAudio = { bytes, size -> transcription?.append(bytes, size) },
                         onProgress = { seconds, level ->
                             mutableState.update { state -> state.copy(seconds = seconds, level = level) }
+                            updateNotification()
                             if (seconds >= MAXIMUM_SECONDS) scope.launch { pauseCapture() }
                         },
                         onError = { failure ->
                             captureFailure = failure
                             mutableState.update { state -> state.copy(recording = false, error = failure.localizedMessage) }
+                            updateNotification(force = true)
                         },
                     )
                     mutableState.update { it.copy(preparing = false, recording = true, hasRecording = true) }
+                    recordingStartedAt = System.currentTimeMillis()
+                    updateNotification(force = true)
                     started?.complete(Unit)
                     changeTranscriptionLanguage(language)
                 } catch (failure: Throwable) {
@@ -130,9 +137,12 @@ class AudioRecordingService : Service() {
                 }
                 try {
                     transcription = AndroidLiveTranscription(recognizer, scope, prefix = prefix,
-                        onText = { text -> mutableState.update { state ->
-                            if (generation == transcriptionGeneration) state.copy(transcript = text) else state
-                        } },
+                        onText = { text ->
+                            mutableState.update { state ->
+                                if (generation == transcriptionGeneration) state.copy(transcript = text) else state
+                            }
+                            updateNotification()
+                        },
                         onError = { failure -> mutableState.update { state ->
                             if (generation == transcriptionGeneration) state.copy(error = failure.localizedMessage) else state
                         } },
@@ -155,26 +165,51 @@ class AudioRecordingService : Service() {
         }
     }
 
-    private fun showNotification() {
+    @Synchronized private fun showNotification() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.audio_recording), NotificationManager.IMPORTANCE_LOW))
-        val openApp = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(getString(R.string.audio_notification_title))
-            .setContentText(getString(R.string.audio_notification_body))
-            .setContentIntent(openApp)
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .build()
+        val notification = recordingNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        notificationActive = true
+    }
+
+    private fun recordingNotification(): Notification {
+        val current = state.value
+        val openApp = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val transcript = current.transcript.trim().takeLast(300)
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(getString(R.string.audio_notification_title))
+            .setContentText(transcript.takeLast(100).ifEmpty { getString(R.string.audio_notification_body) })
+            .setStyle(Notification.BigTextStyle().bigText(transcript.ifEmpty { getString(R.string.audio_notification_body) }))
+            .setWhen(recordingStartedAt)
+            .setUsesChronometer(current.recording)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(openApp)
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .build()
+    }
+
+    @Synchronized private fun updateNotification(force: Boolean = false) {
+        if (!notificationActive) return
+        val second = state.value.seconds
+        if (!force && second == lastNotificationSecond) return
+        lastNotificationSecond = second
+        val manager = getSystemService(NotificationManager::class.java)
+        if (manager.areNotificationsEnabled()) manager.notify(NOTIFICATION_ID, recordingNotification())
+    }
+
+    @Synchronized private fun removeRecordingNotification() {
+        notificationActive = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     private suspend fun finishRecording(): AudioRecordingResult {
@@ -215,7 +250,7 @@ class AudioRecordingService : Service() {
         } finally {
             mutableState.value = AudioRecordingState()
             releaseWakeLock()
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            removeRecordingNotification()
             stopSelf()
         }
     }
@@ -233,7 +268,7 @@ class AudioRecordingService : Service() {
         file = null
         releaseWakeLock()
         mutableState.update { it.copy(preparing = false, preparingTranscription = false, recording = false, hasRecording = false, level = 0f) }
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        removeRecordingNotification()
         stopSelf()
     }
 
@@ -247,6 +282,7 @@ class AudioRecordingService : Service() {
             mutableState.update { it.copy(error = failure.localizedMessage) }
         }
         mutableState.update { it.copy(recording = false, preparingTranscription = false, level = 0f) }
+        updateNotification(force = true)
     }
 
     private fun releaseWakeLock() {
@@ -255,6 +291,7 @@ class AudioRecordingService : Service() {
     }
 
     override fun onDestroy() {
+        removeRecordingNotification()
         if (instance === this) instance = null
         preparation?.cancel()
         languageChange?.cancel()

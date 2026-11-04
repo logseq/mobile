@@ -1,6 +1,7 @@
 package com.logseq.logseq
 
 import android.Manifest
+import android.os.Build
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
@@ -19,7 +20,11 @@ import kotlinx.coroutines.withContext
 class AndroidAudioRecorderInstrumentedTest {
     @get:Rule
     val microphonePermission: GrantPermissionRule =
-        GrantPermissionRule.grant(Manifest.permission.RECORD_AUDIO)
+        GrantPermissionRule.grant(*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            arrayOf(Manifest.permission.RECORD_AUDIO)
+        })
 
     @Test
     fun recordsNonEmptyM4aWithStableMetadata() {

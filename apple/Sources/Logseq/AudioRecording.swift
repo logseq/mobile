@@ -217,6 +217,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
     private var transcriptionTask: Task<Void, Never>?
     private var transcriptionGeneration = 0
     private var inputFormat: AVAudioFormat?
+    private let liveActivity = RecordingLiveActivity()
     private var interruptionObserver: NSObjectProtocol?
 
     func start(locale: Locale = .current, transcriptionLocale: Locale? = nil) async {
@@ -261,6 +262,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
                         self.level = level
                         if seconds >= AudioRecordingPolicy.maximumDurationSeconds { self.pauseCapture() }
                     }
+                    self.updateLiveActivity()
                 }
             }
             self.sink = sink
@@ -273,6 +275,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
             try engine.start()
             hasRecording = true
             isRecording = true
+            liveActivity.start()
             setTranscriptionLanguage(transcriptionLocale)
             interruptionObserver = NotificationCenter.default.addObserver(
                 forName: AVAudioSession.interruptionNotification, object: session, queue: .main
@@ -318,6 +321,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
                     onText: { [weak self] text in
                         guard let self, generation == self.transcriptionGeneration else { return }
                         self.liveTranscript = AudioRecordingPolicy.appendTranscript(text, to: prefix)
+                        self.updateLiveActivity()
                     },
                     onError: { [weak self] message in
                         guard let self, generation == self.transcriptionGeneration else { return }
@@ -345,8 +349,13 @@ final class AudioRecorderController: NSObject, ObservableObject {
         engine = nil
         sink?.close()
         isRecording = false
+        updateLiveActivity()
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         interruptionObserver = nil
+    }
+
+    private func updateLiveActivity() {
+        liveActivity.update(elapsedSeconds: elapsedSeconds, isRecording: isRecording, transcript: liveTranscript)
     }
 
     func stop() async throws -> RecordedAudioAsset? {
@@ -363,6 +372,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
         }
         transcription = nil
         transcriptionGeneration += 1
+        liveActivity.end()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         let data = try Data(contentsOf: outputURL)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -371,6 +381,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
     }
 
     func cancel() {
+        liveActivity.end()
         transcriptionGeneration += 1
         transcriptionTask?.cancel()
         isPreparingTranscription = false

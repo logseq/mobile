@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A50000000000000000000001 /* RecordingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* RecordingActivity.swift */; };
 		A40000000000000000000001 /* LGImageCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000002 /* LGImageCompression.swift */; };
         A30000000000000000000001 = {isa = PBXBuildFile; fileRef = A30000000000000000000003; };
         A30000000000000000000002 = {isa = PBXBuildFile; fileRef = A30000000000000000000003; };
@@ -64,6 +65,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A50000000000000000000002 /* RecordingActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/Logseq/RecordingActivity.swift; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000002 /* LGImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LGImageCompression.swift; path = ../Sources/Logseq/LGImageCompression.swift; sourceTree = SOURCE_ROOT; };
         A30000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/QuickActions.swift; sourceTree = SOURCE_ROOT; };
 		A10000000000000000000005 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
@@ -164,6 +166,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000004 /* LogseqWidgets.swift */,
+				A50000000000000000000002 /* RecordingActivity.swift */,
 				A20000000000000000000005 /* Info.plist */,
 			);
 			path = Widgets;
@@ -323,6 +326,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A20000000000000000000001 /* LogseqWidgets.swift in Sources */,
+				A50000000000000000000001 /* RecordingActivity.swift in Sources */,
                 A30000000000000000000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

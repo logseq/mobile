@@ -59,6 +59,7 @@ check_plist "indirect input support is present" "true" -c "Print :UIApplicationS
 check_plist "portrait orientation is present" "UIInterfaceOrientationPortrait" -c "Print :UISupportedInterfaceOrientations:2"
 check_plist "background fetch mode is present" "fetch" -c "Print :UIBackgroundModes:0"
 check_plist "background audio mode is present" "audio" -c "Print :UIBackgroundModes:1"
+check_plist "recording Live Activities are enabled" "true" -c "Print :NSSupportsLiveActivities"
 check_plist_exists "microphone usage description is present" -c "Print :NSMicrophoneUsageDescription"
 check_plist_exists "speech usage description is present" -c "Print :NSSpeechRecognitionUsageDescription"
 check_plist "primary app icon is declared" "AppIcon" -c "Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName"

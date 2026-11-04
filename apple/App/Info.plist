@@ -66,6 +66,8 @@
     <true/>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>Save images from your Logseq graph to Photos.</string>
     <key>NSCameraUsageDescription</key>
