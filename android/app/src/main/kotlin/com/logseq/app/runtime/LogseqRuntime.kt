@@ -512,7 +512,7 @@ internal class LogseqRuntime(
             requestSyncNow()
             // First post-open snapshots ship an empty sidebar; fill it
             // off the launch path once the journal is up.
-            scope.launch { runCatching { graphLifecycle?.loadSidebar() } }
+            loadSidebarAfterOpen()
         }
         if (resolution.succeeded &&
             effect.kind in setOf("send-capture", "send-task", "send-tagged", "sync-now")
@@ -523,6 +523,18 @@ internal class LogseqRuntime(
     }
 
     // --- Bootstrap / restore ---
+
+    private fun loadSidebarAfterOpen() {
+        scope.launch {
+            try {
+                graphLifecycle?.loadSidebar()?.let { applyCoreResponse(it) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
 
     private fun restoreCore(hasStoredSession: Boolean, storage: AndroidStorageState? = null) {
         val active = activeBootstrap
@@ -591,7 +603,10 @@ internal class LogseqRuntime(
             // renders against; by now auth state is published either way.
             AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
-            if (hasOpenGraph) requestSyncNow()
+            if (hasOpenGraph) {
+                requestSyncNow()
+                loadSidebarAfterOpen()
+            }
             appEntries.markReady()
             updateCatalogPolling("restore")
         } catch (error: Throwable) {
