@@ -1,5 +1,6 @@
 package com.logseq.app.ui
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import com.logseq.app.BuildConfig
 import com.logseq.app.AndroidAudioTranscriber
 import logseq.app.AndroidRuntimeLogs
@@ -37,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.logseq.app.runtime.LogseqRuntime
 import com.logseq.app.runtime.RecordedAudioAsset
 import com.logseq.app.ui.extensions.LogseqDialogs
@@ -53,6 +56,15 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         "light" -> false
         "dark" -> true
         else -> systemDark
+    }
+    val window = LocalActivity.current?.window
+    SideEffect {
+        if (window != null) {
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
     MaterialExpressiveTheme(
         colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
