@@ -1033,37 +1033,39 @@ private struct LGNavigationContent: View {
     @ToolbarContentBuilder
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
         if searchPage, let search, search.context.childIDs.indices.contains(3) {
-            ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
-                search.context.content(for: search.context.childIDs[3])
-                    .frame(width: 44, height: 44)
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-            }
-            .lgPrefersVerticalAxis()
+            pageActionsToolbar(search.context.content(for: search.context.childIDs[3]))
         } else if let toolbarStartIndex {
-            ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
-                // Keep these controls in one item so the system cannot replace
-                // one of them with its own overflow menu as the title changes.
-                LGToolbarControlPair(
-                    first: AnyView(childContent(at: toolbarStartIndex + 2)
-                        .frame(width: 44, height: 44)),
-                    second: AnyView(childContent(at: toolbarStartIndex + 3)
-                        .frame(width: 44, height: 44))
-                )
-                .fixedSize()
+            trailingControlsToolbar(at: toolbarStartIndex)
+        } else if let trailingMenuIndex {
+            pageActionsToolbar(childContent(at: trailingMenuIndex))
+        }
+    }
+
+    private func pageActionsToolbar(_ content: AnyView) -> some ToolbarContent {
+        ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
+            content
+                .frame(width: 44, height: 44)
                 .menuStyle(.button)
                 .buttonStyle(.plain)
-            }
-            .lgPrefersVerticalAxis()
-        } else if let trailingMenuIndex {
-            ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
-                childContent(at: trailingMenuIndex)
-                    .frame(width: 44, height: 44)
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-            }
-            .lgPrefersVerticalAxis()
         }
+        .lgPrefersVerticalAxis()
+    }
+
+    private func trailingControlsToolbar(at startIndex: Int) -> some ToolbarContent {
+        ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
+            // Keep these controls in one item so the system cannot replace
+            // one of them with its own overflow menu as the title changes.
+            LGToolbarControlPair(
+                first: AnyView(childContent(at: startIndex + 2)
+                    .frame(width: 44, height: 44)),
+                second: AnyView(childContent(at: startIndex + 3)
+                    .frame(width: 44, height: 44))
+            )
+            .fixedSize()
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+        }
+        .lgPrefersVerticalAxis()
     }
 
     private var bottomChrome: AnyView {
