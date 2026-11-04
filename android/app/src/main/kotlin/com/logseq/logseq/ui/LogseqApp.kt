@@ -121,7 +121,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                     confirmButton = { TextButton(onClick = LogseqDialogs::clearError) { Text("OK") } },
                 )
             }
-            AudioRecordingDialog()
+            AudioRecordingDialog(runtime.audioRecorder)
             DeleteConfirmationDialog()
             JournalCalendarDialog()
             ImageGalleryHost()
@@ -131,7 +131,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
 }
 
 @Composable
-private fun AudioRecordingDialog() {
+private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorder) {
     val request = LogseqDialogs.recordingRequest ?: return
     val context = LocalContext.current
     val displayLocale = LocalConfiguration.current.locales[0]
@@ -142,11 +142,9 @@ private fun AudioRecordingDialog() {
             ?: AndroidAudioTranscriber.defaultLanguage())
     }
     var languageMenu by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
     val state by AudioRecordingService.state.collectAsState()
-    val scope = rememberCoroutineScope()
-    val locked = state.preparing || state.hasRecording || busy
+    val scope = request.scope
+    val locked = state.preparing || state.hasRecording || request.busy
     val transcriptScroll = rememberScrollState()
 
     LaunchedEffect(request) {
@@ -156,12 +154,12 @@ private fun AudioRecordingDialog() {
     LaunchedEffect(state.transcript) { transcriptScroll.animateScrollTo(transcriptScroll.maxValue) }
 
     fun cancel() {
-        request.recorder.cancel()
+        recorder.cancel()
         request.result.complete(null)
     }
 
     AlertDialog(
-        onDismissRequest = { if (!busy) cancel() },
+        onDismissRequest = { if (!request.busy && !request.result.isCompleted) cancel() },
         title = { Text(stringResource(R.string.audio_recording)) },
         text = {
             Column {
@@ -211,22 +209,22 @@ private fun AudioRecordingDialog() {
                                 .verticalScroll(transcriptScroll).testTag("audio.transcript"))
                     }
                 }
-                (error ?: state.error)?.let {
+                (request.error ?: state.error)?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = !busy && !state.preparing,
+                enabled = !request.busy && !request.result.isCompleted && !state.preparing,
                 modifier = Modifier.testTag(if (state.hasRecording) "button.audio.stop" else "button.audio.start"),
                 onClick = {
-                    busy = true
-                    error = null
+                    request.busy = true
+                    request.error = null
                     scope.launch {
                         try {
                             if (state.hasRecording) {
-                                val recording = request.recorder.stop()
+                                val recording = recorder.stop()
                                 val map = recording.asset
                                 request.transcript = recording.transcript
                                 request.result.complete(RecordedAudioAsset(
@@ -238,20 +236,22 @@ private fun AudioRecordingDialog() {
                                     localPath = map["localPath"] as String,
                                 ))
                             } else {
-                                request.recorder.start(if (request.transcriptionEnabled) language else null)
+                                recorder.start(if (request.transcriptionEnabled) language else null)
                             }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
                         } catch (failure: Exception) {
-                            error = failure.localizedMessage
+                            request.error = failure.localizedMessage
                             AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
                         } finally {
-                            busy = false
+                            request.busy = false
                         }
                     }
                 },
             ) { Text(stringResource(if (state.hasRecording) R.string.audio_stop else R.string.audio_start)) }
         },
         dismissButton = {
-            TextButton(enabled = !busy || state.preparing, onClick = { cancel() }) {
+            TextButton(enabled = (!request.busy || state.preparing) && !request.result.isCompleted, onClick = { cancel() }) {
                 Text(stringResource(android.R.string.cancel))
             }
         },

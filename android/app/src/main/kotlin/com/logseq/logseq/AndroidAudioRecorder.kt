@@ -39,9 +39,13 @@ class AndroidAudioRecorder(private val activity: Activity) {
 
     suspend fun stop(): AudioRecordingResult = AudioRecordingService.stop()
 
-    fun cancel() {
+    fun detach() {
         pendingPermission?.cancel()
         pendingPermission = null
+    }
+
+    fun cancel() {
+        detach()
         AudioRecordingService.cancel()
     }
 

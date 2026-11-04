@@ -123,6 +123,7 @@ internal class LogseqRuntime(
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
+    private var audioRecordingJob: kotlinx.coroutines.Job? = null
     private val graphEventsSession = AndroidForegroundSyncSession(scope)
     private var graphLifecycle: AndroidGraphLifecycle? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
@@ -573,6 +574,7 @@ internal class LogseqRuntime(
             effect.kind in setOf("open-graph", "unlock-graph", "create-graph")
         ) {
             hasOpenGraph = true
+            resumeAudioRecording()
             appEntries.markReady()
             graphCatalogAutoRefresh?.stopPeriodic()
             requestSyncNow()
@@ -665,6 +667,7 @@ internal class LogseqRuntime(
             AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
             if (hasOpenGraph) {
+                resumeAudioRecording()
                 requestSyncNow()
                 loadSidebarAfterOpen()
             }
@@ -773,23 +776,38 @@ internal class LogseqRuntime(
     }
 
     suspend fun presentAudioRecording(targetBlockId: String?) {
-        // The recording sheet UI is presented by the app composable layer
-        // (ui/extensions/LogseqDialogs + LogseqApp's dialog host).
-        val (asset, transcript) =
-            com.logseq.logseq.ui.extensions.LogseqDialogs.recordAudio(
-                audioRecorder,
-            ) ?: return
-        val response = bridge.callCore(asset.coreRequest(targetBlockId))
-        if (!JSONObject(response).optBoolean("ok")) {
-            error("The native core rejected the recorded audio asset")
-        }
-        applyCoreResponse(response)
-        if (!transcript.isNullOrBlank()) {
-            val response = bridge.callCore(
-                asset.transcriptCoreRequest(transcript)
-            )
-            check(JSONObject(response).optBoolean("ok")) { "The native core rejected the recording transcript" }
-            applyCoreResponse(response)
+        com.logseq.logseq.ui.extensions.LogseqDialogs.beginAudioRecording(targetBlockId, selectedGraphId)
+        resumeAudioRecording()
+    }
+
+    private fun resumeAudioRecording() {
+        val request = com.logseq.logseq.ui.extensions.LogseqDialogs.recordingRequest ?: return
+        if (!hasOpenGraph || request.graphId != selectedGraphId || audioRecordingJob?.isActive == true) return
+        audioRecordingJob = scope.launch {
+            try {
+                val recording = com.logseq.logseq.ui.extensions.LogseqDialogs.awaitAudioRecording(request)
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    try {
+                        if (recording != null) {
+                            val (asset, transcript) = recording
+                            val response = bridge.callCore(asset.coreRequest(request.targetBlockId))
+                            check(JSONObject(response).optBoolean("ok")) { "The native core rejected the recorded audio asset" }
+                            applyCoreResponse(response)
+                            if (!transcript.isNullOrBlank()) {
+                                val transcriptResponse = bridge.callCore(asset.transcriptCoreRequest(transcript))
+                                check(JSONObject(transcriptResponse).optBoolean("ok")) { "The native core rejected the recording transcript" }
+                                applyCoreResponse(transcriptResponse)
+                            }
+                        }
+                    } finally {
+                        com.logseq.logseq.ui.extensions.LogseqDialogs.finishAudioRecording(request)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportError(error)
+            }
         }
     }
 
