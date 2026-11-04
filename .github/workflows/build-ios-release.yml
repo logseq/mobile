@@ -42,11 +42,11 @@ jobs:
           umask 077
           printf '%s\n' "$IOS_SIGNING_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/logseq-signing-ci"
           mkdir -p "$HOME/.ssh"
-          curl --fail --silent --show-error https://api.github.com/meta \
-            | jq -r '.ssh_keys[] | "github.com " + .' >> "$HOME/.ssh/known_hosts"
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' >> "$HOME/.ssh/known_hosts"
           GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/logseq-signing-ci -o IdentitiesOnly=yes -o BatchMode=yes" \
             git ls-remote ssh://git@github.com/logseq/certificates.git HEAD > /dev/null
         env:
+          GH_TOKEN: ${{ github.token }}
           IOS_SIGNING_SSH_PRIVATE_KEY: ${{ secrets.IOS_SIGNING_SSH_PRIVATE_KEY }}
 
       - name: Select Xcode 27.2
