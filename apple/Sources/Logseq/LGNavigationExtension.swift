@@ -27,7 +27,7 @@ enum LGNavigationSurfacePolicy {
 private extension ToolbarContent {
     @ToolbarContentBuilder
     func lgPrefersVerticalAxis() -> some ToolbarContent {
-        #if os(iOS)
+        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
         if #available(iOS 27.1, *) {
             self.axisBehavior(.verticalPreferred)
         } else {
@@ -45,7 +45,7 @@ private extension EnvironmentValues {
 
 private struct LGToolbarAxisEnvironment: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
-        #if os(iOS)
+        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
         if #available(iOS 27.1, *) {
             LGVerticalToolbarContent(content: content)
         } else {
@@ -57,7 +57,7 @@ private struct LGToolbarAxisEnvironment: ViewModifier {
     }
 }
 
-#if os(iOS)
+#if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
 @available(iOS 27.1, *)
 private struct LGVerticalToolbarContent<Content: View>: View {
     let content: Content
@@ -74,7 +74,7 @@ private struct LGToolbarControlPair: View {
     let second: AnyView
 
     @ViewBuilder var body: some View {
-        #if os(iOS)
+        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
         if #available(iOS 27.1, *) {
             LGAdaptiveToolbarControlPair(first: first, second: second)
         } else {
@@ -90,7 +90,7 @@ private struct LGToolbarControlPair: View {
     }
 }
 
-#if os(iOS)
+#if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
 @available(iOS 27.1, *)
 private struct LGAdaptiveToolbarControlPair: View {
     let first: AnyView
