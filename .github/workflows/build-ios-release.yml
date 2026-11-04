@@ -201,7 +201,14 @@ jobs:
           key: bundler-${{ hashFiles('apple/App/Gemfile', 'apple/App/Gemfile.lock', '.github/workflows/build-ios-release.yml') }}
 
       - name: Build and upload iOS app
-        run: bundle exec fastlane beta
+        run: |
+          # Xcode's system rsync must also resolve its child process to the
+          # system version, rather than an incompatible Homebrew rsync.
+          mkdir -p "$RUNNER_TEMP/apple-export-tools"
+          ln -s /usr/bin/rsync "$RUNNER_TEMP/apple-export-tools/rsync"
+          export PATH="$RUNNER_TEMP/apple-export-tools:$PATH"
+          df -h .
+          bundle exec fastlane beta
         working-directory: ./apple/App
         env:
           APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
@@ -213,6 +220,34 @@ jobs:
           MATCH_GIT_URL: ssh://git@github.com/logseq/certificates.git
           MATCH_GIT_PRIVATE_KEY: ${{ runner.temp }}/logseq-signing-ci
           XCODE_XCARGS: "-allowProvisioningUpdates"
+
+      - name: Collect iOS export diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          root = Path("_build/ios-release/diagnostics")
+          root.mkdir(parents=True, exist_ok=True)
+          for source in Path(os.environ["TMPDIR"]).glob("*.xcdistributionlogs"):
+              shutil.copytree(source, root / source.name, dirs_exist_ok=True)
+          logs = Path.home() / "Library/Logs/gym"
+          if logs.exists():
+              shutil.copytree(logs, root / "gym", dirs_exist_ok=True)
+          PY
+          df -h .
+
+      - name: Save verified iOS release and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-${{ github.run_id }}
+          path: |
+            _build/ios-release/*.ipa
+            _build/ios-release/*verification.json
+            _build/ios-release/diagnostics
+          retention-days: 7
 
       - name: Save Xcode build caches
         if: always()

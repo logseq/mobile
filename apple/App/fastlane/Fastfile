@@ -44,19 +44,32 @@ platform :ios do
 
     # CURRENT_PROJECT_VERSION is overridden on the command line so every
     # upload lands a unique build number without editing the xcconfig.
-    build_app(
+    release_dir = File.join(repo_root, "_build/ios-release")
+    archive_path = File.join(release_dir, "Logseq.xcarchive")
+    build_options = {
       project: "Logseq.xcodeproj",
       destination: "generic/platform=iOS",
       scheme: "Logseq App",
       configuration: "Release",
+      archive_path: archive_path,
       derived_data_path: File.join(repo_root, "apple/.build/archives", native_cache_key),
       xcargs: "-allowProvisioningUpdates -skipPackagePluginValidation -skipMacroValidation CURRENT_PROJECT_VERSION=#{build_number} LOGSEQ_BUILD_REVISION=#{revision}"
-    )
+    }
+    build_app(**build_options, skip_package_ipa: true)
 
-    sh("python3", File.join(repo_root, "scripts/verify-ios-native-symbols.py"),
-       File.join(lane_context[SharedValues::XCODEBUILD_ARCHIVE], "Products/Applications/Logseq.app"))
+    verifier = File.join(repo_root, "scripts/verify-ios-release-bundle.py")
+    verification_args = ["--version", version_number, "--build", build_number.to_s,
+                         "--revision", revision, "--app-store"]
+    sh("python3", verifier, File.join(archive_path, "Products/Applications/Logseq.app"),
+       *verification_args, "--report", File.join(release_dir, "archive-verification.json"))
+
+    ipa = build_app(**build_options, skip_build_archive: true,
+                    output_directory: release_dir, output_name: "Logseq.ipa")
+    sh("python3", verifier, ipa, *verification_args,
+       "--report", File.join(release_dir, "ipa-verification.json"))
 
     upload_to_testflight(
+      ipa: ipa,
       skip_submission: true,
       skip_waiting_for_build_processing: true,
     )
