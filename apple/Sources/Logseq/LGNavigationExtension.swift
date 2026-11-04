@@ -1032,40 +1032,37 @@ private struct LGNavigationContent: View {
 
     @ToolbarContentBuilder
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
+        if let item = trailingToolbarItem(searchPage: searchPage) {
+            ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
+                item.content
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+            }
+            .lgPrefersVerticalAxis()
+        }
+    }
+
+    private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {
+        let pageActions: AnyView
         if searchPage, let search, search.context.childIDs.indices.contains(3) {
-            pageActionsToolbar(search.context.content(for: search.context.childIDs[3]))
+            pageActions = search.context.content(for: search.context.childIDs[3])
         } else if let toolbarStartIndex {
-            trailingControlsToolbar(at: toolbarStartIndex)
-        } else if let trailingMenuIndex {
-            pageActionsToolbar(childContent(at: trailingMenuIndex))
-        }
-    }
-
-    private func pageActionsToolbar(_ content: AnyView) -> some ToolbarContent {
-        ToolbarItem(id: "logseq.search.page-actions", placement: trailingToolbarPlacement) {
-            content
-                .frame(width: 44, height: 44)
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-        }
-        .lgPrefersVerticalAxis()
-    }
-
-    private func trailingControlsToolbar(at startIndex: Int) -> some ToolbarContent {
-        ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
             // Keep these controls in one item so the system cannot replace
             // one of them with its own overflow menu as the title changes.
-            LGToolbarControlPair(
-                first: AnyView(childContent(at: startIndex + 2)
+            let controls = LGToolbarControlPair(
+                first: AnyView(childContent(at: toolbarStartIndex + 2)
                     .frame(width: 44, height: 44)),
-                second: AnyView(childContent(at: startIndex + 3)
+                second: AnyView(childContent(at: toolbarStartIndex + 3)
                     .frame(width: 44, height: 44))
             )
             .fixedSize()
-            .menuStyle(.button)
-            .buttonStyle(.plain)
+            return ("logseq.trailing-controls", AnyView(controls))
+        } else if let trailingMenuIndex {
+            pageActions = childContent(at: trailingMenuIndex)
+        } else {
+            return nil
         }
-        .lgPrefersVerticalAxis()
+        return ("logseq.search.page-actions", AnyView(pageActions.frame(width: 44, height: 44)))
     }
 
     private var bottomChrome: AnyView {
