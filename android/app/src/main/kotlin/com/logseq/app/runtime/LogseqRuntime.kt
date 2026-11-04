@@ -111,6 +111,8 @@ internal class LogseqRuntime(
         private set
 
     @Volatile private var hasAuthenticatedSession = false
+    private var configuredAccessToken = ""
+    private var restartingGraphEvents = false
     @Volatile private var hasOpenGraph = false
     @Volatile private var appIsForeground = false
     @Volatile private var pendingSyncRequested = false
@@ -326,6 +328,28 @@ internal class LogseqRuntime(
 
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
 
+    private suspend fun restoreCoreAccessToken(): String? {
+        val token = platformEffects.restoreAccessToken()?.takeIf { it.isNotBlank() } ?: return null
+        if (token == configuredAccessToken) return token
+        val response = bridge.callCore(JSONObject()
+            .put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", "setAccessToken").put("payload", token))
+            .toString())
+        check(JSONObject(response).optBoolean("ok")) { "Core authentication refresh failed" }
+        configuredAccessToken = token
+        if (graphEventsSync != null) {
+            restartingGraphEvents = true
+            try {
+                graphEventsSession.cancel()
+                graphEventsSession.join()
+            } finally {
+                restartingGraphEvents = false
+            }
+        }
+        applyCoreResponse(response)
+        return token
+    }
+
     private fun ensureGraphEventsSync() {
         Log.d(
             "GraphEvents",
@@ -334,15 +358,22 @@ internal class LogseqRuntime(
                 "job=${graphEventsSession.isActive} foreground=$appIsForeground",
         )
         val sessionGraphId = selectedGraphId.takeIf {
-            hasAuthenticatedSession && hasOpenGraph && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
+            hasAuthenticatedSession && hasOpenGraph && !restartingGraphEvents && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
         }
         graphEventsSession.update(sessionGraphId, appIsForeground) { graphId ->
             while (isActive) {
                 val token = try {
-                    platformEffects.restoreAccessToken()
+                    restoreCoreAccessToken()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (error: Throwable) {
-                    logRuntime("warn", "core", "access token unavailable: $error")
-                    null
+                    if (isNetworkUnavailable(error)) {
+                        logRuntime("info", "core", "Authentication refresh unavailable; retrying")
+                        kotlinx.coroutines.delay(5_000)
+                        continue
+                    }
+                    logRuntime("warn", "core", "access token unavailable: ${error.javaClass.simpleName}")
+                    break
                 }
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
@@ -404,6 +435,7 @@ internal class LogseqRuntime(
         val job = kotlinx.coroutines.currentCoroutineContext().job
         do {
             pendingSyncRequested = false
+            if (restoreCoreAccessToken().isNullOrBlank()) return
             AndroidPendingSyncPump(
                 callCore = bridge::callCore,
                 applyResponse = ::applyCoreResponse,
@@ -527,6 +559,7 @@ internal class LogseqRuntime(
                 .put("apiVersion", 1).put("method", "dispatch")
                 .put("params", JSONObject().put("action", "configure").put("payload", payload))
                 .toString())
+            configuredAccessToken = ""
             applyCoreResponse(cleared)
         }
         if (resolution.succeeded &&
@@ -608,6 +641,7 @@ internal class LogseqRuntime(
                 callCore = bridge::callCore,
                 trace = { traceGraphLifecycle("bootstrap $it") },
             ).restore(state)
+            configuredAccessToken = restoredAuthentication.accessToken
             applyCoreResponse(restored.catalogResponse)
             graphCatalogAutoRefresh?.rememberCatalog(restored.catalogResponse)
             applyPatch(
