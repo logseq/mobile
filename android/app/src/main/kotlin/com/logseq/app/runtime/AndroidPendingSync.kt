@@ -1,5 +1,8 @@
 package com.logseq.app.runtime
 
+import com.logseq.app.NETWORK_UNAVAILABLE
+import com.logseq.app.isNetworkUnavailable
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CompletableDeferred
@@ -132,7 +135,7 @@ internal object AndroidPendingSyncTransport {
         }
     } catch (error: Throwable) {
         android.util.Log.w("AndroidPendingSync", "HTTP request failed\n${error.stackTraceToString()}")
-        AndroidPendingSyncResult(null, null, error.toString())
+        AndroidPendingSyncResult(null, null, if (isNetworkUnavailable(error)) NETWORK_UNAVAILABLE else error.toString())
     }
 
     private fun openConnection(url: String): HttpURLConnection =

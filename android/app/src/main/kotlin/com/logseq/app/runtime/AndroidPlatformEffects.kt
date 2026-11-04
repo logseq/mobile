@@ -2,6 +2,7 @@ package com.logseq.app.runtime
 
 import com.logseq.app.AndroidPlatformServices
 import com.logseq.app.CognitoAuthProvider
+import com.logseq.app.CognitoSessionUnavailableException
 import com.logseq.app.DEFAULT_BASE_URL
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,6 +25,25 @@ internal class CognitoAndroidAuthentication(
     override suspend fun restoreAccessToken(): String? = provider.apiToken()
     override suspend fun signIn(request: String): String = provider.authenticate(request)
     override suspend fun signOut() = provider.signOut()
+}
+
+internal data class AndroidRestoredAuthentication(
+    val accessToken: String,
+    val hasSession: Boolean,
+    val unavailable: Boolean = false,
+)
+
+internal suspend fun restoreAndroidAuthentication(
+    hasStoredSession: Boolean,
+    restoreAccessToken: suspend () -> String?,
+): AndroidRestoredAuthentication {
+    if (!hasStoredSession) return AndroidRestoredAuthentication("", false)
+    return try {
+        val token = restoreAccessToken().orEmpty()
+        AndroidRestoredAuthentication(token, token.isNotBlank())
+    } catch (_: CognitoSessionUnavailableException) {
+        AndroidRestoredAuthentication("", true, unavailable = true)
+    }
 }
 
 internal data class AndroidStorageState(
@@ -167,7 +187,10 @@ internal class AndroidPlatformEffects(
     suspend fun execute(effect: NativeEffect): NativeEffectResolution = try {
         when (effect.kind) {
             "report-error" -> {
-                platform.appendRuntimeLog("ERROR", "ui", effect.text)
+                platform.appendRuntimeLog(
+                    if (effect.text == com.logseq.app.NETWORK_UNAVAILABLE) "INFO" else "ERROR",
+                    "ui", effect.text,
+                )
                 NativeEffectResolution.Discard()
             }
             "present-journal-calendar" -> presentJournalCalendar()

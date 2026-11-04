@@ -1156,6 +1156,7 @@ let effect_error_present_ (current : Model.logseq_model) =
 
 let effect_error_message (current : Model.logseq_model) =
   match current.effect_error with
+  | Some "network_unavailable" -> tr current "Offline"
   | Some message -> message
   | None -> ""
 
@@ -1376,10 +1377,11 @@ let sync_error_present_ (current : Model.logseq_model) =
   | _ -> false
 
 let sync_error_message (current : Model.logseq_model) =
-  match current.pending_sync_error with Some message -> message | None ->
-  match current.sync_state with
-  | FailedState reason -> reason
-  | _ -> ""
+  let message = match current.pending_sync_error with Some message -> message | None ->
+    match current.sync_state with
+    | FailedState reason -> reason
+    | _ -> "" in
+  if message = "network_unavailable" then tr current "Offline" else message
 
 let selected_page_content_title_visible_ (current : Model.logseq_model) =
   selected_page_present_ current

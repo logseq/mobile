@@ -1,5 +1,8 @@
 package com.logseq.app.runtime
 
+import com.logseq.app.NETWORK_UNAVAILABLE
+import com.logseq.app.isNetworkUnavailable
+
 import org.json.JSONObject
 import com.logseq.app.AndroidGraphLocalStorage
 import java.io.File
@@ -53,7 +56,13 @@ internal class AndroidGraphLifecycle(
                 message = "Unsupported Android graph effect: ${effect.kind}",
             )
         }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
     } catch (error: Throwable) {
+        if (isNetworkUnavailable(error)) {
+            trace("effect.offline kind=${effect.kind} error=${error.javaClass.simpleName}")
+            return NativeEffectResolution.Discard(succeeded = false, message = NETWORK_UNAVAILABLE)
+        }
         val message = "${failureCode(effect.kind)}\n$error"
         trace("effect.failed kind=${effect.kind} message=${message.replace('\n', ' ')}")
         NativeEffectResolution.Discard(succeeded = false, message = message)
@@ -168,7 +177,8 @@ internal class AndroidGraphLifecycle(
         val code = error?.optString("code")?.takeIf(String::isNotEmpty) ?: "core_error"
         val message = error?.optString("message")?.takeIf(String::isNotEmpty)
             ?: "The OCaml core rejected the graph operation"
-        return NativeEffectResolution.Discard(succeeded = false, message = "$code\n$message")
+        return NativeEffectResolution.Discard(succeeded = false,
+            message = if (message == NETWORK_UNAVAILABLE) message else "$code\n$message")
     }
 
     private fun selectedGraphId(response: String): String =

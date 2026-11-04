@@ -1,5 +1,6 @@
 package com.logseq.app.runtime
 
+import com.logseq.app.NETWORK_UNAVAILABLE
 import org.json.JSONObject
 
 // Kotlin port of the former core_effect_executor.dart.
@@ -61,7 +62,8 @@ internal class CoreEffectExecutor(
         val code = error?.optString("code")?.takeIf(String::isNotEmpty) ?: "core_error"
         val message = error?.optString("message")?.takeIf(String::isNotEmpty)
             ?: "The OCaml core rejected the effect"
-        return NativeEffectResolution.Discard(succeeded = false, message = "$code\n$message")
+        return NativeEffectResolution.Discard(succeeded = false,
+            message = if (message == NETWORK_UNAVAILABLE) message else "$code\n$message")
     }
 
     companion object {
