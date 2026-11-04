@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -181,15 +181,9 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
         title = { Text(stringResource(R.string.audio_recording)) },
         text = {
             Column {
-                if (state.preparing || state.preparingTranscription) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text(stringResource(R.string.audio_preparing), modifier = Modifier.padding(top = 8.dp))
-                }
-                if (state.hasRecording) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        LinearProgressIndicator(progress = { state.level }, modifier = Modifier.weight(1f))
-                        Text("%d:%02d".format(state.seconds / 60, state.seconds % 60), modifier = Modifier.padding(start = 12.dp))
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(progress = { state.level }, modifier = Modifier.weight(1f))
+                    Text("%d:%02d".format(state.seconds / 60, state.seconds % 60), modifier = Modifier.padding(start = 12.dp))
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -223,11 +217,18 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                         }
                     }
                 }
-                if (state.hasRecording && request.transcriptionEnabled) {
-                    SelectionContainer {
-                        Text(state.transcript.ifBlank { stringResource(R.string.audio_listening) },
-                            modifier = Modifier.padding(top = 12.dp).heightIn(max = 180.dp)
-                                .verticalScroll(transcriptScroll).testTag("audio.transcript"))
+                if (request.transcriptionEnabled) {
+                    Column(modifier = Modifier.padding(top = 12.dp).height(180.dp).verticalScroll(transcriptScroll)) {
+                        if (state.preparing || state.preparingTranscription) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Text(stringResource(R.string.audio_preparing), modifier = Modifier.padding(top = 8.dp))
+                        }
+                        if (state.transcript.isNotBlank() || (!state.preparing && !state.preparingTranscription)) {
+                            SelectionContainer {
+                                Text(state.transcript.ifBlank { stringResource(R.string.audio_listening) },
+                                    modifier = Modifier.testTag("audio.transcript"))
+                            }
+                        }
                     }
                 }
                 (request.error ?: state.error)?.let {
