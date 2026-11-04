@@ -235,11 +235,25 @@ jobs:
           logs = Path.home() / "Library/Logs/gym"
           if logs.exists():
               shutil.copytree(logs, root / "gym", dirs_exist_ok=True)
+          for path in root.rglob("IDEDistributionPipeline.log"):
+              lines = path.read_text(errors="replace").splitlines()
+              failures = [line for line in lines if any(word in line.lower() for word in ("rsync", "error:", "failed"))]
+              for line in failures[-30:]:
+                  print(line)
           PY
           df -h .
 
-      - name: Save verified iOS release and diagnostics
+      - name: Save iOS verification reports
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-verification-${{ github.run_id }}
+          path: _build/ios-release/*verification.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Save verified iOS release and diagnostics
+        if: always() && github.event.repository.private
         uses: actions/upload-artifact@v4
         with:
           name: ios-release-${{ github.run_id }}
