@@ -126,8 +126,6 @@ internal class LogseqRuntime(
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
 
-    val supportsAudioTranscription: Boolean get() = AndroidAudioTranscriber.isSupported()
-
     init {
         bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }
         logRuntime("info", "ui", "Kotlin host initialized")
@@ -703,7 +701,6 @@ internal class LogseqRuntime(
         val (asset, transcriptionEnabled) =
             com.logseq.app.ui.extensions.LogseqDialogs.recordAudio(
                 audioRecorder,
-                supportsAudioTranscription,
             ) ?: return
         val response = bridge.callCore(asset.coreRequest(targetBlockId))
         if (!JSONObject(response).optBoolean("ok")) {

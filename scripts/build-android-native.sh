@@ -71,7 +71,11 @@ cd "$build_dir"
 
 # The NDK ships no libffi; ctypes-foreign needs real headers for its stub
 # build and -lffi must resolve at the final .so link.
-ffi_prefix=$("$repo_root/scripts/build-mobile-libffi.sh" \
+# Use NDK archive tools: macOS tools cannot archive Android ELF objects.
+ffi_prefix=$(AR="$ndk_bin/llvm-ar" \
+  NM="$ndk_bin/llvm-nm" \
+  RANLIB="$ndk_bin/llvm-ranlib" \
+  "$repo_root/scripts/build-mobile-libffi.sh" \
   "$target_arch-linux-android" \
   "$repo_root/_build/android-toolchain/libffi-$target" \
   "$ndk_bin/clang --target=$target" \

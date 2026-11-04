@@ -910,7 +910,8 @@ let authentication_content (context : Lui_ui.ui_context) model_source
     send : t =
   let sign_in =
     button ~accessibility_identifier:"button.sign-in"
-      ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
+      ~variant:`primary ~size:`lg ~grow:1.0
+      ?text_alignment:(if Lui_ui.host context = KotlinHost then None else Some `center)
       ~disabled:(reactive View_base.authentication_signing_in_ model_source)
       ~on_press:(press send Model.SignIn)
       ~text:(View_base.tr (Signal.sample model_source) "Sign in")

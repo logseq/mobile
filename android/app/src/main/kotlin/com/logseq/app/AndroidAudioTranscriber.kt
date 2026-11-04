@@ -18,12 +18,40 @@ import com.google.mlkit.genai.speechrecognition.speechRecognizerRequest
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+
+internal fun speechRecognitionLocale(locale: Locale): Locale {
+    if (locale.language != "zh") return locale
+    val traditional = when (locale.script) {
+        "Hans" -> false
+        "Hant" -> true
+        else -> locale.country in setOf("TW", "HK", "MO")
+    }
+    return Locale.forLanguageTag(if (traditional) "cmn-Hant-TW" else "cmn-Hans-CN")
+}
+
+internal suspend fun audioTranscriptionAvailable(
+    timeoutMilliseconds: Long = 5_000,
+    checkStatus: suspend () -> Int,
+): Boolean = try {
+    withTimeoutOrNull(timeoutMilliseconds) {
+        when (checkStatus()) {
+            FeatureStatus.AVAILABLE, FeatureStatus.DOWNLOADABLE -> true
+            else -> false
+        }
+    } ?: false
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    false
+}
 
 class AndroidTranscriptAccumulator {
     private val finalSegments = mutableListOf<String>()
@@ -49,17 +77,32 @@ object AndroidAudioTranscriber {
     private const val sampleRate = 16_000
     private const val bytesPerSecond = sampleRate * 2
 
-    fun isSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    suspend fun isSupported(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        return audioTranscriptionAvailable {
+            val recognizer = createRecognizer()
+            try {
+                recognizer.checkStatus()
+            } finally {
+                recognizer.close()
+            }
+        }
+    }
+
+    private fun createRecognizer(): SpeechRecognizer = SpeechRecognition.getClient(
+        speechRecognizerOptions {
+            locale = speechRecognitionLocale(Locale.getDefault())
+            preferredMode = SpeechRecognizerOptions.Mode.MODE_BASIC
+        },
+    )
 
     suspend fun transcribe(path: String): String = coroutineScope {
-        check(isSupported()) { "Audio transcription requires Android 12 or later." }
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            "Audio transcription requires Android 12 or later."
+        }
         val pcm = decodePcm16(path)
         check(pcm.isNotEmpty()) { "The audio recording is empty." }
-        val options = speechRecognizerOptions {
-            locale = Locale.getDefault()
-            preferredMode = SpeechRecognizerOptions.Mode.MODE_BASIC
-        }
-        val recognizer = SpeechRecognition.getClient(options)
+        val recognizer = createRecognizer()
         try {
             prepare(recognizer)
             val pipe = ParcelFileDescriptor.createPipe()

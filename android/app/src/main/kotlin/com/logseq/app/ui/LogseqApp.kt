@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.logseq.app.BuildConfig
+import com.logseq.app.AndroidAudioTranscriber
 import logseq.app.AndroidRuntimeLogs
 import logseq.app.AndroidRuntimeLogLevel
 import logseq.app.AndroidRuntimeLogSource
@@ -105,6 +106,12 @@ private fun AudioRecordingDialog() {
     val request = LogseqDialogs.recordingRequest ?: return
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
     var busy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(request) {
+        val supported = AndroidAudioTranscriber.isSupported()
+        request.transcriptionSupported = supported
+        request.transcriptionEnabled = supported
+    }
 
     LaunchedEffect(request) {
         try {

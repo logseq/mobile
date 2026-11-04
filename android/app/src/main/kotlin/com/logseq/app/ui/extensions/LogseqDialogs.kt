@@ -7,12 +7,13 @@ import com.logseq.app.AndroidAudioRecorder
 import com.logseq.app.runtime.RecordedAudioAsset
 import kotlinx.coroutines.CompletableDeferred
 
-internal data class AudioRecordingRequest(
+internal class AudioRecordingRequest(
     val result: CompletableDeferred<RecordedAudioAsset?>,
-    var transcriptionEnabled: Boolean,
-    val transcriptionSupported: Boolean,
     val recorder: AndroidAudioRecorder,
-)
+) {
+    var transcriptionEnabled by mutableStateOf(false)
+    var transcriptionSupported by mutableStateOf(false)
+}
 
 internal data class DeleteConfirmationRequest(
     val multiple: Boolean,
@@ -45,13 +46,10 @@ internal object LogseqDialogs {
 
     suspend fun recordAudio(
         recorder: AndroidAudioRecorder,
-        transcriptionSupported: Boolean,
     ): Pair<RecordedAudioAsset, Boolean>? {
         val result = CompletableDeferred<RecordedAudioAsset?>()
         val request = AudioRecordingRequest(
             result = result,
-            transcriptionEnabled = transcriptionSupported,
-            transcriptionSupported = transcriptionSupported,
             recorder = recorder,
         )
         recordingRequest = request
