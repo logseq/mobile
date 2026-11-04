@@ -44,7 +44,7 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "d1729ffaa0db0dc7dddcabb1f78bd368a96d30c5")
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "230783b998ecd1cce3712a1d1404e44ea94915cf")
     ],
     targets: [
         .executableTarget(
