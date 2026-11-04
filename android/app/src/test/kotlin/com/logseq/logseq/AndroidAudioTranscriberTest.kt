@@ -13,6 +13,25 @@ import org.junit.Test
 
 class AndroidAudioTranscriberTest {
     @Test
+    fun remembersTheLastLanguageBeforeFallingBackToTheSystem() {
+        assertEquals(Locale.FRANCE, AndroidAudioTranscriber.defaultLanguage("fr-FR", Locale.JAPAN))
+        assertEquals(Locale.JAPAN, AndroidAudioTranscriber.defaultLanguage(null, Locale.JAPAN))
+        assertEquals(Locale.JAPAN, AndroidAudioTranscriber.defaultLanguage("unsupported", Locale.JAPAN))
+        assertEquals("cmn-Hant-TW", AndroidAudioTranscriber.defaultLanguage(null, Locale.TAIWAN).toLanguageTag())
+        assertEquals(Locale.US, AndroidAudioTranscriber.defaultLanguage(null, Locale.forLanguageTag("ar-SA")))
+    }
+
+    @Test
+    fun switchingLanguagesRetainsEarlierTextWhileReplacingNewPartialResults() {
+        val accumulator = AndroidTranscriptAccumulator(" previous language ")
+        accumulator.updatePartial(" draft ")
+        accumulator.updatePartial(" revised draft ")
+        assertEquals("previous language revised draft", accumulator.transcript())
+        accumulator.appendFinal(" new language ")
+        assertEquals("previous language new language", accumulator.transcript())
+    }
+
+    @Test
     fun chineseSystemLocalesUseTheMandarinModelIdentifiers() {
         for (tag in listOf("zh", "zh-CN", "zh-SG", "zh-Hans-CN", "zh-Hans-TW")) {
             assertEquals(tag, "cmn-Hans-CN", speechRecognitionLocale(Locale.forLanguageTag(tag)).toLanguageTag())

@@ -39,6 +39,8 @@ class AndroidAudioRecorder(private val activity: Activity) {
 
     suspend fun stop(): AudioRecordingResult = AudioRecordingService.stop()
 
+    fun setTranscriptionLanguage(language: Locale?) = AudioRecordingService.setTranscriptionLanguage(language)
+
     fun detach() {
         pendingPermission?.cancel()
         pendingPermission = null

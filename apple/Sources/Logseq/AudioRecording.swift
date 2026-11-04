@@ -16,6 +16,15 @@ enum AudioRecordingPolicy {
     static func supportsTranscription(iOSMajorVersion: Int) -> Bool {
         iOSMajorVersion >= 26
     }
+
+    static func transcriptionLocale(lastUsed: String, system: Locale = .current) -> Locale {
+        lastUsed.isEmpty ? system : Locale(identifier: lastUsed)
+    }
+
+    static func appendTranscript(_ text: String, to prefix: String) -> String {
+        [prefix, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
 }
 
 #if os(iOS)
@@ -35,7 +44,7 @@ struct RecordedAudioAsset: Sendable {
 final class RecordingAudioSink: @unchecked Sendable {
     private let lock = NSLock()
     var file: AVAudioFile?
-    var consume: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    private var consume: (@Sendable (AVAudioPCMBuffer) -> Void)?
     let onUpdate: @Sendable (Int, Float, String?) -> Void
     private var frames: AVAudioFramePosition = 0
     private var lastUpdate = 0
@@ -49,6 +58,12 @@ final class RecordingAudioSink: @unchecked Sendable {
     // outside the controller's actor context, including in Swift 6 builds.
     func makeTapHandler() -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         { [self] buffer, _ in append(buffer) }
+    }
+
+    func setConsumer(_ consume: (@Sendable (AVAudioPCMBuffer) -> Void)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.consume = consume
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -104,9 +119,10 @@ private final class ConverterInput: @unchecked Sendable {
 private final class LiveAudioTranscription {
     let analyzer: SpeechAnalyzer
     let continuation: AsyncStream<AnalyzerInput>.Continuation
+    let consume: @Sendable (AVAudioPCMBuffer) -> Void
     private var resultsTask: Task<Void, Never>?
 
-    init(locale: Locale, inputFormat: AVAudioFormat, sink: RecordingAudioSink,
+    init(locale: Locale, inputFormat: AVAudioFormat,
          onText: @escaping @MainActor (String) -> Void,
          onError: @escaping @MainActor (String) -> Void) async throws {
         let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
@@ -126,6 +142,23 @@ private final class LiveAudioTranscription {
         }
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         self.continuation = continuation
+        consume = { buffer in
+            do {
+                let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * format.sampleRate / inputFormat.sampleRate))
+                guard let converted = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                let input = ConverterInput(buffer)
+                var error: NSError?
+                converter.convert(to: converted, error: &error) { @Sendable _, status in
+                    input.take(status)
+                }
+                if let error { throw error }
+                if converted.frameLength > 0 { continuation.yield(AnalyzerInput(buffer: converted)) }
+            } catch {
+                Task { @MainActor in onError(error.localizedDescription) }
+            }
+        }
         analyzer = SpeechAnalyzer(modules: [transcriber])
         try await analyzer.prepareToAnalyze(in: format)
         resultsTask = Task {
@@ -152,24 +185,6 @@ private final class LiveAudioTranscription {
             resultsTask?.cancel()
             throw error
         }
-        sink.consume = { [weak sink] buffer in
-            do {
-                let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * format.sampleRate / inputFormat.sampleRate))
-                guard let converted = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-                    throw CocoaError(.fileReadUnknown)
-                }
-                let input = ConverterInput(buffer)
-                var error: NSError?
-                converter.convert(to: converted, error: &error) { @Sendable _, status in
-                    input.take(status)
-                }
-                if let error { throw error }
-                if converted.frameLength > 0 { continuation.yield(AnalyzerInput(buffer: converted)) }
-            } catch {
-                sink?.consume = nil
-                Task { @MainActor in onError(error.localizedDescription) }
-            }
-        }
     }
 
     func finish() async throws {
@@ -189,6 +204,7 @@ private final class LiveAudioTranscription {
 final class AudioRecorderController: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var isPreparing = false
+    @Published private(set) var isPreparingTranscription = false
     @Published private(set) var hasRecording = false
     @Published private(set) var elapsedSeconds = 0
     @Published private(set) var level: Float = 0
@@ -198,6 +214,9 @@ final class AudioRecorderController: NSObject, ObservableObject {
     private var sink: RecordingAudioSink?
     private var outputURL: URL?
     private var transcription: AnyObject?
+    private var transcriptionTask: Task<Void, Never>?
+    private var transcriptionGeneration = 0
+    private var inputFormat: AVAudioFormat?
     private var interruptionObserver: NSObjectProtocol?
 
     func start(locale: Locale = .current, transcriptionLocale: Locale? = nil) async {
@@ -206,7 +225,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
         errorMessage = nil
         defer { isPreparing = false }
         let granted = await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            AVAudioApplication.requestRecordPermission { @Sendable granted in continuation.resume(returning: granted) }
         }
         guard granted else {
             errorMessage = CaptureLocalization.text("Microphone access is required to record audio.", locale: locale)
@@ -245,13 +264,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
                 }
             }
             self.sink = sink
-            if #available(iOS 26.0, *), let transcriptionLocale {
-                transcription = try await LiveAudioTranscription(
-                    locale: transcriptionLocale, inputFormat: format, sink: sink,
-                    onText: { [weak self] in self?.liveTranscript = $0 },
-                    onError: { [weak self] in self?.errorMessage = $0 }
-                )
-            }
+            inputFormat = format
             try Task.checkCancellation()
             engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format,
                                         block: sink.makeTapHandler())
@@ -260,6 +273,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
             try engine.start()
             hasRecording = true
             isRecording = true
+            setTranscriptionLanguage(transcriptionLocale)
             interruptionObserver = NotificationCenter.default.addObserver(
                 forName: AVAudioSession.interruptionNotification, object: session, queue: .main
             ) { [weak self] notification in
@@ -271,6 +285,56 @@ final class AudioRecorderController: NSObject, ObservableObject {
             cancel()
             if !(error is CancellationError) {
                 errorMessage = CaptureLocalization.text("Couldn't start recording.", locale: locale) + " " + error.localizedDescription
+            }
+        }
+    }
+
+    func setTranscriptionLanguage(_ locale: Locale?) {
+        guard #available(iOS 26.0, *), isRecording, let sink, let inputFormat else { return }
+        transcriptionGeneration += 1
+        let generation = transcriptionGeneration
+        transcriptionTask?.cancel()
+        let previous = transcription as? LiveAudioTranscription
+        transcription = nil
+        sink.setConsumer(nil)
+        let prefix = liveTranscript
+        errorMessage = nil
+        isPreparingTranscription = locale != nil
+        transcriptionTask = Task { [self] in
+            await previous?.cancel()
+            guard !Task.isCancelled, generation == transcriptionGeneration, isRecording else { return }
+            defer {
+                if generation == transcriptionGeneration { isPreparingTranscription = false }
+            }
+            guard let locale else { return }
+            do {
+                guard SpeechTranscriber.isAvailable,
+                      let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
+                    throw CocoaError(.featureUnsupported)
+                }
+                try Task.checkCancellation()
+                let active = try await LiveAudioTranscription(
+                    locale: supported, inputFormat: inputFormat,
+                    onText: { [weak self] text in
+                        guard let self, generation == self.transcriptionGeneration else { return }
+                        self.liveTranscript = AudioRecordingPolicy.appendTranscript(text, to: prefix)
+                    },
+                    onError: { [weak self] message in
+                        guard let self, generation == self.transcriptionGeneration else { return }
+                        self.sink?.setConsumer(nil)
+                        self.errorMessage = message
+                    }
+                )
+                guard !Task.isCancelled, generation == transcriptionGeneration, isRecording else {
+                    await active.cancel()
+                    return
+                }
+                transcription = active
+                sink.setConsumer(active.consume)
+            } catch {
+                if !(error is CancellationError), generation == transcriptionGeneration {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -287,6 +351,8 @@ final class AudioRecorderController: NSObject, ObservableObject {
 
     func stop() async throws -> RecordedAudioAsset? {
         guard hasRecording, let outputURL else { return nil }
+        transcriptionTask?.cancel()
+        isPreparingTranscription = false
         pauseCapture()
         if #available(iOS 26.0, *), let transcription = transcription as? LiveAudioTranscription {
             do { try await transcription.finish() }
@@ -296,6 +362,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
             }
         }
         transcription = nil
+        transcriptionGeneration += 1
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         let data = try Data(contentsOf: outputURL)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -304,6 +371,9 @@ final class AudioRecorderController: NSObject, ObservableObject {
     }
 
     func cancel() {
+        transcriptionGeneration += 1
+        transcriptionTask?.cancel()
+        isPreparingTranscription = false
         pauseCapture()
         if #available(iOS 26.0, *), let transcription = transcription as? LiveAudioTranscription {
             Task { await transcription.cancel() }
@@ -351,9 +421,9 @@ struct AudioRecorderSheet: View {
                             .accessibilityIdentifier("picker.audio.language")
                         }
                     }
-                    .disabled(recorder.hasRecording || recorder.isPreparing)
+                    .disabled(recorder.isPreparing || isSaving)
                 }
-                if recorder.isPreparing {
+                if recorder.isPreparingTranscription {
                     ProgressView(CaptureLocalization.text("Preparing transcription…", locale: locale))
                 }
                 if recorder.hasRecording, transcriptionEnabled, !languages.isEmpty {
@@ -370,10 +440,7 @@ struct AudioRecorderSheet: View {
                     if recorder.hasRecording {
                         Task { await save() }
                     } else {
-                        startTask = Task {
-                            await recorder.start(locale: locale, transcriptionLocale: transcriptionEnabled && !language.isEmpty
-                                                 ? Locale(identifier: language) : nil)
-                        }
+                        startRecording()
                     }
                 } label: {
                     ZStack {
@@ -404,6 +471,7 @@ struct AudioRecorderSheet: View {
             }
         }
         .interactiveDismissDisabled(recorder.hasRecording || recorder.isPreparing || isSaving)
+        .task { startRecording() }
         .task {
             if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
                 languages = await SpeechTranscriber.supportedLocales.sorted {
@@ -411,15 +479,33 @@ struct AudioRecorderSheet: View {
                         .localizedStandardCompare(locale.localizedString(forIdentifier: $1.identifier) ?? $1.identifier) == .orderedAscending
                 }
                 if !languages.contains(where: { $0.identifier == language }) {
-                    language = await SpeechTranscriber.supportedLocale(equivalentTo: .current)?.identifier
-                        ?? languages.first?.identifier ?? ""
+                    let preferred = await SpeechTranscriber.supportedLocale(equivalentTo: selectedTranscriptionLocale)
+                    let system = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
+                    language = preferred?.identifier ?? system?.identifier ?? languages.first?.identifier ?? ""
                 }
             }
         }
+        .onChange(of: language) { _, _ in updateTranscriptionLanguage() }
+        .onChange(of: transcriptionEnabled) { _, _ in updateTranscriptionLanguage() }
         .onDisappear {
             startTask?.cancel()
             if !didSave { recorder.cancel() }
         }
+    }
+
+    private var selectedTranscriptionLocale: Locale {
+        AudioRecordingPolicy.transcriptionLocale(lastUsed: language)
+    }
+
+    private func startRecording() {
+        startTask = Task {
+            await recorder.start(locale: locale,
+                                 transcriptionLocale: transcriptionEnabled ? selectedTranscriptionLocale : nil)
+        }
+    }
+
+    private func updateTranscriptionLanguage() {
+        recorder.setTranscriptionLanguage(transcriptionEnabled ? selectedTranscriptionLocale : nil)
     }
 
     private func save() async {
@@ -428,7 +514,7 @@ struct AudioRecorderSheet: View {
         do {
             if let asset = try await recorder.stop() {
                 let transcript = recorder.liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-                try onSave(asset, targetBlockID, transcriptionEnabled && !transcript.isEmpty ? transcript : nil)
+                try onSave(asset, targetBlockID, transcript.isEmpty ? nil : transcript)
                 didSave = true
                 dismiss()
             }

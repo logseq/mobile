@@ -137,19 +137,37 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
     val displayLocale = LocalConfiguration.current.locales[0]
     val preferences = remember { context.getSharedPreferences("audio-recording", Context.MODE_PRIVATE) }
     var language by remember(request) {
-        mutableStateOf(preferences.getString("language", null)
-            ?.let(Locale::forLanguageTag)?.takeIf { it in AndroidAudioTranscriber.languages }
-            ?: AndroidAudioTranscriber.defaultLanguage())
+        mutableStateOf(AndroidAudioTranscriber.defaultLanguage(preferences.getString("language", null)))
     }
     var languageMenu by remember { mutableStateOf(false) }
     val state by AudioRecordingService.state.collectAsState()
     val scope = request.scope
-    val locked = state.preparing || state.hasRecording || request.busy
+    val locked = state.preparing || request.busy
     val transcriptScroll = rememberScrollState()
 
-    LaunchedEffect(request) {
+    fun startRecording() {
+        if (request.busy || state.hasRecording || state.preparing) return
+        request.busy = true
+        request.error = null
+        preferences.edit { putString("language", language.toLanguageTag()) }
+        scope.launch {
+            try {
+                recorder.start(if (request.transcriptionEnabled) language else null)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                request.error = failure.localizedMessage
+                AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
+            } finally {
+                request.busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(request, recorder) {
         request.transcriptionEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             preferences.getBoolean("transcribe", true)
+        startRecording()
     }
     LaunchedEffect(state.transcript) { transcriptScroll.animateScrollTo(transcriptScroll.maxValue) }
 
@@ -163,10 +181,11 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
         title = { Text(stringResource(R.string.audio_recording)) },
         text = {
             Column {
-                if (state.preparing) {
+                if (state.preparing || state.preparingTranscription) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(stringResource(R.string.audio_preparing), modifier = Modifier.padding(top = 8.dp))
-                } else if (state.hasRecording) {
+                }
+                if (state.hasRecording) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(progress = { state.level }, modifier = Modifier.weight(1f))
                         Text("%d:%02d".format(state.seconds / 60, state.seconds % 60), modifier = Modifier.padding(start = 12.dp))
@@ -180,6 +199,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                             onCheckedChange = {
                                 request.transcriptionEnabled = it
                                 preferences.edit { putBoolean("transcribe", it) }
+                                recorder.setTranscriptionLanguage(if (it) language else null)
                             },
                         )
                         Text(stringResource(R.string.audio_transcribe))
@@ -195,6 +215,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                                     DropdownMenuItem(text = { Text(item.getDisplayName(displayLocale)) }, onClick = {
                                         language = item
                                         preferences.edit { putString("language", item.toLanguageTag()) }
+                                        recorder.setTranscriptionLanguage(item)
                                         languageMenu = false
                                     })
                                 }
@@ -219,11 +240,13 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                 enabled = !request.busy && !request.result.isCompleted && !state.preparing,
                 modifier = Modifier.testTag(if (state.hasRecording) "button.audio.stop" else "button.audio.start"),
                 onClick = {
-                    request.busy = true
-                    request.error = null
-                    scope.launch {
-                        try {
-                            if (state.hasRecording) {
+                    if (!state.hasRecording) {
+                        startRecording()
+                    } else {
+                        request.busy = true
+                        request.error = null
+                        scope.launch {
+                            try {
                                 val recording = recorder.stop()
                                 val map = recording.asset
                                 request.transcript = recording.transcript
@@ -235,16 +258,14 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                                     checksum = map["checksum"] as String,
                                     localPath = map["localPath"] as String,
                                 ))
-                            } else {
-                                recorder.start(if (request.transcriptionEnabled) language else null)
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                request.error = failure.localizedMessage
+                                AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
+                            } finally {
+                                request.busy = false
                             }
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (failure: Exception) {
-                            request.error = failure.localizedMessage
-                            AndroidRuntimeLogs.shared.append(AndroidRuntimeLogLevel.ERROR, AndroidRuntimeLogSource.UI, failure.toString())
-                        } finally {
-                            request.busy = false
                         }
                     }
                 },

@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
-import com.google.mlkit.genai.speechrecognition.SpeechRecognizer
 import java.io.File
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -26,6 +25,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -34,6 +35,7 @@ import kotlinx.coroutines.withContext
 
 data class AudioRecordingState(
     val preparing: Boolean = false,
+    val preparingTranscription: Boolean = false,
     val recording: Boolean = false,
     val hasRecording: Boolean = false,
     val seconds: Int = 0,
@@ -48,7 +50,9 @@ data class AudioRecordingResult(val asset: Map<String, Any>, val transcript: Str
 class AudioRecordingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var microphone: AndroidMicrophoneCapture? = null
-    private var transcription: AndroidLiveTranscription? = null
+    @Volatile private var transcription: AndroidLiveTranscription? = null
+    private var languageChange: Job? = null
+    @Volatile private var transcriptionGeneration = 0L
     private var file: File? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var finishing = false
@@ -73,19 +77,9 @@ class AudioRecordingService : Service() {
             preparation = scope.launch {
                 try {
                     val language = intent.getStringExtra(EXTRA_LANGUAGE)?.let(Locale::forLanguageTag)
-                    val recognizer: SpeechRecognizer? = language?.let { AndroidAudioTranscriber.prepare(it) }
-                    if (cancelled) {
-                        recognizer?.close()
-                        return@launch
-                    }
+                    if (cancelled) return@launch
                     val recordingFile = File(cacheDir, "recording-${UUID.randomUUID()}.m4a")
                     file = recordingFile
-                    transcription = recognizer?.let {
-                        AndroidLiveTranscription(it, scope,
-                            onText = { text -> mutableState.update { state -> state.copy(transcript = text) } },
-                            onError = { failure -> mutableState.update { state -> state.copy(error = failure.localizedMessage) } },
-                        )
-                    }
                     wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
                         .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Logseq:AudioRecording").apply {
                             acquire(12 * 60 * 60 * 1_000L)
@@ -103,6 +97,7 @@ class AudioRecordingService : Service() {
                     )
                     mutableState.update { it.copy(preparing = false, recording = true, hasRecording = true) }
                     started?.complete(Unit)
+                    changeTranscriptionLanguage(language)
                 } catch (failure: Throwable) {
                     mutableState.update { it.copy(preparing = false, recording = false, error = failure.localizedMessage) }
                     started?.completeExceptionally(failure)
@@ -114,6 +109,50 @@ class AudioRecordingService : Service() {
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    private fun changeTranscriptionLanguage(language: Locale?) {
+        if (finishing || cancelled || !state.value.recording) return
+        val generation = ++transcriptionGeneration
+        languageChange?.cancel()
+        val previous = transcription
+        transcription = null
+        val prefix = state.value.transcript
+        mutableState.update { it.copy(preparingTranscription = language != null, error = null) }
+        languageChange = scope.launch {
+            try {
+                previous?.close()
+                if (!isActive || generation != transcriptionGeneration || !state.value.recording || language == null) return@launch
+                val recognizer = AndroidAudioTranscriber.prepare(language)
+                if (!isActive || generation != transcriptionGeneration || !state.value.recording) {
+                    releaseAudioResources({ recognizer.close() })
+                    return@launch
+                }
+                try {
+                    transcription = AndroidLiveTranscription(recognizer, scope, prefix = prefix,
+                        onText = { text -> mutableState.update { state ->
+                            if (generation == transcriptionGeneration) state.copy(transcript = text) else state
+                        } },
+                        onError = { failure -> mutableState.update { state ->
+                            if (generation == transcriptionGeneration) state.copy(error = failure.localizedMessage) else state
+                        } },
+                    )
+                } catch (failure: Throwable) {
+                    releaseAudioResources({ recognizer.close() })?.let(failure::addSuppressed)
+                    throw failure
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation == transcriptionGeneration) {
+                    mutableState.update { it.copy(error = failure.localizedMessage) }
+                }
+            } finally {
+                if (generation == transcriptionGeneration) {
+                    mutableState.update { it.copy(preparingTranscription = false) }
+                }
+            }
+        }
     }
 
     private fun showNotification() {
@@ -149,6 +188,7 @@ class AudioRecordingService : Service() {
                 mutableState.update { it.copy(error = failure.localizedMessage) }
             }
             transcription = null
+            transcriptionGeneration++
             val source = checkNotNull(file) { "No audio was recorded." }
             val asset = withContext(Dispatchers.IO) {
                 check(source.length() > 0) { "The audio recording is empty." }
@@ -182,6 +222,8 @@ class AudioRecordingService : Service() {
 
     private suspend fun cancelRecording() = withContext(NonCancellable) {
         cancelled = true
+        transcriptionGeneration++
+        languageChange?.cancel()
         preparation?.cancel()
         started?.cancel()
         runCatching { pauseCapture() }
@@ -190,12 +232,13 @@ class AudioRecordingService : Service() {
         file?.delete()
         file = null
         releaseWakeLock()
-        mutableState.update { it.copy(preparing = false, recording = false, hasRecording = false, level = 0f) }
+        mutableState.update { it.copy(preparing = false, preparingTranscription = false, recording = false, hasRecording = false, level = 0f) }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     private suspend fun pauseCapture() {
+        languageChange?.cancel()
         val active = microphone
         microphone = null
         val failure = stopAudioCapture { active?.stop() }
@@ -203,7 +246,7 @@ class AudioRecordingService : Service() {
             captureFailure = failure
             mutableState.update { it.copy(error = failure.localizedMessage) }
         }
-        mutableState.update { it.copy(recording = false, level = 0f) }
+        mutableState.update { it.copy(recording = false, preparingTranscription = false, level = 0f) }
     }
 
     private fun releaseWakeLock() {
@@ -214,6 +257,8 @@ class AudioRecordingService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         preparation?.cancel()
+        languageChange?.cancel()
+        transcriptionGeneration++
         scope.launch {
             try {
                 runCatching { microphone?.stop() }
@@ -262,6 +307,10 @@ class AudioRecordingService : Service() {
         }
 
         suspend fun stop(): AudioRecordingResult = checkNotNull(instance).finishRecording()
+
+        fun setTranscriptionLanguage(language: Locale?) {
+            instance?.changeTranscriptionLanguage(language)
+        }
 
         fun cancel() {
             started?.cancel()

@@ -52,8 +52,10 @@ internal suspend fun audioTranscriptionAvailable(
     false
 }
 
-class AndroidTranscriptAccumulator {
-    private val finalSegments = mutableListOf<String>()
+class AndroidTranscriptAccumulator(prefix: String = "") {
+    private val finalSegments = mutableListOf<String>().apply {
+        prefix.trim().takeIf { it.isNotEmpty() }?.let(::add)
+    }
     private var partial = ""
 
     fun updatePartial(text: String) { partial = text.trim() }
@@ -76,8 +78,10 @@ object AndroidAudioTranscriber {
         "it-IT", "ja-JP", "ko-KR", "pl-PL", "pt-BR", "ru-RU", "tr-TR", "vi-VN",
     ).map(Locale::forLanguageTag)
 
-    fun defaultLanguage(): Locale {
-        val current = speechRecognitionLocale(Locale.getDefault())
+    fun defaultLanguage(lastUsed: String? = null, system: Locale = Locale.getDefault()): Locale {
+        val previous = lastUsed?.let(Locale::forLanguageTag)?.let(::speechRecognitionLocale)
+        languages.firstOrNull { it == previous }?.let { return it }
+        val current = speechRecognitionLocale(system)
         return languages.firstOrNull { it == current }
             ?: languages.firstOrNull { it.language == current.language }
             ?: Locale.US
@@ -126,12 +130,13 @@ object AndroidAudioTranscriber {
 internal class AndroidLiveTranscription(
     private val recognizer: SpeechRecognizer,
     scope: CoroutineScope,
+    prefix: String = "",
     private val onText: (String) -> Unit,
     private val onError: (Throwable) -> Unit,
 ) {
     private val pipe = ParcelFileDescriptor.createPipe()
     private val chunks = Channel<ByteArray>(20)
-    private val accumulator = AndroidTranscriptAccumulator()
+    private val accumulator = AndroidTranscriptAccumulator(prefix)
     private val failed = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val writer = scope.launch(Dispatchers.IO) {
