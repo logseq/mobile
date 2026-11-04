@@ -1337,6 +1337,9 @@ let dictionaries = [
     ("Deadline", "Deadline");
     ("Delete", "Delete");
     ("Delete local graph", "Delete local graph");
+    ("Delete local copy", "Delete local copy");
+    ("Delete the local copy of \"{1}\" from this device?", "Delete the local copy of \"{1}\" from this device?");
+    ("Cloud copies are not deleted. Unsynced changes on this device will be lost.", "Cloud copies are not deleted. Unsynced changes on this device will be lost.");
     ("Descending", "Descending");
     ("Done", "Done");
     ("Easy", "Easy");
@@ -5492,6 +5495,9 @@ let dictionaries = [
     ("Deadline", "截止日期");
     ("Delete", "删除");
     ("Delete local graph", "删除本地图谱");
+    ("Delete local copy", "删除本地副本");
+    ("Delete the local copy of \"{1}\" from this device?", "要从此设备删除“{1}”的本地副本吗？");
+    ("Cloud copies are not deleted. Unsynced changes on this device will be lost.", "不会删除云端副本。此设备上未同步的更改将丢失。");
     ("Descending", "降序");
     ("Done", "已完成");
     ("Easy", "简单");

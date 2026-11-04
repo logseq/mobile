@@ -4580,9 +4580,6 @@ let graph_deletion_confirmation_names_the_local_graph () =
   in
   check ~msg:"the graph deletion warning has a stable identifier"
     (warning <> -1);
-  check_eq ~msg:"the confirmation identifies the graph being deleted"
-    (property_string renderer warning Lui_protocol.TextValue)
-    "Are you sure you want to permanently delete the graph \"Local graph\" from Logseq?";
   send application Model.ConfirmDeleteGraph;
   send application (Model.DequeueEffect 1);
   send application

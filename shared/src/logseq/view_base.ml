@@ -1139,8 +1139,7 @@ let graph_deletion_pending_ (current : Model.logseq_model) =
 let graph_deletion_message (current : Model.logseq_model) =
   match current.pending_graph_deletion with
   | Some graph ->
-    "Are you sure you want to permanently delete the graph \"" ^ graph.name
-    ^ "\" from Logseq?"
+    tr_named current "Delete the local copy of \"{1}\" from this device?" graph.name
   | None -> ""
 
 let graph_password_empty_ (current : Model.logseq_model) =

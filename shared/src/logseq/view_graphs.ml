@@ -313,9 +313,8 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
                   [];
               ];
             text ~foreground:"muted-foreground"
-              ~value:
-                "This graph cannot be recovered after deletion. Make \
-                 sure you have a backup."
+              ~value:(View_base.tr (Signal.sample model_source)
+                "Cloud copies are not deleted. Unsynced changes on this device will be lost.")
               [];
             spacer ~grow:1.0 [];
             row ~main:`end_
@@ -333,7 +332,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
                       ~accessibility_identifier:
                         "button.graph-delete.confirm"
                       ~on_press:(press send Model.ConfirmDeleteGraph)
-                      ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
+                      ~text:(View_base.tr (Signal.sample model_source) "Delete local copy") [];
                   ];
               ];
           ];
@@ -350,9 +349,8 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
             (Signal.map View_base.graph_deletion_message model_source)
           ~accessibility_identifier:"text.graph-delete-warning" [];
         text
-          ~value:
-            "Notice that we can't recover this graph after being \
-             deleted. Make sure you have backups before deleting it."
+          ~value:(View_base.tr (Signal.sample model_source)
+            "Cloud copies are not deleted. Unsynced changes on this device will be lost.")
           [];
         button ~style_class:"cancellation-action"
           ~accessibility_identifier:"button.graph-delete.cancel"
@@ -361,7 +359,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
         button ~variant:`destructive
           ~accessibility_identifier:"button.graph-delete.confirm"
           ~on_press:(press send Model.ConfirmDeleteGraph)
-          ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
+          ~text:(View_base.tr (Signal.sample model_source) "Delete local copy") [];
       ]
 
 let graph_picker_overflow_menu model_source send : t =
