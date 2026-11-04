@@ -1,6 +1,7 @@
 package com.logseq.logseq.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -91,6 +92,13 @@ internal object LogseqTheme {
         surfaceContainer = Color(0xff181c22),
         surfaceContainerHigh = Color(0xff1d2229),
         surfaceContainerHighest = Color(0xff22272f),
+    )
+
+    fun semanticColors(scheme: ColorScheme): Map<String, Color> = mapOf(
+        "background" to scheme.background,
+        "surface" to scheme.surfaceContainerLow,
+        "card" to scheme.surfaceContainerHigh,
+        "code-container" to scheme.surfaceContainerHighest,
     )
 }
 

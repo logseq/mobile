@@ -72,6 +72,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
             dev.lui.LocalLuiThemeDark provides dark,
+            dev.lui.LocalLuiSemanticColors provides LogseqTheme.semanticColors(MaterialTheme.colorScheme),
         ) {
             if (BuildConfig.DEBUG) {
                 LaunchedEffect(Unit) {
