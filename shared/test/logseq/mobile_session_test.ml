@@ -376,6 +376,39 @@ let first_download_import_loads_favorites () =
     check_eq ~msg:"the first imported graph response contains favorites"
       (favorite_ids imported) ["graph-a-page"])
 
+let local_graph_removal_allows_redownload_in_the_same_session () =
+  with_favorite_graphs (fun host call fields cache download ->
+    let module U = Yojson.Basic.Util in
+    ignore (call "configure" ["baseUrl", `String "https://example.com";
+      "token", `String "local-test-token"; "graphId", `String "graph-a"]);
+    cache "graph-a";
+    let original = fields "graph-a" in
+    let directory = Filename.concat (Filename.dirname (U.to_string (List.assoc "activePath" original))) "local-graph-a" in
+    Unix.mkdir directory 0o700;
+    let fields = List.map (fun (key, value) -> match key, value with
+      | ("activePath" | "checkpointPath"), `String path ->
+        let destination = Filename.concat directory (Filename.basename path) in
+        Sys.rename path destination;
+        key, `String destination
+      | _ -> key, value) original in
+    ignore (call "openGraph" fields);
+    ignore (call "closeGraph" ["graphId", `String "graph-a"]);
+    remove_tree directory;
+    let selected = Rpc_test.dispatch_json !(host.Mobile_session.session) "selectGraph" "graph-a" in
+    check_eq ~msg:"selecting the remote graph must not read deleted local storage"
+      (U.member "ok" selected) (`Bool true);
+    let plan = call "bootstrapGraph" fields |> U.member "graphBootstrap" in
+    check_eq (U.member "kind" plan) (`String "download");
+    check_eq ~msg:"the catalog survives removal of a local graph"
+      (List.length (U.to_list (U.member "graphs" (U.member "result" selected)))) 2;
+    let config = Option.get (Session_types.state !(host.Mobile_session.session)).config in
+    check_eq ~msg:"authentication and API configuration survive local removal"
+      (config.base_url, config.token) ("https://example.com", "local-test-token");
+    Unix.mkdir directory 0o700;
+    let restored = call "importSnapshot" (fields @ download "graph-a") in
+    check_eq ~msg:"the same session can restore and read the remote graph"
+      (favorite_ids restored) ["graph-a-page"])
+
 let cold_launch_defers_sidebar_but_switching_graphs_loads_it () =
   with_favorite_graphs (fun host call fields cache _ ->
     cache "graph-a"; cache "graph-b";
@@ -845,7 +878,8 @@ let cold_launch_favorite_edits_publish_the_sidebar () =
       (favorite_ids (favorite true "cold-favorite")) ["graph-a-page"])
 
 let cases =
-  [ case "offline edits survive logout restart and sync with new credentials" offline_edits_survive_logout_restart_and_sync_with_new_credentials;
+  [ case "local graph removal allows redownload in the same session" local_graph_removal_allows_redownload_in_the_same_session;
+    case "offline edits survive logout restart and sync with new credentials" offline_edits_survive_logout_restart_and_sync_with_new_credentials;
     case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
     case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;
     case "transcription survives navigation and deduplicates outside the projection" transcription_survives_navigation_and_deduplicates_outside_the_projection;

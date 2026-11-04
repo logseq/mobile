@@ -4754,10 +4754,10 @@ let page_service_exceptions_are_not_reclassified_as_payload_json_errors () =
   let response =
     dispatch_json session "deletePage" "{\"pageUuid\":\"p\",\"operationId\":\"op\"}"
   in
-  check_eq (response_error_code response) "invalid_json";
+  check_eq (response_error_code response) "internal_error";
   check_eq
     (json_string (member "message" (member "error" response)))
-    "request must be valid JSON"
+    "The request could not be completed"
 
 let refresh_reads_local_graph_without_http () =
   List.iter
@@ -5515,7 +5515,7 @@ let rpc_routing_keeps_first_fields_and_catches_handler_errors () =
        (fun () -> Json.to_string (Json.from_string "{"))
        dispatch
        "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")
-    (Rpc.failure "invalid_json" "request must be valid JSON")
+    (Rpc.failure "internal_error" "The request could not be completed")
 
 let capture_payload_supports_plain_text_and_validated_json () =
   List.iter
