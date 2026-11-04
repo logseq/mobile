@@ -757,7 +757,7 @@ private struct LGNavigationContent: View {
     var body: some View {
         let _ = context.revision
         let _ = search?.context.revision
-        navigationLayout
+        navigationStack
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
             }
@@ -767,15 +767,15 @@ private struct LGNavigationContent: View {
     }
 
     @ViewBuilder
-    private var navigationLayout: some View {
-        navigationStack
+    private func navigationSurface<Content: View>(_ content: Content, active: Bool) -> some View {
+        content
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if bottomOccupiesLayoutSpace && showsBottomChrome {
+                if active && bottomOccupiesLayoutSpace && showsBottomChrome {
                     sizedBottomChrome
                 }
             }
             .overlay(alignment: .bottom) {
-                if !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
+                if active && !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
                     if hasCollapsedComposer {
                         VStack {
                             Spacer(minLength: 0)
@@ -795,7 +795,7 @@ private struct LGNavigationContent: View {
             // Only floating keyboards bypass avoidance to keep the toolbar fixed.
             .ignoresSafeArea(.keyboard, edges: UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer && dockedKeyboardInset == 0 ? .bottom : [])
             .background {
-                if UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer {
+                if active && UIDevice.current.userInterfaceIdiom == .pad && !hasCollapsedComposer {
                     LGDockedKeyboardInsetReader { dockedKeyboardInset = $0 }
                 }
             }
@@ -807,7 +807,7 @@ private struct LGNavigationContent: View {
         // Keep returning content mounted while UISearchController animates its toolbar.
         let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
-            Group {
+            navigationSurface(Group {
                 if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
                 else { rootNavigationSurface }
             }
@@ -825,16 +825,16 @@ private struct LGNavigationContent: View {
                             .accessibilityLabel("Dismiss composer")
                             .accessibilityIdentifier("surface.composer.dismiss")
                     }
-                }
+                }, active: path.isEmpty)
                 .navigationDestination(for: Int.self) { childID in
-                    destinationSurface(childID)
+                    navigationSurface(destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
                         .frame(
                             maxWidth: .infinity,
                             maxHeight: .infinity,
                             alignment: .topLeading
                         )
-                        .background(routeBackground)
+                        .background(routeBackground), active: path.last == childID)
                         .toolbar {
                             trailingToolbar(searchPage: searchRoutes.contains(childID))
                         }
