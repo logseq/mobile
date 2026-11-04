@@ -666,8 +666,8 @@ internal class LogseqRuntime(
             // renders against; by now auth state is published either way.
             AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
+            resumeAudioRecording()
             if (hasOpenGraph) {
-                resumeAudioRecording()
                 requestSyncNow()
                 loadSidebarAfterOpen()
             }
@@ -782,7 +782,7 @@ internal class LogseqRuntime(
 
     private fun resumeAudioRecording() {
         val request = com.logseq.logseq.ui.extensions.LogseqDialogs.recordingRequest ?: return
-        if (!hasOpenGraph || request.graphId != selectedGraphId || audioRecordingJob?.isActive == true) return
+        if (audioRecordingJob?.isActive == true) return
         audioRecordingJob = scope.launch {
             try {
                 val recording = com.logseq.logseq.ui.extensions.LogseqDialogs.awaitAudioRecording(request)
@@ -790,6 +790,9 @@ internal class LogseqRuntime(
                     try {
                         if (recording != null) {
                             val (asset, transcript) = recording
+                            check(hasOpenGraph && request.graphId == selectedGraphId) {
+                                "The recording cannot be attached because its original graph is no longer open. Audio retained at ${asset.localPath}"
+                            }
                             val response = bridge.callCore(asset.coreRequest(request.targetBlockId))
                             check(JSONObject(response).optBoolean("ok")) { "The native core rejected the recorded audio asset" }
                             applyCoreResponse(response)
