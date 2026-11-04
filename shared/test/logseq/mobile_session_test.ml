@@ -829,6 +829,21 @@ let configured_task_statuses_survive_snapshots_edits_and_reopen () =
     Graph_runtime.rebase opened.read_runtime 7 [] [waiting];
     assert_choices (dispatch "refresh" []) ["On hold"; "Next"; "Active"])
 
+let cold_launch_favorite_edits_publish_the_sidebar () =
+  with_favorite_graphs (fun _ call fields cache _ ->
+    cache "graph-a";
+    check_eq (favorite_ids (call "openGraph" (fields "graph-a"))) [];
+    let favorite value operation_id =
+      call "setPageFavorite"
+        [ "pageUuid", `String "graph-a-page";
+          "favorite", `Bool value;
+          "operationId", `String operation_id;
+          "now", `Int 100 ]
+    in
+    ignore (favorite false "cold-unfavorite");
+    check_eq ~msg:"a cold-launch favorite edit publishes the current sidebar"
+      (favorite_ids (favorite true "cold-favorite")) ["graph-a-page"])
+
 let cases =
   [ case "offline edits survive logout restart and sync with new credentials" offline_edits_survive_logout_restart_and_sync_with_new_credentials;
     case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
@@ -850,4 +865,6 @@ let cases =
       reopening_closes_the_old_catalog_and_retains_persisted_catalog_data;
     case "database open failure propagates without replacing the rpc session"
       database_open_failure_propagates_without_replacing_the_rpc_session;
+    case "cold launch favorite edits publish the sidebar"
+      cold_launch_favorite_edits_publish_the_sidebar;
   ]
