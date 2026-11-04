@@ -11,6 +11,12 @@ project(logseq_jni C)
 # modified UTF-8 would corrupt 4-byte sequences such as emoji.
 add_library(logseq_jni SHARED logseq_jni.c)
 
+# NDK r27 requires explicit ELF alignment for devices with 16 KB pages.
+target_link_options(logseq_jni PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,-z,common-page-size=16384"
+)
+
 find_library(log-lib log)
 
 target_link_libraries(logseq_jni ${log-lib})

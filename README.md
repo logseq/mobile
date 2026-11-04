@@ -96,6 +96,8 @@ and AAB artifacts and publish the AAB to Google Play **Internal testing**.
 version code using the workflow run number and retry attempt; local builds
 default to `1` (override with `-PlogseqVersionCode=123`). Start a new workflow
 run when publishing newer code rather than rerunning an older release.
+Before upload, CI checks that every native library in the AAB has 16 KB ELF
+alignment for Google Play and devices using 16 KB pages.
 
 The workflow uses these repository Actions secrets:
 

@@ -115,6 +115,8 @@ done
 "$ndk_bin/clang" \
   --target="$target" \
   -shared \
+  -Wl,-z,max-page-size=16384 \
+  -Wl,-z,common-page-size=16384 \
   -Wl,--no-undefined \
   -Wl,-soname,liblogseq_core.so \
   -o "$library" \
