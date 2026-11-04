@@ -12,7 +12,7 @@ internal class AudioRecordingRequest(
     val recorder: AndroidAudioRecorder,
 ) {
     var transcriptionEnabled by mutableStateOf(false)
-    var transcriptionSupported by mutableStateOf(false)
+    var transcript: String? = null
 }
 
 internal data class DeleteConfirmationRequest(
@@ -46,7 +46,8 @@ internal object LogseqDialogs {
 
     suspend fun recordAudio(
         recorder: AndroidAudioRecorder,
-    ): Pair<RecordedAudioAsset, Boolean>? {
+    ): Pair<RecordedAudioAsset, String?>? {
+        if (recordingRequest != null) return null
         val result = CompletableDeferred<RecordedAudioAsset?>()
         val request = AudioRecordingRequest(
             result = result,
@@ -58,7 +59,7 @@ internal object LogseqDialogs {
         } finally {
             recordingRequest = null
         }
-        return asset?.let { it to request.transcriptionEnabled }
+        return asset?.let { it to request.transcript }
     }
 
     suspend fun confirmDeletion(multiple: Boolean): Boolean {

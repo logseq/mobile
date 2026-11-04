@@ -775,7 +775,7 @@ internal class LogseqRuntime(
     suspend fun presentAudioRecording(targetBlockId: String?) {
         // The recording sheet UI is presented by the app composable layer
         // (ui/extensions/LogseqDialogs + LogseqApp's dialog host).
-        val (asset, transcriptionEnabled) =
+        val (asset, transcript) =
             com.logseq.logseq.ui.extensions.LogseqDialogs.recordAudio(
                 audioRecorder,
             ) ?: return
@@ -784,23 +784,12 @@ internal class LogseqRuntime(
             error("The native core rejected the recorded audio asset")
         }
         applyCoreResponse(response)
-        if (transcriptionEnabled) {
-            scope.launch { transcribeRecording(asset) }
-        }
-    }
-
-    private suspend fun transcribeRecording(asset: RecordedAudioAsset) {
-        try {
-            logRuntime("info", "ui", "Audio transcription started")
-            val transcript = AndroidAudioTranscriber.transcribe(asset.localPath).trim()
-            if (transcript.isEmpty()) return
+        if (!transcript.isNullOrBlank()) {
             val response = bridge.callCore(
                 asset.transcriptCoreRequest(transcript)
             )
+            check(JSONObject(response).optBoolean("ok")) { "The native core rejected the recording transcript" }
             applyCoreResponse(response)
-            logRuntime("info", "ui", "Audio transcription completed")
-        } catch (error: Throwable) {
-            reportError(error)
         }
     }
 

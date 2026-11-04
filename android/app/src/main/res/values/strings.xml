@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="audio_recording">Audio recording</string>
+    <string name="audio_transcribe">Transcribe recording</string>
+    <string name="audio_language">Transcription language</string>
+    <string name="audio_preparing">Preparing transcription…</string>
+    <string name="audio_listening">Listening…</string>
+    <string name="audio_start">Start recording</string>
+    <string name="audio_stop">Stop recording</string>
+    <string name="audio_notification_title">Recording voice note</string>
+    <string name="audio_notification_body">Tap to return to your recording</string>
     <string name="shortcut_capture">Capture</string>
     <string name="shortcut_capture_long">Capture a note</string>
     <string name="shortcut_journal">Journal</string>
