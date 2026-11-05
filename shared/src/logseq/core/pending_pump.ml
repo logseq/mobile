@@ -311,6 +311,13 @@ let enqueue_capture session uuid title now status =
   List.fold_left
     (fun result operation ->
       let* () = result in
+      let operation = match operation.Ops.intent with
+        | Ops.Set_property change when change.attr = "logseq.property/status" ->
+          (match (So.base_outliner_context session).db with
+           | Some db -> {operation with Ops.intent = Ops.Set_property {change with
+               expected = Outliner_effects.stored_status_value db change.uuid}}
+           | None -> operation)
+        | _ -> operation in
       enqueue_semantic session operation)
     (Ok ()) operations
 

@@ -70,6 +70,22 @@ let status_reference (status : Model.status) =
   | Some ident -> Ops.Ref_ident ident
   | None -> Ops.Ref_uuid status.uuid
 
+let stored_status_value db uuid =
+  Option.map (fun value ->
+    match Datascript_value.ref_eid db "logseq.property/status" value with
+    | Some eid ->
+      (match Graph_read.value db eid "db/ident" with
+       | Some (Datascript.Keyword ident) -> Ops.Ref_ident ident
+       | _ -> Ops.Ref_uuid (Option.get (Graph_read.uuid_for_eid db eid)))
+    | None -> invalid_arg "Invalid task status reference")
+    (Pending_projection.one_value db (Pending_projection.lookup uuid) "logseq.property/status")
+
+let expected_status (context : State.outliner_context) (block : Model.block) =
+  match context.db with
+  | Some db when Datascript.entid db "block/uuid" (Datascript.Uuid block.uuid) <> None ->
+    stored_status_value db block.uuid
+  | _ -> Option.map status_reference block.status
+
 let next_status_value (block : Model.block) =
   match block.status with
   | Some { Model.ident = Some "logseq.property/status.todo"; _ } ->
@@ -168,6 +184,12 @@ let command base_t now fresh_uuid context cmd =
   | State.Cycle_task_status uuid ->
     (match find_block context uuid with
      | Some block ->
+       let block = match context.db with
+         | Some db ->
+           (match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with
+            | Some eid -> {block with Model.status = Graph_read.status_for_eid (fun text -> Ok text) db eid}
+            | None -> block)
+         | None -> block in
        Ok
          (result
             [
@@ -176,10 +198,7 @@ let command base_t now fresh_uuid context cmd =
                    {
                      uuid;
                      attr = "logseq.property/status";
-                     expected =
-                       (match block.Model.status with
-                        | Some status -> Some (status_reference status)
-                        | None -> None);
+                     expected = expected_status context block;
                      value = next_status_value block;
                    });
             ]
@@ -196,10 +215,7 @@ let command base_t now fresh_uuid context cmd =
                    {
                      uuid = value.status_uuid;
                      attr = "logseq.property/status";
-                     expected =
-                       (match block.Model.status with
-                        | Some status -> Some (status_reference status)
-                        | None -> None);
+                     expected = expected_status context block;
                      value = Some value.status;
                    });
             ]

@@ -345,13 +345,43 @@ let property_value db reference attr =
   | None -> None
 
 let property_txs db uuid attr value =
+  let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+  let reference = lookup uuid in
+  let task = Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task") in
   let many = Option.fold ~none:false ~some:(fun spec -> spec.Ds.cardinality = Ds.Many)
       (List.assoc_opt attr db.Ds.schema) in
-  match many, value with
-  | true, Some (Ops.Set_value values) ->
-    Ds.RetractAttr (lookup uuid, attr) :: List.map (fun value ->
-      Ds.Add (lookup uuid, attr, datascript_value value)) values
-  | _, value -> [property_tx uuid attr value]
+  match attr, value with
+  | "logseq.property/status", None ->
+    let placeholder = Ds.entid db "db/ident" (Ds.Keyword "logseq.property/empty-placeholder") in
+    let direct = one_value db reference attr in
+    let empty = Option.fold ~none:false ~some:(fun id ->
+      Datascript_value.optional_ref_eid db attr direct = Some id) placeholder in
+    let tagged = Option.fold ~none:false ~some:(has_ref db eid "block/tags") task in
+    let other_properties = Option.fold ~none:[]
+      ~some:(fun id -> Graph_read.ref_eids db id "logseq.property.class/properties") task in
+    let has_other = List.exists (fun id ->
+      match Graph_read.value db id "db/ident" with
+      | Some (Ds.Keyword property) when property <> attr -> one_value db reference property <> None
+      | _ -> false) other_properties in
+    if empty then []
+    else if tagged && not has_other then
+      [Ds.RetractAttr (reference, attr);
+       Ds.Retract (reference, "block/tags", Some (Ds.Ref (Option.get task)))]
+    else if tagged || Graph_read.block_classes_provide_property db eid attr then
+      [Ds.Add (reference, attr, Ds.Ref_to (Ds.Ident "logseq.property/empty-placeholder"))]
+    else [property_tx uuid attr None]
+  | _, Some _ when List.mem attr ["logseq.property/status"; "logseq.property/scheduled"; "logseq.property/deadline"] ->
+    property_tx uuid attr value ::
+      (match task with
+       | Some task when not (Graph_read.block_classes_provide_property db eid attr) ->
+         [Ds.Add (reference, "block/tags", Ds.Ref task)]
+       | _ -> [])
+  | _ ->
+    match many, value with
+    | true, Some (Ops.Set_value values) ->
+      Ds.RetractAttr (reference, attr) :: List.map (fun value ->
+        Ds.Add (reference, attr, datascript_value value)) values
+    | _, value -> [property_tx uuid attr value]
 
 let property_value_attrs db (value : Ops.pending_property_value) =
   let owner = lookup value.owner_uuid in

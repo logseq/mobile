@@ -66,15 +66,31 @@ let invalid_tags_do_not_capture_or_create () = R.with_runtime (fun session runti
     check_eq (Datascript.entid (Graph_runtime.db runtime) "block/uuid" (Datascript.Uuid captured)) None)
     [tags [Q.alpha] ["Must not exist"]; tags ["missing"] []; tags [] [" "]])
 
-let inline_tags_and_status_survive () = R.with_runtime (fun session runtime _ ->
-  let status = `Assoc ["uuid", `String "00000002-7975-1727-0000-000000000001";
-    "ident", `String "logseq.property/status.todo"; "title", `String "Todo"] in
-  let response = Rpc_test.dispatch_json session "sendTagged" (J.to_string (`Assoc [
-    "uuid", `String captured; "text", `String "Note #Project"; "now", `Int 1792719000000;
-    "status", status; "tags", tags [] ["Mobile"]])) in
-  succeed response;
-  check_eq ~msg:"selected tags preserve tags typed in the note" (tag_titles runtime captured) ["Mobile"; "Project"];
-  check ~msg:"tagged tasks retain their status" (Editor_command_test.value runtime captured "logseq.property/status" <> None))
+let inline_tags_and_status_survive () =
+  List.iter (fun (method_, body, provides_status, expected_tags) ->
+    R.with_runtime (fun session runtime conn ->
+      if provides_status then (
+        ignore (Datascript.transact_conn conn [Datascript.Add (
+          Datascript.Lookup_ref ("block/uuid", Datascript.Uuid Q.project),
+          "logseq.property.class/properties", Datascript.Ref_to (Datascript.Ident "logseq.property/status"))]);
+        Graph_runtime.rebase runtime 42 [] [Q.project]);
+      let response = Rpc_test.dispatch_json session method_ (J.to_string (`Assoc [
+        "uuid", `String captured; "text", `String body; "now", `Int 1792719000000;
+        "status", `Assoc ["ident", `String "logseq.property/status.doing"; "title", `String "Doing";
+          "uuid", `String "00000002-7975-1727-0000-000000000002"];
+        "tags", tags (if provides_status then [Q.project] else []) ["Mobile"]])) in
+      succeed response;
+      check_eq ~msg:"capture preserves tags without a redundant task class"
+        (tag_titles runtime captured) expected_tags;
+      let db = Graph_runtime.db runtime in
+      let eid = Option.get (Datascript.entid db "block/uuid" (Datascript.Uuid captured)) in
+      let status = Option.bind (Graph_read.status_for_eid (fun value -> Ok value) db eid)
+        (fun status -> status.Cache_model.ident) in
+      check_eq ~msg:"tag defaults do not replace the selected status" status (Some "logseq.property/status.doing")))
+    ["sendTagged", "Note #Project", false, ["Mobile"; "Project"; "Task"];
+     "sendTagged", "Note #Task", false, ["Mobile"; "Task"];
+     "sendTagged", "Note", true, ["Mobile"; "Project"];
+     "sendTask", "Note #Task", false, ["Task"]]
 
 let assets_assign_tags_without_changing_the_filename () = R.with_runtime (fun session runtime conn ->
   let payload = ["uuid", `String captured; "title", `String "Photo.png"; "now", `Int 1792719000000;
