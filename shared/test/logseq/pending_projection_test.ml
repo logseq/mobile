@@ -46,6 +46,11 @@ let schema : (string * Ds.schema_attr) list =
     ("logseq.property.recycle/original-page", ref_attr);
     ("logseq.property.recycle/original-order", string_attr);
     ("logseq.property/status", ref_attr);
+    ("logseq.property/priority", ref_attr);
+    ("logseq.property/scheduled", number_attr);
+    ("logseq.property/deadline", number_attr);
+    ("logseq.property/default-value", ref_attr);
+    ("logseq.property.class/properties", many_ref);
     ("logseq.property.class/extends", many_ref);
     ("logseq.property.asset/type", string_attr);
     ("logseq.property.asset/size", number_attr);
@@ -1207,6 +1212,71 @@ let built_in_tag_db () =
         add 105 "block/uuid" (Ds.Uuid "done");
         add 105 "block/title" (Ds.String "Done")])
 
+let task_properties_follow_master_tag_and_clear_semantics () =
+  let status = "logseq.property/status" in
+  let db = with_tx (built_in_tag_db ())
+    [add 110 "db/ident" (Ds.Keyword status);
+     add 110 "logseq.property/default-value" (Ds.Ref 104);
+     add 111 "db/ident" (Ds.Keyword "logseq.property/priority");
+     add 112 "db/ident" (Ds.Keyword "logseq.property/scheduled");
+     add 113 "db/ident" (Ds.Keyword "logseq.property/deadline");
+     add 114 "db/ident" (Ds.Keyword "logseq.property/empty-placeholder");
+     add 114 "block/uuid" (Ds.Uuid "empty");
+     add 115 "db/ident" (Ds.Keyword "logseq.property/status.doing");
+     add 115 "block/uuid" (Ds.Uuid "doing");
+     add 115 "block/title" (Ds.String "Doing");
+     add 116 "logseq.property.class/extends" (Ds.Ref 103);
+     add 117 "logseq.property.class/properties" (Ds.Ref 110);
+     add 103 "logseq.property.class/properties" (Ds.Ref 110);
+     add 103 "logseq.property.class/properties" (Ds.Ref 111);
+     add 103 "logseq.property.class/properties" (Ds.Ref 112);
+     add 103 "logseq.property.class/properties" (Ds.Ref 113)] in
+  List.iter (fun (attr, selected) ->
+    List.iter (fun (owner, tags, adds_task) ->
+      let db = with_tx db (Ds.RetractAttr (Projection.lookup owner, "block/tags") ::
+        List.map (fun tag -> Ds.Add (Projection.lookup owner, "block/tags", Ds.Ref tag)) tags) in
+      let projected = apply_intent db (property owner attr None (Some selected)) in
+      let id = Option.get (Ds.entid projected "block/uuid" (Ds.Uuid owner)) in
+      check_eq ~msg:(owner ^ ": " ^ attr ^ " supplies Task only when needed")
+        (Read.has_ref projected id "block/tags" 103) adds_task;
+      List.iter (fun tag -> check (Read.has_ref projected id "block/tags" tag)) tags)
+      ["block", [], true; "page", [5], true; "block", [5], true;
+       "block", [116], false; "block", [117], attr <> status])
+    [status, Ops.Ref_ident "logseq.property/status.todo";
+     "logseq.property/scheduled", Ops.Int_value 100;
+     "logseq.property/deadline", Ops.Int_value 200];
+  let stale_block = Option.get (Read.block (fun text -> Ok text) db 10) in
+  let cycle db =
+    let context = Outliner_state.context ~db [stale_block] [] [] in
+    match Outliner_effects.interpret 42 (fun () -> 100) (fun () -> "cycle") context
+      [Outliner_state.Cycle_task_status "block"] with
+    | Error message -> fail message
+    | Ok result -> List.fold_left (fun db (op : Ops.pending_operation) -> apply_intent db op.intent)
+        db result.operations in
+  let selected db = Option.bind (Read.status_for_eid (fun text -> Ok text) db 10)
+      (fun status -> status.Cache_model.ident) in
+  List.iter (fun (tag, other) ->
+    let start = with_tx db ([add 10 "block/tags" (Ds.Ref tag)] @ other) in
+    let start = apply_intent start (property "block" status None
+        (Some (Ops.Ref_ident "logseq.property/status.todo"))) in
+    let doing = cycle start in
+    let done_ = cycle doing in
+    let cleared = cycle done_ in
+    check_eq (List.map selected [start; doing; done_; cleared; cycle cleared])
+      [Some "logseq.property/status.todo"; Some "logseq.property/status.doing";
+       Some "logseq.property/status.done"; None; Some "logseq.property/status.todo"];
+    let keep_task = other <> [] in
+    check_eq (Read.has_ref cleared 10 "block/tags" 103) keep_task;
+    check_eq (value cleared "block" status)
+      (if keep_task || tag <> 103 then Some (Ds.Ref 114) else None);
+    let cleared_again = apply_intent cleared (property "block" status
+      (if keep_task || tag <> 103 then Some (Ops.Ref_ident "logseq.property/empty-placeholder") else None) None) in
+    check_eq (value cleared_again "block" status) (value cleared "block" status))
+    [103, []; 103, [add 10 "logseq.property/priority" (Ds.Ref 104)];
+     103, [add 10 "logseq.property/scheduled" (Ds.Int64 100L)]; 116, []; 117, []];
+  let inherited = with_tx db [add 10 "block/tags" (Ds.Ref 116)] in
+  check_eq (selected (cycle inherited)) (Some "logseq.property/status.doing")
+
 let built_in_tags_initialize_behavior_and_render_through_cache () =
   List.iter (fun kind ->
     let db = apply_intent (built_in_tag_db ())
@@ -1287,7 +1357,9 @@ let asset_transcript_survives_persistence_and_projects_atomically () =
   check_eq (Ds.entid before "block/uuid" (Ds.Uuid "transcript")) None
 
 let cases =
-  [ case "built-in tags initialize behavior and render through cache"
+  [ case "task properties follow master tag and clear semantics"
+      task_properties_follow_master_tag_and_clear_semantics;
+    case "built-in tags initialize behavior and render through cache"
       built_in_tags_initialize_behavior_and_render_through_cache;
     case "inline built-in tags initialize behavior" inline_built_in_tags_initialize_behavior;
     case "existing display properties and tagged tasks are rendered"

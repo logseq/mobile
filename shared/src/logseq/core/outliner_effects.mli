@@ -33,6 +33,8 @@ val operation :
   Pending_ops.pending_intent ->
   Pending_ops.pending_operation
 val status_reference : Cache_model.status -> Pending_ops.semantic_value
+val stored_status_value :
+  Datascript.db -> string -> Pending_ops.semantic_value option
 val next_status_value : Cache_model.block -> Pending_ops.semantic_value option
 val append_result : outliner_effects -> outliner_effects -> outliner_effects
 val command :

@@ -59,6 +59,18 @@ let ref_eids db eid attr =
   List.of_seq (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:attr ())
   |> List.filter_map (fun (datom : Ds.datom) -> Ds_value.ref_eid db attr datom.v)
 
+let block_classes_provide_property db eid attr =
+  match Ds.entid db "db/ident" (Ds.Keyword attr) with
+  | None -> false
+  | Some property ->
+    let visited = Hashtbl.create 8 in
+    let rec provides tag =
+      if Hashtbl.mem visited tag then false else (
+        Hashtbl.add visited tag ();
+        has_ref db tag "logseq.property.class/properties" property
+        || List.exists provides (ref_eids db tag "logseq.property.class/extends")) in
+    List.exists provides (ref_eids db eid "block/tags")
+
 let class_descendants db root_eid =
   let rec loop pending seen =
     match pending with
@@ -246,9 +258,12 @@ let choice_for_eid decrypt_title db eid property =
   let selected =
     if selected = None && property = "logseq.property/status"
        && value db eid property = None
-       && entity_is_instance_of db eid "logseq.class/Task"
+       && (entity_is_instance_of db eid "logseq.class/Task"
+           || block_classes_provide_property db eid property)
     then default_task_status_eid db else selected in
-  Option.bind selected (choice_metadata decrypt_title db)
+  Option.bind selected (fun selected ->
+    if value db selected "db/ident" = Some (Ds.Keyword "logseq.property/empty-placeholder")
+    then None else choice_metadata decrypt_title db selected)
 
 let property_choices decrypt_title db property =
   match Ds.entid db "db/ident" (Ds.Keyword property) with

@@ -1399,7 +1399,7 @@ let send_tagged session input fields =
     let now = Option.value ~default:(now_ms ()) now in
     let text = String.trim text in
     if text = "" then Error "Enter text to capture" else
-    let* operations = capture_operations session uuid text now status in
+    let* operations = capture_operations session uuid text now None in
     match operations with
     | [] -> Error "The capture is unavailable"
     | first :: _ ->
@@ -1407,7 +1407,17 @@ let send_tagged session input fields =
         intent = Ops.Atomic (List.map (fun (op : Ops.pending_operation) -> op.intent) operations)} in
       let tags = match input with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt "tags" fields) | _ -> `Null in
       let* tag_intent = prepare_capture_tags session uuid tags operation now in
-      Ok {operation with Ops.intent = Ops.Atomic [operation.intent; tag_intent]}
+      let intent = Ops.Atomic [operation.intent; tag_intent] in
+      let* intent = match status with
+        | None -> Ok intent
+        | Some status ->
+          let* db = match query_db session with Some db -> Ok db | None -> Error "The graph is unavailable" in
+          let* tx = Pending_projection.compile db intent in
+          let db = Datascript.db_with tx db in
+          Ok (Ops.Atomic [intent; Ops.Set_property {Ops.uuid; attr = "logseq.property/status";
+            expected = Effects.stored_status_value db uuid;
+            value = Some (Effects.status_reference status)}]) in
+      Ok {operation with Ops.intent = intent}
   in
   match prepared with
   | Error message -> Rpc.failure "capture_failed" message
