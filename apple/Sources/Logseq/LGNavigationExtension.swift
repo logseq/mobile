@@ -677,6 +677,7 @@ private struct LGNavigationContent: View {
     let bottomChromeIndex: Int?
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var nativePop: LGNativeNavigationPop?
+    @State private var minimumScrollViewport: CGRect?
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
     @State private var dockedKeyboardInset: CGFloat = 0
@@ -758,6 +759,16 @@ private struct LGNavigationContent: View {
         let _ = context.revision
         let _ = search?.context.revision
         navigationStack
+            .environment(\.luiMinimumScrollViewport, minimumScrollViewport)
+            .background {
+                GeometryReader { _ in
+                    Color.clear
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                            minimumScrollViewport = frame
+                        }
+                }
+                .ignoresSafeArea(.all, edges: .bottom)
+            }
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
             }
