@@ -99,7 +99,7 @@ let unopened_host_preserves_query_and_command_defaults () =
   let host = host () in
   check_eq (Mobile.sync_cursor host) None;
   check_eq (Mobile.blocks host) None;
-  check_eq (Mobile.authoritative_blocks host) None;
+  check_eq (Mobile.authoritative_blocks host ["missing"]) None;
   check_eq (Mobile.sidebar_pages host) None;
   check_eq (Mobile.tag_pages host) None;
   check_eq (Mobile.blocks_for_page host "missing") None;
@@ -257,7 +257,7 @@ let opened_host_reads_live_runtime_and_observes_close () =
       let current = opened.read_runtime in
       check_eq (Mobile.sync_cursor host) (Some 7);
       check_eq (Mobile.blocks host) (Some (Runtime.blocks current));
-      check_eq (Mobile.authoritative_blocks host) (Some []);
+      check_eq (Mobile.authoritative_blocks host ["missing"]) (Some []);
       check_eq
         (Mobile.sidebar_pages host)
         (Some (Runtime.sidebar_pages current));
@@ -438,6 +438,47 @@ let sync_events_persist_cursor_and_rebase_the_read_runtime () =
       check_eq (Sync.applied_server_t opened.state) 9;
       check_eq (Runtime.state opened.read_runtime).server_t 9)
 
+let authoritative_confirmation_is_not_limited_to_journals () =
+  with_directory (fun dir ->
+      prepare_graph dir;
+      let host = host () in
+      expect_ok (Mobile.open_graph host (open_payload dir false));
+      let opened = expect_opened !(host.current) in
+      let page = "00000000-0000-0000-0000-000000000001" in
+      let submitted = "00000000-0000-0000-0000-000000000002" in
+      let pending = "00000000-0000-0000-0000-000000000003" in
+      ignore (Ds.transact_conn opened.conn
+        [ Ds.Add (Ds.Entity_id 1, "block/uuid", Ds.Uuid page)
+        ; Ds.Add (Ds.Entity_id 1, "block/name", Ds.String "notes")
+        ; Ds.Add (Ds.Entity_id 1, "block/title", Ds.String "Notes")
+        ; Ds.Add (Ds.Entity_id 2, "block/uuid", Ds.Uuid submitted)
+        ; Ds.Add (Ds.Entity_id 2, "block/title", Ds.String "Remote title")
+        ; Ds.Add (Ds.Entity_id 2, "block/page", Ds.Ref 1)
+        ; Ds.Add (Ds.Entity_id 2, "block/parent", Ds.Ref 1)
+        ; Ds.Add (Ds.Entity_id 3, "block/uuid", Ds.Uuid pending)
+        ; Ds.Add (Ds.Entity_id 3, "block/title", Ds.String "Remote title")
+        ; Ds.Add (Ds.Entity_id 3, "block/page", Ds.Ref 1)
+        ; Ds.Add (Ds.Entity_id 3, "block/parent", Ds.Ref 1) ]);
+      let session = Rpc_session.create_session
+        { Rpc_session.default_options with
+          authoritative_graph_blocks = Some (Mobile.authoritative_blocks host);
+          apply_sync_event = Some (Mobile.apply_sync_event host) } in
+      let model = (Rpc_session.state session).model in
+      Model.upsert_blocks model
+        [ { (Model.local_block submitted "Local title" page (Some page) 1) with
+            sync_status = "submitted" }
+        ; Model.local_block pending "Unsent title" page (Some page) 1 ] 1;
+      let response = Rpc_session.call session (json_object
+        [ "apiVersion", `Int 1; "method", `String "dispatch";
+          "params", `Assoc ["action", `String "applySyncEvent";
+                             "payload", `String (change_event 7 8)] ]) in
+      check_eq (Yojson.Basic.Util.member "ok" (Json.from_string response)) (`Bool true);
+      check_eq (Option.map (fun (block : Model.block) -> block.sync_status)
+        (Model.read_block model submitted)) (Some "synced");
+      check_eq (Option.map (fun (block : Model.block) -> block.sync_status)
+        (Model.read_block model pending)) (Some "pending");
+      check_eq (Mobile.sync_cursor host) (Some 8))
+
 let snapshot_import_activates_a_real_snapshot_and_reopens_it () =
   with_directory (fun dir ->
       let payload = snapshot_request dir false (database ()) in
@@ -557,6 +598,8 @@ let cases =
       reset_and_invalid_events_do_not_require_an_open_graph;
     case "sync events persist cursor and rebase the read runtime"
       sync_events_persist_cursor_and_rebase_the_read_runtime;
+    case "authoritative confirmation is not limited to journals"
+      authoritative_confirmation_is_not_limited_to_journals;
     case "snapshot import activates a real snapshot and reopens it"
       snapshot_import_activates_a_real_snapshot_and_reopens_it;
     case "encrypted import decrypts before opening the local graph"

@@ -79,7 +79,7 @@ let () =
         let downloaded = Live.download_asset cfg uuid "png" in
         let actual = if encrypted then Live.require_ok "decrypt uploaded asset" (E2ee.decrypt_bytes crypto key downloaded.body) else downloaded.body in
         if actual <> bytes then failwith "Uploaded image bytes differ";
-        let blocks = Option.get (Mobile_graph.authoritative_blocks host.database.graph) in
+        let blocks = Option.get (Mobile_graph.authoritative_blocks host.database.graph [uuid]) in
         if not (List.exists (fun (b : Cache_model.block) -> b.uuid = uuid && b.is_asset) blocks) then
           failwith "Asset never reached authoritative graph";
         print_endline "PASS: real mobile capture, pending upload, datom sync and journal replay")))

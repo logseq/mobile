@@ -26,12 +26,11 @@ let same_pending_version (left : Model.block) (right : Model.block) =
   && left.local_path = right.local_path
 
 let reconcile_authoritative_blocks cache blocks =
-  let by_uuid =
-    List.map (fun (block : Model.block) -> (block.uuid, block)) blocks
-  in
+  let by_uuid = Hashtbl.create (List.length blocks) in
+  List.iter (fun (block : Model.block) -> Hashtbl.replace by_uuid block.uuid block) blocks;
   List.iter
     (fun (block : Model.block) ->
-      match List.assoc_opt block.uuid by_uuid with
+      match Hashtbl.find_opt by_uuid block.uuid with
       | Some (authoritative : Model.block) ->
         if
           block.sync_status = "submitted"

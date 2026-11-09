@@ -348,11 +348,11 @@ let begin_pending_sync (session : Types.session) (config : Api.api_config) =
     let assets = List.filter (fun b -> b.Model.is_asset) pending in
     if assets = [] then activate_semantic_request session config None;
     let s = Types.state session in
-    if s.semantic_active = None && s.pending_sync = None then begin
+    if s.semantic_active = None && s.pending_sync = None && pending <> [] then begin
       let authoritative = Hashtbl.create 64 in
       (match (Types.host session).authoritative_graph_blocks with
        | Some load ->
-         (match load () with
+         (match load (List.map (fun (block : Model.block) -> block.uuid) pending) with
           | Some blocks ->
             List.iter
               (fun (b : Model.block) -> Hashtbl.replace authoritative b.uuid ())

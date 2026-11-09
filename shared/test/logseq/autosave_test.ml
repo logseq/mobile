@@ -23,7 +23,7 @@ let with_editor run =
   let session = Rpc_session.create_session
     { Rpc_session.default_options with
       graph_blocks = Some (fun () -> Some [!saved]);
-      authoritative_graph_blocks = Some (fun () -> Some [!saved]);
+      authoritative_graph_blocks = Some (fun _uuids -> Some [!saved]);
       sync_cursor = Some (fun () -> Some 41);
       stage_operation = Some (fun operation ->
         (match operation.Pending_ops.intent with
@@ -283,7 +283,7 @@ let rapid_editing_and_reparenting_settles_after_the_last_save () =
         graph_blocks = Some (fun () -> Some (R.blocks_for_page runtime page));
         graph_page_blocks = Some (fun uuid -> Some (R.blocks_for_page runtime uuid));
         graph_sidebar_pages = Some (fun () -> Some (R.sidebar_pages runtime));
-        authoritative_graph_blocks = Some (fun () -> Some (Graph_read.blocks_for_page (fun value -> Ok value) (Ds.conn_db conn) page));
+        authoritative_graph_blocks = Some (fun _uuids -> Some (Graph_read.blocks_for_page (fun value -> Ok value) (Ds.conn_db conn) page));
         sync_cursor = Some (fun () -> Some (R.state runtime).server_t);
         stage_operation = Some (R.stage runtime);
         prepare_operation = Some (R.prepare_sync runtime);
