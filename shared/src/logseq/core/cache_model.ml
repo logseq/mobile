@@ -739,26 +739,34 @@ let cache_local_child model uuid title parent_id now =
     Ok ()
   | None -> Error ("unknown parent block: " ^ parent_id)
 
-let blocks_with_sync_statuses model statuses =
-  if Seq.is_empty (Ds.Db.datoms model.db Ds.Aevt ~a:block_sync_status.attr_name ())
-  then []
-  else
-    List.concat_map (fun status ->
-      Ds.Db.datoms model.db Ds.Avet
-        ~a:block_sync_status.attr_name ~v:(Ds.String status) ()
-      |> Seq.filter_map (fun (datom : Ds.datom) ->
-        Ds.Db.datoms model.db Ds.Eavt ~e:datom.e ~a:block_uuid.attr_name ()
-        |> Seq.find_map (fun (datom : Ds.datom) ->
-          match datom.v with
-          | Ds.String uuid -> read_block model uuid
-          | _ -> None))
-      |> List.of_seq) statuses
-    |> List.sort compare_recent
+let blocks_from_sync_datoms model datoms =
+  datoms
+  |> Seq.filter_map (fun (datom : Ds.datom) ->
+    Ds.Db.datoms model.db Ds.Eavt ~e:datom.e ~a:block_uuid.attr_name ()
+    |> Seq.find_map (fun (datom : Ds.datom) ->
+      match datom.v with
+      | Ds.String uuid -> read_block model uuid
+      | _ -> None))
+  |> List.of_seq
+  |> List.sort compare_recent
 
-let pending_blocks model = blocks_with_sync_statuses model ["pending"; "failed"]
+let sync_status_datoms model =
+  Ds.Db.datoms model.db Ds.Aevt ~a:block_sync_status.attr_name ()
+
+let pending_blocks model =
+  if Seq.is_empty (sync_status_datoms model) then []
+  else
+    ["pending"; "failed"] |> List.to_seq
+    |> Seq.flat_map (fun status ->
+      Ds.Db.datoms model.db Ds.Avet
+        ~a:block_sync_status.attr_name ~v:(Ds.String status) ())
+    |> blocks_from_sync_datoms model
 
 let unsynced_blocks model =
-  blocks_with_sync_statuses model ["pending"; "failed"; "submitted"]
+  sync_status_datoms model
+  |> Seq.filter (fun (datom : Ds.datom) ->
+    match datom.v with Ds.String status -> status <> "synced" | _ -> false)
+  |> blocks_from_sync_datoms model
 
 let update_sync_status model uuid sync_status =
   if block_exists model uuid then (

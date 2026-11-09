@@ -390,12 +390,17 @@ let authoritative_reconciliation_preserves_newer_local_edits () =
     }
   in
   let missing = Model.local_block "missing" "Missing" "page" None 1 in
-  Model.upsert_blocks cache [ same; changed; submitted; missing ] 1;
+  let retrying =
+    { (Model.local_block "retrying" "Retrying" "page" None 1) with
+      Model.sync_status = "retrying" }
+  in
+  Model.upsert_blocks cache [ same; changed; submitted; missing; retrying ] 1;
   Rpc.reconcile_authoritative_blocks cache
     [
       same;
       { changed with title = "Remote" };
       { submitted with title = "Remote" };
+      retrying;
     ];
   List.iter
     (fun (uuid, expected) ->
@@ -409,6 +414,7 @@ let authoritative_reconciliation_preserves_newer_local_edits () =
       ("changed", "pending");
       ("submitted", "synced");
       ("missing", "pending");
+      ("retrying", "synced");
     ]
 
 let node_navigation_preserves_independent_projections_and_editing () =
