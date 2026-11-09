@@ -634,13 +634,14 @@ let pending_sync_patch session =
        ])
 
 let reconcile_authoritative_blocks session =
-  match (host session).Types.authoritative_graph_blocks with
-  | Some load ->
-    (match load () with
+  match (Model.unsynced_blocks (state session).model,
+         (host session).Types.authoritative_graph_blocks) with
+  | [], _ | _, None -> ()
+  | pending, Some load ->
+    (match load (List.map (fun (block : Model.block) -> block.uuid) pending) with
      | Some blocks ->
        Rpc.reconcile_authoritative_blocks (state session).model blocks
      | None -> ())
-  | None -> ()
 
 let discover_graphs session (config : Api.api_config) =
   debug "graph discovery started";

@@ -4321,7 +4321,7 @@ let plain_assets_project_before_upload_and_queue_stable_datom_transactions () =
            load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
            sync_cursor = Some (fun () -> Some 41);
            graph_blocks = Some (fun () -> Some !projected);
-           authoritative_graph_blocks = Some (fun () -> Some [ target ]);
+           authoritative_graph_blocks = Some (fun _uuids -> Some [ target ]);
            journal_page_id = Some (fun _ -> Some "journal-page");
            stage_operation =
              Some

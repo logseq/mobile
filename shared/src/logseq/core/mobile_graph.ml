@@ -60,10 +60,14 @@ let empty_journals (host : mobile_graph) =
   | Some opened -> Runtime.empty_journals opened.read_runtime
   | None -> []
 
-let authoritative_blocks (host : mobile_graph) =
+let authoritative_blocks (host : mobile_graph) uuids =
   match !(host.current) with
   | Some opened ->
-    Some (Read.blocks (fun v -> Ok v) 7 (Ds.conn_db opened.conn))
+    let db = Ds.conn_db opened.conn in
+    Some (List.filter_map (fun uuid ->
+      Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (fun eid ->
+        if Read.page_is_hidden db eid then None
+        else Read.block ~with_breadcrumbs:false (fun value -> Ok value) db eid)) uuids)
   | None -> None
 
 let sidebar_pages (host : mobile_graph) =

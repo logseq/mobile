@@ -86,7 +86,7 @@ type host_options =
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Model.block list option) option
   ; graph_db : (unit -> Datascript.db option) option
-  ; authoritative_graph_blocks : (unit -> Model.block list option) option
+  ; authoritative_graph_blocks : (string list -> Model.block list option) option
   ; graph_sidebar_pages : (unit -> Graph.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Model.entity_summary list option) option
   ; graph_node_is_tag : (string -> bool) option
@@ -285,7 +285,7 @@ let create_session options =
       authoritative_graph_blocks =
         (match options.authoritative_graph_blocks with
          | Some _ -> options.authoritative_graph_blocks
-         | None -> options.graph_blocks);
+         | None -> Option.map (fun load _uuids -> load ()) options.graph_blocks);
     }
   in
   let catalog =

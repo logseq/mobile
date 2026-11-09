@@ -67,7 +67,7 @@ let host_options (database : Database.mobile_database) ring catalog =
     empty_journals = Some (fun () -> Graph.empty_journals graph);
     graph_db = Some (fun () -> Graph.projected_db graph);
     authoritative_graph_blocks =
-      Some (fun () -> Graph.authoritative_blocks graph);
+      Some (Graph.authoritative_blocks graph);
     graph_sidebar_pages = Some (fun () -> Graph.sidebar_pages graph);
     graph_tag_pages = Some (fun () -> Graph.tag_pages graph);
     graph_node_is_tag = Some (fun uuid -> Graph.node_is_tag graph uuid);

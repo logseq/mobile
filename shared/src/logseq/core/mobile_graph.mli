@@ -30,7 +30,7 @@ val resolve_asset_path : mobile_graph -> string -> string
 val sync_cursor : mobile_graph -> int option
 val blocks : mobile_graph -> Cache_model.block list option
 val projected_db : mobile_graph -> Datascript.db option
-val authoritative_blocks : mobile_graph -> Cache_model.block list option
+val authoritative_blocks : mobile_graph -> string list -> Cache_model.block list option
 val sidebar_pages : mobile_graph -> Graph_read.sidebar_pages option
 val tag_pages : mobile_graph -> Cache_model.entity_summary list option
 val node_is_tag : mobile_graph -> string -> bool
