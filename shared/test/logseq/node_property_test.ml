@@ -25,9 +25,10 @@ let sync_all runtime conn =
       "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
       | Ok value -> value | Error message -> fail message in
     check_ok (Graph_runtime.stage runtime {operation with Pending_ops.state = Pending_ops.Accepted (before + 1)});
-    let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+    let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
       | Ok value -> value | Error message -> fail message in
-    Graph_runtime.rebase runtime journal.t ids changed) (Graph_runtime.pending_operations runtime)
+    Graph_runtime.rebase ~changed_attributes:applied.changed_attributes runtime journal.t
+      applied.operation_ids applied.changed_uuids) (Graph_runtime.pending_operations runtime)
 
 let projection_and_navigation () =
   let db = R.fixture () in
@@ -106,9 +107,10 @@ let typed_edits_persist_and_sync () = R.with_runtime (fun session runtime conn -
       "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
       | Ok value -> value | Error message -> fail message in
     check_ok (Graph_runtime.stage restored {operation with Pending_ops.state = Pending_ops.Accepted (before + 1)});
-    let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+    let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
       | Ok value -> value | Error message -> fail message in
-    Graph_runtime.rebase restored journal.t ids changed) (Graph_runtime.pending_operations restored);
+    Graph_runtime.rebase ~changed_attributes:applied.changed_attributes restored journal.t
+      applied.operation_ids applied.changed_uuids) (Graph_runtime.pending_operations restored);
   check_eq (Graph_runtime.pending_operations restored) [])
 
 let invalid_and_stale_edits_do_not_write () = R.with_runtime (fun session runtime _ ->

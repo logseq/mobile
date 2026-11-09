@@ -5,6 +5,11 @@ module Wire = Dev.Wire
 type entry = { t : int; tx_id : string option; tx : Wire.t list }
 type journal =
   { t : int; t_before : int option; entries : entry list; graph_id : string option }
+type applied =
+  { operation_ids : string list
+  ; changed_uuids : string list
+  ; changed_attributes : string list
+  }
 
 let non_negative name fields =
   match List.assoc_opt name fields with
@@ -116,10 +121,12 @@ let encode encrypt tx =
       (map_protected encrypt items)
   with error -> Error (Printexc.to_string error)
 
-let changed_uuids before after datoms =
+let changes operation_ids before after datoms =
   let seen = Hashtbl.create 16 in
+  let attributes = Hashtbl.create 16 in
   List.iter
     (fun (d : Ds.datom) ->
+      Hashtbl.replace attributes d.a ();
       List.iter
         (fun db ->
           match Ds.entity db (Ds.Entity_id d.e) with
@@ -130,12 +137,16 @@ let changed_uuids before after datoms =
           | None -> ())
         [ before; after ])
     datoms;
-  Hashtbl.fold (fun uuid () acc -> uuid :: acc) seen []
+  { operation_ids
+  ; changed_uuids = Hashtbl.fold (fun uuid () acc -> uuid :: acc) seen []
+  ; changed_attributes = Hashtbl.fold (fun attr () acc -> attr :: acc) attributes []
+  }
 
 let apply decrypt conn local_t journal =
   try
     let ( let* ) = Result.bind in
-    if journal.t <= local_t then Ok ([], [])
+    if journal.t <= local_t then
+      Ok { operation_ids = []; changed_uuids = []; changed_attributes = [] }
     else if Option.fold ~none:false ~some:(fun before -> local_t < before) journal.t_before then
       Error "journal prefix is missing; pull before applying ACK"
     else
@@ -166,5 +177,5 @@ let apply decrypt conn local_t journal =
         ignore (Ds.apply_report conn
                   { Ds.db_before = before; db_after = after; tx_data = datoms;
                     tempids = []; tx_meta = [] });
-      Ok (ids, changed_uuids before after datoms)
+      Ok (changes ids before after datoms)
   with error -> Error (Printexc.to_string error)

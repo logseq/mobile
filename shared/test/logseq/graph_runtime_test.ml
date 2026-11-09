@@ -1839,9 +1839,10 @@ let reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes () =
         "txs", `List [`Assoc ["t", `Int (before + 1); "tx-id", `String op.operation_id; "tx", `String tx]]])) with
         | Ok value -> value | Error message -> fail message in
       check (is_ok (Runtime.stage current { op with state = Pending.Accepted (before + 1) }));
-      let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+      let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
         | Ok value -> value | Error message -> fail message in
-      Runtime.rebase current journal.t ids changed;
+      Runtime.rebase ~changed_attributes:applied.changed_attributes current journal.t
+        applied.operation_ids applied.changed_uuids;
       check_eq ~msg:"each acknowledgement advances the queue"
         (List.length (Runtime.pending_operations current)) (2 - index)) pending;
     check_eq ~msg:"the recovered edits reach the authoritative graph" (title (Ds.conn_db conn) block_uuid) saved_title;
@@ -1893,9 +1894,10 @@ let reopening_repairs_only_unconfirmed_legacy_page_deletion_timestamps () =
           "t-before", `Int 42; "t", `Int 43; "txs", `List [`Assoc ["t", `Int 43;
             "tx-id", `String pending.operation_id; "tx", `String tx]]])) with
           | Ok value -> value | Error message -> fail message in
-        let ids, changed = match Journal_sync.apply (fun text -> Ok text) conn 42 journal with
+        let applied = match Journal_sync.apply (fun text -> Ok text) conn 42 journal with
           | Ok value -> value | Error message -> fail message in
-        Runtime.rebase current 43 ids changed;
+        Runtime.rebase ~changed_attributes:applied.changed_attributes current 43
+          applied.operation_ids applied.changed_uuids;
         check_eq ~msg:"confirmation clears the recovered deletion" (Pending.list path) []
       end else
         check_eq ~msg:"unrelated rejections and unconfirmed submissions retain their exact transaction"
@@ -1904,8 +1906,56 @@ let reopening_repairs_only_unconfirmed_legacy_page_deletion_timestamps () =
      Pending.Conflicted "permission denied", false; Pending.Submitted, false; Pending.Accepted 43, false]
 
 
+let synced_journal_windows_match_fresh_reads () =
+  with_runtime (fun path conn current ->
+    Fun.protect ~finally:(fun () -> cleanup_store path) (fun () ->
+      let uuid index = Printf.sprintf "00000000-0000-4000-8000-%012d" index in
+      ignore (Ds.transact_conn conn ([add 1 "block/uuid" (Ds.Uuid (uuid 1));
+        add 10 "block/uuid" (Ds.Uuid (uuid 10))] @ List.concat_map (fun index ->
+        let eid = 100 + index in
+        [add eid "block/uuid" (Ds.Uuid (uuid eid));
+         add eid "block/title" (Ds.String ("Row " ^ string_of_int index));
+         add eid "block/page" (Ds.Ref 1); add eid "block/parent" (Ds.Ref 1);
+         add eid "block/order" (Ds.String (Printf.sprintf "b%03d" index))])
+        (List.init 40 Fun.id)));
+      Runtime.rebase current 42 [] [];
+      let check_window () =
+        check_eq ~msg:"the cached window must match a fresh bounded journal read"
+          (Runtime.blocks current)
+          (Graph_read.blocks ~block_limit:32 (fun value -> Ok value) 1 (Runtime.db current)) in
+      let apply operations =
+        let before = (Runtime.state current).server_t in
+        let _, tx, _ = Journal_sync.capture (Ds.conn_db conn) operations in
+        let journal = match Journal_sync.decode (Json.to_string (`Assoc [
+          "type", `String "pull/ok"; "t-before", `Int before; "t", `Int (before + 1);
+          "txs", `List [`Assoc ["t", `Int (before + 1); "tx", `String tx]]])) with
+          | Ok journal -> journal | Error message -> fail message in
+        let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+          | Ok applied -> applied | Error message -> fail message in
+        Runtime.rebase ~changed_attributes:applied.changed_attributes current journal.t
+          applied.operation_ids applied.changed_uuids;
+        check_window () in
+      check_window ();
+      apply [add 10 "block/title" (Ds.String "Remote")];
+      check (is_ok (Runtime.stage current
+        { (operation "local-title" (Pending.Save_title
+            {uuid = uuid 10; expected_title = "Remote"; title = "Local"})) with
+          base_t = (Runtime.state current).server_t }));
+      check_window ();
+      apply [add 10 "block/title" (Ds.String "Another remote")];
+      apply [Ds.Retract (Ds.Entity_id 100, "block/title", None)];
+      apply [add 100 "block/title" (Ds.String "Restored")];
+      apply [add 500 "block/uuid" (Ds.Uuid (uuid 500));
+        add 500 "block/title" (Ds.String "Inserted");
+        add 500 "block/page" (Ds.Ref 1); add 500 "block/parent" (Ds.Ref 1);
+        add 500 "block/order" (Ds.String "a-")];
+      apply [add 120 "block/order" (Ds.String "a!")];
+      apply [add 500 "logseq.property/deleted-at" (Ds.Int64 100L)];
+      apply [add 1 "block/title" (Ds.String "Updated journal")]))
+
 let cases =
   [
+    case "synced journal windows match fresh reads" synced_journal_windows_match_fresh_reads;
     case "reopening repairs only unconfirmed legacy page deletion timestamps" reopening_repairs_only_unconfirmed_legacy_page_deletion_timestamps;
     case "new pages appear in the built-in Page collection" new_pages_appear_in_the_builtin_page_collection;
     case "reopening repairs legacy pages and unblocks dependent changes" reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes;

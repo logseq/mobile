@@ -10,6 +10,7 @@ type runtime_options =
 
 type read_caches =
   { blocks : (int * int option * int, Cache_model.block list) Hashtbl.t
+  ; journal_selection : ((int * int option * int) * string list) option
   ; page_blocks : (string, Cache_model.block list) Hashtbl.t
   ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Cache_model.block list) Hashtbl.t
@@ -77,7 +78,7 @@ val rebase_operation :
   Pending_ops.pending_operation ->
   Pending_ops.pending_state
 val rebase :
-  graph_runtime -> int -> string list -> string list -> unit
+  ?changed_attributes:string list -> graph_runtime -> int -> string list -> string list -> unit
 val create_base :
   string -> int -> Datascript.conn -> runtime_options -> graph_runtime
 val fresh_uuid : unit -> string
