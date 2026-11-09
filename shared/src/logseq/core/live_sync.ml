@@ -134,10 +134,11 @@ let has_title db decrypt expected =
 
 let apply_journal decrypt current body =
   let journal = require_ok "decode journal" (Journal_sync.decode body) in
-  let ids, changed = require_ok "apply canonical journal"
+  let applied = require_ok "apply canonical journal"
       (Journal_sync.apply decrypt current.Graph_runtime.conn
          (Graph_runtime.state current).server_t journal) in
-  Graph_runtime.rebase current journal.t ids changed
+  Graph_runtime.rebase ~changed_attributes:applied.changed_attributes
+    current journal.t applied.operation_ids applied.changed_uuids
 
 let rec submit_tx ?(decrypt = fun value -> Ok value) cfg current operation attempts =
   if attempts <= 0 then

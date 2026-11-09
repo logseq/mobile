@@ -331,7 +331,7 @@ let apply_sync_event (host : mobile_graph) body =
     Error "journal belongs to another graph"
   | Some opened ->
     let local_t = Sync.applied_server_t opened.state in
-    let* ids, changed = Journal_sync.apply
+    let* applied = Journal_sync.apply
         (if opened.e2ee then host.crypto.decrypt_title opened.graph_id else fun value -> Ok value)
         opened.conn local_t journal in
     if journal.t <= local_t then Ok ()
@@ -339,7 +339,8 @@ let apply_sync_event (host : mobile_graph) body =
       let* () = Checkpoint.save_checkpoint_atomic opened.checkpoint_path
           (Checkpoint.create opened.graph_id opened.state.schema_version journal.t) in
       opened.state.applied_server_t := journal.t;
-      Runtime.rebase opened.read_runtime journal.t ids changed;
+      Runtime.rebase ~changed_attributes:applied.changed_attributes
+        opened.read_runtime journal.t applied.operation_ids applied.changed_uuids;
       Ok ()
 
 let search_page host ~offset ~limit query =

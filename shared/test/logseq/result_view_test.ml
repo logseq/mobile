@@ -586,9 +586,10 @@ let native_sort_settings_survive_save_and_refresh () =
           "t-before", `Int before; "t", `Int (before + 1); "txs", `List [`Assoc ["t", `Int (before + 1);
             "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
           | Ok value -> value | Error message -> fail message in
-        let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+        let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
           | Ok value -> value | Error message -> fail message in
-        Graph_runtime.rebase graph journal.t ids changed) (Graph_runtime.pending_operations graph);
+        Graph_runtime.rebase ~changed_attributes:applied.changed_attributes graph journal.t
+          applied.operation_ids applied.changed_uuids) (Graph_runtime.pending_operations graph);
       check_eq ~msg:"Sorts remain after the server acknowledges the transaction"
         (List.length (items "sorting" (find_view table_view (read session)))) 2;
       let restored = Graph_runtime.create graph.path (Graph_runtime.state graph).server_t conn
@@ -686,9 +687,10 @@ let typed_edits_restart_and_sync_acknowledgements () = with_runtime (fun session
         "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
       | Ok value -> value | Error message -> fail message in
     check_ok (Graph_runtime.stage restored {operation with Pending_ops.state = Pending_ops.Accepted (before + 1)});
-    let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+    let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
       | Ok value -> value | Error message -> fail message in
-    Graph_runtime.rebase restored journal.t ids changed;
+    Graph_runtime.rebase ~changed_attributes:applied.changed_attributes restored journal.t
+      applied.operation_ids applied.changed_uuids;
     check_eq ~msg:"server echoes confirm atomic property values and owner assignments together"
       (List.length (Graph_runtime.pending_operations restored)) (2 - index)) pending;
   check_eq (Graph_runtime.pending_operations restored) [];

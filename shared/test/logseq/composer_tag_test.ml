@@ -28,9 +28,10 @@ let sync_all runtime conn =
       "tx-id", `String operation.Pending_ops.operation_id; "tx", `String tx]]])) with
       | Ok value -> value | Error message -> fail message in
     check_ok (Graph_runtime.stage runtime {operation with Pending_ops.state = Pending_ops.Accepted (before + 1)});
-    let ids, changed = match Journal_sync.apply (fun value -> Ok value) conn before journal with
+    let applied = match Journal_sync.apply (fun value -> Ok value) conn before journal with
       | Ok value -> value | Error message -> fail message in
-    Graph_runtime.rebase runtime journal.t ids changed) (Graph_runtime.pending_operations runtime);
+    Graph_runtime.rebase ~changed_attributes:applied.changed_attributes runtime journal.t
+      applied.operation_ids applied.changed_uuids) (Graph_runtime.pending_operations runtime);
   check_eq ~msg:"tagged captures round-trip through confirmed sync" (Graph_runtime.pending_operations runtime) []
 
 let fresh_journal_captures_preserve_the_note () = R.with_runtime (fun session runtime _ ->

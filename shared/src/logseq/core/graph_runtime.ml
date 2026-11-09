@@ -17,6 +17,7 @@ type runtime_options =
 
 type read_caches =
   { blocks : (int * int option * int, Model.block list) Hashtbl.t
+  ; journal_selection : ((int * int option * int) * string list) option
   ; page_blocks : (string, Model.block list) Hashtbl.t
   ; page_readers : (string, Graph_read.page_reader) Hashtbl.t
   ; node_blocks : (string, Model.block list) Hashtbl.t
@@ -71,6 +72,7 @@ let db runtime = (state runtime).snapshot.db
 let new_read_caches () =
   {
     blocks = Hashtbl.create 16;
+    journal_selection = None;
     page_blocks = Hashtbl.create 64;
     page_readers = Hashtbl.create 32;
     node_blocks = Hashtbl.create 64;
@@ -266,10 +268,38 @@ let apply_local_properties runtime database =
     Some (Projection.property_tx uuid attr value)) in
   if operations = [] then database else Ds.db_with operations database
 
-let rebase runtime server_t operation_ids changed_uuids =
+let preserve_journal_selection runtime before operations changed_attributes changed_uuids =
+  match changed_attributes, (state runtime).read_cache, (state runtime).journal_block_limit with
+  | Some attributes, Some (cached, caches), Some limit
+    when cached == before && limit <= initial_journal_block_limit
+      && List.for_all (fun attr -> attr = "block/title" || attr = "block/updated-at") attributes
+      && List.for_all (fun (op : Ops.pending_operation) ->
+        match op.intent with Ops.Save_title _ -> true | _ -> false) operations ->
+    let after = db runtime in
+    let title_present database uuid =
+      Option.map (fun eid -> match Read.value database eid "block/title" with
+        | Some (Ds.String _) -> true | _ -> false)
+        (Ds.entid database "block/uuid" (Ds.Uuid uuid)) in
+    let affected = changed_uuids @ List.concat_map
+        (fun (op : Ops.pending_operation) -> Ops.affected_uuids before op.intent) operations in
+    if List.for_all (fun uuid -> title_present before uuid = title_present after uuid) affected then begin
+      let through_day = Model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
+      let key = (state runtime).journal_limit, Some limit, through_day in
+      let selected = match Hashtbl.find_opt caches.blocks key with
+        | Some blocks -> Some (List.map (fun (block : Model.block) -> block.uuid) blocks)
+        | None -> Option.bind caches.journal_selection (fun (selected_key, uuids) ->
+          if selected_key = key then Some uuids else None) in
+      Option.iter (fun uuids ->
+        let caches = { (new_read_caches ()) with journal_selection = Some (key, uuids) } in
+        runtime.state := { !(runtime.state) with read_cache = Some (after, caches) }) selected
+    end
+  | _ -> ()
+
+let rebase ?changed_attributes runtime server_t operation_ids changed_uuids =
   let started = Unix.gettimeofday () in
   let before = db runtime in
   let authoritative = Ds.conn_db runtime.conn in
+  let pending = Ops.list runtime.path in
   let operations =
     List.filter
       (fun (operation : Ops.pending_operation) ->
@@ -281,7 +311,7 @@ let rebase runtime server_t operation_ids changed_uuids =
           false
         end
         else true)
-      (Ops.list runtime.path)
+      pending
   in
   let projected = ref (Dev_sync.Sync_replay.display_db_from_server authoritative) in
   trace_stage "LOGSEQ_REBASE_METRIC" started "confirmed";
@@ -307,6 +337,7 @@ let rebase runtime server_t operation_ids changed_uuids =
         };
     };
   trace_stage "LOGSEQ_REBASE_METRIC" started "projected";
+  preserve_journal_selection runtime before pending changed_attributes changed_uuids;
   refresh_search_after_rebase runtime before operations changed_uuids;
   trace_stage "LOGSEQ_REBASE_METRIC" started "complete"
 
@@ -600,6 +631,7 @@ let stage runtime (operation : Ops.pending_operation) =
     if operation.base_t <> s.server_t then
       Error "operation was created against a stale server cursor"
     else
+      let visible_before = db runtime in
       let before = match previous with
         | None -> db runtime
         | Some _ -> db_before_operation runtime operation.operation_id
@@ -621,6 +653,15 @@ let stage runtime (operation : Ops.pending_operation) =
            { !(runtime.state) with snapshot =
                { s.snapshot with Projection.db = projected;
                  statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
+      (match normalized.intent with
+       | Ops.Save_title _ ->
+         let attributes = List.fold_left (fun attributes -> function
+           | Ds.Add (_, attr, _) | Ds.Retract (_, attr, _) ->
+             Option.map (fun attributes -> attr :: attributes) attributes
+           | _ -> None) (Some []) operations in
+         preserve_journal_selection runtime visible_before (normalized :: existing) attributes
+           (Ops.affected_uuids before normalized.intent)
+       | _ -> ());
       refresh_search_affected runtime before normalized.intent operations;
       (match previous with None -> refresh_split_page_cache runtime before normalized.intent | Some _ -> ());
       Ok ()
@@ -673,7 +714,14 @@ let blocks runtime =
   | Some blocks -> blocks
   | None ->
     let blocks =
-      Read.blocks ?block_limit ~through_day (fun v -> Ok v) limit (db runtime)
+      match caches.journal_selection with
+      | Some (key, uuids) when key = (limit, block_limit, through_day) ->
+        let database = db runtime in
+        List.filter_map (fun uuid ->
+          Option.bind (Ds.entid database "block/uuid" (Ds.Uuid uuid))
+            (Read.block ~with_breadcrumbs:false (fun value -> Ok value) database)) uuids
+        |> List.sort Read.compare_journal_blocks
+      | _ -> Read.blocks ?block_limit ~through_day (fun v -> Ok v) limit (db runtime)
     in
     Hashtbl.replace caches.blocks (limit, block_limit, through_day) blocks;
     blocks

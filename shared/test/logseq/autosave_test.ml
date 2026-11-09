@@ -276,8 +276,9 @@ let rapid_editing_and_reparenting_settles_after_the_last_save () =
       let apply_journal body =
         let ( let* ) = Result.bind in
         let* journal = Journal_sync.decode body in
-        let* ids, changed = Journal_sync.apply (fun value -> Ok value) conn (R.state runtime).server_t journal in
-        R.rebase runtime journal.t ids changed;
+        let* applied = Journal_sync.apply (fun value -> Ok value) conn (R.state runtime).server_t journal in
+        R.rebase ~changed_attributes:applied.changed_attributes runtime journal.t
+          applied.operation_ids applied.changed_uuids;
         Ok () in
       let session = Rpc_session.create_session { Rpc_session.default_options with
         graph_blocks = Some (fun () -> Some (R.blocks_for_page runtime page));
