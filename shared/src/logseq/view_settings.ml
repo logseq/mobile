@@ -874,7 +874,17 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             ];
         ];
       column ~padding:16 ~background:card_bg
-        [ settings_account_row context model_source send ];
+        [
+          settings_account_row context model_source send;
+          list_item ~icon:(`app "open-external") ~padding:0
+            ~accessibility_identifier:"link.settings.account-deletion"
+            ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/account-deletion"))
+            ~text:(View_base.tr (Signal.sample model_source) "Request account deletion") [];
+          list_item ~icon:(`app "open-external") ~padding:0
+            ~accessibility_identifier:"link.settings.privacy-policy"
+            ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/privacy-policy"))
+            ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
+        ];
     ]
 
 (* Native grouped-settings form: a `form`-styled content column whose
