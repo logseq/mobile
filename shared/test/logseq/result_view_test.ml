@@ -500,6 +500,46 @@ let native_view_tabs_search_table_and_gallery () =
       check (find ("outliner.block." ^ alpha) <> -1))))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let gallery_cards_render_image_assets () =
+  let db = Ds.db_with [
+    put alpha "block/title" (Ds.String "Photo.jpg");
+    put alpha "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Asset"));
+    put alpha "logseq.property.asset/type" (Ds.String "jpeg");
+    put alpha "logseq.property.asset/checksum" (Ds.String "photo-checksum");
+    put beta "block/title" (Ds.String "Document.pdf");
+    put beta "block/tags" (Ds.Ref_to (ref_uuid Q.project));
+    put beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Asset"));
+    put beta "logseq.property.asset/type" (Ds.String "pdf");
+    put gallery_view "logseq.property/view-for" (Ds.Ref_to (ref_uuid Q.project));
+    put gallery_view "logseq.property.view/feature-type" (Ds.Keyword "class-objects");
+  ] (fixture ()) in
+  let session, _ = make_session ~configured:true db in
+  let path = "Assets/Photo.jpg" in
+  Cache_model.cache_local_asset (Session.state session).model alpha "Photo.jpg" "jpeg" 123
+    "photo-checksum" path 1 None;
+  let response = Rpc_test.dispatch_json session "openNode" (Json.to_string (`Assoc ["uuid", `String Q.project])) in
+  check_eq (member "ok" response) (`Bool true);
+  List.iter (fun backend ->
+    Q.with_ui backend (Json.to_string response) (fun app ->
+      App_test.send app (Model.RequestAppNode Q.project);
+      let projection = match Response_snapshot.decode_json_response response with
+        | Ok value -> value | Error message -> fail message in
+      App_test.send app (Model.ApplyCoreSnapshot projection); App_test.flush app;
+      let find = find_visible session app in
+      let runtime = Lui_app.runtime app in
+      let card = find ("view.card." ^ gallery_view ^ "." ^ alpha) in
+      check ~msg:"the tagged photo is already a Gallery result" (card <> -1);
+      let preview = App_test.descendant_with_extension runtime app card "outliner-block-content" in
+      check ~msg:"the Gallery card mounts the native photo preview" (preview <> -1);
+      check_eq (App_test.extension_property app preview "asset-type")
+        (Some (Lui_protocol.StringValue "jpeg"));
+      check_eq (App_test.extension_property app preview "local-path")
+        (Some (Lui_protocol.StringValue path));
+      let pdf = find ("view.card." ^ gallery_view ^ "." ^ beta) in
+      check ~msg:"the PDF remains a result" (pdf <> -1);
+      check_eq (App_test.descendant_with_extension runtime app pdf "outliner-block-content") (-1)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let native_view_settings_and_local_errors () =
   List.iter (fun backend -> with_runtime (fun session _ _ ->
     Q.with_ui backend (Session.snapshot_visible session) (fun app ->
@@ -1571,6 +1611,7 @@ let cases = [
   case "saved filters preserve nested UUID sets and nullable bounds" settings_preserve_nested_match_values;
   case "many numeric and scalar checkbox and text edits preserve types" many_and_scalar_cells_preserve_types;
   case "table edits assign owner values with validation and conflict checks" editable_cells_use_owner_values_and_conflicts;
+  case "Gallery cards show tagged photos" gallery_cards_render_image_assets;
   case "both native hosts expose tabs search table editing and gallery" native_view_tabs_search_table_and_gallery;
   case "native settings expose filters sorting and local action errors" native_view_settings_and_local_errors;
   case "native sorting survives Done and subsequent core refreshes" native_sort_settings_survive_save_and_refresh;

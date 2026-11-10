@@ -258,12 +258,20 @@ let column_json ?(include_candidates = true) ?(include_values = true) db rows p 
   "filterValues", `List filter_values;
   "valuesDeferred", `Bool (not include_values);
   "choices", choices_json db p.choices]
-let row_json ~compact_block db encode properties = function
+let row_json ~compact_block ~include_asset db encode properties = function
   | Query_block.Cells cells -> `Assoc ["cells", `List (List.map (fun cell -> `String cell) cells)]
   | Query_block.Block block -> let id = eid db block.uuid in
-    let encoded = if compact_block then `Assoc [
-      "uuid", `String block.uuid; "title", `String block.title; "pageId", `String block.page_id;
-      "displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title))]
+    let encoded = if compact_block then
+      let asset_fields =
+        if include_asset && block.is_asset then
+          let field key = Option.fold ~none:[] ~some:(fun value -> [key, `String value]) in
+          ("isAsset", `Bool true) :: (
+            field "assetType" block.asset_type @ field "assetChecksum" block.asset_checksum
+            @ field "localPath" block.local_path)
+        else [] in
+      `Assoc (["uuid", `String block.uuid; "title", `String block.title; "pageId", `String block.page_id;
+        "displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title))]
+        @ asset_fields)
       else encode block in
     `Assoc ["block", encoded; "properties", `List (List.map (fun p ->
       let editor = if p.closed then
@@ -375,7 +383,8 @@ let render_rows_cached ?cache ~reuse_prepared ?(input = "") ?(include_values = t
         "rowsDeferred", `Bool (window <> None); "input", `String input;
         "columns", prepared.columns;
         "properties", prepared.catalog;
-        "rows", `List (List.map (row_json ~compact_block:(typ <> "list") db encode_block prepared.properties) rows)])
+        "rows", `List (List.map (row_json ~compact_block:(typ <> "list") ~include_asset:(typ = "gallery")
+          db encode_block prepared.properties) rows)])
     with error -> `Assoc (fields @ ["error", `String (match error with Invalid_argument message -> message | _ -> Printexc.to_string error);
       "rows", `List []; "columns", `List []]) in
   `Assoc ["ownerUuid", `String owner; "featureType", `String feature; "views", `List (List.map view_json views)]
