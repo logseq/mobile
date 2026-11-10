@@ -290,6 +290,27 @@ let finish_deck_effect app session =
     | Error message -> fail message);
   succeeded
 
+let native_due_card_shows_its_linked_category () = with_runtime (fun session _ _ ->
+  ignore (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())));
+  Q.with_ui App_test.kotlin_backend (Rpc_session.snapshot_visible session) (fun app ->
+    App_test.send app Model.ShowFlashcards; App_test.flush app;
+    let category = find app ("flashcard.category." ^ scope_page) in
+    check ~msg:"the due card displays its linked Topic page before revealing the answer" (category <> -1);
+    check_eq (App_test.property_string (Lui_app.runtime app) category Lui_protocol.TextValue) "Topic page"))
+
+let native_selects_an_advanced_saved_group () = with_runtime (fun session runtime conn ->
+  let query = "{:query [:find (pull ?b [*]) :where [?b :block/refs ?topic] [?topic :block/name \"topic page\"]]}" in
+  ignore (D.transact_conn conn [put page_query "block/title" (D.String query)]);
+  Graph_runtime.rebase runtime 42 [] [];
+  ignore (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())));
+  Q.with_ui App_test.kotlin_backend (Rpc_session.snapshot_visible session) (fun app ->
+    App_test.send app Model.ShowFlashcards; App_test.flush app;
+    press app ("flashcards.deck.select." ^ page_deck);
+    check ~msg:"a saved group with an advanced query can be selected" (finish_deck_effect app session);
+    let selected = snapshot session in
+    check_eq (member "selectedUuid" (metadata selected)) (`String page_deck);
+    expect [Q.alpha; R.gamma] selected))
+
 let native_create_and_select_roundtrip () =
   List.iter (fun backend -> with_runtime (fun session runtime _ ->
     ignore (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())));
@@ -473,6 +494,8 @@ let empty_and_unavailable_groups_do_not_offer_unrelated_practice () =
     check_eq (Graph_runtime.pending_operations runtime) [])) [App_test.ios_backend; App_test.kotlin_backend]
 
 let cases = [
+  case "due cards show the linked category on Android" native_due_card_shows_its_linked_category;
+  case "Android can select a saved group with an advanced query" native_selects_an_advanced_saved_group;
   case "both native hosts can repeatedly practice all cards in the completed group" native_practice_again_repeats_the_whole_selected_group;
   case "practice works without due cards and resets safely across groups and graphs" practice_when_nothing_is_due_preserves_scope_and_resets_on_navigation;
   case "empty and unavailable groups never practice unrelated cards" empty_and_unavailable_groups_do_not_offer_unrelated_practice;

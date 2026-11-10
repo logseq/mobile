@@ -105,6 +105,7 @@ type flashcard =
   { flashcard_uuid : string
   ; question_hidden : string
   ; question_revealed : string
+  ; card_categories : sidebar_page list
   ; answer_rows : flashcard_answer_row list
   ; has_cloze : bool
   }

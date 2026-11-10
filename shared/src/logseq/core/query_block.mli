@@ -6,7 +6,7 @@ type result = {
   rows : row list;
   error : string option;
 }
-val render : ?current_page:string -> Datascript.db -> string -> result option
+val render : ?current_page:string -> ?now:int -> ?remove_children_by_default:bool -> Datascript.db -> string -> result option
 val owner_uuids : Datascript.db -> string list
 val to_yojson : (Cache_model.block -> Yojson.Basic.t) -> result -> Yojson.Basic.t
 
