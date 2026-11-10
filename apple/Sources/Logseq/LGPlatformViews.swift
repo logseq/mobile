@@ -16,7 +16,7 @@ enum AssetPresentationPolicy {
     static func kind(assetType: String?, localPath: String?) -> AssetPresentationKind {
         let normalizedType = (assetType ?? pathExtension(localPath)).lowercased()
         if normalizedType.hasPrefix("image/")
-            || ["jpg", "jpeg", "png", "gif", "heic", "webp"].contains(normalizedType) {
+            || ["jpg", "jpeg", "png", "gif", "heic", "heif", "webp", "avif", "bmp", "wbmp"].contains(normalizedType) {
             return .image
         }
         if normalizedType.hasPrefix("audio/")

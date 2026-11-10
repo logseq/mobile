@@ -681,6 +681,28 @@ let value_sheet owner feature view model_source send item property close =
       payload owner feature view.id "editCell" (("blockUuid", `String (Option.value ~default:"" item.uuid)) :: fields)))))
     model_source property close
 
+let gallery_image (row : Model.outline_row) =
+  if not row.is_asset then None else
+  let asset_type = View_base.outliner_row_asset_type row in
+  let path = View_base.outliner_row_local_path row in
+  let format =
+    if asset_type <> "" then asset_type else
+    let extension = Filename.extension (if path = "" then row.row_title else path) in
+    if extension = "" then "" else String.sub extension 1 (String.length extension - 1) in
+  let normalized = String.lowercase_ascii format in
+  if String.starts_with ~prefix:"image/" normalized
+    || List.mem normalized ["jpg"; "jpeg"; "png"; "gif"; "heic"; "heif"; "webp"; "avif"; "bmp"; "wbmp"]
+  then Some (fun context parent ->
+    let node = Lui_ui.extension context "outliner-block-content" in
+    attach context parent node;
+    List.iter (fun (key, value) -> Lui_ui.extension_property context node key (Lui_protocol.StringValue value))
+      ["block-id", row.row_uuid; "title", row.row_title; "asset-type", format; "local-path", path;
+        "markup-json", "[]"; "youtube-target-url", ""];
+    Lui_ui.extension_property context node "is-asset" (Lui_protocol.BoolValue true);
+    Lui_ui.extension_property context node "is-completed" (Lui_protocol.BoolValue false);
+    node)
+  else None
+
 let table_column_width column = if jfield "attr" column = `String "block/title" then 260 else 170
 
 let table_column_window columns (offset, width) =
@@ -932,14 +954,17 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
           (Signal.map2 (fun view item -> view, item) view_source item_source) column_window))) row_context parent in
     let gallery_card item_source : t =
      fun card_context parent ->
-      (dyn (fun (view, item) -> column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
-        ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid) [
-        button ~text:item.title ~text_alignment:`start ~variant:`ghost ~min_height:44
-          ~on_press:(fun _ -> Option.iter (fun uuid -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) item.uuid) [];
-        column ~gap:8 (choices view |> List.filter (fun col -> jfield "attr" col <> `String "block/title")
-          |> List.map (fun col -> let property = cell view item (jtext (jfield "attr" col)) in
-            row ~gap:12 ~main:`space_between [text ~value:(property_title (Signal.sample model_source) col) ~foreground:"muted-foreground" ~style_class:"caption" [];
-              text ~value:(jtext (jfield "text" property)) ~style_class:"caption" []]))])
+      (dyn (fun (view, item) ->
+        let image = Option.bind item.block (fun block -> gallery_image block.row) in
+        column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
+        ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid)
+        (Option.to_list image @ [
+          button ~text:item.title ~text_alignment:`start ~variant:`ghost ~min_height:44
+            ~on_press:(fun _ -> Option.iter (fun uuid -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))) item.uuid) [];
+          column ~gap:8 (choices view |> List.filter (fun col -> jfield "attr" col <> `String "block/title")
+            |> List.map (fun col -> let property = cell view item (jtext (jfield "attr" col)) in
+              row ~gap:12 ~main:`space_between [text ~value:(property_title (Signal.sample model_source) col) ~foreground:"muted-foreground" ~style_class:"caption" [];
+                text ~value:(jtext (jfield "text" property)) ~style_class:"caption" []]))]))
         (Signal.own_signal card_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) card_context parent in
     let item_key item = match item.uuid with
       | Some uuid -> "block:" ^ uuid | None -> "tuple:" ^ string_of_int item.index in
