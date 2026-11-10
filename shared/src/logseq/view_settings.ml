@@ -1172,14 +1172,19 @@ let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
   else settings_main_sheet context model_source send
 
 let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
+  let label page block = Signal.map (fun (model : Model.logseq_model) ->
+    View_base.tr model (match model.pending_node_deletion with
+      | Some (Model.BlockToDelete _) -> block | _ -> page)) model_source in
+  let title = label "Delete page?" "Delete block?" in
+  let description = label "The page will be moved to Recycle." "The block and its children will be deleted." in
   if Lui_ui.host context = KotlinHost then
-    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete page?") ~height:280
+    dialog ~text_signal:title ~height:280
       ~accessibility_identifier:"dialog.page-delete"
-      ~on_dismiss:(press send Model.CancelDeleteActivePage)
+      ~on_dismiss:(press send Model.CancelDeleteActiveNode)
       [
         column ~gap:16 ~cross:`stretch
           [
-            text ~value:(View_base.tr (Signal.sample model_source) "The page will be moved to Recycle.") ~grow:1.0 [];
+            text ~value_signal:description ~grow:1.0 [];
             spacer ~grow:1.0 [];
             row ~main:`end_
               [
@@ -1190,12 +1195,12 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
                     button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.page-delete.cancel"
-                      ~on_press:(press send Model.CancelDeleteActivePage)
+                      ~on_press:(press send Model.CancelDeleteActiveNode)
                       ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
                     button ~variant:`destructive
                       ~accessibility_identifier:
                         "button.page-delete.confirm"
-                      ~on_press:(press send Model.ConfirmDeleteActivePage)
+                      ~on_press:(press send Model.ConfirmDeleteActiveNode)
                       ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
                   ];
               ];
@@ -1204,18 +1209,18 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
   else
     (* Text-and-buttons-only children keep the dialog on the native alert
        path (rich children fall back to a custom sheet). *)
-    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete page?") ~style_class:"alert"
+    dialog ~text_signal:title ~style_class:"alert"
       ~accessibility_identifier:"dialog.page-delete"
-      ~on_dismiss:(press send Model.CancelDeleteActivePage)
+      ~on_dismiss:(press send Model.CancelDeleteActiveNode)
       [
-        text ~value:(View_base.tr (Signal.sample model_source) "The page will be moved to Recycle.") [];
+        text ~value_signal:description [];
         button ~style_class:"cancellation-action"
           ~accessibility_identifier:"button.page-delete.cancel"
-          ~on_press:(press send Model.CancelDeleteActivePage)
+          ~on_press:(press send Model.CancelDeleteActiveNode)
           ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
         button ~variant:`destructive
           ~accessibility_identifier:"button.page-delete.confirm"
-          ~on_press:(press send Model.ConfirmDeleteActivePage)
+          ~on_press:(press send Model.ConfirmDeleteActiveNode)
           ~text:(View_base.tr (Signal.sample model_source) "Delete") [];
       ]
 

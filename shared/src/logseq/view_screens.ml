@@ -568,15 +568,17 @@ let active_overflow_menu model_source send : t =
          (menu_item ~text:(View_base.tr (Signal.sample model_source) "Share") ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
             []);
-       if_ ~test:(Signal.map (fun current ->
-           match Model.active_page current with
-           | Some page -> Model.page_can_delete current page.uuid
-           | None -> false) model_source)
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete") ~variant:`destructive
-            ~accessibility_identifier:"button.page.delete"
-            ?icon:(item_icon "toolbar-delete")
-            ~on_press:(press send Model.RequestDeleteActivePage)
-            []);
+       keyed ~source:(own (Signal.map (fun model -> Option.to_list (Model.active_delete_target model)) model_source))
+         ~key:(function Model.BlockToDelete _ -> `Block | Model.PageToDelete _ -> `Page) ~cmp:compare
+         ~mount:(fun source -> match Signal.sample source with
+         | Model.BlockToDelete _ ->
+           menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete block") ~variant:`destructive
+             ~accessibility_identifier:"button.block.delete" ?icon:(item_icon "toolbar-delete")
+             ~on_press:(press send Model.RequestDeleteActiveNode) []
+         | Model.PageToDelete _ ->
+           menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete") ~variant:`destructive
+             ~accessibility_identifier:"button.page.delete" ?icon:(item_icon "toolbar-delete")
+             ~on_press:(press send Model.RequestDeleteActiveNode) []);
        if_ ~test:settings_source
          (menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings") ?icon:(item_icon "settings")
             ~on_press:(press send Model.OpenSettings)
@@ -984,7 +986,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
                    model_source)
           (View_graphs.graph_password_sheet context model_source send);
         if_
-          ~test:(Signal.map View_base.page_deletion_pending_ model_source)
+          ~test:(Signal.map View_base.node_deletion_pending_ model_source)
           (View_settings.page_delete_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.sign_out_pending_ model_source)
@@ -1029,7 +1031,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
                    model_source)
           (View_graphs.graph_password_sheet context model_source send);
         if_
-          ~test:(Signal.map View_base.page_deletion_pending_ model_source)
+          ~test:(Signal.map View_base.node_deletion_pending_ model_source)
           (View_settings.page_delete_dialog model_source context send);
         if_
           ~test:(Signal.map View_base.sign_out_pending_ model_source)

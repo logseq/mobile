@@ -45,7 +45,7 @@ val sync_cursor_label : Model.logseq_model -> string
 val active_page_actions_visible_ : Model.logseq_model -> bool
 val connection_settings_visible_ : Model.logseq_model -> bool
 val active_page_favorite_label : Model.logseq_model -> string
-val page_deletion_pending_ : Model.logseq_model -> bool
+val node_deletion_pending_ : Model.logseq_model -> bool
 val sign_out_pending_ : Model.logseq_model -> bool
 val sidebar_page_identifier : Model.sidebar_page -> string
 val sidebar_page_title : Model.sidebar_page -> string

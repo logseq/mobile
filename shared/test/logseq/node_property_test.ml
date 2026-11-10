@@ -461,12 +461,12 @@ let builtin_pages_hide_delete_and_reject_deletion_requests () =
         let host = Lui_app.runtime app in
         let item = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.page.delete" in
         check_eq ~msg:(label ^ " menu delete visibility") (item <> -1) allowed;
-        let requested = Model.update (App.model app) Model.RequestDeleteActivePage in
+        let requested = Model.update (App.model app) Model.RequestDeleteActiveNode in
         check_eq ~msg:(label ^ " cannot open a protected delete confirmation")
-          (requested.pending_page_deletion <> None) allowed;
+          (requested.pending_node_deletion <> None) allowed;
         if not allowed then (
-          let stale = { requested with Model.pending_page_deletion = Some {Model.uuid = Q.page; title = "Workspace"} } in
-          let confirmed = Model.update stale Model.ConfirmDeleteActivePage in
+          let stale = { requested with Model.pending_node_deletion = Some (Model.PageToDelete {Model.uuid = Q.page; title = "Workspace"}) } in
+          let confirmed = Model.update stale Model.ConfirmDeleteActiveNode in
           check ~msg:"a stale confirmation cannot enqueue a protected deletion"
             (not (List.exists (function Model.DeletePageEffect _ -> true | _ -> false) confirmed.pending_effects)))))
       [App_test.ios_backend; App_test.kotlin_backend])
@@ -907,7 +907,26 @@ let text_property_references_create_journals_and_keep_partial_dates_literal () =
       (Graph_runtime.pending_operations restored) []))
     ["2026-10-26", 20261026; "Oct 26th, 2026", 20261026; "0044-03-15", 440315]
 
+let zoomed_journal_delete_effect_preserves_the_journal () =
+  R.with_runtime (fun session runtime conn ->
+    ignore (Ds.transact_conn conn [
+      put Q.page "block/journal-day" (Ds.Int64 20200101L);
+      put R.gamma "block/parent" (Ds.Ref_to (Q.ref_uuid Q.alpha));
+    ]);
+    Graph_runtime.rebase runtime 42 [] [];
+    let opened = Rpc_test.dispatch_json session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])) in
+    check_eq (member "ok" opened) (`Bool true);
+    let rejected = Core_effect_test.execute session "delete-block" ["text", `String Q.alpha; "value", `Int 41] in
+    check_eq (member "ok" rejected) (`Bool false);
+    let deleted = Core_effect_test.execute session "delete-block" ["text", `String Q.alpha; "value", `Int 42] in
+    check_eq ~msg:(J.to_string deleted) (member "ok" deleted) (`Bool true);
+    let db = Graph_runtime.db runtime in
+    let exists uuid = Ds.entid db "block/uuid" (Ds.Uuid uuid) <> None in
+    check ~msg:"the block and its descendants are removed" (not (exists Q.alpha || exists R.gamma));
+    check ~msg:"the journal and other entries remain" (exists Q.page && exists Q.beta))
+
 let cases = [
+  case "deleting a zoomed journal block preserves its journal and siblings" zoomed_journal_delete_effect_preserves_the_journal;
   case "date editors open with empty NLP input and preserve existing values" date_editor_opens_empty_and_preserves_the_selected_date;
   case "Date properties accept natural language" date_properties_accept_natural_language;
   case "text property date references create Journals while partial dates remain Pages" text_property_references_create_journals_and_keep_partial_dates_literal;
