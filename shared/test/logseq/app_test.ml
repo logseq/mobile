@@ -9064,8 +9064,8 @@ let active_page_actions_use_typed_core_and_platform_effects () =
   in
   let favorited = Model.update current Model.ToggleActivePageFavorite in
   let shared = Model.update favorited Model.ShareActivePage in
-  let requested = Model.update shared Model.RequestDeleteActivePage in
-  let deleted = Model.update requested Model.ConfirmDeleteActivePage in
+  let requested = Model.update shared Model.RequestDeleteActiveNode in
+  let deleted = Model.update requested Model.ConfirmDeleteActiveNode in
   check_eq ~msg:"favorite changes cross the semantic core boundary"
     favorited.pending_effects
     [ Model.SetPageFavoriteEffect (1, "page-a", true) ];
@@ -9080,7 +9080,7 @@ let active_page_actions_use_typed_core_and_platform_effects () =
         (2, "Project\n- Photo.jpg", [ "Assets/Photo.jpg" ]);
     ];
   check_eq ~msg:"page deletion requires explicit confirmation"
-    requested.pending_page_deletion (Some page);
+    requested.pending_node_deletion (Some (Model.PageToDelete page));
   check_eq ~msg:"confirmed deletion recycles the page and leaves its selected route"
     deleted.pending_effects
     [
@@ -9101,7 +9101,7 @@ let page_delete_dialog_exposes_stable_material_actions () =
   send application
     (apply_core_snapshot None sidebar [] true "" [] [] None None [] [] []
        false []);
-  send application Model.RequestDeleteActivePage;
+  send application Model.RequestDeleteActiveNode;
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
@@ -9113,6 +9113,48 @@ let page_delete_dialog_exposes_stable_material_actions () =
   check ~msg:"the Material confirmation exposes an independent delete action"
     (descendant_with_identifier renderer root "button.page-delete.confirm"
     <> -1)
+
+let zoomed_journal_block_has_a_block_delete_action () =
+  let app = App.create (kotlin_backend ()) in
+  let uuid = "journal-child" and journal = "journal-page" in
+  let snapshot = { (empty_core_projection ()) with
+    selected_graph_id = Some "work"; applied_server_t = Some 42;
+    node_routes = [node_projection uuid journal "Journal entry" [] []] } in
+  start app;
+  send app (Model.RequestAppNode uuid);
+  send app (Model.ApplyCoreSnapshot snapshot);
+  flush app;
+  let runtime = Lui_app.runtime app in
+  let find = descendant_with_identifier runtime (Lui_app.root_node app) in
+  let delete = find "button.block.delete" in
+  check ~msg:"the zoomed block has a delete action" (delete <> -1);
+  check_eq ~msg:"the journal page is never the target of a zoomed block action"
+    (find "button.page.delete") (-1);
+  dispatch app (Lui_protocol.Press delete); flush app;
+  let dialog = find "dialog.page-delete" in
+  check_eq (property_string runtime dialog Lui_protocol.TextValue) "Delete block?";
+  dispatch app (Lui_protocol.Press (find "button.page-delete.confirm")); flush app;
+  let delete_id = List.find_map (function
+    | Model.DeleteBlockEffect (id, target, cursor) ->
+      check_eq ~msg:"delete is scoped to the zoomed block" target uuid;
+      check_eq cursor 42;
+      Some id
+    | _ -> None) (App.model app).pending_effects |> Option.get in
+  check_eq (App.model app).app_navigation_path [Model.NodeRoute uuid];
+  send app (Model.DequeueEffect delete_id);
+  send app (Model.ResolveEffect (delete_id, false, "Stale cursor")); flush app;
+  check_eq ~msg:"a rejected deletion leaves the block open"
+    (App.model app).app_navigation_path [Model.NodeRoute uuid];
+  dispatch app (Lui_protocol.Press (find "button.block.delete")); flush app;
+  dispatch app (Lui_protocol.Press (find "button.page-delete.confirm")); flush app;
+  let retry_id = List.find_map (function
+    | Model.DeleteBlockEffect (id, _, _) -> Some id | _ -> None)
+    (App.model app).pending_effects |> Option.get in
+  send app (Model.DequeueEffect retry_id);
+  send app (Model.ResolveEffect (retry_id, true, "")); flush app;
+  check_eq ~msg:"a successful block deletion returns to the journal"
+    (App.model app).app_navigation_path []
+
 
 let connection_menu_matches_active_page_actions () =
   let application = App.create (ios_backend ()) in
@@ -11013,6 +11055,7 @@ let cases =
     case "outliner-row-press-publishes-a-typed-core-effect" outliner_row_press_publishes_a_typed_core_effect;
     case "kotlin-rich-rows-own-their-primary-tap" kotlin_rich_rows_own_their_primary_tap;
     case "active-page-actions-use-typed-core-and-platform-effects" active_page_actions_use_typed_core_and_platform_effects;
+    case "zoomed journal blocks expose block deletion" zoomed_journal_block_has_a_block_delete_action;
     case "page-delete-dialog-exposes-stable-material-actions" page_delete_dialog_exposes_stable_material_actions;
     case "connection-menu-matches-active-page-actions" connection_menu_matches_active_page_actions;
     case "page-and-block-overflow-keeps-one-native-icon" page_and_block_overflow_keeps_one_native_icon;

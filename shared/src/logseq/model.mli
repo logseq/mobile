@@ -29,6 +29,8 @@ type sidebar_page =
   ; title : string
   }
 
+type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -296,6 +298,7 @@ type logseq_effect =
   | PresentPageShareEffect of int * string * string list
   | SetPageFavoriteEffect of int * string * bool
   | DeletePageEffect of int * string
+  | DeleteBlockEffect of int * string * int
   | SyncNowEffect of int
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
@@ -397,7 +400,7 @@ type logseq_model =
   ; new_graph_password_required : bool
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
-  ; pending_page_deletion : sidebar_page option
+  ; pending_node_deletion : node_deletion option
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
@@ -577,9 +580,9 @@ type logseq_action =
   | CloseConnectionMenu
   | ToggleActivePageFavorite
   | ShareActivePage
-  | RequestDeleteActivePage
-  | CancelDeleteActivePage
-  | ConfirmDeleteActivePage
+  | RequestDeleteActiveNode
+  | CancelDeleteActiveNode
+  | ConfirmDeleteActiveNode
   | OpenSyncDetails
   | CloseSyncDetails
   | SyncNow
@@ -707,7 +710,7 @@ val indexed_outliner_autocomplete_candidates :
 val valid_authentication_state_ : string -> bool
 val current_settings : logseq_model -> settings_projection
 val active_page : logseq_model -> sidebar_page option
-val page_can_delete : logseq_model -> string -> bool
+val active_delete_target : logseq_model -> node_deletion option
 val node_can_set_tags : logseq_model -> string -> bool
 val page_is_favorite_ : logseq_model -> string -> bool
 val page_share_text : sidebar_page -> outline_row list -> string

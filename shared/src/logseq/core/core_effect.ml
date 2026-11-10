@@ -64,6 +64,8 @@ let request ~now ~fresh_id payload =
     | "set-page-favorite" -> let* uuid = text () in let* value = integer fields "value" in
       json "setPageFavorite" (["pageUuid", `String uuid; "favorite", `Bool (value = 1)] @ operation ())
     | "delete-page" -> let* uuid = text () in json "deletePage" (("pageUuid", `String uuid) :: operation ())
+    | "delete-block" -> let* uuid = text () in let* cursor = integer fields "value" in
+      json "deleteBlock" (["uuid", `String uuid; "expectedServerT", `Int cursor] @ operation ())
     | "review-flashcard" -> let* uuid = string fields "uuid" in let* rating = text () in
       json "reviewFlashcard" (["uuid", `String uuid; "rating", `String rating] @ operation ())
     | "tap-outliner-block" -> text_event "tapBlock" "uuid"

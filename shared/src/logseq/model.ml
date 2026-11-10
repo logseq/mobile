@@ -32,6 +32,8 @@ type sidebar_page =
   ; title : string
   }
 
+type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -299,6 +301,7 @@ type logseq_effect =
   | PresentPageShareEffect of int * string * string list
   | SetPageFavoriteEffect of int * string * bool
   | DeletePageEffect of int * string
+  | DeleteBlockEffect of int * string * int
   | SyncNowEffect of int
   | SyncPendingEffect of int
   | SetOutlinerTaskStatusEffect of int * string * task_status
@@ -400,7 +403,7 @@ type logseq_model =
   ; new_graph_password_required : bool
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
-  ; pending_page_deletion : sidebar_page option
+  ; pending_node_deletion : node_deletion option
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
@@ -580,9 +583,9 @@ type logseq_action =
   | CloseConnectionMenu
   | ToggleActivePageFavorite
   | ShareActivePage
-  | RequestDeleteActivePage
-  | CancelDeleteActivePage
-  | ConfirmDeleteActivePage
+  | RequestDeleteActiveNode
+  | CancelDeleteActiveNode
+  | ConfirmDeleteActiveNode
   | OpenSyncDetails
   | CloseSyncDetails
   | SyncNow
@@ -763,7 +766,7 @@ let initial () =
     new_graph_password_required = false;
     new_graph_encrypted = true;
     pending_graph_deletion = None;
-    pending_page_deletion = None;
+    pending_node_deletion = None;
     pending_sign_out = false;
     connection_menu_open = false;
     settings_open = false;
@@ -879,7 +882,7 @@ let effect_id eff =
   | PresentAssetEffect (id, _, _, _) -> id
   | PresentPageShareEffect (id, _, _) -> id
   | SetPageFavoriteEffect (id, _, _) -> id
-  | DeletePageEffect (id, _) -> id
+  | DeletePageEffect (id, _) | DeleteBlockEffect (id, _, _) -> id
   | SyncNowEffect id -> id
   | SyncPendingEffect id -> id
   | SetOutlinerTaskStatusEffect (id, _, _) -> id
@@ -1449,7 +1452,17 @@ let node_permission (current : logseq_model) uuid permission =
     List.assoc_opt permission fields <> Some (`Bool false)
   | _ -> true
 
-let page_can_delete current uuid = node_permission current uuid "canDelete"
+let active_delete_target (current : logseq_model) =
+  let routes = if current.search_open then
+      app_node_routes_from current current.search_navigation_path 0
+    else app_node_routes current in
+  match last_opt routes with
+  | Some route when route.node_uuid <> route.node_page_uuid ->
+    if current.applied_server_t <> None && node_permission current route.node_uuid "canDelete" then
+      Some (BlockToDelete {uuid = route.node_uuid; title = route.node_title})
+    else None
+  | _ -> Option.bind (active_page current) (fun page ->
+    if node_permission current page.uuid "canDelete" then Some (PageToDelete page) else None)
 let node_can_set_tags current uuid = node_permission current uuid "canAdd"
 
 let page_is_favorite_ (current : logseq_model) uuid =
@@ -1676,6 +1689,11 @@ let search_query_ready query = String.trim query <> ""
 
 let resolve_successful_effect (current : logseq_model) eff message =
   match eff with
+  | DeleteBlockEffect (_, uuid, _) ->
+    let path = if current.search_open then current.search_navigation_path else current.app_navigation_path in
+    if Option.map navigation_route_uuid (last_opt path) <> Some uuid then current
+    else if current.search_open then back_search_navigation current 1
+    else back_app_navigation current 1
   | MaintainSearchIndexEffect (_, graph_id) ->
     let ready = try
       let open Yojson.Basic.Util in
@@ -2849,23 +2867,19 @@ let rec update (current : logseq_model) action =
             , page_share_text page current.outliner_rows
             , page_share_asset_paths current.outliner_rows ))
      | None -> current)
-  | RequestDeleteActivePage ->
-    (match active_page current with
-     | Some page when page_can_delete current page.uuid ->
-       {
-         current with
-         connection_menu_open = false;
-         pending_page_deletion = Some page;
-       }
-     | _ -> current)
-  | CancelDeleteActivePage ->
-    { current with pending_page_deletion = None }
-  | ConfirmDeleteActivePage ->
-    (match current.pending_page_deletion with
-     | Some page when not (page_can_delete current page.uuid) ->
-       { current with pending_page_deletion = None }
-     | Some page ->
-       let updated = { current with pending_page_deletion = None } in
+  | RequestDeleteActiveNode ->
+    (match active_delete_target current with
+     | Some target -> {current with connection_menu_open = false; pending_node_deletion = Some target}
+     | None -> current)
+  | CancelDeleteActiveNode ->
+    { current with pending_node_deletion = None }
+  | ConfirmDeleteActiveNode ->
+    let target = current.pending_node_deletion in
+    let updated = {current with pending_node_deletion = None} in
+    (match target, active_delete_target current, current.applied_server_t with
+     | Some (BlockToDelete block), Some (BlockToDelete active), Some cursor when block.uuid = active.uuid ->
+       enqueue_effect updated (DeleteBlockEffect (updated.next_effect_id, block.uuid, cursor))
+     | Some (PageToDelete page), Some (PageToDelete active), _ when page.uuid = active.uuid ->
        let delete_id = updated.next_effect_id in
        let deleting =
          enqueue_effect updated (DeletePageEffect (delete_id, page.uuid))
@@ -2887,7 +2901,7 @@ let rec update (current : logseq_model) action =
          enqueue_effect closed
            (CloseAppNodeEffect (close_id, navigation_route_uuid route))
        end
-     | None -> current)
+     | _ -> updated)
   | OpenJournalCalendar -> enqueue_effect current (PresentJournalCalendarEffect current.next_effect_id)
   | OpenSettings ->
     {
@@ -3328,6 +3342,7 @@ and apply_core_snapshot (current : logseq_model)
              else SyncedState
            else OfflineState);
         applied_server_t = projection.applied_server_t;
+        pending_node_deletion = (if selected_graph_changed then None else current.pending_node_deletion);
         has_pending_semantic_operations =
           projection.has_pending_semantic_operations;
         has_pending_sync_request = projection.has_pending_sync_request;

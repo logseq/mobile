@@ -243,8 +243,8 @@ let active_page_favorite_label (current : Model.logseq_model) =
     else "Favorite"
   | None -> "Favorite"
 
-let page_deletion_pending_ (current : Model.logseq_model) =
-  current.pending_page_deletion <> None
+let node_deletion_pending_ (current : Model.logseq_model) =
+  current.pending_node_deletion <> None
 
 let sign_out_pending_ (current : Model.logseq_model) =
   current.pending_sign_out

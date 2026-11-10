@@ -99,7 +99,7 @@ let search_destinations_keep_the_page_menu () =
       let favorite = Model.update current Model.ToggleActivePageFavorite in
       check ~msg:"Favorite targets the visible search page"
         (List.exists (function Model.SetPageFavoriteEffect (_, uuid, _) -> uuid = Q.page | _ -> false) favorite.pending_effects);
-      let deleted = Model.update (Model.update current Model.RequestDeleteActivePage) Model.ConfirmDeleteActivePage in
+      let deleted = Model.update (Model.update current Model.RequestDeleteActiveNode) Model.ConfirmDeleteActiveNode in
       check_eq ~msg:"deleting a search page preserves the underlying app navigation"
         deleted.app_navigation_path current.app_navigation_path;
       check_eq ~msg:"deleting a search page returns to the previous search destination" deleted.search_navigation_path [];

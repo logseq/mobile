@@ -124,7 +124,7 @@ let confirmation_cancel_actions_are_semantic_and_localized () =
         (List.filter (function Model.DeleteLocalGraphEffect _ | Model.DeletePageEffect _ -> true | _ -> false)
           (App.model app).pending_effects) [])
       ["button.graph-delete.cancel", Model.RequestDeleteGraph "local";
-       "button.page-delete.cancel", Model.RequestDeleteActivePage;
+       "button.page-delete.cancel", Model.RequestDeleteActiveNode;
        "button.sign-out.cancel", Model.RequestSignOut])
     ["en"; "zh-CN"; "ja"]) [ios_backend; kotlin_backend]
 

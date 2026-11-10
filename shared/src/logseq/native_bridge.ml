@@ -299,6 +299,9 @@ let encode_effect (eff : Model.logseq_effect) =
   | DeletePageEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"delete-page\",\"text\":"
     ^ Lui_wire.quoted uuid ^ "}"
+  | DeleteBlockEffect (id, uuid, cursor) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "delete-block";
+      "text", `String uuid; "value", `Int cursor])
   | PdfAnnotationEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "pdf-annotation"; "text", `String payload])
   | ResultViewEffect (id, _, payload) ->
