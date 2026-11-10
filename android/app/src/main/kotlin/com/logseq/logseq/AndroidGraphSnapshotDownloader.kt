@@ -15,6 +15,20 @@ data class AndroidDownloadedGraphSnapshot(
 class AndroidGraphSnapshotException(message: String, cause: Throwable? = null) :
     Exception(message, cause)
 
+internal fun resolveSnapshotStreamUrl(metadataUrl: URL, advertisedUrl: String): URL {
+    val url = URL(metadataUrl, advertisedUrl)
+    if (metadataUrl.protocol != "https" || url.protocol != "http") return url
+
+    // A self-hosted Node server behind a TLS proxy can advertise its HTTP origin.
+    // The graph's standard stream is served beside its metadata on the proxy.
+    val stream = URL(metadataUrl, "stream")
+    val path = url.path
+    return if (path.endsWith("/snapshot/stream") &&
+        (path == stream.path || (path.startsWith("/sync/") && stream.path.endsWith(path)))) {
+        URL(metadataUrl, "stream" + url.query?.let { "?$it" }.orEmpty())
+    } else url
+}
+
 class AndroidGraphSnapshotDownloader {
     suspend fun download(
         baseUrl: String,
@@ -30,7 +44,7 @@ class AndroidGraphSnapshotDownloader {
         val metadataBody = readText(metadataUrl, accessToken, "Snapshot metadata")
         val resolved = shared(callCore, "resolveSnapshotDownload", JSONObject()
             .put("metadataBody", metadataBody))
-        val snapshotUrl = URL(metadataUrl, resolved.getString("downloadURL"))
+        val snapshotUrl = resolveSnapshotStreamUrl(metadataUrl, resolved.getString("downloadURL"))
 
         val directory = File(workingDirectory)
         if (!directory.isDirectory && !directory.mkdirs()) {
