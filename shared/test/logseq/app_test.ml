@@ -425,6 +425,7 @@ let flashcard uuid question_hidden question_revealed answer_rows has_cloze =
     Model.flashcard_uuid = uuid;
     question_hidden;
     question_revealed;
+    card_categories = [];
     answer_rows;
     has_cloze;
   }

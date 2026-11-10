@@ -61,22 +61,18 @@ let cards ~due_only db now uuid =
       | definition :: _ -> Option.value ~default:"" (G.entity_title (fun s -> Ok s) db definition)
       | [] -> "" in
     if String.trim source = "" then Ok (load db now)
-    else try
-      let opts : Dev_query.Db_query_dsl.exec_opts = {
-        opt_cards = true; opt_block_attrs = Some "[:db/id]"; opt_current_page_title = None;
-        opt_today_day = Dev_query.Time.local_date_of_journal_day (Dev_query.Time.local_tz ())
-          (Cache_model.journal_day_for_ms now)} in
-      match Dev_query.Db_query_dsl.execute_query db source opts with
+    else
+      match Query_block.render ~now ~remove_children_by_default:false db uuid with
+      | Some {error = Some message; _} -> Error message
       | None -> Error "This card group has an invalid query"
-      | Some rows ->
-        let matched = Hashtbl.create (List.length rows) in
+      | Some result ->
+        let matched = Hashtbl.create (List.length result.rows) in
         List.iter (function
-          | [D.Result_entity eid] -> Hashtbl.replace matched eid ()
-          | [D.Result_pull entity] -> Hashtbl.replace matched entity.D.pulled_id ()
-          | _ -> ()) rows;
+          | Query_block.Block block ->
+            Option.iter (fun eid -> Hashtbl.replace matched eid ())
+              (D.entid db "block/uuid" (D.Uuid block.uuid))
+          | Query_block.Cells _ -> ()) result.rows;
         Ok (load ~include_eid:(Hashtbl.mem matched) db now)
-    with Invalid_argument message | Failure message -> Error message
-       | _ -> Error "This card group's query could not be evaluated"
 
 let due_cards db now uuid = cards ~due_only:true db now uuid
 let all_cards db now uuid = cards ~due_only:false db now uuid

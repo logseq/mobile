@@ -231,6 +231,7 @@ let flashcard input =
       { Model.flashcard_uuid;
         question_hidden = block_markup_text false block;
         question_revealed = block_markup_text true block;
+        card_categories = sidebar_pages_member "references" block;
         answer_rows; has_cloze }
   | None -> None
 
