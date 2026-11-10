@@ -7,9 +7,28 @@ import org.junit.Test
 import org.json.JSONObject
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
+import java.net.URL
 import java.nio.file.Files
 
 class AndroidGraphSnapshotDownloaderTest {
+    @Test
+    fun `downloads the standard stream through the configured HTTPS proxy`() {
+        val metadata = URL("https://sync.example.test:8443/logseq/sync/graph/snapshot/download")
+        val url = resolveSnapshotStreamUrl(metadata, "http://backend:8787/sync/graph/snapshot/stream?cursor=42")
+        assertEquals("https://sync.example.test:8443/logseq/sync/graph/snapshot/stream?cursor=42", url.toString())
+    }
+
+    @Test
+    fun `respects other download links and direct HTTP servers`() {
+        val metadata = URL("https://sync.example.test/sync/graph/snapshot/download")
+        val otherGraph = "http://backend:8787/sync/other/snapshot/stream"
+        val signedDownload = "https://storage.example.test/graph.snapshot?signature=abc"
+        val directStream = "http://localhost:8787/sync/graph/snapshot/stream"
+        assertEquals(otherGraph, resolveSnapshotStreamUrl(metadata, otherGraph).toString())
+        assertEquals(signedDownload, resolveSnapshotStreamUrl(metadata, signedDownload).toString())
+        assertEquals(directStream, resolveSnapshotStreamUrl(URL("http://localhost:8787/sync/graph/snapshot/download"), directStream).toString())
+    }
+
     @Test
     fun `downloads the shared snapshot plan and preserves binary bytes`() = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
