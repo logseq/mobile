@@ -270,7 +270,8 @@ let flashcard_screen model_source send : t =
       flashcard_group_controls model_source send;
       if_
         ~test:(Signal.map View_base.flashcards_empty_ model_source)
-        (column ~accessibility_identifier:"layout.flashcards.empty"
+        (fun context parent ->
+          let content = column ~accessibility_identifier:"layout.flashcards.empty"
            ~grow:1.0 ~main:`center ~cross:`center ~gap:10 ~padding:32
            [
              if_ ~test:(Signal.map review_completed model_source)
@@ -299,7 +300,10 @@ let flashcard_screen model_source send : t =
                           List.exists (function Model.FlashcardDeckEffect _ -> true | _ -> false)
                             (model.pending_effects @ model.in_flight_effects)) model_source)
                         ~on_press:(fun _ -> deck_request model_source send ["action", `String "practice"]) [])]);
-           ]);
+           ] in
+          (if Lui_ui.host context = Lui_protocol.KotlinHost then
+             row ~grow:1.0 ~main:`space_between [content]
+           else content) context parent);
       if_
         ~test:(Signal.map View_base.flashcards_present_ model_source)
         (flashcard_review_content model_source send);

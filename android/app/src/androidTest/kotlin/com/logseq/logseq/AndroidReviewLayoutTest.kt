@@ -48,7 +48,7 @@ class AndroidReviewLayoutTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun app(error: String? = null) {
+    private fun app(error: String? = null, projection: JSONObject? = null) {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = { events.add(it); dispatchLuiEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
@@ -59,6 +59,7 @@ class AndroidReviewLayoutTest {
         val result = JSONObject().put("graphName", "Review graph").put("selectedGraphId", "review-layout")
             .put("isGraphUnlocked", true).put("syncConnected", false).put("outlinerRows", JSONArray())
         if (error != null) result.put("pendingSyncError", error)
+        projection?.keys()?.forEach { result.put(it, projection.get(it)) }
         filter.applyJson(native.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
@@ -78,6 +79,41 @@ class AndroidReviewLayoutTest {
         ui.onNodeWithTag("button.sidebar").performClick()
         ui.onNodeWithTag("link.sidebar.graphs").performClick()
         ui.onNodeWithTag("button.graph-add").performClick()
+    }
+
+    @Test fun completedFlashcardReviewIsCenteredAcrossTheScreen() {
+        app(projection = JSONObject().put("flashcardDecks",
+            JSONObject().put("completed", true).put("totalCards", 1)))
+        ui.onNodeWithTag("button.sidebar").performClick()
+        ui.onNodeWithTag("link.sidebar.flashcards").performClick()
+        val screen = ui.onNodeWithTag("screen.flashcards").fetchSemanticsNode().boundsInRoot
+        val complete = ui.onNodeWithTag("flashcards.complete").fetchSemanticsNode().boundsInRoot
+        assertEquals("The completion state is centered on the screen", screen.center.x, complete.center.x, 1f)
+    }
+
+    @Test fun graphUnlockFormFillsTheSheetWithEvenInsets() {
+        app(projection = JSONObject().put("isGraphEncrypted", true).put("isGraphUnlocked", false))
+        val sheet = ui.onNodeWithTag("sheet.graph-unlock").getUnclippedBoundsInRoot()
+        val field = ui.onNodeWithTag("field.graph-password").getUnclippedBoundsInRoot()
+        assertTrue("The password field has a leading inset", field.left - sheet.left >= 20.dp)
+        assertTrue("The password field fills the sheet", sheet.right - field.right <= 32.dp)
+        ui.onNodeWithTag("field.graph-password").performClick().performTextInput("local-layout-check")
+        ui.onNodeWithTag("button.graph-unlock.cancel").assertIsDisplayed()
+        ui.onNodeWithTag("button.graph-unlock").assertIsDisplayed()
+    }
+
+    @Test fun sidebarFavoritesAndRecentPagesUseCompactRows() {
+        fun pages(prefix: String) = JSONArray().apply {
+            repeat(3) { put(JSONObject().put("uuid", "$prefix-$it").put("title", "$prefix $it")) }
+        }
+        app(projection = JSONObject().put("favorites", pages("favorite")).put("recentPages", pages("recent")))
+        ui.onNodeWithTag("button.sidebar").performClick()
+        for (prefix in listOf("favorite", "recent")) {
+            val first = ui.onNodeWithTag("link.sidebar.page.$prefix-0").getUnclippedBoundsInRoot()
+            val second = ui.onNodeWithTag("link.sidebar.page.$prefix-1").getUnclippedBoundsInRoot()
+            assertTrue("Adjacent $prefix rows stay compact", second.top - first.top <= 50.dp)
+            assertTrue("Page rows retain a 48 dp height", first.bottom - first.top >= 48.dp)
+        }
     }
 
     @Test fun graphActionsAreVisibleOnFirstOpen() {

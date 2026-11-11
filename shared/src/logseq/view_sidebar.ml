@@ -12,6 +12,8 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
   let item custom =
     View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
       (list_item ~corner_radius:10
+        ?height:(if Lui_ui.host context = KotlinHost then Some 48 else None)
+        ?padding_vertical:(if Lui_ui.host context = KotlinHost then Some 0 else None)
         ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
         ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
         ?icon:(if custom then None else Some (`app "document"))
