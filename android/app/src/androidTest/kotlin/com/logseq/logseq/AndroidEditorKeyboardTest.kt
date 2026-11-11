@@ -133,6 +133,25 @@ class AndroidEditorKeyboardTest {
         } finally { ui.mainClock.autoAdvance = true }
     }
 
+    @Test fun tappingAnotherBlockAppliesItsTextAndCaretInOneFrame() {
+        render("Source block")
+        ui.mainClock.autoAdvance = false
+        try {
+            ui.runOnUiThread {
+                val ops = JSONArray()
+                mapOf("block-id" to "target-block", "title" to "Target 中文 📝",
+                    "caret-utf16-offset" to 7).forEach { (name, value) ->
+                    ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2)
+                        .put("property", name).put("value", value))
+                }
+                assertTrue(backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+            }
+            ui.mainClock.advanceTimeByFrame()
+            ui.onNodeWithTag("field.outliner.block.target-block").assertIsFocused().assertTextEquals("Target 中文 📝")
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(7)))
+        } finally { ui.mainClock.autoAdvance = true }
+    }
+
     @Test fun softwareKeyboardNextCreatesOneBlockWithoutCommittingANewline() {
         val editor = render("")
         assertEquals(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,

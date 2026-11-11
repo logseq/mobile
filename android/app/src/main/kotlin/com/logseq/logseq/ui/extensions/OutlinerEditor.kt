@@ -203,9 +203,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         }
     }
 
-    // Model → field sync (didUpdateWidget equivalent).
-    LaunchedEffect(blockId, modelTitle, modelCaret, selectionRevision) {
-        if (awaitingHandoff) return@LaunchedEffect
+    // A reused editor must show its new block before this frame is drawn.
+    if (!awaitingHandoff) {
         val blockChanged = blockId != rememberedBlockId
         rememberedBlockId = blockId
         val selectionRequested = selectionRevision != rememberedSelectionRevision
@@ -215,19 +214,17 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val acknowledged = if (blockChanged) -1 else publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
-            // An older echo must not replace newer typing or active IME composition.
-            if (!selectionRequested || value.text != modelTitle || value.composition != null) {
-                return@LaunchedEffect
-            }
         }
+        // An older echo must not replace newer typing or active IME composition.
+        val preserveNativeInput = acknowledged >= 0 &&
+            (!selectionRequested || value.text != modelTitle || value.composition != null)
         // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
-        if (blockChanged || selectionRequested || titleChanged) {
+        if (!preserveNativeInput && (blockChanged || selectionRequested || titleChanged)) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++
             val offset = modelCaret.coerceIn(0, modelTitle.length)
-            value = TextFieldValue(modelTitle, TextRange(offset))
-            observedValue = value
+            applyNativeValue(TextFieldValue(modelTitle, TextRange(offset)))
             applyingModel = false
         }
     }
