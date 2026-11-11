@@ -113,7 +113,8 @@ let sheet source send : t =
             (row ~cross:`center ~corner_radius:28
               ~background_signal:(Signal.map (fun enabled -> if enabled then "auth-action" else "auth-disabled") can_submit)
               [button ~variant:`ghost ~min_height:54 ~size:`lg ~grow:1.0
-                ~accessibility_identifier:"button.auth.submit" ~text_alignment:`center
+                ~accessibility_identifier:"button.auth.submit"
+                ?text_alignment:(if Lui_ui.host context = KotlinHost then None else Some `center)
                 ~disabled_signal:(Signal.map not can_submit)
                 ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source)
                 ~on_press:(action send Auth_flow.Submit) [

@@ -2,6 +2,7 @@ package com.logseq.logseq
 
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextRange
@@ -68,8 +69,10 @@ class AndroidEditorKeyboardTest {
         editor.performKeyInput { pressKey(Key.Enter) }
         acknowledge("keyboard-block", "Hello ", 6)
         editor.assertTextEquals("Hello 中文 📝")
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(6)))
         acknowledge("next-block", "中文 📝", 0)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("中文 📝")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(0)))
     }
 
     @Test fun typingDuringSplitIsMergedAtTheNewCaretAndPublishedForTheNewBlock() {
@@ -137,6 +140,7 @@ class AndroidEditorKeyboardTest {
         editor.performTextInput("Native keyboard")
         editor.performImeAction()
         editor.assertTextEquals("Native keyboard")
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange("Native keyboard".length)))
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
 

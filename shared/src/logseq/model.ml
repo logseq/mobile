@@ -1453,16 +1453,20 @@ let node_permission (current : logseq_model) uuid permission =
   | _ -> true
 
 let active_delete_target (current : logseq_model) =
-  let routes = if current.search_open then
-      app_node_routes_from current current.search_navigation_path 0
-    else app_node_routes current in
-  match last_opt routes with
-  | Some route when route.node_uuid <> route.node_page_uuid ->
-    if current.applied_server_t <> None && node_permission current route.node_uuid "canDelete" then
-      Some (BlockToDelete {uuid = route.node_uuid; title = route.node_title})
-    else None
-  | _ -> Option.bind (active_page current) (fun page ->
+  let path = if current.search_open then current.search_navigation_path else current.app_navigation_path in
+  match last_opt path with
+  | None -> Option.bind (active_page current) (fun page ->
     if node_permission current page.uuid "canDelete" then Some (PageToDelete page) else None)
+  | Some requested ->
+    let uuid = navigation_route_uuid requested in
+    (* The displayed stack can lag behind a new route request. *)
+    match last_opt (app_node_routes_from current path 0) with
+    | Some route when route.node_uuid = uuid && node_permission current uuid "canDelete" ->
+      let node = { uuid; title = route.node_title } in
+      if uuid = route.node_page_uuid then Some (PageToDelete node)
+      else if current.applied_server_t <> None then Some (BlockToDelete node)
+      else None
+    | _ -> None
 let node_can_set_tags current uuid = node_permission current uuid "canAdd"
 
 let page_is_favorite_ (current : logseq_model) uuid =

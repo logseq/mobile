@@ -9117,15 +9117,26 @@ let page_delete_dialog_exposes_stable_material_actions () =
 let zoomed_journal_block_has_a_block_delete_action () =
   let app = App.create (kotlin_backend ()) in
   let uuid = "journal-child" and journal = "journal-page" in
+  let page_route = node_projection journal journal "Journal" [] [] in
+  let block_route = node_projection uuid journal "Journal entry" [] [] in
   let snapshot = { (empty_core_projection ()) with
     selected_graph_id = Some "work"; applied_server_t = Some 42;
-    node_routes = [node_projection uuid journal "Journal entry" [] []] } in
+    sidebar = { (empty_sidebar_projection ()) with selected_page = Some { uuid = journal; title = "Journal" } };
+    node_routes = [page_route] } in
   start app;
-  send app (Model.RequestAppNode uuid);
+  send app (Model.RequestAppNode journal);
   send app (Model.ApplyCoreSnapshot snapshot);
   flush app;
   let runtime = Lui_app.runtime app in
   let find = descendant_with_identifier runtime (Lui_app.root_node app) in
+  check ~msg:"the journal has a page delete action before opening the block"
+    (find "button.page.delete" <> -1);
+  send app (Model.RequestAppNode uuid);
+  flush app;
+  check_eq ~msg:"a pending block route cannot delete the journal"
+    (find "button.page.delete") (-1);
+  send app (Model.ApplyCoreSnapshot { snapshot with node_routes = [page_route; block_route] });
+  flush app;
   let delete = find "button.block.delete" in
   check ~msg:"the zoomed block has a delete action" (delete <> -1);
   check_eq ~msg:"the journal page is never the target of a zoomed block action"
@@ -9140,11 +9151,11 @@ let zoomed_journal_block_has_a_block_delete_action () =
       check_eq cursor 42;
       Some id
     | _ -> None) (App.model app).pending_effects |> Option.get in
-  check_eq (App.model app).app_navigation_path [Model.NodeRoute uuid];
+  check_eq (App.model app).app_navigation_path [Model.NodeRoute journal; Model.NodeRoute uuid];
   send app (Model.DequeueEffect delete_id);
   send app (Model.ResolveEffect (delete_id, false, "Stale cursor")); flush app;
   check_eq ~msg:"a rejected deletion leaves the block open"
-    (App.model app).app_navigation_path [Model.NodeRoute uuid];
+    (App.model app).app_navigation_path [Model.NodeRoute journal; Model.NodeRoute uuid];
   dispatch app (Lui_protocol.Press (find "button.block.delete")); flush app;
   dispatch app (Lui_protocol.Press (find "button.page-delete.confirm")); flush app;
   let retry_id = List.find_map (function
@@ -9153,7 +9164,7 @@ let zoomed_journal_block_has_a_block_delete_action () =
   send app (Model.DequeueEffect retry_id);
   send app (Model.ResolveEffect (retry_id, true, "")); flush app;
   check_eq ~msg:"a successful block deletion returns to the journal"
-    (App.model app).app_navigation_path []
+    (App.model app).app_navigation_path [Model.NodeRoute journal]
 
 
 let connection_menu_matches_active_page_actions () =
