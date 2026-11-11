@@ -16,6 +16,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.logseq.runtime.LogseqNativeBridge
@@ -77,6 +83,29 @@ class AndroidEditorCompletionTest {
         ui.onNodeWithTag("outliner.code-editor.editing").assertIsDisplayed()
         ui.onNodeWithTag("field.outliner.block.editing").performTextInput("\nvalue + 1")
         ui.onNodeWithTag("outliner.code-editor.editing").assertIsDisplayed()
+    }
+
+    @Test fun codeLanguageLabelsFitInsideACompactHeader() {
+        start("const answer = 42", null)
+        for (language in listOf("", "typescript", "custom-language-name")) {
+            val response = JSONObject(snapshot(null, "const answer = 42"))
+            response.getJSONObject("result").getJSONArray("outlinerRows").getJSONObject(0)
+                .getJSONObject("block").put("displayType", "code")
+                .put("markup", org.json.JSONArray().put(JSONObject()
+                    .put("type", "codeBlock").put("style", language).put("text", "const answer = 42")))
+            ui.runOnIdle { bridge.applySnapshot(response.toString()).takeIf { it.isNotEmpty() }?.let(filter::applyJson) }
+            val label = ui.onNodeWithText(if (language.isEmpty()) "Plain text" else language, useUnmergedTree = true)
+            label.assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertTrue("The whole language name fits horizontally", !layout.didOverflowWidth)
+            assertTrue("The language name fits vertically", !layout.didOverflowHeight)
+            val header = ui.onNodeWithTag("outliner.code.language-header.editing").getUnclippedBoundsInRoot()
+            assertTrue("The header stays compact", header.bottom - header.top <= 32.dp)
+        }
+        ui.onNodeWithTag("button.outliner.code-language.editing").performClick()
+        ui.onNodeWithTag("button.outliner.code-language.option.python").performScrollTo().assertIsDisplayed().performClick()
     }
 
     @Test fun commandsReferencesAndTagsUseOneNativePanel() {

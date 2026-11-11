@@ -352,12 +352,11 @@ let outliner_priority_control model_source row_source send : t =
               ~accessibility_identifier:"button.block-task-priority-clear" ~on_press:(fun _ -> choose "") []
           ]]))]
 
-let code_language_control model_source row_source send : t =
-  let current_row = Signal.sample row_source in
-  if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
-    (row ~main:`start ~padding_horizontal:12 ~padding_vertical:2
-      ~accessibility_identifier:("outliner.code.language-header." ^ current_row.row_uuid) [
-      box ~height:28 [menu_trigger ~style_class:"caption" ~foreground:"muted-foreground" ~text_signal:(Signal.map (fun row -> let value = code_language row in if value = "" then "Plain text" else value) row_source)
+let code_language_control context model_source row_source send : t =
+  let current_row = (Signal.sample row_source : Model.outline_row) in
+  let trigger =
+    menu_trigger ~style_class:"caption" ~foreground:"muted-foreground"
+        ~text_signal:(Signal.map (fun row -> let value = code_language row in if value = "" then "Plain text" else value) row_source)
         ~label:(View_base.tr (Signal.sample model_source) "Code language")
         ~accessibility_identifier:("button.outliner.code-language." ^ current_row.row_uuid)
         [dropdown_menu (List.map (fun (value, label) ->
@@ -370,7 +369,14 @@ let code_language_control model_source row_source send : t =
            "css", "CSS"; "go", "Go"; "html", "HTML"; "java", "Java"; "javascript", "JavaScript";
            "json", "JSON"; "kotlin", "Kotlin"; "markdown", "Markdown"; "ocaml", "OCaml";
            "python", "Python"; "ruby", "Ruby"; "rust", "Rust"; "sql", "SQL"; "swift", "Swift";
-           "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] ] ])
+           "typescript", "TypeScript"; "yaml", "YAML"; "calc", "Calculator"]) ] in
+  let trigger = if Lui_ui.host context = KotlinHost then
+      View_base.with_string_prop TextAlignment "start" trigger
+    else trigger in
+  if_ ~test:(Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source)
+    (row ~main:`start ~padding_horizontal:12 ~padding_vertical:2
+      ~accessibility_identifier:("outliner.code.language-header." ^ current_row.row_uuid)
+      [box ~height:28 [trigger]])
 
 let code_block_content model_source retained_source row_source send : t =
  fun context parent ->
@@ -402,7 +408,7 @@ let code_block_content model_source retained_source row_source send : t =
     ~background_signal:(Signal.map (fun retained ->
       if View_rows.retained_row_selected_ retained then "#00000000" else "code-container") retained_source)
     ~accessibility_identifier:("outliner.code." ^ current_row.Model.row_uuid) [
-      code_language_control model_source row_source send;
+      code_language_control context model_source row_source send;
       dyn (fun calculator -> if not calculator then input else
         row ~gap:0 ~cross:`start
           ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
