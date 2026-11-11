@@ -9,11 +9,15 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -116,6 +120,11 @@ class AndroidOutlinerToolbarTest {
         }
         capture("editor-overflow")
         reference.assertIsDisplayed()
+        ui.onNode(
+            hasContentDescription("Page reference") and
+                hasAnyAncestor(hasTestTag("button.outliner.editor.pageReference")),
+            useUnmergedTree = true,
+        ).assertHeightIsEqualTo(24.dp)
         assertEquals(before, hide.fetchSemanticsNode().boundsInRoot)
         ui.runOnIdle { events.clear() }
         hide.performClick()

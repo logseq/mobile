@@ -104,6 +104,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var rememberedBlockId by remember { mutableStateOf(blockId) }
     var awaitingHandoff by remember { mutableStateOf(false) }
+    var retainedReturnTitle by remember { mutableStateOf<String?>(null) }
     // Each segment buffers native edits after a structural edit until acknowledgement.
     val handoffSegments = remember { ArrayDeque<PendingEditorInput>() }
     val queuedHandoffs = remember { ArrayDeque<EditorHandoff>() }
@@ -119,6 +120,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val pasteKey = remember { Any() }
     val publishedTitles = remember { mutableStateListOf<String>() }
     var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
+
+    fun applyNativeValue(next: TextFieldValue) {
+        // Snapshot observers can run during the edit. Mark it before writing.
+        observedValue = next
+        value = next
+    }
 
     fun capturePendingInput(incoming: TextFieldValue) {
         if (!awaitingHandoff) return
@@ -143,20 +150,21 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
         awaitingHandoff = handoffSegments.isNotEmpty()
+        retainedReturnTitle = null
         if (awaitingHandoff) {
             handoffRevision = selectionRevision
             publishedTitles.add(merged)
             handoffEvent = when (val queued = queuedHandoffs.removeFirst()) {
-                is EditorHandoff.Return -> EditorHandoff.Return(merged, caret)
+                is EditorHandoff.Return -> {
+                    retainedReturnTitle = merged
+                    EditorHandoff.Return(merged, caret)
+                }
                 is EditorHandoff.Paste -> EditorHandoff.Paste(
                     rebasePastePayload(queued.payload, merged),
                 )
             }
         } else {
-            if (value.text != merged || value.selection != selection) {
-                value = TextFieldValue(merged, selection)
-            }
-            observedValue = value
+            applyNativeValue(TextFieldValue(merged, selection))
             if (merged != modelTitle) debounceSeq++
         }
     }
@@ -234,9 +242,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     fun submitReturn(title: String, caret: Int) {
         capturePendingInput(TextFieldValue(title, TextRange(caret)))
+        if (!awaitingHandoff) retainedReturnTitle = title
         // Rebase the native field before later IME commits can target the old block.
-        value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
-        observedValue = value
+        applyNativeValue(TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0)))
         if (awaitingHandoff) {
             queuedHandoffs.addLast(EditorHandoff.Return(title, caret))
             handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
@@ -337,8 +345,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 val submitted = title.removeRange(splitAt, splitAt + 1)
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
                 applyingModel = true
-                value = TextFieldValue(submitted, TextRange(submittedCaret))
-                observedValue = value
+                applyNativeValue(TextFieldValue(submitted, TextRange(submittedCaret)))
                 applyingModel = false
                 submitReturn(submitted, submittedCaret)
             } else {
@@ -387,12 +394,22 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
-    val highlighted = if (code) rememberHighlightedCode(value.text, codeLanguage) else value.annotatedString
+    val highlighted = if (code) rememberHighlightedCode(retainedReturnTitle ?: value.text, codeLanguage) else null
     val highlightedState = rememberUpdatedState(highlighted)
     val outputTransformation = remember {
         OutputTransformation {
+            // The input buffer already belongs to the next block. Keep the
+            // source row's text visible until the shared outliner moves the editor.
+            retainedReturnTitle?.let { title ->
+                val input = asCharSequence().toString()
+                if (title.endsWith(input)) {
+                    replace(0, 0, title.dropLast(input.length))
+                } else {
+                    replace(0, length, title)
+                }
+            }
             val styled = highlightedState.value
-            if (styled.text == asCharSequence().toString()) {
+            if (styled != null && styled.text == asCharSequence().toString()) {
                 styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
             }
         }
@@ -434,8 +451,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     } else {
                         debounceSeq++
                     }
-                    value = next
-                    observedValue = value
+                    applyNativeValue(next)
                     true
                 } else if (!multiline && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                     // Handle hardware Enter before the IME can batch several keys into pasted text.

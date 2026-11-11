@@ -135,6 +135,30 @@ private val copyReference: ImageVector = ImageVector.Builder(
     lineTo(15f, 13f)
 }.build()
 
+private val pageReference: ImageVector = ImageVector.Builder(
+    name = "PageReference",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).path(
+    fill = null,
+    stroke = SolidColor(Color.Black),
+    strokeLineWidth = 1.8f,
+    strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round,
+) {
+    fun bracket(edge: Float, tip: Float) {
+        moveTo(tip, 4f)
+        lineTo(edge, 4f)
+        lineTo(edge, 20f)
+        lineTo(tip, 20f)
+    }
+    bracket(2.5f, 5.5f)
+    bracket(8.5f, 11f)
+    bracket(15.5f, 13f)
+    bracket(21.5f, 18.5f)
+}.build()
+
 // App icon vocabulary (the former logseq_icons.dart) mapped onto
 // Material Symbols vectors — same symbolic names the core emits, matched
 // to the SF Symbols / asset meanings the iOS renderer uses.
@@ -204,6 +228,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "toolbar-move-down" to Icons.Filled.ArrowDownward,
     "toolbar-move-up" to Icons.Filled.ArrowUpward,
     "toolbar-outdent" to Icons.AutoMirrored.Filled.ArrowBack,
+    "toolbar-page-reference" to pageReference,
     "toolbar-tag" to Icons.Outlined.Tag,
     "toolbar-task" to Icons.Outlined.CheckCircle,
     "toolbar-unselect" to Icons.Filled.Clear,

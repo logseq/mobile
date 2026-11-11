@@ -6,8 +6,11 @@ import android.view.MotionEvent
 import android.view.inspector.WindowInspector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
@@ -47,7 +50,7 @@ class AndroidComposerMenuTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun composer() {
+    private fun composer(scheme: ColorScheme = LogseqTheme.lightScheme) {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(
             onEvent = { dispatchLuiEvent(it, native) },
@@ -62,14 +65,14 @@ class AndroidComposerMenuTest {
         filter.applyJson(native.applySnapshot("""{"ok":true,"result":{
             "graphName":"Composer test","selectedGraphId":"composer-test",
             "isGraphUnlocked":true,"outlinerRows":[]}}"""))
-        content(backend, root)
+        content(backend, root, scheme)
         ui.onNodeWithTag("button.composer.expand").performClick()
         ui.onNodeWithTag("field.composer").performTextInput("Unsent draft 中文")
     }
 
-    private fun content(backend: LuiBackend, root: Long) {
+    private fun content(backend: LuiBackend, root: Long, scheme: ColorScheme = LogseqTheme.lightScheme) {
         ui.setContent {
-            MaterialTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
+            MaterialTheme(colorScheme = scheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
             }
         }
@@ -137,6 +140,25 @@ class AndroidComposerMenuTest {
         ui.onNodeWithTag("button.task-status").performClick()
         ui.onNodeWithText("Todo")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+    }
+
+    @Test fun selectedMenuItemUsesTheLightSelectionPalette() {
+        assertSelectedMenuColor(LogseqTheme.lightScheme)
+    }
+
+    @Test fun selectedMenuItemUsesTheDarkSelectionPalette() {
+        assertSelectedMenuColor(LogseqTheme.darkScheme)
+    }
+
+    private fun assertSelectedMenuColor(scheme: ColorScheme) {
+        composer(scheme)
+        val status = ui.onNodeWithTag("button.task-status")
+        val todo = ui.onNodeWithText("Todo")
+        status.performClick()
+        todo.performClick()
+        status.performClick()
+        val pixels = todo.assertIsSelected().captureToImage().toPixelMap()
+        assertEquals(scheme.secondaryContainer, pixels[pixels.width * 9 / 10, pixels.height / 2])
     }
 
     @Test fun tappingOutsideTheComposerClosesItAndPreservesTheDraft() {

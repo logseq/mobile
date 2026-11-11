@@ -9789,12 +9789,12 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
          "icon")
     buttons;
   let page_reference = List.nth buttons 9 in
-  check_eq ~msg:"page reference does not use an unrelated code glyph"
+  check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
-    "<missing>";
-  check_eq ~msg:"page reference matches the iOS toolbar symbol"
+    "app:toolbar-page-reference";
+  check_eq ~msg:"page reference renders as an icon button"
     (property_string renderer page_reference Lui_protocol.TextValue)
-    "[[]]";
+    "<missing>";
   dispatch application (Lui_protocol.Press (List.nth buttons 10));
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"

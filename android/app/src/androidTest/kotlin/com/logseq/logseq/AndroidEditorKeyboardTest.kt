@@ -77,6 +77,7 @@ class AndroidEditorKeyboardTest {
         editor.performTextInputSelection(TextRange(6))
         editor.performKeyInput { pressKey(Key.Enter) }
         editor.performTextInput("新📝")
+        editor.assertTextEquals("Hello 中文 📝")
         acknowledge("keyboard-block", "Hello ", 6)
         acknowledge("next-block", "中文 📝", 0)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("新📝中文 📝")
@@ -130,9 +131,10 @@ class AndroidEditorKeyboardTest {
     }
 
     @Test fun softwareKeyboardNextCreatesOneBlockWithoutCommittingANewline() {
-        val editor = render("Native keyboard")
+        val editor = render("")
         assertEquals(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,
             editorInfo().imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION)
+        editor.performTextInput("Native keyboard")
         editor.performImeAction()
         editor.assertTextEquals("Native keyboard")
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
