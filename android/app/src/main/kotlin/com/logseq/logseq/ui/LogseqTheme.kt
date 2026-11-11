@@ -58,6 +58,12 @@ internal object LogseqTheme {
     val lightSurface = Color(0xfff8f9ff)
     val darkSurface = Color(0xff101318)
 
+    // Material Expressive menus read the tertiary container roles for selection.
+    private fun ColorScheme.withMenuSelectionColors() = copy(
+        tertiaryContainer = secondaryContainer,
+        onTertiaryContainer = onSecondaryContainer,
+    )
+
     val lightScheme = lightColorScheme(
         primary = accent,
         onPrimary = Color.White,
@@ -75,7 +81,7 @@ internal object LogseqTheme {
         surfaceContainer = Color(0xffeceef4),
         surfaceContainerHigh = Color(0xffe6e8ef),
         surfaceContainerHighest = Color(0xffe0e2ea),
-    )
+    ).withMenuSelectionColors()
 
     val darkScheme = darkColorScheme(
         primary = Color(0xff9bd3d4),
@@ -92,7 +98,7 @@ internal object LogseqTheme {
         surfaceContainer = Color(0xff181c22),
         surfaceContainerHigh = Color(0xff1d2229),
         surfaceContainerHighest = Color(0xff22272f),
-    )
+    ).withMenuSelectionColors()
 
     fun semanticColors(scheme: ColorScheme): Map<String, Color> = mapOf(
         "background" to scheme.background,

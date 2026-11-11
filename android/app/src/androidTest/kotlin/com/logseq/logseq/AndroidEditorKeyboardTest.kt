@@ -2,6 +2,7 @@ package com.logseq.logseq
 
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextRange
@@ -68,8 +69,10 @@ class AndroidEditorKeyboardTest {
         editor.performKeyInput { pressKey(Key.Enter) }
         acknowledge("keyboard-block", "Hello ", 6)
         editor.assertTextEquals("Hello 中文 📝")
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(6)))
         acknowledge("next-block", "中文 📝", 0)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("中文 📝")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(0)))
     }
 
     @Test fun typingDuringSplitIsMergedAtTheNewCaretAndPublishedForTheNewBlock() {
@@ -77,6 +80,7 @@ class AndroidEditorKeyboardTest {
         editor.performTextInputSelection(TextRange(6))
         editor.performKeyInput { pressKey(Key.Enter) }
         editor.performTextInput("新📝")
+        editor.assertTextEquals("Hello 中文 📝")
         acknowledge("keyboard-block", "Hello ", 6)
         acknowledge("next-block", "中文 📝", 0)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("新📝中文 📝")
@@ -129,12 +133,33 @@ class AndroidEditorKeyboardTest {
         } finally { ui.mainClock.autoAdvance = true }
     }
 
+    @Test fun tappingAnotherBlockAppliesItsTextAndCaretInOneFrame() {
+        render("Source block")
+        ui.mainClock.autoAdvance = false
+        try {
+            ui.runOnUiThread {
+                val ops = JSONArray()
+                mapOf("block-id" to "target-block", "title" to "Target 中文 📝",
+                    "caret-utf16-offset" to 7).forEach { (name, value) ->
+                    ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2)
+                        .put("property", name).put("value", value))
+                }
+                assertTrue(backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+            }
+            ui.mainClock.advanceTimeByFrame()
+            ui.onNodeWithTag("field.outliner.block.target-block").assertIsFocused().assertTextEquals("Target 中文 📝")
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(7)))
+        } finally { ui.mainClock.autoAdvance = true }
+    }
+
     @Test fun softwareKeyboardNextCreatesOneBlockWithoutCommittingANewline() {
-        val editor = render("Native keyboard")
+        val editor = render("")
         assertEquals(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,
             editorInfo().imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION)
+        editor.performTextInput("Native keyboard")
         editor.performImeAction()
         editor.assertTextEquals("Native keyboard")
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange("Native keyboard".length)))
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
 

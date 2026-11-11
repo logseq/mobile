@@ -1,8 +1,10 @@
 package com.logseq.logseq.ui.extensions
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +47,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.background
@@ -69,18 +70,31 @@ private sealed interface EditorHandoff {
 }
 
 private class EditorFieldValue(private val state: TextFieldState) {
+    var prefix: String = ""
+
+    fun read(): TextFieldValue {
+        val offset = prefix.length
+        fun TextRange.afterPrefix() = TextRange((start - offset).coerceAtLeast(0), (end - offset).coerceAtLeast(0))
+        return TextFieldValue(
+            state.text.drop(offset).toString(), state.selection.afterPrefix(), state.composition?.afterPrefix(),
+        )
+    }
+
     operator fun getValue(owner: Any?, property: kotlin.reflect.KProperty<*>): TextFieldValue =
-        TextFieldValue(state.text.toString(), state.selection, state.composition)
+        read()
 
     operator fun setValue(owner: Any?, property: kotlin.reflect.KProperty<*>, next: TextFieldValue) {
-        if (state.text.toString() == next.text && state.selection == next.selection) return
+        val text = prefix + next.text
+        val selection = TextRange(prefix.length + next.selection.start, prefix.length + next.selection.end)
+        if (state.text.toString() == text && state.selection == selection) return
         state.edit {
-            if (asCharSequence().toString() != next.text) replace(0, length, next.text)
-            selection = next.selection
+            if (asCharSequence().toString() != text) replace(0, length, text)
+            this.selection = selection
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun OutlinerEditor(context: LuiExtensionContext) {
     val blockId = context.string("block-id") ?: ""
@@ -104,6 +118,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
     var rememberedBlockId by remember { mutableStateOf(blockId) }
     var awaitingHandoff by remember { mutableStateOf(false) }
+    var retainedReturn by remember { mutableStateOf<EditorHandoff.Return?>(null) }
     // Each segment buffers native edits after a structural edit until acknowledgement.
     val handoffSegments = remember { ArrayDeque<PendingEditorInput>() }
     val queuedHandoffs = remember { ArrayDeque<EditorHandoff>() }
@@ -120,6 +135,17 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val publishedTitles = remember { mutableStateListOf<String>() }
     var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
 
+    fun applyNativeValue(next: TextFieldValue) {
+        // Snapshot observers can run during the edit. Mark it before writing.
+        observedValue = next
+        value = next
+    }
+
+    fun keepPrefix(prefix: String, input: TextFieldValue) {
+        nativeValue.prefix = prefix
+        applyNativeValue(input)
+    }
+
     fun capturePendingInput(incoming: TextFieldValue) {
         if (!awaitingHandoff) return
         handoffSegments.lastOrNull()?.capture(incoming.text, incoming.selection.start, incoming.selection.end)
@@ -130,7 +156,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     // new text, caret and identity together instead of waiting another frame.
     val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
     if (awaitingHandoff && value.composition == null && (blockId != rememberedBlockId || handoffAcknowledged)) {
-        capturePendingInput(value)
+        val buffered = value
+        capturePendingInput(buffered)
         handoffRevision = null
         val pending = handoffSegments.removeFirstOrNull()
         val offset = modelCaret.coerceIn(0, modelTitle.length)
@@ -143,20 +170,24 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
         awaitingHandoff = handoffSegments.isNotEmpty()
+        retainedReturn = null
         if (awaitingHandoff) {
             handoffRevision = selectionRevision
             publishedTitles.add(merged)
             handoffEvent = when (val queued = queuedHandoffs.removeFirst()) {
-                is EditorHandoff.Return -> EditorHandoff.Return(merged, caret)
-                is EditorHandoff.Paste -> EditorHandoff.Paste(
-                    rebasePastePayload(queued.payload, merged),
-                )
+                is EditorHandoff.Return -> {
+                    val nextReturn = EditorHandoff.Return(merged, caret)
+                    retainedReturn = nextReturn
+                    keepPrefix(merged.take(caret), buffered)
+                    nextReturn
+                }
+                is EditorHandoff.Paste -> {
+                    keepPrefix("", buffered)
+                    EditorHandoff.Paste(rebasePastePayload(queued.payload, merged))
+                }
             }
         } else {
-            if (value.text != merged || value.selection != selection) {
-                value = TextFieldValue(merged, selection)
-            }
-            observedValue = value
+            keepPrefix("", TextFieldValue(merged, selection))
             if (merged != modelTitle) debounceSeq++
         }
     }
@@ -172,9 +203,8 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         }
     }
 
-    // Model → field sync (didUpdateWidget equivalent).
-    LaunchedEffect(blockId, modelTitle, modelCaret, selectionRevision) {
-        if (awaitingHandoff) return@LaunchedEffect
+    // A reused editor must show its new block before this frame is drawn.
+    if (!awaitingHandoff) {
         val blockChanged = blockId != rememberedBlockId
         rememberedBlockId = blockId
         val selectionRequested = selectionRevision != rememberedSelectionRevision
@@ -184,19 +214,17 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         val acknowledged = if (blockChanged) -1 else publishedTitles.indexOf(modelTitle)
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
-            // An older echo must not replace newer typing or active IME composition.
-            if (!selectionRequested || value.text != modelTitle || value.composition != null) {
-                return@LaunchedEffect
-            }
         }
+        // An older echo must not replace newer typing or active IME composition.
+        val preserveNativeInput = acknowledged >= 0 &&
+            (!selectionRequested || value.text != modelTitle || value.composition != null)
         // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
-        if (blockChanged || selectionRequested || titleChanged) {
+        if (!preserveNativeInput && (blockChanged || selectionRequested || titleChanged)) {
             if (titleChanged) publishedTitles.clear()
             applyingModel = true
             debounceSeq++
             val offset = modelCaret.coerceIn(0, modelTitle.length)
-            value = TextFieldValue(modelTitle, TextRange(offset))
-            observedValue = value
+            applyNativeValue(TextFieldValue(modelTitle, TextRange(offset)))
             applyingModel = false
         }
     }
@@ -234,9 +262,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     fun submitReturn(title: String, caret: Int) {
         capturePendingInput(TextFieldValue(title, TextRange(caret)))
-        // Rebase the native field before later IME commits can target the old block.
-        value = TextFieldValue(title.substring(caret.coerceIn(0, title.length)), TextRange(0))
-        observedValue = value
+        val split = caret.coerceIn(0, title.length)
+        if (!awaitingHandoff) retainedReturn = EditorHandoff.Return(title, split)
+        // Keep the real caret at the split. The input for the next block starts there.
+        keepPrefix(nativeValue.prefix + title.take(split), TextFieldValue(title.drop(split), TextRange(0)))
         if (awaitingHandoff) {
             queuedHandoffs.addLast(EditorHandoff.Return(title, caret))
             handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
@@ -337,8 +366,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                 val submitted = title.removeRange(splitAt, splitAt + 1)
                 val submittedCaret = splitAt.coerceIn(0, submitted.length)
                 applyingModel = true
-                value = TextFieldValue(submitted, TextRange(submittedCaret))
-                observedValue = value
+                applyNativeValue(TextFieldValue(submitted, TextRange(submittedCaret)))
                 applyingModel = false
                 submitReturn(submitted, submittedCaret)
             } else {
@@ -369,7 +397,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
     val onNativeChange by rememberUpdatedState(::acceptValue)
     LaunchedEffect(fieldState) {
-        snapshotFlow { TextFieldValue(fieldState.text.toString(), fieldState.selection, fieldState.composition) }
+        snapshotFlow { nativeValue.read() }
             .collect { onNativeChange(it) }
     }
     val completionToolbar = remember(nativeToolbar, value, selectionRevision) {
@@ -387,18 +415,36 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
-    val highlighted = if (code) rememberHighlightedCode(value.text, codeLanguage) else value.annotatedString
+    val highlighted = if (code) rememberHighlightedCode(retainedReturn?.title ?: value.text, codeLanguage) else null
     val highlightedState = rememberUpdatedState(highlighted)
+    val inputTransformation = remember {
+        InputTransformation {
+            val boundary = nativeValue.prefix.length
+            if (boundary > 0) {
+                if ((0 until changes.changeCount).any { changes.getOriginalRange(it).min < boundary }) {
+                    revertAllChanges()
+                }
+                selection = TextRange(selection.start.coerceAtLeast(boundary), selection.end.coerceAtLeast(boundary))
+            }
+        }
+    }
     val outputTransformation = remember {
         OutputTransformation {
+            // Buffer edits to the next block while displaying the source row.
+            retainedReturn?.let { source ->
+                if (asCharSequence().toString() != source.title) {
+                    replace(source.caret, length, source.title.drop(source.caret))
+                }
+            }
             val styled = highlightedState.value
-            if (styled.text == asCharSequence().toString()) {
+            if (styled != null && styled.text == asCharSequence().toString()) {
                 styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
             }
         }
     }
     BasicTextField(
         state = fieldState,
+        inputTransformation = inputTransformation,
         outputTransformation = outputTransformation,
         modifier = Modifier
             .fillMaxWidth()
@@ -434,8 +480,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     } else {
                         debounceSeq++
                     }
-                    value = next
-                    observedValue = value
+                    applyNativeValue(next)
                     true
                 } else if (!multiline && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                     // Handle hardware Enter before the IME can batch several keys into pasted text.
@@ -452,12 +497,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     false
                 }
             },
-        textStyle = MaterialTheme.typography.bodyLarge.copy(
+        textStyle = outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface,
-            // Match iOS `.body` (17pt, ~22pt leading).
-            fontSize = 17.sp,
-            fontFamily = if (code) FontFamily.Monospace else FontFamily.Default,
-            lineHeight = 22.sp,
+            fontFamily = if (code) FontFamily.Monospace else outlinerBodyStyle.fontFamily,
         ),
         keyboardOptions = KeyboardOptions(
             capitalization = if (code) KeyboardCapitalization.None else KeyboardCapitalization.Sentences,

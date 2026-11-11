@@ -1144,15 +1144,9 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               "button.outliner.editor.audio" "audio" send;
             toolbar_button model_source (`app "toolbar-attachment") "Upload asset"
               "button.outliner.editor.attachment" "attachment" send;
-            button ~variant:`ghost ~size:`icon ~width:48 ~height:48
-              ~label:(View_base.tr (Signal.sample model_source) "Page reference")
-              ~accessibility_identifier:
-                "button.outliner.editor.pageReference"
-              ~on_press:(fun _ ->
-                ignore
-                  (send
-                     (Model.PerformOutlinerToolbarAction "pageReference")))
-              ~text:(View_base.tr (Signal.sample model_source) "[[]]") [];
+            toolbar_button model_source (`app "toolbar-page-reference")
+              (View_base.tr (Signal.sample model_source) "Page reference")
+              "button.outliner.editor.pageReference" "pageReference" send;
               ] ];
             toolbar_button model_source (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;

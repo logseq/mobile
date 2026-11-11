@@ -106,7 +106,7 @@ import org.json.JSONObject
 // android_embedded_media.dart, android_math.dart, android_cloze.dart.
 
 // Block text matches iOS `.body` (17pt, ~22pt leading).
-private val outlinerBodyStyle: androidx.compose.ui.text.TextStyle
+internal val outlinerBodyStyle: TextStyle
     @Composable get() = MaterialTheme.typography.bodyLarge.copy(
         fontSize = if (LocalPropertyValue.current) 16.sp else 17.sp,
         lineHeight = if (LocalPropertyValue.current) 21.sp else 22.sp,

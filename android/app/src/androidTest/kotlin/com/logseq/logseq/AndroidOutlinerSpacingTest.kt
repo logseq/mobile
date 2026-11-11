@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,6 +17,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -45,7 +50,7 @@ class AndroidOutlinerSpacingTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun snapshot(editing: Boolean = false, priority: Boolean = false, status: Boolean = false, dates: Boolean = false, hasChildren: Boolean = true): String {
+    private fun snapshot(editing: Boolean = false, priority: Boolean = false, status: Boolean = false, dates: Boolean = false, hasChildren: Boolean = true, editingUuid: String = "parent"): String {
         fun row(id: String, text: String, depth: Int): JSONObject {
             val block = JSONObject().put("uuid", id).put("title", text).put("pageId", "spacing-journal")
                 .put("journalTitle", journal).put("journalDay", 20261022)
@@ -61,8 +66,8 @@ class AndroidOutlinerSpacingTest {
             return JSONObject().put("depth", depth).put("hasChildren", depth == 0 && hasChildren).put("block", block)
         }
         val state = JSONObject()
-        if (editing) state.put("editing", JSONObject().put("uuid", "parent")
-            .put("title", "Parent note").put("caretUTF16Offset", 0))
+        if (editing) state.put("editing", JSONObject().put("uuid", editingUuid)
+            .put("title", if (editingUuid == "parent") "Parent note" else "Child note").put("caretUTF16Offset", 0))
         return JSONObject().put("ok", true).put("result", JSONObject()
             .put("graphName", "Spacing test").put("selectedGraphId", "spacing-test")
             .put("isGraphUnlocked", true).put("outlinerState", state)
@@ -99,6 +104,45 @@ class AndroidOutlinerSpacingTest {
     @Test fun editingKeepsTheSameCompactTextColumn() {
         render(editing = true)
         assertTrue("Editing does not reserve an empty priority gap: ${gap(true)}", gap(true) in 0.dp..4.dp)
+    }
+
+    @Test fun tappingBlockTextKeepsTheTextLayoutWhenTheEditorOpens() {
+        render()
+        val content = ui.onNodeWithTag("outliner-block-content-parent")
+        val body = ui.onNodeWithText("Parent note")
+        val before = mutableListOf<TextLayoutResult>()
+        body.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(before) }
+        val initialLeft = body.getUnclippedBoundsInRoot().left
+        content.performTouchInput { click(center) }
+        ui.runOnIdle {
+            assertTrue(events.filterIsInstance<LuiEvent.Extension>().any { it.name == "edit" })
+            filter.applyJson(requireNotNull(bridge).applySnapshot(snapshot(editing = true)))
+        }
+        val editor = ui.onNodeWithTag("field.outliner.block.parent").assertIsFocused()
+        val after = mutableListOf<TextLayoutResult>()
+        editor.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(after) }
+        assertEquals(initialLeft, editor.getUnclippedBoundsInRoot().left)
+        assertEquals(before.single().getLineRight(0), after.single().getLineRight(0), 0.5f)
+        assertEquals(before.single().firstBaseline, after.single().firstBaseline, 0.5f)
+    }
+
+    @Test fun tappingBetweenBlocksKeepsEachTitleInTheFirstEditorFrame() {
+        render(editing = true)
+        val editorId = ui.onNodeWithTag("field.outliner.block.parent").assertIsFocused().fetchSemanticsNode().id
+        for (uuid in listOf("child", "parent", "child")) {
+            ui.onNodeWithTag("outliner-block-content-$uuid").performTouchInput { click(center) }
+            ui.mainClock.autoAdvance = false
+            try {
+                ui.runOnUiThread {
+                    filter.applyJson(requireNotNull(bridge).applySnapshot(snapshot(editing = true, editingUuid = uuid)))
+                }
+                ui.mainClock.advanceTimeByFrame()
+                val editor = ui.onNodeWithTag("field.outliner.block.$uuid").assertIsFocused()
+                    .assertTextEquals(if (uuid == "parent") "Parent note" else "Child note")
+                assertEquals("Switching blocks reuses the native editor", editorId, editor.fetchSemanticsNode().id)
+                ui.onNodeWithTag("outliner-block-content-${if (uuid == "parent") "child" else "parent"}").assertIsDisplayed()
+            } finally { ui.mainClock.autoAdvance = true }
+        }
     }
 
     @Test fun theBulletCenterAlignsWithTheJournalTitleLeadingEdge() {

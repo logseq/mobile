@@ -390,38 +390,43 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
       [
-        column ~gap:20 ~cross:`stretch ~grow:1.0
-          ~accessibility_identifier:"form.graph-unlock"
+        column ~gap:0 ~cross:`stretch ~grow:1.0
           [
-            secure_field
-              ~text_signal:
-                (Signal.map View_base.model_graph_password model_source)
-              ~placeholder:(View_base.tr (Signal.sample model_source) "E2EE password") ~label:(View_base.tr (Signal.sample model_source) "E2EE password")
-              ~accessibility_identifier:"field.graph-password"
-              ~on_input:
-                (on_input send (fun text ->
-                     Model.ChangeGraphPassword text))
-              [];
-            text ~style_class:"footnote" ~foreground:"muted-foreground"
-              ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
-
-            spacer ~grow:1.0 [];
-            toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Graph unlock actions")
-              ~accessibility_identifier:"toolbar.graph-unlock"
-              [
-                spacer ~grow:1.0 [];
-                button ~variant:`ghost
-                  ~accessibility_identifier:"button.graph-unlock.cancel"
-                  ~on_press:(press send Model.CancelGraphUnlock)
-                  ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-                button ~variant:`primary
-                  ~accessibility_identifier:"button.graph-unlock"
-                  ~disabled_signal:
-                    (Signal.map View_base.graph_unlock_disabled_
-                       model_source)
-                  ~on_press:(press send Model.SubmitGraphPassword)
-                  ~text:(View_base.tr (Signal.sample model_source) "Unlock") [];
-              ];
+            scroll ~grow:1.0 [
+              column ~gap:20 ~cross:`stretch ~padding:24 ~style_class:"form"
+                ~accessibility_identifier:"form.graph-unlock"
+                [
+                  secure_field
+                    ~text_signal:
+                      (Signal.map View_base.model_graph_password model_source)
+                    ~placeholder:(View_base.tr (Signal.sample model_source) "E2EE password") ~label:(View_base.tr (Signal.sample model_source) "E2EE password")
+                    ~accessibility_identifier:"field.graph-password"
+                    ~on_input:
+                      (on_input send (fun text ->
+                           Model.ChangeGraphPassword text))
+                    [];
+                  text ~style_class:"footnote" ~foreground:"muted-foreground"
+                    ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
+                ];
+            ];
+            row ~main:`space_between ~cross:`center ~padding_horizontal:24 ~padding_vertical:16 [
+              spacer ~grow:1.0 [];
+              toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Graph unlock actions")
+                ~accessibility_identifier:"toolbar.graph-unlock"
+                [
+                  button ~variant:`ghost
+                    ~accessibility_identifier:"button.graph-unlock.cancel"
+                    ~on_press:(press send Model.CancelGraphUnlock)
+                    ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
+                  button ~variant:`primary
+                    ~accessibility_identifier:"button.graph-unlock"
+                    ~disabled_signal:
+                      (Signal.map View_base.graph_unlock_disabled_
+                         model_source)
+                    ~on_press:(press send Model.SubmitGraphPassword)
+                    ~text:(View_base.tr (Signal.sample model_source) "Unlock") [];
+                ];
+            ];
           ];
       ]
   else
