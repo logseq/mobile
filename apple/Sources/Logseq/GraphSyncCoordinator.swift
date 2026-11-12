@@ -112,13 +112,3 @@ actor GraphSyncCoordinator {
         _ = await backgroundTask.value
     }
 }
-
-@MainActor final class BackgroundTaskCompletion {
-    private var finished = false
-
-    func finish(success: Bool, completion: (Bool) -> Void) {
-        guard !finished else { return }
-        finished = true
-        completion(success)
-    }
-}

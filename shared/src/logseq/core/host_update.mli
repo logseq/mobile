@@ -28,6 +28,8 @@ type host_settings =
   ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; version : string

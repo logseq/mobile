@@ -116,7 +116,7 @@ class AndroidNodePropertiesTest {
         val snapshot = InstrumentationRegistry.getInstrumentation().context.assets
             .open("node-properties.json").bufferedReader().use { it.readText() }
         filter.applyJson(bridge.applySnapshot(snapshot))
-        val settingsPatch = bridge.applyHostUpdate("settings", """{"appearance":"dark","language":"en","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}""")
+        val settingsPatch = bridge.applyHostUpdate("settings", """{"appearance":"dark","language":"en","spellCheck":true,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}""")
         settingsPatch.takeIf { it.isNotEmpty() }?.let { filter.applyJson(it) }
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let { filter.applyJson(it) }
         ui.setContent {

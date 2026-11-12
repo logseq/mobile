@@ -66,6 +66,12 @@ import SwiftUI
         fixture_json = Path(entry).with_suffix(".json")
         if fixture_json.exists():
             shutil.copy2(fixture_json, app / fixture_json.name)
+        generated_fixture = os.environ.get("LOGSEQ_RUNTIME_CHECK_FIXTURE")
+        if generated_fixture:
+            shutil.copy2(Path(generated_fixture).resolve(), app / "task-reminders.json")
+        generated_date_fixture = os.environ.get("LOGSEQ_RUNTIME_CHECK_DATE_FIXTURE")
+        if generated_date_fixture:
+            shutil.copy2(Path(generated_date_fixture).resolve(), app / "task-reminders-date.json")
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
         testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
@@ -91,7 +97,7 @@ import SwiftUI
         runtime = Path((core / "native-link-inputs.txt").read_text().split(":", 1)[0])
         if not runtime.is_file():
             raise SystemExit("The app build's native core object is missing; rebuild the simulator app")
-        toolchain = ROOT / "_build/apple-toolchains/ios"
+        toolchain = Path(os.environ.get("LOGSEQ_APPLE_TOOLCHAIN_ROOT", ROOT / "_build/apple-toolchains")) / "ios"
         optimization = ["-O"] if CONFIGURATION == "release" else []
         runtime_exports = ["-Xlinker", "-export_dynamic"]
         for symbol in ("_logseq_https_send", "_logseq_https_upload_file", "_logseq_crypto_call", "_logseq_metric_log", "_logseq_graph_import_progress"):
@@ -139,6 +145,10 @@ import SwiftUI
         terminate_app(SIMULATOR, bundle)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
         launch_environment = os.environ.copy()
+        if not benchmark:
+            for name, value in os.environ.items():
+                if name.startswith("LOGSEQ_TASK_REMINDERS_OS_"):
+                    launch_environment["SIMCTL_CHILD_" + name] = value
         if benchmark:
             container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", SIMULATOR, bundle, "data"], text=True).strip())
             documents = container / "Documents"

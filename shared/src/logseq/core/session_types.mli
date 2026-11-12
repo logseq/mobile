@@ -144,6 +144,9 @@ type session_state =
   ; node_routes : node_route list
   ; node_base_state : Outliner_state.outliner_state option
   ; bootstrap_generation : int
+  ; task_reminder_generation : int
+  ; task_reminder_ready_generation : int option
+  ; task_reminder_activation_required : bool
   ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Flashcards.due_card list

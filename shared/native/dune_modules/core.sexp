@@ -13,6 +13,7 @@
 "Dev_view"
 "Query_block"
 "Result_view"
+"Task_reminders"
 "Node_property"
 "Node_title"
 "Journal_sync"

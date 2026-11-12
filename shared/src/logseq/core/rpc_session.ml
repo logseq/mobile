@@ -92,6 +92,29 @@ let query_db session =
   | Some load -> load ()
   | None -> Some (state session).model.db
 
+let task_reminder_scope_db session =
+  let s = state session in
+  match s.config, s.active_graph_id, (host session).Types.graph_db with
+    | Some config, Some active, Some load
+      when config.Api.graph_id <> "" && config.graph_id = active
+           && selected_graph_is_unlocked session
+           && List.exists (fun (graph : Api.api_graph) -> graph.id = active) s.available_graphs -> load ()
+    | _ -> None
+
+let task_reminders session =
+  let s = state session in
+  let graph_id = Option.bind s.config (fun (config : Api.api_config) ->
+    if config.graph_id = "" then None else Some config.graph_id) in
+  let db = task_reminder_scope_db session in
+  let ready = s.task_reminder_ready_generation = Some s.task_reminder_generation
+    && not s.task_reminder_activation_required && Option.is_some db in
+  let tasks = match ready, db with
+    | true, Some db -> Task_reminders.inventory db
+    | _ -> [] in
+  `Assoc ["graphId", Option.fold ~none:`Null ~some:(fun id -> `String id) graph_id;
+    "ready", `Bool ready; "complete", `Bool ready;
+    "tasks", `List (List.map Task_reminders.task_json tasks)]
+
 let current_summary session (summary : Model.entity_summary) =
   Option.value ~default:summary (Option.bind (query_db session) (fun db ->
     Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid))
@@ -856,6 +879,8 @@ let switch_graph_model session payload =
                   !(session.state) with
                   model = load uuid;
                   active_graph_id = Some uuid;
+                  task_reminder_ready_generation = Some (state session).task_reminder_generation;
+                  task_reminder_activation_required = false;
                   accepted_server_t = None;
                   pending_sync = None;
                   semantic_queue = [];
@@ -1002,6 +1027,14 @@ let configure session _input fields =
     let authentication_changed = match (state session).config with
       | Some previous -> previous.Api.token <> config.token
       | None -> false in
+    let reminder_scope_unchanged = match (state session).config with
+      | Some previous -> previous.Api.graph_id = config.graph_id
+          && previous.base_url = config.base_url && previous.token = config.token
+      | None -> false in
+    let reminder_resource_unchanged = match (state session).config with
+      | Some previous -> previous.Api.graph_id = config.graph_id
+          && previous.base_url = config.base_url
+      | None -> false in
     if changed || authentication_changed then cancel_pending_sync session;
     if changed then
       session.state := { !(session.state) with semantic_queue = [] };
@@ -1009,6 +1042,14 @@ let configure session _input fields =
       {
         !(session.state) with
         accepted_server_t = None;
+        task_reminder_generation = if reminder_scope_unchanged
+          then (state session).task_reminder_generation
+          else (state session).task_reminder_generation + 1;
+        task_reminder_ready_generation = if reminder_scope_unchanged
+          then (state session).task_reminder_ready_generation else None;
+        task_reminder_activation_required = if reminder_resource_unchanged
+          then (state session).task_reminder_activation_required
+          else changed || Option.is_some (state session).active_graph_id;
         config = Some config;
         sync_connected =
           (match (state session).config with
@@ -1048,6 +1089,10 @@ let select_graph session payload =
          Rpc.failure "graph_not_ready"
            "The selected graph is not ready for sync"
        else begin
+         let reminder_activation_required =
+           if config.Api.graph_id = graph.id && (state session).active_graph_id = Some graph.id
+           then (state session).task_reminder_activation_required
+           else true in
          let config =
            {
              config with
@@ -1064,6 +1109,9 @@ let select_graph session payload =
          session.Types.state :=
            {
              !(session.state) with
+             task_reminder_generation = (state session).task_reminder_generation + 1;
+             task_reminder_ready_generation = None;
+             task_reminder_activation_required = reminder_activation_required;
              selected_sidebar_page = None;
              accepted_server_t = None;
              config = Some config;
@@ -1937,6 +1985,7 @@ let rec dispatch session action payload =
       if existing then snapshot_visible session else
         send_message session (Some (Json.to_string (`Assoc ["uuid", `String uuid; "text", `String text])))
     | _, Error message | Error message, _ -> Rpc.failure "invalid_shared_capture" message)
+  | "taskReminders" -> Rpc.success (task_reminders session)
   | "handleDeepLink" -> object_action (fun _ fields ->
     match Shared_capture.deep_link fields with
     | Error message -> Rpc.failure "invalid_deep_link" message
@@ -1959,6 +2008,15 @@ let rec dispatch session action payload =
       let allowed = Yojson.Basic.Util.member "allowSnapshotDownload" input <> `Bool false in
       let respond kind =
         if kind = "download" then session.state := { !(session.state) with bootstrap_generation = (state session).bootstrap_generation + 1 };
+        if kind = "locked" then session.state := { !(session.state) with task_reminder_ready_generation = None };
+        (* Reminder activation follows the existing graph decision; it must not
+           force a warm graph reopen or reset its navigation/editor state. A
+           token refresh may reactivate the same provider/graph only after this
+           normal ready boundary. A changed resource still needs open/import. *)
+        if kind = "ready" && not (state session).task_reminder_activation_required
+           && Option.is_some (task_reminder_scope_db session)
+        then session.state := { !(session.state) with
+          task_reminder_ready_generation = Some (state session).task_reminder_generation };
         let has_token = match Yojson.Basic.Util.member "hasAccessToken" input with
           | `Bool value -> value | _ -> String.trim config.Api.token <> "" in
         let sync_allowed = has_token && selected_graph_is_unlocked session && kind <> "locked" in
@@ -2140,6 +2198,8 @@ let rec dispatch session action payload =
         session.Types.state :=
           {
             !(session.state) with
+            task_reminder_generation = (state session).task_reminder_generation + 1;
+            task_reminder_ready_generation = None;
             accepted_server_t = None;
             config = Some config;
           };
@@ -2455,6 +2515,9 @@ let rec dispatch session action payload =
                { config with graph_id = ""; graph_name = None }) s.config;
              available_graphs = s.available_graphs;
              bootstrap_generation = s.bootstrap_generation + 1;
+             task_reminder_generation = s.task_reminder_generation + 1;
+             task_reminder_ready_generation = None;
+             task_reminder_activation_required = true;
              next_pending_request_id = s.next_pending_request_id;
              outliner_revision = s.outliner_revision + 1 };
            Hashtbl.clear session.reference_cache;

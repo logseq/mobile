@@ -46,6 +46,7 @@ val settings_general_card :
   (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_editor_card : Model.logseq_model Signal.signal -> Lui_ui.ui_context ->
   bool Signal.signal ->
+  bool Signal.signal ->
   bool Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val settings_export_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_runtime_log_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t

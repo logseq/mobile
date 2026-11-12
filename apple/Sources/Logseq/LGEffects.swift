@@ -64,6 +64,8 @@ public struct LGSettingsPayload: Decodable, Equatable, Sendable {
     public let language: String
     public let spellCheck: Bool
     public let autoCorrection: Bool
+    public let taskRemindersEnabled: Bool
+    public let taskRemindersStatus: String
     public let sidebarTabs: [String]
     public let baseURL: String
 }
@@ -405,16 +407,19 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
     private let callCore: @MainActor (LogseqRPCRequest) async -> String
     private let deleteLocalGraph: (@MainActor (String) async -> String)?
     private let platformEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
+    private let coreResponseObserver: (@MainActor (String) -> Void)?
 
     public init(
         callCore: @escaping @MainActor (LogseqRPCRequest) async -> String = { request in
             await LogseqCore.callAsync(request)
         },
         deleteLocalGraph: (@MainActor (String) async -> String)? = nil,
-        platformEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil
+        platformEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
+        coreResponseObserver: (@MainActor (String) -> Void)? = nil
     ) {
         self.deleteLocalGraph = deleteLocalGraph
         self.platformEffect = platformEffect
+        self.coreResponseObserver = coreResponseObserver
         self.callCore = callCore
     }
 
@@ -446,7 +451,9 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             let request = LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
                 action: "executeEffect", payload: payload
             ))
-            let resolution = await Self.resolution(from: await callCore(request))
+            let response = await callCore(request)
+            await coreResponseObserver?(response)
+            let resolution = await Self.resolution(from: response)
             if effect.kind == "maintain-search-index", resolution.succeeded {
                 return LGEffectResolution(succeeded: true, message: resolution.message, output: .discard)
             }

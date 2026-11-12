@@ -485,6 +485,8 @@ let settings tabs =
     system_language = None;
     spell_check = true;
     auto_correction = true;
+    task_reminders_enabled = false;
+    task_reminders_status = "";
     sidebar_tabs = tabs;
     base_url = "https://api.logseq.com";
     version = "1.0";
@@ -889,6 +891,9 @@ let settings_preferences_persist_without_dismissing_the_sheet () =
   let auto_correction_disabled =
     Model.update spell_check_saved (Model.ToggleAutoCorrection false)
   in
+  let task_reminders_enabled =
+    Model.update auto_correction_disabled (Model.ToggleTaskReminders true)
+  in
   check_eq ~msg:"theme changes persist immediately like main's AppStorage picker"
     themed.pending_effects
     [ Model.SaveSettingsEffect (1, Model.current_settings themed) ];
@@ -910,7 +915,13 @@ let settings_preferences_persist_without_dismissing_the_sheet () =
     [
       Model.SaveSettingsEffect
         (4, Model.current_settings auto_correction_disabled);
-    ]
+    ];
+  check ~msg:"task reminders remain disabled in the default settings"
+    (not (Model.initial ()).task_reminders_enabled);
+  check_eq ~msg:"enabling task reminders persists the opt-in setting"
+    task_reminders_enabled.pending_effects
+    [ Model.SaveSettingsEffect (4, Model.current_settings auto_correction_disabled);
+      Model.SaveSettingsEffect (5, Model.current_settings task_reminders_enabled) ]
 
 let settings_reject_invalid_connections_and_preserve_required_tabs () =
   let opened =

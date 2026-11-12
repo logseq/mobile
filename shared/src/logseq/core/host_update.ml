@@ -28,6 +28,8 @@ type host_settings =
   ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; version : string
@@ -76,6 +78,8 @@ let settings value =
       system_language = (match Util.member "systemLanguage" value with `String value -> Some value | _ -> None);
       spell_check = bool_field "spellCheck" value;
       auto_correction = bool_field "autoCorrection" value;
+      task_reminders_enabled = bool_field "taskRemindersEnabled" value;
+      task_reminders_status = string_field "taskRemindersStatus" value;
       sidebar_tabs = string_vector (Util.member "sidebarTabs" value);
       base_url = string_field "baseURL" value;
       version = string_field "version" value;
