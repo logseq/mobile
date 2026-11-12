@@ -7,6 +7,10 @@ private struct TaskReminderEnvelope<Value: Decodable>: Decodable {
     let result: Value
 }
 
+private enum ReminderCenterProbeError: Error {
+    case forcedAddFailure
+}
+
 private actor ReminderCenterProbe: TaskReminderCenterClient {
     private(set) var authorization: UNAuthorizationStatus
     private var requests: [TaskReminderStoredNotification]
@@ -17,9 +21,16 @@ private actor ReminderCenterProbe: TaskReminderCenterClient {
     private var addStarted = false
     private var addStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var addRelease: CheckedContinuation<Void, Never>?
+    private var shouldFailNextAdd = false
+    private var holdFailedAdd = false
+    private var addFailureStarted = false
+    private var addFailureWaiters: [CheckedContinuation<Void, Never>] = []
+    private var addFailureRelease: CheckedContinuation<Void, Never>?
     private var shouldSuspendCleanup = false
     private var cleanupStarted = false
+    private var managedCleanupStarted = false
     private var cleanupStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var managedCleanupWaiters: [CheckedContinuation<Void, Never>] = []
     private var cleanupRelease: CheckedContinuation<Void, Never>?
     private var shouldSuspendAuthorization = false
     private var authorizationStarted = false
@@ -55,6 +66,18 @@ private actor ReminderCenterProbe: TaskReminderCenterClient {
         if shouldSuspendAdd {
             await withCheckedContinuation { addRelease = $0 }
         }
+        if shouldFailNextAdd {
+            shouldFailNextAdd = false
+            events.append("addFailed")
+            addFailureStarted = true
+            addFailureWaiters.forEach { $0.resume() }
+            addFailureWaiters.removeAll()
+            if holdFailedAdd {
+                await withCheckedContinuation { addFailureRelease = $0 }
+                holdFailedAdd = false
+            }
+            throw ReminderCenterProbeError.forcedAddFailure
+        }
         triggers[item.identifier] = item.trigger
         requests.removeAll { $0.identifier == item.identifier }
         requests.append(TaskReminderStoredNotification(
@@ -69,6 +92,11 @@ private actor ReminderCenterProbe: TaskReminderCenterClient {
 
     func removePending(_ identifiers: [String]) async {
         events.append("removePending")
+        if identifiers.contains(where: { $0.hasPrefix(TaskReminderPlan.managedPrefix) }) {
+            managedCleanupStarted = true
+            managedCleanupWaiters.forEach { $0.resume() }
+            managedCleanupWaiters.removeAll()
+        }
         await pauseCleanupIfRequested()
         let removed = Set(identifiers)
         requests.removeAll { removed.contains($0.identifier) }
@@ -82,6 +110,21 @@ private actor ReminderCenterProbe: TaskReminderCenterClient {
     }
 
     func suspendAdds() { shouldSuspendAdd = true }
+
+    func failNextAdd(holdUntilReleased: Bool = false) {
+        shouldFailNextAdd = true
+        holdFailedAdd = holdUntilReleased
+    }
+
+    func waitForAddFailureStart() async {
+        if addFailureStarted { return }
+        await withCheckedContinuation { addFailureWaiters.append($0) }
+    }
+
+    func releaseHeldAddFailure() {
+        addFailureRelease?.resume()
+        addFailureRelease = nil
+    }
 
     func waitForAddStart() async {
         if addStarted { return }
@@ -99,6 +142,11 @@ private actor ReminderCenterProbe: TaskReminderCenterClient {
     func waitForCleanupStart() async {
         if cleanupStarted { return }
         await withCheckedContinuation { cleanupStartWaiters.append($0) }
+    }
+
+    func waitForManagedCleanupStart() async {
+        if managedCleanupStarted { return }
+        await withCheckedContinuation { managedCleanupWaiters.append($0) }
     }
 
     func releaseSuspendedCleanup() {
@@ -231,6 +279,7 @@ struct CheckTaskReminders {
                     "Datetime trigger shifted from its exact core timestamp: \(future.fireDate)")
         let exactComponents = future.triggerDateComponents
         try require(future.trigger == .instant
+                    && exactComponents.calendar?.identifier == .gregorian
                     && exactComponents.timeZone == .gmt
                     && exactComponents.year == 2026 && exactComponents.month == 11
                     && exactComponents.day == 12 && exactComponents.hour == 12,
@@ -507,7 +556,8 @@ struct CheckTaskReminders {
         await raceCenter.waitForAddStart()
         let invalidate = Task { await raceAdapter.invalidate(to: 2) }
         await raceCenter.releaseSuspendedAdd()
-        await reconcile.value
+        try require(!(await reconcile.value),
+                    "A superseded notification reconciliation unexpectedly reported success")
         await invalidate.value
         try require(await raceCenter.storedIDs().isEmpty,
                     "An add completing after graph invalidation left a stale reminder")
@@ -669,6 +719,86 @@ struct CheckTaskReminders {
         try require(failedDrainIDs == [unrelatedID],
                     "Failed refresh did not await selective cleanup of stale managed requests")
         print("PASS: background refresh awaits writes; disable, failure, and supersession drain managed cleanup")
+
+        let adapterFailureCenter = ReminderCenterProbe()
+        await adapterFailureCenter.failNextAdd()
+        let adapterFailureResult = await TaskReminderNotificationAdapter(center: adapterFailureCenter)
+            .reconcile(plan, epoch: 1)
+        try require(!adapterFailureResult,
+                    "The notification adapter reported success after the center rejected an add")
+        let adapterFailureEvents = await adapterFailureCenter.eventLog()
+        let adapterFailureIDs = await adapterFailureCenter.storedIDs()
+        try require(adapterFailureEvents.contains("addFailed"),
+                    "The adapter failure probe did not reach the injected add rejection")
+        try require(adapterFailureIDs.isEmpty,
+                    "The adapter failure probe retained a request after the injected rejection")
+
+        let coordinatorFailureCenter = ReminderCenterProbe()
+        await coordinatorFailureCenter.failNextAdd()
+        let coordinatorFailureSuite = "TaskReminderAddFailure-\(UUID().uuidString)"
+        let coordinatorFailureDefaults = UserDefaults(suiteName: coordinatorFailureSuite)!
+        defer { coordinatorFailureDefaults.removePersistentDomain(forName: coordinatorFailureSuite) }
+        let coordinatorFailure = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: coordinatorFailureCenter),
+            defaults: coordinatorFailureDefaults,
+            now: { now }
+        )
+        await coordinatorFailure.setEnabled(true)
+        let coordinatorFailureToken = coordinatorFailure.beginRefresh()
+        let coordinatorFailureResult = await coordinatorFailure.reconcile(
+            raw, expectedGraphID: "sample", refreshToken: coordinatorFailureToken
+        )
+        try require(!coordinatorFailureResult,
+                    "The coordinator reported success after the notification center rejected an add")
+        try require(await coordinatorFailureCenter.eventLog().contains("addFailed"),
+                    "Coordinator failure result was not caused by the injected center add rejection")
+
+        let backgroundAddFailureCenter = ReminderCenterProbe(requests: [
+            TaskReminderStoredNotification(
+                identifier: future.identifier, graphId: future.graphId,
+                taskUUID: future.taskUUID, pageId: future.pageId,
+                fireDate: future.fireDate, trigger: future.trigger
+            ),
+            TaskReminderStoredNotification(
+                identifier: unrelatedID, graphId: nil, taskUUID: nil,
+                pageId: nil, fireDate: nil, trigger: nil
+            )
+        ])
+        await backgroundAddFailureCenter.failNextAdd(holdUntilReleased: true)
+        let backgroundAddFailureSuite = "TaskReminderBackgroundAddFailure-\(UUID().uuidString)"
+        let backgroundAddFailureDefaults = UserDefaults(suiteName: backgroundAddFailureSuite)!
+        defer { backgroundAddFailureDefaults.removePersistentDomain(forName: backgroundAddFailureSuite) }
+        let backgroundAddFailureCoordinator = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: backgroundAddFailureCenter),
+            defaults: backgroundAddFailureDefaults,
+            now: { now }
+        )
+        await backgroundAddFailureCoordinator.setEnabled(true)
+        let backgroundAddFailureCompletion = CompletionProbe()
+        let backgroundAddFailureTask = Task {
+            let result = await backgroundAddFailureCoordinator.refreshAndDrain(
+                expectedGraphID: "sample",
+                fetchProjection: { raw }
+            )
+            await backgroundAddFailureCompletion.markCompleted()
+            return result
+        }
+        await backgroundAddFailureCenter.waitForAddFailureStart()
+        await backgroundAddFailureCenter.suspendCleanup()
+        await backgroundAddFailureCenter.releaseHeldAddFailure()
+        await backgroundAddFailureCenter.waitForManagedCleanupStart()
+        try require(!(await backgroundAddFailureCompletion.hasCompleted()),
+                    "A failed background add returned before managed cleanup drained")
+        try require(await backgroundAddFailureCenter.storedIDs().contains(future.identifier),
+                    "The held cleanup did not retain the old managed request while suspended")
+        await backgroundAddFailureCenter.releaseSuspendedCleanup()
+        try require(!(await backgroundAddFailureTask.value),
+                    "A background refresh with a rejected OS add unexpectedly reported success")
+        try require(await backgroundAddFailureCompletion.hasCompleted(),
+                    "Failed background refresh completion was not recorded")
+        try require(await backgroundAddFailureCenter.storedIDs() == [unrelatedID],
+                    "Failed background add did not await managed-only cleanup")
+        print("PASS: notification center add failures propagate through adapter/coordinator and background refresh drains managed alerts")
 
         let expirationCenter = ReminderCenterProbe(requests: [
             TaskReminderStoredNotification(

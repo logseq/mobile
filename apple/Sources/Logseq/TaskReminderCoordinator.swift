@@ -152,6 +152,7 @@ struct TaskReminderPlan: Sendable, Equatable {
                 var components = calendar.dateComponents(
                     [.year, .month, .day, .hour, .minute, .second], from: fireDate
                 )
+                components.calendar = calendar
                 components.timeZone = .gmt
                 return components
             case .localDate(let day):
@@ -237,7 +238,8 @@ protocol TaskReminderNotificationStoring: Sendable {
     func requestAuthorization() async throws -> Bool
     func advance(to epoch: UInt64)
     func invalidate(to epoch: UInt64) async
-    func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async
+    @discardableResult
+    func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool
 }
 
 struct TaskReminderStoredNotification: Sendable {
@@ -344,24 +346,27 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
         await enqueue { [self] in await removeManagedRequests() }
     }
 
-    func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async {
-        guard epoch >= latestEpoch else { return }
+    @discardableResult
+    func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool {
+        guard epoch >= latestEpoch else { return false }
         advance(to: epoch)
-        await enqueue { [self] in await reconcileNow(plan, epoch: epoch) }
+        return await enqueue { [self] in await reconcileNow(plan, epoch: epoch) }
     }
 
-    private func enqueue(_ operation: @escaping @Sendable () async -> Void) async {
+    private func enqueue<Result: Sendable>(
+        _ operation: @escaping @Sendable () async -> Result
+    ) async -> Result {
         let previous = writeTail
         let next = Task {
             await previous?.value
-            await operation()
+            return await operation()
         }
-        writeTail = next
-        await next.value
+        writeTail = Task { _ = await next.value }
+        return await next.value
     }
 
-    private func reconcileNow(_ plan: TaskReminderPlan, epoch: UInt64) async {
-        guard epoch == latestEpoch else { return }
+    private func reconcileNow(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool {
+        guard epoch == latestEpoch else { return false }
         let allPending = await center.pending()
         let pending = allPending.filter {
             $0.identifier.hasPrefix(TaskReminderPlan.managedPrefix)
@@ -403,7 +408,7 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
         await center.removeDelivered(staleDeliveredIDs)
 
         for item in desiredItems {
-            guard epoch == latestEpoch else { return }
+            guard epoch == latestEpoch else { return false }
             if pending.contains(where: { $0.identifier == item.identifier }),
                !stalePendingIDs.contains(item.identifier) {
                 continue
@@ -412,14 +417,15 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
                 try await center.add(item)
             } catch {
                 logger.error("Could not schedule a task reminder: \(error.localizedDescription)")
-                return
+                return false
             }
             guard epoch == latestEpoch else {
                 await center.removePending([item.identifier])
                 await center.removeDelivered([item.identifier])
-                return
+                return false
             }
         }
+        return epoch == latestEpoch
     }
 
     private func removeManagedRequests() async {
@@ -596,8 +602,8 @@ final class TaskReminderCoordinator {
             }
             let plan = TaskReminderPlan.make(from: projection, now: now())
             guard token == epoch, !Task.isCancelled else { return false }
-            await adapter.reconcile(plan, epoch: token)
-            return token == epoch && isEnabled && !Task.isCancelled
+            let scheduled = await adapter.reconcile(plan, epoch: token)
+            return scheduled && token == epoch && isEnabled && !Task.isCancelled
         } catch {
             logger.error("Could not read the task reminder projection: \(error.localizedDescription)")
             if token == epoch { await adapter.invalidate(to: token) }

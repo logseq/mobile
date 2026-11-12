@@ -1191,7 +1191,7 @@ public enum LogseqBackgroundRefresh {
         identifier = UIApplication.shared.beginBackgroundTask(withName: "Logseq graph sync") { [weak self] in
             self?.expire()
         }
-        syncTask = Task { [self] in
+        syncTask = Task {
             _ = await LogseqLogseqRuntime.shared.runExclusiveBackgroundSync()
             completion.finish(success: true)
         }
