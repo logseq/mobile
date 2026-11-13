@@ -72,6 +72,8 @@ type settings_projection =
   ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; version : string
@@ -418,6 +420,8 @@ type logseq_model =
   ; community_links : settings_community_link list
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; base_url_draft : string
@@ -605,6 +609,7 @@ type logseq_action =
   | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
+  | ToggleTaskReminders of bool
   | ToggleSidebarTab of string
   | MoveSidebarTab of string * int
   | ChangeBaseURL of string
@@ -781,6 +786,8 @@ let initial () =
     community_links = settings_community_links ();
     spell_check = true;
     auto_correction = true;
+    task_reminders_enabled = false;
+    task_reminders_status = "";
     sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
     base_url = "https://api.logseq.io";
     base_url_draft = "https://api.logseq.io";
@@ -1421,6 +1428,8 @@ let current_settings (current : logseq_model) =
     system_language = Some current.system_language;
     spell_check = current.spell_check;
     auto_correction = current.auto_correction;
+    task_reminders_enabled = current.task_reminders_enabled;
+    task_reminders_status = current.task_reminders_status;
     sidebar_tabs = current.sidebar_tabs;
     base_url = String.trim current.base_url;
     version = current.version;
@@ -2820,6 +2829,8 @@ let rec update (current : logseq_model) action =
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
+      task_reminders_enabled = settings.task_reminders_enabled;
+      task_reminders_status = settings.task_reminders_status;
       sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
@@ -2968,6 +2979,8 @@ let rec update (current : logseq_model) action =
   | ToggleAutoCorrection enabled ->
     persist_settings_change current
       { current with auto_correction = enabled }
+  | ToggleTaskReminders enabled ->
+    persist_settings_change current { current with task_reminders_enabled = enabled }
   | ToggleSidebarTab tab ->
     persist_settings_change current
       {

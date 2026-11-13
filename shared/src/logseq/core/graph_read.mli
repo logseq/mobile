@@ -18,6 +18,7 @@ val ref_eids : Datascript.db -> int -> string -> int list
 val block_classes_provide_property : Datascript.db -> int -> string -> bool
 val class_descendants : Datascript.db -> int -> int list
 val entity_is_instance_of : Datascript.db -> int -> string -> bool
+val recycled : Datascript.db -> int -> bool
 val tag_display_type : Datascript.db -> int -> string option
 val default_task_status_eid : Datascript.db -> int option
 val entity_summary :

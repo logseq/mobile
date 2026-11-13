@@ -842,7 +842,7 @@ struct LGRendererTests {
         let save = await handler.execute(LGEffect(
             id: 40,
             kind: "save-settings",
-            text: #"{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"sidebarTabs":["journals","graphs"],"baseURL":"https://example.com"}"#
+            text: #"{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":["journals","graphs"],"baseURL":"https://example.com"}"#
         ))
         let refresh = await handler.execute(LGEffect(
             id: 41,

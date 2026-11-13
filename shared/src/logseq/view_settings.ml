@@ -568,6 +568,12 @@ let settings_toggle_auto_correction send input_event =
     ignore (send (Model.ToggleAutoCorrection enabled))
   | _ -> ()
 
+let settings_toggle_task_reminders send input_event =
+  match input_event with
+  | ToggleChanged (_node, enabled) ->
+    ignore (send (Model.ToggleTaskReminders enabled))
+  | _ -> ()
+
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
@@ -639,7 +645,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
       ]
 
 let settings_editor_card model_source (context : Lui_ui.ui_context) spell_check_source
-    auto_correction_source send : t =
+    auto_correction_source task_reminders_source send : t =
   if Lui_ui.host context = KotlinHost then
     column ~gap:0 ~cross:`stretch ~padding_horizontal:16
       [
@@ -662,6 +668,15 @@ let settings_editor_card model_source (context : Lui_ui.ui_context) spell_check_
         toggle ~checked_signal:auto_correction_source
           ~on_toggle:(settings_toggle_auto_correction send)
           ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") [];
+        separator [];
+        toggle ~checked_signal:task_reminders_source
+          ~on_toggle:(settings_toggle_task_reminders send)
+          ~text:(View_base.tr (Signal.sample model_source) "Task reminders") [];
+        text ~style_class:"footnote" ~foreground:"secondary"
+          ~value_signal:(Signal.map (fun (current : Model.logseq_model) ->
+            if current.task_reminders_status = "" then
+              View_base.tr current "Local alerts for scheduled tasks and deadlines."
+            else View_base.tr current current.task_reminders_status) model_source) [];
       ]
 
 let settings_export_row model_source (context : Lui_ui.ui_context) send : t =
@@ -792,6 +807,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           settings_editor_card model_source context
             (Signal.map View_base.settings_spell_check model_source)
             (Signal.map View_base.settings_auto_correction model_source)
+            (Signal.map (fun (current : Model.logseq_model) -> current.task_reminders_enabled) model_source)
             send;
         ];
       column ~gap:8 ~cross:`stretch
@@ -938,6 +954,16 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ~accessibility_identifier:"switch.settings.auto-correction"
         ~on_toggle:(settings_toggle_auto_correction send)
         ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") []);
+      with_native_control_tint "switch" (toggle
+        ~checked_signal:(Signal.map (fun (current : Model.logseq_model) -> current.task_reminders_enabled) model_source)
+        ~accessibility_identifier:"switch.settings.task-reminders"
+        ~on_toggle:(settings_toggle_task_reminders send)
+        ~text:(View_base.tr (Signal.sample model_source) "Task reminders") []);
+      text ~style_class:"footnote" ~foreground:"secondary"
+        ~value_signal:(Signal.map (fun (current : Model.logseq_model) ->
+          if current.task_reminders_status = "" then
+            View_base.tr current "Local alerts for scheduled tasks and deadlines."
+          else View_base.tr current current.task_reminders_status) model_source) [];
       heading ~value:(View_base.tr (Signal.sample model_source) "Sync server") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.sync-server" [];
       text_field

@@ -69,6 +69,8 @@ type settings_projection =
   ; system_language : string option
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; version : string
@@ -415,6 +417,8 @@ type logseq_model =
   ; community_links : settings_community_link list
   ; spell_check : bool
   ; auto_correction : bool
+  ; task_reminders_enabled : bool
+  ; task_reminders_status : string
   ; sidebar_tabs : string list
   ; base_url : string
   ; base_url_draft : string
@@ -602,6 +606,7 @@ type logseq_action =
   | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
+  | ToggleTaskReminders of bool
   | ToggleSidebarTab of string
   | MoveSidebarTab of string * int
   | ChangeBaseURL of string

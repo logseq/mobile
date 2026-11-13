@@ -151,6 +151,9 @@ type session_state =
   ; node_routes : node_route list
   ; node_base_state : Outliner.outliner_state option
   ; bootstrap_generation : int
+  ; task_reminder_generation : int
+  ; task_reminder_ready_generation : int option
+  ; task_reminder_activation_required : bool
   ; active_graph_id : string option
   ; accepted_server_t : int option
   ; flashcards : Cards.due_card list
@@ -317,6 +320,9 @@ let create_session options =
           node_routes = [];
           node_base_state = None;
           bootstrap_generation = 0;
+          task_reminder_generation = 0;
+          task_reminder_ready_generation = None;
+          task_reminder_activation_required = false;
           active_graph_id = None;
           accepted_server_t = None;
           flashcards = [];

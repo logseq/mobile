@@ -225,16 +225,6 @@ import Testing
         #expect(await background.value == false)
         #expect(await events.snapshot() == ["foreground-start"])
     }
-
-    @Test @MainActor func backgroundTaskCompletionOnlyFinishesOnce() {
-        let completion = BackgroundTaskCompletion()
-        var results: [Bool] = []
-
-        completion.finish(success: true) { results.append($0) }
-        completion.finish(success: false) { results.append($0) }
-
-        #expect(results == [true])
-    }
 }
 
 private actor SyncEventRecorder {

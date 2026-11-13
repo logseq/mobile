@@ -76,7 +76,7 @@ class AndroidTagSearchRegressionTest {
         bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
         val root = bridge.initialize(authenticationCode = 3)
         filter.applyJson(bridge.applySnapshot(response.toString()))
-        bridge.applyHostUpdate("settings", """{"appearance":"light","language":"$language","systemLanguage":"en","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}""")
+        bridge.applyHostUpdate("settings", """{"appearance":"light","language":"$language","systemLanguage":"en","spellCheck":true,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}""")
             .takeIf { it.isNotEmpty() }?.let(filter::applyJson)
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
         ui.setContent {

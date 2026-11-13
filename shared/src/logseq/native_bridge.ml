@@ -119,6 +119,8 @@ let host_action (update : Host_update.host_update) =
         system_language = settings.system_language;
         spell_check = settings.spell_check;
         auto_correction = settings.auto_correction;
+        task_reminders_enabled = settings.task_reminders_enabled;
+        task_reminders_status = settings.task_reminders_status;
         sidebar_tabs = settings.sidebar_tabs;
         base_url = settings.base_url;
         version = settings.version;
@@ -231,6 +233,8 @@ let encode_settings (settings : Model.settings_projection) =
   ^ ",\"language\":" ^ Lui_wire.quoted settings.language
   ^ ",\"spellCheck\":" ^ string_of_bool settings.spell_check
   ^ ",\"autoCorrection\":" ^ string_of_bool settings.auto_correction
+  ^ ",\"taskRemindersEnabled\":" ^ string_of_bool settings.task_reminders_enabled
+  ^ ",\"taskRemindersStatus\":" ^ Lui_wire.quoted settings.task_reminders_status
   ^ ",\"sidebarTabs\":" ^ encode_string_vector settings.sidebar_tabs
   ^ ",\"baseURL\":" ^ Lui_wire.quoted settings.base_url ^ "}"
 

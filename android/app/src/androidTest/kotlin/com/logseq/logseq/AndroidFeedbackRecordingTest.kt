@@ -308,7 +308,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 assertEquals("NLP date-time input uses the device's local time", expected.toString(), scheduled.getString("editorValue"))
             }
             "language" -> {
-                mount(1); host("settings", """{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}""")
+                mount(1); host("settings", """{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}""")
                 ui.onNodeWithTag("button.sidebar").performClick(); pause()
                 ui.onNodeWithTag("button.sidebar.settings").performClick(); pause()
                 if (verify) ui.onNodeWithText("设置").assertExists()

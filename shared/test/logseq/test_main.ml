@@ -1,4 +1,9 @@
 let () =
+  match Sys.getenv_opt "LOGSEQ_TASK_REMINDERS_FIXTURE_PATH" with
+  | Some path -> Task_reminders_test.write_rpc_fixture path
+  | None -> (match Sys.getenv_opt "LOGSEQ_TASK_REMINDERS_DATE_FIXTURE_PATH" with
+  | Some path -> Task_reminders_test.write_rpc_date_fixture path
+  | None ->
   Alcotest.run "logseq"
     [
       "asset_files", Asset_files_test.cases;
@@ -42,6 +47,7 @@ let () =
       "sqlite", Sqlite_test.cases;
       "pending_ops", Pending_ops_test.cases;
       "graph_read", Graph_read_test.cases;
+      "task_reminders", Task_reminders_test.cases;
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
       "natural_date", Natural_date_test.cases;
@@ -72,4 +78,4 @@ let () =
       "autosave", Autosave_test.cases;
       "drive", Drive_scenario_test.cases;
       "repro", Repro_wedge_test.cases;
-    ]
+    ])

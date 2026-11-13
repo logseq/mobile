@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import SwiftUI
+import UserNotifications
 import LogseqModel
 import LUIAppleBackend
 
@@ -30,11 +31,13 @@ let logger = LogseqAppLogger()
 @MainActor
 private final class LGCoreResponseRelay {
     var apply: ((String) -> Void)?
+    var remindersChanged: (() -> Void)?
 
     func send(_ response: String) {
         if let apply {
             apply(response)
         }
+        remindersChanged?()
     }
 }
 
@@ -94,13 +97,19 @@ public struct LogseqRootView : View {
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
+                runtime.refreshTaskReminderProjection(checkPermission: true)
                 while !Task.isCancelled {
                     await runtime.refreshLocalJournalDay()
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                runtime.refreshTaskReminderProjection(checkPermission: true)
+                Task { await runtime.refreshLocalJournalDay() }
+            }
             .onChange(of: runtime.authentication.state) { previousState, state in
                 runtime.publishAuthenticationState()
+                if state == .signedOut { runtime.clearTaskRemindersForSignOut() }
                 guard state == .signedIn, previousState != .restoring else { return }
                 Task { await runtime.resumeLGApplication() }
             }
@@ -168,6 +177,16 @@ public struct LogseqRootView : View {
     private var refreshedJournalDay: String?
     private let graphLifecycle: LGGraphLifecycle
     private let platformCommandRouter: LGPlatformCommandRouter
+    private let taskReminderCoordinator: TaskReminderCoordinator
+    private let taskReminderNotificationDelegate: TaskReminderNotificationDelegate
+    private var reminderRefreshTask: Task<Void, Never>?
+    private struct PendingTaskReminderRoute {
+        let graphId: String
+        let taskUUID: String
+        let pageId: String
+        let expiresAt: Date
+    }
+    private var pendingTaskReminderRoute: PendingTaskReminderRoute?
 
     private struct SettingsHostPayload: Encodable {
         let appearance: String
@@ -179,6 +198,8 @@ public struct LogseqRootView : View {
         let baseURL: String
         let version: String
         let revision: String
+        let taskRemindersEnabled: Bool
+        let taskRemindersStatus: String
     }
 
     private struct AuthenticationHostPayload: Encodable {
@@ -201,6 +222,9 @@ public struct LogseqRootView : View {
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )
         let responseRelay = LGCoreResponseRelay()
+        let taskReminderCoordinator = TaskReminderCoordinator()
+        let taskReminderNotificationDelegate = TaskReminderNotificationDelegate()
+        UNUserNotificationCenter.current().delegate = taskReminderNotificationDelegate
         let store = LogseqStore(
             call: { request in LogseqCore.shared.logseq_call(request) },
             responseObserver: responseRelay.send
@@ -243,9 +267,18 @@ public struct LogseqRootView : View {
                     forKey: "logseq.mobile.sidebarTabs"
                 )
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
+                if settings.taskRemindersEnabled != taskReminderCoordinator.isEnabled {
+                    await taskReminderCoordinator.setEnabled(settings.taskRemindersEnabled)
+                }
+                defaults.set(
+                    taskReminderCoordinator.isEnabled,
+                    forKey: TaskReminderCoordinator.enabledDefaultsKey
+                )
                 if LogseqSettingsPolicy.storedBaseURL(in: defaults) != previousBaseURL {
+                    await taskReminderCoordinator.disableBeforeGraphMutation()
                     try await graphLifecycle.reconfigureAPI()
                 }
+                taskReminderCoordinator.onSettingsChanged?()
             },
             persistComposerDraft: { draft in
                 UserDefaults.standard.set(draft, forKey: "logseq.composerDraft")
@@ -254,6 +287,7 @@ public struct LogseqRootView : View {
             copyText: { text in Self.copyText(text) },
             signIn: { request in try await authentication.authenticate(request) },
             signOut: {
+                await taskReminderCoordinator.disableBeforeGraphMutation()
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
                 await authentication.signOut()
@@ -332,7 +366,23 @@ public struct LogseqRootView : View {
             }
         )
         let effectExecutor = LGCoreEffectExecutor(
-            platformEffect: { effect in await platformHandler.execute(effect) }
+            platformEffect: { effect in
+                let changesGraph = ["open-graph", "unlock-graph", "create-graph", "delete-local-graph"].contains(effect.kind)
+                let result = if changesGraph {
+                    await taskReminderCoordinator.withGraphMutation {
+                        await platformHandler.execute(effect)
+                    }
+                } else {
+                    await platformHandler.execute(effect)
+                }
+                if changesGraph {
+                    taskReminderCoordinator.graphMutationDidFinish(succeeded: result.succeeded)
+                }
+                return result
+            },
+            coreResponseObserver: { _ in
+                taskReminderCoordinator.onCoreMutation?()
+            }
         )
         self.store = store
         self.authentication = authentication
@@ -340,6 +390,8 @@ public struct LogseqRootView : View {
         self.syncCoordinator = syncCoordinator
         self.graphLifecycle = graphLifecycle
         self.platformCommandRouter = platformCommandRouter
+        self.taskReminderCoordinator = taskReminderCoordinator
+        self.taskReminderNotificationDelegate = taskReminderNotificationDelegate
         let lgRuntime = LGRuntime(
             native: LGCoreNativeCaller(),
             effectExecutor: effectExecutor,
@@ -358,6 +410,26 @@ public struct LogseqRootView : View {
                 print("LOGSEQ_LG_PATCH_ERROR source=core-response error=\(error)")
                 #endif
             }
+        }
+        responseRelay.remindersChanged = { [weak self] in
+            TaskReminderBackgroundAttempt.refreshAfterCoreResponse {
+                self?.refreshTaskReminderProjection()
+            }
+        }
+        taskReminderCoordinator.onSettingsChanged = { [weak self] in
+            self?.publishSettingsHostUpdate()
+        }
+        taskReminderCoordinator.onGraphMutationCompleted = { [weak self] in
+            Task { @MainActor in await self?.processPendingTaskReminderRoute() }
+            self?.refreshTaskReminderProjection()
+        }
+        taskReminderCoordinator.onCoreMutation = { [weak self] in
+            TaskReminderBackgroundAttempt.refreshAfterCoreResponse {
+                self?.refreshTaskReminderProjection()
+            }
+        }
+        taskReminderNotificationDelegate.openTask = { [weak self] graphId, taskUUID, pageId in
+            await self?.openTaskReminder(graphId: graphId, taskUUID: taskUUID, pageId: pageId)
         }
         store.graphDownloadProgressChanged = { [weak presentationCoordinator] progress in
             presentationCoordinator?.graphDownloadProgress = progress
@@ -400,7 +472,7 @@ public struct LogseqRootView : View {
             )
             try lgRuntime.applyHostUpdate(
                 kind: "settings",
-                payload: try Self.settingsHostPayload()
+                payload: try settingsHostPayload()
             )
             try lgRuntime.applyHostUpdate(
                 kind: "authentication",
@@ -472,7 +544,10 @@ public struct LogseqRootView : View {
         guard !didResumeCurrentActivation else { return }
         isResumingLGApplication = true
         defer { isResumingLGApplication = false }
-        let connected = await graphLifecycle.connectStoredGraph()
+        let connected = await taskReminderCoordinator.withGraphMutation {
+            await graphLifecycle.connectStoredGraph()
+        }
+        isResumingLGApplication = false
         do {
             try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
         } catch {
@@ -485,7 +560,14 @@ public struct LogseqRootView : View {
             logger.error("Could not restore the stored graph connection")
         } else {
             didResumeCurrentActivation = true
+            await processPendingTaskReminderRoute()
         }
+        refreshTaskReminderProjection(checkPermission: true)
+    }
+
+    func clearTaskRemindersForSignOut() {
+        pendingTaskReminderRoute = nil
+        Task { await taskReminderCoordinator.disableBeforeGraphMutation() }
     }
 
     func refreshLocalJournalDay() async {
@@ -543,7 +625,7 @@ public struct LogseqRootView : View {
         return String(data: try JSONEncoder().encode(payload), encoding: .utf8) ?? "{}"
     }
 
-    private static func settingsHostPayload() throws -> String {
+    private func settingsHostPayload() throws -> String {
         let defaults = UserDefaults.standard
         let rawTabs = defaults.string(forKey: "logseq.mobile.sidebarTabs") ?? ""
         let payload = SettingsHostPayload(
@@ -560,9 +642,123 @@ public struct LogseqRootView : View {
                 : rawTabs.split(separator: ",").map { value in String(value) },
             baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
             version: LogseqSettingsPolicy.version,
-            revision: LogseqSettingsPolicy.revision
+            revision: LogseqSettingsPolicy.revision,
+            taskRemindersEnabled: taskReminderCoordinator.isEnabled,
+            taskRemindersStatus: taskReminderCoordinator.statusForSettings
         )
         return String(data: try JSONEncoder().encode(payload), encoding: .utf8) ?? "{}"
+    }
+
+    private func publishSettingsHostUpdate() {
+        guard didStartLGRenderer, let payload = try? settingsHostPayload() else { return }
+        do { try lgRuntime.applyHostUpdate(kind: "settings", payload: payload) }
+        catch { logger.error("Could not publish task reminder settings: \(error.localizedDescription)") }
+    }
+
+    func refreshTaskReminderProjection(checkPermission: Bool = false) {
+        if checkPermission {
+            Task { @MainActor [weak self] in
+                await self?.taskReminderCoordinator.refreshPermissionStatus()
+            }
+        }
+        reminderRefreshTask?.cancel()
+        // Reserve the writer fence at request time, before debounce and RPC.
+        let requestEpoch = taskReminderCoordinator.beginRefresh()
+        guard taskReminderCoordinator.isEnabled,
+              authentication.state == .signedIn,
+              store.snapshot.isGraphUnlocked != false,
+              let graphID = store.snapshot.selectedGraphId, !graphID.isEmpty else {
+            if taskReminderCoordinator.isEnabled {
+                Task { await taskReminderCoordinator.invalidateForGraphMutation() }
+            }
+            return
+        }
+        reminderRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+            guard self.taskReminderCoordinator.isEnabled,
+                  self.taskReminderCoordinator.currentEpoch == requestEpoch,
+                  self.authentication.state == .signedIn,
+                  self.store.snapshot.isGraphUnlocked != false,
+                  self.store.snapshot.selectedGraphId == graphID else { return }
+            let response = await LogseqCore.callAsync(LogseqRPCRequest(
+                method: "dispatch",
+                params: LogseqRPCParams(action: "taskReminders", payload: "{}")
+            ))
+            guard !Task.isCancelled,
+                  self.taskReminderCoordinator.isEnabled,
+                  self.taskReminderCoordinator.currentEpoch == requestEpoch,
+                  self.authentication.state == .signedIn,
+                  self.store.snapshot.isGraphUnlocked != false,
+                  self.store.snapshot.selectedGraphId == graphID else { return }
+            await self.taskReminderCoordinator.reconcile(
+                response, expectedGraphID: graphID, refreshToken: requestEpoch
+            )
+        }
+    }
+
+    private func openTaskReminder(
+        graphId: String,
+        taskUUID: String,
+        pageId: String,
+        allowColdQueue: Bool = true
+    ) async {
+        if allowColdQueue,
+           (!isLGApplicationReady || authentication.state == .restoring
+             || (authentication.state == .signedIn && isResumingLGApplication)) {
+            pendingTaskReminderRoute = PendingTaskReminderRoute(
+                graphId: graphId,
+                taskUUID: taskUUID,
+                pageId: pageId,
+                expiresAt: .now.addingTimeInterval(120)
+            )
+            return
+        }
+        let requestScopeEpoch = taskReminderCoordinator.currentScopeEpoch
+        guard isLGApplicationReady,
+              authentication.state == .signedIn,
+              store.snapshot.selectedGraphId == graphId,
+              store.snapshot.isGraphUnlocked != false else { return }
+        let response = await LogseqCore.callAsync(LogseqRPCRequest(
+            method: "dispatch",
+            params: LogseqRPCParams(action: "taskReminders", payload: "{}")
+        ))
+        guard let projection = try? JSONDecoder().decode(
+            TaskReminderRPCEnvelope<NativeTaskReminderProjection>.self,
+            from: Data(response.utf8)
+        ).result,
+              let currentContext = TaskReminderRouteResolver.resolve(
+                graphId: graphId,
+                taskUUID: taskUUID,
+                in: projection
+              ),
+              taskReminderCoordinator.currentScopeEpoch == requestScopeEpoch,
+              authentication.state == .signedIn,
+              store.snapshot.selectedGraphId == graphId,
+              store.snapshot.isGraphUnlocked != false,
+              let encoded = try? JSONEncoder().encode(currentContext.taskUUID),
+              let payload = String(data: encoded, encoding: .utf8)
+        else { return }
+        do { try lgRuntime.applyHostUpdate(kind: "open-node", payload: payload) }
+        catch { logger.error("Could not open a task reminder: \(error.localizedDescription)") }
+    }
+
+    private func processPendingTaskReminderRoute() async {
+        guard let route = pendingTaskReminderRoute else { return }
+        guard route.expiresAt > .now else {
+            pendingTaskReminderRoute = nil
+            return
+        }
+        guard isLGApplicationReady, authentication.state == .signedIn,
+              !isResumingLGApplication, store.snapshot.selectedGraphId != nil,
+              store.snapshot.isGraphUnlocked != false else { return }
+        pendingTaskReminderRoute = nil
+        await openTaskReminder(
+            graphId: route.graphId,
+            taskUUID: route.taskUUID,
+            pageId: route.pageId,
+            allowColdQueue: false
+        )
     }
 
     private static func copyText(_ text: String) {
@@ -789,7 +985,10 @@ public struct LogseqRootView : View {
                     let payload = String(decoding: data, as: UTF8.self)
                     guard await self.store.handleDeepLink(payload) else { return false }
                     if let graphID = self.store.deepLinkGraphId {
-                        let opened = await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
+                        let opened = await self.taskReminderCoordinator.withGraphMutation {
+                            await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
+                        }
+                        self.taskReminderCoordinator.graphMutationDidFinish(succeeded: opened.succeeded)
                         guard opened.succeeded, await self.store.handleDeepLink(payload), self.store.deepLinkGraphId == nil else { return false }
                     }
                     if let uuid = self.store.deepLinkNodeUuid {
@@ -831,47 +1030,57 @@ public struct LogseqRootView : View {
         store.open(path: databasePath)
     }
 
-    public func syncFromStoredConnection() async -> Bool {
+    private func synchronizeStoredGraph() async -> String? {
         await waitForLocalLaunchLoad()
         let defaults = UserDefaults.standard
         let baseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
         guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {
-            return false
+            return nil
         }
-        guard let token = try? await authentication.apiToken() else { return false }
+        guard let token = try? await authentication.apiToken() else { return nil }
         await store.configureAndSelectGraph(
             baseURL: baseURL,
             token: token,
             selectedGraphID: graphID,
             refreshGraphCatalog: false
         )
-        guard store.lastError == nil else { return false }
+        guard store.lastError == nil else { return nil }
         let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
-        if isEncrypted && store.snapshot.isGraphUnlocked != true { return false }
+        if isEncrypted && store.snapshot.isGraphUnlocked != true { return nil }
         guard await store.bootstrapSelectedGraph(
             graphID: graphID,
             baseURL: baseURL,
             accessToken: token,
             allowSnapshotDownload: false,
             isEncrypted: isEncrypted
-        ) else { return false }
+        ) else { return nil }
         _ = await store.runGraphEventsOnce(
             graphID: graphID,
             baseURL: baseURL,
             accessToken: token,
             stopAfterFirstFrame: true
         )
-        return store.lastError == nil && store.syncError == nil
+        guard store.lastError == nil, store.syncError == nil,
+              store.snapshot.selectedGraphId == graphID,
+              store.snapshot.isGraphUnlocked != false else { return nil }
+        return graphID
     }
 
-    public func runExclusiveBackgroundSync() async -> Bool {
-        await syncCoordinator.runBackground {
-            await LogseqLogseqRuntime.shared.syncFromStoredConnection()
+    func runExclusiveBackgroundSync(_ attempt: TaskReminderBackgroundAttempt) async -> Bool {
+        await attempt.run(reminders: taskReminderCoordinator, sync: syncCoordinator,
+                          synchronizeGraph: { [self] in await synchronizeStoredGraph() }) { [self] graphID in
+            guard authentication.state == .signedIn,
+                  store.snapshot.selectedGraphId == graphID,
+                  store.snapshot.isGraphUnlocked != false else { return nil }
+            let response = await LogseqCore.callAsync(LogseqRPCRequest(
+                method: "dispatch",
+                params: LogseqRPCParams(action: "taskReminders", payload: "{}")
+            ))
+            guard authentication.state == .signedIn,
+                  store.snapshot.selectedGraphId == graphID,
+                  store.snapshot.isGraphUnlocked != false else { return nil }
+            return response
         }
-    }
-
-    public func cancelBackgroundSync() async {
-        await syncCoordinator.cancelBackground()
     }
 }
 
@@ -905,10 +1114,6 @@ public enum LogseqBackgroundRefresh {
         #endif
     }
 
-    @MainActor private static func runOnce() async -> Bool {
-        await LogseqLogseqRuntime.shared.runExclusiveBackgroundSync()
-    }
-
     public static func register() {
         #if os(iOS)
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
@@ -935,21 +1140,18 @@ public enum LogseqBackgroundRefresh {
     #if os(iOS)
     private static func handle(_ task: BGTask) {
         schedule()
-        let completion = BackgroundTaskCompletion()
+        let attempt = TaskReminderBackgroundAttempt()
+        let completion = TaskReminderBackgroundCompletion(
+            clearAndDrain: { await attempt.expireAndDrain() },
+            completion: { result in task.setTaskCompleted(success: result) },
+            afterExpiration: { await attempt.awaitExpiredNetworkTask() }
+        )
         let refreshTask = Task {
-            let success = await runOnce()
-            await completion.finish(success: success) { result in
-                task.setTaskCompleted(success: result)
-            }
+            let success = await LogseqLogseqRuntime.shared.runExclusiveBackgroundSync(attempt)
+            await completion.finish(success: success)
         }
         task.expirationHandler = {
-            Task { @MainActor in
-                refreshTask.cancel()
-                completion.finish(success: false) { result in
-                    task.setTaskCompleted(success: result)
-                }
-                await LogseqLogseqRuntime.shared.cancelBackgroundSync()
-            }
+            completion.expire(cancel: { refreshTask.cancel() })
         }
     }
     #endif
@@ -959,28 +1161,33 @@ public enum LogseqBackgroundRefresh {
 @MainActor private final class BackgroundSyncExecution {
     private var identifier: UIBackgroundTaskIdentifier = .invalid
     private var syncTask: Task<Void, Never>?
+    private var completion: TaskReminderBackgroundCompletion?
 
     func start() {
+        let attempt = TaskReminderBackgroundAttempt()
+        let completion = TaskReminderBackgroundCompletion(
+            clearAndDrain: { await attempt.expireAndDrain() },
+            completion: { [self] _ in finish() },
+            afterExpiration: { await attempt.awaitExpiredNetworkTask() }
+        )
+        self.completion = completion
         identifier = UIApplication.shared.beginBackgroundTask(withName: "Logseq graph sync") { [weak self] in
             self?.expire()
         }
-        syncTask = Task { [self] in
-            _ = await LogseqLogseqRuntime.shared.runExclusiveBackgroundSync()
-            finish()
+        syncTask = Task {
+            let success = await LogseqLogseqRuntime.shared.runExclusiveBackgroundSync(attempt)
+            completion.finish(success: success)
         }
     }
 
     private func expire() {
-        syncTask?.cancel()
-        // Relinquish the iOS assertion before awaiting potentially slow network cleanup.
-        finish()
-        Task {
-            await LogseqLogseqRuntime.shared.cancelBackgroundSync()
-        }
+        let syncTask = syncTask
+        completion?.expire(cancel: { syncTask?.cancel() })
     }
 
     private func finish() {
         syncTask = nil
+        completion = nil
         guard identifier != .invalid else { return }
         UIApplication.shared.endBackgroundTask(identifier)
         identifier = .invalid

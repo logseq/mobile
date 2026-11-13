@@ -102,7 +102,7 @@ import LogseqModel
             await pause()
             switch scenario {
             case "language":
-                try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}"#)
+                try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","systemLanguage":"zh-CN","spellCheck":true,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}"#)
                 try press("button.sidebar"); await pause()
                 try press("button.sidebar.settings"); await pause()
                 if let id = find("sheet.settings") { observations["system-language"] = backend.model(id: id)?.property(.text)?.stringValue == "设置" }
