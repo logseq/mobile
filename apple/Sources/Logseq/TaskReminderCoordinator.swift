@@ -3,11 +3,17 @@ import CryptoKit
 import UserNotifications
 import os
 
+func taskReminderLocalization(for identifier: String) -> String {
+    let language = Locale.Language(identifier: identifier.replacingOccurrences(of: "_", with: "-"))
+    guard let code = language.languageCode?.identifier else { return "en" }
+    if code == "zh" { return language.script?.identifier == "Hant" ? "zh-Hant" : "zh-Hans" }
+    return code
+}
+
 private func taskReminderLocalized(_ key: String) -> String {
     let setting = UserDefaults.standard.string(forKey: "logseq.language") ?? "system"
     let requested = setting == "system" ? Locale.preferredLanguages.first ?? "en" : setting
-    let normalized = requested.replacingOccurrences(of: "_", with: "-").lowercased()
-    let localization = normalized.hasPrefix("zh") ? "zh-Hans" : normalized.split(separator: "-").first.map(String.init) ?? "en"
+    let localization = taskReminderLocalization(for: requested)
     if let path = Bundle.module.url(forResource: localization, withExtension: "lproj"),
        let languageBundle = Bundle(url: path) {
         return languageBundle.localizedString(forKey: key, value: key, table: nil)
@@ -238,6 +244,7 @@ protocol TaskReminderNotificationStoring: Sendable {
     func requestAuthorization() async throws -> Bool
     func advance(to epoch: UInt64)
     func invalidate(to epoch: UInt64) async
+    func invalidateIfCurrent(to epoch: UInt64) async
     @discardableResult
     func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool
 }
@@ -326,6 +333,8 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
     private let epochFence = OSAllocatedUnfairLock(initialState: UInt64(0))
     private var latestEpoch: UInt64 { epochFence.withLock { $0 } }
     private var writeTail: Task<Void, Never>?
+    private var reconciliationDrains: [UInt64: Task<Void, Never>] = [:]
+    private var lastCompletedPlanEpoch: UInt64 = 0
 
     init(center: any TaskReminderCenterClient = UserNotificationCenterClient()) { self.center = center }
 
@@ -343,26 +352,44 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
 
     func invalidate(to epoch: UInt64) async {
         advance(to: epoch)
-        await enqueue { [self] in await removeManagedRequests() }
+        await enqueue { [self] in
+            // A newer request alone cannot suppress mandatory opt-out/scope
+            // cleanup. A newer fully committed authoritative plan can.
+            await removeManagedRequests(unlessPlanAfter: epoch)
+        }.value
+    }
+
+    func invalidateIfCurrent(to epoch: UInt64) async {
+        guard epoch == latestEpoch else {
+            // Join only this attempt's write. A stale network read that never
+            // wrote must not wait on an unrelated newer foreground add.
+            await reconciliationDrains[epoch]?.value
+            return
+        }
+        await enqueue { [self] in await removeManagedRequests(ifCurrent: epoch) }.value
     }
 
     @discardableResult
     func reconcile(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool {
         guard epoch >= latestEpoch else { return false }
         advance(to: epoch)
-        return await enqueue { [self] in await reconcileNow(plan, epoch: epoch) }
+        let write = enqueue { [self] in await reconcileNow(plan, epoch: epoch) }
+        reconciliationDrains[epoch] = Task { _ = await write.value }
+        let result = await write.value
+        reconciliationDrains[epoch] = nil
+        return result
     }
 
     private func enqueue<Result: Sendable>(
         _ operation: @escaping @Sendable () async -> Result
-    ) async -> Result {
+    ) -> Task<Result, Never> {
         let previous = writeTail
         let next = Task {
             await previous?.value
             return await operation()
         }
         writeTail = Task { _ = await next.value }
-        return await next.value
+        return next
     }
 
     private func reconcileNow(_ plan: TaskReminderPlan, epoch: UInt64) async -> Bool {
@@ -425,10 +452,17 @@ actor TaskReminderNotificationAdapter: TaskReminderNotificationStoring {
                 return false
             }
         }
-        return epoch == latestEpoch
+        guard epoch == latestEpoch else { return false }
+        lastCompletedPlanEpoch = epoch
+        return true
     }
 
-    private func removeManagedRequests() async {
+    private func removeManagedRequests(
+        ifCurrent epoch: UInt64? = nil,
+        unlessPlanAfter mandatoryEpoch: UInt64? = nil
+    ) async {
+        if let epoch, epoch != latestEpoch { return }
+        if let mandatoryEpoch, lastCompletedPlanEpoch > mandatoryEpoch { return }
         let pending = await center.pending()
             .map(\.identifier).filter { $0.hasPrefix(TaskReminderPlan.managedPrefix) }
         let delivered = await center.delivered()
@@ -445,6 +479,7 @@ final class TaskReminderCoordinator {
     private let now: @Sendable () -> Date
     private var epoch: UInt64 = 0
     private var scopeEpoch: UInt64 = 0
+    private var graphMutationDepth = 0
     // Permission consent can outlive an ordinary foreground graph refresh. Only a
     // newer opt-in choice or an account/API reset supersedes that user intent.
     private var enableIntentEpoch: UInt64 = 0
@@ -525,7 +560,7 @@ final class TaskReminderCoordinator {
                 let token = invalidateImmediately()
                 await adapter.invalidate(to: token)
             }
-        } else {
+        } else if statusMessageKey == "Allow notifications in iOS Settings to enable task reminders." {
             statusMessageKey = nil
         }
         onSettingsChanged?()
@@ -542,9 +577,29 @@ final class TaskReminderCoordinator {
     }
 
     func invalidateForGraphMutation() async {
+        await withGraphMutation {}
+    }
+
+    func graphMutationDidFinish(succeeded: Bool) {
+        if succeeded { onGraphMutationCompleted?() }
+        else { onCoreMutation?() }
+    }
+
+    // Keep old-scope callbacks fenced throughout cleanup AND the graph effect.
+    // Invalidating only before an awaited cleanup lets the old graph publish a
+    // newer plan before the actual switch has even started.
+    func withGraphMutation<Result>(
+        _ operation: @MainActor () async throws -> Result
+    ) async rethrows -> Result {
+        graphMutationDepth += 1
         scopeEpoch &+= 1
         let token = invalidateImmediately()
+        defer {
+            graphMutationDepth -= 1
+            invalidateImmediately()
+        }
         await adapter.invalidate(to: token)
+        return try await operation()
     }
 
     func beginRefresh() -> UInt64 {
@@ -555,42 +610,53 @@ final class TaskReminderCoordinator {
         await adapter.invalidate(to: invalidateImmediately())
     }
 
+    func clearAndDrain(ifCurrent token: UInt64) async {
+        // A superseded attempt joins its own reconciliation so outstanding
+        // writes have drained before a background completion releases budget.
+        await adapter.invalidateIfCurrent(to: token)
+    }
+
     // Background callers await both the fresh core read and the serialized
-    // notification write. A superseded attempt drains managed cleanup before
-    // returning failure, so releasing background time cannot leave stale alerts.
+    // notification write. A superseded attempt waits for its own writes but
+    // must not invalidate a newer refresh.
     func refreshAndDrain(
         expectedGraphID: String,
+        refreshToken: UInt64? = nil,
         fetchProjection: @MainActor () async -> String?
     ) async -> Bool {
+        let token = refreshToken ?? beginRefresh()
+        guard token == epoch, !Task.isCancelled else {
+            await clearAndDrain(ifCurrent: token)
+            return false
+        }
         guard isEnabled else {
-            await clearAndDrain()
+            await clearAndDrain(ifCurrent: token)
             return true
         }
-        let token = beginRefresh()
         if !Task.isCancelled, let response = await fetchProjection(),
            await reconcile(response, expectedGraphID: expectedGraphID, refreshToken: token) {
             return true
         } else {
-            await clearAndDrain()
+            await adapter.invalidateIfCurrent(to: token)
             return false
         }
     }
 
     @discardableResult
     func reconcile(_ response: String, expectedGraphID: String, refreshToken token: UInt64) async -> Bool {
-        guard isEnabled, token == epoch, !Task.isCancelled else { return false }
+        guard isEnabled, graphMutationDepth == 0, token == epoch, !Task.isCancelled else { return false }
         do {
             let projection = try JSONDecoder().decode(
                 TaskReminderRPCEnvelope<NativeTaskReminderProjection>.self,
                 from: Data(response.utf8)
             ).result
-            guard token == epoch, !Task.isCancelled else { return false }
-            guard projection.graphId == expectedGraphID else {
-                await adapter.invalidate(to: token)
+            guard graphMutationDepth == 0, token == epoch, !Task.isCancelled else { return false }
+            guard projection.graphId == expectedGraphID, projection.ready, projection.complete else {
+                await adapter.invalidateIfCurrent(to: token)
                 return false
             }
             let status = await adapter.authorizationStatus()
-            guard token == epoch, !Task.isCancelled else { return false }
+            guard graphMutationDepth == 0, token == epoch, !Task.isCancelled else { return false }
             guard status == .authorized || status == .provisional || status == .ephemeral else {
                 enableIntentEpoch &+= 1
                 defaults.set(false, forKey: Self.enabledDefaultsKey)
@@ -603,10 +669,13 @@ final class TaskReminderCoordinator {
             let plan = TaskReminderPlan.make(from: projection, now: now())
             guard token == epoch, !Task.isCancelled else { return false }
             let scheduled = await adapter.reconcile(plan, epoch: token)
-            return scheduled && token == epoch && isEnabled && !Task.isCancelled
+            guard token == epoch, isEnabled, !Task.isCancelled else { return false }
+            statusMessageKey = scheduled ? nil : "Could not schedule task reminders."
+            onSettingsChanged?()
+            return scheduled
         } catch {
             logger.error("Could not read the task reminder projection: \(error.localizedDescription)")
-            if token == epoch { await adapter.invalidate(to: token) }
+            await adapter.invalidateIfCurrent(to: token)
             return false
         }
     }
@@ -616,6 +685,73 @@ final class TaskReminderCoordinator {
         epoch &+= 1
         adapter.advance(to: epoch)
         return epoch
+    }
+}
+
+// One OS caller owns one sync request. Coalesced callers share the first
+// operation's reminder epoch, while expiration only cleans up when the final
+// caller releases that shared operation. No continuation consults global work.
+@MainActor
+final class TaskReminderBackgroundAttempt {
+    @MainActor private final class ResponseContext {
+        var active = true
+    }
+    @TaskLocal private static var responseContext: ResponseContext?
+    private let request = GraphSyncCoordinator.BackgroundRequest()
+    private var sync: GraphSyncCoordinator?
+    private var refreshToken: UInt64?
+    private var expirationDrain: Task<Void, Never>?
+    private var expiredNetworkTask: Task<Bool, Never>?
+
+    nonisolated init() {}
+
+    // Store.apply invokes its observer in the awaiting caller's task. Children
+    // inherit the context but stop coalescing when the awaited sync returns.
+    // Scene/UI tasks have their own context and reserve epochs normally.
+    static func refreshAfterCoreResponse(_ refresh: () -> Void) {
+        guard responseContext?.active != true else { return }
+        refresh()
+    }
+
+    func run(
+        reminders: TaskReminderCoordinator,
+        sync: GraphSyncCoordinator,
+        synchronizeGraph: @escaping @MainActor @Sendable () async -> String?,
+        fetchProjection: @escaping @MainActor @Sendable (String) async -> String?
+    ) async -> Bool {
+        guard expirationDrain == nil else { return false }
+        self.sync = sync
+        return await sync.runBackground(request: request, expirationCleanup: { [self] in
+            if let refreshToken { await reminders.clearAndDrain(ifCurrent: refreshToken) }
+        }) { [self] in
+            let token = reminders.beginRefresh()
+            refreshToken = token
+            let context = ResponseContext()
+            let graphID = await Self.$responseContext.withValue(context) {
+                defer { context.active = false }
+                return await synchronizeGraph()
+            }
+            guard !Task.isCancelled, reminders.currentEpoch == token, let graphID else {
+                await reminders.clearAndDrain(ifCurrent: token)
+                return false
+            }
+            return await reminders.refreshAndDrain(
+                expectedGraphID: graphID, refreshToken: token
+            ) { await fetchProjection(graphID) }
+        }
+    }
+
+    func expireAndDrain() async {
+        if let expirationDrain { await expirationDrain.value; return }
+        let drain = Task { [self] in
+            expiredNetworkTask = await sync?.expireBackground(request: request)
+        }
+        expirationDrain = drain
+        await drain.value
+    }
+
+    func awaitExpiredNetworkTask() async {
+        _ = await expiredNetworkTask?.value
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import LogseqModel
 import UIKit
 @testable import Logseq
 
@@ -239,6 +240,12 @@ private actor SuspendedAsyncProbe {
 struct CheckTaskReminders {
     @MainActor
     static func main() async throws {
+        for (input, expected) in [("zh-Hant", "zh-Hant"), ("zh-TW", "zh-Hant"),
+                                  ("zh_HK", "zh-Hant"), ("zh-CN", "zh-Hans"),
+                                  ("zh-Hans-TW", "zh-Hans"), ("fr-CA", "fr")] {
+            try require(taskReminderLocalization(for: input) == expected,
+                        "Reminder localization did not honor language script or region: \(input)")
+        }
         guard let url = Bundle.main.url(forResource: "task-reminders", withExtension: "json") else {
             throw failure("Missing generated task-reminders RPC fixture")
         }
@@ -401,6 +408,36 @@ struct CheckTaskReminders {
         let afterPlan = await center.storedIDs()
         try require(afterPlan.contains(unrelatedID), "Reconciliation removed an unrelated notification")
         try require(afterPlan.contains(future.identifier), "Reconciliation did not add the core-projected task reminder")
+        for (ready, complete) in [(false, true), (true, false)] {
+            let incompleteCenter = ReminderCenterProbe(requests: [
+                TaskReminderStoredNotification(identifier: future.identifier, graphId: future.graphId,
+                    taskUUID: future.taskUUID, pageId: future.pageId, fireDate: future.fireDate, trigger: future.trigger),
+                TaskReminderStoredNotification(identifier: unrelatedID, graphId: nil,
+                    taskUUID: nil, pageId: nil, fireDate: nil, trigger: nil)
+            ])
+            let suite = "TaskReminderIncomplete-\(UUID().uuidString)"
+            let incompleteDefaults = UserDefaults(suiteName: suite)!
+            defer { incompleteDefaults.removePersistentDomain(forName: suite) }
+            let incompleteCoordinator = TaskReminderCoordinator(
+                adapter: TaskReminderNotificationAdapter(center: incompleteCenter),
+                defaults: incompleteDefaults, now: { now }
+            )
+            await incompleteCoordinator.setEnabled(true)
+            await incompleteCenter.suspendCleanup()
+            let token = incompleteCoordinator.beginRefresh()
+            let completion = CompletionProbe()
+            let response = #"{"result":{"graphId":"sample","ready":\#(ready),"complete":\#(complete),"tasks":[]}}"#
+            let task = Task {
+                let result = await incompleteCoordinator.reconcile(response, expectedGraphID: "sample", refreshToken: token)
+                await completion.markCompleted()
+                return result
+            }
+            await incompleteCenter.waitForManagedCleanupStart()
+            try require(!(await completion.hasCompleted()), "Incomplete projection returned before cleanup")
+            await incompleteCenter.releaseSuspendedCleanup()
+            try require(!(await task.value), "Incomplete projection reported success")
+            try require(await incompleteCenter.storedIDs() == [unrelatedID], "Incomplete projection failed selective cleanup")
+        }
         print("PASS: genuine core RPC JSON flows through the production coordinator and adapter while unrelated requests remain")
         await coordinator.invalidateForGraphMutation()
         try require(coordinator.currentScopeEpoch > scopeBeforeRefresh,
@@ -627,6 +664,77 @@ struct CheckTaskReminders {
         try require(supersededCoordinator.currentScopeEpoch == navigationScopeBeforeRefresh
                     && supersededCoordinator.isEnabled,
                     "Refresh supersession changed navigation scope or app-level consent")
+
+        // A newer no-op refresh must not cancel mandatory disable cleanup that
+        // is waiting behind a notification write.
+        let mandatoryRaw = #"{"result":{"graphId":"sample","ready":true,"complete":true,"tasks":[{"uuid":"a","pageId":"p","temporal":{"kind":"datetime","timestampMs":4070908800000}},{"uuid":"b","pageId":"p","temporal":{"kind":"datetime","timestampMs":4070908800000}}]}}"#
+        let mandatoryProjection = try JSONDecoder().decode(
+            TaskReminderRPCEnvelope<NativeTaskReminderProjection>.self, from: Data(mandatoryRaw.utf8)
+        ).result
+        let existing = TaskReminderPlan.make(from: mandatoryProjection, now: now).items[0]
+        let mandatoryCenter = ReminderCenterProbe(requests: [TaskReminderStoredNotification(
+            identifier: existing.identifier, graphId: existing.graphId, taskUUID: existing.taskUUID,
+            pageId: existing.pageId, fireDate: existing.fireDate, trigger: existing.trigger
+        )])
+        await mandatoryCenter.suspendAdds()
+        let mandatorySuite = "TaskReminderMandatoryCleanup-\(UUID().uuidString)"
+        let mandatoryDefaults = UserDefaults(suiteName: mandatorySuite)!
+        defer { mandatoryDefaults.removePersistentDomain(forName: mandatorySuite) }
+        let mandatoryCoordinator = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: mandatoryCenter), defaults: mandatoryDefaults, now: { now }
+        )
+        await mandatoryCoordinator.setEnabled(true)
+        let mandatoryToken = mandatoryCoordinator.beginRefresh()
+        let heldWrite = Task {
+            await mandatoryCoordinator.reconcile(mandatoryRaw, expectedGraphID: "sample", refreshToken: mandatoryToken)
+        }
+        await mandatoryCenter.waitForAddStart()
+        let disable = Task { await mandatoryCoordinator.setEnabled(false) }
+        while mandatoryCoordinator.isEnabled { await Task.yield() }
+        _ = mandatoryCoordinator.beginRefresh()
+        await mandatoryCenter.releaseSuspendedAdd()
+        _ = await heldWrite.value
+        await disable.value
+        try require(await mandatoryCenter.storedIDs().isEmpty,
+                    "A newer no-op epoch skipped mandatory disable cleanup")
+
+        // An old background read can finish after a newer foreground write, or
+        // while that write is suspended. Neither ordering may cancel the newer work.
+        for newerInFlight in [false, true] {
+            let raceCenter = ReminderCenterProbe()
+            if newerInFlight { await raceCenter.suspendAdds() }
+            let suite = "TaskReminderNewerRefresh-\(UUID().uuidString)"
+            let raceDefaults = UserDefaults(suiteName: suite)!
+            defer { raceDefaults.removePersistentDomain(forName: suite) }
+            let raceCoordinator = TaskReminderCoordinator(
+                adapter: TaskReminderNotificationAdapter(center: raceCenter),
+                defaults: raceDefaults, now: { now }
+            )
+            await raceCoordinator.setEnabled(true)
+            let oldFetch = SuspendedAsyncProbe()
+            let oldTask = Task {
+                await raceCoordinator.refreshAndDrain(expectedGraphID: "sample") {
+                    await oldFetch.run()
+                    return nil
+                }
+            }
+            await oldFetch.waitForStart()
+            let newerToken = raceCoordinator.beginRefresh()
+            let newerTask = Task {
+                await raceCoordinator.reconcile(raw, expectedGraphID: "sample", refreshToken: newerToken)
+            }
+            if newerInFlight {
+                await raceCenter.waitForAddStart()
+            } else {
+                try require(await newerTask.value, "Newer refresh did not finish")
+            }
+            await oldFetch.release()
+            try require(!(await oldTask.value), "Superseded background read reported success")
+            if newerInFlight { await raceCenter.releaseSuspendedAdd() }
+            try require(await newerTask.value, "Old background read invalidated a newer refresh")
+            try require(await raceCenter.storedIDs().contains(future.identifier),
+                        "Old background read removed the newer reminder")
+        }
         let disabledDrainCenter = ReminderCenterProbe()
         await disabledDrainCenter.suspendAdds()
         let disabledDrainSuite = "TaskReminderDisabledDrain-\(UUID().uuidString)"
@@ -752,6 +860,59 @@ struct CheckTaskReminders {
                     "The coordinator reported success after the notification center rejected an add")
         try require(await coordinatorFailureCenter.eventLog().contains("addFailed"),
                     "Coordinator failure result was not caused by the injected center add rejection")
+        try require(coordinatorFailure.statusForSettings == "Could not schedule task reminders.",
+                    "Settings did not report the scheduling failure")
+        await coordinatorFailure.refreshPermissionStatus()
+        try require(coordinatorFailure.statusForSettings == "Could not schedule task reminders.",
+                    "Permission refresh erased the scheduling failure")
+        let retryToken = coordinatorFailure.beginRefresh()
+        try require(await coordinatorFailure.reconcile(raw, expectedGraphID: "sample", refreshToken: retryToken),
+                    "Scheduling retry did not succeed")
+        try require(coordinatorFailure.statusForSettings == "Local alerts for scheduled tasks and deadlines.",
+                    "Successful scheduling did not clear the failure status")
+
+        let staleFailureCenter = ReminderCenterProbe()
+        await staleFailureCenter.failNextAdd(holdUntilReleased: true)
+        let staleFailureSuite = "TaskReminderStaleFailure-\(UUID().uuidString)"
+        let staleFailureDefaults = UserDefaults(suiteName: staleFailureSuite)!
+        defer { staleFailureDefaults.removePersistentDomain(forName: staleFailureSuite) }
+        let staleFailureCoordinator = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: staleFailureCenter),
+            defaults: staleFailureDefaults, now: { now }
+        )
+        await staleFailureCoordinator.setEnabled(true)
+        let staleToken = staleFailureCoordinator.beginRefresh()
+        let staleFailure = Task {
+            await staleFailureCoordinator.reconcile(raw, expectedGraphID: "sample", refreshToken: staleToken)
+        }
+        await staleFailureCenter.waitForAddFailureStart()
+        let latestToken = staleFailureCoordinator.beginRefresh()
+        await staleFailureCenter.releaseHeldAddFailure()
+        try require(!(await staleFailure.value), "Superseded failed add reported success")
+        try require(staleFailureCoordinator.statusForSettings == "Local alerts for scheduled tasks and deadlines.",
+                    "Superseded failure replaced the current settings status")
+        try require(await staleFailureCoordinator.reconcile(raw, expectedGraphID: "sample", refreshToken: latestToken),
+                    "New refresh failed after a superseded add failure")
+
+        let staleFetch = SuspendedAsyncProbe()
+        let staleBackground = Task {
+            await staleFailureCoordinator.refreshAndDrain(expectedGraphID: "sample") {
+                await staleFetch.run()
+                return nil
+            }
+        }
+        await staleFetch.waitForStart()
+        // Change the plan so the injected rejection cannot reuse an existing request.
+        let changedResponse = raw.replacingOccurrences(of: "task-202", with: "task-new-status")
+        await staleFailureCenter.failNextAdd()
+        let failedLatestToken = staleFailureCoordinator.beginRefresh()
+        try require(!(await staleFailureCoordinator.reconcile(
+            changedResponse, expectedGraphID: "sample", refreshToken: failedLatestToken
+        )), "Latest injected add failure reported success")
+        await staleFetch.release()
+        try require(!(await staleBackground.value), "Old background read reported success")
+        try require(staleFailureCoordinator.statusForSettings == "Could not schedule task reminders.",
+                    "Old background read erased the latest failure status")
 
         let backgroundAddFailureCenter = ReminderCenterProbe(requests: [
             TaskReminderStoredNotification(
@@ -847,6 +1008,9 @@ struct CheckTaskReminders {
                     "Expiration completion left managed requests pending or removed unrelated ones")
         await networkTeardown.release()
         print("PASS: OS expiration drains reminders before one false completion and slow network teardown")
+
+        try await checkBackgroundOwnership(now: now)
+        try await checkStoreCallbacksAndGraphMutation(now: now)
 
         let deniedCenter = ReminderCenterProbe(authorization: .denied)
         try require(await deniedCenter.authorizationStatus() == .denied,
@@ -1085,6 +1249,345 @@ struct CheckTaskReminders {
             try await Task.sleep(for: .milliseconds(250))
         }
         throw failure("Return to the runtime-check app after changing notification settings")
+    }
+
+
+
+    @MainActor
+    private static func checkStoreCallbacksAndGraphMutation(now: Date) async throws {
+        let raw = #"{"result":{"graphId":"sample","ready":true,"complete":true,"tasks":[{"uuid":"owned","pageId":"page","temporal":{"kind":"datetime","timestampMs":4070908800000}}]}}"#
+        let snapshot = #"{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Synthetic","selectedGraphId":"sample","isGraphUnlocked":true},"error":null}"#
+        let projection = try JSONDecoder().decode(
+            TaskReminderEnvelope<NativeTaskReminderProjection>.self, from: Data(raw.utf8)
+        ).result
+        let plan = TaskReminderPlan.make(from: projection, now: now)
+        for succeeds in [true, false] {
+            let suite = "TaskReminderStoreCallback-\(UUID())"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let center = ReminderCenterProbe()
+            let reminders = TaskReminderCoordinator(
+                adapter: TaskReminderNotificationAdapter(center: center), defaults: defaults, now: { now }
+            )
+            await reminders.setEnabled(true)
+            if succeeds { await center.suspendAdds() }
+            else {
+                try require(await reminders.reconcile(raw, expectedGraphID: "sample",
+                                                      refreshToken: reminders.beginRefresh()),
+                            "Could not seed the failed-sync cleanup check")
+                await center.suspendCleanup()
+            }
+            var callbacks = 0
+            var independentRefreshes = 0
+            // Exercise the real async LogseqStore.configure -> core executor ->
+            // Store.apply -> responseObserver path. All RPC/transport data is
+            // synthetic; no graph, network, credentials, or real core is used.
+            let store = LogseqStore(call: { _ in snapshot }, responseObserver: { _ in
+                callbacks += 1
+                TaskReminderBackgroundAttempt.refreshAfterCoreResponse {
+                    independentRefreshes += 1
+                    _ = reminders.beginRefresh()
+                }
+            })
+            let finished = CompletionProbe()
+            let attempt = TaskReminderBackgroundAttempt()
+            let background = Task {
+                let result = await attempt.run(reminders: reminders, sync: GraphSyncCoordinator(),
+                                               synchronizeGraph: {
+                    await store.configureAndSelectGraph(baseURL: "https://example.invalid",
+                                                        token: "synthetic", selectedGraphID: "sample")
+                    await store.syncPendingForBackground()
+                    return succeeds ? "sample" : nil
+                }, fetchProjection: { _ in raw })
+                await finished.markCompleted()
+                return result
+            }
+            if succeeds { await center.waitForAddStart() }
+            // Seeding the plan performs an empty cleanup too. Wait for this
+            // failure's managed removal, rather than that earlier empty call.
+            else { await center.waitForManagedCleanupStart() }
+            try require(callbacks >= 2 && independentRefreshes == 0,
+                        "Real store/child sync callbacks superseded their own background attempt")
+            try require(!(await finished.hasCompleted()),
+                        "Background completed before its final add/cleanup drained")
+            if succeeds { await center.releaseSuspendedAdd() }
+            else { await center.releaseSuspendedCleanup() }
+            try require(await background.value == succeeds,
+                        "Real store callback flow lost the final background result")
+            let remaining = await center.storedIDs()
+            try require(succeeds ? remaining == Set(plan.items.map(\.identifier)) : remaining.isEmpty,
+                        "Real store callback flow failed final reminder reconciliation/cleanup")
+            // An independent response after the context exits reserves a fresh
+            // epoch; inherited child contexts must not suppress it forever.
+            await store.configureAndSelectGraph(baseURL: "https://example.invalid",
+                                                token: "", selectedGraphID: "sample")
+            try require(independentRefreshes == 1, "Completed sync suppressed a later response")
+        }
+        print("PASS: real async store and child sync callbacks coalesce; background success/failure await final add/cleanup")
+
+        let suite = "TaskReminderGraphMutationBarrier-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let center = ReminderCenterProbe()
+        let reminders = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: center), defaults: defaults, now: { now }
+        )
+        await reminders.setEnabled(true)
+        try require(await reminders.reconcile(raw, expectedGraphID: "sample",
+                                              refreshToken: reminders.beginRefresh()),
+                    "Could not seed old graph")
+        await center.suspendCleanup()
+        let effect = SuspendedAsyncProbe()
+        let mutation = Task {
+            try await reminders.withGraphMutation {
+                try require(await center.storedIDs().isEmpty,
+                            "Graph effect started before old-scope requests were cleared")
+                await effect.run()
+            }
+        }
+        await center.waitForManagedCleanupStart()
+        let duringCleanup = reminders.beginRefresh()
+        try require(!(await reminders.reconcile(raw, expectedGraphID: "sample", refreshToken: duringCleanup)),
+                    "Old graph wrote while mandatory cleanup was suspended")
+        await center.releaseSuspendedCleanup()
+        await effect.waitForStart()
+        let duringEffect = reminders.beginRefresh()
+        try require(!(await reminders.reconcile(raw, expectedGraphID: "sample", refreshToken: duringEffect)),
+                    "Old graph wrote while the actual graph switch was suspended")
+        await effect.release()
+        try await mutation.value
+        try require(!(await reminders.reconcile(raw, expectedGraphID: "sample", refreshToken: duringEffect)),
+                    "An old-scope callback survived the graph-switch barrier")
+        let newGraph = raw.replacingOccurrences(of: "sample", with: "new-graph")
+        try require(await reminders.reconcile(newGraph, expectedGraphID: "new-graph",
+                                              refreshToken: reminders.beginRefresh()),
+                    "Graph barrier suppressed a legitimate new-scope plan")
+        do {
+            try await reminders.withGraphMutation { throw ReminderCenterProbeError.forcedAddFailure }
+        } catch ReminderCenterProbeError.forcedAddFailure {}
+        try require(await reminders.reconcile(newGraph, expectedGraphID: "new-graph",
+                                              refreshToken: reminders.beginRefresh()),
+                    "A failed graph effect did not release its barrier")
+        // Match the runtime callers: leave the barrier, then report a failed
+        // graph operation through the same callback helper. Failure must request
+        // a new authoritative projection without triggering success navigation.
+        var recoveryTask: Task<Bool, Never>?
+        var successRoutes = 0
+        var recoveryProjection = newGraph
+        reminders.onGraphMutationCompleted = { successRoutes += 1 }
+        reminders.onCoreMutation = {
+            let response = recoveryProjection
+            recoveryTask = Task {
+                await reminders.refreshAndDrain(expectedGraphID: "new-graph") { response }
+            }
+        }
+        let failedSwitch = await reminders.withGraphMutation { false }
+        reminders.graphMutationDidFinish(succeeded: failedSwitch)
+        let validRecovery = try require(recoveryTask, "Failed graph caller did not request a fresh projection")
+        try require(await validRecovery.value,
+                    "Failed graph caller did not restore the still-valid graph plan")
+        try require(successRoutes == 0, "Failed graph recovery invoked success navigation")
+        recoveryProjection = #"{"result":{"graphId":"new-graph","ready":false,"complete":false,"tasks":[]}}"#
+        recoveryTask = nil
+        let unavailableSwitch = await reminders.withGraphMutation { false }
+        reminders.graphMutationDidFinish(succeeded: unavailableSwitch)
+        let invalidRecovery = try require(recoveryTask, "Unavailable graph did not request validation")
+        try require(!(await invalidRecovery.value), "Failed graph recovery accepted unavailable core state")
+        try require(await center.storedIDs().isEmpty, "Unavailable graph recovery restored stale reminders")
+        print("PASS: graph mutation fences old callbacks through cleanup/effect, clears before switching, and releases on failure")
+    }
+
+    @MainActor
+    private static func checkBackgroundOwnership(now: Date) async throws {
+        let raw = #"{"result":{"graphId":"sample","ready":true,"complete":true,"tasks":[{"uuid":"owned","pageId":"page","temporal":{"kind":"datetime","timestampMs":4070908800000}}]}}"#
+        let projection = try JSONDecoder().decode(
+            TaskReminderEnvelope<NativeTaskReminderProjection>.self, from: Data(raw.utf8)
+        ).result
+        let plan = TaskReminderPlan.make(from: projection, now: now)
+        let item = plan.items[0]
+        let suite = "TaskReminderBackgroundOwnership-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let center = ReminderCenterProbe()
+        let adapter = TaskReminderNotificationAdapter(center: center)
+        let reminders = TaskReminderCoordinator(adapter: adapter, defaults: defaults, now: { now })
+        await reminders.setEnabled(true)
+
+        // Exercise the exact helper used by LogseqApp across its network wait.
+        for syncSucceeds in [false, true] {
+            let sync = GraphSyncCoordinator()
+            let gate = SuspendedAsyncProbe()
+            let attempt = TaskReminderBackgroundAttempt()
+            let background = Task {
+                await attempt.run(reminders: reminders, sync: sync, synchronizeGraph: {
+                    await gate.run()
+                    return syncSucceeds ? "sample" : nil
+                }, fetchProjection: { _ in raw })
+            }
+            await gate.waitForStart()
+            let newerToken = reminders.beginRefresh()
+            try require(await reminders.reconcile(raw, expectedGraphID: "sample", refreshToken: newerToken),
+                        "New foreground plan did not complete")
+            await gate.release()
+            try require(!(await background.value), "A superseded sync reported reminder success")
+            try require(await center.storedIDs() == [item.identifier],
+                        "Old sync failure/success erased a newer foreground plan")
+            await attempt.expireAndDrain()
+            await attempt.awaitExpiredNetworkTask()
+            try require(await center.storedIDs() == [item.identifier],
+                        "Late expiration cleared a completed newer plan")
+        }
+
+        // An expiration while the old network call is still suspended must
+        // preserve newer scene work and must await only the captured old task.
+        let sync = GraphSyncCoordinator()
+        let oldGate = SuspendedAsyncProbe()
+        let oldAttempt = TaskReminderBackgroundAttempt()
+        let old = Task {
+            await oldAttempt.run(reminders: reminders, sync: sync, synchronizeGraph: {
+                await oldGate.run()
+                return nil
+            }, fetchProjection: { _ in raw })
+        }
+        await oldGate.waitForStart()
+        try require(await reminders.reconcile(raw, expectedGraphID: "sample",
+                                              refreshToken: reminders.beginRefresh()),
+                    "Foreground scene plan failed")
+        await oldAttempt.expireAndDrain()
+        try require(await center.storedIDs() == [item.identifier],
+                    "An old in-flight expiration cleared a newer scene plan")
+        await oldGate.release()
+        try require(!(await old.value), "Expired background succeeded")
+        let newGate = SuspendedAsyncProbe()
+        let newAttempt = TaskReminderBackgroundAttempt()
+        let newer = Task {
+            await newAttempt.run(reminders: reminders, sync: sync, synchronizeGraph: {
+                await newGate.run()
+                return Task.isCancelled ? nil : "sample"
+            }, fetchProjection: { _ in raw })
+        }
+        await newGate.waitForStart()
+        await oldAttempt.expireAndDrain()
+        await oldAttempt.awaitExpiredNetworkTask()
+        await newGate.release()
+        try require(await newer.value, "Old expiration/teardown canceled a newer sync generation")
+
+        // Two OS budgets share one operation. Expiring either first or second
+        // waiter must keep the other alive; expiring the last must drain the
+        // first operation's epoch, even when the last caller never ran it.
+        for expireFirst in [true, false] {
+            let sharedSync = GraphSyncCoordinator()
+            let gate = SuspendedAsyncProbe()
+            let firstAttempt = TaskReminderBackgroundAttempt()
+            let secondAttempt = TaskReminderBackgroundAttempt()
+            let first = Task {
+                await firstAttempt.run(reminders: reminders, sync: sharedSync, synchronizeGraph: {
+                    await gate.run()
+                    return Task.isCancelled ? nil : "sample"
+                }, fetchProjection: { _ in raw })
+            }
+            await gate.waitForStart()
+            let second = Task {
+                await secondAttempt.run(reminders: reminders, sync: sharedSync,
+                                        synchronizeGraph: { throwUnexpectedSharedExecution() },
+                                        fetchProjection: { _ in raw })
+            }
+            // Let the second waiter enter the actor while the shared operation
+            // is held at a deterministic continuation.
+            try await Task.sleep(for: .milliseconds(20))
+            await (expireFirst ? firstAttempt : secondAttempt).expireAndDrain()
+            await gate.release()
+            let firstResult = await first.value
+            let secondResult = await second.value
+            try require(firstResult == !expireFirst && secondResult == expireFirst,
+                        "Expiring one coalesced waiter canceled the remaining budget")
+            await (expireFirst ? firstAttempt : secondAttempt).awaitExpiredNetworkTask()
+        }
+        let sharedSync = GraphSyncCoordinator()
+        let sharedGate = SuspendedAsyncProbe()
+        let firstAttempt = TaskReminderBackgroundAttempt()
+        let secondAttempt = TaskReminderBackgroundAttempt()
+        let sharedFirst = Task {
+            await firstAttempt.run(reminders: reminders, sync: sharedSync, synchronizeGraph: {
+                await sharedGate.run()
+                return "sample"
+            }, fetchProjection: { _ in raw })
+        }
+        await sharedGate.waitForStart()
+        let sharedSecond = Task {
+            await secondAttempt.run(reminders: reminders, sync: sharedSync,
+                                    synchronizeGraph: { throwUnexpectedSharedExecution() },
+                                    fetchProjection: { _ in raw })
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        await firstAttempt.expireAndDrain()
+        await secondAttempt.expireAndDrain()
+        try require(await center.storedIDs().isEmpty,
+                    "Last coalesced expiration failed to clear the shared operation's alerts")
+        await sharedGate.release()
+        let sharedFirstResult = await sharedFirst.value
+        let sharedSecondResult = await sharedSecond.value
+        try require(!sharedFirstResult && !sharedSecondResult,
+                    "Expired coalesced callers reported success")
+        await secondAttempt.awaitExpiredNetworkTask()
+
+        // Mandatory invalidation can enter the adapter after a newer plan has
+        // already committed, or after only a disabled/no-op epoch advance.
+        let newerToken = reminders.beginRefresh()
+        try require(await reminders.reconcile(raw, expectedGraphID: "sample", refreshToken: newerToken),
+                    "Valid plan failed before delayed mandatory cleanup")
+        await adapter.invalidate(to: newerToken - 1)
+        try require(await center.storedIDs() == [item.identifier],
+                    "Delayed mandatory cleanup erased a newer completed plan")
+        adapter.advance(to: newerToken + 2)
+        await adapter.invalidate(to: newerToken + 1)
+        try require(await center.storedIDs().isEmpty,
+                    "A no-op epoch suppressed mandatory cleanup")
+        print("PASS: production background helper preserves newer plans, scopes expiration/teardown, and handles both coalesced waiter orders")
+
+        // Expiration races a held notification add and held managed cleanup.
+        // Completion must remain exactly once and after the writer has drained.
+        let drainCenter = ReminderCenterProbe()
+        await drainCenter.suspendAdds()
+        let drainReminders = TaskReminderCoordinator(
+            adapter: TaskReminderNotificationAdapter(center: drainCenter), defaults: defaults, now: { now }
+        )
+        let drainAttempt = TaskReminderBackgroundAttempt()
+        let completions = BackgroundCompletionProbe()
+        let completion = TaskReminderBackgroundCompletion(
+            clearAndDrain: { await drainAttempt.expireAndDrain() },
+            completion: { value in Task { await completions.record(value) } },
+            afterExpiration: { await drainAttempt.awaitExpiredNetworkTask() }
+        )
+        let draining = Task {
+            let value = await drainAttempt.run(reminders: drainReminders, sync: GraphSyncCoordinator(),
+                                               synchronizeGraph: { "sample" }, fetchProjection: { _ in raw })
+            completion.finish(success: value)
+            return value
+        }
+        await drainCenter.waitForAddStart()
+        completion.expire(cancel: { draining.cancel() })
+        await drainCenter.suspendCleanup()
+        try require(await completions.results().isEmpty,
+                    "Expiration completed while its notification add was suspended")
+        await drainCenter.releaseSuspendedAdd()
+        await drainCenter.waitForCleanupStart()
+        try require(await completions.results().isEmpty,
+                    "Expiration completed before serialized cleanup drained")
+        await drainCenter.releaseSuspendedCleanup()
+        _ = await draining.value
+        await completions.waitForResult()
+        completion.finish(success: true)
+        completion.expire(cancel: {})
+        let completedValues = await completions.results()
+        let remainingIDs = await drainCenter.storedIDs()
+        try require(completedValues == [false] && remainingIDs.isEmpty,
+                    "Expiration did not finish exactly once after draining owned writes")
+        print("PASS: production expiration helper awaits held writes and cleanup before exactly one OS completion")
+    }
+
+    private static func throwUnexpectedSharedExecution() -> String? {
+        fatalError("A coalesced background caller executed a second graph sync")
     }
 
     private static func date(_ value: String) -> Date {
