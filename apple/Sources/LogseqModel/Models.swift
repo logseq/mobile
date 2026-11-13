@@ -435,7 +435,8 @@ public struct LogseqPendingSyncResult: Codable, Sendable {
 }
 
 public enum LogseqOutlinerAutocompleteKind: String, Codable, Sendable {
-    case node, tag, property
+    case node, tag, property, command
+    case embed, template, link, image, date, deadline, scheduled, youtube
 }
 
 public struct LogseqOutlinerEditing: Codable, Equatable, Sendable {
