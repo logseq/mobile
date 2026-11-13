@@ -102,6 +102,17 @@ let full_inventory_includes_offscreen_and_excludes_deleted_done_and_repeat () =
   check_eq (List.find (fun task -> task.Store.uuid = "task-209") tasks).Store.temporal (Store.Datetime 1794484800000L);
   check_eq (List.find (fun task -> task.Store.uuid = "task-210") tasks).Store.temporal (Store.Datetime 1794484800000L)
 
+let task_tagged_page_is_its_own_reminder_page () =
+  let db = Ds.db_with [
+    Ds.Add (Ds.Entity_id 18, "db/ident", Ds.Keyword "logseq.class/Page");
+    Ds.Add (Ds.Entity_id 220, "block/uuid", Ds.Uuid "task-page");
+    Ds.Add (Ds.Entity_id 220, "block/title", Ds.String "Task page");
+    Ds.Add (Ds.Entity_id 220, "block/tags", Ds.Ref 2);
+    Ds.Add (Ds.Entity_id 220, "block/tags", Ds.Ref 18);
+    Ds.Add (Ds.Entity_id 220, "logseq.property/scheduled", Ds.Int64 220L)] (task_db ()) in
+  let task = List.find_opt (fun task -> task.Store.uuid = "task-page") (Store.inventory db) in
+  check_eq (Option.map (fun task -> task.Store.page_id) task) (Some "task-page")
+
 let schema_typed_date_remains_date_only () =
   let db = task_db () in
   let date_db = Ds.db_with [
@@ -333,6 +344,7 @@ let projected_rpc_tracks_runtime_status_and_temporal_edits () = with_task_runtim
 
 let cases = [
   "full inventory and eligibility", `Quick, full_inventory_includes_offscreen_and_excludes_deleted_done_and_repeat;
+  "Task-tagged page inventory", `Quick, task_tagged_page_is_its_own_reminder_page;
   "schema typed date", `Quick, schema_typed_date_remains_date_only;
   "RPC and scope invalidation", `Quick, rpc_is_complete_and_config_change_invalidates_inventory;
   "warm bootstrap preserves navigation on token refresh", `Quick, warm_bootstrap_preserves_navigation_and_editor_on_token_refresh;

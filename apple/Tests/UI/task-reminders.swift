@@ -195,6 +195,18 @@ private actor CompletionProbe {
     func hasCompleted() -> Bool { completed }
 }
 
+private final class SynchronousBackgroundCompletionProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+    private var cancelCount = 0
+
+    func record(_ value: Bool) { lock.withLock { values.append(value) } }
+    func recordCancel() { lock.withLock { cancelCount += 1 } }
+    func snapshot() -> (values: [Bool], cancelCount: Int) {
+        lock.withLock { (values, cancelCount) }
+    }
+}
+
 private actor BackgroundCompletionProbe {
     private var values: [Bool] = []
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -1584,6 +1596,21 @@ struct CheckTaskReminders {
         try require(completedValues == [false] && remainingIDs.isEmpty,
                     "Expiration did not finish exactly once after draining owned writes")
         print("PASS: production expiration helper awaits held writes and cleanup before exactly one OS completion")
+
+        let normalProbe = SynchronousBackgroundCompletionProbe()
+        let normalCompletion = TaskReminderBackgroundCompletion(
+            clearAndDrain: {},
+            completion: { normalProbe.record($0) }
+        )
+        normalCompletion.finish(success: true)
+        normalCompletion.finish(success: false)
+        normalCompletion.expire(cancel: { normalProbe.recordCancel() })
+        let normalResult = normalProbe.snapshot()
+        try require(normalResult.values == [true],
+                    "Repeated finish or post-finish expiration changed the successful OS completion")
+        try require(normalResult.cancelCount == 0,
+                    "Post-finish expiration canceled work")
+        print("PASS: normal success completes once; repeated finish and later expiration are no-ops")
     }
 
     private static func throwUnexpectedSharedExecution() -> String? {
