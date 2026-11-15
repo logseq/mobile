@@ -1,0 +1,15 @@
+# Launch task-date-clear-time.swift with the native runtime runner's
+# --interactive mode and an empty fixture directory. This fixture captures the
+# submitted value without changing a graph and opens the deadline editor.
+appId: com.logseq.logseq.PageBenchmark
+---
+- scrollUntilVisible:
+    element:
+      id: view.edit.date.property.page.logseq.property/deadline.time-toggle
+    direction: DOWN
+- tapOn:
+    id: view.edit.date.property.page.logseq.property/deadline.time-toggle
+- assertVisible: "Add time"
+- tapOn:
+    id: view.edit.save.property.page.logseq.property/deadline
+- assertVisible: "Saved datetime: 2026-10-22 00:00"

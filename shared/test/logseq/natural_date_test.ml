@@ -40,7 +40,57 @@ let parallel_references_remain_independent () =
   |> Array.iter Thread.join;
   Array.iteri (fun index answer -> check_eq answer (Some (20261011+index))) answers
 
+let task_day_start () =
+  let midnight = reference 2026 1 10 0 0 in
+  List.iter (fun attr ->
+    check ~msg:(attr ^ " local day start") (Natural_date.is_task_date_only attr midnight);
+    check ~msg:(attr ^ " time remains visible") (not (Natural_date.is_task_date_only attr (midnight +. 3600000.)));
+    check ~msg:(attr ^ " fractional milliseconds are not date-only") (not (Natural_date.is_task_date_only attr (midnight +. 1.))))
+    ["logseq.property/scheduled"; "logseq.property/deadline"];
+  check ~msg:"custom datetime midnight retains its time"
+    (not (Natural_date.is_task_date_only "user.property/Appointment" midnight));
+  ()
+
+let timezone_case zone =
+  let local millis =
+    let t = Unix.localtime (millis /. 1000.) in
+    t.Unix.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec in
+  let expect_time label millis expected = check_eq ~msg:label (local millis) expected in
+  let date_only millis = Natural_date.is_task_date_only "logseq.property/deadline" millis in
+  match zone with
+  | "America/Sao_Paulo" ->
+    let gap = 1541300400000. in
+    expect_time "gap previous second" (gap -. 1000.) (2018, 11, 3, 23, 59, 59);
+    expect_time "gap first second" gap (2018, 11, 4, 1, 0, 0);
+    check ~msg:"midnight DST gap starts at 01:00" (date_only gap);
+    check ~msg:"later time on gap day is timed" (not (date_only (gap +. 3600000.)))
+  | "America/Havana" ->
+    let overlap = 1604203200000. in
+    expect_time "first midnight" overlap (2020, 11, 1, 0, 0, 0);
+    expect_time "repeated midnight" (overlap +. 3600000.) (2020, 11, 1, 0, 0, 0);
+    check ~msg:"first midnight is date-only" (date_only overlap);
+    check ~msg:"repeated midnight is date-only as on desktop" (date_only (overlap +. 3600000.))
+  | "America/St_Johns" ->
+    let rollback = 1257042660000. in
+    expect_time "rollback previous second" (rollback -. 1000.) (2009, 11, 1, 0, 0, 59);
+    expect_time "rollback instant" rollback (2009, 10, 31, 23, 1, 0);
+    check ~msg:"backward date crossing remains timed" (not (date_only rollback))
+  | _ -> failwith ("Unknown timezone test: " ^ zone)
+
+let task_timezone_transitions () =
+  List.iter (fun zone ->
+    let env = Unix.environment () |> Array.to_list |> List.filter (fun entry ->
+      not (String.starts_with ~prefix:"TZ=" entry || String.starts_with ~prefix:"LOGSEQ_TEST_TIMEZONE=" entry)) in
+    let env = Array.of_list (("TZ=" ^ zone) :: ("LOGSEQ_TEST_TIMEZONE=" ^ zone) :: env) in
+    let executable = Sys.executable_name in
+    let pid = Unix.create_process_env executable [|executable|] env Unix.stdin Unix.stdout Unix.stderr in
+    let _, status = Unix.waitpid [] pid in
+    check_eq ~msg:("timezone subprocess: " ^ zone) status (Unix.WEXITED 0))
+    ["America/Sao_Paulo"; "America/Havana"; "America/St_Johns"]
+
 let cases = [
+  case "task day starts" task_day_start;
+  case "task timezone transitions" task_timezone_transitions;
   case "calendar input leaves the engine lazy" calendar_inputs_do_not_start_the_engine;
   case "English expressions match master" english_inputs_match_chrono;
   case "date-time expressions keep local time" timestamp_inputs_keep_local_time;

@@ -102,12 +102,25 @@ private struct LGPropertyRowLayout: Layout {
 
 private struct LGPropertyDatePicker: View {
     let context: LUIAppleExtensionViewContext
+    @State private var editingTime = false
 
     private func string(_ name: String) -> String {
         if case let .string(value) = context.property(name) { return value }
         return ""
     }
     private var includesTime: Bool { string("kind") == "datetime" }
+    private var isTaskDate: Bool {
+        ["logseq.property/scheduled", "logseq.property/deadline"].contains {
+            string("identifier").hasSuffix($0)
+        }
+    }
+    private var hasTime: Bool {
+        let date = selection.wrappedValue
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let midnight = time.hour == 0 && time.minute == 0 && time.second == 0 && time.nanosecond == 0
+        return !midnight && date != calendar.startOfDay(for: date)
+    }
     private var formatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -125,10 +138,29 @@ private struct LGPropertyDatePicker: View {
         })
     }
     var body: some View {
-        DatePicker("Value", selection: selection, displayedComponents: includesTime ? [.date, .hourAndMinute] : [.date])
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .accessibilityIdentifier(string("identifier"))
+        VStack(alignment: .leading, spacing: 8) {
+            DatePicker("Value", selection: Binding(get: { selection.wrappedValue }, set: { date in
+                selection.wrappedValue = isTaskDate && !hasTime && !editingTime
+                    ? Calendar.current.startOfDay(for: date) : date
+            }), displayedComponents: includesTime && (!isTaskDate || hasTime || editingTime) ? [.date, .hourAndMinute] : [.date])
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .accessibilityIdentifier(string("identifier"))
+            if includesTime && isTaskDate {
+                Button {
+                    if hasTime || editingTime {
+                        editingTime = false
+                        selection.wrappedValue = Calendar.current.startOfDay(for: selection.wrappedValue)
+                    } else {
+                        editingTime = true
+                    }
+                } label: {
+                    Label(hasTime || editingTime ? String(localized: "Clear time") : String(localized: "Add time"),
+                          systemImage: hasTime || editingTime ? "clock.badge.xmark" : "clock")
+                }
+                .accessibilityIdentifier(string("identifier") + ".time-toggle")
+            }
+        }
     }
 }
 
