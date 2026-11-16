@@ -8,13 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -302,31 +301,30 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             if (childIds.size == 2) {
                 // Second child is the bottom chrome. Hoist it out of the content
                 // column like iOS's safeAreaInset/overlay so the composer's
-                // internal `grow` props can't starve the journal; intrinsic
-                // sizing keeps it at natural height instead of letting those
-                // props claim the whole screen.
-                if (occupies) {
-                    Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { NavigationContent(context, childIds[0], dismissesComposer) }
-                        Box(Modifier.height(IntrinsicSize.Min)) {
-                            context.child(childIds[1])
-                        }
-                    }
-                } else {
-                    Box(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize()) { NavigationContent(context, childIds[0], dismissesComposer) }
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .height(IntrinsicSize.Min),
-                        ) {
-                            context.child(childIds[1])
-                        }
-                    }
-                }
+                // internal `grow` props can't starve the journal.
+                NavigationChromeLayout(occupies,
+                    content = { NavigationContent(context, childIds[0], dismissesComposer) },
+                    chrome = { context.child(childIds[1]) })
             } else {
                 context.Children()
             }
+        }
+    }
+}
+
+@Composable
+internal fun NavigationChromeLayout(occupies: Boolean, content: @Composable () -> Unit, chrome: @Composable () -> Unit) {
+    // Unbounded height keeps grow modifiers from claiming the screen without
+    // asking for intrinsics, which subcomposed controls do not support.
+    if (occupies) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f)) { content() }
+            Box(Modifier.wrapContentHeight(unbounded = true)) { chrome() }
+        }
+    } else {
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) { content() }
+            Box(Modifier.align(Alignment.BottomCenter).wrapContentHeight(unbounded = true)) { chrome() }
         }
     }
 }
