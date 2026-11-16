@@ -1450,6 +1450,19 @@ struct CheckTaskReminders {
                         "Late expiration cleared a completed newer plan")
         }
 
+        // The OS can claim expiration after the shared network task finishes
+        // but before its queued expiration call reaches the coordinator.
+        let finishedAttempt = TaskReminderBackgroundAttempt()
+        try require(await finishedAttempt.run(reminders: reminders, sync: GraphSyncCoordinator(),
+                                             synchronizeGraph: { "sample" }, fetchProjection: { _ in raw }),
+                    "Could not finish the late-expiration reminder plan")
+        try require(await center.storedIDs() == [item.identifier],
+                    "Completed sync did not schedule its reminder")
+        await finishedAttempt.expireAndDrain()
+        try require(await center.storedIDs().isEmpty,
+                    "Late expiration lost the completed run's reminder cleanup")
+        await finishedAttempt.awaitExpiredNetworkTask()
+
         // An expiration while the old network call is still suspended must
         // preserve newer scene work and must await only the captured old task.
         let sync = GraphSyncCoordinator()

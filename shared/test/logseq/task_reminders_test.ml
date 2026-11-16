@@ -127,6 +127,62 @@ let schema_typed_date_remains_date_only () =
   let tasks = Store.inventory date_db in
   check_eq (List.find (fun task -> task.Store.uuid = "task-date") tasks).Store.temporal (Store.Date 20261112)
 
+let raw_numeric_references_respect_schema_and_empty_placeholders () =
+  let raw e a v = Ds.Raw_datom {Ds.e; a; v; tx = 0; added = true} in
+  List.iter (fun schema_declared ->
+    List.iter (fun typ ->
+      let schema = if schema_declared then
+          List.map (fun (attr, spec) ->
+            if List.mem attr ["logseq.property/scheduled"; "logseq.property/deadline"]
+            then attr, ref_ else attr, spec) schema
+        else schema in
+      let property id attr = [
+        raw id "db/ident" (Ds.Keyword attr);
+        raw id "logseq.property/type" (Ds.Keyword typ)]
+        @ (if schema_declared then [] else [
+          raw id "db/valueType" (Ds.Keyword "db.type/ref");
+          raw id "db/cardinality" (Ds.Keyword "db.cardinality/one")]) in
+      let task id attrs = [
+        raw id "block/uuid" (Ds.Uuid ("numeric-" ^ string_of_int id));
+        raw id "block/page" (Ds.Int64 1L);
+        raw id "block/tags" (Ds.Int64 2L)] @ attrs in
+      let scalar, expected = if typ = "date" then Ds.Int64 20261112L, Store.Date 20261112
+        else Ds.Int64 4070908800000L, Store.Datetime 4070908800000L in
+      let db = Ds.db_with ([
+        raw 1 "block/uuid" (Ds.Uuid "numeric-page");
+        raw 2 "db/ident" (Ds.Keyword "logseq.class/Task");
+        raw 11 (if typ = "date" then "block/journal-day" else "block/title") scalar;
+        raw 11 "logseq.property/value" (Ds.String "invalid lower-priority value");
+        raw 12 "db/ident" (Ds.Keyword "logseq.property/empty-placeholder");
+        raw 13 "block/title" (Ds.String "invalid higher-priority value");
+        raw 13 "logseq.property/value" scalar;
+        raw 14 "logseq.property/value" scalar]
+        @ property 4 "logseq.property/scheduled" @ property 5 "logseq.property/deadline"
+        @ task 300 [raw 300 "logseq.property/scheduled" (Ds.Int64 11L)]
+        @ task 301 [raw 301 "logseq.property/scheduled" (Ds.Int64 12L);
+                    raw 301 "logseq.property/deadline" (Ds.Int64 11L)]
+        @ task 302 [raw 302 "logseq.property/deadline" (Ds.Int64 11L)]
+        @ task 303 [raw 303 "logseq.property/scheduled" (Ds.Int64 12L);
+                    raw 303 "logseq.property/deadline" (Ds.Int64 12L)]
+        @ task 304 [raw 304 "logseq.property/scheduled" (Ds.Int64 14L)]
+        @ (if typ = "datetime" then task 305 [
+            raw 305 "logseq.property/scheduled" (Ds.Int64 13L);
+            raw 305 "logseq.property/deadline" (Ds.Int64 11L)] else []))
+        (Ds.empty_db ~schema ()) in
+      let tasks = Store.inventory db in
+      check_eq (List.map (fun task -> task.Store.uuid) tasks)
+        ["numeric-300"; "numeric-301"; "numeric-302"; "numeric-304"];
+      List.iter (fun task ->
+        check_eq task.Store.page_id "numeric-page";
+        check_eq task.Store.temporal expected) tasks
+    ) ["date"; "datetime"]
+  ) [false; true];
+  (* Numeric scalars stay scalar when their attribute is not a reference, even
+     when the same number is also an existing entity/placeholder ID. *)
+  let db = Ds.db_with [Ds.Add (Ds.Entity_id 202, "logseq.property/scheduled", Ds.Int64 12L)] (task_db ()) in
+  check_eq (List.find (fun task -> task.Store.uuid = "task-202") (Store.inventory db)).Store.temporal
+    (Store.Datetime 12L)
+
 let rpc_fixture_session ?(db = task_db ()) ?(open_graph = fun _ -> Ok ()) () =
   let session = Session.create_session { Session.default_options with
     load_graph_catalog = Some (fun () -> Some "{\"graphs\":[{\"graph-id\":\"sample\",\"graph-name\":\"Sample\",\"graph-e2ee?\":false,\"graph-ready-for-use?\":true}]}");
@@ -145,6 +201,24 @@ let rpc_fixture_session ?(db = task_db ()) ?(open_graph = fun _ -> Ok ()) () =
 let dispatch_task_reminders session =
   Session.call session (Yojson.Basic.to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch";
     "params", `Assoc ["action", `String "taskReminders"]]))
+
+let catalog_completion_invalidates_removed_graph_reminders () =
+  List.iter (fun body ->
+    let session = rpc_fixture_session () in
+    let inventory () = dispatch_task_reminders session |> Yojson.Basic.from_string
+      |> Yojson.Basic.Util.member "result" in
+    check_eq (Yojson.Basic.Util.member "ready" (inventory ())) (`Bool true);
+    let payload = Yojson.Basic.to_string (`Assoc ["baseUrl", `String "http://localhost";
+      "token", `String "synthetic"; "status", `Int 200; "body", `String body]) in
+    let response = Session.call session (Yojson.Basic.to_string (`Assoc ["apiVersion", `Int 1;
+      "method", `String "dispatch"; "params", `Assoc ["action", `String "completeGraphCatalog";
+        "payload", `String payload]])) |> Yojson.Basic.from_string in
+    check_eq (Yojson.Basic.Util.member "ok" response) (`Bool true);
+    let unavailable = inventory () in
+    check_eq (Yojson.Basic.Util.member "ready" unavailable) (`Bool false);
+    check_eq (Yojson.Basic.Util.member "tasks" unavailable) (`List [])
+  ) [ {|{"graphs":[]}|};
+      {|{"graphs":[{"graph-id":"other","graph-name":"Other","graph-e2ee?":false,"graph-ready-for-use?":true}]}|} ]
 
 let bootstrap_graph session =
   Session.call session (Yojson.Basic.to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch";
@@ -346,6 +420,8 @@ let cases = [
   "full inventory and eligibility", `Quick, full_inventory_includes_offscreen_and_excludes_deleted_done_and_repeat;
   "Task-tagged page inventory", `Quick, task_tagged_page_is_its_own_reminder_page;
   "schema typed date", `Quick, schema_typed_date_remains_date_only;
+  "raw numeric temporal and page references", `Quick, raw_numeric_references_respect_schema_and_empty_placeholders;
   "RPC and scope invalidation", `Quick, rpc_is_complete_and_config_change_invalidates_inventory;
+  "catalog completion removes reminder scope", `Quick, catalog_completion_invalidates_removed_graph_reminders;
   "warm bootstrap preserves navigation on token refresh", `Quick, warm_bootstrap_preserves_navigation_and_editor_on_token_refresh;
   "runtime-backed RPC inventory", `Quick, projected_rpc_tracks_runtime_status_and_temporal_edits]

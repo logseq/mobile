@@ -408,6 +408,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
     private let deleteLocalGraph: (@MainActor (String) async -> String)?
     private let platformEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
     private let coreResponseObserver: (@MainActor (String) -> Void)?
+    private let catalogSession: URLSession
 
     public init(
         callCore: @escaping @MainActor (LogseqRPCRequest) async -> String = { request in
@@ -415,11 +416,13 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         },
         deleteLocalGraph: (@MainActor (String) async -> String)? = nil,
         platformEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
-        coreResponseObserver: (@MainActor (String) -> Void)? = nil
+        coreResponseObserver: (@MainActor (String) -> Void)? = nil,
+        catalogSession: URLSession = .shared
     ) {
         self.deleteLocalGraph = deleteLocalGraph
         self.platformEffect = platformEffect
         self.coreResponseObserver = coreResponseObserver
+        self.catalogSession = catalogSession
         self.callCore = callCore
     }
 
@@ -445,7 +448,9 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         }
         do {
             if effect.kind == "refresh-graphs" {
-                return await Self.resolution(from: try await refreshGraphCatalog())
+                let response = try await refreshGraphCatalog()
+                await coreResponseObserver?(response)
+                return await Self.resolution(from: response)
             }
             let payload = String(decoding: try JSONEncoder().encode(effect), as: UTF8.self)
             let request = LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
@@ -480,7 +485,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
             pending.httpMethod = "GET"
             pending.timeoutInterval = 30
             pending.setValue("Bearer " + (request["token"] as? String ?? ""), forHTTPHeaderField: "Authorization")
-            let (body, response) = try await URLSession.shared.data(for: pending)
+            let (body, response) = try await catalogSession.data(for: pending)
             completion["status"] = (response as? HTTPURLResponse)?.statusCode ?? 0
             completion["body"] = String(decoding: body, as: UTF8.self)
         } catch is CancellationError { throw CancellationError() }

@@ -9,9 +9,8 @@ let value db id attr = G.value db id attr
 let ident db id = match value db id "db/ident" with Some (Ds.Keyword name) -> name | _ -> ""
 let uuid db id = Option.value ~default:"" (G.uuid_for_eid db id)
 let ref_id db attr = function
-  | Some (Ds.Ref id) -> Some id
   | Some (Ds.Ref_to reference) -> Option.map (fun entity -> entity.Ds.id) (Ds.entity db reference)
-  | _ -> None
+  | raw -> Datascript_value.optional_ref_eid db attr raw
 
 (* Keep the same precedence as Result_view.content for typed property values:
    wrapper entities store text in block/title and non-text scalars in value. *)
@@ -38,16 +37,14 @@ let repeat_metadata_present db id =
         "logseq.property.repeat/checked-property"])) metadata
   | _ -> metadata <> []
 
-let empty_placeholder db = function
-  | Some (Ds.Ref eid) -> ident db eid = "logseq.property/empty-placeholder"
-  | Some (Ds.Ref_to reference) -> Option.fold ~none:false ~some:(fun eid -> ident db eid = "logseq.property/empty-placeholder")
-      (Option.map (fun entity -> entity.Ds.id) (Ds.entity db reference))
-  | _ -> false
+let empty_placeholder db attr raw =
+  Option.fold ~none:false ~some:(fun eid -> ident db eid = "logseq.property/empty-placeholder")
+    (ref_id db attr raw)
 
 let scheduled_or_deadline db id =
   let scheduled = value db id "logseq.property/scheduled" in
   let attr, raw = match scheduled with
-    | Some value when not (empty_placeholder db (Some value)) -> "logseq.property/scheduled", Some value
+    | Some value when not (empty_placeholder db "logseq.property/scheduled" (Some value)) -> "logseq.property/scheduled", Some value
     | None | Some _ -> "logseq.property/deadline", value db id "logseq.property/deadline" in
   match raw with
   | None -> None

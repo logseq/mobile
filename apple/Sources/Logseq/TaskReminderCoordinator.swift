@@ -699,7 +699,7 @@ final class TaskReminderBackgroundAttempt {
     @TaskLocal private static var responseContext: ResponseContext?
     private let request = GraphSyncCoordinator.BackgroundRequest()
     private var sync: GraphSyncCoordinator?
-    private var refreshToken: UInt64?
+    private let refreshToken = OSAllocatedUnfairLock<UInt64?>(initialState: nil)
     private var expirationDrain: Task<Void, Never>?
     private var expiredNetworkTask: Task<Bool, Never>?
 
@@ -721,11 +721,13 @@ final class TaskReminderBackgroundAttempt {
     ) async -> Bool {
         guard expirationDrain == nil else { return false }
         self.sync = sync
-        return await sync.runBackground(request: request, expirationCleanup: { [self] in
-            if let refreshToken { await reminders.clearAndDrain(ifCurrent: refreshToken) }
+        // The request retains its run's cleanup. Capture the token storage,
+        // rather than the attempt that owns the request, to avoid a cycle.
+        return await sync.runBackground(request: request, expirationCleanup: { [refreshToken] in
+            if let token = refreshToken.withLock({ $0 }) { await reminders.clearAndDrain(ifCurrent: token) }
         }) { [self] in
             let token = reminders.beginRefresh()
-            refreshToken = token
+            refreshToken.withLock { $0 = token }
             let context = ResponseContext()
             let graphID = await Self.$responseContext.withValue(context) {
                 defer { context.active = false }
