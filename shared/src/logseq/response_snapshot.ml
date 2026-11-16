@@ -231,7 +231,13 @@ let flashcard input =
       { Model.flashcard_uuid;
         question_hidden = block_markup_text false block;
         question_revealed = block_markup_text true block;
-        card_categories = sidebar_pages_member "references" block;
+        (* The Card class is an implementation marker, not a category chosen
+           by the user. Older projections could include it among references. *)
+        card_categories =
+          List.filter
+            (fun (page : Model.sidebar_page) ->
+              page.uuid <> "00000002-1358-2811-0900-000000000000")
+            (sidebar_pages_member "references" block);
         answer_rows; has_cloze }
   | None -> None
 

@@ -709,6 +709,27 @@ let mobile_page_references_are_deferred () =
     check_eq (List.length (json_items "nodeRoutes" opened)) 1
   ) [false; true]
 
+let mobile_journal_home_defers_references_for_its_first_day () =
+  let journal = { (Model.local_block "today-block" "Today" "today-page" None 1) with
+    Model.journal = Some ("Today", 20261116) } in
+  let reference = Model.local_block "today-reference" "Links today" "other-page" None 1 in
+  let reads = ref 0 in
+  let session = Session.create_session {
+    Session.default_options with
+    outliner_projection_limit = Some 32;
+    graph_blocks = Some (fun () -> Some [journal]);
+    graph_node_references = Some (fun uuid ->
+      incr reads; if uuid = journal.page_id then Some [reference] else Some []);
+  } in
+  let first = response_result (dispatch_json session "refresh" "") in
+  check_eq ~msg:"journal first paint leaves references off the launch path" !reads 0;
+  check_eq ~msg:"journal home requests references for the visible day"
+    (member "pendingReferenceUuid" first) (`String journal.page_id);
+  let loaded = response_result (dispatch_json session "loadPageReferences" journal.page_id) in
+  check_eq !reads 1;
+  check_eq (member "uuid" (List.hd (json_items "referenceBlocks" loaded)))
+    (`String reference.uuid)
+
 let search_projects_page_context_and_clears_blank_queries () =
   let page : Model.entity_summary = { uuid = "page-1"; title = "Page one" } in
   let hit : Search.indexed_search_hit =
@@ -6615,6 +6636,8 @@ let cases =
     case "search block reveals page and zoom has ancestry" search_block_reveals_page_and_zoom_has_ancestry;
     case "graph assets download and cache binary files" graph_assets_download_and_cache_binary_files;
     case "mobile page references are deferred" mobile_page_references_are_deferred;
+    case "mobile journal home defers references for its first day"
+      mobile_journal_home_defers_references_for_its_first_day;
     case "sidebar tag selection projects objects and linked references"
       sidebar_tag_selection_projects_objects_and_linked_references;
     case "favorite blocks select the root subtree" favorite_blocks_select_the_root_subtree;

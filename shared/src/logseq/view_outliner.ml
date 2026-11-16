@@ -1040,7 +1040,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) [] in
       let done_ = button ~text:(View_base.tr (Signal.sample model_source) "Insert") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:"button.outliner.autocomplete.submit" ~on_press:confirm [] in
-      (sheet ~text:(title kind) ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+      (sheet ~text:(title kind) ~detents:(if temporal then "large" else "medium,large") ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
         list ~grow:1.0 ~style:`inset_grouped [list_section (
           if temporal then [list_item ~padding_horizontal:0 ~padding_vertical:0 [

@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
 import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
@@ -501,6 +502,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             color = MaterialTheme.colorScheme.onSurface,
             fontFamily = if (code) FontFamily.Monospace else outlinerBodyStyle.fontFamily,
         ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(
             capitalization = if (code) KeyboardCapitalization.None else KeyboardCapitalization.Sentences,
             autoCorrectEnabled = if (code) false else null,

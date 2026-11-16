@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -102,6 +103,10 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                         .padding(padding)
                         .consumeWindowInsets(padding)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
+                        // LUI's editor chrome is anchored to the bottom of this
+                        // host. Keep slash-command results above the IME even on
+                        // devices that do not reliably honor adjustResize.
+                        .imePadding()
                         // Expose LUI accessibility-identifier testTags as
                         // resource-ids so Maestro `id:` selectors resolve.
                         .semantics { testTagsAsResourceId = true },
