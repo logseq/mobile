@@ -162,8 +162,10 @@ internal fun OutlinerBlockContent(
 ) {
     val uuid = context.string("block-id") ?: ""
     val title = context.string("title") ?: ""
+    val markupJson = context.string("markup-json") ?: ""
     val completed = context.flag("is-completed")
     val isAsset = context.flag("is-asset")
+    val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
@@ -220,8 +222,7 @@ internal fun OutlinerBlockContent(
     }
 
     val decoration = if (completed) TextDecoration.LineThrough else null
-    Box(
-        modifier = Modifier
+    val rowModifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned {
                 rowHeightPx = it.size.height
@@ -230,7 +231,7 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .dragAndDropSource(
+            .then(if (linkOnly) Modifier else Modifier.dragAndDropSource(
                 drawDragDecoration = {},
                 block = {
                     detectTapGestures(
@@ -249,12 +250,14 @@ internal fun OutlinerBlockContent(
                         },
                     )
                 },
-            )
+            ))
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
             )
-            .testTag("outliner-block-content-$uuid"),
+            .testTag("outliner-block-content-$uuid")
+    Box(
+        modifier = rowModifier,
     ) {
         Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
             if (isAsset) {
@@ -272,7 +275,7 @@ internal fun OutlinerBlockContent(
                 CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
                     ProjectedMarkup(
                         youtubeStarts = youtubeStarts,
-                        encoded = context.string("markup-json") ?: "",
+                        encoded = markupJson,
                         fallback = title,
                         completedDecoration = decoration,
                         onOpenNode = { context.emit("open-node", "uuid" to it) },
@@ -291,6 +294,14 @@ internal fun OutlinerBlockContent(
             }
         }
     }
+}
+
+internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
+    val values = JSONArray(encoded)
+    values.length() == 1 && values.optJSONObject(0)?.optString("type") in
+        setOf("nodeReference", "url", "pageReference")
+} catch (_: Throwable) {
+    false
 }
 
 internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Float = 0f): String {

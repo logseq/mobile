@@ -7,14 +7,17 @@ let video_page = "f0000000-0000-4000-8000-000000000004"
 let math_page = "f0000000-0000-4000-8000-000000000005"
 let formula_page = "f0000000-0000-4000-8000-000000000006"
 let discussion_page = "f0000000-0000-4000-8000-000000000007"
+let template_page = "f0000000-0000-4000-8000-000000000008"
 let empty_block = "f0000000-0000-4000-8000-000000000013"
 let code_block = "f0000000-0000-4000-8000-000000000012"
 let ref_uuid uuid = Ds.Lookup_ref ("block/uuid", Ds.Uuid uuid)
 let entity uuid fields = Ds.Entity {Ds.db_id = Some (Ds.Temp_id uuid);
   attrs = ("block/uuid", Ds.One_value (Ds.Uuid uuid)) :: fields}
 let text attr value = attr, Ds.One_value (Ds.String value)
+let int attr value = attr, Ds.One_value (Ds.Int64 (Int64.of_int value))
 let reference attr uuid = attr, Ds.One_value (Ds.Ref_to (ref_uuid uuid))
 let tag ident = "block/tags", Ds.One_value (Ds.Ref_to (Ds.Ident ident))
+let tags idents = "block/tags", Ds.Many_values (List.map (fun ident -> Ds.Ref_to (Ds.Ident ident)) idents)
 let make_page uuid title = entity uuid [text "block/title" title;
   text "block/name" (String.lowercase_ascii title); tag "logseq.class/Page"]
 let block uuid parent order title extra = entity uuid
@@ -24,14 +27,19 @@ let () =
   let path = Sys.argv.(1) in
   let db = Result.get_ok (Graph_bootstrap.database "Mobile feedback" false (fun value -> Ok value)) in
   let db = Ds.db_with [
-    make_page page "Sep 17th, 2026"; make_page code_page "Code continuation";
+    entity page [text "block/title" "Nov 16th, 2026"; text "block/name" "nov 16th, 2026";
+      int "block/journal-day" 20261116; tags ["logseq.class/Page"; "logseq.class/Journal"]];
+    make_page code_page "Code continuation";
     make_page photo_page "Photo capture"; make_page video_page "YouTube link";
     make_page math_page "LaTeX regression"; make_page formula_page "Formula";
     make_page discussion_page "Comments and reactions";
+    entity template_page [text "block/title" "Daily standup"; text "block/name" "daily standup";
+      tags ["logseq.class/Page"; "logseq.class/Template"]];
+    block "f0000000-0000-4000-8000-000000000063" template_page "a0" "Yesterday / Today / Blockers" [];
     block "f0000000-0000-4000-8000-000000000011" page "a0" "Journal content" [];
     block "f0000000-0000-4000-8000-000000000021" page "a1" "[[Formula]]" [reference "block/refs" formula_page];
     block "f0000000-0000-4000-8000-000000000022" formula_page "a0" "A formula page" [];
-    block "f0000000-0000-4000-8000-000000000023" formula_page "a1" "[[Sep 17th, 2026]]" [reference "block/refs" page];
+    block "f0000000-0000-4000-8000-000000000023" formula_page "a1" "[[Nov 16th, 2026]]" [reference "block/refs" page];
     block code_block code_page "a0" "print(42)" ["logseq.property.node/display-type", Ds.One_value (Ds.Keyword "code")];
     block empty_block photo_page "a0" "" [];
     block "f0000000-0000-4000-8000-000000000014" video_page "a0" "https://youtu.be/dQw4w9WgXcQ" [];
