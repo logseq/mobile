@@ -2833,7 +2833,9 @@ let rec update (current : logseq_model) action =
       task_reminders_status = settings.task_reminders_status;
       sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
       base_url = settings.base_url;
-      base_url_draft = settings.base_url;
+      base_url_draft =
+        if current.base_url_draft = current.base_url then settings.base_url
+        else current.base_url_draft;
       version = settings.version;
       revision = settings.revision;
     }

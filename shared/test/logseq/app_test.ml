@@ -923,6 +923,73 @@ let settings_preferences_persist_without_dismissing_the_sheet () =
     [ Model.SaveSettingsEffect (4, Model.current_settings auto_correction_disabled);
       Model.SaveSettingsEffect (5, Model.current_settings task_reminders_enabled) ]
 
+let settings_snapshots_preserve_dirty_connection_drafts () =
+  let snapshot = settings [ "journals"; "graphs" ] in
+  let opened =
+    Model.update
+      (Model.update (Model.initial ()) (Model.ApplySettingsSnapshot snapshot))
+      Model.OpenSettings
+  in
+  let empty = Model.update opened (Model.ChangeBaseURL "") in
+  let empty_refreshed = Model.update empty (Model.ApplySettingsSnapshot snapshot) in
+  check_eq ~msg:"an incomplete empty draft survives an unrelated snapshot"
+    empty_refreshed.base_url_draft "";
+  let dirty = Model.update opened (Model.ChangeBaseURL "  https://draft.example  ") in
+  (* Foreground permission refresh publishes a complete snapshot even when disabled. *)
+  let disabled_refresh = Model.update dirty (Model.ApplySettingsSnapshot
+    { snapshot with task_reminders_status = "denied" }) in
+  check_eq ~msg:"disabled reminder foreground refresh preserves the unsaved URL"
+    disabled_refresh.base_url_draft "  https://draft.example  ";
+  check_eq ~msg:"permission status still updates" disabled_refresh.task_reminders_status "denied";
+  let enabled_refresh = Model.update disabled_refresh (Model.ApplySettingsSnapshot
+    { snapshot with task_reminders_enabled = true; task_reminders_status = "authorized";
+                    base_url = "https://changed.example" }) in
+  check_eq ~msg:"enabled reminder update preserves the draft even when the host URL changes"
+    enabled_refresh.base_url_draft "  https://draft.example  ";
+  check ~msg:"enabled reminder update still changes settings" enabled_refresh.task_reminders_enabled;
+  check_eq ~msg:"host URL remains current while editing" enabled_refresh.base_url "https://changed.example";
+  let applied = Model.update enabled_refresh Model.ApplySettings in
+  check_eq ~msg:"Apply trims and commits the draft" applied.base_url "https://draft.example";
+  check_eq ~msg:"Apply leaves a clean draft" applied.base_url_draft applied.base_url;
+  check ~msg:"Apply closes settings" (not applied.settings_open);
+  check_eq ~msg:"Apply persists the committed URL" applied.pending_effects
+    [ Model.SaveSettingsEffect (1, Model.current_settings applied) ];
+  let dismissed = Model.update enabled_refresh Model.DismissSettings in
+  check_eq ~msg:"Dismiss discards the draft in favor of the latest host URL"
+    dismissed.base_url_draft "https://changed.example";
+  check ~msg:"Dismiss closes settings" (not dismissed.settings_open);
+  let refreshed = Model.update dismissed (Model.ApplySettingsSnapshot
+    { snapshot with base_url = "https://new.example" }) in
+  check_eq ~msg:"a clean draft follows a host URL refresh" refreshed.base_url_draft "https://new.example";
+  let reopened = Model.update refreshed Model.OpenSettings in
+  check_eq ~msg:"opening settings starts with the current URL" reopened.base_url_draft refreshed.base_url
+
+let native_settings_refresh_preserves_dirty_connection_draft () =
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    let snapshot enabled status url =
+      Yojson.Basic.to_string (`Assoc [
+        "appearance", `String "system"; "language", `String "system";
+        "spellCheck", `Bool true; "autoCorrection", `Bool true;
+        "taskRemindersEnabled", `Bool enabled; "taskRemindersStatus", `String status;
+        "sidebarTabs", `List [`String "journals"; `String "graphs"];
+        "baseURL", `String url; "version", `String "1"; "revision", `String "abc" ]) in
+    let publish enabled status url =
+      ignore (Native_bridge.apply_host_update "settings" (snapshot enabled status url)) in
+    let model () = App.model (Native_bridge.app ()) in
+    publish false "" "https://original.example";
+    ignore (Native_bridge.flush_action Model.OpenSettings);
+    ignore (Native_bridge.flush_action (Model.ChangeBaseURL " https://draft.example "));
+    publish false "" "https://original.example";
+    check_eq ~msg:"native disabled permission refresh keeps the raw draft"
+      (model ()).base_url_draft " https://draft.example ";
+    publish true "authorized" "https://new.example";
+    check_eq ~msg:"native enabled status update keeps the raw draft"
+      (model ()).base_url_draft " https://draft.example ";
+    check_eq ~msg:"native status update reaches the model" (model ()).task_reminders_status "authorized";
+    ignore (Native_bridge.flush_action Model.DismissSettings);
+    check_eq ~msg:"native dismissal adopts the latest host URL" (model ()).base_url_draft "https://new.example")
+
 let settings_reject_invalid_connections_and_preserve_required_tabs () =
   let opened =
     {
@@ -10896,6 +10963,8 @@ let cases =
     case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
+    case "settings-snapshots-preserve-dirty-connection-drafts" settings_snapshots_preserve_dirty_connection_drafts;
+    case "native-settings-refresh-preserves-dirty-connection-draft" native_settings_refresh_preserves_dirty_connection_draft;
     case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;
     case "settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary" settings_snapshot_normalizes_sidebar_tabs_at_the_lg_boundary;
     case "runtime-log-filters-refresh-and-successful-results-enter-lg-state" runtime_log_filters_refresh_and_successful_results_enter_lg_state;
