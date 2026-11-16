@@ -6,6 +6,7 @@ import android.graphics.Paint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
@@ -17,6 +18,7 @@ import org.junit.runners.Parameterized
 import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.logseq.runtime.*
 import com.logseq.logseq.ui.LogseqTheme
+import com.logseq.logseq.ui.logseqContentHostInsets
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
 import kotlinx.coroutines.runBlocking
@@ -88,7 +90,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             }; bitmap.recycle()
         }
     }
-    private fun mount(page: Int) {
+    private fun mount(page: Int, dark: Boolean = false) {
         val directory = File(context.cacheDir, "feedback-recording").apply { deleteRecursively(); mkdirs() }
         graph = File(directory, "graphs/feedback").apply { mkdirs() }
         for (name in listOf("graph.sqlite", "sync.checkpoint")) {
@@ -111,8 +113,29 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
         apply(opened); apply(selected)
         host("local-graph-ids", """["feedback"]""")
         host("graph-loading", "false")
+        ui.setContent { MaterialExpressiveTheme(colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
+            CompositionLocalProvider(dev.lui.LocalLuiThemeDark provides dark,
+                dev.lui.LocalLuiSemanticColors provides LogseqTheme.semanticColors(androidx.compose.material3.MaterialTheme.colorScheme)) {
+                Box(Modifier.fillMaxSize().logseqContentHostInsets()) { backend.Content(root) }
+            }
+        } }
+        pause()
+    }
+    private fun mountProjection(projection: JSONObject) {
+        lateinit var native: LogseqNativeBridge
+        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, native) },
+            extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
+        filter = LuiPatchFilter(backend)
+        native = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
+        bridge = native
+        val root = native.initialize(authenticationCode = 3)
+        val result = JSONObject().put("graphName", "Recording graph")
+            .put("selectedGraphId", "recording").put("isGraphUnlocked", true)
+            .put("syncConnected", false).put("outlinerRows", JSONArray())
+        projection.keys().forEach { result.put(it, projection.get(it)) }
+        filter.applyJson(native.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
         ui.setContent { MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
-            Box(Modifier.fillMaxSize()) { backend.Content(root) }
+            Box(Modifier.fillMaxSize().logseqContentHostInsets()) { backend.Content(root) }
         } }
         pause()
     }
@@ -132,6 +155,87 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
     }
     private fun recordCase() {
         when (scenario) {
+            "slash-template" -> {
+                mount(1)
+                apply(request("outlinerEvent", JSONObject().put("type", "tapBlock").put("uuid", uuid(11)).toString()))
+                drain()
+                ui.onNodeWithTag("field.outliner.block." + uuid(11)).performTextReplacement("/")
+                val changed = request("outlinerEvent", JSONObject().put("type", "textChanged")
+                    .put("title", "/").put("caretUTF16Offset", 1).toString())
+                apply(changed)
+                pause()
+                val options = JSONObject(changed).getJSONObject("result").getJSONArray("outlinerAutocompleteCandidates")
+                val option = (0 until options.length()).map(options::getJSONObject)
+                    .single { it.getString("label") == "Template" }
+                apply(request("outlinerEvent", JSONObject().put("type", "chooseAutocomplete")
+                    .put("value", option.getString("value")).toString()))
+                pause()
+            }
+            "cursor-dark" -> {
+                mount(1, dark = true)
+                apply(request("outlinerEvent", JSONObject().put("type", "tapBlock").put("uuid", uuid(11)).toString()))
+                drain()
+                ui.onNodeWithTag("field.outliner.block." + uuid(11)).performTextReplacement("Find the blinking cursor")
+                pause()
+            }
+            "deadline-calendar" -> {
+                mount(1)
+                apply(request("outlinerEvent", JSONObject().put("type", "tapBlock").put("uuid", uuid(11)).toString()))
+                drain()
+                ui.onNodeWithTag("field.outliner.block." + uuid(11)).performTextReplacement("/")
+                val changed = request("outlinerEvent", JSONObject().put("type", "textChanged")
+                    .put("title", "/").put("caretUTF16Offset", 1).toString())
+                apply(changed)
+                val options = JSONObject(changed).getJSONObject("result").getJSONArray("outlinerAutocompleteCandidates")
+                val option = (0 until options.length()).map(options::getJSONObject)
+                    .single { it.getString("label") == "Deadline" }
+                apply(request("outlinerEvent", JSONObject().put("type", "chooseAutocomplete")
+                    .put("value", option.getString("value")).toString()))
+                pause()
+            }
+            "link-only-edit" -> {
+                mount(1)
+                ui.onNodeWithTag("outliner-block-content-" + uuid(21)).performTouchInput { longClick() }
+                pause()
+            }
+            "journal-references" -> {
+                mount(1)
+                ui.onRoot().performTouchInput { swipeUp(startY = bottom * .82f, endY = top + height * .22f, durationMillis = 900) }
+                pause()
+            }
+            "flashcard-categories" -> {
+                val cardClass = JSONObject().put("uuid", "00000002-1358-2811-0900-000000000000").put("title", "Card")
+                val sailing = JSONObject().put("uuid", uuid(60)).put("title", "Sailing")
+                val card = JSONObject().put("block", JSONObject().put("uuid", uuid(61))
+                    .put("title", "What makes a good tack?")
+                    .put("references", JSONArray().put(cardClass).put(sailing)))
+                    .put("children", JSONArray()).put("due", 1).put("repetitions", 0)
+                    .put("lapses", 0).put("state", "new")
+                mountProjection(JSONObject().put("flashcards", JSONArray().put(card))
+                    .put("flashcardDecks", JSONObject().put("totalCards", 1).put("completed", false)))
+                ui.onNodeWithTag("button.sidebar").performClick()
+                ui.onNodeWithTag("link.sidebar.flashcards").performClick()
+                pause()
+            }
+            "image-performance" -> {
+                mount(3)
+                val file = File(context.cacheDir, "large-feedback-image.png")
+                val bitmap = Bitmap.createBitmap(3200, 3200, Bitmap.Config.ARGB_8888)
+                Canvas(bitmap).apply {
+                    drawColor(android.graphics.Color.rgb(25, 95, 145))
+                    drawText("Large image preview", 180f, 1650f, Paint().apply {
+                        color = android.graphics.Color.WHITE; textSize = 180f
+                    })
+                }
+                file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+                val response = request("addAsset", JSONObject().put("uuid", uuid(62))
+                    .put("title", "Large image preview.png").put("assetType", "png")
+                    .put("assetSize", file.length()).put("assetChecksum", "large-feedback-image")
+                    .put("localPath", file.path).put("targetBlockId", uuid(13)).toString())
+                apply(response)
+                pause()
+            }
             "responsiveness" -> {
                 mount(1)
                 request("configure", JSONObject().put("graphId", "").put("baseUrl", args.getString("feedbackCatalogUrl"))

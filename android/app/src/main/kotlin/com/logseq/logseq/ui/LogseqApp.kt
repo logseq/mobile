@@ -67,6 +67,13 @@ import kotlinx.coroutines.launch
 // plus the modal hosts (audio recording sheet, delete confirmation,
 // error snackbar) the runtime requests through LogseqDialogs.
 @Composable
+internal fun Modifier.logseqContentHostInsets(): Modifier =
+    windowInsetsPadding(WindowInsets.safeDrawing)
+        // LUI's editor chrome is anchored to the bottom of this host. Keep
+        // command results above IMEs that do not reliably honor adjustResize.
+        .imePadding()
+
+@Composable
 internal fun LogseqApp(runtime: LogseqRuntime) {
     val systemDark = isSystemInDarkTheme()
     val dark = when (runtime.effectiveAppearance) {
@@ -102,11 +109,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                         .fillMaxSize()
                         .padding(padding)
                         .consumeWindowInsets(padding)
-                        .windowInsetsPadding(WindowInsets.safeDrawing)
-                        // LUI's editor chrome is anchored to the bottom of this
-                        // host. Keep slash-command results above the IME even on
-                        // devices that do not reliably honor adjustResize.
-                        .imePadding()
+                        .logseqContentHostInsets()
                         // Expose LUI accessibility-identifier testTags as
                         // resource-ids so Maestro `id:` selectors resolve.
                         .semantics { testTagsAsResourceId = true },
