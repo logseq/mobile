@@ -1,12 +1,21 @@
 {
-  "originHash" : "92925a4afbf12e7a1c40877deb1da433658971b0569cbfc7feb4876321b3a212",
+  "originHash" : "18bf2d4feeedcfb116dcd7237889dd6c74b685937a6c9cac65015faa21026c2e",
   "pins" : [
     {
       "identity" : "lui",
       "kind" : "remoteSourceControl",
       "location" : "ssh://git@github.com/logseq/lui.git",
       "state" : {
-        "revision" : "cf618462e1c55e65a19f24a67f832137fb9fb667"
+        "revision" : "3fc49cb1555b1575dbe8f0c37f178ccb0692883a"
+      }
+    },
+    {
+      "identity" : "swiftdraw",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swhitty/SwiftDraw.git",
+      "state" : {
+        "revision" : "dbb4ef98824053ead8c83fa866c2c6054fb41809",
+        "version" : "0.24.0"
       }
     }
   ],
