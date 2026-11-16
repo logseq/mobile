@@ -5477,11 +5477,14 @@ let kotlin_composer_preserves_the_capture_contract () =
     descendant_with_identifier renderer chrome "surface.composer.root"
   in
   let collapsed = List.nth (children renderer composer) 0 in
-  check_eq ~msg:"the Android capture row fills its dock slot like iOS"
+  check_eq ~msg:"the Android capture row keeps its natural height"
     (property_float renderer placement Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"collapsed Capture fills the available dock width"
+    (-1.0);
+  check_eq ~msg:"collapsed Capture keeps its natural height"
     (property_float renderer collapsed Lui_protocol.GrowValue)
+    (-1.0);
+  check_eq ~msg:"the composer fills the available dock width"
+    (property_float renderer composer Lui_protocol.GrowValue)
     1.0;
   let expand =
     descendant_with_identifier renderer collapsed "button.composer.expand"
@@ -5492,6 +5495,9 @@ let kotlin_composer_preserves_the_capture_contract () =
     descendant_with_identifier renderer chrome "surface.composer.root"
   in
   let expanded = List.nth (children renderer expanded_composer) 0 in
+  check_eq ~msg:"expanded Capture keeps its natural height"
+    (property_float renderer expanded Lui_protocol.GrowValue)
+    (-1.0);
   let send_button =
     descendant_with_identifier renderer expanded "button.send"
   in
@@ -6515,9 +6521,9 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
     (descendant_with_identifier renderer search_content "list.outliner"
     <> -1);
   check_eq
-    ~msg:"Kotlin capture fills the bottom dock like iOS"
+    ~msg:"Kotlin capture keeps its natural height in the bottom dock"
     (property_float renderer capture_row Lui_protocol.GrowValue)
-    1.0;
+    (-1.0);
   send application Model.ExpandComposer;
   flush application;
   let expanded_row =
