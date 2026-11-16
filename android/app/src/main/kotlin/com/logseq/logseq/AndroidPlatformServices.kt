@@ -87,6 +87,7 @@ class AndroidPlatformServices(private val context: Context) {
                 normalizedBaseUrl(settings.optString("baseURL", DEFAULT_BASE_URL)),
             )
             .apply()
+        applyAndroidApplicationAppearance(context, settings.optString("appearance", "system"))
     }
 
     fun openExternalUrl(url: String): Boolean {
@@ -257,7 +258,7 @@ class AndroidPlatformServices(private val context: Context) {
     private fun JSONArray.toStringList(): List<String> =
         (0 until length()).mapNotNull { index -> optString(index).takeIf(String::isNotBlank) }
 
-    private companion object {
+    internal companion object {
         const val preferencesName = "logseq"
     }
 }

@@ -55,7 +55,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
+import com.logseq.logseq.applyAndroidSystemBarAppearance
 import androidx.core.content.edit
 import com.logseq.logseq.runtime.LogseqRuntime
 import com.logseq.logseq.runtime.RecordedAudioAsset
@@ -84,10 +84,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
     val window = LocalActivity.current?.window
     SideEffect {
         if (window != null) {
-            WindowCompat.getInsetsController(window, window.decorView).apply {
-                isAppearanceLightStatusBars = !dark
-                isAppearanceLightNavigationBars = !dark
-            }
+            applyAndroidSystemBarAppearance(window, dark)
         }
     }
     MaterialExpressiveTheme(

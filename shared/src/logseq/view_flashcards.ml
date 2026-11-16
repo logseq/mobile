@@ -107,7 +107,7 @@ let flashcard_review_content model_source send : t =
                [
                  button ~variant:`ghost ~style_class:"semibold" ~grow:1.0
                    ~min_height:50 ~text_alignment:`center
-                   ~foreground:"white" ~background:"primary"
+                   ~foreground:"primary-foreground" ~background:"primary"
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-cloze"
                    ~on_press:(press send Model.RevealFlashcardCloze)
@@ -119,7 +119,7 @@ let flashcard_review_content model_source send : t =
                [
                  button ~variant:`ghost ~style_class:"semibold" ~grow:1.0
                    ~min_height:50 ~text_alignment:`center
-                   ~foreground:"white" ~background:"primary"
+                   ~foreground:"primary-foreground" ~background:"primary"
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-answer"
                    ~on_press:(press send Model.RevealFlashcardAnswer)

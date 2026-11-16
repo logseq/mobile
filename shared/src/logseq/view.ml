@@ -21,13 +21,13 @@ let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
     ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
-    (* Match master's Radix status palette in both appearances. *)
-    ("task-backlog", Adaptive { light = "#E8E8E8"; dark = "#2E2E2E" });
+    (* Retain the status hues while lifting dark-mode icons off the background. *)
+    ("task-backlog", Adaptive { light = "#E8E8E8"; dark = "#92979E" });
     ("task-todo", Adaptive { light = "#858585"; dark = "#7E7E7E" });
-    ("task-doing", Adaptive { light = "#EBBC00"; dark = "#705E00" });
+    ("task-doing", Adaptive { light = "#EBBC00"; dark = "#D9B94C" });
     ("task-in-review", Fixed "#0090FF");
-    ("task-done", Adaptive { light = "#5BB98C"; dark = "#236E4A" });
-    ("task-canceled", Adaptive { light = "#EB9091"; dark = "#AA2429" });
+    ("task-done", Adaptive { light = "#5BB98C"; dark = "#6BC394" });
+    ("task-canceled", Adaptive { light = "#EB9091"; dark = "#EF9298" });
     ("flashcard-again-background", Fixed "#FF3B301F");
     ("flashcard-again-foreground", Adaptive { light = "#B42318"; dark = "#FFB4AB" });
     ("flashcard-hard-background", Fixed "#FF95001F");
