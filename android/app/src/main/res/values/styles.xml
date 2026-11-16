@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="SystemBarThemeBase" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:colorBackground">@color/app_background</item>
         <item name="android:statusBarColor">#FCFCFC</item>
         <item name="android:navigationBarColor">#FCFCFC</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

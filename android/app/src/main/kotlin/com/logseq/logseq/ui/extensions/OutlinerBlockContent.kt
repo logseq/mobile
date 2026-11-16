@@ -67,6 +67,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -704,10 +705,19 @@ private fun MarkupTable(
 
 // --- assets ---
 
+internal fun themedHtmlContent(html: String, dark: Boolean, foreground: Int, link: Int): String {
+    fun cssColor(color: Int) = "#%06x".format(java.util.Locale.ROOT, color and 0xffffff)
+    return "<meta name='viewport' content='width=device-width,initial-scale=1'>" +
+        "<style>:root{color-scheme:${if (dark) "dark" else "light"}}" +
+        "body{background:transparent;color:${cssColor(foreground)};font:17px sans-serif;margin:0}" +
+        "a{color:${cssColor(link)}}img{max-width:100%}</style>" + html
+}
+
 @Composable
 private fun AndroidHtml(html: String) {
-    val content = "<meta name='viewport' content='width=device-width,initial-scale=1'>" +
-        "<style>:root{color-scheme:light dark}body{background:transparent;font:17px sans-serif;margin:0}img{max-width:100%}</style>" + html
+    val scheme = MaterialTheme.colorScheme
+    val dark = dev.lui.LocalLuiThemeDark.current ?: androidx.compose.foundation.isSystemInDarkTheme()
+    val content = themedHtmlContent(html, dark, scheme.onSurface.toArgb(), scheme.primary.toArgb())
     AndroidView(factory = { context -> WebView(context).apply {
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
         webViewClient = WebViewClient()

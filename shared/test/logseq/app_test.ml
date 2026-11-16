@@ -3836,6 +3836,9 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
   check_eq ~msg:"the reveal action uses the accent fill"
     (property_string renderer show_cloze Lui_protocol.BackgroundValue)
     "primary";
+  check_eq ~msg:"the reveal label pairs with the accent in both appearances"
+    (property_string renderer show_cloze Lui_protocol.ForegroundValue)
+    "primary-foreground";
   check_eq ~msg:"the reveal action centers its native button label"
     (property_string renderer show_cloze Lui_protocol.TextAlignment)
     "center";
@@ -3853,6 +3856,9 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
   let show_answer =
     descendant_with_identifier renderer screen "button.flashcard.show-answer"
   in
+  check_eq ~msg:"the answer label pairs with the accent in both appearances"
+    (property_string renderer show_answer Lui_protocol.ForegroundValue)
+    "primary-foreground";
   dispatch application (Lui_protocol.Press show_answer);
   flush application;
   let answer_row =
