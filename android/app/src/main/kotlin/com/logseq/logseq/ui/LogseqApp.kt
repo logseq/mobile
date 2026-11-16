@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -66,6 +67,13 @@ import kotlinx.coroutines.launch
 // plus the modal hosts (audio recording sheet, delete confirmation,
 // error snackbar) the runtime requests through LogseqDialogs.
 @Composable
+internal fun Modifier.logseqContentHostInsets(): Modifier =
+    windowInsetsPadding(WindowInsets.safeDrawing)
+        // LUI's editor chrome is anchored to the bottom of this host. Keep
+        // command results above IMEs that do not reliably honor adjustResize.
+        .imePadding()
+
+@Composable
 internal fun LogseqApp(runtime: LogseqRuntime) {
     val systemDark = isSystemInDarkTheme()
     val dark = when (runtime.effectiveAppearance) {
@@ -101,7 +109,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                         .fillMaxSize()
                         .padding(padding)
                         .consumeWindowInsets(padding)
-                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .logseqContentHostInsets()
                         // Expose LUI accessibility-identifier testTags as
                         // resource-ids so Maestro `id:` selectors resolve.
                         .semantics { testTagsAsResourceId = true },

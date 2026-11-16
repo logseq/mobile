@@ -3125,8 +3125,13 @@ and apply_core_snapshot (current : logseq_model)
     else
       let uuid, rows = Option.get projection.reference_update in
       let selected = Option.map (fun (page : sidebar_page) -> page.uuid) current.selected_page = Some uuid in
+      let journal_home = current.node_routes = [] && current.selected_page = None
+        && match current.journal_outliner_rows with
+           | first :: _ -> first.page_id = uuid
+           | [] -> false in
       { current with
-        related_rows = (if selected && not current.selected_page_is_tag then rows else current.related_rows);
+        related_rows = (if (selected && not current.selected_page_is_tag) || journal_home
+          then rows else current.related_rows);
         linked_reference_rows = (if selected && current.selected_page_is_tag then rows else current.linked_reference_rows);
         node_routes = List.map (fun (route : node_projection) ->
           if route.node_uuid <> uuid then route

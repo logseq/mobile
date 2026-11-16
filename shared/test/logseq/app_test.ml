@@ -6932,6 +6932,31 @@ let journal_navigation_exposes_an_immediate_preview_route () =
   check_eq ~msg:"leaving the route releases its optimistic preview"
     returned.app_navigation_previews []
 
+let journal_home_places_today_references_before_older_days () =
+  let today =
+    journal_outline_row "today-block" "today-page" "Today" "Today" 20261116 0 in
+  let older =
+    journal_outline_row "older-block" "older-page" "Older" "Yesterday" 20261115 0 in
+  let reference = outline_row "today-reference" "Linked from another page" in
+  let current = { (Model.initial ()) with
+    selected_graph_id = Some "graph";
+    outliner_rows = [today; older]; journal_outliner_rows = [today; older];
+    related_rows = [reference] } in
+  let entries = View_rows.page_entries (View_rows.retained_outliner_rows current) current in
+  let ids = List.map View_rows.page_entry_identifier entries in
+  let rec index target at = function
+    | [] -> -1
+    | value :: rest -> if value = target then at else index target (at + 1) rest in
+  let reference_index = index "reference.related.today-reference" 0 ids in
+  let older_index = index "outline.older-block" 0 ids in
+  check ~msg:"today's linked references stay with today instead of trailing the feed"
+    (reference_index >= 0 && reference_index < older_index);
+  let applied = Model.update current (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with selected_graph_id = Some "graph";
+    reference_update = Some ("today-page", [reference]) }) in
+  check_eq ~msg:"journal home accepts the deferred reference result for its first day"
+    applied.related_rows [reference]
+
 let block_navigation_exposes_an_immediate_outliner_preview_route () =
   let parent =
     {
@@ -11014,6 +11039,7 @@ let cases =
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
     case "journal-navigation-exposes-an-immediate-preview-route" journal_navigation_exposes_an_immediate_preview_route;
+    case "journal-home-places-today-references-before-older-days" journal_home_places_today_references_before_older_days;
     case "block-navigation-exposes-an-immediate-outliner-preview-route" block_navigation_exposes_an_immediate_outliner_preview_route;
     case "popped-native-path-restores-root-before-core-route-cleanup" popped_native_path_restores_root_before_core_route_cleanup;
     case "app-and-search-routes-are-retained-by-distinct-native-stacks" app_and_search_routes_are_retained_by_distinct_native_stacks;

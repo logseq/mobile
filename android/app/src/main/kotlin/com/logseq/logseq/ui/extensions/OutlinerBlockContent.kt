@@ -15,6 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +70,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -112,6 +117,40 @@ internal val outlinerBodyStyle: TextStyle
         lineHeight = if (LocalPropertyValue.current) 21.sp else 22.sp,
     )
 
+private object BlockImageCache {
+    private val bitmaps = object : android.util.LruCache<String, android.graphics.Bitmap>(16 * 1024) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
+            (value.allocationByteCount / 1024).coerceAtLeast(1)
+    }
+
+    @Synchronized fun get(key: String): android.graphics.Bitmap? = bitmaps.get(key)
+    @Synchronized fun put(key: String, value: android.graphics.Bitmap) { bitmaps.put(key, value) }
+}
+
+internal fun bitmapSampleSize(width: Int, height: Int, maxDimension: Int = 2048): Int {
+    var sample = 1
+    while (width / sample > maxDimension || height / sample > maxDimension) sample *= 2
+    return sample
+}
+
+private fun decodeSampledBytes(bytes: ByteArray): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+        inSampleSize = bitmapSampleSize(bounds.outWidth, bounds.outHeight)
+    })
+}
+
+private fun decodeSampledFile(path: String): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+        inSampleSize = bitmapSampleSize(bounds.outWidth, bounds.outHeight)
+    })
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun OutlinerBlockContent(
@@ -123,8 +162,10 @@ internal fun OutlinerBlockContent(
 ) {
     val uuid = context.string("block-id") ?: ""
     val title = context.string("title") ?: ""
+    val markupJson = context.string("markup-json") ?: ""
     val completed = context.flag("is-completed")
     val isAsset = context.flag("is-asset")
+    val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
@@ -181,8 +222,7 @@ internal fun OutlinerBlockContent(
     }
 
     val decoration = if (completed) TextDecoration.LineThrough else null
-    Box(
-        modifier = Modifier
+    val rowModifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned {
                 rowHeightPx = it.size.height
@@ -191,7 +231,7 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .dragAndDropSource(
+            .then(if (linkOnly) Modifier else Modifier.dragAndDropSource(
                 drawDragDecoration = {},
                 block = {
                     detectTapGestures(
@@ -210,12 +250,14 @@ internal fun OutlinerBlockContent(
                         },
                     )
                 },
-            )
+            ))
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
             )
-            .testTag("outliner-block-content-$uuid"),
+            .testTag("outliner-block-content-$uuid")
+    Box(
+        modifier = rowModifier,
     ) {
         Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
             if (isAsset) {
@@ -233,7 +275,7 @@ internal fun OutlinerBlockContent(
                 CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
                     ProjectedMarkup(
                         youtubeStarts = youtubeStarts,
-                        encoded = context.string("markup-json") ?: "",
+                        encoded = markupJson,
                         fallback = title,
                         completedDecoration = decoration,
                         onOpenNode = { context.emit("open-node", "uuid" to it) },
@@ -252,6 +294,14 @@ internal fun OutlinerBlockContent(
             }
         }
     }
+}
+
+internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
+    val values = JSONArray(encoded)
+    values.length() == 1 && values.optJSONObject(0)?.optString("type") in
+        setOf("nodeReference", "url", "pageReference")
+} catch (_: Throwable) {
+    false
 }
 
 internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Float = 0f): String {
@@ -518,10 +568,27 @@ private fun MarkupInlineText(
         style = textStyle ?: outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
-        // The row owns edit/long-press/drag; only annotated links consume a tap here.
-        modifier = modifier.semantics {
-            onClick(label = "Edit block") { onTapFallback(); true }
-        },
+        // The row owns fallback gestures; annotated links consume short taps here.
+        modifier = modifier
+            // A link-only block otherwise has no tappable surface that enters
+            // editing: Text consumes every short tap to open the URL. Observe
+            // a hold before the link handler and turn it into the block's edit
+            // action, while leaving ordinary taps to native link semantics.
+            .pointerInput(edit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial,
+                    )
+                    awaitLongPressOrCancellation(down.id)?.let { release ->
+                        release.consume()
+                        edit()
+                    }
+                }
+            }
+            .semantics {
+                onClick(label = "Edit block") { onTapFallback(); true }
+            },
     )
 }
 
@@ -654,12 +721,13 @@ private fun AndroidHtml(html: String) {
 
 @Composable
 private fun AndroidLinkedImage(url: String, alt: String) {
-    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember(url) { mutableStateOf(BlockImageCache.get("remote:$url")) }
     var failed by remember(url) { mutableStateOf(false) }
     LaunchedEffect(url) {
         try {
             val uri = androidEmbeddedMediaUri(url) ?: error("Invalid image URL")
             bitmap = withContext(Dispatchers.IO) {
+                BlockImageCache.get("remote:$url")?.let { return@withContext it }
                 val connection = java.net.URL(uri.toString()).openConnection().apply {
                     connectTimeout = 10_000
                     readTimeout = 10_000
@@ -677,12 +745,9 @@ private fun AndroidLinkedImage(url: String, alt: String) {
                     output.toByteArray()
                 }
                 require(bytes.size <= 20_000_000) { "Image is too large" }
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
-                var sample = 1
-                while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                requireNotNull(decodeSampledBytes(bytes)) { "Invalid image" }.also {
+                    BlockImageCache.put("remote:$url", it)
+                }
             }
             failed = bitmap == null
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -897,8 +962,13 @@ internal fun GraphImagePreview(
         try {
             val path = if (localPath.isNotEmpty() && File(localPath).isFile) localPath
                 else requireNotNull(loadImage) { "Image unavailable" }(uuid, assetType)
+            val file = File(path)
+            val cacheKey = "file:$path:${file.lastModified()}:${file.length()}"
             val image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                requireNotNull(BitmapFactory.decodeFile(path)?.asImageBitmap()) { "Image unavailable" }
+                val decoded = BlockImageCache.get(cacheKey) ?:
+                    requireNotNull(decodeSampledFile(path)) { "Image unavailable" }
+                        .also { BlockImageCache.put(cacheKey, it) }
+                decoded.asImageBitmap()
             }
             loadedPath = path
             bitmap = image

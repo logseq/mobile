@@ -197,7 +197,12 @@ type reference_entry =
   | Reference_row of string * Model.outline_row
 
 let reference_entries (current : Model.logseq_model) =
-  if not (View_base.page_content_ready_ current) then []
+  if View_base.journal_home_visible_ current then
+    (match current.related_rows with
+     | [] -> []
+     | rows -> Reference_heading ("related", "Linked references") ::
+       List.map (fun row -> Reference_row ("related", row)) rows)
+  else if not (View_base.page_content_ready_ current) then []
   else
     let add_section visible key title rows acc =
       if not visible then acc
@@ -269,8 +274,9 @@ let journal_entries rows (current : Model.logseq_model) =
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
 let page_entries rows current =
+  let journal_home = View_base.journal_home_visible_ current in
   let outline =
-    if View_base.journal_home_visible_ current then journal_entries rows current
+    if journal_home then journal_entries rows current
     else if View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current then []
     else
       let outline = outline_entries rows in
@@ -283,8 +289,23 @@ let page_entries rows current =
       if allowed && needs_placeholder rows then
         outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
       else outline in
-  List.rev_append (List.rev outline)
-    (List.map (fun row -> Reference_entry row) (reference_entries current))
+  let references =
+    List.map (fun row -> Reference_entry row) (reference_entries current) in
+  if not journal_home || references = [] then List.rev_append (List.rev outline) references
+  else
+    let page = function
+      | Outline_entry row -> Some row.value.page_id
+      | Placeholder_entry value -> Some value.parent_uuid
+      | Reference_entry _ -> None in
+    match outline with
+    | [] -> references
+    | first :: _ ->
+      let first_page = page first in
+      let rec split acc = function
+        | entry :: rest when page entry = first_page -> split (entry :: acc) rest
+        | rest -> List.rev acc, rest in
+      let today, older = split [] outline in
+      today @ references @ older
 
 let page_entry_identifier = function
   | Outline_entry row -> "outline." ^ retained_row_identifier row

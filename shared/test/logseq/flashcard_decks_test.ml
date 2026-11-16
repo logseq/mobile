@@ -294,6 +294,8 @@ let native_due_card_shows_its_linked_category () = with_runtime (fun session _ _
   ignore (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ())));
   Q.with_ui App_test.kotlin_backend (Rpc_session.snapshot_visible session) (fun app ->
     App_test.send app Model.ShowFlashcards; App_test.flush app;
+    check ~msg:"card page references are labeled as categories"
+      (find app "flashcard.categories.heading" <> -1);
     let category = find app ("flashcard.category." ^ scope_page) in
     check ~msg:"the due card displays its linked Topic page before revealing the answer" (category <> -1);
     check_eq (App_test.property_string (Lui_app.runtime app) category Lui_protocol.TextValue) "Topic page"))

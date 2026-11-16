@@ -161,11 +161,24 @@ let references_for_node session uuid =
     | Some load -> Option.value ~default:[] (load uuid)
     | None -> []
 
+let journal_home_reference_uuid session =
+  let current = Types.state session in
+  if current.selected_sidebar_page <> None || current.node_routes <> [] then None
+  else
+    let context = base_outliner_context_live session in
+    match Outliner.visible_rows context current.outliner_state with
+    | row :: _ ->
+      (match row.Outliner.block.journal with
+       | Some _ -> Some row.block.page_id
+       | None -> None)
+    | [] -> None
+
 let active_reference_uuid session =
   match active_node_route session with
   | Some route -> Some route.uuid
   | None -> Option.map (fun (page : Model.entity_summary) -> page.uuid)
       (Types.state session).selected_sidebar_page
+    |> Option.fold ~none:(journal_home_reference_uuid session) ~some:(fun uuid -> Some uuid)
 
 let pending_reference_uuid session =
   if not (deferred_references session) then None
@@ -351,8 +364,8 @@ let snapshot_related_blocks (session : Types.session) =
        | None -> [])
     | _ -> []
   else if deferred_references session then
-    (match (Types.state session).selected_sidebar_page with
-     | Some page -> references_for_node session page.Model.uuid
+    (match active_reference_uuid session with
+     | Some uuid -> references_for_node session uuid
      | None -> [])
   else (Types.state session).related_blocks
 
