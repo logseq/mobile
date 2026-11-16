@@ -268,7 +268,8 @@ public final class LGRenderer {
         // virtual-window entries (see shared/native/logseq_core_ffi.h), so these
         // events are dropped — matching the Kotlin LuiDispatch.
         case .pressDetail, .pointerDown, .pointerUp, .pointerEnter,
-             .pointerLeave, .contextMenuPress, .virtualWindow:
+             .pointerLeave, .contextMenuPress, .virtualWindow,
+             .virtualRetention:
             return nil
         }
     }
