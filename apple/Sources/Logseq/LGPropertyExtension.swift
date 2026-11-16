@@ -59,13 +59,14 @@ enum LGPropertyExtension {
         })
         try registry.register(LUIAppleExtension(
             identifier: "native-property-date",
-            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
+            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required],10:clear-time[5:value:string:required]",
             properties: [
                 .init(name: "identifier", kind: .string, isRequired: true),
                 .init(name: "kind", kind: .string, isRequired: true),
                 .init(name: "value", kind: .string, isRequired: true),
             ],
-            events: [.init(name: "change", fields: [.init(name: "value", kind: .string, isRequired: true)])]
+            events: [.init(name: "change", fields: [.init(name: "value", kind: .string, isRequired: true)]),
+                     .init(name: "clear-time", fields: [.init(name: "value", kind: .string, isRequired: true)])]
         ) { AnyView(LGPropertyDatePicker(context: $0)) })
     }
 }
@@ -150,7 +151,10 @@ private struct LGPropertyDatePicker: View {
                 Button {
                     if hasTime || editingTime {
                         editingTime = false
-                        selection.wrappedValue = Calendar.current.startOfDay(for: selection.wrappedValue)
+                        let date = Calendar.current.startOfDay(for: selection.wrappedValue)
+                        let value = String(Int64((date.timeIntervalSince1970 * 1000).rounded()))
+                        do { try context.emit(name: "clear-time", values: ["value": .string(value)]) }
+                        catch { logger.error("Could not clear property time: \(String(describing: error))") }
                     } else {
                         editingTime = true
                     }

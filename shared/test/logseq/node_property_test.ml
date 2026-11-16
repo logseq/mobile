@@ -373,6 +373,55 @@ let task_date_display_paths () =
       [day_start, index < 2; Int64.add day_start 3600000L, false])
     ["logseq.property/scheduled"; "logseq.property/deadline"; "user.property/Appointment"]
 
+let task_date_picker_preserves_draft_and_clears_time () =
+  let day = Natural_date_test.reference 2026 1 10 0 0 |> Int64.of_float in
+  let cases = ["seconds", Int64.add day 30000L; "fraction", Int64.add day 123L;
+    "midnight", day; "ordinary", Int64.add day 34230000L] in
+  List.iter (fun attr -> List.iter (fun (label, original) ->
+    List.iter (fun action -> R.with_runtime (fun session runtime conn ->
+      ignore (Ds.transact_conn conn [put Q.alpha attr (Ds.Int64 original)]);
+      Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [Q.alpha];
+      ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+      ignore (Native_bridge.initialize 2 2 3);
+      Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+        let app = Native_bridge.app () in
+        App_test.send app (Model.RequestAppNode Q.alpha);
+        let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+          | Ok value -> value | Error message -> fail message in
+        App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let click id = let node = find id in check ~msg:id (node <> -1);
+          App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+        if find ("properties.expand." ^ Q.alpha) <> -1 then click ("properties.expand." ^ Q.alpha);
+        click ("property.value." ^ Q.alpha ^ "." ^ attr);
+        let editor = "property." ^ Q.alpha ^ "." ^ attr in
+        let calendar = App_test.extension_node app "native-property-date" in
+        let preview = match App_test.extension_property app calendar "value" with
+          | Some (Lui_protocol.StringValue value) -> value | _ -> fail "missing picker preview" in
+        let emit name value =
+          ignore (Native_bridge.extension_event calendar "native-property-date" name value 0) in
+        (* Native initialization can repeat the rounded preview without editing the draft. *)
+        emit "change" preview;
+        if action = "clear" || action = "cancel-clear" then emit "clear-time" (Int64.to_string day);
+        if action = "cancel" || action = "cancel-clear" then (
+          click ("view.edit.cancel." ^ editor);
+          check ~msg:(attr ^ " " ^ label ^ " Cancel does not save")
+            (not (List.exists (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects)))
+        else (
+          click ("view.edit.save." ^ editor);
+          let body = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (J.from_string body) | _ -> None)
+            (List.rev (App.model app).pending_effects) |> Option.get in
+          let expected = if action = "clear" then day else original in
+          check_eq ~msg:(attr ^ " " ^ label ^ " " ^ action ^ " editor draft")
+            (member "value" body) (`String (Int64.to_string expected));
+          let p = property attr (result (read session Q.alpha)) in
+          ignore (result (edit session Q.alpha p (R.text (member "value" body)) []));
+          check_eq ~msg:(attr ^ " " ^ label ^ " " ^ action ^ " persisted")
+            (member "editorValue" (property attr (result (read session Q.alpha)))) (`String (Int64.to_string expected))))))
+      ["done"; "clear"; "cancel"; "cancel-clear"]) cases)
+    ["logseq.property/scheduled"; "logseq.property/deadline"]
+
 let task_dates_clear_time_roundtrip () = R.with_runtime (fun session runtime conn ->
   let before = Natural_date_test.reference 2026 1 10 9 30 |> Int64.of_float in
   let day = Natural_date_test.reference 2026 1 10 0 0 |> Int64.of_float in
@@ -967,6 +1016,7 @@ let zoomed_journal_delete_effect_preserves_the_journal () =
     check ~msg:"the journal and other entries remain" (exists Q.page && exists Q.beta))
 
 let cases = [
+  case "task date picker preserves draft and clears time" task_date_picker_preserves_draft_and_clears_time;
   case "task dates clear time and reopen" task_dates_clear_time_roundtrip;
   case "task dates project date-only and timed values" task_date_display_paths;
   case "deleting a zoomed journal block preserves its journal and siblings" zoomed_journal_delete_effect_preserves_the_journal;
