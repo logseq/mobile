@@ -1,0 +1,3 @@
+- Linked references now show nested blocks with correct indentation and independent folding.
+- Match desktop reference behavior for aliases, source-page grouping and ordering.
+- Fix quick capture reopening and taking focus after hiding the block editor keyboard. Unsent capture drafts are preserved.
