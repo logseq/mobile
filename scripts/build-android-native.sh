@@ -107,6 +107,7 @@ for source in logseq_crypto_android.c logseq_https_android.c; do
   "$ndk_bin/clang" \
     --target="$target" \
     -fPIC \
+    -g \
     -I "$ocaml_lib" \
     -c "$repo_root/shared/native/$source" \
     -o "${source%.c}.o"
@@ -117,6 +118,7 @@ done
   -shared \
   -Wl,-z,max-page-size=16384 \
   -Wl,-z,common-page-size=16384 \
+  -Wl,--build-id=sha1 \
   -Wl,--no-undefined \
   -Wl,-soname,liblogseq_core.so \
   -o "$library" \
@@ -129,7 +131,8 @@ done
   -llog \
   -pthread
 
-"$ndk_bin/llvm-strip" --strip-unneeded "$library"
+# AGP strips the packaged library after merging native libs. Sentry reads the
+# merged, unstripped copy to upload symbols for the same ELF build ID.
 cp "$library" "$jni_dir/liblogseq_core.so"
 
 "$ndk_bin/llvm-readelf" -h "$library" \

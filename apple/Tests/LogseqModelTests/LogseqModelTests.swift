@@ -132,6 +132,23 @@ private let testEmptySnapshotJSON = """
         #expect(autocomplete.query == "Project")
     }
 
+    @Test func outlinerAutocompleteDecodesEveryCoreWireKindAndRejectsUnknownKinds() throws {
+        let coreWireKinds = [
+            "node", "tag", "property", "command", "embed", "template", "link",
+            "image", "date", "deadline", "scheduled", "youtube",
+        ]
+        for kind in coreWireKinds {
+            let data = Data(#"{"kind":"\#(kind)","query":""}"#.utf8)
+            let autocomplete = try JSONDecoder().decode(LogseqOutlinerAutocomplete.self, from: data)
+            #expect(autocomplete.kind.rawValue == kind)
+        }
+
+        let unknownKind = Data(#"{"kind":"future-kind","query":""}"#.utf8)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(LogseqOutlinerAutocomplete.self, from: unknownKind)
+        }
+    }
+
     @Test func decodesTypedMldocRenderNodesWithoutParsingInSwift() throws {
         let data = Data(#"{"uuid":"source","title":"See [[target]]","pageId":"page","createdAt":1,"updatedAt":1,"markup":[{"type":"text","text":"See "},{"type":"nodeReference","uuid":"target","title":"Target","children":[]}]}"#.utf8)
         let block = try JSONDecoder().decode(LogseqBlock.self, from: data)

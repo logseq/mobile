@@ -231,7 +231,13 @@ let flashcard input =
       { Model.flashcard_uuid;
         question_hidden = block_markup_text false block;
         question_revealed = block_markup_text true block;
-        card_categories = sidebar_pages_member "references" block;
+        (* The Card class is an implementation marker, not a category chosen
+           by the user. Older projections could include it among references. *)
+        card_categories =
+          List.filter
+            (fun (page : Model.sidebar_page) ->
+              page.uuid <> "00000002-1358-2811-0900-000000000000")
+            (sidebar_pages_member "references" block);
         answer_rows; has_cloze }
   | None -> None
 
@@ -294,7 +300,8 @@ let related_row input =
   in
   outline_row_from_block
     (string_member "youtubeTargetURL" fields)
-    opens_as_page 0 false false fields
+    opens_as_page (Option.value ~default:0 (int_member "depth" fields))
+    (bool_member "hasChildren" fields) (bool_member "isCollapsed" fields) fields
 
 let outliner_rows_member name fields =
   filter_map_option outline_row (list_member name fields)

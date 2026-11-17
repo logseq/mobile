@@ -718,7 +718,9 @@ let unique_named_uuid require_tag db name =
       List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ~v:(Ds.String key) ())
       |> List.map (fun (datom : Ds.datom) -> datom.e)
       |> List.filter (fun eid ->
-        (not require_tag) || entity_is_instance_of db eid "logseq.class/Tag")
+        (not require_tag)
+        || (entity_is_instance_of db eid "logseq.class/Tag"
+            && tag_available_for_completion db eid))
     in
     match matches with
     | [ eid ] -> uuid_for_eid db eid
@@ -843,9 +845,6 @@ let read_blocks_referencing ?(with_breadcrumbs = true) ?page_info decrypt_title 
 
 let blocks_referencing ?with_breadcrumbs decrypt_title db attr uuid =
   read_blocks_referencing ?with_breadcrumbs decrypt_title db attr uuid
-
-let references_for_node decrypt_title db uuid =
-  blocks_referencing decrypt_title db "block/refs" uuid
 
 type page_window_row =
   { block : Model.block
@@ -1059,6 +1058,46 @@ let children_for_block decrypt_title db (parent : Model.block) =
       if page_entity_visible reader.tree child then
         read_block ~with_breadcrumbs:false ~page_info decrypt_title db child
       else None)
+
+let references_for_node decrypt_title db uuid =
+  (* Match master's unfiltered linked-reference membership, including aliases,
+     page-level mentions and the exclusion of a class's own instances. *)
+  let roots = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+    | None -> []
+    | Some target ->
+      let ids = Hashtbl.create 8 in
+      List.iter (fun id -> Hashtbl.replace ids id ()) (target :: ref_eids db target "block/alias");
+      Seq.iter (fun (datom : Ds.datom) -> Hashtbl.replace ids datom.e ())
+        (Ds_value.datoms_by_ref db Ds.Aevt "block/alias" target);
+      let classes = Hashtbl.create 8 in
+      if entity_is_instance_of db target "logseq.class/Tag" then
+        List.iter (fun id -> Hashtbl.replace classes id ()) (class_descendants db target);
+      let visible = related_candidate_is_visible db and found = Hashtbl.create 32 in
+      Hashtbl.iter (fun id () -> Seq.iter (fun (datom : Ds.datom) ->
+        let page = Ds_value.optional_ref_eid db "block/page" (value db datom.e "block/page") in
+        if not (Hashtbl.mem found datom.e) && visible datom.e
+           && not (Option.fold ~none:false ~some:(Hashtbl.mem ids) page)
+           && not (Option.fold ~none:false ~some:(page_is_hidden db) page)
+           && not (List.exists (Hashtbl.mem classes) (ref_eids db datom.e "block/tags")) then
+          Hashtbl.add found datom.e ())
+        (Ds_value.datoms_by_ref db Ds.Aevt "block/refs" id)) ids;
+      Hashtbl.to_seq_keys found |> Seq.filter_map (fun eid ->
+        match read_block decrypt_title db eid with
+        | Some _ as block -> block
+        | None -> page_block decrypt_title db eid)
+      |> List.of_seq |> List.sort compare_blocks in
+  let seen = Hashtbl.create 64 in
+  let rec walk result = function
+    | [] -> List.rev result
+    | [] :: rest -> walk result rest
+    | (block :: siblings) :: rest ->
+      if Hashtbl.mem seen block.Model.uuid then walk result (siblings :: rest)
+      else begin
+        Hashtbl.add seen block.uuid ();
+        let children = children_for_block decrypt_title db block in
+        walk (block :: result) (children :: siblings :: rest)
+      end in
+  walk [] [roots]
 
 let node_destination decrypt_title db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with

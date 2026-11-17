@@ -131,6 +131,18 @@ class AndroidRichContentTest {
         ui.runOnIdle { assertEquals(listOf("edit"), events.filterIsInstance<LuiEvent.Extension>().map { it.name }) }
     }
 
+    @Test fun holdingALinkOnlyBlockEntersEditingInsteadOfOpeningIt() {
+        render("""[{"type":"link","url":"https://logseq.com","children":[{"type":"text","text":"Website"}]}]""")
+        ui.onNodeWithText("Website").performTouchInput { longClick() }
+        ui.runOnIdle {
+            assertEquals(
+                "A link-only row must retain a reachable edit gesture",
+                listOf("edit"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name },
+            )
+        }
+    }
+
     private fun assertLinkTheme(dark: Boolean, color: Color) {
         render("""[{"type":"nodeReference","uuid":"page-target","title":"Destination"},
             {"type":"text","text":" "},{"type":"link","url":"https://logseq.com","children":[{"type":"text","text":"Website"}]}]""",

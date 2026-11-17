@@ -61,16 +61,22 @@ let flashcard_review_content model_source send : t =
                     ~value_signal:
                       (Signal.map View_base.flashcard_question model_source)
                     ~accessibility_identifier:"flashcard.question" [];
-                  keyed
-                    ~source:(Signal.map (fun model ->
-                      Option.fold ~none:[] ~some:(fun card -> card.Model.card_categories)
-                        (View_base.first_flashcard model)) model_source)
-                    ~key:(fun (category : Model.sidebar_page) -> category.uuid) ~cmp:String.compare
-                    ~mount:(fun source ->
-                      let category = Signal.sample source in
-                      text ~style_class:"footnote" ~foreground:"muted-foreground"
-                        ~value_signal:(Signal.map (fun (category : Model.sidebar_page) -> category.title) source)
-                        ~accessibility_identifier:("flashcard.category." ^ category.uuid) []);
+                  (let categories = Signal.map (fun model ->
+                     Option.fold ~none:[] ~some:(fun card -> card.Model.card_categories)
+                       (View_base.first_flashcard model)) model_source in
+                   column ~gap:6 [
+                     if_ ~test:(Signal.map (fun values -> values <> []) categories)
+                       (text ~value:(View_base.tr (Signal.sample model_source) "Categories")
+                         ~style_class:"caption semibold" ~foreground:"muted-foreground"
+                         ~accessibility_identifier:"flashcard.categories.heading" []);
+                     keyed ~source:categories
+                       ~key:(fun (category : Model.sidebar_page) -> category.uuid) ~cmp:String.compare
+                       ~mount:(fun source ->
+                         let category = Signal.sample source in
+                         text ~style_class:"footnote semibold" ~foreground:"primary"
+                           ~value_signal:(Signal.map (fun (category : Model.sidebar_page) -> category.title) source)
+                           ~accessibility_identifier:("flashcard.category." ^ category.uuid) []);
+                   ]);
                   if_
                     ~test:
                       (Signal.map View_base.flashcard_answer_rows_visible_
@@ -101,7 +107,7 @@ let flashcard_review_content model_source send : t =
                [
                  button ~variant:`ghost ~style_class:"semibold" ~grow:1.0
                    ~min_height:50 ~text_alignment:`center
-                   ~foreground:"white" ~background:"primary"
+                   ~foreground:"primary-foreground" ~background:"primary"
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-cloze"
                    ~on_press:(press send Model.RevealFlashcardCloze)
@@ -113,7 +119,7 @@ let flashcard_review_content model_source send : t =
                [
                  button ~variant:`ghost ~style_class:"semibold" ~grow:1.0
                    ~min_height:50 ~text_alignment:`center
-                   ~foreground:"white" ~background:"primary"
+                   ~foreground:"primary-foreground" ~background:"primary"
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-answer"
                    ~on_press:(press send Model.RevealFlashcardAnswer)

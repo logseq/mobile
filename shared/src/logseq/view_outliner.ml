@@ -1040,7 +1040,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         ~accessibility_identifier:"button.outliner.autocomplete.dismiss" ~on_press:(fun _ -> dismiss ()) [] in
       let done_ = button ~text:(View_base.tr (Signal.sample model_source) "Insert") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:"button.outliner.autocomplete.submit" ~on_press:confirm [] in
-      (sheet ~text:(title kind) ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+      (sheet ~text:(title kind) ~detents:(if temporal then "large" else "medium,large") ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
         list ~grow:1.0 ~style:`inset_grouped [list_section (
           if temporal then [list_item ~padding_horizontal:0 ~padding_vertical:0 [
@@ -1207,12 +1207,16 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           [];
       ]
 
-let node_related_row context model_source ~source:row_source send : t =
+let node_related_row ?(reference = false) context model_source ~source:row_source send : t =
+  let send action = send (match action with
+    | Model.ToggleOutlinerCollapsed uuid when reference ->
+      Model.ToggleReferenceCollapsed (uuid, not (Signal.sample row_source : Model.outline_row).is_collapsed)
+    | action -> action) in
   let structured_breadcrumb_source =
-    Signal.map View_base.outliner_row_structured_breadcrumb_ row_source
+    Signal.map (fun row -> row.Model.depth = 0 && View_base.outliner_row_structured_breadcrumb_ row) row_source
   in
   let fallback_breadcrumb_source =
-    Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source
+    Signal.map (fun row -> row.Model.depth = 0 && View_base.outliner_row_fallback_breadcrumb_ row) row_source
   in
   let retained_row_source =
     Signal.map2
@@ -1263,9 +1267,14 @@ let reference_entry context model_source entry_source send : t =
       | View_rows.Empty_tag ->
         box ~padding_horizontal:16
           [ text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "No tagged nodes") [] ]
-      | View_rows.Reference_row _ ->
+      | View_rows.Reference_page (_, page) ->
+        let page_source = Signal.map (function View_rows.Reference_page (_, page) -> page | _ -> page) entry_source in
+        box ~padding_horizontal:16 ~margin_top:12
+          ~accessibility_identifier:("reference.page." ^ page.uuid)
+          [ node_breadcrumb_button model_source page_source send ]
+      | View_rows.Reference_row (key, _) ->
         box ~padding_horizontal:8
-          [ node_related_row context model_source
+          [ node_related_row ~reference:(key <> "tagged") context model_source
               ~source:(reactive View_rows.reference_entry_row entry_source) send ]
 
 let page_loading_view model_source : t =

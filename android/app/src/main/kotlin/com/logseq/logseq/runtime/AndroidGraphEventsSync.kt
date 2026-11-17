@@ -25,6 +25,36 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+internal class CoreGraphSyncEligibility {
+    private var selectedGraphId: String? = null
+    private var syncAllowed = false
+
+    @Synchronized
+    fun update(response: String) {
+        runCatching {
+            val result = JSONObject(response).optJSONObject("result") ?: return
+            if (result.has("selectedGraphId")) {
+                val nextGraphId = if (result.isNull("selectedGraphId")) null else result.getString("selectedGraphId")
+                if (nextGraphId != selectedGraphId) {
+                    selectedGraphId = nextGraphId
+                    syncAllowed = false
+                }
+            }
+
+            val graphBootstrap = result.optJSONObject("graphBootstrap")
+            when {
+                graphBootstrap?.has("syncAllowed") == true -> syncAllowed = graphBootstrap.getBoolean("syncAllowed")
+                result.has("isGraphUnlocked") && !result.isNull("isGraphUnlocked") ->
+                    syncAllowed = result.getBoolean("isGraphUnlocked")
+            }
+        }
+    }
+
+    @Synchronized
+    fun canSync(hasAuthenticatedSession: Boolean, hasOpenGraph: Boolean): Boolean =
+        hasAuthenticatedSession && hasOpenGraph && syncAllowed
+}
+
 // Executes socket commands from the shared core; frames remain opaque here.
 internal class AndroidGraphEventsSync(
     private val callCore: suspend (String) -> String,

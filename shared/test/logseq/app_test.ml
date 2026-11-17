@@ -3914,6 +3914,9 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
   check_eq ~msg:"the reveal action uses the accent fill"
     (property_string renderer show_cloze Lui_protocol.BackgroundValue)
     "primary";
+  check_eq ~msg:"the reveal label pairs with the accent in both appearances"
+    (property_string renderer show_cloze Lui_protocol.ForegroundValue)
+    "primary-foreground";
   check_eq ~msg:"the reveal action centers its native button label"
     (property_string renderer show_cloze Lui_protocol.TextAlignment)
     "center";
@@ -3931,6 +3934,9 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
   let show_answer =
     descendant_with_identifier renderer screen "button.flashcard.show-answer"
   in
+  check_eq ~msg:"the answer label pairs with the accent in both appearances"
+    (property_string renderer show_answer Lui_protocol.ForegroundValue)
+    "primary-foreground";
   dispatch application (Lui_protocol.Press show_answer);
   flush application;
   let answer_row =
@@ -5386,6 +5392,24 @@ let hide_keyboard_waits_for_saved_outliner_projection () =
     check_eq ~msg:"the rendered row contains the saved title when the editor closes"
       (List.hd finished.outliner_rows).row_title editing.editing_title)
     [([], []); ([change], []); ([], [change])]
+
+let leaving_block_editor_does_not_reopen_capture () =
+  let editing = {Model.editing_uuid = "block-a"; editing_title = "Block";
+    caret_utf16_offset = 5} in
+  let current = Model.update (Model.initial ()) Model.ExpandComposer in
+  let current = {current with Model.composer_draft = "Unsent capture"} in
+  let editing = Model.update current (Model.ApplyCoreSnapshot
+    {(empty_core_projection ()) with is_outliner_patch = true;
+      projection_outliner_editing = Some editing}) in
+  check_eq ~msg:"block editing collapses the capture composer" editing.composer_expanded false;
+  check_eq ~msg:"block editing clears the capture focus request" editing.composer_autofocus false;
+  let finished = Model.update editing (Model.ApplyCoreSnapshot
+    {(empty_core_projection ()) with is_outliner_patch = true}) in
+  check_eq ~msg:"ending editing leaves capture collapsed" finished.composer_expanded false;
+  check_eq ~msg:"ending editing cannot autofocus capture" finished.composer_autofocus false;
+  check_eq ~msg:"the unsent capture draft survives" finished.composer_draft "Unsent capture";
+  let reopened = Model.update finished Model.ExpandComposer in
+  check_eq ~msg:"capture still opens when explicitly requested" reopened.composer_autofocus true
 
 let outliner_return_handoff_retains_one_native_editor_node () =
   let application = App.create (ios_backend ()) in
@@ -7016,6 +7040,31 @@ let journal_navigation_exposes_an_immediate_preview_route () =
   check_eq ~msg:"leaving the route releases its optimistic preview"
     returned.app_navigation_previews []
 
+let journal_home_places_today_references_before_older_days () =
+  let today =
+    journal_outline_row "today-block" "today-page" "Today" "Today" 20261116 0 in
+  let older =
+    journal_outline_row "older-block" "older-page" "Older" "Yesterday" 20261115 0 in
+  let reference = outline_row "today-reference" "Linked from another page" in
+  let current = { (Model.initial ()) with
+    selected_graph_id = Some "graph";
+    outliner_rows = [today; older]; journal_outliner_rows = [today; older];
+    related_rows = [reference] } in
+  let entries = View_rows.page_entries (View_rows.retained_outliner_rows current) current in
+  let ids = List.map View_rows.page_entry_identifier entries in
+  let rec index target at = function
+    | [] -> -1
+    | value :: rest -> if value = target then at else index target (at + 1) rest in
+  let reference_index = index "reference.related.today-reference" 0 ids in
+  let older_index = index "outline.older-block" 0 ids in
+  check ~msg:"today's linked references stay with today instead of trailing the feed"
+    (reference_index >= 0 && reference_index < older_index);
+  let applied = Model.update current (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with selected_graph_id = Some "graph";
+    reference_update = Some ("today-page", [reference]) }) in
+  check_eq ~msg:"journal home accepts the deferred reference result for its first day"
+    applied.related_rows [reference]
+
 let block_navigation_exposes_an_immediate_outliner_preview_route () =
   let parent =
     {
@@ -8430,6 +8479,7 @@ let reference_breadcrumbs_keep_their_navigation_context () =
       let source = { Model.uuid = "source"; title = "Source page" } in
       let parent = { Model.uuid = "parent"; title = "Parent block" } in
       let reference = { (outline_row "reference" "Linked note") with
+        Model.page_id = "source";
         Model.row_breadcrumb = "Source page › Parent block";
         row_breadcrumbs = [source; parent] } in
       let route = node_projection "target" "target" "Target" [reference] [] in
@@ -8452,7 +8502,7 @@ let reference_breadcrumbs_keep_their_navigation_context () =
       flush application;
       let breadcrumbs = descendant_with_identifier renderer root "breadcrumb.related-blocks" in
       check ~msg:"plain body hydration cannot erase existing reference ancestry" (breadcrumbs <> -1);
-      let page = descendant_with_identifier renderer breadcrumbs "button.breadcrumb.source" in
+      let page = descendant_with_identifier renderer root "button.breadcrumb.source" in
       let ancestor = descendant_with_identifier renderer breadcrumbs "button.breadcrumb.parent" in
       check_eq ~msg:"the source page keeps its label"
         (property_string renderer page Lui_protocol.TextValue) source.title;
@@ -8467,6 +8517,47 @@ let reference_breadcrumbs_keep_their_navigation_context () =
       check_eq ~msg:"search breadcrumbs leave the underlying app stack unchanged"
         (if search then current.app_navigation_path else current.search_navigation_path) []
     ) [false; true]
+  ) [ios_backend; kotlin_backend]
+
+let linked_reference_groups_and_disclosure_reach_native_rows () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let source : Model.sidebar_page = {uuid = "source"; title = "Source"} in
+    let ancestor : Model.sidebar_page = {uuid = "ancestor"; title = "Ancestor"} in
+    let base uuid = {(outline_row uuid uuid) with Model.page_id = source.uuid;
+      row_breadcrumbs = [source; ancestor]; row_breadcrumb = "Source › Ancestor"} in
+    let parent = {(base "parent") with has_children = true} in
+    let child = {(base "child") with depth = 1; has_children = true; is_collapsed = true} in
+    let sibling = base "sibling" in
+    start application;
+    send application (Model.RequestAppNode "target");
+    send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" []
+      [node_projection "target" "target" "Target" [parent; child; sibling] []]
+      None None [] [] [] false []);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let root = descendant_with_identifier renderer (Lui_app.root_node application) "screen.node" in
+    let count id = descendant_count_with_identifier renderer root id in
+    check_eq ~msg:"a source page gets one linked-reference heading" (count "reference.page.source") 1;
+    check_eq ~msg:"siblings share their ancestor breadcrumb and nested children do not repeat it"
+      (count "breadcrumb.related-blocks") 1;
+    let row = descendant_with_identifier renderer root "outliner.block.child" in
+    if native_row application row <> -1 then
+      check_eq ~msg:"the native child row retains its relative indent"
+        (Yojson.Basic.Util.member "depth" (native_row_payload application row)) (`Int 1);
+    let collapse = descendant_with_identifier renderer row "button.outliner.collapse.child" in
+    if collapse <> -1 then dispatch application (Lui_protocol.Press collapse)
+    else begin
+      let native = native_row application row in
+      check ~msg:"the child has a native disclosure action" (native <> -1);
+      dispatch application (Lui_protocol.ExtensionEvent (native, "outliner-block-row", "collapse",
+        Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue "child")))
+    end;
+    flush application;
+    check ~msg:"reference disclosure carries its scope across the core effect boundary"
+      (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
+        Yojson.Basic.Util.member "reference" (Yojson.Basic.from_string payload) = `Bool true
+        | _ -> false) (App.model application).pending_effects)
   ) [ios_backend; kotlin_backend]
 
 let switching_graphs_resets_the_journal_viewport () =
@@ -8509,7 +8600,7 @@ let switching_graphs_resets_the_journal_viewport () =
     check_eq ~msg:"returning to a graph starts its journals at the top" (start_index ()) 0
   ) [ios_backend; kotlin_backend]
 
-let tagged_nodes_replace_the_linked_references_section () =
+let tagged_nodes_keep_the_linked_references_section () =
   List.iter (fun backend ->
     List.iter (fun destination ->
       List.iter (fun is_tag ->
@@ -8541,7 +8632,7 @@ let tagged_nodes_replace_the_linked_references_section () =
           let tagged = descendant_with_identifier renderer root "section.tag.tagged-nodes" in
           let references = descendant_with_identifier renderer root "section.node.linked-references" in
           check_eq ~msg:"tag pages show their Tagged nodes section" (tagged <> -1) is_tag;
-          check_eq ~msg:"tag pages never also show Linked references" (references <> -1) (not is_tag)
+          check ~msg:"tag pages retain Linked references alongside their objects" (references <> -1)
         ) [false; true]
       ) [false; true]
     ) ["main"; "node"; "search"]
@@ -11057,6 +11148,7 @@ let cases =
     case "completion-requests-native-caret-selection" completion_requests_native_caret_selection;
     case "autocomplete-selection-waits-for-pending-text-to-settle" autocomplete_selection_waits_for_pending_text_to_settle;
     case "hide-keyboard-waits-for-saved-outliner-projection" hide_keyboard_waits_for_saved_outliner_projection;
+    case "leaving-block-editor-does-not-reopen-capture" leaving_block_editor_does_not_reopen_capture;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
@@ -11100,6 +11192,7 @@ let cases =
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
     case "journal-navigation-exposes-an-immediate-preview-route" journal_navigation_exposes_an_immediate_preview_route;
+    case "journal-home-places-today-references-before-older-days" journal_home_places_today_references_before_older_days;
     case "block-navigation-exposes-an-immediate-outliner-preview-route" block_navigation_exposes_an_immediate_outliner_preview_route;
     case "popped-native-path-restores-root-before-core-route-cleanup" popped_native_path_restores_root_before_core_route_cleanup;
     case "app-and-search-routes-are-retained-by-distinct-native-stacks" app_and_search_routes_are_retained_by_distinct_native_stacks;
@@ -11141,7 +11234,8 @@ let cases =
     case "returning-to-a-scrolled-page-keeps-hydrated-rows-mounted" returning_to_a_scrolled_page_keeps_hydrated_rows_mounted;
     case "search-only-patches-preserve-the-open-outline" search_only_patches_preserve_the_open_outline;
     case "reference-breadcrumbs-keep-their-navigation-context" reference_breadcrumbs_keep_their_navigation_context;
-    case "tagged-nodes-replace-the-linked-references-section" tagged_nodes_replace_the_linked_references_section;
+    case "tagged-nodes-keep-the-linked-references-section" tagged_nodes_keep_the_linked_references_section;
+    case "linked reference groups and disclosure reach native rows" linked_reference_groups_and_disclosure_reach_native_rows;
     case "tag-and-property-pages-hide-blocks-but-keep-objects" tag_and_property_pages_hide_blocks_but_keep_objects;
     case "switching-graphs-resets-the-journal-viewport" switching_graphs_resets_the_journal_viewport;
     case "large-tag-and-reference-sections-virtualize-each-block" large_tag_and_reference_sections_virtualize_each_block;

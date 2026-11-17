@@ -341,10 +341,13 @@ let linked_blocks_preserve_source_formatting () =
       linked.row_title "Beta result")) [false; true]
 
 let linked_content_keeps_outline_boundaries () =
-  List.iter (fun (kind, caret) -> R.with_runtime (fun session runtime conn ->
-    rebase runtime conn [
+  List.iter (fun (kind, caret, zoomed, page) -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn ([
       put Q.alpha "block/title" (Ds.String "");
-      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))]
+      @ if page then [put Q.beta "block/name" (Ds.String "beta result")] else []);
+    if zoomed then ignore (result (Rpc_test.dispatch_json session "openNode"
+      (J.to_string (`Assoc ["uuid", `String Q.alpha]))));
     ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
     ignore (type_at session "Edited source" caret);
     ignore (event session kind (if kind = "backspacePressed" then ["selectionLength", `Int 0] else []));
@@ -356,7 +359,10 @@ let linked_content_keeps_outline_boundaries () =
         (value runtime Q.alpha "block/title") (Some (Ds.String ""))
     else check_eq ~msg:"Backspace removes the wrapper, not the linked source"
       (value runtime Q.alpha "block/title") None))
-    ["returnPressed", 13; "returnPressed", 6; "returnPressed", 0; "backspacePressed", 0]
+    ["returnPressed", 13, false, false; "returnPressed", 6, false, false;
+     "returnPressed", 0, false, false; "backspacePressed", 0, false, false;
+     "returnPressed", 0, true, false; "returnPressed", 0, true, true;
+     "returnPressed", 0, false, true]
 
 let linked_editing_tracks_the_captured_source () = R.with_runtime (fun session runtime conn ->
   rebase runtime conn [
@@ -1011,6 +1017,49 @@ let enter_on_a_parent_matches_master_placement () =
       | Ok _ -> () | Error message -> fail message) (Graph_runtime.pending_operations runtime)))
     [false, 5, Q.alpha, ""; false, 2, Q.alpha, "llo"; true, 5, Q.page, ""; false, 0, Q.page, ""]
 
+let enter_keeps_the_editor_inside_the_zoom_root () =
+  List.iter (fun (title, caret, nested, collapsed, has_child) -> R.with_runtime (fun session runtime conn ->
+    let child = "70000000-0000-4000-8000-000000000003" in
+    rebase runtime conn ([put Q.alpha "block/title" (Ds.String title)]
+      @ (if nested then [put Q.alpha "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta))] else [])
+      @ (if has_child then R.entity 222 child "Existing child" @ [
+        put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+        put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.alpha)); put child "block/order" (Ds.String "a0")] else []));
+    ignore (result (Rpc_test.dispatch_json session "openNode"
+      (J.to_string (`Assoc ["uuid", `String Q.alpha]))));
+    if collapsed then ignore (event session "toggleCollapsed" ["uuid", `String Q.alpha]);
+    ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+    let response = event session "returnPressed" ["uuid", `String Q.alpha;
+      "title", `String title; "caretUTF16Offset", `Int caret] in
+    let route = Rpc_test.first_node_route response in
+    let uuid = text (member "uuid" (draft route)) in
+    check ~msg:"Enter focuses a new block within the zoomed outline" (uuid <> "" && uuid <> Q.alpha);
+    let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+    let created = List.find (fun (b : Cache_model.block) -> b.uuid = uuid) blocks in
+    check_eq ~msg:"Enter on the zoom root creates a child, not a hidden sibling" created.parent_id (Some Q.alpha);
+    let index = Outliner_state.byte_index_of_utf16 title caret in
+    check_eq (value runtime Q.alpha "block/title") (Some (Ds.String (String.sub title 0 index)));
+    check_eq created.title (String.sub title index (String.length title - index));
+    check ~msg:"the newly focused child is visible without leaving the zoom"
+      (List.exists (fun row -> member "uuid" (member "block" row) = `String uuid) (items "outlinerRows" route));
+    if has_child then begin
+      let existing = List.find (fun (b : Cache_model.block) -> b.uuid = child) blocks in
+      check ~msg:"insertion precedes existing children" (created.order < existing.order)
+    end;
+    ignore (type_at session "" 0);
+    let continued = event session "returnPressed" ["uuid", `String uuid; "title", `String ""; "caretUTF16Offset", `Int 0] in
+    let route = Rpc_test.first_node_route continued in
+    let focused = text (member "uuid" (draft route)) in
+    let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+    List.iter (fun id ->
+      let block = List.find (fun (b : Cache_model.block) -> b.uuid = id) blocks in
+      check_eq ~msg:"empty Return cannot outdent across the zoom boundary" block.parent_id (Some Q.alpha)) [uuid; focused];
+    check ~msg:"continuing from an empty child keeps the editor visible"
+      (List.exists (fun row -> member "uuid" (member "block" row) = `String focused) (items "outlinerRows" route))))
+    ["Hello", 5, false, false, false; "Hello", 2, false, false, false;
+     "Hello", 0, false, false, false; "Hello", 5, false, true, true;
+     "", 0, true, false, false]
+
 let backspace_at_start_keeps_the_caret_at_the_merge_boundary () =
   List.iter (fun (previous_title, nested, collapsed, has_children) -> R.with_runtime (fun session runtime conn ->
     let descendant = "70000000-0000-4000-8000-000000000002" in
@@ -1131,6 +1180,7 @@ let cases = [
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "unrelated edits do not create issue number tags" unrelated_edit_does_not_create_issue_number_tags;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;
+  case "Enter keeps the editor inside the zoom root" enter_keeps_the_editor_inside_the_zoom_root;
   case "task dates are visible and editable in the outline" task_dates_are_visible_and_editable_in_the_outline;
   case "command groups follow master order" command_groups_follow_master_order;
   case "display titles resolve UUID references" display_titles_resolve_references_without_changing_source;

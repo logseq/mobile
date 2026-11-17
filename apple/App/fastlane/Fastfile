@@ -27,6 +27,8 @@ platform :ios do
     version_number = File.read(File.join(repo_root, "version.xcconfig"))
       .match(/^MARKETING_VERSION\s*=\s*(.+)$/)[1].strip
     revision = sh("git -C #{Shellwords.escape(repo_root)} rev-parse --short=8 HEAD", log: false).strip
+    changelog_path = File.join(repo_root, "release-notes", version_number, "ios.txt")
+    changelog = File.file?(changelog_path) ? File.read(changelog_path).strip : nil
 
     latest_build_number = latest_testflight_build_number(
       version: version_number,
@@ -68,8 +70,14 @@ platform :ios do
     sh("python3", verifier, ipa, *verification_args,
        "--report", File.join(release_dir, "ipa-verification.json"))
 
+    unless ENV["SENTRY_AUTH_TOKEN"].to_s.strip.empty?
+      sh("sentry-cli", "debug-files", "upload", "--org", "logseq", "--project", "logseq-ios",
+         "--wait", File.join(archive_path, "dSYMs"))
+    end
+
     upload_to_testflight(
       ipa: ipa,
+      changelog: changelog,
       skip_submission: true,
       skip_waiting_for_build_processing: true,
     )

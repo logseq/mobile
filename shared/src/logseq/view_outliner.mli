@@ -94,6 +94,7 @@ val outliner_editor_toolbar :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val node_related_row :
+  ?reference:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   source:Model.outline_row Signal.signal ->

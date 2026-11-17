@@ -503,6 +503,7 @@ type logseq_action =
   | BackspaceOutlinerEditor of string * string * int
   | MoveOutlinerCaret of string * int
   | ToggleOutlinerCollapsed of string
+  | ToggleReferenceCollapsed of string * bool
   | LongPressOutlinerBlock of string
   | BeginOutlinerDrag of string
   | DropOutlinerBlocks of string * string

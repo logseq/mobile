@@ -9,9 +9,31 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidGraphEventsSyncTest {
+    @Test
+    fun `locked graph resumes sync after unlock without carrying eligibility to another graph`() {
+        val eligibility = CoreGraphSyncEligibility()
+
+        eligibility.update(
+            """{"ok":true,"result":{"selectedGraphId":"encrypted-1","isGraphUnlocked":false,"graphBootstrap":{"kind":"locked","syncAllowed":false}}}"""
+        )
+        assertFalse(eligibility.canSync(hasAuthenticatedSession = true, hasOpenGraph = true))
+
+        eligibility.update(
+            """{"ok":true,"result":{"selectedGraphId":"encrypted-1","isGraphUnlocked":true}}"""
+        )
+        assertTrue(eligibility.canSync(hasAuthenticatedSession = true, hasOpenGraph = true))
+
+        eligibility.update(
+            """{"ok":true,"result":{"selectedGraphId":"encrypted-2","isGraphUnlocked":false,"graphBootstrap":{"kind":"locked","syncAllowed":false}}}"""
+        )
+        assertFalse(eligibility.canSync(hasAuthenticatedSession = true, hasOpenGraph = true))
+    }
+
     @Test
     fun `foreground transport waits for paused session cleanup before reconnecting`(): Unit = runBlocking {
         withTimeout(2_000) {

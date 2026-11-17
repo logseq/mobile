@@ -26,6 +26,16 @@ class MainActivity : ComponentActivity() {
     private var entryToken = java.util.UUID.randomUUID().toString()
     private var entryHandled = false
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::runtime.isInitialized) {
+            // Window/decor focus can restore flags from the platform theme
+            // after Compose's first SideEffect, including after a dialog closes.
+            applyAndroidSystemBarAppearance(window,
+                androidAppearanceIsDark(runtime.effectiveAppearance, resources.configuration))
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         AndroidE2EECrypto.initialize(applicationContext)
         AndroidHttpTransport.initialize(applicationContext)
@@ -37,8 +47,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         entryToken = savedInstanceState?.getString("entryToken") ?: entryToken
         entryHandled = savedInstanceState?.getBoolean("entryHandled") ?: false
-        // The theme opts out of edge-to-edge enforcement and pins opaque
-        // light system bars; the runtime contrast flags keep them opaque.
+        // App theme controls system-bar contrast, rather than an OS scrim.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
