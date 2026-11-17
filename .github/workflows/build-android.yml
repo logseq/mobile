@@ -266,9 +266,14 @@ jobs:
           LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           DUNE="$(command -v dune)"
           export LOGSEQ_OPAM_SWITCH DUNE
+          if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "::warning::SENTRY_AUTH_TOKEN is missing. Android debug symbols will stay in the local build."
+          fi
           ./gradlew :app:testReleaseUnitTest :app:compileReleaseAndroidTestKotlin \
             :app:assembleRelease :app:bundleRelease -PlogseqTestBuildType=release
         working-directory: android
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Save Android OCaml toolchain
         if: always() && steps.android-toolchain.outputs.cache-hit != 'true'

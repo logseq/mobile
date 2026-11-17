@@ -6,16 +6,24 @@ sdk=$2
 triple=$3
 deployment_target=$4
 output=$5
-shift 5
+swift_build_dir=$6
+swift_scratch_dir=$7
+shift 7
 work=$(mktemp -d /tmp/logseq-app-intents.XXXXXX)
 trap 'rm -rf "$work"' EXIT
 module_cache="$repo_root/apple/.build/app-intents-module-cache"
 mkdir -p "$module_cache"
-sources=()
-compiler_options=()
-for arg in "$@"; do
-  if [[ $arg == *.swift ]]; then sources+=("$arg"); else compiler_options+=("$arg"); fi
-done
+sources=("$@")
+# SwiftPM normally supplies these Clang modules when importing Logseq.
+sentry_headers="$swift_scratch_dir/checkouts/sentry-cocoa/Sources/Sentry"
+compiler_options=(
+  -I "$swift_build_dir/Modules"
+  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqCoreABI.build/module.modulemap"
+  -I "$repo_root/apple/Sources/LogseqCoreABI/include"
+  -Xcc "-fmodule-map-file=$swift_build_dir/SentryHeaders.build/module.modulemap"
+  -I "$sentry_headers/Public"
+  -I "$sentry_headers/include"
+)
 printf '%s\n' "${sources[@]}" > "$work/sources"
 printf '%s\n' "$work/values.swiftconstvalues" > "$work/values"
 started=$SECONDS

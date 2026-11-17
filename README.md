@@ -111,6 +111,14 @@ The TestFlight lane uploads the iOS notes as What to Test. Android CI includes
 the Android notes in its artifacts and uploads them to Google Play internal
 testing; keep those notes within Google's 500-character limit.
 
+Release builds report crashes to Sentry's `logseq-android` and `logseq-ios`
+projects. Both release workflows read the `SENTRY_AUTH_TOKEN` Actions secret
+to upload symbols for the exact binaries being distributed. For a local
+smoke test, enable reporting in a debug build with
+`-PlogseqSentryDebug=true` on Android or launch the iOS simulator with
+`SIMCTL_CHILD_LOGSEQ_SENTRY_DEBUG=1`. These events use the `development`
+environment in Sentry.
+
 The workflow uses these repository Actions secrets:
 
 - `ANDROID_KEYSTORE`: base64-encoded upload keystore with one private key.

@@ -70,6 +70,11 @@ platform :ios do
     sh("python3", verifier, ipa, *verification_args,
        "--report", File.join(release_dir, "ipa-verification.json"))
 
+    unless ENV["SENTRY_AUTH_TOKEN"].to_s.strip.empty?
+      sh("sentry-cli", "debug-files", "upload", "--org", "logseq", "--project", "logseq-ios",
+         "--wait", File.join(archive_path, "dSYMs"))
+    end
+
     upload_to_testflight(
       ipa: ipa,
       changelog: changelog,

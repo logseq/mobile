@@ -1,5 +1,5 @@
 {
-  "originHash" : "18bf2d4feeedcfb116dcd7237889dd6c74b685937a6c9cac65015faa21026c2e",
+  "originHash" : "8b2b6815a1ff2c1d86bd94f3e760064309e49d89d412b476eba3b08c049992cf",
   "pins" : [
     {
       "identity" : "lui",
@@ -7,6 +7,15 @@
       "location" : "ssh://git@github.com/logseq/lui.git",
       "state" : {
         "revision" : "1a9325444bca0f38ca0ff886e9fefdca9d5f6538"
+      }
+    },
+    {
+      "identity" : "sentry-cocoa",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/getsentry/sentry-cocoa.git",
+      "state" : {
+        "revision" : "aaf96c4a417d30208b3c25d90910d6156ddc973d",
+        "version" : "9.27.0"
       }
     },
     {
