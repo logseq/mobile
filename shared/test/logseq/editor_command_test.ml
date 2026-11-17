@@ -341,10 +341,13 @@ let linked_blocks_preserve_source_formatting () =
       linked.row_title "Beta result")) [false; true]
 
 let linked_content_keeps_outline_boundaries () =
-  List.iter (fun (kind, caret) -> R.with_runtime (fun session runtime conn ->
-    rebase runtime conn [
+  List.iter (fun (kind, caret, zoomed, page) -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn ([
       put Q.alpha "block/title" (Ds.String "");
-      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))];
+      put Q.alpha "block/link" (Ds.Ref_to (Q.ref_uuid Q.beta))]
+      @ if page then [put Q.beta "block/name" (Ds.String "beta result")] else []);
+    if zoomed then ignore (result (Rpc_test.dispatch_json session "openNode"
+      (J.to_string (`Assoc ["uuid", `String Q.alpha]))));
     ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
     ignore (type_at session "Edited source" caret);
     ignore (event session kind (if kind = "backspacePressed" then ["selectionLength", `Int 0] else []));
@@ -356,7 +359,10 @@ let linked_content_keeps_outline_boundaries () =
         (value runtime Q.alpha "block/title") (Some (Ds.String ""))
     else check_eq ~msg:"Backspace removes the wrapper, not the linked source"
       (value runtime Q.alpha "block/title") None))
-    ["returnPressed", 13; "returnPressed", 6; "returnPressed", 0; "backspacePressed", 0]
+    ["returnPressed", 13, false, false; "returnPressed", 6, false, false;
+     "returnPressed", 0, false, false; "backspacePressed", 0, false, false;
+     "returnPressed", 0, true, false; "returnPressed", 0, true, true;
+     "returnPressed", 0, false, true]
 
 let linked_editing_tracks_the_captured_source () = R.with_runtime (fun session runtime conn ->
   rebase runtime conn [

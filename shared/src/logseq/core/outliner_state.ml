@@ -1056,13 +1056,15 @@ let split_editing context (state : outliner_state) (editing : editor_draft) =
   let after = String.sub editing.title index (String.length editing.title - index) in
   let linked = editing.content_uuid <> editing.uuid in
   let zoom_root = is_zoom_root state editing.uuid in
-  let at_start = not zoom_root && index = 0 && not (String_kit.is_blank editing.title) in
+  let at_start = index = 0 && not (String_kit.is_blank editing.title) in
   let expected, row_before, row_after, save_content =
     if not linked then editing.expected_title, before, after, []
     else
       let raw = Option.fold ~none:"" ~some:(fun (block : Model.block) -> block.title)
         (find_block context editing.uuid) in
-      if at_start then raw, "", raw, commit_effect context (Some editing)
+      if at_start then
+        let row_before, row_after = if zoom_root then raw, "" else "", raw in
+        raw, row_before, row_after, commit_effect context (Some editing)
       else raw, raw, after, commit_effect ~trim:true context (Some {editing with title = before})
   in
   step
