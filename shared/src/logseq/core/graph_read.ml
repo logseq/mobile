@@ -718,7 +718,9 @@ let unique_named_uuid require_tag db name =
       List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ~v:(Ds.String key) ())
       |> List.map (fun (datom : Ds.datom) -> datom.e)
       |> List.filter (fun eid ->
-        (not require_tag) || entity_is_instance_of db eid "logseq.class/Tag")
+        (not require_tag)
+        || (entity_is_instance_of db eid "logseq.class/Tag"
+            && tag_available_for_completion db eid))
     in
     match matches with
     | [ eid ] -> uuid_for_eid db eid

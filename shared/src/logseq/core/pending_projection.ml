@@ -145,7 +145,9 @@ let tag_eids_for_title db title =
       (List.filter_map
          (fun name ->
            match eid_for_node db name with
-           | Some eid when has_ref db eid "block/tags" tag_class_eid ->
+           | Some eid
+             when has_ref db eid "block/tags" tag_class_eid
+                  && Graph_read.tag_available_for_completion db eid ->
              Some eid
            | _ -> None)
          (inline_tag_names title))
