@@ -502,6 +502,7 @@ type logseq_action =
   | BackspaceOutlinerEditor of string * string * int
   | MoveOutlinerCaret of string * int
   | ToggleOutlinerCollapsed of string
+  | ToggleReferenceCollapsed of string * bool
   | LongPressOutlinerBlock of string
   | BeginOutlinerDrag of string
   | DropOutlinerBlocks of string * string
@@ -2124,6 +2125,12 @@ let rec update (current : logseq_model) action =
     else current
   | ApplyCoreSnapshot projection ->
     let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
+    (* The block editor takes ownership of keyboard focus. Retaining an expanded
+       composer here would remount its autofocus field when editing ends. *)
+    let applied = if applied.outliner_editing <> None
+        && (applied.composer_expanded || applied.composer_autofocus) then
+        {applied with composer_expanded = false; composer_autofocus = false}
+      else applied in
     let applied =
       if applied.selected_graph_id <> current.selected_graph_id then {applied with pdf_workspace = None}
       else match applied.pdf_workspace, projection.pdf_update with
@@ -2224,6 +2231,10 @@ let rec update (current : logseq_model) action =
   | ToggleOutlinerCollapsed uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (ToggleOutlinerCollapsedEffect (id, uuid))
+  | ToggleReferenceCollapsed (uuid, collapsed) ->
+    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc ["type", `String "toggleCollapsed";
+        "uuid", `String uuid; "reference", `Bool true; "collapsed", `Bool collapsed])))
   | LongPressOutlinerBlock uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (LongPressOutlinerBlockEffect (id, uuid))

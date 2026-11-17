@@ -161,6 +161,79 @@ let references_for_node session uuid =
     | Some load -> Option.value ~default:[] (load uuid)
     | None -> []
 
+let reference_key session uuid =
+  Option.map (fun config -> config.Api.graph_id) (Types.state session).config, uuid
+
+let set_reference_collapsed session uuid collapsed =
+  Hashtbl.replace session.Types.reference_collapsed (reference_key session uuid) collapsed
+
+let reference_open_level graph_db =
+  let open Datascript in
+  let configured = Option.bind graph_db (fun db ->
+    Db.datoms db Aevt ~a:"file/path" () |> Seq.find_map (fun (datom : datom) ->
+      if datom.v <> String "logseq/config.edn" then None else
+      Option.bind (Graph_read.string_value (Graph_read.value db datom.e "file/content")) (fun source ->
+        try match Dev_query.Edn_util.read_string source with
+          | Map fields -> (match List.assoc_opt (Keyword "ref/default-open-blocks-level") fields with
+              | Some (Int64 level) when level >= 0L -> Some (Int64.to_int (min 9L level))
+              | _ -> None)
+          | _ -> None
+        with _ -> None))) in
+  Option.value ~default:2 configured
+
+(* Master's default list: page groups descending by journal day/title, ancestor
+   partitions in outline order, and temporary disclosure at the configured depth. *)
+let reference_rows session current blocks =
+  if blocks = [] then [] else
+  let db = Option.bind (Types.host session).graph_db (fun load -> load ()) in
+  let level = reference_open_level db in
+  let groups = Hashtbl.create 16 in
+  List.iter (fun (block : Model.block) ->
+    let existing = Option.value ~default:[] (Hashtbl.find_opt groups block.page_id) in
+    Hashtbl.replace groups block.page_id (block :: existing)) blocks;
+  let page_key (blocks : Model.block list) = match blocks with
+    | [] -> None, "", ""
+    | block :: _ ->
+      let page = Option.bind db (fun db -> Option.bind
+        (Datascript.entid db "block/uuid" (Datascript.Uuid block.page_id))
+        (Graph_read.page_block (fun text -> Ok text) db)) in
+      let title = match page with
+        | Some page -> page.title
+        | None -> (match block.journal with Some (title, _) -> title | None ->
+            Option.value ~default:block.page_id (Option.map (fun (page : Model.entity_summary) -> page.title)
+              (List.find_opt (fun (page : Model.entity_summary) -> page.uuid = block.page_id) block.breadcrumbs))) in
+      Option.map snd block.journal, title, block.page_id in
+  let groups = Hashtbl.to_seq_values groups |> Seq.map (fun blocks -> page_key blocks, blocks)
+    |> List.of_seq |> List.sort (fun (a, _) (b, _) -> compare b a) |> List.map snd in
+  let parent_orders = Hashtbl.create 16 in
+  let parent_order (block : Model.block) = match Hashtbl.find_opt parent_orders block.parent_id with
+    | Some order -> order
+    | None -> let order = Option.bind db (fun db ->
+      Option.bind block.parent_id (fun uuid -> Option.bind
+      (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+      (fun eid -> Graph_read.string_value (Graph_read.value db eid "block/order")))) in
+      Hashtbl.add parent_orders block.parent_id order; order in
+  let compare_roots a b = let by_parent = compare (parent_order a) (parent_order b) in
+    if by_parent <> 0 then by_parent else Outliner.compare_blocks a b in
+  let project blocks =
+    let rows = Outliner.visible_rows ~compare_roots (Outliner.context blocks [] []) Outliner.empty in
+    let hidden_depth = ref None in
+    List.filter_map (fun (row : Outliner.outliner_row) ->
+      if Option.fold ~none:false ~some:(fun depth -> row.depth > depth) !hidden_depth then None
+      else begin
+        hidden_depth := None;
+        let stored = Option.fold ~none:false ~some:(fun db -> Option.fold ~none:false
+          ~some:(fun eid -> Graph_read.value db eid "block/collapsed?" = Some (Datascript.Bool true))
+          (Datascript.entid db "block/uuid" (Datascript.Uuid row.block.uuid))) db in
+        let default = stored || Outliner.Sset.mem row.block.uuid current.Outliner.collapsed
+          || row.depth + 1 >= level || row.block.uuid = row.block.page_id in
+        let collapsed = row.has_children && Option.value ~default
+          (Hashtbl.find_opt session.Types.reference_collapsed (reference_key session row.block.uuid)) in
+        if collapsed then hidden_depth := Some row.depth;
+        Some {row with is_collapsed = collapsed}
+      end) rows in
+  List.fold_left (fun rows group -> List.rev_append (project group) rows) [] groups |> List.rev
+
 let journal_home_reference_uuid session =
   let current = Types.state session in
   if current.selected_sidebar_page <> None || current.node_routes <> [] then None
@@ -212,7 +285,7 @@ let node_route_related_blocks session (route : Types.node_route) =
   | None -> route.related_blocks
 
 let node_route_linked_reference_blocks session (route : Types.node_route) =
-  if route.is_tag && not (uses_paged_tag_objects session) then references_for_node session route.uuid else []
+  if route.is_tag then references_for_node session route.uuid else []
 
 let page_for_visible_block (block : Model.block) =
   let title =
@@ -297,9 +370,12 @@ let outliner_context (session : Types.session) =
       (node_route_related_blocks session route
        @ node_route_linked_reference_blocks session route)
   | None ->
+    let references = match active_reference_uuid session with
+      | Some uuid -> references_for_node session uuid
+      | None -> [] in
     with_extra_blocks
       (base_outliner_context session)
-      (Types.state session).related_blocks
+      ((Types.state session).related_blocks @ references)
 
 let project_outliner_operations (context : Outliner.outliner_context)
     operations =
@@ -370,7 +446,7 @@ let snapshot_related_blocks (session : Types.session) =
   else (Types.state session).related_blocks
 
 let snapshot_linked_reference_blocks (session : Types.session) =
-  if selected_page_is_tag session && not (uses_paged_tag_objects session) then
+  if selected_page_is_tag session then
     match (Types.state session).selected_sidebar_page with
     | Some page -> references_for_node session page.Model.uuid
     | None -> []

@@ -724,7 +724,7 @@ let sorted_siblings (context : outliner_context) parent =
        (fun (block : Model.block) -> block.parent_id = parent)
        context.blocks)
 
-let visible_rows (context : outliner_context) (state : outliner_state) =
+let visible_rows ?(compare_roots = compare_root_blocks) (context : outliner_context) (state : outliner_state) =
   let ids =
     List.fold_left
       (fun set (block : Model.block) -> Sset.add block.uuid set)
@@ -752,7 +752,7 @@ let visible_rows (context : outliner_context) (state : outliner_state) =
     | None -> []
   in
   let roots =
-    List.sort compare_root_blocks
+    List.sort compare_roots
       (List.filter
          (fun (block : Model.block) ->
            match block.parent_id with

@@ -193,15 +193,37 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
 type reference_entry =
   | Result_views of string
   | Reference_heading of string * string
+  | Reference_page of string * Model.sidebar_page
   | Empty_tag
   | Reference_row of string * Model.outline_row
+
+let reference_section_rows key rows =
+  if key = "tagged" then List.map (fun row -> Reference_row (key, row)) rows
+  else
+    let previous_page = ref None and previous_ancestors = ref [] in
+    List.fold_left (fun entries (row : Model.outline_row) ->
+      let new_page = !previous_page <> Some row.page_id in
+      let page = List.find_opt (fun (page : Model.sidebar_page) -> page.uuid = row.page_id) row.row_breadcrumbs in
+      let page = Option.value ~default:{Model.uuid = row.page_id;
+        title = Option.value ~default:(if row.opens_as_page then row.row_title else row.page_id) row.journal_title} page in
+      let entries = if new_page then begin
+          previous_page := Some row.page_id; previous_ancestors := [];
+          Reference_page (key, page) :: entries
+        end else entries in
+      let ancestors = if row.depth = 0 then List.filter
+          (fun (page : Model.sidebar_page) -> page.uuid <> row.page_id) row.row_breadcrumbs else [] in
+      let show = row.depth = 0 && ancestors <> !previous_ancestors in
+      if row.depth = 0 then previous_ancestors := ancestors;
+      let row = {row with Model.row_breadcrumbs = (if show then ancestors else []);
+        row_breadcrumb = (if show then String.concat " › " (List.map (fun (page : Model.sidebar_page) -> page.title) ancestors) else "")} in
+      Reference_row (key, row) :: entries) [] rows |> List.rev
 
 let reference_entries (current : Model.logseq_model) =
   if View_base.journal_home_visible_ current then
     (match current.related_rows with
      | [] -> []
      | rows -> Reference_heading ("related", "Linked references") ::
-       List.map (fun row -> Reference_row ("related", row)) rows)
+       reference_section_rows "related" rows)
   else if not (View_base.page_content_ready_ current) then []
   else
     let add_section visible key title rows acc =
@@ -209,7 +231,7 @@ let reference_entries (current : Model.logseq_model) =
       else
         let acc = Reference_heading (key, title) :: acc in
         let acc = if key = "tagged" && rows = [] then Empty_tag :: acc else acc in
-        List.fold_left (fun acc row -> Reference_row (key, row) :: acc) acc rows
+        List.rev_append (reference_section_rows key rows) acc
     in
     let views = View_base.active_node_result_views current in
     let sections = []
@@ -225,6 +247,7 @@ let reference_entries (current : Model.logseq_model) =
 let reference_entry_identifier = function
   | Result_views _ -> "objects.views"
   | Reference_heading (key, _) -> key ^ ".heading"
+  | Reference_page (key, page) -> key ^ ".page." ^ page.Model.uuid
   | Empty_tag -> "tagged.empty"
   | Reference_row (key, row) -> key ^ "." ^ row.Model.row_uuid
 

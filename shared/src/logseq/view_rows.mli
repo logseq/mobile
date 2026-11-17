@@ -32,6 +32,7 @@ val windowed_keyed :
 type reference_entry =
   | Result_views of string
   | Reference_heading of string * string
+  | Reference_page of string * Model.sidebar_page
   | Empty_tag
   | Reference_row of string * Model.outline_row
 val reference_entries : Model.logseq_model -> reference_entry list

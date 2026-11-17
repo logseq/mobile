@@ -1,5 +1,6 @@
 open Test_util
 
+module App_model = Model
 module Ds = Datascript
 module Rpc = Rpc
 module Session = Rpc_session
@@ -551,6 +552,97 @@ let sidebar_tag_selection_projects_objects_and_linked_references () =
   check_eq
     (member "uuid" (List.hd (json_items "linkedReferenceBlocks" result)))
     (`String "reference-1")
+
+let linked_reference_outlines_preserve_depth_and_collapse () =
+  List.iter (fun deferred -> List.iter (fun route -> List.iter (fun tag ->
+    let page : Model.entity_summary = {uuid = "target"; title = "Target"} in
+    let parent = synced_block "parent" "Linked parent" in
+    let child = {(synced_block "child" "Child") with Model.parent_id = Some "parent"} in
+    let grandchild = {(synced_block "grandchild" "Grandchild") with Model.parent_id = Some "child"} in
+    let session = configure_plain_session (Session.create_session
+      {Session.default_options with
+        outliner_projection_limit = (if deferred then Some 1 else None);
+        graph_sidebar_pages = Some (fun () -> Some {Graph.favorites = [page]; recent_pages = []});
+        graph_node_destination = Some (fun _ -> Some (page, false));
+        graph_node_is_tag = Some (fun _ -> tag);
+        graph_page_blocks = Some (fun _ -> Some []);
+        graph_node_references = Some (fun _ -> Some [grandchild; parent; child])}) in
+    let open_response = if route then dispatch_json session "openNode" {|{"uuid":"target"}|}
+      else dispatch_json session "selectPage" "target" in
+    let response = if deferred then dispatch_json session "loadPageReferences" "target" else open_response in
+    let rows response =
+      let result = response_result response in
+      if deferred then json_items "referenceBlocks" result
+      else let result = if route then List.hd (json_items "nodeRoutes" result) else result in
+        json_items (if tag then "linkedReferenceBlocks" else "relatedBlocks") result in
+    let expanded = rows response in
+    check_eq ~msg:"reference subtrees use outline order and relative depth"
+      (List.map (fun row -> member "uuid" row, member "depth" row) expanded)
+      [`String "parent", `Int 0; `String "child", `Int 1];
+    check_eq ~msg:"master defaults to two open reference levels" (member "isCollapsed" (List.nth expanded 1)) (`Bool true);
+    check_eq ~msg:"reference parents expose a collapse control" (member "hasChildren" (List.hd expanded)) (`Bool true);
+    let collapsed = dispatch_json session "outlinerEvent" {|{"type":"toggleCollapsed","uuid":"parent","reference":true}|} in
+    if deferred then ignore (dispatch_json session "outlinerEvent"
+      {|{"type":"toggleCollapsed","uuid":"parent","reference":true,"collapsed":true}|});
+    let response = if deferred then dispatch_json session "loadPageReferences" "target" else collapsed in
+    check_eq ~msg:"collapsing a reference hides descendants" (List.map (member "uuid") (rows response)) [`String "parent"];
+    check_eq (member "isCollapsed" (List.hd (rows response))) (`Bool true);
+    ignore (dispatch_json session "outlinerEvent" {|{"type":"toggleCollapsed","uuid":"parent","reference":true}|});
+    if deferred then ignore (dispatch_json session "loadPageReferences" "target");
+    let reopened = dispatch_json session "outlinerEvent" {|{"type":"toggleCollapsed","uuid":"child","reference":true}|} in
+    let response = if deferred then dispatch_json session "loadPageReferences" "target"
+      else reopened in
+    (* Decode the same full/patch payload consumed by both native clients. *)
+    let projection = match Response_snapshot.decode_response (Json.to_string response) with
+      | Ok projection -> projection | Error error -> fail error in
+    let decoded = if deferred then snd (Option.get projection.reference_update)
+      else if route then let node = List.hd projection.node_routes in
+        if tag then node.node_linked_reference_rows else node.node_related_rows
+      else if tag then projection.sidebar.linked_reference_rows else projection.sidebar.related_rows in
+    check_eq ~msg:"native reference rows retain hierarchy and disclosure metadata"
+      (List.map (fun (row : App_model.outline_row) -> row.depth, row.has_children) decoded)
+      [0, true; 1, true; 2, false];
+    check_eq ~msg:"reference disclosure does not alter the page outline's collapse state"
+      (Types.state session).outliner_state.collapsed Outliner.Sset.empty
+  ) [false; true]) [false; true]) [false; true]
+
+let reference_defaults_and_group_order_match_master () =
+  let open Graph_read_test in
+  let conn = new_conn ["block/page"; "block/parent"; "block/order"; "block/refs";
+    "block/journal-day"] ["file/path", string_attr; "file/content", string_attr;
+      "block/collapsed?", one] in
+  transact conn [page "target" "target" "Target" [];
+    journal "old" "Old journal" 20261116; journal "new" "New journal" 20261117;
+    page "alpha" "alpha" "Alpha" []; page "zeta" "zeta" "Zeta" [];
+    entity "config" "Config" [field "file/path" (Ds.String "logseq/config.edn"); field "file/content" (Ds.String "{}")];
+    block "new-parent" "New parent" "new" "new" 9 [refs "block/refs" ["target"]];
+    block "child" "Child" "new" "new-parent" 10 [];
+    block "grandchild" "Grandchild" "new" "child" 11 [];
+    block "old-ref" "Old mention" "old" "old" 1 [refs "block/refs" ["target"]];
+    block "alpha-ref" "Alpha mention" "alpha" "alpha" 2 [refs "block/refs" ["target"]];
+    block "zeta-ref" "Zeta mention" "zeta" "zeta" 3 [refs "block/refs" ["target"]];
+    block "first-ancestor" "First ancestor" "alpha" "alpha" 4 [field "block/order" (Ds.String "a0")];
+    block "second-ancestor" "Second ancestor" "alpha" "alpha" 5 [field "block/order" (Ds.String "a1")];
+    block "later" "Later group" "alpha" "second-ancestor" 6 [field "block/order" (Ds.String "a0"); refs "block/refs" ["target"]];
+    block "earlier" "Earlier group" "alpha" "first-ancestor" 7 [field "block/order" (Ds.String "a1"); refs "block/refs" ["target"]]];
+  let session = Session.create_session {Session.default_options with graph_db = Some (fun () -> Some (Ds.conn_db conn))} in
+  let rows () = Session_outliner.reference_rows session Outliner.empty
+    (Read.references_for_node plain (Ds.conn_db conn) "target") in
+  check_eq ~msg:"default groups sort journals newest first, then page titles descending, and parent partitions by outline order"
+    (List.map (fun (row : Outliner.outliner_row) -> row.block.uuid) (rows ()))
+    ["new-parent"; "child"; "old-ref"; "zeta-ref"; "alpha-ref"; "earlier"; "later"];
+  List.iter (fun (config, expected) ->
+    add conn "config" "file/content" (Ds.String config);
+    let nested = List.filter (fun (row : Outliner.outliner_row) -> row.block.page_id = "new") (rows ()) in
+    check_eq ~msg:("reference open-level config: " ^ config) (List.length nested) expected)
+    ["{:ref/default-open-blocks-level 1}", 1; "{:ref/default-open-blocks-level 3}", 3;
+     "{:ref/default-open-blocks-level -1}", 2; "{:ref/default-open-blocks-level \"3\"}", 2; "invalid edn {", 2];
+  add conn "new-parent" "block/collapsed?" (Ds.Bool true);
+  check_eq ~msg:"stored collapse is respected by reference defaults"
+    (List.length (List.filter (fun (row : Outliner.outliner_row) -> row.block.page_id = "new") (rows ()))) 1;
+  Session_outliner.set_reference_collapsed session "new-parent" false;
+  check_eq ~msg:"temporary disclosure can expand a stored collapsed reference"
+    (List.length (List.filter (fun (row : Outliner.outliner_row) -> row.block.page_id = "new") (rows ()))) 2
 
 let favorite_blocks_select_the_root_subtree () =
   let conn = Ds.create_conn ~schema:Graph_read_test.schema () in
@@ -6640,6 +6732,9 @@ let cases =
       mobile_journal_home_defers_references_for_its_first_day;
     case "sidebar tag selection projects objects and linked references"
       sidebar_tag_selection_projects_objects_and_linked_references;
+    case "linked reference outlines preserve depth and collapse"
+      linked_reference_outlines_preserve_depth_and_collapse;
+    case "reference defaults and group order match master" reference_defaults_and_group_order_match_master;
     case "favorite blocks select the root subtree" favorite_blocks_select_the_root_subtree;
     case "sidebar page selection projects references without node routes"
       sidebar_page_selection_projects_references_without_node_routes;

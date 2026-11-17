@@ -300,7 +300,8 @@ let related_row input =
   in
   outline_row_from_block
     (string_member "youtubeTargetURL" fields)
-    opens_as_page 0 false false fields
+    opens_as_page (Option.value ~default:0 (int_member "depth" fields))
+    (bool_member "hasChildren" fields) (bool_member "isCollapsed" fields) fields
 
 let outliner_rows_member name fields =
   filter_map_option outline_row (list_member name fields)

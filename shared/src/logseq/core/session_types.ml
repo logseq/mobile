@@ -180,6 +180,7 @@ type session =
   ; state : session_state ref
   ; collapsed_nodes : (string, Outliner_state.Sset.t) Hashtbl.t
   ; reference_cache : (string, Model.block list) Hashtbl.t
+  ; reference_collapsed : (string option * string, bool) Hashtbl.t
   ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; reference_generation : (string option * int option * int) option ref
@@ -303,6 +304,7 @@ let create_session options =
     host = options;
     collapsed_nodes = Hashtbl.create 4;
     reference_cache = Hashtbl.create 8;
+    reference_collapsed = Hashtbl.create 32;
     result_view_cache = Result_view.create_cache ();
     reference_generation = ref None;
     pdf_workspace = ref None;
