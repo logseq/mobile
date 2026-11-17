@@ -2,6 +2,7 @@ plugins {
     id("com.android.application") version "9.4.1" apply false
     id("com.android.library") version "9.4.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.21" apply false
+    id("io.sentry.android.gradle") version "6.27.0" apply false
     // Resolved on this build's classpath so the included :lui module
     // (../lui/platform/android/lui) can apply it; paparazzi tests stay
     // disabled here — see the withType<Test> block below.

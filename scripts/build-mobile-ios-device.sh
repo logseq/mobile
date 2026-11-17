@@ -140,6 +140,7 @@ for source in logseq_https_darwin.m logseq_crypto_darwin.m; do
     -isysroot "$sdk_path" \
     -fobjc-arc \
     -fPIC \
+    -g \
     -I "$ocaml_lib" \
     -c "$repo_root/shared/native/$source" \
     -o "$core_build_dir/${source%.m}.o"
@@ -203,10 +204,7 @@ fi
 
 # SwiftPM does not run Xcode's App Intents metadata build phase.
 "$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
-  "$deployment_target" "$app_dir" \
-  -I "$swift_build_dir/Modules" \
-  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqCoreABI.build/module.modulemap" \
-  -I "$repo_root/apple/Sources/LogseqCoreABI/include" \
+  "$deployment_target" "$app_dir" "$swift_build_dir" "$swift_scratch_dir" \
   "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
 widget_bundle_id=${LOGSEQ_IOS_WIDGET_BUNDLE_ID:-$bundle_id.shortcuts}

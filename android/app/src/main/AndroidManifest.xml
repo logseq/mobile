@@ -17,6 +17,7 @@
         android:label="Logseq"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/LaunchTheme">
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

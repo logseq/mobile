@@ -58,6 +58,16 @@ jobs:
       - name: System dependencies
         run: brew install sdl2 sdl2_ttf
 
+      - name: Install Sentry CLI for release symbols
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+            brew install sentry-cli
+          else
+            echo "::warning::SENTRY_AUTH_TOKEN is missing. The iOS dSYMs will stay in the local archive."
+          fi
+
       - name: Restore opam root
         id: opam-root
         uses: actions/cache/restore@v4
@@ -212,6 +222,7 @@ jobs:
         working-directory: ./apple/App
         env:
           APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
           APP_STORE_CONNECT_API_KEY_IS_KEY_CONTENT_BASE64: true

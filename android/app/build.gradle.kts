@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
 
     id("org.jetbrains.kotlin.plugin.compose")
+    id("io.sentry.android.gradle")
 }
 
 // The OCaml core .so is produced by scripts/build-android-native.sh; it
@@ -49,6 +50,20 @@ val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
 // developers (and CI running `test`) to skip it.
 val nativeCoreRequired =
     providers.gradleProperty("logseqRequireNativeCore").map(String::toBoolean).orElse(true)
+val sentryDebug = providers.gradleProperty("logseqSentryDebug").map(String::toBoolean).orElse(false)
+val sentryUpload = providers.environmentVariable("SENTRY_AUTH_TOKEN").map(String::isNotBlank).orElse(false)
+
+sentry {
+    org.set("logseq")
+    projectName.set("logseq-android")
+    ignoredBuildTypes.set(setOf("debug", "profile"))
+    autoInstallation.enabled.set(false)
+    tracingInstrumentation.enabled.set(false)
+    includeDependenciesReport.set(false)
+    telemetry.set(false)
+    autoUploadProguardMapping.set(sentryUpload)
+    uploadNativeSymbols.set(sentryUpload)
+}
 
 android {
     namespace = "com.logseq.logseq"
@@ -68,6 +83,7 @@ android {
         versionName = appVersion
         buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "SENTRY_DEBUG", sentryDebug.get().toString())
         // The JNI shim and prebuilt OCaml core must use the same ABI. Shipping
         // a shim for an unbuilt ABI lets installation succeed but startup fail.
         ndk {
@@ -143,6 +159,7 @@ dependencies {
     // The real Kotlin LUI backend, included from
     // ../lui/platform/android/lui — see settings.gradle.kts.
     implementation(project(":lui"))
+    implementation("io.sentry:sentry-android:8.64.0")
 
     // Compose 1.12 and the current Material expressive components require SDK 37.0.
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))

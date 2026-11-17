@@ -999,6 +999,7 @@ public final class LogseqAppDelegate : Sendable {
 
     @MainActor public func onInit() {
         #if os(iOS)
+        LogseqCrashReporting.start()
         RecordingLiveActivity.dismissStaleActivities()
         #endif
         let runtime = LogseqLogseqRuntime.shared
