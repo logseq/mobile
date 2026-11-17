@@ -8,13 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -302,13 +301,13 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             if (childIds.size == 2) {
                 // Second child is the bottom chrome. Hoist it out of the content
                 // column like iOS's safeAreaInset/overlay so the composer's
-                // internal `grow` props can't starve the journal; intrinsic
-                // sizing keeps it at natural height instead of letting those
-                // props claim the whole screen.
+                // internal `grow` props can't starve the journal. Unbounded
+                // height keeps it at natural size without querying intrinsic
+                // measurements unsupported by subcomposed LUI layouts.
                 if (occupies) {
                     Column(Modifier.fillMaxSize()) {
                         Box(Modifier.weight(1f)) { NavigationContent(context, childIds[0], dismissesComposer) }
-                        Box(Modifier.height(IntrinsicSize.Min)) {
+                        Box(Modifier.wrapContentHeight(unbounded = true)) {
                             context.child(childIds[1])
                         }
                     }
@@ -318,7 +317,7 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
                         Box(
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .height(IntrinsicSize.Min),
+                                .wrapContentHeight(unbounded = true),
                         ) {
                             context.child(childIds[1])
                         }
