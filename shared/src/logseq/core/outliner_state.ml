@@ -1045,12 +1045,18 @@ let leave_interaction context (state : outliner_state) =
     { state with editing = None; selected = Sset.empty; autocomplete = None }
     (commit_effect ~trim:true context state.editing)
 
+let is_zoom_root (state : outliner_state) uuid =
+  match List.rev state.zoomed with
+  | root :: _ -> root = uuid
+  | [] -> false
+
 let split_editing context (state : outliner_state) (editing : editor_draft) =
   let index = byte_index_of_utf16 editing.title editing.caret in
   let before = String.sub editing.title 0 index in
   let after = String.sub editing.title index (String.length editing.title - index) in
   let linked = editing.content_uuid <> editing.uuid in
-  let at_start = index = 0 && not (String_kit.is_blank editing.title) in
+  let zoom_root = is_zoom_root state editing.uuid in
+  let at_start = not zoom_root && index = 0 && not (String_kit.is_blank editing.title) in
   let expected, row_before, row_after, save_content =
     if not linked then editing.expected_title, before, after, []
     else
@@ -1060,12 +1066,13 @@ let split_editing context (state : outliner_state) (editing : editor_draft) =
       else raw, raw, after, commit_effect ~trim:true context (Some {editing with title = before})
   in
   step
-    { state with editing = None; autocomplete = None }
+    { state with editing = None; autocomplete = None;
+      collapsed = (if zoom_root then Sset.remove editing.uuid state.collapsed else state.collapsed) }
     (save_content @ [
       Split_at
         {
           split_uuid = editing.uuid;
-          split_placement = (if at_start then Before
+          split_placement = (if zoom_root then Inside else if at_start then Before
             else if not (Sset.mem editing.uuid state.collapsed)
               && sorted_siblings context (Some editing.uuid) <> [] then Inside else After);
           split_expected_title = expected;
@@ -1080,6 +1087,8 @@ let split_or_outdent (context : outliner_context) (state : outliner_state)
     match find_block context editing.uuid with
     | Some (block : Model.block) ->
       String_kit.is_blank editing.title
+      && not (is_zoom_root state block.uuid)
+      && not (Option.fold ~none:false ~some:(is_zoom_root state) block.parent_id)
       && block.parent_id <> Some block.page_id
       &&
       (match List.rev (sorted_siblings context block.parent_id) with
