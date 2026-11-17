@@ -70,6 +70,18 @@ let execute path mode =
   let ( let* ) = Result.bind in
   let* conn = Store.restore_conn path in
   let* () = seed_mode conn mode in
+  let* () =
+    match mode with
+    | Inspect -> Ok ()
+    | _ ->
+      (* seeding replaces local entities; queued ops referencing entities
+         that no longer exist can never complete, so drop them *)
+      Ok
+        (List.iter
+           (fun (operation : Ops.pending_operation) ->
+             Ops.remove path operation.operation_id)
+           (Ops.list path))
+  in
   let* db = Store.restore_db path in
   let plain value = Ok value in
   let blocks = Graph.blocks plain 7 db in
