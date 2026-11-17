@@ -117,7 +117,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                     }
                 }
             }
-            val error = if (BuildConfig.DEBUG) LogseqDialogs.errorMessage else null
+            val error = LogseqDialogs.errorMessage
             if (error != null) {
                 AlertDialog(
                     onDismissRequest = LogseqDialogs::clearError,
