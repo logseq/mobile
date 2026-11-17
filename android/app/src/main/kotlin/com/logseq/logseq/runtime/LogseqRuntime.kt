@@ -101,7 +101,13 @@ internal class LogseqRuntime(
     private val appEntries = AndroidAppEntryCoordinator(
         scope, ::handleAppEntry, ::reportError, java.io.File(activity.filesDir, "incoming-shares"),
     )
-    private val outlinerCommands = OutlinerPlatformCommandDispatcher(::handleOutlinerCommandBatch)
+    private val outlinerCommands = OutlinerPlatformCommandDispatcher(
+        onBatch = ::handleOutlinerCommandBatch,
+        onError = { error ->
+            reportError(error)
+            LogseqDialogs.notifyError(error.message ?: "The action could not be completed")
+        },
+    )
 
     var rootNodeId by mutableStateOf<Long?>(null)
         private set
@@ -768,9 +774,7 @@ internal class LogseqRuntime(
 
     private suspend fun addImportedAsset(asset: AndroidImportedAsset, targetBlockId: String?) {
         val response = bridge.callCore(asset.coreRequest(targetBlockId))
-        if (!JSONObject(response).optBoolean("ok")) {
-            error("The native core rejected ${asset.title}")
-        }
+        asset.requireAccepted(response)
         logRuntime("info", "core", "Added attachment ${asset.title}")
         applyCoreResponse(response)
     }

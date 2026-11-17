@@ -38,6 +38,7 @@ internal data class OutlinerPlatformCommandBatch(
 
 internal class OutlinerPlatformCommandDispatcher(
     private val onBatch: suspend (OutlinerPlatformCommandBatch) -> Unit,
+    private val onError: (Exception) -> Unit = {},
 ) {
     private var lastRevision = 0L
 
@@ -45,7 +46,17 @@ internal class OutlinerPlatformCommandDispatcher(
         val batch = decode(response) ?: return
         if (batch.revision <= lastRevision) return
         lastRevision = batch.revision
-        if (batch.commands.isNotEmpty()) onBatch(batch)
+        if (batch.commands.isNotEmpty()) {
+            try {
+                onBatch(batch)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Picker results arrive after the original UI event has returned.
+                // A failed import must not escape into the effect-drain launch.
+                onError(error)
+            }
+        }
     }
 
     companion object {

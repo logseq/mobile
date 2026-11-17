@@ -26,6 +26,17 @@ internal data class AndroidImportedAsset(
     val checksum: String,
     val localPath: String,
 ) {
+    fun requireAccepted(response: String) {
+        val decoded = JSONObject(response)
+        check(decoded.optBoolean("ok")) {
+            val error = decoded.optJSONObject("error")
+            val code = error?.optString("code")?.takeIf(String::isNotBlank) ?: "asset_import_failed"
+            val message = error?.optString("message")?.takeIf(String::isNotBlank)
+                ?: "The native core rejected the attachment"
+            "Could not add $title ($code): $message"
+        }
+    }
+
     fun coreRequest(targetBlockId: String? = null): String {
         val payload = JSONObject()
             .put("uuid", uuid)
