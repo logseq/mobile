@@ -125,6 +125,7 @@ internal class LogseqRuntime(
     @Volatile private var appliedServerT = -1L
     @Volatile private var selectedGraphId = ""
     @Volatile private var storageBaseUrl = ""
+    private val graphSyncEligibility = CoreGraphSyncEligibility()
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
@@ -220,13 +221,16 @@ internal class LogseqRuntime(
 
     private suspend fun syncInBackground(): BackgroundSyncResult = scope.async {
         activeBootstrap?.join()
-        if (!hasAuthenticatedSession || !hasOpenGraph) BackgroundSyncResult.Skipped
+        if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) BackgroundSyncResult.Skipped
         else {
             requestSyncNow()
             pendingSyncJob?.join()
-            val snapshot = JSONObject(bridge.callCore("""{"apiVersion":1,"method":"snapshot","params":{}}"""))
-            if (snapshot.optBoolean("ok") && snapshot.optJSONObject("result")?.isNull("pendingSyncError") == true)
-                BackgroundSyncResult.Success else BackgroundSyncResult.Retry
+            if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) BackgroundSyncResult.Skipped
+            else {
+                val snapshot = JSONObject(bridge.callCore("""{"apiVersion":1,"method":"snapshot","params":{}}"""))
+                if (snapshot.optBoolean("ok") && snapshot.optJSONObject("result")?.isNull("pendingSyncError") == true)
+                    BackgroundSyncResult.Success else BackgroundSyncResult.Retry
+            }
         }
     }.await()
 
@@ -322,6 +326,11 @@ internal class LogseqRuntime(
     // snapshot; cache them so the WebSocket loop can pull entity changes
     // without holding client-side state of its own (iOS snapshot fields).
     private fun trackSyncState(response: String) {
+        graphSyncEligibility.update(response)
+        if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
+            pendingSyncRequested = false
+            pendingSyncJob?.cancel()
+        }
         runCatching {
             val result = JSONObject(response).optJSONObject("result") ?: return
             if (result.has("appliedServerT") && !result.isNull("appliedServerT")) {
@@ -365,7 +374,8 @@ internal class LogseqRuntime(
                 "job=${graphEventsSession.isActive} foreground=$appIsForeground",
         )
         val sessionGraphId = selectedGraphId.takeIf {
-            hasAuthenticatedSession && hasOpenGraph && !restartingGraphEvents && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
+            graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph) &&
+                !restartingGraphEvents && it.isNotEmpty() && storageBaseUrl.isNotEmpty()
         }
         graphEventsSession.update(sessionGraphId, appIsForeground) { graphId ->
             while (isActive) {
@@ -407,6 +417,7 @@ internal class LogseqRuntime(
                         if (recovery is NativeEffectResolution.CoreResponse) {
                             applyCoreResponse(recovery.response)
                         }
+                        if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) break
                         val wait = sync.completeSnapshot(recovery?.succeeded == true)
                         if (wait > 0) kotlinx.coroutines.delay(wait)
                     }
@@ -424,7 +435,7 @@ internal class LogseqRuntime(
     // --- Pending sync pump (port of iOS runPendingSyncPump) ---
 
     fun requestSyncNow(): Boolean {
-        if (!hasAuthenticatedSession || !hasOpenGraph) return false
+        if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) return false
         pendingSyncRequested = true
         if (pendingSyncJob?.isActive != true) {
             pendingSyncJob = scope.launch {
@@ -523,6 +534,7 @@ internal class LogseqRuntime(
             applyCoreResponse(closed)
         }
         val resolution = executor.execute(effect)
+        if (resolution is NativeEffectResolution.CoreResponse) trackSyncState(resolution.response)
         if (deletingOpenGraph) {
             if (resolution.succeeded) {
                 platformEffects.persistSelectedGraphId("")
