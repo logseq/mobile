@@ -135,5 +135,7 @@ val refresh_reference_metadata :
   Outliner_state.outliner_context
 
 val references_for_node : Session_types.session -> string -> Cache_model.block list
+val reference_rows : Session_types.session -> Outliner_state.outliner_state -> Cache_model.block list -> Outliner_state.outliner_row list
+val set_reference_collapsed : Session_types.session -> string -> bool -> unit
 val pending_reference_uuid : Session_types.session -> string option
 val load_page_references : Session_types.session -> string -> unit

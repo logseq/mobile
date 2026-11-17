@@ -288,6 +288,20 @@ let node_properties_for session uuid =
   | Some db -> (match Node_property.render db ~owner:uuid ~encode_block:(result_block_encoder db) with
       | Ok value -> value | Error _ -> `Null)
 
+let reference_blocks_json session current serialize blocks =
+  let rows = So.reference_rows session current blocks in
+  let serialize = window_serializer session serialize
+    (List.map (fun (row : Outliner.outliner_row) -> row.block) rows) in
+  Rpc.json_list (List.map (fun (row : Outliner.outliner_row) ->
+    match serialize row.block with
+    | `Assoc fields ->
+      let fields = if List.assoc_opt "isShell" fields = Some (`Bool true) then
+          ("breadcrumbs", Rpc.json_list (List.map Rpc.summary_json row.block.breadcrumbs)) :: fields
+        else fields in
+      `Assoc (["depth", `Int row.depth;
+        "hasChildren", `Bool row.has_children; "isCollapsed", `Bool row.is_collapsed] @ fields)
+    | value -> value) rows)
+
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
   Rpc.json_list
@@ -306,7 +320,6 @@ let node_routes_json session serialize serialize_plain =
          let related = node_route_related_blocks session route in
          let linked = node_route_linked_reference_blocks session route in
          let serialize_related = window_serializer session serialize_plain related in
-         let serialize_linked = window_serializer session serialize_plain linked in
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
@@ -322,11 +335,10 @@ let node_routes_json session serialize serialize_plain =
                   (if (host session).Types.outliner_projection_limit = None then context.Outliner.blocks else ordered)))
              )
            ; ( "relatedBlocks"
-             , Rpc.json_list
-                 (List.map serialize_related related) )
+             , if route.is_tag then Rpc.json_list (List.map serialize_related related)
+               else reference_blocks_json session current serialize_plain related )
            ; ( "linkedReferenceBlocks"
-             , Rpc.json_list
-                 (List.map serialize_linked linked) )
+             , reference_blocks_json session current serialize_plain linked )
            ; ("outlinerState", Rpc.outliner_state_json current)
            ; ( "outlinerRows"
              , Rpc.outliner_rows_json serialize context current )
@@ -378,7 +390,6 @@ let snapshot session context_blocks blocks =
   let related = snapshot_related_blocks session in
   let linked = snapshot_linked_reference_blocks session in
   let related_serialize = window_serializer session Rpc.block_json related in
-  let linked_serialize = window_serializer session Rpc.block_json linked in
   let config = s.config in
   let response =
     success session
@@ -394,12 +405,11 @@ let snapshot session context_blocks blocks =
              | Some block -> Rpc.block_json block
              | None -> `Null )
          ; ( "relatedBlocks"
-           , Rpc.json_list
-               (List.map related_serialize related)
+           , if selected_page_is_tag session then Rpc.json_list (List.map related_serialize related)
+             else reference_blocks_json session current Rpc.block_json related
            )
          ; ( "linkedReferenceBlocks"
-           , Rpc.json_list
-               (List.map linked_serialize linked) )
+           , reference_blocks_json session current Rpc.block_json linked )
          ; ("resultViews", (match s.selected_sidebar_page with
              | Some page -> object_views_for session page.uuid (selected_page_is_tag session) (selected_page_is_property session)
              | None -> `Null))
@@ -689,7 +699,9 @@ let outliner_action_context session context message =
     | Set_task_priority value -> value.priority_uuid :: targets
     | _ -> targets in
   let missing = List.filter (fun uuid -> Outliner.find_block context uuid = None) targets in
-  let metadata = List.exists (fun uuid ->
+  let reference_target = List.exists (fun (block : Model.block) -> List.mem block.uuid targets)
+    (snapshot_related_blocks session @ snapshot_linked_reference_blocks session) in
+  let metadata = reference_target || List.exists (fun uuid ->
     not (List.exists (fun (block : Model.block) -> block.uuid = uuid) context.Outliner.blocks)
     && Outliner.find_block context uuid <> None) targets in
   match missing, query_db session with
@@ -726,9 +738,30 @@ let dispatch_outliner_event session payload =
       in
       let context, external_results = outliner_action_context session display_context message in
       let previous = (state session).outliner_state in
+      let reference_toggle = match message with
+        | Outliner.Toggle_collapsed uuid when (try
+            Yojson.Basic.Util.member "reference" (Json.from_string payload) = `Bool true with _ -> false) ->
+          let blocks = match active_node_route session with
+            | Some route -> node_route_related_blocks session route @ node_route_linked_reference_blocks session route
+            | None -> snapshot_related_blocks session @ snapshot_linked_reference_blocks session in
+          let collapsed = match Yojson.Basic.Util.member "collapsed" (Json.from_string payload) with
+            | `Bool collapsed -> collapsed
+            | _ -> Option.fold ~none:false ~some:(fun (row : Outliner.outliner_row) -> not row.is_collapsed)
+                (List.find_opt (fun (row : Outliner.outliner_row) -> row.block.uuid = uuid)
+                  (So.reference_rows session previous blocks)) in
+          (* A repeated tap can arrive while deferred references reload. Its
+             explicit desired state stays idempotent and cannot affect the page. *)
+          Some (uuid, collapsed)
+        | _ -> None in
+      let command_state = match reference_toggle with
+        | Some (uuid, collapsed) -> {previous with Outliner.collapsed =
+            (if collapsed then Outliner.Sset.remove else Outliner.Sset.add) uuid previous.collapsed}
+        | None -> previous in
       let next_state, commands =
-        Outliner.update context previous message
+        Outliner.update context command_state message
       in
+      let next_state = if reference_toggle = None then next_state
+        else {next_state with Outliner.collapsed = previous.collapsed} in
       let base_t =
         match projection_server_t session with
         | Some t -> t
@@ -821,10 +854,11 @@ let dispatch_outliner_event session payload =
                outliner_revision =
                  (state session).outliner_revision + 1;
              };
-           (match message with
-            | Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
+           (match reference_toggle, message with
+            | Some (uuid, collapsed), _ -> So.set_reference_collapsed session uuid collapsed
+            | None, Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
             | _ -> ());
-           if external_results || (state session).node_routes <> [] then
+           if reference_toggle <> None || external_results || (state session).node_routes <> [] then
              snapshot_visible session
            else
              (match event_patch_plan ?db:context.Outliner.db message operations with
@@ -2333,12 +2367,11 @@ let rec dispatch session action payload =
      | Some uuid ->
        So.load_page_references session uuid;
        let blocks = So.references_for_node session uuid in
-       let serialize = window_serializer session Rpc.visible_block_json blocks in
        success session (Rpc.json_object [
          "isReferencePatch", `Bool true; "referenceUuid", `String uuid;
          "selectedGraphId", (match (state session).config with
            | Some config -> `String config.Api.graph_id | None -> `Null);
-         "referenceBlocks", Rpc.json_list (List.map serialize blocks)]))
+         "referenceBlocks", reference_blocks_json session (state session).outliner_state Rpc.visible_block_json blocks]))
   | "openNode" ->
     with_object action payload "openNode requires a node id"
       (fun _input fields -> open_node session fields)

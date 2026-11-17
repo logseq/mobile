@@ -33,6 +33,7 @@ let schema : (string * Ds.schema_attr) list =
     ("block/updated-at", instant_attr);
     ("block/journal-day", one);
     ("block/refs", many_ref);
+    ("block/alias", many_ref);
     ("block/tags", many_ref);
     ("logseq.property.class/extends", many_ref);
     ("logseq.property/hide?", one);
@@ -250,12 +251,13 @@ let node_navigation_and_related_blocks_respect_visibility_and_breadcrumbs () =
   transact conn
     [
       page "node-page" "node-page" "Node page" [];
+      page "source-page" "source-page" "Source page" [];
       page "tag" "project" "Project" [];
       block "parent-block" "Parent block" "node-page" "node-page" 1 [];
       block "referenced-block" "Referenced block" "node-page" "node-page" 1 [];
       block "object" "Tagged object" "node-page" "parent-block" 2
         [ refs "block/tags" [ "tag" ] ];
-      block "linked-reference" "Linked reference" "node-page" "node-page" 3
+      block "linked-reference" "Linked reference" "source-page" "source-page" 3
         [ refs "block/refs" [ "node-page" ] ];
       block "hidden-tagged-object" "Hidden tagged object" "node-page"
         "node-page" 4
@@ -321,7 +323,7 @@ let node_navigation_and_related_blocks_respect_visibility_and_breadcrumbs () =
     (List.map
        (fun (e : Model.entity_summary) -> e.title)
        (List.hd references).breadcrumbs)
-    [ "Node page" ]
+    [ "Source page" ]
 
 let journals_stay_grouped_newest_first_in_outliner_order () =
   let conn =
@@ -894,6 +896,8 @@ let page_navigation_reads_only_the_requested_reference_range () =
     ([ page "target" "target" "Target" [];
        page "elsewhere" "elsewhere" "Elsewhere" [];
        block "visible" "Visible" "target" "target" 1
+         [ refs "block/refs" [ "target" ] ];
+       block "reference" "Reference" "elsewhere" "elsewhere" 1
          [ refs "block/refs" [ "target" ] ] ]
      @ List.init 8192 (fun index ->
          let uuid = "unrelated-" ^ string_of_int index in
@@ -912,7 +916,7 @@ let page_navigation_reads_only_the_requested_reference_range () =
        reads := 0;
        let blocks = load plain db "target" in
        check_eq ~msg:(label ^ " returns only the selected page's blocks")
-         (uuids blocks) [ "visible" ];
+         (uuids blocks) (if label = "page" then ["visible"] else ["reference"]);
        check ~msg:(Printf.sprintf "%s reads a bounded index range: %d storage reads" label !reads)
          (!reads < 24))
     [ "page", Read.blocks_for_page; "references", Read.references_for_node ]
@@ -1182,10 +1186,57 @@ let custom_status_icons_are_shared_by_selected_and_default_values () =
     check_eq ~msg:"selected and default statuses preserve the property's custom icon and color"
       (Read.status_for_eid (fun text -> Ok text) db eid) (Some expected)) [20; 21]
 
+let linked_references_include_visible_descendants_once () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/order"; "block/refs";
+    "logseq.property/hide?"; "logseq.property/created-from-property"] [] in
+  transact conn [page "target" "target" "Target" []; page "source" "source" "Source" [];
+    block "parent" "Linked parent" "source" "source" 1 [refs "block/refs" ["target"]];
+    block "child" "Linked child" "source" "parent" 2 [refs "block/refs" ["target"]];
+    block "grandchild" "Unlinked grandchild" "source" "child" 3 [];
+    block "sibling" "Unrelated sibling" "source" "source" 4 [];
+    block "hidden" "Hidden" "source" "parent" 5 [field "logseq.property/hide?" (Ds.Bool true)];
+    block "hidden-child" "Hidden descendant" "source" "hidden" 6 [];
+    block "metadata" "Property value" "source" "parent" 7
+      [field "logseq.property/created-from-property" (Ds.Ref_to (Ds.Temp_id "target"))]];
+  let blocks = Read.references_for_node plain (Ds.conn_db conn) "target" in
+  check_eq ~msg:"references include descendants, omit hidden/metadata/unrelated subtrees, and deduplicate direct matches"
+    (uuids blocks) ["parent"; "child"; "grandchild"];
+  check_eq ~msg:"nested references retain their real parent"
+    (find_block "grandchild" blocks).parent_id (Some "child")
+
+let linked_reference_membership_matches_master () =
+  let conn = new_conn ["block/page"; "block/parent"; "block/order"; "block/refs";
+    "block/alias"; "block/tags"; "db/ident"; "logseq.property.class/extends";
+    "logseq.property/hide?"] [] in
+  transact conn [
+    page "tag-type" "tag" "Tag" [field "db/ident" (Ds.Keyword "logseq.class/Tag")];
+    page "target" "target" "Target" [refs "block/tags" ["tag-type"]; refs "block/alias" ["alias"]];
+    page "alias" "alias" "Alias" [];
+    page "reverse-alias" "reverse alias" "Reverse alias" [refs "block/alias" ["target"]];
+    page "source" "source" "Source" [];
+    page "page-reference" "page reference" "Page reference" [refs "block/refs" ["target"]];
+    page "subclass" "subclass" "Subclass" [field "logseq.property.class/extends" (Ds.Ref_to (Ds.Temp_id "target"))];
+    page "hidden-page" "hidden page" "Hidden page" [field "logseq.property/hide?" (Ds.Bool true)];
+    block "self" "Self mention" "target" "target" 1 [refs "block/refs" ["target"]];
+    block "alias-self" "Alias self mention" "alias" "alias" 2 [refs "block/refs" ["target"]];
+    block "reverse-self" "Reverse alias self mention" "reverse-alias" "reverse-alias" 3 [refs "block/refs" ["alias"]];
+    block "mention" "Direct and alias mentions" "source" "source" 4 [refs "block/refs" ["target"; "alias"]];
+    block "alias-mention" "Alias mention" "source" "source" 5 [refs "block/refs" ["alias"]];
+    block "reverse-mention" "Reverse alias mention" "source" "source" 6 [refs "block/refs" ["reverse-alias"]];
+    block "instance" "Target instance" "source" "source" 7 [refs "block/tags" ["target"]; refs "block/refs" ["target"]];
+    block "sub-instance" "Subclass instance" "source" "source" 8 [refs "block/tags" ["subclass"]; refs "block/refs" ["alias"]];
+    block "hidden-ref" "Hidden page mention" "hidden-page" "hidden-page" 9 [refs "block/refs" ["target"]]];
+  let blocks = Read.references_for_node plain (Ds.conn_db conn) "target" in
+  check_eq ~msg:"master merges aliases, deduplicates matches, excludes self mentions and class instances, and keeps page-level mentions"
+    (List.sort compare (uuids blocks)) ["alias-mention"; "mention"; "page-reference"; "reverse-mention"];
+  check_eq ~msg:"a page-level reference opens as a page" (find_block "page-reference" blocks).page_id "page-reference"
+
 let cases =
   case "custom status icons are shared by selected and default values"
     custom_status_icons_are_shared_by_selected_and_default_values ::
-  [ case "pages only display icons stored in the graph" pages_only_display_icons_stored_in_the_graph;
+  [ case "linked references include visible descendants once" linked_references_include_visible_descendants_once;
+    case "linked reference membership matches master" linked_reference_membership_matches_master;
+    case "pages only display icons stored in the graph" pages_only_display_icons_stored_in_the_graph;
     case "builtin Library is hidden without hiding ordinary pages" builtin_library_is_hidden_without_hiding_ordinary_pages;
     case "cyclic block references have finite rendered projections" cyclic_block_references_have_finite_rendered_projections;
     case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;

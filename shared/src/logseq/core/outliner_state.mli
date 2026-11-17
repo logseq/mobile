@@ -242,7 +242,7 @@ val compare_blocks : Cache_model.block -> Cache_model.block -> int
 val compare_root_blocks : Cache_model.block -> Cache_model.block -> int
 val sorted_siblings :
   outliner_context -> string option -> Cache_model.block list
-val visible_rows : outliner_context -> outliner_state -> outliner_row list
+val visible_rows : ?compare_roots:(Cache_model.block -> Cache_model.block -> int) -> outliner_context -> outliner_state -> outliner_row list
 val selected_roots : outliner_context -> Sset.t -> Cache_model.block list
 val moves_with_orders :
   Cache_model.block list ->
