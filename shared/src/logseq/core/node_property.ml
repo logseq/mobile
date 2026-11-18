@@ -149,10 +149,14 @@ let mutation db ~now ~fresh_uuid input =
           | `String value -> value
           | _ -> invalid_arg "Choose a tag") values
         | _ -> invalid_arg "Choose a tag" in
+      let validate_tag uuid =
+        match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+        | Some id when G.node_is_tag db uuid ->
+          if not (G.tag_available_for_completion db id) then
+            invalid_arg "This tag cannot be assigned"
+        | _ -> invalid_arg "The tag no longer exists" in
       let selected_uuids = List.sort_uniq String.compare (values "selectedValues") in
-      List.iter (fun uuid ->
-        if not (G.node_is_tag db uuid) then invalid_arg "The tag no longer exists")
-        selected_uuids;
+      List.iter validate_tag selected_uuids;
       let new_titles = List.map Dev_query.Unicode.trim (values "newValues")
         |> List.sort_uniq String.compare in
       List.iter (fun title ->
@@ -165,7 +169,7 @@ let mutation db ~now ~fresh_uuid input =
             if G.entity_is_instance_of db d.e "logseq.class/Tag"
             then G.uuid_for_eid db d.e else None) in
         match existing with
-        | Some uuid -> uuid, None
+        | Some uuid -> validate_tag uuid; uuid, None
         | None ->
           let uuid = fresh_uuid () in
           uuid, Some (Pending_ops.Create_tag {uuid; title; created_at = now}))

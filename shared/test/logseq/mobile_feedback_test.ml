@@ -278,7 +278,13 @@ let tags_are_managed_together_in_set_tags () = R.with_runtime (fun session runti
 
 let selection_toolbar_adds_tags_to_all_selected_blocks_atomically () =
   let run backend = R.with_runtime (fun session runtime conn ->
-    update runtime conn [put Q.beta "block/tags" (D.Ref_to (ref_uuid Q.project))];
+    update runtime conn [
+      put Q.beta "block/tags" (D.Ref_to (ref_uuid Q.project));
+      put Q.alpha "block/tags" (D.Ref_to (D.Ident "logseq.class/Asset"));
+    ];
+    let asset_class = D.entid (Graph_runtime.db runtime) "db/ident"
+      (D.Keyword "logseq.class/Asset") |> Option.get in
+    let asset_uuid = Graph_read.uuid_for_eid (Graph_runtime.db runtime) asset_class |> Option.get in
     open_node session Q.page;
     let response = Rpc_session.snapshot_visible session in
     let selected_blocks = [Q.alpha; Q.beta] in
@@ -327,6 +333,10 @@ let selection_toolbar_adds_tags_to_all_selected_blocks_atomically () =
         let loaded_response = Core_effect_test.execute session "load-property-values" ["text", `String payload] in
         check_eq (member "ok" loaded_response) (`Bool true);
         let loaded = member "propertyValues" loaded_response in
+        let column = member "column" loaded in
+        check ~msg:"the owner's structural Asset tag is not an assignable candidate"
+          (not (List.exists (fun choice -> member "match" choice = `List [`String asset_uuid])
+            (items "filterValues" column)));
         App_test.send app (Model.ReceivePropertyValues (key, J.to_string (member "column" loaded)));
         App_test.send app (Model.ResolveEffect (id, true, J.to_string loaded_response));
         App_test.flush app in
@@ -370,9 +380,10 @@ let selection_toolbar_adds_tags_to_all_selected_blocks_atomically () =
           (App.model app).result_view_feedback);
       let db = Graph_runtime.db runtime in
       let new_tag = Graph_read.unique_named_uuid true db "Bulk tag" |> Option.get in
-      List.iter (fun uuid ->
-        check_eq ~msg:"existing tags remain assigned" (tags db uuid)
-          (List.sort String.compare [Q.project; new_tag])) [Q.alpha; Q.beta];
+      check_eq ~msg:"existing tags and the Asset owner's structural type remain assigned"
+        (tags db Q.alpha) (List.sort String.compare [Q.project; new_tag; asset_uuid]);
+      check_eq ~msg:"existing tags remain assigned"
+        (tags db Q.beta) (List.sort String.compare [Q.project; new_tag]);
       check_eq ~msg:"the unselected block is not tagged" (tags db R.gamma) original_gamma_tags;
       check_eq ~msg:"the active page is not tagged" (tags db Q.page) [];
       List.iter (fun (uuid, original) -> check_eq (title db uuid) original) original_titles;
@@ -393,16 +404,22 @@ let selection_toolbar_adds_tags_to_all_selected_blocks_atomically () =
         (List.exists (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects) false;
       update runtime conn [put Q.page "logseq.property/built-in?" (D.Bool true)];
       let before_invalid_batch = Graph_runtime.pending_operations runtime in
-      let batch targets new_values = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+      let batch targets selected_values new_values = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
         "action", `String "addTags";
         "blockUuids", `List (List.map (fun uuid -> `String uuid) targets);
-        "selectedValues", `List [];
+        "selectedValues", `List (List.map (fun uuid -> `String uuid) selected_values);
         "newValues", `List (List.map (fun value -> `String value) new_values)])) in
-      let empty = batch [Q.alpha; Q.beta] [] in
+      let empty = batch [Q.alpha; Q.beta] [] [] in
       check_eq ~msg:"an empty add-only batch is rejected" (member "ok" empty) (`Bool false);
-      let rejected = batch [Q.alpha; Q.page] ["Do not create"] in
+      let structural = batch [Q.alpha; Q.beta] [asset_uuid] [] in
+      check_eq ~msg:"batch addTags rejects a structural Asset class" (member "ok" structural) (`Bool false);
+      let structural_by_name = batch [Q.alpha; Q.beta] [] ["Asset"] in
+      check_eq ~msg:"batch addTags does not resolve a structural class by title" (member "ok" structural_by_name) (`Bool false);
+      let rejected = batch [Q.alpha; Q.page] [] ["Do not create"] in
       check_eq ~msg:"all targets are validated before creating tags" (member "ok" rejected) (`Bool false);
       check_eq (Graph_runtime.pending_operations runtime) before_invalid_batch;
+      check_eq ~msg:"rejected structural tags never reach the ordinary block"
+        (tags (Graph_runtime.db runtime) Q.beta) (List.sort String.compare [Q.project; new_tag]);
       check_eq ~msg:"an invalid target cannot leave a partially-created tag"
         (Graph_read.unique_named_uuid true (Graph_runtime.db runtime) "Do not create") None)) in
   List.iter run [App_test.ios_backend; App_test.kotlin_backend]
