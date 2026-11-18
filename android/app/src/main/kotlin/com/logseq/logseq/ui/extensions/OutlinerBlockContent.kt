@@ -57,13 +57,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
-import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
@@ -167,13 +164,13 @@ internal fun OutlinerBlockContent(
     val completed = context.flag("is-completed")
     val isAsset = context.flag("is-asset")
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
+    val currentContext by rememberUpdatedState(context)
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current.density
     var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
-    var dragging by remember { mutableStateOf(false) }
     val hoverColor by animateColorAsState(
         if (dragHover) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         label = "dropHighlight",
@@ -232,26 +229,16 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .then(if (linkOnly) Modifier else Modifier.dragAndDropSource(
-                drawDragDecoration = {},
-                block = {
-                    detectTapGestures(
-                        onTap = {
-                            context.emit("edit", "uuid" to uuid)
-                        },
-                        onLongPress = {
-                            dragging = true
-                            context.emit("drag-start", "uuid" to uuid)
-                            startTransfer(
-                                DragAndDropTransferData(
-                                    android.content.ClipData.newPlainText("block", uuid),
-                                )
-                            )
-                            dragging = false
-                        },
-                    )
-                },
-            ))
+            .then(if (linkOnly) Modifier else Modifier.pointerInput(uuid) {
+                detectTapGestures(
+                    onTap = {
+                        currentContext.emit("edit", "uuid" to uuid)
+                    },
+                    onLongPress = {
+                        currentContext.emit("drag-start", "uuid" to uuid)
+                    },
+                )
+            })
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
@@ -260,7 +247,7 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = rowModifier,
     ) {
-        Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
+        Column {
             if (isAsset) {
                 ProjectedAsset(
                     uuid = uuid,

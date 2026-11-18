@@ -1,16 +1,20 @@
 package com.logseq.logseq
 
+import android.view.DragEvent
+import android.view.ViewConfiguration
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -29,6 +33,7 @@ import dev.lui.LuiEvent
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,7 +44,7 @@ import androidx.compose.ui.graphics.Color
 
 @RunWith(AndroidJUnit4::class)
 class AndroidRichContentTest {
-    @get:Rule val ui = createComposeRule()
+    @get:Rule val ui = createAndroidComposeRule<ComponentActivity>()
     private val events = mutableListOf<LuiEvent>()
 
     private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null,
@@ -99,8 +104,33 @@ class AndroidRichContentTest {
         }
     }
 
-    @Test fun plainBodyLongPressSelectsInsteadOfEditing() =
-        assertLongPressSelects("""[{"type":"text","text":"Plain block"}]""", "Plain block")
+    @Test fun plainBodyLongPressAndMovementSelectsWithoutStartingAndroidTransfer() {
+        render("""[{"type":"text","text":"Plain block"}]""")
+        var dragStarted = false
+        ui.runOnIdle {
+            ui.activity.window.decorView.setOnDragListener { _, event ->
+                if (event.action == DragEvent.ACTION_DRAG_STARTED) dragStarted = true
+                true
+            }
+        }
+        val movement = Offset(16f * ui.activity.resources.displayMetrics.density, 0f)
+        ui.onNodeWithText("Plain block").performTouchInput {
+            down(center)
+            advanceEventTime(ViewConfiguration.getLongPressTimeout().toLong() + 100L)
+            moveBy(movement)
+            advanceEventTime(100L)
+            up()
+        }
+        ui.runOnIdle {
+            ui.activity.window.decorView.setOnDragListener(null)
+            assertEquals(
+                "A long press with movement selects the block exactly once",
+                listOf("drag-start"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name },
+            )
+            assertFalse("A block-body hold must not start Android drag-and-drop", dragStarted)
+        }
+    }
 
     @Test fun richBodyLongPressSelectsInsteadOfEditing() =
         assertLongPressSelects("""[{"type":"emphasis","style":"bold","children":[{"type":"text","text":"Bold block"}]}]""", "Bold block")
