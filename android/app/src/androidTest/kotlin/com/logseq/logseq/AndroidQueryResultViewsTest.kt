@@ -268,7 +268,7 @@ class AndroidQueryResultViewsTest {
         assertTrue(action.getBoolean("expanded"))
     }
 
-    @Test fun savedListsGallerySearchAndErrorsRenderInCompose() {
+    @Test fun savedListsAndGallerySearchRecoverAfterSelectingAnInvalidView() {
         mount()
         ui.onNodeWithText("Project result 1").assertIsDisplayed()
         ui.onNodeWithText("Nested child").assertDoesNotExist()
@@ -283,7 +283,8 @@ class AndroidQueryResultViewsTest {
         ui.onNodeWithTag("view.search.query-owner").performTextReplacement("result 1")
         ui.onNodeWithTag("view.card.gallery.result-1").assertDoesNotExist()
         selectView("broken")
-        ui.onNodeWithTag("view.error.broken").assertIsDisplayed()
+        ui.onNodeWithTag("view.type.broken").assertIsDisplayed()
+        ui.onNodeWithTag("view.table.scroll.broken").assertDoesNotExist()
         selectView("list")
         ui.onNodeWithText("Project result 1").assertIsDisplayed()
         ui.runOnIdle { assertNull(backend.lastError) }
