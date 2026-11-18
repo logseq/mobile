@@ -726,8 +726,10 @@ internal class LogseqRuntime(
                     .toString()
             )
             AndroidAppEntryKind.SharedText, AndroidAppEntryKind.DeepLink -> applyAppEntryCoreRequest(entry.coreRequest())
-            AndroidAppEntryKind.SharedAsset ->
+            AndroidAppEntryKind.SharedAsset -> {
+                check(hasOpenGraph) { "Open a graph before adding a shared attachment" }
                 addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
+            }
         }
     }
 
