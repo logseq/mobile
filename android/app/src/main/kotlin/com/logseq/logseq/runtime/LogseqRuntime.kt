@@ -752,7 +752,7 @@ internal class LogseqRuntime(
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
-            error("The native core rejected the Android app entry")
+            throw AndroidAppEntryRejected("The native core rejected the Android app entry")
         }
         applyCoreResponse(response)
         val result = decoded.optJSONObject("result")

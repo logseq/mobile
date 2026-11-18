@@ -28,13 +28,12 @@ internal data class AndroidImportedAsset(
 ) {
     fun requireAccepted(response: String) {
         val decoded = JSONObject(response)
-        check(decoded.optBoolean("ok")) {
-            val error = decoded.optJSONObject("error")
-            val code = error?.optString("code")?.takeIf(String::isNotBlank) ?: "asset_import_failed"
-            val message = error?.optString("message")?.takeIf(String::isNotBlank)
-                ?: "The native core rejected the attachment"
-            "Could not add $title ($code): $message"
-        }
+        if (decoded.optBoolean("ok")) return
+        val error = decoded.optJSONObject("error")
+        val code = error?.optString("code")?.takeIf(String::isNotBlank) ?: "asset_import_failed"
+        val message = error?.optString("message")?.takeIf(String::isNotBlank)
+            ?: "The native core rejected the attachment"
+        throw AndroidAppEntryRejected("Could not add $title ($code): $message")
     }
 
     fun coreRequest(targetBlockId: String? = null): String {
@@ -125,7 +124,10 @@ internal data class AndroidAppEntry(
     }
 }
 
-// Persist before delivery; only a successful graph operation acknowledges an entry.
+// The core refused this entry; replaying it cannot succeed.
+internal class AndroidAppEntryRejected(message: String) : IllegalStateException(message)
+
+// Persist before delivery; a successful or rejected graph operation acknowledges an entry.
 internal class AndroidAppEntryCoordinator(
     private val scope: CoroutineScope,
     private val handle: suspend (AndroidAppEntry) -> Unit,
@@ -163,6 +165,11 @@ internal class AndroidAppEntryCoordinator(
         scheduleDrain()
     }
 
+    private suspend fun acknowledge(entry: AndroidAppEntry) = mutex.withLock {
+        withContext(Dispatchers.IO) { store.acknowledge(entry) }
+        pending.removeFirst()
+    }
+
     private fun scheduleDrain() {
         if (drainJob?.isActive == true) return
         drainJob = scope.launch {
@@ -170,12 +177,12 @@ internal class AndroidAppEntryCoordinator(
                 val entry = mutex.withLock { load(); pending.peekFirst() } ?: break
                 try {
                     handle(entry)
-                    mutex.withLock {
-                        withContext(Dispatchers.IO) { store.acknowledge(entry) }
-                        pending.removeFirst()
-                    }
+                    acknowledge(entry)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
+                } catch (rejected: AndroidAppEntryRejected) {
+                    onError(rejected)
+                    acknowledge(entry)
                 } catch (error: Exception) {
                     onError(error)
                     break
