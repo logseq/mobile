@@ -9697,15 +9697,16 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
          caption;
        check_eq ~msg:"selection actions retain main's fixed widths"
          (property_int renderer button Lui_protocol.WidthValue)
-         (if index = 6 then 52 else 50))
+         (if index = 7 then 52 else 50))
     [
       (0, "app:toolbar-copy", "Copy");
-      (1, "app:toolbar-outdent", "Outdent");
-      (2, "app:toolbar-indent", "Indent");
-      (3, "app:toolbar-delete", "Delete");
-      (4, "app:toolbar-copy-reference", "Copy reference");
-      (5, "app:toolbar-copy-url", "Copy URL");
-      (6, "app:toolbar-unselect", "Unselect");
+      (1, "app:toolbar-tag", "Tag");
+      (2, "app:toolbar-outdent", "Outdent");
+      (3, "app:toolbar-indent", "Indent");
+      (4, "app:toolbar-delete", "Delete");
+      (5, "app:toolbar-copy-reference", "Copy reference");
+      (6, "app:toolbar-copy-url", "Copy URL");
+      (7, "app:toolbar-unselect", "Unselect");
     ];
   check_eq ~msg:"selection replaces Capture"
     (descendant_with_identifier renderer chrome "surface.composer.root")
@@ -9825,7 +9826,7 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
     (property_int renderer toolbar Lui_protocol.Gap)
     4;
   check_eq ~msg:"all selection actions remain directly reachable"
-    (List.length buttons) 7;
+    (List.length buttons) 8;
   List.iter
     (fun button ->
        check_eq ~msg:"Android selection actions use compact 48dp targets"

@@ -897,70 +897,173 @@ let toolbar_button model_source icon label identifier action send : t =
       ignore (send (Model.PerformOutlinerToolbarAction action)))
     []
 
+type selection_tag_snapshot = {
+  selection_tag_id : string;
+  selection_tag_graph_id : string;
+  selection_tag_block_uuids : string list;
+  selection_tag_revision : int;
+  selection_tag_location :
+    Model.primary_destination * string option * bool * Model.navigation_route list
+    * Model.navigation_route list * string list;
+}
+
 let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    box
-      ~accessibility_identifier:"surface.outliner.selection-toolbar"
-      [
-        toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
-          ~accessibility_identifier:"toolbar.outliner.selection"
-          ~style_class:"scroll-leading" ~toolbar_gap:4
-          [
-            toolbar_button model_source (`app "toolbar-copy") "Copy"
-              "button.outliner.selection.copy" "copy" send;
-            toolbar_button model_source (`app "toolbar-outdent") "Outdent"
-              "button.outliner.selection.outdent" "outdent" send;
-            toolbar_button model_source (`app "toolbar-indent") "Indent"
-              "button.outliner.selection.indent" "indent" send;
-            toolbar_button model_source (`app "toolbar-delete") "Delete"
-              "button.outliner.selection.delete" "delete" send;
-            toolbar_button model_source (`app "toolbar-copy-reference") "Copy reference"
-              "button.outliner.selection.copyReference" "copyReference"
-              send;
-            toolbar_button model_source (`app "toolbar-copy-url") "Copy URL"
-              "button.outliner.selection.copyURL" "copyURL" send;
-            toolbar_button model_source (`app "toolbar-unselect") "Unselect"
-              "button.outliner.selection.unselect" "unselect" send;
-          ];
-      ]
-  else
-    let apple_button icon label identifier action : t =
-      View_base.with_int_prop_signal WidthValue
-        (Signal.map (fun (current : Model.logseq_model) ->
-          if current.viewport_width >= Model.wide_content_breakpoint then 58
-          else if current.viewport_width >= 390 then 50 else 46) model_source)
-        (button ~icon ~variant:`ghost ~height:46
-        ~icon_placement:`top ~label
-        ~accessibility_identifier:identifier
-        ~on_press:(fun _ ->
-          ignore (send (Model.PerformOutlinerToolbarAction action)))
-        ~text:label [])
-    in
-    toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
-         ~accessibility_identifier:"toolbar.outliner.selection"
-         ~style_class:"scroll-leading"
-         ~toolbar_gap:2 ~placement:"bottom"
-      [
-        apple_button (`app "toolbar-copy") "Copy"
-          "button.outliner.selection.copy" "copy";
-        apple_button (`app "toolbar-outdent") "Outdent"
-          "button.outliner.selection.outdent" "outdent";
-        apple_button (`app "toolbar-indent") "Indent"
-          "button.outliner.selection.indent" "indent";
-        apple_button (`app "toolbar-delete") "Delete"
-          "button.outliner.selection.delete" "delete";
-        apple_button (`app "toolbar-copy-reference") "Copy reference"
-          "button.outliner.selection.copyReference" "copyReference";
-        apple_button (`app "toolbar-copy-url") "Copy URL"
-          "button.outliner.selection.copyURL" "copyURL";
-        button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:52
-          ~height:46 ~icon_placement:`top ~label:(View_base.tr (Signal.sample model_source) "Unselect")
-          ~accessibility_identifier:"button.outliner.selection.unselect"
+  let location (current : Model.logseq_model) =
+    current.destination,
+    Option.map (fun (page : Model.sidebar_page) -> page.uuid) current.selected_page,
+    current.search_open,
+    current.app_navigation_path,
+    current.search_navigation_path,
+    List.map (fun (route : Model.node_projection) -> route.node_uuid) current.node_routes in
+  let snapshot_is_current (current : Model.logseq_model) snapshot =
+    current.selected_graph_id = Some snapshot.selection_tag_graph_id
+    && current.outliner_selected_block_ids = snapshot.selection_tag_block_uuids
+    && current.outliner_selection_revision = snapshot.selection_tag_revision
+    && location current = snapshot.selection_tag_location in
+  let picker = Signal.state context.ui_scheduler None in
+  let finished = ref None in
+  let send_property_action action = ignore (send action); true in
+  let picker_id snapshot = snapshot.selection_tag_id in
+  let open_picker () =
+    let current : Model.logseq_model = Signal.sample model_source in
+    match current.selected_graph_id, current.outliner_selected_block_ids with
+    | Some graph_id, (_ :: _ as block_uuids) ->
+      let id = "selection.tags." ^ String.concat "." block_uuids ^ "."
+        ^ string_of_int current.next_effect_id in
+      Signal.set picker (Some {
+        selection_tag_id = id;
+        selection_tag_graph_id = graph_id;
+        selection_tag_block_uuids = block_uuids;
+        selection_tag_revision = current.outliner_selection_revision;
+        selection_tag_location = location current;
+      })
+    | _ -> () in
+  ignore (Signal.own context.ui_scope (Signal.observe model_source (fun current ->
+    match Signal.sample (Signal.value picker) with
+    | Some snapshot when not (snapshot_is_current current snapshot) ->
+      Signal.set picker None
+    | Some snapshot ->
+      (match List.find_opt (fun (key, _, _) -> key = picker_id snapshot) current.result_view_feedback with
+       | Some (_, revision, error) when !finished <> Some revision ->
+         finished := Some revision;
+         if error = None then Signal.set picker None
+       | _ -> ())
+    | None -> ())));
+  let tag_label = View_base.tr (Signal.sample model_source) "Tag" in
+  let render_tag_picker snapshot =
+    let current : Model.logseq_model = Signal.sample model_source in
+    match snapshot with
+      | Some snapshot when snapshot_is_current current snapshot ->
+        let owner = List.hd snapshot.selection_tag_block_uuids in
+        let property = `Assoc [
+          "attr", `String "block/tags";
+          "title", `String "Add tags";
+          "kind", `String "class";
+          "many", `Bool true;
+          "ref", `Bool true;
+          "editable", `Bool true;
+          "canCreate", `Bool true;
+          "closed", `Bool false;
+          "filterValues", `List [];
+          "valuesDeferred", `Bool true;
+          "raw", `Assoc ["type", `String "set"; "value", `List []];
+        ] in
+        View_query.property_editor ~owner ~send:send_property_action ~id:(picker_id snapshot) ~column:property
+          ~submit:(fun fields ->
+            let current = Signal.sample model_source in
+            if snapshot_is_current current snapshot then
+              ignore (send (Model.SubmitNodeProperty (picker_id snapshot,
+                Yojson.Basic.to_string (`Assoc ([
+                  "action", `String "addTags";
+                  "graphId", `String snapshot.selection_tag_graph_id;
+                  "blockUuids", `List (List.map (fun uuid -> `String uuid)
+                    snapshot.selection_tag_block_uuids)] @ fields)))))
+            else Signal.set picker None)
+          model_source property (fun () -> Signal.set picker None)
+      | _ -> box [] in
+  let selection_toolbar =
+    if Lui_ui.host context = KotlinHost then
+      box
+        ~accessibility_identifier:"surface.outliner.selection-toolbar"
+        [
+          toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
+            ~accessibility_identifier:"toolbar.outliner.selection"
+            ~style_class:"scroll-leading" ~toolbar_gap:4
+            [
+              toolbar_button model_source (`app "toolbar-copy") "Copy"
+                "button.outliner.selection.copy" "copy" send;
+              button ~icon:(`app "toolbar-tag") ~variant:`ghost ~size:`icon ~width:48 ~height:48
+                ~label:tag_label ~accessibility_identifier:"button.outliner.selection.tag"
+                ~on_press:(fun _ -> open_picker ()) [];
+              toolbar_button model_source (`app "toolbar-outdent") "Outdent"
+                "button.outliner.selection.outdent" "outdent" send;
+              toolbar_button model_source (`app "toolbar-indent") "Indent"
+                "button.outliner.selection.indent" "indent" send;
+              toolbar_button model_source (`app "toolbar-delete") "Delete"
+                "button.outliner.selection.delete" "delete" send;
+              toolbar_button model_source (`app "toolbar-copy-reference") "Copy reference"
+                "button.outliner.selection.copyReference" "copyReference"
+                send;
+              toolbar_button model_source (`app "toolbar-copy-url") "Copy URL"
+                "button.outliner.selection.copyURL" "copyURL" send;
+              toolbar_button model_source (`app "toolbar-unselect") "Unselect"
+                "button.outliner.selection.unselect" "unselect" send;
+            ];
+        ]
+    else
+      let apple_button icon label identifier action : t =
+        View_base.with_int_prop_signal WidthValue
+          (Signal.map (fun (current : Model.logseq_model) ->
+            if current.viewport_width >= Model.wide_content_breakpoint then 58
+            else if current.viewport_width >= 390 then 50 else 46) model_source)
+          (button ~icon ~variant:`ghost ~height:46
+          ~icon_placement:`top ~label
+          ~accessibility_identifier:identifier
           ~on_press:(fun _ ->
-            ignore
-              (send (Model.PerformOutlinerToolbarAction "unselect")))
-          ~text:(View_base.tr (Signal.sample model_source) "Unselect") [];
-      ]
+            ignore (send (Model.PerformOutlinerToolbarAction action)))
+          ~text:label [])
+      in
+      let apple_tag_button =
+        View_base.with_int_prop_signal WidthValue
+          (Signal.map (fun (current : Model.logseq_model) ->
+              if current.viewport_width >= Model.wide_content_breakpoint then 58
+              else if current.viewport_width >= 390 then 50 else 46) model_source)
+          (button ~icon:(`app "toolbar-tag") ~variant:`ghost ~height:46
+            ~icon_placement:`top ~label:tag_label
+            ~accessibility_identifier:"button.outliner.selection.tag"
+            ~on_press:(fun _ -> open_picker ()) ~text:tag_label [])
+      in
+      toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
+           ~accessibility_identifier:"toolbar.outliner.selection"
+           ~style_class:"scroll-leading"
+           ~toolbar_gap:2 ~placement:"bottom"
+        [
+          apple_button (`app "toolbar-copy") "Copy"
+            "button.outliner.selection.copy" "copy";
+          apple_tag_button;
+          apple_button (`app "toolbar-outdent") "Outdent"
+            "button.outliner.selection.outdent" "outdent";
+          apple_button (`app "toolbar-indent") "Indent"
+            "button.outliner.selection.indent" "indent";
+          apple_button (`app "toolbar-delete") "Delete"
+            "button.outliner.selection.delete" "delete";
+          apple_button (`app "toolbar-copy-reference") "Copy reference"
+            "button.outliner.selection.copyReference" "copyReference";
+          apple_button (`app "toolbar-copy-url") "Copy URL"
+            "button.outliner.selection.copyURL" "copyURL";
+          button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:52
+            ~height:46 ~icon_placement:`top ~label:(View_base.tr (Signal.sample model_source) "Unselect")
+            ~accessibility_identifier:"button.outliner.selection.unselect"
+            ~on_press:(fun _ ->
+              ignore
+                (send (Model.PerformOutlinerToolbarAction "unselect")))
+            ~text:(View_base.tr (Signal.sample model_source) "Unselect") [];
+        ]
+  in
+  stack [
+    selection_toolbar;
+    reactive render_tag_picker (Signal.value picker);
+  ]
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     ~node_labels candidate_source send : t =
