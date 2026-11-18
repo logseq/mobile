@@ -276,6 +276,154 @@ let tags_are_managed_together_in_set_tags () = R.with_runtime (fun session runti
     check ~msg:"deselecting removes the tag from the submitted selection"
       (not (List.mem (`String person) (items "selectedValues" payload)))))
 
+let selection_toolbar_adds_tags_to_all_selected_blocks_atomically () =
+  let run backend = R.with_runtime (fun session runtime conn ->
+    update runtime conn [
+      put Q.beta "block/tags" (D.Ref_to (ref_uuid Q.project));
+      put Q.alpha "block/tags" (D.Ref_to (D.Ident "logseq.class/Asset"));
+    ];
+    let asset_class = D.entid (Graph_runtime.db runtime) "db/ident"
+      (D.Keyword "logseq.class/Asset") |> Option.get in
+    let asset_uuid = Graph_read.uuid_for_eid (Graph_runtime.db runtime) asset_class |> Option.get in
+    open_node session Q.page;
+    let response = Rpc_session.snapshot_visible session in
+    let selected_blocks = [Q.alpha; Q.beta] in
+    let projection = match Response_snapshot.decode_response response with
+      | Ok projection -> {projection with
+        Model.projection_outliner_selected_block_ids = selected_blocks;
+        node_routes = List.map (fun (route : Model.node_projection) ->
+          {route with Model.node_outliner_selected_block_ids = selected_blocks}) projection.node_routes}
+      | Error message -> fail message in
+    let title db uuid = match Graph_read.value db
+      (D.entid db "block/uuid" (D.Uuid uuid) |> Option.get) "block/title" with
+      | Some (D.String title) -> title | _ -> "" in
+    let tags db uuid =
+      let owner = D.entid db "block/uuid" (D.Uuid uuid) |> Option.get in
+      Graph_read.ref_eids db owner "block/tags"
+      |> List.filter_map (Graph_read.uuid_for_eid db) |> List.sort String.compare in
+    let original_titles = List.map (fun uuid -> uuid, title (Graph_runtime.db runtime) uuid)
+      [Q.alpha; Q.beta; R.gamma; Q.page] in
+    let original_gamma_tags = tags (Graph_runtime.db runtime) R.gamma in
+    Q.with_ui backend response (fun app ->
+      App_test.send app (Model.ApplyCoreSnapshot projection);
+      App_test.flush app;
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id =
+        let node = find id in
+        check ~msg:("Missing action: " ^ id) (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node);
+        App_test.flush app in
+      let picker_id () =
+        "selection.tags." ^ Q.alpha ^ "." ^ Q.beta ^ "."
+        ^ string_of_int (App.model app).next_effect_id in
+      let open_picker () =
+        let id = picker_id () in
+        click "button.outliner.selection.tag";
+        id in
+      let load_candidates () =
+        let id, key, payload = List.find_map (function
+          | Model.LoadPropertyValuesEffect (id, key, payload) -> Some (id, key, payload)
+          | _ -> None) (App.model app).pending_effects |> Option.get in
+        let request = J.from_string payload in
+        check_eq (member "ownerUuid" request) (`String Q.alpha);
+        check_eq (member "attr" request) (`String "block/tags");
+        check_eq (member "graphId" request) (`String (Option.get (App.model app).selected_graph_id));
+        App_test.send app (Model.DequeueEffect id);
+        let loaded_response = Core_effect_test.execute session "load-property-values" ["text", `String payload] in
+        check_eq (member "ok" loaded_response) (`Bool true);
+        let loaded = member "propertyValues" loaded_response in
+        let column = member "column" loaded in
+        check ~msg:"the owner's structural Asset tag is not an assignable candidate"
+          (not (List.exists (fun choice -> member "match" choice = `List [`String asset_uuid])
+            (items "filterValues" column)));
+        App_test.send app (Model.ReceivePropertyValues (key, J.to_string (member "column" loaded)));
+        App_test.send app (Model.ResolveEffect (id, true, J.to_string loaded_response));
+        App_test.flush app in
+      let add_new_tag id title =
+        let field = find ("view.edit.value." ^ id) in
+        check ~msg:"selection tag picker exposes its deferred value editor" (field <> -1);
+        App_test.dispatch app (Lui_protocol.TextChanged (field, title));
+        App_test.flush app;
+        click ("view.edit.create." ^ id);
+        click ("view.edit.save." ^ id) in
+      let pending_property () = List.find_map (function
+        | Model.NodePropertyEffect (id, view, payload) -> Some (id, view, payload)
+        | _ -> None) (App.model app).pending_effects |> Option.get in
+      let dispatch_property expected error_message =
+        let id, view, payload = pending_property () in
+        App_test.send app (Model.DequeueEffect id);
+        let result = Rpc_test.dispatch_json session "nodeProperty" payload in
+        check_eq (member "ok" result) expected;
+        App_test.send app (Model.ResolveEffect (id, expected = `Bool true,
+          if expected = `Bool true then J.to_string result else error_message));
+        App_test.flush app;
+        view, J.from_string payload, result in
+      let graph_id = Option.get (App.model app).selected_graph_id in
+      check (find "button.outliner.selection.tag" <> -1);
+      let first_picker_id = open_picker () in
+      load_candidates ();
+      add_new_tag first_picker_id "Bulk tag";
+      let before_operations = Graph_runtime.pending_operations runtime in
+      let view, payload, result = dispatch_property (`Bool true) "" in
+      check_eq (member "action" payload) (`String "addTags");
+      check_eq (member "graphId" payload) (`String graph_id);
+      check_eq (member "blockUuids" payload) (`List [`String Q.alpha; `String Q.beta]);
+      check_eq (member "blockUuid" payload) `Null;
+      check_eq (items "newValues" payload) [`String "Bulk tag"];
+      check_eq (member "ok" result) (`Bool true);
+      check_eq ~msg:"one batch is staged as one atomic pending operation"
+        (List.length (Graph_runtime.pending_operations runtime) - List.length before_operations) 1;
+      check_eq ~msg:"successful feedback closes the picker" (find ("view.edit.save." ^ first_picker_id)) (-1);
+      check ~msg:"successful feedback is associated with the picker"
+        (List.exists (fun (key, _, error) -> key = view && error = None)
+          (App.model app).result_view_feedback);
+      let db = Graph_runtime.db runtime in
+      let new_tag = Graph_read.unique_named_uuid true db "Bulk tag" |> Option.get in
+      check_eq ~msg:"existing tags and the Asset owner's structural type remain assigned"
+        (tags db Q.alpha) (List.sort String.compare [Q.project; new_tag; asset_uuid]);
+      check_eq ~msg:"existing tags remain assigned"
+        (tags db Q.beta) (List.sort String.compare [Q.project; new_tag]);
+      check_eq ~msg:"the unselected block is not tagged" (tags db R.gamma) original_gamma_tags;
+      check_eq ~msg:"the active page is not tagged" (tags db Q.page) [];
+      List.iter (fun (uuid, original) -> check_eq (title db uuid) original) original_titles;
+      let failed_picker_id = open_picker () in
+      load_candidates ();
+      add_new_tag failed_picker_id "#Invalid";
+      let pending_before_error = Graph_runtime.pending_operations runtime in
+      let error_view, _, error_response = dispatch_property (`Bool false) "Enter a valid tag name" in
+      check_eq (member "ok" error_response) (`Bool false);
+      check_eq ~msg:"failure feedback keeps the picker open" (find ("view.edit.save." ^ failed_picker_id) <> -1) true;
+      check ~msg:"failure feedback is rendered in the picker" (find ("view.edit.error." ^ failed_picker_id) <> -1);
+      check ~msg:"failure feedback is attached to the picker"
+        (List.exists (fun (key, _, error) -> key = error_view && Option.is_some error)
+          (App.model app).result_view_feedback);
+      check_eq (Graph_runtime.pending_operations runtime) pending_before_error;
+      click ("view.edit.cancel." ^ failed_picker_id);
+      check_eq ~msg:"Cancel does not submit a mutation"
+        (List.exists (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects) false;
+      update runtime conn [put Q.page "logseq.property/built-in?" (D.Bool true)];
+      let before_invalid_batch = Graph_runtime.pending_operations runtime in
+      let batch targets selected_values new_values = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+        "action", `String "addTags";
+        "blockUuids", `List (List.map (fun uuid -> `String uuid) targets);
+        "selectedValues", `List (List.map (fun uuid -> `String uuid) selected_values);
+        "newValues", `List (List.map (fun value -> `String value) new_values)])) in
+      let empty = batch [Q.alpha; Q.beta] [] [] in
+      check_eq ~msg:"an empty add-only batch is rejected" (member "ok" empty) (`Bool false);
+      let structural = batch [Q.alpha; Q.beta] [asset_uuid] [] in
+      check_eq ~msg:"batch addTags rejects a structural Asset class" (member "ok" structural) (`Bool false);
+      let structural_by_name = batch [Q.alpha; Q.beta] [] ["Asset"] in
+      check_eq ~msg:"batch addTags does not resolve a structural class by title" (member "ok" structural_by_name) (`Bool false);
+      let rejected = batch [Q.alpha; Q.page] [] ["Do not create"] in
+      check_eq ~msg:"all targets are validated before creating tags" (member "ok" rejected) (`Bool false);
+      check_eq (Graph_runtime.pending_operations runtime) before_invalid_batch;
+      check_eq ~msg:"rejected structural tags never reach the ordinary block"
+        (tags (Graph_runtime.db runtime) Q.beta) (List.sort String.compare [Q.project; new_tag]);
+      check_eq ~msg:"an invalid target cannot leave a partially-created tag"
+        (Graph_read.unique_named_uuid true (Graph_runtime.db runtime) "Do not create") None)) in
+  List.iter run [App_test.ios_backend; App_test.kotlin_backend]
+
 let set_tags_replaces_assignments_and_preserves_structural_types () = R.with_runtime (fun session runtime conn ->
   update runtime conn (R.entity 220 person "Extra tag" @ [
     put person "block/tags" (D.Ref_to (D.Ident "logseq.class/Tag"));
@@ -411,6 +559,7 @@ let cases = [
   case "table property editors share node discovery and journal links" tables_share_node_candidates_and_date_navigation;
   case "creation and removal enforce type protections atomically" creation_and_removal_reject_protected_or_invalid_targets;
   case "tags are managed together in Set tags" tags_are_managed_together_in_set_tags;
+  case "selection toolbar adds tags to all selected blocks atomically" selection_toolbar_adds_tags_to_all_selected_blocks_atomically;
   case "Set tags replaces assignments and preserves structural types" set_tags_replaces_assignments_and_preserves_structural_types;
   case "built-in pages cannot Set tags" built_in_pages_cannot_set_tags;
   case "pasted page refs survive saving and subsequent paste" pasted_page_references_survive_followup_edits;

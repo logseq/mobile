@@ -559,6 +559,16 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
     `Assoc (("valuesDeferred", `Bool false) :: List.remove_assoc "valuesDeferred" (fields col)) else col in
   let column, loading, load_error = loaded_column context ~id:view.id ~owner ~mode:"property" ~feature:""
     (Signal.constant context.ui_scheduler column) model_source send in
+  let property_error model load_error =
+    let submit_error = List.find_opt (fun (key, _, _) -> key = view.id) model.Model.result_view_feedback in
+    let message = match submit_error with
+      | Some (_, _, Some message) -> Some (View_base.tr model message)
+      | _ when load_error <> "" -> Some load_error
+      | _ -> None in
+    match message with
+    | Some message -> text ~value:message ~foreground:"destructive" ~style_class:"footnote"
+        ~accessibility_identifier:("view.edit.error." ^ view.id) []
+    | None -> box [] in
   let options = own (Signal.map (fun col ->
     let choices = jlist (jfield "choices" col) in
     if closed then List.map (fun choice ->
@@ -658,6 +668,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
           ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]]);
 
       ]);
+    reactive property_error model_source load_error;
     (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 controls
      else toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" controls);
   ]) context parent

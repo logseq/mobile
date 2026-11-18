@@ -83,6 +83,9 @@ let attach db owner attr =
 let mutation db ~now ~fresh_uuid input =
   try
     let action = member "action" input in
+    let has_batch_owners = match input with
+      | `Assoc fields -> List.mem_assoc "blockUuids" fields
+      | _ -> false in
     if action = `String "remove" || action = `String "removeTag" then (
       let owner = required "blockUuid" input in
       let id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with
@@ -127,6 +130,58 @@ let mutation db ~now ~fresh_uuid input =
       Ok (Pending_ops.Atomic [
         Pending_ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected; value};
         Pending_ops.Set_key_value {key = "logseq.kv/latest-code-lang"; value}]))
+    else if action = `String "addTags" && has_batch_owners then (
+      let owners = match member "blockUuids" input with
+        | `List owners -> List.map (function
+          | `String uuid when uuid <> "" -> uuid
+          | _ -> invalid_arg "Choose blocks") owners
+        | _ -> invalid_arg "Choose blocks" in
+      let owners = List.sort_uniq String.compare owners in
+      if owners = [] then invalid_arg "Choose at least one block";
+      List.iter (fun owner ->
+        match Ds.entid db "block/uuid" (Ds.Uuid owner) with
+        | Some id when Node_title.can_edit db id -> ()
+        | Some _ -> invalid_arg "This object is read-only"
+        | None -> invalid_arg "Object no longer exists") owners;
+      let values name = match member name input with
+        | `Null -> []
+        | `List values -> List.map (function
+          | `String value -> value
+          | _ -> invalid_arg "Choose a tag") values
+        | _ -> invalid_arg "Choose a tag" in
+      let validate_tag uuid =
+        match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
+        | Some id when G.node_is_tag db uuid ->
+          if not (G.tag_available_for_completion db id) then
+            invalid_arg "This tag cannot be assigned"
+        | _ -> invalid_arg "The tag no longer exists" in
+      let selected_uuids = List.sort_uniq String.compare (values "selectedValues") in
+      List.iter validate_tag selected_uuids;
+      let new_titles = List.map Dev_query.Unicode.trim (values "newValues")
+        |> List.sort_uniq String.compare in
+      List.iter (fun title ->
+        if title = "" || String.contains title '#' || String.contains title '/'
+           || String.starts_with ~prefix:"[[" title
+        then invalid_arg "Enter a valid tag name") new_titles;
+      let new_tags = List.map (fun title ->
+        let existing = Ds.Db.datoms db Ds.Avet ~a:"block/title" ~v:(Ds.String title) ()
+          |> Seq.find_map (fun (d : Ds.datom) ->
+            if G.entity_is_instance_of db d.e "logseq.class/Tag"
+            then G.uuid_for_eid db d.e else None) in
+        match existing with
+        | Some uuid -> validate_tag uuid; uuid, None
+        | None ->
+          let uuid = fresh_uuid () in
+          uuid, Some (Pending_ops.Create_tag {uuid; title; created_at = now}))
+        new_titles in
+      let tag_uuids = List.sort_uniq String.compare
+        (selected_uuids @ List.map fst new_tags) in
+      if tag_uuids = [] then invalid_arg "Choose at least one tag";
+      let creates = List.filter_map snd new_tags in
+      let additions = List.concat_map (fun owner ->
+        List.map (fun tag_uuid -> Pending_ops.Add_tag {uuid = owner; tag_uuid}) tag_uuids)
+        owners in
+      Ok (Pending_ops.Atomic (creates @ additions)))
     else if action = `String "addTags" || action = `String "setTags" then (
       let owner = required "blockUuid" input in
       let owner_id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in

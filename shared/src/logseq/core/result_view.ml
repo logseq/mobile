@@ -633,6 +633,10 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
     else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
   let candidates = scoped_reference_values db p (assigned @ candidates) |> List.sort_uniq compare in
+  let candidates = if attr <> "block/tags" then candidates else
+    List.filter (fun value ->
+      Option.fold ~none:false ~some:(G.tag_available_for_completion db) (ref_id db value))
+      candidates in
   let filter_values = List.map (fun value -> `Assoc [
     "title", `String (property_display db p value); "value", plain value;
     "match", (match ref_id db value with Some id -> `List [`String (uuid db id)] | None -> `List [plain value])]) candidates in
