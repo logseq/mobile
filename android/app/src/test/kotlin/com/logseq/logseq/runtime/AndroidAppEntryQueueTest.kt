@@ -60,4 +60,25 @@ class AndroidAppEntryQueueTest {
             assertFalse("Activity cancellation is not an import error", errorReported)
         } finally { first.cancel(); second.cancel(); root.deleteRecursively() }
     }
+
+    @Test fun rejectedShareIsDiscardedSoLaterSharesStillArrive() = runBlocking {
+        val directory = kotlin.io.path.createTempDirectory("entry-rejected").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val delivered = mutableListOf<String?>()
+            val errors = mutableListOf<Throwable>()
+            val queue = AndroidAppEntryCoordinator(scope, {
+                if (it.text == "Rejected") throw AndroidAppEntryRejected("rejected")
+                delivered += it.text
+            }, { errors += it }, directory)
+            queue.publish(mapOf("kind" to "shared-text", "text" to "Rejected"))
+            queue.publish(mapOf("kind" to "shared-text", "text" to "Later"))
+            queue.markReady()
+            withTimeout(3_000) { while (delivered.isEmpty()) delay(10) }
+            assertEquals(listOf("Later"), delivered)
+            assertTrue(errors.single() is AndroidAppEntryRejected)
+            AndroidAppEntryCoordinator(scope, { fail("Rejected share replayed") }, {}, directory).markReady()
+            delay(100)
+        } finally { scope.cancel(); directory.deleteRecursively() }
+    }
 }

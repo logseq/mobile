@@ -726,8 +726,10 @@ internal class LogseqRuntime(
                     .toString()
             )
             AndroidAppEntryKind.SharedText, AndroidAppEntryKind.DeepLink -> applyAppEntryCoreRequest(entry.coreRequest())
-            AndroidAppEntryKind.SharedAsset ->
+            AndroidAppEntryKind.SharedAsset -> {
+                check(hasOpenGraph) { "Open a graph before adding a shared attachment" }
                 addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
+            }
         }
     }
 
@@ -752,7 +754,7 @@ internal class LogseqRuntime(
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
-            error("The native core rejected the Android app entry")
+            throw AndroidAppEntryRejected("The native core rejected the Android app entry")
         }
         applyCoreResponse(response)
         val result = decoded.optJSONObject("result")
