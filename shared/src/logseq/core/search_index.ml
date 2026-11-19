@@ -152,28 +152,46 @@ let private_search_node db eid =
 let page_title_matches ~limit db query =
   let query = Dev_query.Unicode.lowercase (String.trim query) in
   let cleaned_query = clean_str query in
-  if cleaned_query = "" || limit <= 0 then []
+  if cleaned_query = "" || limit <= 0
+     || Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()) then []
   else
     (* Page names come from the live graph even during an FTS index rebuild. *)
-    Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
-    |> Seq.filter_map (fun (datom : Ds.datom) ->
-      Option.bind (Graph.string_value (Some datom.v)) (fun name ->
-        let name = Dev_query.Unicode.lowercase name in
-        let score = fuzzy_score_cleaned cleaned_query (clean_str name) in
-        if score <= 0.0 || private_search_node db datom.e then None
-        else
-          let tier = if name = query then 0
-            else if String.starts_with ~prefix:query name then 1
-            else if String_kit.includes ~sub:query name then 2
-            else 3 in
-          Option.map (fun page -> tier, score, page)
-          (Graph.page_summary (fun title -> Ok title) db datom.e)))
-    |> List.of_seq
-    |> List.stable_sort (fun (tier_a, score_a, _) (tier_b, score_b, _) ->
-      let order = Int.compare tier_a tier_b in
-      if order <> 0 then order else Float.compare score_b score_a)
-    |> List.take limit
-    |> List.map (fun (_, _, page) -> page)
+    let seen = Hashtbl.create limit in
+    let page (datom : Ds.datom) =
+      if private_search_node db datom.e then None
+      else Option.bind (Graph.page_summary (fun title -> Ok title) db datom.e)
+        (fun page ->
+          if Hashtbl.mem seen page.Cache_model.uuid then None
+          else (Hashtbl.add seen page.uuid (); Some page)) in
+    let collect count datoms =
+      datoms |> Seq.filter_map page |> Seq.take count |> List.of_seq in
+    let exact = collect limit (Ds.Db.datoms db Ds.Avet
+      ~a:"block/name" ~v:(Ds.String query) ()) in
+    let prefix = Ds.Db.seek_datoms db Ds.Avet ~a:"block/name" ~v:(Ds.String query) ()
+      |> Seq.take_while (fun (datom : Ds.datom) ->
+        datom.a = "block/name" && match datom.v with
+        | Ds.String name -> String.starts_with ~prefix:query name
+        | _ -> false)
+      |> collect (limit - List.length exact) in
+    let remaining = limit - List.length exact - List.length prefix in
+    let fallback count matches =
+      if count <= 0 then []
+      else Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
+        |> Seq.filter_map (fun (datom : Ds.datom) ->
+          Option.bind (Graph.string_value (Some datom.v)) (fun name ->
+            if not (matches name) then None
+            else
+              let score = fuzzy_score_cleaned cleaned_query (clean_str name) in
+              if score <= 0.0 then None
+              else Option.map (fun page -> score, page) (page datom)))
+        |> Seq.take count |> List.of_seq
+        |> List.stable_sort (fun (a, _) (b, _) -> Float.compare b a)
+        |> List.map snd in
+    let substring = fallback remaining (fun name ->
+      not (String.starts_with ~prefix:query name) && String_kit.includes ~sub:query name) in
+    let fuzzy = fallback (remaining - List.length substring) (fun name ->
+      not (String_kit.includes ~sub:query name)) in
+    exact @ prefix @ substring @ fuzzy
 
 let row_of_eid db eid =
   let title_for_uuid uuid =

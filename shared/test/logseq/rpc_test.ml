@@ -1755,7 +1755,7 @@ let global_search_ranks_exact_tags_before_pagination () =
 let page_autocomplete_orders_name_match_tiers () =
   Search_index_test.with_index (fun index ->
     let conn = Search_index_test.seeded_conn () in
-    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"] in
+    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"; "testpa"] in
     let add = Search_index_test.add in
     List.iteri (fun i title ->
       let eid = 20 + i in
@@ -1763,25 +1763,52 @@ let page_autocomplete_orders_name_match_tiers () =
         add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
         add eid "block/name" (Ds.String (String.lowercase_ascii title));
         add eid "block/title" (Ds.String title)])) names;
-    let db = Ds.conn_db conn in
-    let session = configure_plain_session (Session.create_session {
-      Session.default_options with
-      graph_db = Some (fun () -> Some db);
-      graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
-      graph_search_page = Some (fun ~offset ~limit query ->
-        Search.search_hits_page ~offset ~limit index db query);
-    }) in
-    ignore (outliner_block_event session "tapBlock" "editing");
-    List.iter (fun (query, expected) ->
-      let candidates = outliner_event session (Json.to_string (`Assoc [
+    let block_uuid = "018f7850-0000-7da0-8b3f-0000000003e8" in
+    ignore (Ds.transact_conn conn [
+      add 1000 "block/uuid" (Ds.Uuid block_uuid);
+      add 1000 "block/title" (Ds.String "testpage block");
+      add 1000 "block/page" (Ds.Ref 1);
+      add 1000 "block/parent" (Ds.Ref 1)]);
+    Search.search_upsert index.path [block_uuid, "testpage block", Search_index_test.page_uuid];
+    let make_session () =
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      session in
+    let candidates session query =
+      outliner_event session (Json.to_string (`Assoc [
         "type", `String "textChanged"; "title", `String ("[[" ^ query);
         "caretUTF16Offset", `Int (2 + String.length query)]))
         |> json_items "outlinerAutocompleteCandidates" in
+    let session = make_session () in
+    List.iter (fun (query, expected) ->
       check_eq ~msg:("page match tiers for " ^ query)
-        (List.map (member "label") (List.take 4 candidates))
+        (List.map (member "label") (candidates session query))
         (List.map (fun s -> `String s) expected))
-      ["testpa", ["testpage"; "testpage notes"; "my testpage"; "Test page"];
-       "TESTPAGE", ["testpage"; "testpage notes"; "my testpage"; "Test page"]])
+      ["testpa", ["testpa"; "testpage"; "testpage notes"; "my testpage"; "Test page";
+                  "testpage block"; "New page: testpa"];
+       "TESTPAGE", ["testpage"; "testpage notes"; "my testpage"; "Test page";
+                    "testpage block"; "New page: TESTPAGE"]];
+    List.iter (fun limit ->
+      check_eq ~msg:"the caller's page limit is respected"
+        (List.length (Search.page_title_matches ~limit (Ds.conn_db conn) "testpa")) limit)
+      [0; 1; 2; 3];
+    List.iteri (fun i _ ->
+      let eid = 100 + i in
+      let title = Printf.sprintf "Test pa fuzzy %d" i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/title" (Ds.String title)])) (List.init 200 Fun.id);
+    check_eq ~msg:"fuzzy matches cannot displace exact or prefix matches at the limit"
+      (List.map (member "label") (List.take 3 (candidates (make_session ()) "testpa")))
+      [`String "testpa"; `String "testpage"; `String "testpage notes"])
 
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->

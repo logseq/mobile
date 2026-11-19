@@ -14,7 +14,7 @@ let schema =
         indexed = true;
         value_type = Some Ds.UuidType;
       } );
-    ("block/name", { one with Ds.value_type = Some Ds.StringType });
+    ("block/name", { one with Ds.value_type = Some Ds.StringType; indexed = true });
     ("block/title", { one with Ds.value_type = Some Ds.StringType });
     ("block/page", { one with Ds.value_type = Some Ds.RefType });
     ("block/parent", { one with Ds.value_type = Some Ds.RefType });
