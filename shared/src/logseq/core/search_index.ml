@@ -406,7 +406,7 @@ let page_title_matches ~limit db query =
         if !count = limit then worst_rank := Some (fst (Top.min_elt !best))) in
     (* Index sequences can be single-pass; retain each head until consumed. *)
     let cursor attr = ref ((Ds.Db.datoms db Ds.Aevt ~a:attr ()) ()) in
-    let titles = cursor "block/title" and journals = cursor "block/journal-day" in
+    let names = cursor "block/name" and journals = cursor "block/journal-day" in
     let rec at cursor eid =
       match !cursor with
       | Seq.Cons ((datom : Ds.datom), rest) when datom.e < eid -> cursor := rest (); at cursor eid
@@ -419,12 +419,8 @@ let page_title_matches ~limit db query =
         else loop (if query.[qi] = target.[si] then qi + 1 else qi) (si + 1) in
       loop 0 0 in
     let ascii_query = ascii cleaned_query in
-    Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
-    |> Seq.iter (fun (datom : Ds.datom) ->
-      let title = match Graph.int_value (at journals datom.e) with
-        | Some day when Journal.valid_day day -> Graph.entity_title (fun title -> Ok title) db datom.e
-        | _ -> Graph.string_value (at titles datom.e) in
-      match Graph.string_value (Some datom.v), title with
+    let score_page eid name title =
+      match Graph.string_value name, title with
       | Some name, Some title ->
         let score =
           if ascii_query then match completion_clean_ascii_str title with
@@ -433,10 +429,26 @@ let page_title_matches ~limit db query =
             | None -> completion_score_cleaned cleaned_query (completion_clean_str title)
           else completion_score_cleaned cleaned_query (completion_clean_str title) in
         if score > 0.0 then (
-          let rank = name = query, score, datom.e in
+          let rank = name = query, score, eid in
           if Option.fold ~none:true ~some:(fun worst -> compare_rank rank worst > 0) !worst_rank
-             && not (private_search_node db datom.e) then
-            Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db datom.e))
+             && not (private_search_node db eid) then
+            Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db eid))
+      | _ -> () in
+    Ds.Db.fold_datoms (fun () (datom : Ds.datom) ->
+      match at names datom.e with
+      | None -> ()
+      | Some _ as name ->
+        let title = match Graph.int_value (at journals datom.e) with
+          | Some day when Journal.valid_day day -> Graph.entity_title (fun title -> Ok title) db datom.e
+          | _ -> Graph.string_value (Some datom.v) in
+        score_page datom.e name title)
+      () db Ds.Aevt ~a:"block/title" ();
+    Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ()
+    |> Seq.iter (fun (datom : Ds.datom) ->
+      match Graph.int_value (Some datom.v) with
+      | Some day when Journal.valid_day day ->
+        score_page datom.e (Graph.value db datom.e "block/name")
+          (Graph.entity_title (fun title -> Ok title) db datom.e)
       | _ -> ());
     Top.elements !best |> List.rev_map snd
 
