@@ -5,8 +5,11 @@ import CoreText
 @testable import Logseq
 
 @MainActor private final class IconEffects: LGEffectExecuting {
+    var openedNode: String?
+
     func execute(_ effect: LGEffect) async -> LGEffectResolution {
-        LGEffectResolution(succeeded: true, message: "", output: .discard)
+        if effect.kind == "open-node" { openedNode = effect.text }
+        return LGEffectResolution(succeeded: true, message: "", output: .discard)
     }
 }
 
@@ -20,7 +23,8 @@ import CoreText
         guard CTFontGetGlyphsForCharacters(font as CTFont, &characters, &glyphs, characters.count), glyphs.allSatisfy({ $0 != 0 }) else {
             throw failure("The filled Tabler font must supply HeartFilled without colliding with the outline font")
         }
-        let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: IconEffects())
+        let effects = IconEffects()
+        let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
         func response(icons: Bool) throws -> String {
             let descriptors: [String: Any] = icons ? [
                 "page": ["type": "tabler-icon", "id": "Rocket", "color": "#fb434c"],
@@ -94,7 +98,7 @@ import CoreText
         let embedded: [String: Any] = ["ok": true, "result": ["selectedGraphId": "icons", "graphName": "Existing graph icons",
             "selectedPage": ["uuid": "page", "title": "Embedded objects"],
             "outlinerRows": [["depth": 0, "block": ["uuid": "embed", "title": "Embedded object", "pageId": "page",
-                "isEmbed": true, "listType": "number", "listNumber": "3."]]]]]
+                "isEmbed": true, "embedSourceUuid": "embed-source", "listType": "number", "listNumber": "3."]]]]]
         try runtime.applyCoreResponse(String(decoding: JSONSerialization.data(withJSONObject: embedded), as: UTF8.self))
         try await Task.sleep(for: .milliseconds(500))
         let arrow = try JSONDecoder().decode(NodeIconPayload.self, from: Data(#"{"type":"tabler-icon","id":"arrow-narrow-right"}"#.utf8))
@@ -105,6 +109,12 @@ import CoreText
             throw failure("Embedded objects must visibly use the master arrow glyph instead of a bullet or list number")
         }
         try screenshot("embedded-object-arrow.png")
+        bullet.sendActions(for: .touchUpInside)
+        await runtime.drainEffectsForTesting()
+        guard effects.openedNode == "embed-source" else {
+            throw failure("Tapping an embed arrow must open the source node")
+        }
+        print("PASS: tapping the native embed arrow opens the source node")
         print("PASS: existing graph icons and colors render in page, favorites, recents, native text and rich rows; removing icons resets reused rows")
     }
     static func failure(_ message: String) -> NSError {

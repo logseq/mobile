@@ -777,7 +777,9 @@ let embedded_queries_follow_live_source_and_links () =
   check ~msg:"interactive refresh includes transitive embedded query owners"
     (List.mem embedded owners && List.mem nested_embed owners);
   let hydrated = dispatch session "hydrateOutlinerRows" (Json.to_string (`List [`String nested_embed])) in
-  check_eq (row_ids (member "query" (List.hd (items "hydratedBlocks" hydrated)))) [beta];
+  let block = List.hd (items "hydratedBlocks" hydrated) in
+  check_eq (row_ids (member "query" block)) [beta];
+  check_eq (member "embedSourceUuid" block) (`String owner);
   set_db (Ds.db_with [put definition "block/title" (Ds.String "#Project")] db);
   check_eq (row_ids (q ())) [alpha];
   let missing = Ds.db_with [Ds.RetractEntity (ref_uuid definition)] db in

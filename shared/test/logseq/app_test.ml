@@ -447,6 +447,7 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
+    row_embed_source_uuid = None;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -2894,6 +2895,7 @@ let outline_row uuid title =
     row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
+    row_embed_source_uuid = None;
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;

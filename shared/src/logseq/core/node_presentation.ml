@@ -109,11 +109,11 @@ let decorate db =
         | node -> [node]) parsed in
       [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
     | _ -> parsed in
-  let rec source_title seen budget eid =
+  let rec embed_source seen budget eid =
     if budget <= 0 || List.mem eid seen then None
     else match Read.ref_eids db eid "block/link" with
-      | source :: _ -> source_title (eid :: seen) (budget - 1) source
-      | [] -> Read.string_value (Read.value db eid "block/title") in
+      | source :: _ -> embed_source (eid :: seen) (budget - 1) source
+      | [] -> Some eid in
   fun uuid encoded -> match Ds.entid db "block/uuid" (Ds.Uuid uuid), encoded with
     | Some eid, `Assoc fields ->
       let embedded = Read.ref_eids db eid "block/link" <> [] in
@@ -121,10 +121,15 @@ let decorate db =
         || Read.value db eid "logseq.property/heading" <> None
         || Read.value db eid "logseq.property.code/lang" <> None in
       let fields = if decorated then ("markup", M.to_yojson (markup [] 16 eid)) :: List.remove_assoc "markup" fields else fields in
-      let fields = if embedded then match source_title [] 16 eid with
-        | Some title -> ("sourceTitle", `String title) :: fields
+      let fields = if not embedded then fields else
+        match embed_source [] 16 eid with
         | None -> fields
-        else fields in
+        | Some source ->
+          let add_string key value fields =
+            Option.fold ~none:fields ~some:(fun text -> (key, `String text) :: fields) value in
+          fields
+          |> add_string "sourceTitle" (Read.string_value (Read.value db source "block/title"))
+          |> add_string "embedSourceUuid" (Read.uuid_for_eid db source) in
       let fields = match Pdf_annotation.reference db uuid with
         | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))

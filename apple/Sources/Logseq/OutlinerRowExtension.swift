@@ -48,6 +48,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
     }
     let uuid: String
+    let embedSourceUuid: String?
     let title: String
     let markup: [LogseqMarkupNode]
     let depth: Int
@@ -192,7 +193,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .foregroundStyle(bulletForeground)
                         .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 } else {
-                    Button { emit("open-node") } label: {
+                    Button { emit("open-node", uuid: row.embedSourceUuid) } label: {
                         if let number = row.listNumber {
                             Text("\(number).").font(.subheadline).frame(width: 24, height: 24)
                                 .accessibilityIdentifier("outliner.number." + row.uuid)

@@ -735,7 +735,12 @@ let command_output_has_native_presentation () = R.with_runtime (fun session runt
   check ~msg:"embedded nodes render their source content" (String_kit.includes ~sub:"Beta result" markup);
   check_eq ~msg:"rendered embed identity stays the wrapper UUID" (member "uuid" (block ())) (`String Q.alpha))
 
-let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ ->
+let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runtime conn ->
+  let child = "30000000-0000-4000-8000-000000000003" in
+  rebase runtime conn (R.entity 102 child "Source child" @ [
+    put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+    put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put child "block/order" (Ds.String "a0")]);
   ignore (run session "Number list"); save session;
   ignore (run session "Node embed"); ignore (choose session Q.beta);
   let response = snapshot session in
@@ -756,8 +761,34 @@ let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ 
       match App_test.extension_property app icon "payload" with
       | Some (Lui_protocol.StringValue raw) -> J.from_string raw
       | _ -> `Null) in
-    check_eq ~msg:"both platforms render master's arrow-narrow-right" (member "id" descriptor) (`String "arrow-narrow-right")))
-    [App_test.ios_backend, true; App_test.kotlin_backend, false])
+    check_eq ~msg:"both platforms render the embed arrow" (member "id" descriptor) (`String "arrow-narrow-right");
+    let open Lui_protocol in
+    let event = if ios then
+      let target = member "embedSourceUuid" (App_test.native_row_payload app row) in
+      check_eq ~msg:"the native bullet receives the source UUID" target (`String Q.beta);
+      ExtensionEvent (App_test.native_row app row, "outliner-block-row", "open-node",
+        String_map.singleton "uuid" (StringValue (text target)))
+    else
+      let bullet = App_test.descendant_with_identifier host row
+        ("button.outliner.zoom." ^ Q.alpha ^ ".Beta result") in
+      check ~msg:"the embed arrow is interactive" (bullet <> -1);
+      Press bullet in
+    App_test.dispatch app event;
+    App_test.flush app;
+    check_eq (App.model app).app_navigation_path [Model.NodeRoute Q.beta]))
+    [App_test.ios_backend, true; App_test.kotlin_backend, false];
+  let response = Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.beta])) in
+  let route = Rpc_test.first_node_route response in
+  let visible = List.map (fun row -> member "uuid" (member "block" row)) (items "outlinerRows" route) in
+  check_eq ~msg:"the source opens with its children" visible [`String Q.beta; `String child];
+  let response = event session "tapBlock" ["uuid", `String Q.beta] in
+  let editing = draft (Rpc_test.first_node_route response) in
+  check_eq (member "uuid" editing) (`String Q.beta);
+  check_eq (member "title" editing) (`String "Beta result");
+  ignore (type_at session "Edited source" 13);
+  save session;
+  check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Edited source"));
+  check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "")))
 
 let embedding_in_text_preserves_the_original_block () = R.with_runtime (fun session runtime _ ->
   ignore (start session "Keep this /");
@@ -1238,7 +1269,7 @@ let cases = [
   case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;
   case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
   case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;
-  case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;
+  case "embedded outliner bullets open the source" embedded_outliner_bullets_open_source;
   case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "unrelated edits do not create issue number tags" unrelated_edit_does_not_create_issue_number_tags;
