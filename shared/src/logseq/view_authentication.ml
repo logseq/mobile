@@ -55,7 +55,7 @@ let fields source send stage attributes choices =
         ~on_press:(action send (Auth_flow.ChooseMfa choice)) []) choices
   | SetupMfa -> []
   | VerifyMfa -> [text ~accessibility_identifier:"auth.setup-secret"
-      ~value_signal:(Signal.map (fun current -> (form current).setup_secret) source) []; code]
+      ~value:(reactive (fun current -> (form current).setup_secret) source) []; code]
 
 let theme_tokens ui_context =
   let open Lui_ui in
@@ -83,7 +83,7 @@ let sheet source send : t =
   let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
   fun context parent ->
   themed ~tokens:(theme_tokens context) (
-  sheet ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.title (form current))) source)
+  sheet ~title:(reactive (fun current -> tr source (Auth_flow.title (form current))) source)
     ~height:680 ~style_class:"navigation-content navigation-inline-title"
     ~detents_signal:(Signal.map (fun current -> match (form current).stage with
       | Auth_flow.Register | NewPassword -> "0.82,large"
@@ -97,17 +97,17 @@ let sheet source send : t =
           if_ ~test:(Signal.map (fun current -> match (form current).stage with
             | Auth_flow.Login | Register | ForgotPassword -> false | _ -> true) source)
             (text ~foreground:"muted-foreground" ~style_class:"footnote"
-              ~value_signal:(Signal.map (fun current -> tr source (Auth_flow.description (form current))) source) []);
-          dyn (fun (stage, attributes, choices) ->
+              ~value:(reactive (fun current -> tr source (Auth_flow.description (form current))) source) []);
+          reactive (fun (stage, attributes, choices) ->
             column ~gap:24 ~cross:`stretch (fields source send stage attributes choices))
             (Signal.map (fun current -> let t = form current in
               t.stage, List.map fst t.attributes, t.mfa_choices) source);
           if_ ~test:(Signal.map (fun current -> (form current).error <> None) source)
             (text ~accessibility_identifier:"auth.error" ~foreground:"destructive" ~style_class:"footnote"
-              ~value_signal:(Signal.map (fun current -> tr source (Option.value ~default:"" (form current).error)) source) []);
+              ~value:(reactive (fun current -> tr source (Option.value ~default:"" (form current).error)) source) []);
           if_ ~test:(Signal.map (fun current -> (form current).notice <> None) source)
             (text ~accessibility_identifier:"auth.notice" ~foreground:"muted-foreground" ~style_class:"footnote"
-              ~value_signal:(Signal.map (fun current -> tr source (Option.value ~default:"" (form current).notice)) source) []);
+              ~value:(reactive (fun current -> tr source (Option.value ~default:"" (form current).notice)) source) []);
           if_ ~test:busy (spinner ~accessibility_identifier:"auth.loading" []);
           if_ ~test:(Signal.map (fun current -> (form current).stage <> Auth_flow.SelectMfa) source)
             (row ~cross:`center ~corner_radius:28
@@ -116,13 +116,13 @@ let sheet source send : t =
                 ~accessibility_identifier:"button.auth.submit"
                 ?text_alignment:(if Lui_ui.host context = KotlinHost then None else Some `center)
                 ~disabled_signal:(Signal.map not can_submit)
-                ~text_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source)
+                ~text:(reactive (fun current -> tr source (Auth_flow.submit_label (form current))) source)
                 ~on_press:(action send Auth_flow.Submit) [
                   text ~grow:1.0 ~text_alignment:`center ~style_class:"headline"
                     ~foreground_signal:(Signal.map (fun enabled -> if enabled then "auth-action-text" else "auth-disabled-text") can_submit)
-                    ~value_signal:(Signal.map (fun current -> tr source (Auth_flow.submit_label (form current))) source) [];
+                    ~value:(reactive (fun current -> tr source (Auth_flow.submit_label (form current))) source) [];
                 ]]);
-          dyn (fun stage -> row ~main:`center ~cross:`center ~gap:8 (match stage with
+          reactive (fun stage -> row ~main:`center ~cross:`center ~gap:8 (match stage with
             | Auth_flow.Login -> [link "button.auth.create-account" "Sign up" (Auth_flow.Navigate Register);
                 text ~value:"·" ~foreground:"muted-foreground" [];
                 link "button.auth.forgot-password" "Forgot password?" (Auth_flow.Navigate ForgotPassword)]
@@ -133,8 +133,8 @@ let sheet source send : t =
         ];
       ];
       toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
-        spacer ~grow:1.0 [];
-        button ~icon:(`app "close") ~label:(tr source "Close") ~variant:`ghost
+        Lui_elements.toolbar_spacer ~grow:1.0 [];
+        Lui_elements.toolbar_icon_button ~icon:(`app "close") ~label:(tr source "Close") ~variant:`ghost
           ~style_class:"confirmation-action" ~min_height:44
           ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
           ~on_press:(action send Auth_flow.Cancel) [];

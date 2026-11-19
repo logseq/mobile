@@ -9739,6 +9739,38 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
 
+let typed_toolbars_keep_reactive_width_and_labels () =
+  let application = App.create (ios_backend ()) in
+  Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose application)) (fun () ->
+    start application;
+    let row = outline_row "block-a" "Block" in
+    let snapshot editing selected rows =
+      send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+        editing None [] selected rows false []);
+      flush application in
+    let renderer = Lui_app.runtime application in
+    let find identifier =
+      descendant_with_identifier renderer (Lui_app.root_node application) identifier in
+    snapshot None [row.row_uuid] [row];
+    List.iter (fun (viewport, width) ->
+      send application (Model.ApplyViewportWidth viewport);
+      flush application;
+      Alcotest.(check int) "typed selection actions keep responsive widths" width
+        (property_int renderer (find "button.outliner.selection.copy") Lui_protocol.WidthValue))
+      [375, 46; 393, 50; 768, 58; 375, 46];
+    let editing = Some {Model.editing_uuid = row.row_uuid; editing_title = row.row_title; caret_utf16_offset = 0} in
+    let done_status = Some {Model.uuid = "done"; ident = None; title = "Done";
+      icon_type = None; icon_id = None; icon_color = None} in
+    List.iter (fun status ->
+      snapshot editing [] [{row with row_status = status}];
+      check_eq ~msg:"typed editor actions retain their live accessibility label"
+        (property_string renderer (find "button.outliner.editor.task") Lui_protocol.AccessibilityLabel)
+        (View_base.outliner_editor_task_label (App.model application)))
+      [None; done_status; None];
+    snapshot None [] [];
+    check_eq ~msg:"empty selection removes the toolbar" (find "toolbar.outliner.selection") (-1);
+    check_eq ~msg:"ending editing removes the editor toolbar" (find "toolbar.outliner.editor") (-1))
+
 let parent_selection_highlights_visible_descendants () =
   List.iter (fun (ios, backend) ->
     let application = App.create (backend ()) in
@@ -11193,6 +11225,7 @@ let cases =
     case "existing-outliner-tags-remove-from-the-owning-node" existing_outliner_tag_menus_remove_from_the_owning_node;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
     case "parent selection highlights visible descendants" parent_selection_highlights_visible_descendants;
+    case "typed toolbars keep reactive width and labels" typed_toolbars_keep_reactive_width_and_labels;
     case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;

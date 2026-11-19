@@ -9,6 +9,6 @@ val tag_properties : Model.logseq_model Signal.signal -> string Signal.signal ->
 val rename_page : string -> (string * Yojson.Basic.t) option
 
 val with_add_property_picker : ?in_tag_properties:bool -> Model.logseq_model Signal.signal -> string Signal.signal ->
-  (Model.logseq_action -> bool) -> (Lui_elements.t -> Lui_elements.t -> Lui_elements.t) -> Lui_elements.t
+  (Model.logseq_action -> bool) -> (Lui_elements.t -> Lui_elements.dropdown_menu_item_el -> Lui_elements.t -> Lui_elements.t) -> Lui_elements.t
 
 val tag_picker : string -> (string * Yojson.Basic.t) option

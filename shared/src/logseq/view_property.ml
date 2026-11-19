@@ -8,7 +8,7 @@ let property_title current property = View_base.property_title current
   ~attr:(text (field "attr" property)) ~title:(text (field "title" property))
 let owner_uuid raw = text (field "ownerUuid" (decode raw))
 let has_tag_schema raw = field "classSchema" (decode raw) = `Bool true
-let local_input set = function Lui_protocol.TextChanged (_, value) -> set value | _ -> ()
+let local_input set value = set value
 let has_properties raw = let source = decode raw in
   list (field "properties" source) <> []
 let rename_page raw =
@@ -74,31 +74,36 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
       let title = String.trim query in
       title <> "" && not (List.exists (fun name -> List.exists (fun property -> text (field "title" property) = title)
         (list (field name json))) ["availableProperties"; "properties"; "schemaProperties"])) source (Signal.value search)) in
-    let action = if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true &&
-      (in_tag_properties || field "classSchema" json <> `Bool true)) source))
+    let can_add = own (Signal.map (fun json -> field "canAdd" json = `Bool true &&
+      (in_tag_properties || field "classSchema" json <> `Bool true)) source) in
+    let show_picker () = Signal.set search ""; Signal.set adding true in
+    let action = if_ ~test:can_add
       (menu_item ~text:(View_base.tr (Signal.sample model_source) "Add property") ~accessibility_identifier:add_id
-        ~on_press:(fun _ -> Signal.set search ""; Signal.set adding true) []) in
+        ~on_press:show_picker []) in
+    let menu_action = if_dropdown_menu_item ~test:can_add
+      (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Add property")
+        ~accessibility_identifier:add_id ~on_press:show_picker []) in
     let picker = if_ ~test:(Signal.value adding)
-      (sheet ~text:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+      (sheet ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
         Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
           search_field ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a property") ~label:(View_base.tr (Signal.sample model_source) "Search")
             ~accessibility_identifier:(add_id ^ ".search") ~on_input:(local_input (Signal.set search)) [];
-          list_section [keyed ~source:available ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
+          list_section [keyed_list_section_item ~source:available ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
             ~mount:(fun property_source -> let property = Signal.sample property_source in
               let attr = text (field "attr" property) in
-              list_item [button ~text:(property_title (Signal.sample model_source) property) ~variant:`ghost ~text_alignment:`start ~min_height:44
+              list_section_item [button ~text:(property_title (Signal.sample model_source) property) ~variant:`ghost ~text_alignment:`start ~min_height:44
                 ~accessibility_identifier:("property.add.option." ^ owner ^ "." ^ attr)
                 ~disabled_signal:(View_query.waiting model_source add_id)
                 ~on_press:(fun _ -> add ["action", `String "add"; "attr", `String attr]) []])];
           if_ ~test:can_create
-            (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~min_height:44
+            (list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~min_height:44
               ~accessibility_identifier:(add_id ^ ".create") ~disabled_signal:(View_query.waiting model_source add_id)
               ~on_press:(fun _ -> add ["action", `String "create"; "title", `String (String.trim (Signal.sample (Signal.value search)))]) []]]);
           ];
-        toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+        toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
           ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
-    (render action picker) context parent)) context parent
+    (render action menu_action picker) context parent)) context parent
 
 let tag_properties model_source raw_source send close : t =
  fun context parent ->
@@ -106,32 +111,32 @@ let tag_properties model_source raw_source send close : t =
   let source = own (Signal.map decode raw_source) in
   let owner = text (field "ownerUuid" (Signal.sample source)) in
   let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
-  (with_add_property_picker ~in_tag_properties:true model_source raw_source send (fun add picker ->
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Tag properties")
+  (with_add_property_picker ~in_tag_properties:true model_source raw_source send (fun add _ picker ->
+    sheet ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
       ~style_class:"navigation-list navigation-inline-title" ~detents:"large"
       ~accessibility_identifier:("sheet.tag-properties." ^ owner) ~on_dismiss:(fun _ -> close ()) [
       Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
-        list_section [keyed ~source:(own (Signal.map (fun json -> list (field "schemaProperties" json)) source))
+        list_section [keyed_list_section_item ~source:(own (Signal.map (fun json -> list (field "schemaProperties" json)) source))
           ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare ~mount:(fun property_source ->
             let attr = text (field "attr" (Signal.sample property_source)) in
             let id = "property.schema.remove." ^ owner ^ "." ^ attr in
-            list_item [row ~cross:`center [
-              Lui_elements.text ~value_signal:(own (Signal.map2 property_title model_source property_source))
+            list_section_item [row ~cross:`center [
+              Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
                 ~text_alignment:`start ~grow:1.0 ~min_height:44
                 ~accessibility_identifier:("property.schema." ^ owner ^ "." ^ attr) [];
               if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
                 (menu ~icon:(`app "more-horiz") ~label:(View_base.tr (Signal.sample model_source) "Actions")
                   ~accessibility_identifier:("property.schema.actions." ^ owner ^ "." ^ attr) [
-                  menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove") ~variant:`destructive
+                  dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove") ~variant:`destructive
                     ~accessibility_identifier:id
                     ~on_press:(fun _ -> ignore (send (Model.SubmitNodeProperty (id, J.to_string (`Assoc [
                       "blockUuid", `String owner; "graphId", `String graph; "action", `String "remove"; "attr", `String attr]))))) []])];
               ])];
         if_ ~test:(own (Signal.map (fun json -> field "canAdd" json = `Bool true) source))
-          (list_section [list_item [add]])];
+          (list_section [list_section_item [add]])];
       picker;
       toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [
-        button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
+        Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
           ~accessibility_identifier:("sheet.tag-properties.done." ^ owner) ~on_press:(fun _ -> close ()) []]
     ])) context parent
 
@@ -194,21 +199,21 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             | Some name -> icon ~name:(`app name) ~width:20 ~height:20 ~foreground:"muted-foreground"
                 ~tooltip:(property_title (Signal.sample model_source) first)
                 ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) []
-            | None -> Lui_elements.text ~value_signal:(own (Signal.map2 property_title model_source property_source))
+            | None -> Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
             ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:(if compact then 0.0 else 1.0)
-            ~text_signal:(own (Signal.map2 (fun current p -> let value = display_value p in
+            ~text:(reactive (own (Signal.map2 (fun current p -> let value = display_value p in
               if value = "" then View_base.tr current "Empty"
               else if field "kind" p = `String "datetime" && List.mem value ["Today"; "Tomorrow"]
-              then View_base.tr current value else value) model_source property_source))
+              then View_base.tr current value else value) model_source property_source)))
             ~label:(property_title (Signal.sample model_source) first)
             ~disabled:(reactive (fun property model -> field "editable" property <> `Bool true || List.exists (function
               | Model.NodePropertyEffect (_, key, _) -> key = id | _ -> false)
                 (model.Model.pending_effects @ model.in_flight_effects)) property_source model_source)
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
-          let node_value = dyn (fun property -> match list (field "references" property) with
+          let node_value = reactive (fun property -> match list (field "references" property) with
             | [] -> value
             | references ->
                 let values = List.mapi (fun index reference ->
@@ -230,17 +235,17 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             ~disabled_signal:(own (Signal.map2 (fun property model -> field "editable" property <> `Bool true || List.exists (function
               | Model.NodePropertyEffect (_, key, _) -> key = id | _ -> false) (model.Model.pending_effects @ model.in_flight_effects)) property_source model_source))
             ~label:(property_title (Signal.sample model_source) first) ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr)
-            ~on_toggle:(function Lui_protocol.ToggleChanged (_, value) ->
+            ~on_toggle:(fun value ->
               Signal.set checked value;
               submit ["attr", `String attr; "expected", field "raw" (Signal.sample property_source);
-                "value", `String (string_of_bool value)] | _ -> ()) [] in
+                "value", `String (string_of_bool value)]) [] in
           let fields children = if compact then row ~gap:6 ~cross:`center children
             else adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) children in
           (column ~gap:2 ~cross:(if compact then `start else `stretch) [
             fields [
               label;
-              dyn (fun text_layout -> if text_layout then
-                dyn (fun empty -> if empty then row [value] else box ~opacity:0.72 [
+              reactive (fun text_layout -> if text_layout then
+                reactive (fun empty -> if empty then row [value] else box ~opacity:0.72 [
                   View_query.block_values ~render_block owner (own (Signal.map (fun p ->
                     match list (field "blocks" p) with
                     | [] -> `List [`Assoc ["uuid", `String id; "title", field "text" p;
@@ -252,7 +257,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                 (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
             ];
             if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-              (dyn (function None -> box [] | Some property ->
+              (reactive (function None -> box [] | Some property ->
                 let open_nodes = List.map (fun reference ->
                   let uuid = text (field "uuid" reference) in
                   uuid, View_base.tr_named (Signal.sample model_source) "Open {1}" (text (field "title" reference)),
@@ -265,8 +270,8 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
       if_ ~test:(own (Signal.map (fun values -> List.length values > 3) all_properties))
         (button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start ~min_height:32 ~padding:0
           ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "chevron-up" else "chevron-down")) (Signal.value expanded)))
-          ~text_signal:(own (Signal.map (fun expanded -> View_base.tr (Signal.sample model_source)
-            (if expanded then "Collapse" else "Expand")) (Signal.value expanded)))
+          ~text:(reactive (own (Signal.map (fun expanded -> View_base.tr (Signal.sample model_source)
+            (if expanded then "Collapse" else "Expand")) (Signal.value expanded))))
           ~accessibility_identifier:("properties.expand." ^ owner)
           ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) []);
     ]))) context parent
