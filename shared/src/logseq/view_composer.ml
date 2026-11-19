@@ -1,26 +1,26 @@
 open Lui_elements
 
-let attachment_picker_items model_source context send =
+let attachment_picker_items item model_source context send =
   let items = [
-      menu_item ~icon:(`app "toolbar-attachment")
+      item ~icon:(`app "toolbar-attachment")
         ~accessibility_identifier:"button.attachment.files"
         ~text:(View_base.tr (Signal.sample model_source) "File")
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "files")))
         [];
-      menu_item ~icon:(`app "toolbar-camera")
+      item ~icon:(`app "toolbar-camera")
         ~accessibility_identifier:"button.attachment.camera"
         ~text:(View_base.tr (Signal.sample model_source) "Camera")
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "camera")))
         [];
-      menu_item ~icon:(`app "composer-photo")
+      item ~icon:(`app "composer-photo")
         ~accessibility_identifier:"button.attachment.photos"
         ~text:(View_base.tr (Signal.sample model_source) "Photo")
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "photos")))
         [];
-      menu_item ~icon:(`app "toolbar-audio")
+      item ~icon:(`app "toolbar-audio")
         ~accessibility_identifier:"button.attachment.audio"
         ~text:(View_base.tr (Signal.sample model_source) "Audio recording")
         ~on_press:(fun _ ->
@@ -31,13 +31,17 @@ let attachment_picker_items model_source context send =
 
 let composer_attachment_button model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
+    let item ~icon ~accessibility_identifier ~text ~on_press children =
+      dropdown_menu_item ~icon ~accessibility_identifier ~text ~on_press children in
     menu_trigger ~icon:(`app "composer-add") ~label:(View_base.tr (Signal.sample model_source) "Add attachment")
       ~accessibility_identifier:"button.attachment"
-      [dropdown_menu (attachment_picker_items model_source context send)]
+      (dropdown_menu (attachment_picker_items item model_source context send))
   else
-    button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
+    let item ~icon ~accessibility_identifier ~text ~on_press _ =
+      context_menu_item ~icon ~accessibility_identifier ~text ~on_press () in
+    icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:"button.attachment"
-      [context_menu (attachment_picker_items model_source context send)]
+      [context_menu (attachment_picker_items item model_source context send)]
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -62,7 +66,7 @@ let composer_asset_view model_source (context : Lui_ui.ui_context) asset_source 
         [
           row ~main:`end_ ~height:24
             [
-              button ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:24
+              icon_button ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:24
                 ~height:24 ~corner_radius:12 ~background:"muted-foreground"
                 ~foreground:"white" ~label:(View_base.tr (Signal.sample model_source) "Remove attachment")
                 ~accessibility_identifier:"composer.asset.remove"
@@ -77,13 +81,13 @@ let composer_asset_view model_source (context : Lui_ui.ui_context) asset_source 
         ];
     ]
 
-let task_status_row model_source status_source send : t =
+let task_status_row model_source status_source send =
   let status = Signal.sample status_source in
-  menu_item
-    ~text_signal:(reactive View_base.task_status_title status_source)
+  dropdown_menu_item
+    ~text:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
-    ~selected_signal:(Signal.map (fun (current : Model.logseq_model) ->
+    ~selected:(reactive (fun (current : Model.logseq_model) ->
       match current.selected_task_status with
       | Some selected -> selected.uuid = status.uuid
       | None -> false) model_source)
@@ -95,18 +99,43 @@ let task_status_row model_source status_source send : t =
               (Signal.sample status_source).uuid)))
     []
 
+let task_status_context_row model_source status_source send =
+  let status = Signal.sample status_source in
+  context_menu_item
+    ~text:(reactive View_base.task_status_title status_source)
+    ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
+    ~foreground:(View_base.task_status_foreground status)
+    ~selected:(reactive (fun (current : Model.logseq_model) ->
+      match current.selected_task_status with
+      | Some selected -> selected.uuid = status.uuid
+      | None -> false) model_source)
+    ~accessibility_identifier:(View_base.task_status_identifier status)
+    ~on_press:(fun () -> ignore (send (Model.ChooseTaskStatus (Signal.sample status_source).uuid))) ()
+
 let task_status_picker_items model_source send =
     [
-      keyed
-        ~source:(Signal.map View_base.model_task_statuses model_source)
+      keyed_dropdown_menu_item
+        ~source:(reactive View_base.model_task_statuses model_source)
         ~key:View_base.task_status_identifier ~cmp:compare
         ~mount:(fun status_source -> task_status_row model_source status_source send);
-      if_
-        ~test:(Signal.map View_base.task_status_selected_ model_source)
-        (menu_item ~accessibility_identifier:"button.task-status.clear"
-           ~text:(View_base.tr (Signal.sample model_source) "Clear task status")
-           ~on_press:(press send Model.ClearTaskStatus)
-           []);
+      if_dropdown_menu_item
+        ~test:(reactive View_base.task_status_selected_ model_source)
+        (dropdown_menu_item ~accessibility_identifier:"button.task-status.clear"
+          ~text:(View_base.tr (Signal.sample model_source) "Clear task status")
+          ~on_press:(press send Model.ClearTaskStatus) []);
+    ]
+
+let task_status_context_items model_source send =
+    [
+      keyed_context_menu_item
+        ~source:(reactive View_base.model_task_statuses model_source)
+        ~key:View_base.task_status_identifier ~cmp:compare
+        ~mount:(fun status_source -> task_status_context_row model_source status_source send);
+      if_context_menu_item
+        ~test:(reactive View_base.task_status_selected_ model_source)
+        (context_menu_item ~accessibility_identifier:"button.task-status.clear"
+          ~text:(View_base.tr (Signal.sample model_source) "Clear task status")
+          ~on_press:(press send Model.ClearTaskStatus) ());
     ]
 
 let composer_task_status_button (context : Lui_ui.ui_context) model_source send : t =
@@ -123,13 +152,13 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
     menu_trigger ~icon:(reactive icon model_source)
       ~foreground:(reactive foreground model_source) ~label:(View_base.tr (Signal.sample model_source) "Task status")
       ~accessibility_identifier:"button.task-status"
-      [dropdown_menu (task_status_picker_items model_source send)]
+      (dropdown_menu (task_status_picker_items model_source send))
   else
-    button ~icon_signal:(Signal.map icon model_source)
+    icon_button ~icon:(reactive icon model_source)
       ~variant:`ghost ~size:`icon ~width:32 ~height:44
       ~foreground_signal:(Signal.map foreground model_source) ~label:(View_base.tr (Signal.sample model_source) "Task status")
       ~accessibility_identifier:"button.task-status"
-      [context_menu (task_status_picker_items model_source send)]
+      [context_menu (task_status_context_items model_source send)]
 
 let with_press handler (elem : t) : t =
  fun context parent ->
@@ -142,12 +171,12 @@ let composer_send_button model_source context ?send_icon send_disabled on_send :
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
-    button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48 ~height:48
+    icon_button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48 ~height:48
       ~label:(View_base.tr (Signal.sample model_source) "Send")
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
   else
-    button ~icon:apple_icon ~variant:`ghost ~width:36 ~height:36
+    icon_button ~icon:apple_icon ~variant:`ghost ~width:36 ~height:36
       ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:(View_base.tr (Signal.sample model_source) "Send")
       ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
       ~on_press:on_send []
@@ -158,7 +187,7 @@ let composer_tag_chips model_source send : t =
       keyed ~source:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags) model_source)
         ~key:(fun (tag : Model.sidebar_page) -> tag.uuid) ~cmp:String.compare
         ~mount:(fun source -> let tag = Signal.sample source in
-          button ~text_signal:(Signal.map (fun (tag : Model.sidebar_page) -> "#" ^ tag.title) source)
+          button ~text:(reactive (fun (tag : Model.sidebar_page) -> "#" ^ tag.title) source)
             ~icon:(`app "close") ~icon_placement:`trailing ~variant:`secondary ~corner_radius:16
             ~style_class:"caption single-line" ~min_height:32 ~padding_vertical:0 ~padding_horizontal:10
             ~foreground:"muted-foreground" ~label:("Remove tag " ^ tag.title)
@@ -208,7 +237,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
     match on_press with
     | None -> box ~height ~accessibility_identifier []
     | Some handler ->
-      button ~variant:`ghost ~grow:1.0 ~height ~padding_horizontal:0
+      button ~text:"" ~variant:`ghost ~grow:1.0 ~height ~padding_horizontal:0
         ~label:(View_base.tr (Signal.sample model_source) "Focus capture") ~accessibility_identifier ~on_press:handler [] in
   let attachment_strip =
     match attachments with
@@ -283,7 +312,7 @@ let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     row ~grow:1.0 ~height:56 ~gap:0 ~cross:`center
       ~padding_horizontal:4 ~background:"surface-container-low" ~corner_radius:28
-      [ button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+      [ icon_button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
           ~width:48 ~height:48 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")
           ~accessibility_identifier:"button.composer.camera"
           ~on_press:(press send (Model.ChooseAttachment "camera")) [];
@@ -300,7 +329,7 @@ let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
     [
       with_press (press send Model.ExpandComposer)
         (box ~width:8 ~height:58 []);
-      button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+      icon_button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
         ~width:44 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")
         ~accessibility_identifier:"button.composer.camera"
         ~on_press:(press send (Model.ChooseAttachment "camera")) [];
@@ -335,7 +364,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              [
                stack [composer_attachment_button model_source context send];
                stack [composer_task_status_button context model_source send];
-               stack [button ~icon:(`app "toolbar-tag") ~variant:`ghost
+               stack [icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost
                  ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
                  ~label:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.composer.tags"
                  ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_loading) model_source)
@@ -357,9 +386,9 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
         (collapsed_composer model_source context send);
     ]
 
-let outliner_task_status_row row_source status_source send : t =
+let outliner_task_status_row row_source status_source send : dropdown_menu_item_el =
   let status = Signal.sample status_source in
-  menu_item
+  dropdown_menu_item
     ~text:(reactive View_base.task_status_title status_source)
     ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
@@ -376,3 +405,18 @@ let outliner_task_status_row row_source status_source send : t =
               (View_base.outliner_row_uuid (Signal.sample row_source),
                (Signal.sample status_source).uuid))))
     []
+
+let outliner_task_status_context_row row_source status_source send =
+  let status = Signal.sample status_source in
+  context_menu_item
+    ~text:(reactive View_base.task_status_title status_source)
+    ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
+    ~foreground:(View_base.task_status_foreground status)
+    ~selected:(reactive (fun (row : Model.outline_row) ->
+      Option.fold ~none:false
+        ~some:(fun (selected : Model.task_status) -> selected.uuid = status.uuid)
+        row.row_status) row_source)
+    ~accessibility_identifier:(View_base.outliner_task_status_option_identifier status)
+    ~on_press:(fun () -> ignore (send (Model.SetOutlinerTaskStatus
+      (View_base.outliner_row_uuid (Signal.sample row_source),
+       (Signal.sample status_source).uuid)))) ()

@@ -32,7 +32,7 @@ jobs:
   # — platform-independent — so vendor it once on Linux and share via cache.
   duniverse:
     name: Vendor duniverse
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libsdl3-dev libpango1.0-dev
 
       - name: Restore opam root
         id: opam-root
@@ -408,7 +408,7 @@ jobs:
   android-e2e:
     name: Android e2e
     needs: duniverse
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
@@ -427,7 +427,7 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libsdl3-dev libpango1.0-dev
 
       - name: Restore opam root
         id: opam-root

@@ -44,12 +44,32 @@ let sidebar_graph_menu_item model_source graph_source send : t =
          ignore (send (Model.SelectSidebarGraph (sample graph_source).id)))
        [])) context parent
 
-let sidebar_graph_menu_items model_source send =
+let sidebar_graph_menu_items keyed item model_source send =
   [ keyed
       ~source:(Signal.map View_base.model_graphs model_source)
       ~key:View_base.sidebar_graph_identifier ~cmp:compare
       ~mount:(fun graph_source ->
-        sidebar_graph_menu_item model_source graph_source send) ]
+        item model_source graph_source send) ]
+
+let sidebar_graph_context_item model_source graph_source send =
+  let graph = sample graph_source in
+  context_menu_item
+    ~icon:(reactive (fun model graph -> View_base.icon_of_wire_name (View_base.sidebar_graph_icon_name model graph)) model_source graph_source)
+    ~selected:(reactive View_base.sidebar_graph_selected_ model_source graph_source)
+    ~text:(reactive View_base.graph_title graph_source)
+    ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
+    ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
+    ~on_press:(fun () -> ignore (send (Model.SelectSidebarGraph (sample graph_source).id))) ()
+
+let sidebar_graph_dropdown_item model_source graph_source send =
+  let graph = sample graph_source in
+  dropdown_menu_item ~size:`sm
+    ~icon:(reactive (fun model graph -> View_base.icon_of_wire_name (View_base.sidebar_graph_icon_name model graph)) model_source graph_source)
+    ~selected:(reactive View_base.sidebar_graph_selected_ model_source graph_source)
+    ~text:(reactive View_base.graph_title graph_source)
+    ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
+    ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
+    ~on_press:(fun () -> ignore (send (Model.SelectSidebarGraph (sample graph_source).id))) []
 
 let sidebar_section_heading model_source title icon : t =
   column ~gap:0
@@ -94,12 +114,12 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
   else
     View_base.with_label "Switch graph"
       (button ~variant:`ghost ~min_height:44 ~grow:1.0
-      ~text_signal:(Signal.map View_base.graph_label model_source)
+      ~text:(reactive View_base.graph_label model_source)
       ~text_alignment:`start ~style_class:"semibold" ~foreground:"foreground"
       ~icon:(`app "chevron-down") ~icon_placement:`trailing
       ~accessibility_identifier:"button.graph-switch"
       [context_menu ~accessibility_identifier:"menu.graph-switch"
-         (sidebar_graph_menu_items model_source send)])
+         (sidebar_graph_menu_items keyed_context_menu_item sidebar_graph_context_item model_source send)])
 
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
@@ -152,7 +172,7 @@ let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
   let native_toolbar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
   let settings =
-    button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+    icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
       ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
       ~accessibility_identifier:"button.sidebar.settings"
       ~on_press:(press send Model.OpenSettings) [] in
@@ -166,11 +186,11 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               if_
                 ~test:(Signal.map (fun current -> Lui_ui.host context = KotlinHost
                   && View_base.model_graph_menu_open_ current) model_source)
-                (dropdown_menu ~anchor:`below ~anchor_alignment:`start
+                (dropdown_menu_view (dropdown_menu ~anchor:`below ~anchor_alignment:`start
                    ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
                    ~style_class:"anchored-popover" ~gap:0
                    ~on_dismiss:(press send Model.DismissGraphMenu)
-                   (sidebar_graph_menu_items model_source send));
+                   (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)));
             ];
           settings;
         ];

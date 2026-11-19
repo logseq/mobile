@@ -92,7 +92,7 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
        "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
       count offset source (Signal.value viewport)) ~track_visible_range:true
     ~on_visible_range:(function
-      | Lui_protocol.VisibleRange (_, first, last) when first >= 0 && last >= first ->
+      | Lui_elements.Range { first; last } when first >= 0 && last >= first ->
         Signal.set viewport (first, last); on_visible_range first last
       | _ -> ())
     [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
@@ -174,7 +174,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     (Lui_elements.list ~accessibility_identifier:identifier
       ~data_attrs_signal:metadata ~track_visible_range:true
       ~on_visible_range:(function
-        | Lui_protocol.VisibleRange (_, first, last) ->
+        | Lui_elements.Range { first; last } ->
           on_visible_range first last;
           let items, start, length = Signal.sample window in
           let count = Array.length items in

@@ -1648,6 +1648,26 @@ let kotlin_settings_use_full_width_material_controls () =
     ~msg:
       "Material preferences use the native list surface without an Apple card"
     (property renderer general_card Lui_protocol.BackgroundValue) None;
+  List.iter
+    (fun identifier ->
+      let heading = descendant_with_identifier renderer root identifier in
+      check_eq ~msg:(identifier ^ " keeps the Material primary ink")
+        (property_string renderer heading Lui_protocol.ForegroundValue)
+        "primary")
+    [
+      "label.settings.general";
+      "label.settings.editor";
+      "label.settings.sync-server";
+      "label.settings.advanced";
+      "label.settings.about";
+      "label.settings.community";
+    ];
+  let tabs = descendant_with_identifier renderer root "link.settings.tabs" in
+  List.iter
+    (fun padding ->
+      check_eq ~msg:"Tabs keeps native list padding like Theme and Language"
+        (property renderer tabs padding) None)
+    [Lui_protocol.PaddingValue; Lui_protocol.PaddingHorizontal];
   check_eq ~msg:"Settings actions use the Material tonal surface"
     (property_string renderer actions Lui_protocol.BackgroundValue)
     "surface-container-low";
@@ -9450,6 +9470,131 @@ let outliner_task_status_selection_uses_the_core_event_boundary () =
     chosen.pending_effects
     [ Model.SetOutlinerTaskStatusEffect (1, "block-a", done_status) ]
 
+let tweak_order_backend () =
+  let open Lui_protocol in
+  let descendants = Hashtbl.create 64 in
+  let tweaks = Hashtbl.create 16 in
+  let failures = ref [] in
+  let children id = Option.value ~default:[] (Hashtbl.find_opt descendants id) in
+  let unlink id =
+    Hashtbl.filter_map_inplace (fun _ values -> Some (List.filter ((<>) id) values)) descendants
+  in
+  let rec drop id =
+    List.iter drop (children id);
+    Hashtbl.remove descendants id;
+    Hashtbl.remove tweaks id
+  in
+  let rec validate id =
+    if Hashtbl.mem tweaks id then
+      match children id with
+      | [child] -> validate child
+      | values -> failures := (id, List.length values) :: !failures
+  in
+  let backend = { backend_profile = profile IOS SwiftUIHost;
+    apply_batch = (fun batch ->
+      List.iter (function
+        | CreateExtension (id, identifier, _) ->
+          if List.mem identifier ["liquid-glass"; "native-adaptive-insets";
+            "native-navigation-title"; "native-control-tint"] then
+            Hashtbl.replace tweaks id ()
+        | InsertChild (parent, child, index) ->
+          validate child;
+          let values = children parent in
+          Hashtbl.replace descendants parent
+            (List.filteri (fun i _ -> i < index) values @ [child]
+             @ List.filteri (fun i _ -> i >= index) values)
+        | RemoveChild (parent, child) ->
+          Hashtbl.replace descendants parent (List.filter ((<>) child) (children parent))
+        | DetachSubtree id -> unlink id; drop id
+        | DropNode id -> unlink id; Hashtbl.remove descendants id; Hashtbl.remove tweaks id
+        | _ -> ()) batch.ops;
+      true) } in
+  backend, failures
+
+let ios_tweak_mounts_keep_children_before_attachment () =
+  let backend, failures = tweak_order_backend () in
+  let application = App.create backend in
+  let assert_order stage =
+    flush application;
+    check_eq ~msg:(stage ^ " attaches only complete platform tweaks") !failures []
+  in
+  start application;
+  assert_order "signed out";
+  let row = outline_row "editing" "Draft" in
+  let todo = Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo" in
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "test-graph"; outliner_rows = [row]; task_statuses = [todo] } in
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "journals";
+  let editing = { Model.editing_uuid = "editing"; editing_title = "Draft"; caret_utf16_offset = 5 } in
+  let editing_projection = { projection with projection_outliner_editing = Some editing } in
+  send application (Model.ApplyCoreSnapshot editing_projection);
+  assert_order "editor";
+  let find_toolbar_control identifier =
+    descendant_with_identifier (Lui_app.runtime application)
+      (extension_node application "native-search-presentation") identifier
+  in
+  check ~msg:"editing mounts the toolbar"
+    (find_toolbar_control "button.outliner.editor.hideKeyboard" <> -1);
+  send application (Model.ChangeOutlinerText ("editing", "Draft text", 10));
+  assert_order "typing";
+  send application (Model.SetOutlinerTaskStatus ("editing", "todo"));
+  send application (Model.ApplyCoreSnapshot { editing_projection with
+    task_statuses = [todo]; outliner_rows = [{ row with row_status = Some todo }];
+    projection_outliner_editing = Some { editing with editing_title = "Draft text"; caret_utf16_offset = 10 } });
+  assert_order "Todo";
+  check_eq ~msg:"the toolbar reflects the changed task status"
+    (property_string (Lui_app.runtime application)
+       (find_toolbar_control "button.outliner.editor.task") Lui_protocol.AccessibilityLabel)
+    "Task: Todo";
+  send application (Model.PerformOutlinerToolbarAction "hideKeyboard");
+  let resolve_effects () =
+    List.iter (fun eff ->
+      let id = Model.effect_id eff in
+      send application (Model.DequeueEffect id);
+      send application (Model.ResolveEffect (id, true, "")))
+      (App.model application).pending_effects
+  in
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "hide keyboard";
+  check ~msg:"hide keyboard restores capture and search"
+    (descendant_with_identifier (Lui_app.runtime application)
+       (native_bottom_chrome (Lui_app.runtime application) application) "button.search" <> -1);
+  send application (Model.ApplyCoreSnapshot { projection with
+    projection_outliner_selected_block_ids = ["editing"] });
+  assert_order "selection toolbar";
+  send application (Model.PerformOutlinerToolbarAction "delete");
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "selection delete returns to capture";
+  send application Model.OpenSettings;
+  assert_order "settings";
+  send application (Model.ChooseSettingsLanguage "zh-CN");
+  assert_order "language change";
+  send application Model.DismissSettings;
+  assert_order "dismiss settings";
+  send application Model.OpenSearch;
+  send application (Model.RequestSearchNode "page");
+  resolve_effects ();
+  let route = { (node_projection "page" "page" "Page" [] []) with
+    node_outliner_rows = [row]; node_outliner_editing = Some editing } in
+  send application (Model.ApplyCoreSnapshot { projection with node_routes = [route];
+    projection_outliner_editing = Some editing });
+  assert_order "search editor";
+  check ~msg:"the search destination mounts its editor toolbar"
+    (find_toolbar_control "button.outliner.editor.hideKeyboard" <> -1);
+  send application (Model.PerformOutlinerToolbarAction "hideKeyboard");
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot { projection with
+    node_routes = [{ route with node_outliner_editing = None }] });
+  assert_order "hide search keyboard";
+  let invalid_backend, invalid = tweak_order_backend () in
+  ignore (invalid_backend.Lui_protocol.apply_batch { generation = 1; ops = [
+    Lui_protocol.CreateExtension (2, "liquid-glass", "");
+    Lui_protocol.InsertChild (1, 2, 0)] });
+  check_eq ~msg:"the ordering check rejects an incomplete tweak" !invalid [(2, 0)]
+
 let kotlin_outliner_markers_match_ios_visual_metrics () =
   let application = App.create (kotlin_backend ()) in
   let todo =
@@ -9738,6 +9883,38 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   check_eq ~msg:"selection toolbar actions cross the typed core boundary"
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
+
+let typed_toolbars_keep_reactive_width_and_labels () =
+  let application = App.create (ios_backend ()) in
+  Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose application)) (fun () ->
+    start application;
+    let row = outline_row "block-a" "Block" in
+    let snapshot editing selected rows =
+      send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+        editing None [] selected rows false []);
+      flush application in
+    let renderer = Lui_app.runtime application in
+    let find identifier =
+      descendant_with_identifier renderer (Lui_app.root_node application) identifier in
+    snapshot None [row.row_uuid] [row];
+    List.iter (fun (viewport, width) ->
+      send application (Model.ApplyViewportWidth viewport);
+      flush application;
+      Alcotest.(check int) "typed selection actions keep responsive widths" width
+        (property_int renderer (find "button.outliner.selection.copy") Lui_protocol.WidthValue))
+      [375, 46; 393, 50; 768, 58; 375, 46];
+    let editing = Some {Model.editing_uuid = row.row_uuid; editing_title = row.row_title; caret_utf16_offset = 0} in
+    let done_status = Some {Model.uuid = "done"; ident = None; title = "Done";
+      icon_type = None; icon_id = None; icon_color = None} in
+    List.iter (fun status ->
+      snapshot editing [] [{row with row_status = status}];
+      check_eq ~msg:"typed editor actions retain their live accessibility label"
+        (property_string renderer (find "button.outliner.editor.task") Lui_protocol.AccessibilityLabel)
+        (View_base.outliner_editor_task_label (App.model application)))
+      [None; done_status; None];
+    snapshot None [] [];
+    check_eq ~msg:"empty selection removes the toolbar" (find "toolbar.outliner.selection") (-1);
+    check_eq ~msg:"ending editing removes the editor toolbar" (find "toolbar.outliner.editor") (-1))
 
 let parent_selection_highlights_visible_descendants () =
   List.iter (fun (ios, backend) ->
@@ -11187,12 +11364,14 @@ let cases =
     case "native-toolbar-navigation-replay" native_toolbar_navigation_replay;
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
+    case "ios-tweak-mounts-keep-children-before-attachment" ios_tweak_mounts_keep_children_before_attachment;
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "existing-outliner-tags-remove-from-the-owning-node" existing_outliner_tag_menus_remove_from_the_owning_node;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
     case "parent selection highlights visible descendants" parent_selection_highlights_visible_descendants;
+    case "typed toolbars keep reactive width and labels" typed_toolbars_keep_reactive_width_and_labels;
     case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;
