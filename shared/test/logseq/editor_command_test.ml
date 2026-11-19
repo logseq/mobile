@@ -405,27 +405,67 @@ let switching_linked_rows_preserves_unsaved_content () = R.with_runtime (fun ses
 let templates_clone_without_mutating_the_source () = R.with_runtime (fun session runtime conn ->
   let child = "30000000-0000-4000-8000-000000000004" in
   let grandchild = "30000000-0000-4000-8000-000000000005" in
-  rebase runtime conn ([put Q.beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Template"))]
-    @ R.entity 103 child "Meeting <%current page%>"
+  let target = "30000000-0000-4000-8000-000000000006" in
+  rebase runtime conn (R.entity 105 target "" @ [
+      put target "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+      put target "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page)); put target "block/order" (Ds.String "a5");
+      put Q.beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Template"))]
+    @ R.entity 103 child "Meeting <%current page%> #Task"
     @ [put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
        put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta)); put child "block/order" (Ds.String "a0");
+       put child "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+       put child "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing"));
        put child "logseq.property/heading" (Ds.Int64 2L)]
     @ R.entity 104 grandchild "Nested note"
     @ [put grandchild "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
        put grandchild "block/parent" (Ds.Ref_to (Q.ref_uuid child)); put grandchild "block/order" (Ds.String "a0")]);
-  ignore (run session "Template");
+  ignore (event session "tapBlock" ["uuid", `String target]);
+  ignore (type_at session "/" 1);
+  ignore (command session "Template");
   ignore (event session "searchAutocomplete" ["query", `String "Beta"]);
   ignore (choose session Q.beta); save session;
-  let inserted = value runtime Q.alpha "block/title" in
+  let inserted = value runtime target "block/title" in
   check ~msg:"templates insert their children and resolve target-page variables"
     (match inserted with Some (Ds.String title) -> String_kit.starts_with ~prefix:"Meeting [[" title | _ -> false);
-  check_eq (value runtime Q.alpha "logseq.property/heading") (Some (Ds.Int64 2L));
-  let children = Graph_runtime.blocks_for_page runtime Q.page |> List.filter (fun (b : Cache_model.block) ->
-    b.parent_id = Some Q.alpha) in
+  check_eq (value runtime target "logseq.property/heading") (Some (Ds.Int64 2L));
+  let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+  let inserted = List.find (fun (b : Cache_model.block) -> b.uuid = target) blocks in
+  check_eq ~msg:"templates preserve task status alongside inline tags"
+    (Option.bind inserted.status (fun status -> status.Cache_model.ident)) (Some "logseq.property/status.doing");
+  let children = List.filter (fun (b : Cache_model.block) -> b.parent_id = Some target) blocks in
   check ~msg:"nested template children have new identities" (List.exists (fun (b : Cache_model.block) ->
     b.title = "Nested note" && b.uuid <> grandchild) children);
   check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Beta result"));
-  check_eq ~msg:"template application does not create a live link" (value runtime Q.alpha "block/link") None)
+  check_eq (value runtime target "block/link") None)
+
+let templates_apply_to_new_tags_and_resolve_missing_dates () = R.with_runtime (fun _ runtime conn ->
+  let source = "30000000-0000-4000-8000-000000000021" in
+  let item = "30000000-0000-4000-8000-000000000022" in
+  let existing = "30000000-0000-4000-8000-000000000023" in
+  let node n uuid title parent = R.entity n uuid title @
+    [put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid parent));
+     put uuid "block/page" (Ds.Ref_to (Q.ref_uuid Q.page)); put uuid "block/order" (Ds.String "a0")] in
+  rebase runtime conn (R.entity 121 source "Project template"
+    @ [put source "logseq.property/template-applied-to" (Ds.Ref_to (Q.ref_uuid Q.project))]
+    @ node 122 item "Follow up <%tomorrow%>" source
+    @ node 123 existing "Existing child" Q.beta);
+  let stage operation_id =
+    check_ok (Graph_runtime.stage runtime {Pending_ops.operation_id; base_t = 42; state = Pending_ops.Queued;
+      intent = Pending_ops.Add_tag {uuid = Q.beta; tag_uuid = Q.project}}) in
+  let following_seconds, _ = Unix.mktime (let now = Unix.localtime (Unix.gettimeofday ()) in
+    {now with tm_mday = now.tm_mday + 1}) in
+  let tomorrow = Cache_model.journal_day_for_ms (int_of_float (following_seconds *. 1000.)) in
+  stage "apply-tag-template";
+  stage "repeat-tag";
+  let children = Graph_runtime.blocks_for_page runtime Q.page
+    |> List.filter (fun (b : Cache_model.block) -> b.parent_id = Some Q.beta)
+    |> List.sort Outliner_state.compare_blocks in
+  let db = Graph_runtime.db runtime in
+  let tomorrow_uuid = Option.get (Graph_read.journal_page_uuid db tomorrow) in
+  check_eq (List.map (fun (block : Cache_model.block) -> block.title) children)
+    ["Follow up [[" ^ tomorrow_uuid ^ "]]"; "Existing child"];
+  let copied = List.hd children in
+  check_eq (List.map (fun (ref : Cache_model.entity_summary) -> ref.uuid) copied.references) [tomorrow_uuid])
 
 let typed_quote_marker_converts_only_ordinary_blocks () =
   R.with_runtime (fun session runtime _ ->
@@ -656,6 +696,12 @@ let calculator_last_tracks_successful_lines () = R.with_runtime (fun session _ _
 
 let command_output_has_native_presentation () = R.with_runtime (fun session runtime _ ->
   let block () = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" (snapshot session)) in
+  ignore (start session "## Title"); save session;
+  let heading level = Markup.to_yojson [Markup.Markup_emphasis (level, [Markup.Markup_text "Title"])] in
+  check_eq (member "markup" (block ())) (heading "heading-2");
+  check_eq (member "title" (block ())) (`String "## Title");
+  ignore (start session "## Title /"); ignore (command session "Heading 3"); save session;
+  check_eq (member "markup" (block ())) (heading "heading-3");
   ignore (run session "Heading 2"); save session;
   check ~msg:"heading formatting reaches the renderer"
     (String_kit.includes ~sub:"heading-2" (J.to_string (member "markup" (block ()))));
@@ -1216,6 +1262,7 @@ let cases = [
   case "linked blocks preserve source formatting" linked_blocks_preserve_source_formatting;
   case "linked content keeps outline boundaries" linked_content_keeps_outline_boundaries;
   case "templates clone without mutating the source" templates_clone_without_mutating_the_source;
+  case "templates apply once to new tags and resolve missing dates" templates_apply_to_new_tags_and_resolve_missing_dates;
   case "numbered lists toggle" numbered_lists_toggle_without_changing_source_text;
   case "shared panel for commands pages and tags" shared_panel_for_commands_pages_and_tags;
 ]

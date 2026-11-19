@@ -1220,7 +1220,9 @@ let ensure_journal session payload =
   | None -> Rpc.failure "invalid_params" "A journal date is required"
   | Some day when not (Journal.valid_day day) -> Rpc.failure "invalid_params" "The journal date is invalid"
   | Some day ->
-    let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
+    let existing = match (host session).Types.journal_page_id with
+      | Some find -> find day
+      | None -> Option.bind (query_db session) (fun db -> Graph_read.journal_page_uuid db day) in
     let result = match existing, projection_server_t session, (state session).config with
       | Some uuid, _, _ -> Ok uuid
       | None, Some base_t, Some _ ->

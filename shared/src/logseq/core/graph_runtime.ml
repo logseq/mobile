@@ -639,7 +639,16 @@ let stage runtime (operation : Ops.pending_operation) =
       let ( let* ) = Result.bind in
       let* normalized = Ops.normalize_operation before operation in
       let* operations = Projection.compile before normalized.intent in
-      let projected, tx, reversed = Journal_sync.capture ?creator:(runtime.current_creator ()) before operations in
+      let report = Ds.with_tx (Dev_sync.Sync_replay.display_db_from_server before) operations in
+      let now = int_of_float (Unix.gettimeofday () *. 1000.) in
+      let* template = Editor_command_effects.tag_template_intent report ~now ~fresh_uuid in
+      let* normalized, operations, report = match template with
+        | None -> Ok (normalized, operations, report)
+        | Some template ->
+          let* additions = Projection.compile report.db_after template in
+          Ok ({normalized with intent = Ops.Atomic [normalized.intent; template]},
+            operations @ additions, Journal_sync.extend_report report additions) in
+      let projected, tx, reversed = Journal_sync.capture_report ?creator:(runtime.current_creator ()) report in
       let local_properties = local_property_changes normalized.intent in
       let local_only = local_properties <> [] && tx = "[]" in
       if local_only then Graph_sqlite.store_local_properties runtime.path local_properties

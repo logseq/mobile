@@ -250,3 +250,10 @@ let to_ids resolve_ref resolve_tag title =
     else match reference.kind with
     | Page -> Option.map (fun uuid -> "[[" ^ uuid ^ "]]") (resolve_ref reference.name)
     | Tag -> Option.map (fun uuid -> "#[[" ^ uuid ^ "]]") (resolve_tag reference.name)) title
+
+let remap_page_ids map title =
+  rewrite (fun reference ->
+    match reference.kind with
+    | Page when is_uuid reference.name ->
+      Option.map (fun uuid -> "[[" ^ uuid ^ "]]") (map reference.name)
+    | _ -> None) title

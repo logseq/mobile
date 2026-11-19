@@ -194,6 +194,21 @@ let mixed_embeds_retain_surrounding_text () =
        "[{\"type\":\"text\",\"text\":\"Before \"},{\"type\":\"video\",\"url\":\"https://cdn.example.com/demo.mp4\"},{\"type\":\"text\",\"text\":\" after\"}]")
     (markup_json "Before {{video https://cdn.example.com/demo.mp4}} after")
 
+let markdown_headings_preserve_inline_markup_and_line_breaks () =
+  for level = 1 to 6 do
+    check_eq [Markup_emphasis ("heading-" ^ string_of_int level, [Markup_text "Title"])]
+      (parse_bare (String.make level '#' ^ " Title"))
+  done;
+  check_eq
+    [Markup_text "Before\n";
+     Markup_emphasis ("heading-2", [Markup_emphasis ("italic", [Markup_text "Title"]);
+       Markup_text " "; Markup_node_ref ("target", "Target")]);
+     Markup_text "\nAfter"]
+    (parse [summary "target" "Target"] [] "Before\n## *Title* [[target]] ##\nAfter");
+  List.iter (fun source -> check_eq ~msg:source [Markup_text source] (parse_bare source))
+    ["Inline ## Title"; "##Title"; "####### Title"; "    ## Indented"];
+  check_eq [Markup_code_block (None, "## Literal\n")] (parse_bare "```\n## Literal\n```")
+
 let tables_preserve_cells_and_surrounding_content () =
   let references = [summary "target" "Target"] in
   let expected = Yojson.Basic.from_string
@@ -229,5 +244,6 @@ let cases =
     case "block markup boundaries" block_markup_boundaries;
     case "playable and web embeds" playable_and_web_embeds;
     case "mixed embeds retain surrounding text" mixed_embeds_retain_surrounding_text;
+    case "Markdown headings preserve inline markup and line breaks" markdown_headings_preserve_inline_markup_and_line_breaks;
     case "tables preserve cells and surrounding content" tables_preserve_cells_and_surrounding_content;
   ]

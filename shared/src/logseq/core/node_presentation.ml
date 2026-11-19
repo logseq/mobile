@@ -103,7 +103,11 @@ let decorate db =
         | Some "quote" -> [M.Markup_quote (M.parse (summaries "block/refs") (summaries "block/tags") title)]
         | _ -> M.parse (summaries "block/refs") (summaries "block/tags") title) in
     match Read.int_value (Read.value db eid "logseq.property/heading") with
-    | Some level when level >= 1 && level <= 6 -> [M.Markup_emphasis ("heading-" ^ string_of_int level, parsed)]
+    | Some level when level >= 1 && level <= 6 ->
+      let content = List.concat_map (function
+        | M.Markup_emphasis (style, children) when String.starts_with ~prefix:"heading-" style -> children
+        | node -> [node]) parsed in
+      [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
     | _ -> parsed in
   let rec source_title seen budget eid =
     if budget <= 0 || List.mem eid seen then None

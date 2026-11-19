@@ -85,6 +85,78 @@ let all_journal_creation_paths_use_the_preference () = R.with_runtime (fun sessi
   check_eq ~msg:"automatic today creation uses the graph preference" (display_title (Graph_runtime.db restored) page)
     (Some (Printf.sprintf "%04d-%02d-%02d" (day / 10000) (day / 100 mod 100) (day mod 100))))
 
+let assigned_template_applies_only_when_journals_are_created () = R.with_runtime (fun session runtime conn ->
+  let ensure day = success (Rpc_test.dispatch_json session "ensureJournal" (string_of_int day)) in
+  let old_day = 20260603 and new_day = 20260604 and written_day = 20260605 and empty_day = 20260606 in
+  ensure old_day;
+  let old_page = Journal.page_uuid old_day in
+  let placeholder = List.hd (Graph_runtime.blocks_for_page runtime old_page) in
+  let template = "80000000-0000-4000-8000-000000000001" in
+  let first = "80000000-0000-4000-8000-000000000002" in
+  let second = "80000000-0000-4000-8000-000000000003" in
+  let child = "80000000-0000-4000-8000-000000000004" in
+  let persisted_page = Journal.page_uuid written_day in
+  let reference uuid = D.Ref_to (Q.ref_uuid uuid) in
+  let block n uuid title parent page order = R.entity n uuid title @
+    [Q.put uuid "block/parent" (reference parent); Q.put uuid "block/page" (reference page);
+     Q.put uuid "block/order" (D.String order)] in
+  Editor_command_test.rebase runtime conn
+    (R.entity 201 template "Journal template"
+     @ [Q.put template "block/tags" (D.Ref_to (D.Ident "logseq.class/Template"));
+        Q.put template "logseq.property/template-applied-to" (D.Ref_to (D.Ident "logseq.class/Journal"))]
+     @ block 202 first "## Plan <%current page%>" template template "a0"
+     @ block 203 second "Reflection" template template "a1"
+     @ block 204 child "Nested note" first template "a0"
+     @ [Q.put child "block/link" (reference second)]
+     @ R.entity 205 persisted_page "Jun 5th, 2026"
+     @ [Q.put persisted_page "block/name" (D.String "jun 5th, 2026");
+        Q.put persisted_page "block/journal-day" (D.Int64 (Int64.of_int written_day))]
+     @ block 206 "80000000-0000-4000-8000-000000000006" "Existing entry" persisted_page persisted_page "a0"
+     @ R.entity 207 (Journal.page_uuid empty_day) "Jun 6th, 2026"
+     @ [Q.put (Journal.page_uuid empty_day) "block/name" (D.String "jun 6th, 2026");
+        Q.put (Journal.page_uuid empty_day) "block/journal-day" (D.Int64 (Int64.of_int empty_day))]);
+  let assert_copied runtime day first_uuid =
+    let page = Journal.page_uuid day in
+    let blocks = Graph_runtime.blocks_for_page runtime page in
+    let root title = List.find (fun (b : Cache_model.block) -> b.title = title) blocks in
+    let second_block = root "Reflection" in
+    let first_block = root ("## Plan [[" ^ page ^ "]]") in
+    let nested_block = root "Nested note" in
+    check_eq (List.length blocks) 3;
+    check_eq first_block.uuid first_uuid;
+    check_eq nested_block.parent_id (Some first_uuid);
+    let db = Graph_runtime.db runtime in
+    let target uuid = Option.get (D.entid db "block/uuid" (D.Uuid uuid)) in
+    check_eq (Graph_read.ref_eids db (target first_uuid) "block/refs") [target page];
+    check_eq (Graph_read.ref_eids db (target first_uuid) "logseq.property/used-template") [target template];
+    check_eq (Graph_read.ref_eids db (target nested_block.uuid) "block/link") [target second_block.uuid] in
+  let desktop_first_uuid day =
+    Printf.sprintf "00000005-%04d-%04d-0000-000000000002" (day / 10000) (day mod 10000) in
+  ensure new_day;
+  assert_copied runtime new_day (desktop_first_uuid new_day);
+  let pending = Graph_runtime.pending_operations runtime in
+  ensure old_day;
+  check_eq (Graph_runtime.blocks_for_page runtime old_page) [placeholder];
+  ensure empty_day;
+  check_eq (Graph_runtime.blocks_for_page runtime (Journal.page_uuid empty_day)) [];
+  ensure new_day;
+  ensure written_day;
+  check_eq (Graph_runtime.pending_operations runtime) pending;
+  check_eq (List.map (fun (b : Cache_model.block) -> b.title)
+    (Graph_runtime.blocks_for_page runtime persisted_page)) ["Existing entry"];
+  let today = Cache_model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
+  let open_runtime () = Graph_runtime.create runtime.path 42 conn
+    {Graph_runtime.default_options with auto_create_today = true} in
+  let opened = open_runtime () in
+  assert_copied opened today (desktop_first_uuid today);
+  let count = List.length (Graph_runtime.pending_operations opened) in
+  let reopened = open_runtime () in
+  assert_copied reopened today (desktop_first_uuid today);
+  check_eq (List.length (Graph_runtime.pending_operations reopened)) count;
+  Composer_tag_test.sync_all reopened conn;
+  assert_copied reopened today (desktop_first_uuid today);
+  assert_copied reopened new_day (desktop_first_uuid new_day))
+
 let failed_storage_keeps_the_previous_graph_preference () = R.with_runtime (fun _ runtime _ ->
   let before = stored_format runtime in
   let session = Rpc_session.create_session {Rpc_session.default_options with
@@ -220,6 +292,7 @@ let cases = [
   case "properties and journal references share date format" property_values_and_reference_labels_share_the_format;
   case "invalid and stale date preferences never write" invalid_and_stale_changes_never_write;
   case "all journal creation paths use the chosen format" all_journal_creation_paths_use_the_preference;
+  case "assigned templates apply only when journals are created" assigned_template_applies_only_when_journals_are_created;
   case "failed storage preserves the graph preference" failed_storage_keeps_the_previous_graph_preference;
   case "native settings hide date format choices" settings_hide_date_format_choices;
 ]

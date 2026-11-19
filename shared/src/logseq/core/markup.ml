@@ -412,32 +412,61 @@ let parse_inline references tags source =
   | Ok nodes -> convert_nodes source references tags nodes
   | Error _ -> [ Markup_text source ]
 
-let parse_tables references tags source =
-  let rec has_table_row index line_start =
+let heading_prefix = Str.regexp "^ ? ? ?#+[ \t]+"
+let heading_suffix = Str.regexp "[ \t]+#+[ \t]*$"
+
+let parse_blocks references tags source =
+  let rec has_block_markup index line_start =
     if index = String.length source then false
     else match source.[index] with
       | '|' when line_start -> true
-      | ' ' | '\t' | '\026' | '\012' when line_start -> has_table_row (index + 1) true
-      | '\n' | '\r' -> has_table_row (index + 1) true
-      | _ -> has_table_row (index + 1) false in
-  if not (has_table_row 0 true) then parse_inline references tags source
+      | '#' when line_start ->
+        let rec end_of_hashes i =
+          if i < String.length source && source.[i] = '#' then end_of_hashes (i + 1) else i in
+        let finish = end_of_hashes index in
+        (finish - index <= 6 && finish < String.length source
+         && (source.[finish] = ' ' || source.[finish] = '\t'))
+        || has_block_markup finish false
+      | ' ' | '\t' | '\026' | '\012' when line_start -> has_block_markup (index + 1) true
+      | '\n' | '\r' -> has_block_markup (index + 1) true
+      | _ -> has_block_markup (index + 1) false in
+  if not (has_block_markup 0 true) then parse_inline references tags source
   else
-    let tables = Mldoc.Parser.parse config source |> List.filter_map (function
-      | Mldoc.Type.Table table, position -> Some (table, position)
-      | _ -> None) in
-    let inline start finish =
-      parse_inline references tags (String.sub source start (finish - start)) in
-    let rec collect offset reversed = function
-      | [] -> List.rev_append reversed (inline offset (String.length source))
-      | ((table : Mldoc.Type.table), (position : Mldoc.Pos.pos_meta)) :: rest ->
+    let blocks = Mldoc.Parser.parse config source |> List.filter_map (function
+      | Mldoc.Type.Table table, (position : Mldoc.Pos.pos_meta) ->
         let cell nodes = convert_nodes source references tags
           (List.map (fun node -> node, None) nodes) in
         let row cells = List.map cell cells in
         let header = Option.map row table.header in
         let rows = List.concat_map (List.map row) table.groups in
-        let reversed = List.rev_append (inline offset position.start_pos) reversed in
-        collect position.end_pos (Markup_table (header, rows) :: reversed) rest in
-    collect 0 [] tables
+        Some (position.start_pos, position.end_pos, Markup_table (header, rows))
+      | Mldoc.Type.Heading {size = Some level; unordered = false; _}, position
+        when level >= 1 && level <= 6 ->
+        let start = position.start_pos in
+        let stop = position.end_pos in
+        let rec line_end i =
+          if i > start && (source.[i - 1] = '\r' || source.[i - 1] = '\n')
+          then line_end (i - 1) else i in
+        let stop = line_end stop in
+        let line = String.sub source start (stop - start) in
+        if not (Str.string_match heading_prefix line 0) then None else
+        let content_start = Str.match_end () in
+        let content_end =
+          try Str.search_forward heading_suffix line (content_start - 1)
+          with Not_found -> String.length line in
+        let text = String.sub line content_start (max 0 (content_end - content_start)) |> S.trim in
+        Some (start, stop, Markup_emphasis ("heading-" ^ string_of_int level,
+          parse_inline references tags text))
+      | _ -> None) in
+    let inline start finish =
+      if start = finish then []
+      else parse_inline references tags (String.sub source start (finish - start)) in
+    let rec collect offset reversed = function
+      | [] -> List.rev_append reversed (inline offset (String.length source))
+      | (start, finish, node) :: rest ->
+        let reversed = List.rev_append (inline offset start) reversed in
+        collect finish (node :: reversed) rest in
+    collect 0 [] blocks
 
 let parse references tags source =
   if source = "" then []
@@ -453,7 +482,7 @@ let parse references tags source =
           Markup_quote
             (parse_inline references tags (S.trim (String.sub source 1 (String.length source - 1))));
         ]
-      else parse_tables references tags source
+      else parse_blocks references tags source
 
 let plain_text nodes =
   let result = Buffer.create 64 in
