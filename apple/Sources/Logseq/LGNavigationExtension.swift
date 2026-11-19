@@ -976,6 +976,7 @@ private struct LGNavigationContent: View {
                     let background = routeBackground
                     search.context.content(for: search.context.childIDs[1])
                         .environment(\.luiTextHighlightQuery, search.query)
+                        .environment(\.defaultMinListRowHeight, 0)
                         .transformEnvironment(\.luiSemanticColors) { colors in
                             colors["background"] = background
                             colors["surface"] = background
