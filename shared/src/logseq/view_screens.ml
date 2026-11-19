@@ -1018,9 +1018,11 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       ]
     else
       [
-        if_
-          ~test:(Signal.map View_base.main_screen_visible_ model_source)
-          (native_search_view ~base:(native_navigation_view context
+        keyed
+          ~source:(reactive (fun current ->
+            if View_base.main_screen_visible_ current then [()] else []) model_source)
+          ~key:Fun.id ~cmp:Unit.compare
+          ~mount:(fun _ -> native_search_view ~base:(native_navigation_view context
              (Signal.map (fun (current : Model.logseq_model) ->
                let base = if current.search_open then View_base.without_outliner_interaction current else current in
                { base with search_open = false; search_navigation_path = [] }) model_source) send)
