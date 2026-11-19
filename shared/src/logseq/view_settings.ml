@@ -569,7 +569,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
       [
         settings_appearance_control context model_source send;
         settings_language_control context model_source send;
-        list_item ~padding:0
+        list_item
           ~accessibility_identifier:"link.settings.tabs"
           ~on_press:(press send Model.OpenSettingsTabs)
           [

@@ -1648,6 +1648,26 @@ let kotlin_settings_use_full_width_material_controls () =
     ~msg:
       "Material preferences use the native list surface without an Apple card"
     (property renderer general_card Lui_protocol.BackgroundValue) None;
+  List.iter
+    (fun identifier ->
+      let heading = descendant_with_identifier renderer root identifier in
+      check_eq ~msg:(identifier ^ " keeps the Material primary ink")
+        (property_string renderer heading Lui_protocol.ForegroundValue)
+        "primary")
+    [
+      "label.settings.general";
+      "label.settings.editor";
+      "label.settings.sync-server";
+      "label.settings.advanced";
+      "label.settings.about";
+      "label.settings.community";
+    ];
+  let tabs = descendant_with_identifier renderer root "link.settings.tabs" in
+  List.iter
+    (fun padding ->
+      check_eq ~msg:"Tabs keeps native list padding like Theme and Language"
+        (property renderer tabs padding) None)
+    [Lui_protocol.PaddingValue; Lui_protocol.PaddingHorizontal];
   check_eq ~msg:"Settings actions use the Material tonal surface"
     (property_string renderer actions Lui_protocol.BackgroundValue)
     "surface-container-low";
