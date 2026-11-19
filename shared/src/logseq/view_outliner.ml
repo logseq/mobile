@@ -188,8 +188,12 @@ let outliner_tag model_source owner tag_source send : t =
            ~on_press:(fun _ -> ignore (send (remove_node_tag (Signal.sample model_source) owner tag.uuid))) ())]])
 
 let outliner_zoom_control (context : Lui_ui.ui_context) model_source
-    row_source send search_open : t =
+    row_source send : t =
   let current_row = Signal.sample row_source in
+  let on_press _ =
+    let row : Model.outline_row = Signal.sample row_source in
+    let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+    ignore (send (View_base.request_node_action (Signal.sample model_source) uuid)) in
   if Lui_ui.host context = KotlinHost then
     stack ~width:24 ~height:24
       [
@@ -218,15 +222,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
              ~accessibility_identifier_signal:
                (Signal.map View_base.outliner_row_zoom_identifier
                   row_source)
-             ~on_press:(fun _ ->
-               ignore
-                 (send
-                    (if search_open then
-                       Model.RequestSearchNode
-                         (Signal.sample row_source : Model.outline_row).row_uuid
-                     else
-                       Model.RequestAppNode
-                         (Signal.sample row_source : Model.outline_row).row_uuid)))
+             ~on_press
              []);
       ]
   else
@@ -237,15 +233,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
          ~width:24 ~height:24
          ~accessibility_identifier_signal:
            (Signal.map View_base.outliner_row_zoom_identifier row_source)
-         ~on_press:(fun _ ->
-           ignore
-             (send
-                (if search_open then
-                   Model.RequestSearchNode
-                     (Signal.sample row_source : Model.outline_row).row_uuid
-                 else
-                   Model.RequestAppNode
-                     (Signal.sample row_source : Model.outline_row).row_uuid)))
+         ~on_press
          [])
 
 let outliner_status_icon identifier test name row_source : t =
@@ -525,13 +513,12 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     ]
 
 let outliner_row_content context model_source retained_row_source
-    row_source send search_open : t =
+    row_source send : t =
   row ~gap:0 ~cross:`start ~padding_vertical:2
     [
       outliner_indent_view
         (Signal.map View_base.outliner_row_indent row_source);
-      outliner_zoom_control context model_source row_source send
-        search_open;
+      outliner_zoom_control context model_source row_source send;
       box ~width:2 [];
       outliner_row_main_content context model_source retained_row_source
         row_source send;
@@ -549,6 +536,7 @@ let native_outliner_row model_source retained_source row_source send : t =
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "embedSourceUuid", (match row.row_embed_source_uuid with Some uuid -> `String uuid | None -> `Null);
       "pdfAnnotation", metadata_member "pdfAnnotation" row;
       "listNumber", (match (if row.row_is_embed then None else row.row_list_number) with Some n -> `Int n | None -> `Null);
       "nodeIcon", (let icon = View_base.outliner_node_icon current row in
@@ -630,8 +618,7 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
           [
             outliner_indent_view
               (Signal.map View_base.outliner_row_indent row_source);
-            outliner_zoom_control context model_source row_source send
-              search_open;
+            outliner_zoom_control context model_source row_source send;
             box ~width:2 [];
             selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
               (View_base.with_label_signal
@@ -690,7 +677,7 @@ let outliner_row_body (context : Lui_ui.ui_context) model_source
             ~padding:0 ~corner_radius:10
             [
               outliner_row_content context model_source
-                retained_row_source row_source send search_open;
+                retained_row_source row_source send;
             ]))
 
 let outliner_text_leading context (row : Model.outline_row) =

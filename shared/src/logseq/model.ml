@@ -130,6 +130,7 @@ type outline_row =
   ; row_list_number : int option
   ; row_display_type : string option
   ; row_is_embed : bool
+  ; row_embed_source_uuid : string option
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option

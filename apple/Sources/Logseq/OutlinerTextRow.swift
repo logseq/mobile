@@ -363,7 +363,7 @@ struct OutlinerTextRow: UIViewRepresentable {
         emit?("edit", nil, ["caret-utf16-offset": .int(OutlinerTapCaret.sourceOffset(offset, title: row.title, nodes: row.markup))])
     }
     @objc private func edit() { emit?(row?.opensAsPage == true ? "open-node" : "edit", nil, [:]) }
-    @objc private func open() { emit?("open-node", nil, [:]) }
+    @objc private func open() { emit?("open-node", row?.embedSourceUuid, [:]) }
     @objc private func collapse() { emit?("collapse", nil, [:]) }
     @objc private func openTag(_ sender: UIButton) {
         guard let row, row.tags.indices.contains(sender.tag) else { return }
