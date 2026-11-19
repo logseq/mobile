@@ -364,6 +364,12 @@ let rec take_n n xs =
   if n <= 0 then []
   else match xs with [] -> [] | x :: rest -> x :: take_n (n - 1) rest
 
+let node_search_candidates (context : outliner_context) query =
+  let pages = match context.db with
+    | Some db -> summary_candidates (Search.page_title_matches ~limit:12 db query)
+    | None -> [] in
+  pages @ context.search_nodes query
+
 let autocomplete_candidates (context : outliner_context) request =
   let resolve (candidate : outliner_candidate) = match context.db with
     | Some db when List.exists Ref_text.is_uuid (Ref_text.page_names candidate.label) ->
@@ -413,7 +419,9 @@ let autocomplete_candidates (context : outliner_context) request =
     | Command | Picker _ -> []) in
   let fuzzy = request.kind = Tag && normalized <> "" in
   let seen = Hashtbl.create 32 in
-  let indexed = if request.kind = Node && query <> "" then List.map resolve (context.search_nodes query) else [] in
+  let indexed = if request.kind = Node && query <> "" then
+      List.map resolve (node_search_candidates context query)
+    else [] in
   let matches = indexed @
     List.filter
       (fun (candidate : outliner_candidate) ->
@@ -1371,7 +1379,7 @@ let choose_completion context (state : outliner_state) value =
   | Some editing, Some request
     when autocomplete_for editing.title editing.caret = Some request ->
     let context = if request.kind = Node && String_kit.trim request.query <> "" then
-        let pages = context.search_nodes (String_kit.trim request.query) @ context.pages in
+        let pages = node_search_candidates context (String_kit.trim request.query) @ context.pages in
         let label_values = candidate_label_values (pages @ context.tags) in
         { context with pages; label_values; dup_labels = duplicated_of label_values }
       else context in

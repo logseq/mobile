@@ -62,9 +62,7 @@ let str_len_distance left right =
   let shortest = min left right in
   if longest = 0.0 then 1.0 else 1.0 -. ((longest -. shortest) /. longest)
 
-let fuzzy_score query target =
-  let query = clean_str query in
-  let target = clean_str target in
+let fuzzy_score_cleaned query target =
   let rec loop query_index target_index mult acc =
     if query_index >= String.length query then
       acc
@@ -80,6 +78,8 @@ let fuzzy_score query target =
     else loop query_index (target_index + 1) 1 (acc -. 0.1)
   in
   loop 0 0 1 0.0
+
+let fuzzy_score query target = fuzzy_score_cleaned (clean_str query) (clean_str target)
 
 let fts_phrase_input input =
   "\"" ^ String_kit.replace input ~match_:"\"" ~replacement:"\"\"" ^ "\"*"
@@ -144,6 +144,30 @@ let create path =
   search_open path;
   { path }
 
+let private_search_node db eid =
+  (Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
+   && not (Graph.entity_is_instance_of db eid "logseq.class/Tag"))
+  || Option.is_some (Graph.value db eid "block/closed-value-property")
+
+let page_title_matches ~limit db query =
+  let query = Dev_query.Unicode.lowercase (String.trim query) in
+  let cleaned_query = clean_str query in
+  if cleaned_query = "" || limit <= 0 then []
+  else
+    (* Page names come from the live graph even during an FTS index rebuild. *)
+    Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
+    |> Seq.filter_map (fun (datom : Ds.datom) ->
+      Option.bind (Graph.string_value (Some datom.v)) (fun name ->
+        let score = fuzzy_score_cleaned cleaned_query (clean_str name) in
+        if score <= 0.0 || private_search_node db datom.e then None
+        else Option.map (fun page -> name = query, score, page)
+          (Graph.page_summary (fun title -> Ok title) db datom.e)))
+    |> List.of_seq
+    |> List.stable_sort (fun (exact_a, score_a, _) (exact_b, score_b, _) ->
+      compare (exact_b, score_b) (exact_a, score_a))
+    |> List.take limit
+    |> List.map (fun (_, _, page) -> page)
+
 let row_of_eid db eid =
   let title_for_uuid uuid =
     match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
@@ -157,12 +181,7 @@ let row_of_eid db eid =
   | Some uuid ->
     (match Graph.entity_title (fun value -> Ok value) db eid with
      | Some title ->
-       let hidden =
-         (Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
-          && not (Graph.entity_is_instance_of db eid "logseq.class/Tag"))
-         || Option.is_some (Graph.value db eid "block/closed-value-property")
-         || Graph.page_is_hidden db eid
-       in
+       let hidden = private_search_node db eid || Graph.page_is_hidden db eid in
        if String.trim title <> "" && (not hidden) && utf8_length title <= 10000
        then
          let is_page =
@@ -277,7 +296,7 @@ let refresh index db =
 let query_rows index sql binds =
   try search_query index.path sql binds with Failure _ -> []
 
-let full_text_rows ~offset ~limit index query =
+let full_text_rows ?(prioritize_pages = false) ~offset ~limit index query =
   let query = String.trim query in
   let query = if String.starts_with ~prefix:"#" query && not (String.exists whitespace_char query)
     then String.sub query 1 (String.length query - 1) else query in
@@ -291,11 +310,20 @@ let full_text_rows ~offset ~limit index query =
           query ["\\"; "%"; "_"] in
         "title LIKE ? ESCAPE '\\'", "%" ^ escaped ^ "%"
       else "title MATCH ?", get_match_input query in
+    let order, rank_binds =
+      if prioritize_pages then
+        (* Rank page titles before LIMIT/OFFSET. Preserve the existing FTS
+           order within each group so later pages continue where earlier ones ended. *)
+        " ORDER BY CASE WHEN id <> page THEN 3 \
+         WHEN title = ? COLLATE NOCASE THEN 0 \
+         WHEN instr(lower(title), lower(?)) = 1 THEN 1 ELSE 2 END, rowid",
+        [Sqlite3.Data.TEXT query; Sqlite3.Data.TEXT query]
+      else "", [] in
     try Sql.with_search_db index.path (fun connection ->
       Sql.query connection
-        ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ " LIMIT ? OFFSET ?")
-        [Sqlite3.Data.TEXT input; Sqlite3.Data.INT (Int64.of_int limit);
-         Sqlite3.Data.INT (Int64.of_int (max 0 offset))]
+        ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ order ^ " LIMIT ? OFFSET ?")
+        (Sqlite3.Data.TEXT input :: rank_binds @ [Sqlite3.Data.INT (Int64.of_int limit);
+         Sqlite3.Data.INT (Int64.of_int (max 0 offset))])
         (fun row ->
           let uuid = Sqlite3.column_text row 0 and page_uuid = Sqlite3.column_text row 1 in
           {uuid; page_uuid; title = Sqlite3.column_text row 2; is_page = uuid = page_uuid}))
@@ -335,8 +363,6 @@ let hydrate_hits db results =
       })
     results
 
-(* Reference completion restricts short queries to page names. Global search
-   uses the paged API below to include both page titles and block content. *)
 let search_hits limit index db query =
   let query = String.trim query in
   if limit <= 0 || query = "" then []
@@ -352,11 +378,11 @@ let search_hits limit index db query =
     |> Seq.take limit |> List.of_seq
   else hydrate_hits db (search limit index query)
 
-(* Bound the result window before reading graph context. *)
+(* Rank before slicing and only hydrate the requested window. *)
 let search_hits_page ~offset ~limit index db query =
   if limit <= 0 then [], false else
     let limit = min 100 limit in
-    let results = full_text_rows ~offset ~limit:(limit + 1) index query in
+    let results = full_text_rows ~prioritize_pages:true ~offset ~limit:(limit + 1) index query in
     let rec take n acc = function
       | [] -> List.rev acc, false
       | _ when n = 0 -> List.rev acc, true
