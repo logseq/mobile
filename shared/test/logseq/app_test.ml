@@ -8123,7 +8123,7 @@ let native_page_title_waits_for_the_content_heading_to_scroll () =
   check_eq (property_string renderer heading Lui_protocol.StyleClass) "scroll-section-title"
 
 let search_uses_a_regular_list_and_paginates_on_scroll () =
-  List.iter (fun backend ->
+  List.iter (fun (backend, android) ->
     let application = App.create (backend ()) in
     start application;
     send application (Model.SelectGraph "Work");
@@ -8137,11 +8137,17 @@ let search_uses_a_regular_list_and_paginates_on_scroll () =
     let root () = main_root renderer application in
     let results () = descendant_with_identifier renderer (root ()) "screen.search.results" in
     let list_id = results () in
-    check_eq ~msg:"search uses the regular native list surface"
-      (node renderer list_id) (Some Lui_protocol.ListContainer);
-    check_eq ~msg:"search has no custom virtual data window"
-      (descendant_with_identifier renderer (root ()) "search.window") (-1);
-    check ~msg:"all fetched results retain ordinary keyed rows"
+    check_eq ~msg:"search uses a native scrolling surface"
+      (node renderer list_id)
+      (Some (if android then Lui_protocol.VirtualList else Lui_protocol.ListContainer));
+    let viewport () = if android then
+        descendant_with_identifier renderer (root ()) "search.results.window"
+      else results () in
+    if android then begin
+      dispatch application (Lui_protocol.VisibleRange (viewport (), 395, 410));
+      flush application
+    end;
+    check ~msg:"scrolled fetched results are addressable"
       (descendant_with_identifier renderer (root ()) "search.result.hit-400" <> -1);
     let patch offset has_more rows =
       match Response_snapshot.decode_response (Yojson.Basic.to_string (`Assoc ["ok", `Bool true;
@@ -8154,22 +8160,35 @@ let search_uses_a_regular_list_and_paginates_on_scroll () =
     flush application;
     check_eq ~msg:"paging updates keep the same native scroll surface" (results ()) list_id;
     let before = List.length (App.model application).pending_effects in
-    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
-    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 14, 19));
     flush application;
     check_eq ~msg:"repeated visible-range events enqueue only one next page"
       (List.length (App.model application).pending_effects) (before + 1);
-    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
-    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
+    send application (patch 20 true (List.init 20 (fun i -> i + 20)));
+    send application (patch 20 true (List.init 20 (fun i -> i + 20)));
     flush application;
     check_eq ~msg:"duplicate pages cannot duplicate results"
-      (App.model application).search_result_count 25;
+      (App.model application).search_result_count 40;
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 34, 39));
+    flush application;
+    check ~msg:"scrolling the second page requests offset 40"
+      (List.exists (function Model.LoadSearchPageEffect (_, "needle", 40) -> true | _ -> false)
+        (App.model application).pending_effects);
+    send application (patch 40 false (List.init 9 (fun i -> i + 40)));
+    flush application;
+    check_eq ~msg:"all 49 matches are loaded" (App.model application).search_result_count 49;
+    let before = List.length (App.model application).pending_effects in
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 44, 48));
+    flush application;
+    check_eq ~msg:"the final page stops paging"
+      (List.length (App.model application).pending_effects) before;
     send application (Model.ChangeSearchQuery "new query");
     send application (patch 25 false [25]);
     flush application;
     check_eq ~msg:"late pages cannot leak old hits into a new query"
       (App.model application).search_result_pages []
-  ) [ios_backend; kotlin_backend]
+  ) [ios_backend, false; kotlin_backend, true]
 
 let search_navigation_preserves_the_result_list () =
   let application = App.create (ios_backend ()) in

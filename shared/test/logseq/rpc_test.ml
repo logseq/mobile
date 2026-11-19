@@ -1752,6 +1752,37 @@ let global_search_ranks_exact_tags_before_pagination () =
     check_eq (List.length ids) 47;
     check_eq (List.length (List.sort_uniq compare ids)) 47)
 
+let page_autocomplete_orders_name_match_tiers () =
+  Search_index_test.with_index (fun index ->
+    let conn = Search_index_test.seeded_conn () in
+    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"] in
+    let add = Search_index_test.add in
+    List.iteri (fun i title ->
+      let eid = 20 + i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/title" (Ds.String title)])) names;
+    let db = Ds.conn_db conn in
+    let session = configure_plain_session (Session.create_session {
+      Session.default_options with
+      graph_db = Some (fun () -> Some db);
+      graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+      graph_search_page = Some (fun ~offset ~limit query ->
+        Search.search_hits_page ~offset ~limit index db query);
+    }) in
+    ignore (outliner_block_event session "tapBlock" "editing");
+    List.iter (fun (query, expected) ->
+      let candidates = outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" in
+      check_eq ~msg:("page match tiers for " ^ query)
+        (List.map (member "label") (List.take 4 candidates))
+        (List.map (fun s -> `String s) expected))
+      ["testpa", ["testpage"; "testpage notes"; "my testpage"; "Test page"];
+       "TESTPAGE", ["testpage"; "testpage notes"; "my testpage"; "Test page"]])
+
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->
     let conn = Search_index_test.seeded_conn () in
@@ -6861,6 +6892,7 @@ let cases =
       page_autocomplete_searches_beyond_sidebar_and_current_page;
     case "page autocomplete finds pages before and during indexing"
       page_autocomplete_finds_pages_before_and_during_indexing;
+    case "page autocomplete orders name match tiers" page_autocomplete_orders_name_match_tiers;
     case "global search ranks exact tags before pagination"
       global_search_ranks_exact_tags_before_pagination;
     case "websocket errors distinguish snapshot recovery from apply failures"
