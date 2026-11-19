@@ -241,7 +241,7 @@ let flashcard input =
         answer_rows; has_cloze }
   | None -> None
 
-let outline_row_from_block youtube_target_url opens_as_page depth
+let rec outline_row_from_block youtube_target_url opens_as_page depth
     has_children is_collapsed fields =
   match string_member "uuid" fields, string_member "title" fields with
   | Some row_uuid, Some row_title ->
@@ -254,6 +254,11 @@ let outline_row_from_block youtube_target_url opens_as_page depth
         row_list_number = int_member "listNumber" fields;
         row_is_embed = bool_member "isEmbed" fields;
         row_embed_source_uuid = string_member "embedSourceUuid" fields;
+        row_embed_children = filter_map_option (fun child ->
+          let fields = object_fields child in
+          outline_row_from_block (string_member "youtubeTargetURL" fields)
+            false 0 false (bool_member "isCollapsed" fields) fields)
+          (list_member "embedChildren" fields);
         row_display_type = string_member "displayType" fields; row_loaded = not (bool_member "isShell" fields);
         row_cached = false;
         query_json = (match List.assoc_opt "query" fields with

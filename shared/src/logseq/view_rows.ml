@@ -9,11 +9,11 @@ type retained_row =
   ; editing_caret : int
   }
 
-let make_retained_outline_row_with_selection is_selected (current : Model.logseq_model)
+let make_retained_outline_row_with_selection ?edit_scope is_selected (current : Model.logseq_model)
     (row : Model.outline_row) =
   match current.outliner_editing with
   | Some editing ->
-    if editing.editing_uuid = row.row_uuid then
+    if editing.editing_uuid = row.row_uuid && current.outliner_edit_scope = edit_scope then
       {
         render_key = "active-outliner-editor";
         value = row;
@@ -41,8 +41,8 @@ let make_retained_outline_row_with_selection is_selected (current : Model.logseq
       editing_caret = 0;
     }
 
-let make_retained_outline_row current row =
-  make_retained_outline_row_with_selection (View_base.row_selected_ current row) current row
+let make_retained_outline_row ?edit_scope current row =
+  make_retained_outline_row_with_selection ?edit_scope (View_base.row_selected_ current row) current row
 
 let retained_outliner_rows (current : Model.logseq_model) =
   let selected = Selection.of_list current.outliner_selected_block_ids in

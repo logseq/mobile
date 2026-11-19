@@ -737,10 +737,15 @@ let command_output_has_native_presentation () = R.with_runtime (fun session runt
 
 let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runtime conn ->
   let child = "30000000-0000-4000-8000-000000000003" in
+  let grandchild = "30000000-0000-4000-8000-000000000004" in
   rebase runtime conn (R.entity 102 child "Source child" @ [
     put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
     put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta));
-    put child "block/order" (Ds.String "a0")]);
+    put child "block/order" (Ds.String "a0")]
+    @ R.entity 103 grandchild "Grandchild" @ [
+    put grandchild "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+    put grandchild "block/parent" (Ds.Ref_to (Q.ref_uuid child));
+    put grandchild "block/order" (Ds.String "a0")]);
   ignore (run session "Number list"); save session;
   ignore (run session "Node embed"); ignore (choose session Q.beta);
   let response = snapshot session in
@@ -748,6 +753,8 @@ let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runti
   check_eq ~msg:"only linked wrapper rows carry the embed marker" (member "isEmbed" embedded) (`Bool true);
   let ordinary = List.find (fun block -> member "uuid" block = `String Q.beta) (items "blocks" response) in
   check ~msg:"source blocks retain their ordinary bullet" (member "isEmbed" ordinary <> `Bool true);
+  check ~msg:"the child title is separate from the embedded source title"
+    (not (String_kit.includes ~sub:"Source child" (J.to_string (member "markup" embedded))));
   List.iter (fun (backend, ios) -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
     let host = Lui_app.runtime app in
     let row = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.block." ^ Q.alpha) in
@@ -763,6 +770,27 @@ let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runti
       | _ -> `Null) in
     check_eq ~msg:"both platforms render the embed arrow" (member "id" descriptor) (`String "arrow-narrow-right");
     let open Lui_protocol in
+    let entry = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.entry." ^ Q.alpha) in
+    let find_child uuid = App_test.descendant_with_identifier host entry ("outliner.block." ^ uuid) in
+    let child_row = find_child child in
+    check ~msg:"the embedded child has its own row" (child_row <> -1);
+    let grandchild_row = find_child grandchild in
+    check ~msg:"the embedded outline renders the grandchild too" (grandchild_row <> -1);
+    if ios then begin
+      check_eq (member "depth" (App_test.native_row_payload app child_row)) (`Int 1);
+      check_eq (member "depth" (App_test.native_row_payload app grandchild_row)) (`Int 2)
+    end;
+    let collapse = if ios then
+      ExtensionEvent (App_test.native_row app row, "outliner-block-row", "collapse",
+        String_map.singleton "uuid" (StringValue Q.alpha))
+    else
+      Press (App_test.descendant_with_identifier host row ("button.outliner.collapse." ^ Q.alpha)) in
+    App_test.dispatch app collapse;
+    App_test.flush app;
+    check_eq ~msg:"collapsing the embed hides its outline" (find_child child) (-1);
+    App_test.dispatch app collapse;
+    App_test.flush app;
+    check ~msg:"expanding restores the embedded outline" (find_child grandchild <> -1);
     let event = if ios then
       let target = member "embedSourceUuid" (App_test.native_row_payload app row) in
       check_eq ~msg:"the native bullet receives the source UUID" target (`String Q.beta);
@@ -777,10 +805,16 @@ let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runti
     App_test.flush app;
     check_eq (App.model app).app_navigation_path [Model.NodeRoute Q.beta]))
     [App_test.ios_backend, true; App_test.kotlin_backend, false];
+  ignore (event session "tapBlock" ["uuid", `String child]);
+  ignore (type_at session "Updated child" 13);
+  let changed = event session "saveEditing" [] in
+  let embed = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" changed) in
+  check_eq ~msg:"saving a child refreshes the embedded outline"
+    (List.map (member "title") (items "embedChildren" embed)) [`String "Updated child"];
   let response = Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.beta])) in
   let route = Rpc_test.first_node_route response in
   let visible = List.map (fun row -> member "uuid" (member "block" row)) (items "outlinerRows" route) in
-  check_eq ~msg:"the source opens with its children" visible [`String Q.beta; `String child];
+  check_eq ~msg:"the source opens with its children" visible [`String Q.beta; `String child; `String grandchild];
   let response = event session "tapBlock" ["uuid", `String Q.beta] in
   let editing = draft (Rpc_test.first_node_route response) in
   check_eq (member "uuid" editing) (`String Q.beta);

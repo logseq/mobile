@@ -737,8 +737,45 @@ let reaction_strip row_source : t =
 let decorate_row model_source row_source send body =
   column ~gap:0 [discussion_body model_source row_source body; reaction_strip row_source]
 
-let render_result_block context model_source row_source send =
-    let retained = Signal.map2 View_rows.make_retained_outline_row model_source row_source in
+let with_embed_children model_source edit_scope row_source send render_row render_child : t =
+  reactive (fun has_embed_children ->
+    if not has_embed_children then render_row row_source send else
+      fun context parent ->
+        let initial = Signal.sample row_source in
+        let child_scope =
+          if initial.Model.row_is_embed then
+            Some (initial.row_uuid ^ "." ^ string_of_int (Option.value ~default:0 parent))
+          else edit_scope in
+        let collapsed = Signal.state context.Lui_ui.ui_scheduler None in
+        let row_source = Signal.map2 (fun (row : Model.outline_row) collapsed ->
+          {row with has_children = true; is_collapsed = Option.value ~default:row.is_collapsed collapsed})
+          row_source (Signal.value collapsed) in
+        let row_send = function
+          | Model.ToggleOutlinerCollapsed uuid when uuid = (Signal.sample row_source).row_uuid ->
+            if (Signal.sample model_source : Model.logseq_model).outliner_editing <> None then
+              ignore (send (Model.PerformOutlinerToolbarAction "hideKeyboard"));
+            Signal.set collapsed (Some (not (Signal.sample row_source).is_collapsed));
+            true
+          | action -> send action in
+        let children = Signal.map (fun (row : Model.outline_row) ->
+          if row.is_collapsed then [] else List.map (fun (child : Model.outline_row) ->
+            {child with depth = row.depth + 1}) row.row_embed_children) row_source in
+        (column ~gap:0 [
+          render_row row_source row_send;
+          keyed ~source:children ~key:View_base.outliner_row_uuid ~cmp:String.compare
+            ~mount:(fun source -> render_child child_scope source send)
+        ]) context parent)
+    (Signal.map (fun (row : Model.outline_row) -> row.row_embed_children <> []) row_source)
+
+let rec render_result_block_in_scope context model_source edit_scope row_source send =
+  with_embed_children model_source edit_scope row_source send (fun row_source send ->
+    let send action = match edit_scope, action with
+      | Some scope, Model.BeginOutlinerEdit uuid ->
+        send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, None))
+      | Some scope, Model.BeginOutlinerEditAt (uuid, offset) ->
+        send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, Some offset))
+      | _ -> send action in
+    let retained = Signal.map2 (View_rows.make_retained_outline_row ?edit_scope) model_source row_source in
     column ~gap:0 [
       if_ ~test:(Signal.map View_base.outliner_row_structured_breadcrumb_ row_source)
         (scroll ~orientation:`horizontal ~height:28 [related_row_breadcrumbs model_source row_source send]);
@@ -747,7 +784,11 @@ let render_result_block context model_source row_source send =
           ~style_class:"caption" ~foreground:"muted-foreground" []);
       (let body = decorate_row model_source row_source send (outliner_row_body context model_source retained row_source send) in
        if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
-      outliner_continuation row_source (outliner_task_dates context model_source row_source send)]
+      outliner_continuation row_source (outliner_task_dates context model_source row_source send)])
+    (render_result_block_in_scope context model_source)
+
+let render_result_block context model_source =
+  render_result_block_in_scope context model_source None
 
 let node_properties ?(root = false) context model_source send =
   View_property.view ~render_block:(render_result_block context model_source) model_source
@@ -779,6 +820,9 @@ let with_result_page ?(root = false) context model_source send fallback : t =
       && View_base.page_content_ready_ current && View_base.active_node_result_views current <> "") model_source)
 
 let outliner_row context model_source retained_row_source row_source send : t =
+  with_embed_children model_source None row_source send (fun row_source send ->
+  let retained_row_source = Signal.map2 (fun (retained : View_rows.retained_row) value ->
+    {retained with value}) retained_row_source row_source in
   let body = outliner_row_body context model_source retained_row_source row_source send in
   let body = decorate_row model_source row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
@@ -802,7 +846,8 @@ let outliner_row context model_source retained_row_source row_source send : t =
       row.query_json <> "", (match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
         && View_property.has_properties route.node_properties_json
-      | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source)
+      | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source))
+    (render_result_block_in_scope context model_source)
 
 let journal_heading model_source row_source send children : t =
  fun context parent ->

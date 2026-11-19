@@ -7,7 +7,7 @@ type retained_row = {
   editing_caret : int;
 }
 val make_retained_outline_row :
-  Model.logseq_model -> Model.outline_row -> retained_row
+  ?edit_scope:string -> Model.logseq_model -> Model.outline_row -> retained_row
 val retained_outliner_rows : Model.logseq_model -> retained_row list
 val first_journal_section_visible_ : Model.logseq_model -> bool
 val retained_row_value : retained_row -> Model.outline_row
