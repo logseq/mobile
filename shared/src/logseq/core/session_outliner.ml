@@ -661,6 +661,30 @@ let event_patch_plan ?db (message : Outliner.outliner_message) operations =
         | _ -> Structural_diff)
      | _ -> Structural_diff)
 
+let unseen_template_copies db (context : Outliner.outliner_context) operations =
+  let seen = Hashtbl.create 64 in
+  List.iter (fun (block : Model.block) -> Hashtbl.replace seen block.uuid ()) context.blocks;
+  let children eid = Seq.map (fun (datom : Datascript.datom) -> datom.e)
+      (Datascript_value.datoms_by_ref db Datascript.Aevt "block/parent" eid) |> List.of_seq in
+  let outline_block eid =
+    List.for_all (fun attr -> Graph_read.value db eid attr = None)
+      ["block/name"; "logseq.property/deleted-at"; "logseq.property/view-for";
+       "logseq.property/created-from-property"; "block/closed-value-property"]
+    && Graph_read.value db eid "logseq.property/hide?" <> Some (Datascript.Bool true) in
+  let rec subtree eid = match Graph_read.block ~with_breadcrumbs:false (fun value -> Ok value) db eid with
+    | Some block when outline_block eid && not (Hashtbl.mem seen block.uuid) ->
+      Hashtbl.replace seen block.uuid ();
+      block :: List.concat_map subtree (children eid)
+    | _ -> [] in
+  List.concat_map (fun (operation : Ops.pending_operation) ->
+    List.concat_map (fun uuid ->
+      match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with
+      | Some eid when Hashtbl.mem seen uuid ->
+        List.filter (fun child ->
+          Graph_read.value db child "logseq.property/used-template" <> None) (children eid)
+        |> List.concat_map subtree
+      | _ -> []) (Ops.affected_uuids db operation.intent)) operations
+
 let refresh_reference_metadata session aggregate projected operations =
   if
     List.exists

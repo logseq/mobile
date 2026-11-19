@@ -8,6 +8,8 @@ type applied =
   ; changed_attributes : string list
   }
 val decode : string -> (journal, string) result
+val extend_report : Datascript.tx_report -> Datascript.tx_op list -> Datascript.tx_report
+val capture_report : ?creator:Created_by.identity -> Datascript.tx_report -> Datascript.db * string * string
 val capture : ?creator:Created_by.identity -> Datascript.db -> Datascript.tx_op list -> Datascript.db * string * string
 val replay : Datascript.db -> string -> string -> string -> Datascript.db
 val encode : (string -> (string, string) result) -> string -> (string, string) result

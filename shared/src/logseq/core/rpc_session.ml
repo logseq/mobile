@@ -821,6 +821,11 @@ let dispatch_outliner_event session payload =
              refresh_reference_metadata session aggregate projected
                operations
            in
+           let template_copies = match operations, query_db session with
+             | _ :: _, Some db -> So.unseen_template_copies db projected operations
+             | _ -> [] in
+           let projected = if template_copies = [] then projected
+             else {projected with Outliner.blocks = projected.Outliner.blocks @ template_copies} in
            let next_state =
              List.fold_left
                (fun current (operation : Ops.pending_operation) ->
@@ -861,7 +866,8 @@ let dispatch_outliner_event session payload =
            if reference_toggle <> None || external_results || (state session).node_routes <> [] then
              snapshot_visible session
            else
-             (match event_patch_plan ?db:context.Outliner.db message operations with
+             (match if template_copies <> [] then So.Structural_diff
+                    else event_patch_plan ?db:context.Outliner.db message operations with
               | So.Patch_blocks changed ->
                 outliner_patch session projected changed
               | So.Structural_diff ->
@@ -1220,7 +1226,9 @@ let ensure_journal session payload =
   | None -> Rpc.failure "invalid_params" "A journal date is required"
   | Some day when not (Journal.valid_day day) -> Rpc.failure "invalid_params" "The journal date is invalid"
   | Some day ->
-    let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
+    let existing = match (host session).Types.journal_page_id with
+      | Some find -> find day
+      | None -> Option.bind (query_db session) (fun db -> Graph_read.journal_page_uuid db day) in
     let result = match existing, projection_server_t session, (state session).config with
       | Some uuid, _, _ -> Ok uuid
       | None, Some base_t, Some _ ->

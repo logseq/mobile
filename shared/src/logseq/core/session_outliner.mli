@@ -121,6 +121,12 @@ type outliner_patch_plan =
   | Patch_blocks of string list
   | Structural_diff
 
+val unseen_template_copies :
+  Datascript.db -> Outliner_state.outliner_context -> Pending_ops.pending_operation list ->
+  Cache_model.block list
+(** Template blocks a staged operation copied under a visible block that the
+    optimistic outline does not show yet. *)
+
 val event_patch_plan :
   ?db:Datascript.db ->
   Outliner_state.outliner_message ->
