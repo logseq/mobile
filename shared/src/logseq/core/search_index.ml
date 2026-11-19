@@ -203,9 +203,31 @@ let completion_accents = lazy (
 
 let ascii value = String.for_all (fun ch -> Char.code ch < 128) value
 
+let completion_clean_ascii_str value =
+  let stripped = function '[' | ' ' | '\\' | '/' | '_' | ']' | '(' | ')' -> true | _ -> false in
+  let rec scan index =
+    if index = String.length value then Some value
+    else
+      let ch = value.[index] in
+      if Char.code ch >= 128 then None
+      else if stripped ch || ch >= 'A' && ch <= 'Z' then (
+        let output = Buffer.create (String.length value) in
+        Buffer.add_substring output value 0 index;
+        let rec copy index =
+          if index = String.length value then Some (Buffer.contents output)
+          else
+            let ch = value.[index] in
+            if Char.code ch >= 128 then None
+            else (if not (stripped ch) then Buffer.add_char output (Char.lowercase_ascii ch);
+              copy (index + 1)) in
+        copy index)
+      else scan (index + 1) in
+  scan 0
+
 let completion_clean_str value =
-  if ascii value then clean_str value
-  else
+  match completion_clean_ascii_str value with
+  | Some value -> value
+  | None ->
     let value = clean_str (Dev_query.Unicode.lowercase value) in
     let normalizer = Uunf.create `NFKC in
     let output = Buffer.create (String.length value) in
@@ -226,8 +248,31 @@ let completion_clean_str value =
       Str.global_substitute pattern
         (fun value -> Hashtbl.find replacements (Str.matched_string value)) value
 
+let completion_score_ascii_cleaned query target =
+  let qlen = String.length query and slen = String.length target in
+  let distance = if max qlen slen = 0 then 1.0 else
+    1.0 -. (float_of_int (abs (qlen - slen)) /. float_of_int (max qlen slen)) in
+  if String.starts_with ~prefix:query target then
+    let length = float_of_int qlen in
+    length *. (length +. 1.0) /. 2.0 +. distance +. 1010.0
+    +. (if qlen = slen then 1.0 else 0.0)
+  else
+    let rec contains start index =
+      if index = qlen then true
+      else if start + qlen > slen then false
+      else if target.[start + index] = query.[index] then contains start (index + 1)
+      else contains (start + 1) 0 in
+    let rec loop qi si mult score =
+      if qi = qlen then score +. distance
+        +. (if contains 0 0 then 1000.0 else 0.0)
+        +. (if si = slen then 1.0 else 0.0)
+      else if si = slen then 0.0
+      else if query.[qi] = target.[si] then loop (qi + 1) (si + 1) (mult + 1) (score +. float_of_int mult)
+      else loop qi (si + 1) 1 (score -. 0.1) in
+    loop 0 0 1 0.0
+
 let completion_score_cleaned query target =
-  if ascii query && ascii target then fuzzy_score_cleaned query target
+  if ascii query && ascii target then completion_score_ascii_cleaned query target
   else
     let units value =
       let rec loop index acc =
@@ -342,6 +387,7 @@ let page_title_matches ~limit db query =
     end) in
     let best = ref Top.empty in
     let count = ref 0 in
+    let worst_rank = ref None in
     let seen = Hashtbl.create limit in
     let offer rank (page : Cache_model.entity_summary) =
       let previous = Hashtbl.find_opt seen page.uuid in
@@ -356,17 +402,41 @@ let page_title_matches ~limit db query =
            else incr count);
         let entry = rank, page in
         best := Top.add entry !best;
-        Hashtbl.replace seen page.uuid entry) in
+        Hashtbl.replace seen page.uuid entry;
+        if !count = limit then worst_rank := Some (fst (Top.min_elt !best))) in
+    (* Index sequences can be single-pass; retain each head until consumed. *)
+    let cursor attr = ref ((Ds.Db.datoms db Ds.Aevt ~a:attr ()) ()) in
+    let titles = cursor "block/title" and journals = cursor "block/journal-day" in
+    let rec at cursor eid =
+      match !cursor with
+      | Seq.Cons ((datom : Ds.datom), rest) when datom.e < eid -> cursor := rest (); at cursor eid
+      | Seq.Cons (datom, _) when datom.e = eid -> Some datom.v
+      | _ -> None in
+    let subsequence query target =
+      let rec loop qi si =
+        if qi = String.length query then true
+        else if si = String.length target then false
+        else loop (if query.[qi] = target.[si] then qi + 1 else qi) (si + 1) in
+      loop 0 0 in
+    let ascii_query = ascii cleaned_query in
     Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
     |> Seq.iter (fun (datom : Ds.datom) ->
-      match Graph.string_value (Some datom.v), Graph.entity_title (fun title -> Ok title) db datom.e with
+      let title = match Graph.int_value (at journals datom.e) with
+        | Some day when Journal.valid_day day -> Graph.entity_title (fun title -> Ok title) db datom.e
+        | _ -> Graph.string_value (at titles datom.e) in
+      match Graph.string_value (Some datom.v), title with
       | Some name, Some title ->
-        let score = completion_score_cleaned cleaned_query (completion_clean_str title) in
-        let rank = name = query, score, datom.e in
-        if score > 0.0
-           && (!count < limit || compare_rank rank (fst (Top.min_elt !best)) > 0)
-           && not (private_search_node db datom.e) then
-          Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db datom.e)
+        let score =
+          if ascii_query then match completion_clean_ascii_str title with
+            | Some target ->
+              if subsequence cleaned_query target then completion_score_ascii_cleaned cleaned_query target else 0.0
+            | None -> completion_score_cleaned cleaned_query (completion_clean_str title)
+          else completion_score_cleaned cleaned_query (completion_clean_str title) in
+        if score > 0.0 then (
+          let rank = name = query, score, datom.e in
+          if Option.fold ~none:true ~some:(fun worst -> compare_rank rank worst > 0) !worst_rank
+             && not (private_search_node db datom.e) then
+            Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db datom.e))
       | _ -> ());
     Top.elements !best |> List.rev_map snd
 
