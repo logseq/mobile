@@ -1829,6 +1829,37 @@ let page_autocomplete_matches_master_order () =
       (List.mem (`String label) labels)) ["testpa"; "testpage"; "testpage notes"];
     check (List.length labels <= 20))
 
+let page_autocomplete_keeps_late_stronger_matches () =
+  List.iter (fun (query, early, better) ->
+    Search_index_test.with_index (fun index ->
+      let conn = Search_index_test.seeded_conn () in
+      let add = Search_index_test.add in
+      List.iteri (fun i title ->
+        let eid = 20 + i in
+        ignore (Ds.transact_conn conn [
+          add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+          add eid "block/name" (Ds.String (String.lowercase_ascii title));
+          add eid "block/title" (Ds.String title)]))
+        (List.init 25 early @ [better]);
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      let labels = outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" |> List.map (member "label") in
+      let existing = List.filter (fun label -> label <> `String ("New page: " ^ query)) labels in
+      check_eq ~msg:("late stronger match ranks first for " ^ query)
+        (List.hd existing) (`String better)))
+    ["testpage", (fun i -> Printf.sprintf "T-e-s-t-p-a-g-e fuzzy %02d" i), "My testpage";
+     "prefix", (fun i -> Printf.sprintf "prefix a very long title %02d" i), "prefix z"]
+
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->
     let conn = Search_index_test.seeded_conn () in
@@ -6939,6 +6970,7 @@ let cases =
     case "page autocomplete finds pages before and during indexing"
       page_autocomplete_finds_pages_before_and_during_indexing;
     case "page autocomplete matches master order" page_autocomplete_matches_master_order;
+    case "page autocomplete keeps late stronger matches" page_autocomplete_keeps_late_stronger_matches;
     case "global search ranks exact tags before pagination"
       global_search_ranks_exact_tags_before_pagination;
     case "websocket errors distinguish snapshot recovery from apply failures"

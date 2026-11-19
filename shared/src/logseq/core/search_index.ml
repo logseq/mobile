@@ -331,44 +331,44 @@ let page_title_matches ~limit db query =
      || Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()) then []
   else
     (* Page names come from the live graph even during an FTS index rebuild. *)
+    let compare_rank (exact_a, score_a, eid_a) (exact_b, score_b, eid_b) =
+      let order = Bool.compare exact_a exact_b in
+      if order <> 0 then order else
+        let order = Float.compare score_a score_b in
+        if order <> 0 then order else Int.compare eid_b eid_a in
+    let module Top = Set.Make (struct
+      type t = (bool * float * int) * Cache_model.entity_summary
+      let compare (a, _) (b, _) = compare_rank a b
+    end) in
+    let best = ref Top.empty in
+    let count = ref 0 in
     let seen = Hashtbl.create limit in
-    let page (datom : Ds.datom) =
-      if private_search_node db datom.e then None
-      else Option.bind (Graph.page_summary (fun title -> Ok title) db datom.e)
-        (fun page ->
-          if Hashtbl.mem seen page.Cache_model.uuid then None
-          else (Hashtbl.add seen page.uuid (); Some (datom.e, page))) in
-    let collect count datoms =
-      datoms |> Seq.filter_map page |> Seq.take count |> List.of_seq in
-    let exact = collect limit (Ds.Db.datoms db Ds.Avet
-      ~a:"block/name" ~v:(Ds.String query) ()) in
-    let prefix = Ds.Db.seek_datoms db Ds.Avet ~a:"block/name" ~v:(Ds.String query) ()
-      |> Seq.take_while (fun (datom : Ds.datom) ->
-        datom.a = "block/name" && match datom.v with
-        | Ds.String name -> String.starts_with ~prefix:query name
-        | _ -> false)
-      |> collect (limit - List.length exact) in
-    let remaining = limit - List.length exact - List.length prefix in
-    let fallback count matches =
-      if count <= 0 then []
-      else Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
-        |> Seq.filter_map (fun (datom : Ds.datom) ->
-          Option.bind (Graph.string_value (Some datom.v)) (fun name ->
-            if not (matches name) then None
-            else
-              let score = completion_score_cleaned cleaned_query (completion_clean_str name) in
-              if score <= 0.0 then None
-              else Option.map (fun page -> score, page) (page datom)))
-        |> Seq.take count |> List.of_seq
-        |> List.stable_sort (fun (a, _) (b, _) -> Float.compare b a)
-        |> List.map snd in
-    let fuzzy = fallback remaining (fun _ -> true) in
-    exact @ prefix @ fuzzy
-    |> List.map (fun (eid, (page : Cache_model.entity_summary)) ->
-      completion_score_cleaned cleaned_query (completion_clean_str page.title), eid, page)
-    |> List.stable_sort (fun (a, ae, _) (b, be, _) ->
-      let order = Float.compare b a in if order = 0 then Int.compare ae be else order)
-    |> List.map (fun (_, _, page) -> page)
+    let offer rank (page : Cache_model.entity_summary) =
+      let previous = Hashtbl.find_opt seen page.uuid in
+      if Option.fold ~none:true ~some:(fun (old_rank, _) -> compare_rank rank old_rank > 0) previous then (
+        (match previous with
+         | Some old -> best := Top.remove old !best
+         | None ->
+           if !count = limit then (
+             let (_, (removed : Cache_model.entity_summary)) as worst = Top.min_elt !best in
+             best := Top.remove worst !best;
+             Hashtbl.remove seen removed.uuid)
+           else incr count);
+        let entry = rank, page in
+        best := Top.add entry !best;
+        Hashtbl.replace seen page.uuid entry) in
+    Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()
+    |> Seq.iter (fun (datom : Ds.datom) ->
+      match Graph.string_value (Some datom.v), Graph.entity_title (fun title -> Ok title) db datom.e with
+      | Some name, Some title ->
+        let score = completion_score_cleaned cleaned_query (completion_clean_str title) in
+        let rank = name = query, score, datom.e in
+        if score > 0.0
+           && (!count < limit || compare_rank rank (fst (Top.min_elt !best)) > 0)
+           && not (private_search_node db datom.e) then
+          Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db datom.e)
+      | _ -> ());
+    Top.elements !best |> List.rev_map snd
 
 let row_of_eid db eid =
   let title_for_uuid uuid =
