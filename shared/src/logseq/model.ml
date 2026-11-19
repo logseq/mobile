@@ -131,6 +131,7 @@ type outline_row =
   ; row_display_type : string option
   ; row_is_embed : bool
   ; row_embed_source_uuid : string option
+  ; row_embed_children : outline_row list
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -443,6 +444,7 @@ type logseq_model =
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
   ; outliner_editing : outliner_editing option
+  ; outliner_edit_scope : string option
   ; outliner_selection_revision : int
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
@@ -495,6 +497,7 @@ type logseq_action =
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
   | BeginOutlinerEditAt of string * int
+  | BeginEmbeddedOutlinerEdit of string * string * int option
   | EditorCompletion of string * string
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
@@ -807,6 +810,7 @@ let initial () =
     outliner_rows = [];
     outliner_selected_block_ids = [];
     outliner_editing = None;
+    outliner_edit_scope = None;
     outliner_selection_revision = 0;
     outliner_autocomplete = None;
     outliner_autocomplete_candidates = [];
@@ -1530,7 +1534,7 @@ let enqueue_effect (current : logseq_model) eff =
   }
 
 let cancel_outliner_editing (current : logseq_model) =
-  let current = cancel_outliner_autosave current in
+  let current = { (cancel_outliner_autosave current) with outliner_edit_scope = None } in
   match current.outliner_editing with
   | Some _ ->
     let updated =
@@ -2164,11 +2168,16 @@ let rec update (current : logseq_model) action =
      | _ -> updated)
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
-    enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
+    enqueue_effect {current with outliner_edit_scope = None} (TapOutlinerBlockEffect (id, uuid))
   | BeginOutlinerEditAt (uuid, caret) ->
-    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+    enqueue_effect {current with outliner_edit_scope = None} (EditorOutlinerEventEffect (current.next_effect_id,
       Yojson.Basic.to_string (`Assoc ["type", `String "tapBlock"; "uuid", `String uuid;
         "caretUTF16Offset", `Int caret])))
+  | BeginEmbeddedOutlinerEdit (scope, uuid, caret) ->
+    let action = match caret with
+      | Some offset -> BeginOutlinerEditAt (uuid, offset)
+      | None -> BeginOutlinerEdit uuid in
+    { (update current action) with outliner_edit_scope = Some scope }
   | EditorCompletion (kind, value) ->
     let fields = if kind = "searchAutocomplete" then ["query", `String value]
       else if kind = "submitAutocomplete" then ["value", `String value] else [] in
@@ -2601,7 +2610,7 @@ let rec update (current : logseq_model) action =
     if List.exists (function AddRootBlockEffect (_, parent) -> parent = uuid | _ -> false)
       (current.pending_effects @ current.in_flight_effects) then current
     else let id = current.next_effect_id in
-      enqueue_effect current (AddRootBlockEffect (id, uuid))
+      enqueue_effect {current with outliner_edit_scope = None} (AddRootBlockEffect (id, uuid))
   | LoadOlderJournals ->
     if current.graph_loading || load_older_journals_active_ current then current
     else begin

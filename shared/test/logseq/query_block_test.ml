@@ -715,8 +715,11 @@ let embedded_queries_execute_and_render () =
     let markup = Json.to_string (member "markup" block) in
     check ~msg:"embedded queries must not display their definition as code"
       (not (contains markup source));
-    check ~msg:"ordinary embedded child code remains visible"
-      (contains markup "Ordinary child code");
+    let children = items "embedChildren" block in
+    check_eq ~msg:"query definitions are omitted from the embedded outline"
+      (List.map (member "uuid") children) [`String note];
+    check ~msg:"ordinary child code renders in its own row"
+      (contains (Json.to_string (member "markup" (List.hd children))) "Ordinary child code");
     let collapsed = expand_query session embedded false in
     check_eq (member "expanded" (member "query" collapsed)) (`Bool false);
     List.iter (fun backend -> with_ui backend (Json.to_string (`Assoc ["ok", `Bool true; "result", response])) (fun app ->

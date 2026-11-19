@@ -516,11 +516,15 @@ let outliner_patch_result session context blocks deleted splices =
     else match query_db session with
       | None -> blocks
       | Some db ->
-        let queries = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
-        List.iter (fun uuid -> Hashtbl.replace queries uuid ()) (Query_block.owner_uuids db);
+        let dependent_rows = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
+        List.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ()) (Query_block.owner_uuids db);
+        Seq.iter (fun (datom : Datascript.datom) ->
+          Option.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ())
+            (Graph_read.uuid_for_eid db datom.e))
+          (Datascript.Db.datoms db Datascript.Aevt ~a:"block/link" ());
         List.iter (fun (block : Model.block) -> Hashtbl.replace included block.uuid ()) blocks;
         let refreshed = List.filter (fun (block : Model.block) ->
-          Hashtbl.mem queries block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
+          Hashtbl.mem dependent_rows block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
         List.rev_append (List.rev blocks) refreshed in
   let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
     ?sync_error:(Pump.pending_sync_error session)
