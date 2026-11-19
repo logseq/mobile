@@ -442,21 +442,35 @@ let templates_apply_to_new_tags_and_resolve_missing_dates () = R.with_runtime (f
   let source = "30000000-0000-4000-8000-000000000021" in
   let item = "30000000-0000-4000-8000-000000000022" in
   let existing = "30000000-0000-4000-8000-000000000023" in
+  let journal_template = "30000000-0000-4000-8000-000000000024" in
+  let journal_entry = "30000000-0000-4000-8000-000000000025" in
   let node n uuid title parent = R.entity n uuid title @
     [put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid parent));
      put uuid "block/page" (Ds.Ref_to (Q.ref_uuid Q.page)); put uuid "block/order" (Ds.String "a0")] in
   rebase runtime conn (R.entity 121 source "Project template"
     @ [put source "logseq.property/template-applied-to" (Ds.Ref_to (Q.ref_uuid Q.project))]
     @ node 122 item "Follow up <%tomorrow%>" source
-    @ node 123 existing "Existing child" Q.beta);
-  let stage operation_id =
-    check_ok (Graph_runtime.stage runtime {Pending_ops.operation_id; base_t = 42; state = Pending_ops.Queued;
-      intent = Pending_ops.Add_tag {uuid = Q.beta; tag_uuid = Q.project}}) in
+    @ node 123 existing "Existing child" Q.beta
+    @ R.entity 124 journal_template "Journal template"
+    @ [put journal_template "logseq.property/template-applied-to" (Ds.Ref_to (Ds.Ident "logseq.class/Journal"));
+       put journal_entry "block/parent" (Ds.Ref_to (Q.ref_uuid journal_template));
+       put journal_entry "block/page" (Ds.Ref_to (Q.ref_uuid journal_template));
+       put journal_entry "block/order" (Ds.String "a0")]
+    @ R.entity 125 journal_entry "Journal entry");
+  let stage_intent operation_id intent =
+    check_ok (Graph_runtime.stage runtime {Pending_ops.operation_id; base_t = 42; state = Pending_ops.Queued; intent}) in
+  let stage operation_id = stage_intent operation_id (Pending_ops.Add_tag {uuid = Q.beta; tag_uuid = Q.project}) in
+  let retitle operation_id title =
+    let expected_title = match value runtime Q.beta "block/title" with
+      | Some (Ds.String title) -> title | _ -> "" in
+    stage_intent operation_id (Pending_ops.Save_title {uuid = Q.beta; expected_title; title}) in
   let following_seconds, _ = Unix.mktime (let now = Unix.localtime (Unix.gettimeofday ()) in
     {now with tm_mday = now.tm_mday + 1}) in
   let tomorrow = Cache_model.journal_day_for_ms (int_of_float (following_seconds *. 1000.)) in
   stage "apply-tag-template";
   stage "repeat-tag";
+  retitle "retain-tag" "Beta result #Project";
+  retitle "edit-with-retained-tag" "Beta edited #Project";
   let children = Graph_runtime.blocks_for_page runtime Q.page
     |> List.filter (fun (b : Cache_model.block) -> b.parent_id = Some Q.beta)
     |> List.sort Outliner_state.compare_blocks in
@@ -465,7 +479,10 @@ let templates_apply_to_new_tags_and_resolve_missing_dates () = R.with_runtime (f
   check_eq (List.map (fun (block : Cache_model.block) -> block.title) children)
     ["Follow up [[" ^ tomorrow_uuid ^ "]]"; "Existing child"];
   let copied = List.hd children in
-  check_eq (List.map (fun (ref : Cache_model.entity_summary) -> ref.uuid) copied.references) [tomorrow_uuid])
+  check_eq (List.map (fun (ref : Cache_model.entity_summary) -> ref.uuid) copied.references) [tomorrow_uuid];
+  check_eq ~msg:"a journal created by a template date gets the journal template"
+    (List.map (fun (block : Cache_model.block) -> block.title) (Graph_runtime.blocks_for_page runtime tomorrow_uuid))
+    ["Journal entry"])
 
 let typed_quote_marker_converts_only_ordinary_blocks () =
   R.with_runtime (fun session runtime _ ->
@@ -1262,7 +1279,7 @@ let cases = [
   case "linked blocks preserve source formatting" linked_blocks_preserve_source_formatting;
   case "linked content keeps outline boundaries" linked_content_keeps_outline_boundaries;
   case "templates clone without mutating the source" templates_clone_without_mutating_the_source;
-  case "templates apply once to new tags and resolve missing dates" templates_apply_to_new_tags_and_resolve_missing_dates;
+  case "templates apply once to new tags and created journals" templates_apply_to_new_tags_and_resolve_missing_dates;
   case "numbered lists toggle" numbered_lists_toggle_without_changing_source_text;
   case "shared panel for commands pages and tags" shared_panel_for_commands_pages_and_tags;
 ]

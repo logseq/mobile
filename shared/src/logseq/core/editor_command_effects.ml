@@ -186,7 +186,7 @@ let clone_template db ~now ~fresh_uuid target source draft =
     ~page_title ~parent ~lower ~upper ~replacement ~source:source_eid ~roots in
   let writes = if replace then writes else
     let expected_title = Option.value ~default:"" (Read.string_value (Read.value db target_eid "block/title")) in
-    if expected_title = draft || String.trim draft = "" then writes else Ops.Save_title {uuid = target; expected_title; title = draft} :: writes in
+    if expected_title = draft then writes else Ops.Save_title {uuid = target; expected_title; title = draft} :: writes in
   [template_intent db writes properties]
 
 let templates_for_tags db tags =
@@ -207,21 +207,25 @@ let templates_for_tags db tags =
     compare (Read.value db a "block/created-at", Read.uuid_for_eid db a)
       (Read.value db b "block/created-at", Read.uuid_for_eid db b))
 
-let tag_template_intent (report : Ds.tx_report) ~now ~fresh_uuid =
+let tag_template_intent ?(applied = []) (report : Ds.tx_report) ~now ~fresh_uuid =
   let db = report.db_after in
   let targets = Hashtbl.create 8 in
   List.iter (fun (d : Ds.datom) ->
     if d.added && d.a = "block/tags" then
       Option.iter (fun tag ->
         let tags = Option.value ~default:[] (Hashtbl.find_opt targets d.e) in
-        Hashtbl.replace targets d.e (tag :: tags))
+        if not (List.mem tag tags) && Read.has_ref db d.e d.a tag
+           && not (Read.has_ref report.db_before d.e d.a tag) then
+          Hashtbl.replace targets d.e (tag :: tags))
         (Datascript_value.ref_eid db d.a d.v)) report.tx_data;
   if Hashtbl.length targets = 0 || Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"logseq.property/template-applied-to" ()) then
     Ok None
   else
     let journal_class = Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Journal") in
     let insert (writes, properties) (target, tags) =
-      match templates_for_tags db tags, Read.uuid_for_eid db target with
+      let templates = templates_for_tags db tags
+        |> List.filter (fun (source, _) -> not (List.mem source applied)) in
+      match templates, Read.uuid_for_eid db target with
       | [], _ | _, None -> writes, properties
       | templates, Some parent ->
         let journal = Read.value db target "block/journal-day" <> None
