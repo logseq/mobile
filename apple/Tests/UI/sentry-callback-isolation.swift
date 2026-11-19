@@ -6,7 +6,11 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             Text("Sentry callback check").task {
-                LogseqCrashReporting.start()
+                let dsn = "https://public@127.0.0.1:9/0"
+                LogseqCrashReporting.start(dsn: dsn)
+                precondition(SentrySDK.internal.options.dsn == dsn)
+                print("SENTRY_CHECK_DSN=\(SentrySDK.internal.options.dsn!)")
+                fflush(stdout)
                 await Task.detached {
                     precondition(!Thread.isMainThread)
                     // Exercise the actual installed callback without uploading test events.

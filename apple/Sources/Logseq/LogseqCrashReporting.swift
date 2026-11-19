@@ -3,7 +3,7 @@ import Foundation
 import SentrySwift
 
 enum LogseqCrashReporting {
-    nonisolated static func start() {
+    nonisolated static func start(dsn: String = "https://97cf2c1b0b73bc127f78ad8802e6be9f@o416451.ingest.us.sentry.io/4512448516194305") {
         #if DEBUG
         guard ProcessInfo.processInfo.environment["LOGSEQ_SENTRY_DEBUG"] == "1" else { return }
         let environment = "development"
@@ -12,7 +12,7 @@ enum LogseqCrashReporting {
         #endif
 
         SentrySDK.start { options in
-            options.dsn = "https://97cf2c1b0b73bc127f78ad8802e6be9f@o416451.ingest.us.sentry.io/4512448516194305"
+            options.dsn = dsn
             options.environment = environment
             options.sendDefaultPii = false
             options.enableAutoSessionTracking = false

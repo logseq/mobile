@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "apple/.build/arm64-apple-ios-simulator/debug"
 BUNDLE = "com.logseq.logseq.SentryCallbackCheck"
+LOCAL_DSN = "https://public@127.0.0.1:9/0"
 
 
 def run(args, **kwargs):
@@ -24,6 +25,10 @@ def run(args, **kwargs):
 
 def main():
     simulator = os.environ.get("LOGSEQ_IOS_SIMULATOR", "booted")
+    installed = subprocess.run(["xcrun", "simctl", "get_app_container", simulator, BUNDLE, "data"], capture_output=True)
+    if installed.returncode == 0:
+        run(["xcrun", "simctl", "uninstall", simulator, BUNDLE])
+    print("SENTRY_CHECK_FRESH_INSTALL", flush=True)
     description = json.loads((BUILD / "description.json").read_text())
     sentry = next(command for command in description["swiftCommands"].values()
                   if command["moduleName"] == "SentrySwift")
@@ -60,10 +65,14 @@ def main():
                                      simulator, BUNDLE], env=environment, text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=45)
             print(output.stdout, flush=True)
+            if f"SENTRY_CHECK_DSN={LOCAL_DSN}" not in output.stdout:
+                raise SystemExit("FAIL: simulator Sentry callback check did not confirm the local-only DSN")
             if "PASS: background beforeSend" not in output.stdout:
                 raise SystemExit("FAIL: simulator Sentry callback check did not complete")
         finally:
             subprocess.run(["xcrun", "simctl", "terminate", simulator, BUNDLE], capture_output=True)
+            run(["xcrun", "simctl", "uninstall", simulator, BUNDLE])
+            print("SENTRY_CHECK_UNINSTALLED (cached envelopes removed)", flush=True)
 
 
 if __name__ == "__main__":
