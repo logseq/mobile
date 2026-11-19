@@ -711,8 +711,8 @@ let autocomplete_candidates_combine_deduplicate_and_bound_results () =
   in
   check_eq
     (State.autocomplete_candidates ctx (request State.Node "alpha"))
-    [ candidate "Project Alpha" "Project Alpha";
-      candidate "Alpha block" "alpha"; candidate "New page: alpha" "alpha" ];
+    [ candidate "New page: alpha" "alpha"; candidate "Project Alpha" "Project Alpha";
+      candidate "Alpha block" "alpha" ];
   let candidates =
     [ candidate "Project" "project"; candidate "Project duplicate" "project" ]
   in

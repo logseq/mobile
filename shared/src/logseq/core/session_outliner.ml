@@ -36,7 +36,7 @@ let outliner_context_with_blocks session sidebar blocks =
   in
   let search_nodes query =
     let hits = match (Types.host session).graph_search_page, (Types.host session).graph_search with
-      | Some search, _ -> fst (search ~offset:0 ~limit:12 query)
+      | Some search, _ -> fst (search ~offset:0 ~limit:100 query)
       | None, Some search -> search query
       | None, None -> [] in
     List.map (fun (hit : Search_index.indexed_search_hit) ->

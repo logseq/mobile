@@ -1752,16 +1752,26 @@ let global_search_ranks_exact_tags_before_pagination () =
     check_eq (List.length ids) 47;
     check_eq (List.length (List.sort_uniq compare ids)) 47)
 
-let page_autocomplete_orders_name_match_tiers () =
+let page_autocomplete_matches_master_order () =
   Search_index_test.with_index (fun index ->
-    let conn = Search_index_test.seeded_conn () in
-    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"; "testpa"] in
+    let conn = Ds.create_conn ~schema:(Search_index_test.schema @ [
+      "db/ident", {Storage_codec.default_schema_attr with Ds.unique = Some Ds.Identity};
+      "block/tags", {Storage_codec.default_schema_attr with Ds.value_type = Some Ds.RefType;
+        cardinality = Ds.Many}]) () in
+    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"; "testpa";
+                 "Person"; "Person notes"; "Personal ledger"; "About a person"] in
     let add = Search_index_test.add in
+    ignore (Ds.transact_conn conn [
+      add 1 "block/uuid" (Ds.Uuid Search_index_test.page_uuid);
+      add 1 "block/name" (Ds.String "movies");
+      add 1 "block/title" (Ds.String "Movies");
+      add 10 "db/ident" (Ds.Keyword "logseq.class/Page")]);
     List.iteri (fun i title ->
       let eid = 20 + i in
       ignore (Ds.transact_conn conn [
         add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
         add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/tags" (Ds.Ref 10);
         add eid "block/title" (Ds.String title)])) names;
     let block_uuid = "018f7850-0000-7da0-8b3f-0000000003e8" in
     ignore (Ds.transact_conn conn [
@@ -1788,13 +1798,19 @@ let page_autocomplete_orders_name_match_tiers () =
         |> json_items "outlinerAutocompleteCandidates" in
     let session = make_session () in
     List.iter (fun (query, expected) ->
-      check_eq ~msg:("page match tiers for " ^ query)
+      check_eq ~msg:("master completion order for " ^ query)
         (List.map (member "label") (candidates session query))
         (List.map (fun s -> `String s) expected))
-      ["testpa", ["testpa"; "testpage"; "testpage notes"; "my testpage"; "Test page";
-                  "testpage block"; "New page: testpa"];
-       "TESTPAGE", ["testpage"; "testpage notes"; "my testpage"; "Test page";
-                    "testpage block"; "New page: TESTPAGE"]];
+      ["testpa", ["testpa"; "Test page"; "testpage";
+                  "testpage notes"; "my testpage"; "testpage block"];
+       "TESTPAGE", ["testpage"; "Test page";
+                    "testpage notes"; "my testpage"; "testpage block"];
+       "person", ["Person"; "Person notes";
+                  "Personal ledger"; "About a person"];
+       "testpag", ["New page: testpag"; "Test page"; "testpage";
+                   "testpage notes"; "my testpage"; "testpage block"];
+       "test", ["testpa"; "New page: test"; "Test page"; "testpage";
+                "testpage notes"; "my testpage"; "testpage block"]];
     List.iter (fun limit ->
       check_eq ~msg:"the caller's page limit is respected"
         (List.length (Search.page_title_matches ~limit (Ds.conn_db conn) "testpa")) limit)
@@ -1806,9 +1822,12 @@ let page_autocomplete_orders_name_match_tiers () =
         add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
         add eid "block/name" (Ds.String (String.lowercase_ascii title));
         add eid "block/title" (Ds.String title)])) (List.init 200 Fun.id);
-    check_eq ~msg:"fuzzy matches cannot displace exact or prefix matches at the limit"
-      (List.map (member "label") (List.take 3 (candidates (make_session ()) "testpa")))
-      [`String "testpa"; `String "testpage"; `String "testpage notes"])
+    let labels = List.map (member "label") (candidates (make_session ()) "testpa") in
+    check_eq ~msg:"master's fuzzy tie order survives bounded retrieval"
+      (List.take 3 labels) [`String "testpa"; `String "Test page"; `String "testpage"];
+    List.iter (fun label -> check ~msg:"exact and prefix candidates survive the candidate limit"
+      (List.mem (`String label) labels)) ["testpa"; "testpage"; "testpage notes"];
+    check (List.length labels <= 20))
 
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->
@@ -6919,7 +6938,7 @@ let cases =
       page_autocomplete_searches_beyond_sidebar_and_current_page;
     case "page autocomplete finds pages before and during indexing"
       page_autocomplete_finds_pages_before_and_during_indexing;
-    case "page autocomplete orders name match tiers" page_autocomplete_orders_name_match_tiers;
+    case "page autocomplete matches master order" page_autocomplete_matches_master_order;
     case "global search ranks exact tags before pagination"
       global_search_ranks_exact_tags_before_pagination;
     case "websocket errors distinguish snapshot recovery from apply failures"

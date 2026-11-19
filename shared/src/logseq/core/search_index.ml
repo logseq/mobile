@@ -81,6 +81,181 @@ let fuzzy_score_cleaned query target =
 
 let fuzzy_score query target = fuzzy_score_cleaned (clean_str query) (clean_str target)
 
+(* remove-accents 0.5.0, also used by frontend.common.search-fuzzy. *)
+(* The MIT License (MIT)
+   Copyright (c) 2015 Marin Atanasov
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE. *)
+let completion_accents = lazy (
+  let pairs = [
+    ("À", "A"); ("Á", "A"); ("Â", "A"); ("Ã", "A"); ("Ä", "A");
+    ("Å", "A"); ("Ấ", "A"); ("Ắ", "A"); ("Ẳ", "A"); ("Ẵ", "A");
+    ("Ặ", "A"); ("Æ", "AE"); ("Ầ", "A"); ("Ằ", "A"); ("Ȃ", "A");
+    ("Ả", "A"); ("Ạ", "A"); ("Ẩ", "A"); ("Ẫ", "A"); ("Ậ", "A");
+    ("Ç", "C"); ("Ḉ", "C"); ("È", "E"); ("É", "E"); ("Ê", "E");
+    ("Ë", "E"); ("Ế", "E"); ("Ḗ", "E"); ("Ề", "E"); ("Ḕ", "E");
+    ("Ḝ", "E"); ("Ȇ", "E"); ("Ẻ", "E"); ("Ẽ", "E"); ("Ẹ", "E");
+    ("Ể", "E"); ("Ễ", "E"); ("Ệ", "E"); ("Ì", "I"); ("Í", "I");
+    ("Î", "I"); ("Ï", "I"); ("Ḯ", "I"); ("Ȋ", "I"); ("Ỉ", "I");
+    ("Ị", "I"); ("Ð", "D"); ("Ñ", "N"); ("Ò", "O"); ("Ó", "O");
+    ("Ô", "O"); ("Õ", "O"); ("Ö", "O"); ("Ø", "O"); ("Ố", "O");
+    ("Ṍ", "O"); ("Ṓ", "O"); ("Ȏ", "O"); ("Ỏ", "O"); ("Ọ", "O");
+    ("Ổ", "O"); ("Ỗ", "O"); ("Ộ", "O"); ("Ờ", "O"); ("Ở", "O");
+    ("Ỡ", "O"); ("Ớ", "O"); ("Ợ", "O"); ("Ù", "U"); ("Ú", "U");
+    ("Û", "U"); ("Ü", "U"); ("Ủ", "U"); ("Ụ", "U"); ("Ử", "U");
+    ("Ữ", "U"); ("Ự", "U"); ("Ý", "Y"); ("à", "a"); ("á", "a");
+    ("â", "a"); ("ã", "a"); ("ä", "a"); ("å", "a"); ("ấ", "a");
+    ("ắ", "a"); ("ẳ", "a"); ("ẵ", "a"); ("ặ", "a"); ("æ", "ae");
+    ("ầ", "a"); ("ằ", "a"); ("ȃ", "a"); ("ả", "a"); ("ạ", "a");
+    ("ẩ", "a"); ("ẫ", "a"); ("ậ", "a"); ("ç", "c"); ("ḉ", "c");
+    ("è", "e"); ("é", "e"); ("ê", "e"); ("ë", "e"); ("ế", "e");
+    ("ḗ", "e"); ("ề", "e"); ("ḕ", "e"); ("ḝ", "e"); ("ȇ", "e");
+    ("ẻ", "e"); ("ẽ", "e"); ("ẹ", "e"); ("ể", "e"); ("ễ", "e");
+    ("ệ", "e"); ("ì", "i"); ("í", "i"); ("î", "i"); ("ï", "i");
+    ("ḯ", "i"); ("ȋ", "i"); ("ỉ", "i"); ("ị", "i"); ("ð", "d");
+    ("ñ", "n"); ("ò", "o"); ("ó", "o"); ("ô", "o"); ("õ", "o");
+    ("ö", "o"); ("ø", "o"); ("ố", "o"); ("ṍ", "o"); ("ṓ", "o");
+    ("ȏ", "o"); ("ỏ", "o"); ("ọ", "o"); ("ổ", "o"); ("ỗ", "o");
+    ("ộ", "o"); ("ờ", "o"); ("ở", "o"); ("ỡ", "o"); ("ớ", "o");
+    ("ợ", "o"); ("ù", "u"); ("ú", "u"); ("û", "u"); ("ü", "u");
+    ("ủ", "u"); ("ụ", "u"); ("ử", "u"); ("ữ", "u"); ("ự", "u");
+    ("ý", "y"); ("ÿ", "y"); ("Ā", "A"); ("ā", "a"); ("Ă", "A");
+    ("ă", "a"); ("Ą", "A"); ("ą", "a"); ("Ć", "C"); ("ć", "c");
+    ("Ĉ", "C"); ("ĉ", "c"); ("Ċ", "C"); ("ċ", "c"); ("Č", "C");
+    ("č", "c"); ("C̆", "C"); ("c̆", "c"); ("Ď", "D"); ("ď", "d");
+    ("Đ", "D"); ("đ", "d"); ("Ē", "E"); ("ē", "e"); ("Ĕ", "E");
+    ("ĕ", "e"); ("Ė", "E"); ("ė", "e"); ("Ę", "E"); ("ę", "e");
+    ("Ě", "E"); ("ě", "e"); ("Ĝ", "G"); ("Ǵ", "G"); ("ĝ", "g");
+    ("ǵ", "g"); ("Ğ", "G"); ("ğ", "g"); ("Ġ", "G"); ("ġ", "g");
+    ("Ģ", "G"); ("ģ", "g"); ("Ĥ", "H"); ("ĥ", "h"); ("Ħ", "H");
+    ("ħ", "h"); ("Ḫ", "H"); ("ḫ", "h"); ("Ĩ", "I"); ("ĩ", "i");
+    ("Ī", "I"); ("ī", "i"); ("Ĭ", "I"); ("ĭ", "i"); ("Į", "I");
+    ("į", "i"); ("İ", "I"); ("ı", "i"); ("Ĳ", "IJ"); ("ĳ", "ij");
+    ("Ĵ", "J"); ("ĵ", "j"); ("Ķ", "K"); ("ķ", "k"); ("Ḱ", "K");
+    ("ḱ", "k"); ("K̆", "K"); ("k̆", "k"); ("Ĺ", "L"); ("ĺ", "l");
+    ("Ļ", "L"); ("ļ", "l"); ("Ľ", "L"); ("ľ", "l"); ("Ŀ", "L");
+    ("ŀ", "l"); ("Ł", "l"); ("ł", "l"); ("Ḿ", "M"); ("ḿ", "m");
+    ("M̆", "M"); ("m̆", "m"); ("Ń", "N"); ("ń", "n"); ("Ņ", "N");
+    ("ņ", "n"); ("Ň", "N"); ("ň", "n"); ("ŉ", "n"); ("N̆", "N");
+    ("n̆", "n"); ("Ō", "O"); ("ō", "o"); ("Ŏ", "O"); ("ŏ", "o");
+    ("Ő", "O"); ("ő", "o"); ("Œ", "OE"); ("œ", "oe"); ("P̆", "P");
+    ("p̆", "p"); ("Ŕ", "R"); ("ŕ", "r"); ("Ŗ", "R"); ("ŗ", "r");
+    ("Ř", "R"); ("ř", "r"); ("R̆", "R"); ("r̆", "r"); ("Ȓ", "R");
+    ("ȓ", "r"); ("Ś", "S"); ("ś", "s"); ("Ŝ", "S"); ("ŝ", "s");
+    ("Ş", "S"); ("Ș", "S"); ("ș", "s"); ("ş", "s"); ("Š", "S");
+    ("š", "s"); ("Ţ", "T"); ("ţ", "t"); ("ț", "t"); ("Ț", "T");
+    ("Ť", "T"); ("ť", "t"); ("Ŧ", "T"); ("ŧ", "t"); ("T̆", "T");
+    ("t̆", "t"); ("Ũ", "U"); ("ũ", "u"); ("Ū", "U"); ("ū", "u");
+    ("Ŭ", "U"); ("ŭ", "u"); ("Ů", "U"); ("ů", "u"); ("Ű", "U");
+    ("ű", "u"); ("Ų", "U"); ("ų", "u"); ("Ȗ", "U"); ("ȗ", "u");
+    ("V̆", "V"); ("v̆", "v"); ("Ŵ", "W"); ("ŵ", "w"); ("Ẃ", "W");
+    ("ẃ", "w"); ("X̆", "X"); ("x̆", "x"); ("Ŷ", "Y"); ("ŷ", "y");
+    ("Ÿ", "Y"); ("Y̆", "Y"); ("y̆", "y"); ("Ź", "Z"); ("ź", "z");
+    ("Ż", "Z"); ("ż", "z"); ("Ž", "Z"); ("ž", "z"); ("ſ", "s");
+    ("ƒ", "f"); ("Ơ", "O"); ("ơ", "o"); ("Ư", "U"); ("ư", "u");
+    ("Ǎ", "A"); ("ǎ", "a"); ("Ǐ", "I"); ("ǐ", "i"); ("Ǒ", "O");
+    ("ǒ", "o"); ("Ǔ", "U"); ("ǔ", "u"); ("Ǖ", "U"); ("ǖ", "u");
+    ("Ǘ", "U"); ("ǘ", "u"); ("Ǚ", "U"); ("ǚ", "u"); ("Ǜ", "U");
+    ("ǜ", "u"); ("Ứ", "U"); ("ứ", "u"); ("Ṹ", "U"); ("ṹ", "u");
+    ("Ǻ", "A"); ("ǻ", "a"); ("Ǽ", "AE"); ("ǽ", "ae"); ("Ǿ", "O");
+    ("ǿ", "o"); ("Þ", "TH"); ("þ", "th"); ("Ṕ", "P"); ("ṕ", "p");
+    ("Ṥ", "S"); ("ṥ", "s"); ("X́", "X"); ("x́", "x"); ("Ѓ", "Г");
+    ("ѓ", "г"); ("Ќ", "К"); ("ќ", "к"); ("A̋", "A"); ("a̋", "a");
+    ("E̋", "E"); ("e̋", "e"); ("I̋", "I"); ("i̋", "i"); ("Ǹ", "N");
+    ("ǹ", "n"); ("Ồ", "O"); ("ồ", "o"); ("Ṑ", "O"); ("ṑ", "o");
+    ("Ừ", "U"); ("ừ", "u"); ("Ẁ", "W"); ("ẁ", "w"); ("Ỳ", "Y");
+    ("ỳ", "y"); ("Ȁ", "A"); ("ȁ", "a"); ("Ȅ", "E"); ("ȅ", "e");
+    ("Ȉ", "I"); ("ȉ", "i"); ("Ȍ", "O"); ("ȍ", "o"); ("Ȑ", "R");
+    ("ȑ", "r"); ("Ȕ", "U"); ("ȕ", "u"); ("B̌", "B"); ("b̌", "b");
+    ("Č̣", "C"); ("č̣", "c"); ("Ê̌", "E"); ("ê̌", "e"); ("F̌", "F");
+    ("f̌", "f"); ("Ǧ", "G"); ("ǧ", "g"); ("Ȟ", "H"); ("ȟ", "h");
+    ("J̌", "J"); ("ǰ", "j"); ("Ǩ", "K"); ("ǩ", "k"); ("M̌", "M");
+    ("m̌", "m"); ("P̌", "P"); ("p̌", "p"); ("Q̌", "Q"); ("q̌", "q");
+    ("Ř̩", "R"); ("ř̩", "r"); ("Ṧ", "S"); ("ṧ", "s"); ("V̌", "V");
+    ("v̌", "v"); ("W̌", "W"); ("w̌", "w"); ("X̌", "X"); ("x̌", "x");
+    ("Y̌", "Y"); ("y̌", "y"); ("A̧", "A"); ("a̧", "a"); ("B̧", "B");
+    ("b̧", "b"); ("Ḑ", "D"); ("ḑ", "d"); ("Ȩ", "E"); ("ȩ", "e");
+    ("Ɛ̧", "E"); ("ɛ̧", "e"); ("Ḩ", "H"); ("ḩ", "h"); ("I̧", "I");
+    ("i̧", "i"); ("Ɨ̧", "I"); ("ɨ̧", "i"); ("M̧", "M"); ("m̧", "m");
+    ("O̧", "O"); ("o̧", "o"); ("Q̧", "Q"); ("q̧", "q"); ("U̧", "U");
+    ("u̧", "u"); ("X̧", "X"); ("x̧", "x"); ("Z̧", "Z"); ("z̧", "z");
+    ("й", "и"); ("Й", "И"); ("ё", "е"); ("Ё", "Е");
+  ] in
+  let replacements = Hashtbl.create (List.length pairs) in
+  List.iter (fun (from, to_) -> Hashtbl.add replacements from to_) pairs;
+  Str.regexp (String.concat "\\|" (List.map (fun (from, _) -> Str.quote from) pairs)), replacements)
+
+let ascii value = String.for_all (fun ch -> Char.code ch < 128) value
+
+let completion_clean_str value =
+  if ascii value then clean_str value
+  else
+    let value = clean_str (Dev_query.Unicode.lowercase value) in
+    let normalizer = Uunf.create `NFKC in
+    let output = Buffer.create (String.length value) in
+    let rec add input = match Uunf.add normalizer input with
+      | `Uchar ch -> Buffer.add_utf_8_uchar output ch; add `Await
+      | `Await | `End -> () in
+    let rec loop index =
+      if index < String.length value then (
+        let ch = String.get_utf_8_uchar value index in
+        add (`Uchar (Uchar.utf_decode_uchar ch));
+        loop (index + Uchar.utf_decode_length ch)) in
+    loop 0;
+    add `End;
+    let value = Buffer.contents output in
+    if ascii value then value
+    else
+      let pattern, replacements = Lazy.force completion_accents in
+      Str.global_substitute pattern
+        (fun value -> Hashtbl.find replacements (Str.matched_string value)) value
+
+let completion_score_cleaned query target =
+  if ascii query && ascii target then fuzzy_score_cleaned query target
+  else
+    let units value =
+      let rec loop index acc =
+        if index = String.length value then Array.of_list (List.rev acc)
+        else
+          let decoded = String.get_utf_8_uchar value index in
+          let cp = Uchar.to_int (Uchar.utf_decode_uchar decoded) in
+          let acc = if cp < 0x10000 then cp :: acc
+            else let cp = cp - 0x10000 in
+              (0xDC00 + (cp land 0x3FF)) :: (0xD800 + (cp lsr 10)) :: acc in
+          loop (index + Uchar.utf_decode_length decoded) acc in
+      loop 0 [] in
+    let q = units query and s = units target in
+    let qlen = Array.length q and slen = Array.length s in
+    let rec loop qi si mult score =
+      if qi = qlen then score
+        +. (1.0 -. (float_of_int (abs (qlen - slen)) /. float_of_int (max qlen slen)))
+        +. (if String.starts_with ~prefix:query target then 1010.0
+            else if String_kit.includes ~sub:query target then 1000.0 else 0.0)
+        +. (if si = slen then 1.0 else 0.0)
+      else if si = slen then 0.0
+      else if q.(qi) = s.(si) then loop (qi + 1) (si + 1) (mult + 1) (score +. float_of_int mult)
+      else loop qi (si + 1) 1 (score -. 0.1) in
+    loop 0 0 1 0.0
+
+let completion_score query target =
+  completion_score_cleaned (completion_clean_str query) (completion_clean_str target)
+
 let fts_phrase_input input =
   "\"" ^ String_kit.replace input ~match_:"\"" ~replacement:"\"\"" ^ "\"*"
 
@@ -151,7 +326,7 @@ let private_search_node db eid =
 
 let page_title_matches ~limit db query =
   let query = Dev_query.Unicode.lowercase (String.trim query) in
-  let cleaned_query = clean_str query in
+  let cleaned_query = completion_clean_str query in
   if cleaned_query = "" || limit <= 0
      || Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()) then []
   else
@@ -162,7 +337,7 @@ let page_title_matches ~limit db query =
       else Option.bind (Graph.page_summary (fun title -> Ok title) db datom.e)
         (fun page ->
           if Hashtbl.mem seen page.Cache_model.uuid then None
-          else (Hashtbl.add seen page.uuid (); Some page)) in
+          else (Hashtbl.add seen page.uuid (); Some (datom.e, page))) in
     let collect count datoms =
       datoms |> Seq.filter_map page |> Seq.take count |> List.of_seq in
     let exact = collect limit (Ds.Db.datoms db Ds.Avet
@@ -181,17 +356,19 @@ let page_title_matches ~limit db query =
           Option.bind (Graph.string_value (Some datom.v)) (fun name ->
             if not (matches name) then None
             else
-              let score = fuzzy_score_cleaned cleaned_query (clean_str name) in
+              let score = completion_score_cleaned cleaned_query (completion_clean_str name) in
               if score <= 0.0 then None
               else Option.map (fun page -> score, page) (page datom)))
         |> Seq.take count |> List.of_seq
         |> List.stable_sort (fun (a, _) (b, _) -> Float.compare b a)
         |> List.map snd in
-    let substring = fallback remaining (fun name ->
-      not (String.starts_with ~prefix:query name) && String_kit.includes ~sub:query name) in
-    let fuzzy = fallback (remaining - List.length substring) (fun name ->
-      not (String_kit.includes ~sub:query name)) in
-    exact @ prefix @ substring @ fuzzy
+    let fuzzy = fallback remaining (fun _ -> true) in
+    exact @ prefix @ fuzzy
+    |> List.map (fun (eid, (page : Cache_model.entity_summary)) ->
+      completion_score_cleaned cleaned_query (completion_clean_str page.title), eid, page)
+    |> List.stable_sort (fun (a, ae, _) (b, be, _) ->
+      let order = Float.compare b a in if order = 0 then Int.compare ae be else order)
+    |> List.map (fun (_, _, page) -> page)
 
 let row_of_eid db eid =
   let title_for_uuid uuid =
