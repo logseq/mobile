@@ -13,7 +13,7 @@ let search_result_row hit_source send : t =
               (Model.RequestSearchResult
                  (Signal.sample hit_source : Model.search_hit).hit_uuid)))
        [
-         column ~gap:4 ~padding_vertical:6 ~grow:1.0
+         column ~gap:4 ~padding_vertical:3 ~grow:1.0
            [
              if_
                ~test:
@@ -47,8 +47,8 @@ let search_section_heading title identifier : t =
    let title = heading ~level:5 ~foreground:"muted-foreground"
      ~accessibility_identifier:identifier ~value:title [] in
    (if Lui_ui.host context = KotlinHost then
-      box ~padding_horizontal:20 ~padding_vertical:8 [title]
-    else list_item ~separator:`hidden [box ~padding_vertical:8 [title]]) context parent
+      box ~padding_horizontal:20 ~padding_vertical:5 [title]
+    else list_item ~separator:`hidden [box ~padding_vertical:5 [title]]) context parent
 
 type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
 
