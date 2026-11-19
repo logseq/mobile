@@ -62,9 +62,7 @@ let str_len_distance left right =
   let shortest = min left right in
   if longest = 0.0 then 1.0 else 1.0 -. ((longest -. shortest) /. longest)
 
-let fuzzy_score query target =
-  let query = clean_str query in
-  let target = clean_str target in
+let fuzzy_score_cleaned query target =
   let rec loop query_index target_index mult acc =
     if query_index >= String.length query then
       acc
@@ -80,6 +78,228 @@ let fuzzy_score query target =
     else loop query_index (target_index + 1) 1 (acc -. 0.1)
   in
   loop 0 0 1 0.0
+
+let fuzzy_score query target = fuzzy_score_cleaned (clean_str query) (clean_str target)
+
+(* remove-accents 0.5.0, also used by frontend.common.search-fuzzy. *)
+(* The MIT License (MIT)
+   Copyright (c) 2015 Marin Atanasov
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE. *)
+let completion_accents = lazy (
+  let pairs = [
+    ("À", "A"); ("Á", "A"); ("Â", "A"); ("Ã", "A"); ("Ä", "A");
+    ("Å", "A"); ("Ấ", "A"); ("Ắ", "A"); ("Ẳ", "A"); ("Ẵ", "A");
+    ("Ặ", "A"); ("Æ", "AE"); ("Ầ", "A"); ("Ằ", "A"); ("Ȃ", "A");
+    ("Ả", "A"); ("Ạ", "A"); ("Ẩ", "A"); ("Ẫ", "A"); ("Ậ", "A");
+    ("Ç", "C"); ("Ḉ", "C"); ("È", "E"); ("É", "E"); ("Ê", "E");
+    ("Ë", "E"); ("Ế", "E"); ("Ḗ", "E"); ("Ề", "E"); ("Ḕ", "E");
+    ("Ḝ", "E"); ("Ȇ", "E"); ("Ẻ", "E"); ("Ẽ", "E"); ("Ẹ", "E");
+    ("Ể", "E"); ("Ễ", "E"); ("Ệ", "E"); ("Ì", "I"); ("Í", "I");
+    ("Î", "I"); ("Ï", "I"); ("Ḯ", "I"); ("Ȋ", "I"); ("Ỉ", "I");
+    ("Ị", "I"); ("Ð", "D"); ("Ñ", "N"); ("Ò", "O"); ("Ó", "O");
+    ("Ô", "O"); ("Õ", "O"); ("Ö", "O"); ("Ø", "O"); ("Ố", "O");
+    ("Ṍ", "O"); ("Ṓ", "O"); ("Ȏ", "O"); ("Ỏ", "O"); ("Ọ", "O");
+    ("Ổ", "O"); ("Ỗ", "O"); ("Ộ", "O"); ("Ờ", "O"); ("Ở", "O");
+    ("Ỡ", "O"); ("Ớ", "O"); ("Ợ", "O"); ("Ù", "U"); ("Ú", "U");
+    ("Û", "U"); ("Ü", "U"); ("Ủ", "U"); ("Ụ", "U"); ("Ử", "U");
+    ("Ữ", "U"); ("Ự", "U"); ("Ý", "Y"); ("à", "a"); ("á", "a");
+    ("â", "a"); ("ã", "a"); ("ä", "a"); ("å", "a"); ("ấ", "a");
+    ("ắ", "a"); ("ẳ", "a"); ("ẵ", "a"); ("ặ", "a"); ("æ", "ae");
+    ("ầ", "a"); ("ằ", "a"); ("ȃ", "a"); ("ả", "a"); ("ạ", "a");
+    ("ẩ", "a"); ("ẫ", "a"); ("ậ", "a"); ("ç", "c"); ("ḉ", "c");
+    ("è", "e"); ("é", "e"); ("ê", "e"); ("ë", "e"); ("ế", "e");
+    ("ḗ", "e"); ("ề", "e"); ("ḕ", "e"); ("ḝ", "e"); ("ȇ", "e");
+    ("ẻ", "e"); ("ẽ", "e"); ("ẹ", "e"); ("ể", "e"); ("ễ", "e");
+    ("ệ", "e"); ("ì", "i"); ("í", "i"); ("î", "i"); ("ï", "i");
+    ("ḯ", "i"); ("ȋ", "i"); ("ỉ", "i"); ("ị", "i"); ("ð", "d");
+    ("ñ", "n"); ("ò", "o"); ("ó", "o"); ("ô", "o"); ("õ", "o");
+    ("ö", "o"); ("ø", "o"); ("ố", "o"); ("ṍ", "o"); ("ṓ", "o");
+    ("ȏ", "o"); ("ỏ", "o"); ("ọ", "o"); ("ổ", "o"); ("ỗ", "o");
+    ("ộ", "o"); ("ờ", "o"); ("ở", "o"); ("ỡ", "o"); ("ớ", "o");
+    ("ợ", "o"); ("ù", "u"); ("ú", "u"); ("û", "u"); ("ü", "u");
+    ("ủ", "u"); ("ụ", "u"); ("ử", "u"); ("ữ", "u"); ("ự", "u");
+    ("ý", "y"); ("ÿ", "y"); ("Ā", "A"); ("ā", "a"); ("Ă", "A");
+    ("ă", "a"); ("Ą", "A"); ("ą", "a"); ("Ć", "C"); ("ć", "c");
+    ("Ĉ", "C"); ("ĉ", "c"); ("Ċ", "C"); ("ċ", "c"); ("Č", "C");
+    ("č", "c"); ("C̆", "C"); ("c̆", "c"); ("Ď", "D"); ("ď", "d");
+    ("Đ", "D"); ("đ", "d"); ("Ē", "E"); ("ē", "e"); ("Ĕ", "E");
+    ("ĕ", "e"); ("Ė", "E"); ("ė", "e"); ("Ę", "E"); ("ę", "e");
+    ("Ě", "E"); ("ě", "e"); ("Ĝ", "G"); ("Ǵ", "G"); ("ĝ", "g");
+    ("ǵ", "g"); ("Ğ", "G"); ("ğ", "g"); ("Ġ", "G"); ("ġ", "g");
+    ("Ģ", "G"); ("ģ", "g"); ("Ĥ", "H"); ("ĥ", "h"); ("Ħ", "H");
+    ("ħ", "h"); ("Ḫ", "H"); ("ḫ", "h"); ("Ĩ", "I"); ("ĩ", "i");
+    ("Ī", "I"); ("ī", "i"); ("Ĭ", "I"); ("ĭ", "i"); ("Į", "I");
+    ("į", "i"); ("İ", "I"); ("ı", "i"); ("Ĳ", "IJ"); ("ĳ", "ij");
+    ("Ĵ", "J"); ("ĵ", "j"); ("Ķ", "K"); ("ķ", "k"); ("Ḱ", "K");
+    ("ḱ", "k"); ("K̆", "K"); ("k̆", "k"); ("Ĺ", "L"); ("ĺ", "l");
+    ("Ļ", "L"); ("ļ", "l"); ("Ľ", "L"); ("ľ", "l"); ("Ŀ", "L");
+    ("ŀ", "l"); ("Ł", "l"); ("ł", "l"); ("Ḿ", "M"); ("ḿ", "m");
+    ("M̆", "M"); ("m̆", "m"); ("Ń", "N"); ("ń", "n"); ("Ņ", "N");
+    ("ņ", "n"); ("Ň", "N"); ("ň", "n"); ("ŉ", "n"); ("N̆", "N");
+    ("n̆", "n"); ("Ō", "O"); ("ō", "o"); ("Ŏ", "O"); ("ŏ", "o");
+    ("Ő", "O"); ("ő", "o"); ("Œ", "OE"); ("œ", "oe"); ("P̆", "P");
+    ("p̆", "p"); ("Ŕ", "R"); ("ŕ", "r"); ("Ŗ", "R"); ("ŗ", "r");
+    ("Ř", "R"); ("ř", "r"); ("R̆", "R"); ("r̆", "r"); ("Ȓ", "R");
+    ("ȓ", "r"); ("Ś", "S"); ("ś", "s"); ("Ŝ", "S"); ("ŝ", "s");
+    ("Ş", "S"); ("Ș", "S"); ("ș", "s"); ("ş", "s"); ("Š", "S");
+    ("š", "s"); ("Ţ", "T"); ("ţ", "t"); ("ț", "t"); ("Ț", "T");
+    ("Ť", "T"); ("ť", "t"); ("Ŧ", "T"); ("ŧ", "t"); ("T̆", "T");
+    ("t̆", "t"); ("Ũ", "U"); ("ũ", "u"); ("Ū", "U"); ("ū", "u");
+    ("Ŭ", "U"); ("ŭ", "u"); ("Ů", "U"); ("ů", "u"); ("Ű", "U");
+    ("ű", "u"); ("Ų", "U"); ("ų", "u"); ("Ȗ", "U"); ("ȗ", "u");
+    ("V̆", "V"); ("v̆", "v"); ("Ŵ", "W"); ("ŵ", "w"); ("Ẃ", "W");
+    ("ẃ", "w"); ("X̆", "X"); ("x̆", "x"); ("Ŷ", "Y"); ("ŷ", "y");
+    ("Ÿ", "Y"); ("Y̆", "Y"); ("y̆", "y"); ("Ź", "Z"); ("ź", "z");
+    ("Ż", "Z"); ("ż", "z"); ("Ž", "Z"); ("ž", "z"); ("ſ", "s");
+    ("ƒ", "f"); ("Ơ", "O"); ("ơ", "o"); ("Ư", "U"); ("ư", "u");
+    ("Ǎ", "A"); ("ǎ", "a"); ("Ǐ", "I"); ("ǐ", "i"); ("Ǒ", "O");
+    ("ǒ", "o"); ("Ǔ", "U"); ("ǔ", "u"); ("Ǖ", "U"); ("ǖ", "u");
+    ("Ǘ", "U"); ("ǘ", "u"); ("Ǚ", "U"); ("ǚ", "u"); ("Ǜ", "U");
+    ("ǜ", "u"); ("Ứ", "U"); ("ứ", "u"); ("Ṹ", "U"); ("ṹ", "u");
+    ("Ǻ", "A"); ("ǻ", "a"); ("Ǽ", "AE"); ("ǽ", "ae"); ("Ǿ", "O");
+    ("ǿ", "o"); ("Þ", "TH"); ("þ", "th"); ("Ṕ", "P"); ("ṕ", "p");
+    ("Ṥ", "S"); ("ṥ", "s"); ("X́", "X"); ("x́", "x"); ("Ѓ", "Г");
+    ("ѓ", "г"); ("Ќ", "К"); ("ќ", "к"); ("A̋", "A"); ("a̋", "a");
+    ("E̋", "E"); ("e̋", "e"); ("I̋", "I"); ("i̋", "i"); ("Ǹ", "N");
+    ("ǹ", "n"); ("Ồ", "O"); ("ồ", "o"); ("Ṑ", "O"); ("ṑ", "o");
+    ("Ừ", "U"); ("ừ", "u"); ("Ẁ", "W"); ("ẁ", "w"); ("Ỳ", "Y");
+    ("ỳ", "y"); ("Ȁ", "A"); ("ȁ", "a"); ("Ȅ", "E"); ("ȅ", "e");
+    ("Ȉ", "I"); ("ȉ", "i"); ("Ȍ", "O"); ("ȍ", "o"); ("Ȑ", "R");
+    ("ȑ", "r"); ("Ȕ", "U"); ("ȕ", "u"); ("B̌", "B"); ("b̌", "b");
+    ("Č̣", "C"); ("č̣", "c"); ("Ê̌", "E"); ("ê̌", "e"); ("F̌", "F");
+    ("f̌", "f"); ("Ǧ", "G"); ("ǧ", "g"); ("Ȟ", "H"); ("ȟ", "h");
+    ("J̌", "J"); ("ǰ", "j"); ("Ǩ", "K"); ("ǩ", "k"); ("M̌", "M");
+    ("m̌", "m"); ("P̌", "P"); ("p̌", "p"); ("Q̌", "Q"); ("q̌", "q");
+    ("Ř̩", "R"); ("ř̩", "r"); ("Ṧ", "S"); ("ṧ", "s"); ("V̌", "V");
+    ("v̌", "v"); ("W̌", "W"); ("w̌", "w"); ("X̌", "X"); ("x̌", "x");
+    ("Y̌", "Y"); ("y̌", "y"); ("A̧", "A"); ("a̧", "a"); ("B̧", "B");
+    ("b̧", "b"); ("Ḑ", "D"); ("ḑ", "d"); ("Ȩ", "E"); ("ȩ", "e");
+    ("Ɛ̧", "E"); ("ɛ̧", "e"); ("Ḩ", "H"); ("ḩ", "h"); ("I̧", "I");
+    ("i̧", "i"); ("Ɨ̧", "I"); ("ɨ̧", "i"); ("M̧", "M"); ("m̧", "m");
+    ("O̧", "O"); ("o̧", "o"); ("Q̧", "Q"); ("q̧", "q"); ("U̧", "U");
+    ("u̧", "u"); ("X̧", "X"); ("x̧", "x"); ("Z̧", "Z"); ("z̧", "z");
+    ("й", "и"); ("Й", "И"); ("ё", "е"); ("Ё", "Е");
+  ] in
+  let replacements = Hashtbl.create (List.length pairs) in
+  List.iter (fun (from, to_) -> Hashtbl.add replacements from to_) pairs;
+  Str.regexp (String.concat "\\|" (List.map (fun (from, _) -> Str.quote from) pairs)), replacements)
+
+let ascii value = String.for_all (fun ch -> Char.code ch < 128) value
+
+let completion_clean_ascii_str value =
+  let stripped = function '[' | ' ' | '\\' | '/' | '_' | ']' | '(' | ')' -> true | _ -> false in
+  let rec scan index =
+    if index = String.length value then Some value
+    else
+      let ch = value.[index] in
+      if Char.code ch >= 128 then None
+      else if stripped ch || ch >= 'A' && ch <= 'Z' then (
+        let output = Buffer.create (String.length value) in
+        Buffer.add_substring output value 0 index;
+        let rec copy index =
+          if index = String.length value then Some (Buffer.contents output)
+          else
+            let ch = value.[index] in
+            if Char.code ch >= 128 then None
+            else (if not (stripped ch) then Buffer.add_char output (Char.lowercase_ascii ch);
+              copy (index + 1)) in
+        copy index)
+      else scan (index + 1) in
+  scan 0
+
+let completion_clean_str value =
+  match completion_clean_ascii_str value with
+  | Some value -> value
+  | None ->
+    let value = clean_str (Dev_query.Unicode.lowercase value) in
+    let normalizer = Uunf.create `NFKC in
+    let output = Buffer.create (String.length value) in
+    let rec add input = match Uunf.add normalizer input with
+      | `Uchar ch -> Buffer.add_utf_8_uchar output ch; add `Await
+      | `Await | `End -> () in
+    let rec loop index =
+      if index < String.length value then (
+        let ch = String.get_utf_8_uchar value index in
+        add (`Uchar (Uchar.utf_decode_uchar ch));
+        loop (index + Uchar.utf_decode_length ch)) in
+    loop 0;
+    add `End;
+    let value = Buffer.contents output in
+    if ascii value then value
+    else
+      let pattern, replacements = Lazy.force completion_accents in
+      Str.global_substitute pattern
+        (fun value -> Hashtbl.find replacements (Str.matched_string value)) value
+
+let completion_score_ascii_cleaned query target =
+  let qlen = String.length query and slen = String.length target in
+  let distance = if max qlen slen = 0 then 1.0 else
+    1.0 -. (float_of_int (abs (qlen - slen)) /. float_of_int (max qlen slen)) in
+  if String.starts_with ~prefix:query target then
+    let length = float_of_int qlen in
+    length *. (length +. 1.0) /. 2.0 +. distance +. 1010.0
+    +. (if qlen = slen then 1.0 else 0.0)
+  else
+    let rec contains start index =
+      if index = qlen then true
+      else if start + qlen > slen then false
+      else if target.[start + index] = query.[index] then contains start (index + 1)
+      else contains (start + 1) 0 in
+    let rec loop qi si mult score =
+      if qi = qlen then score +. distance
+        +. (if contains 0 0 then 1000.0 else 0.0)
+        +. (if si = slen then 1.0 else 0.0)
+      else if si = slen then 0.0
+      else if query.[qi] = target.[si] then loop (qi + 1) (si + 1) (mult + 1) (score +. float_of_int mult)
+      else loop qi (si + 1) 1 (score -. 0.1) in
+    loop 0 0 1 0.0
+
+let completion_score_cleaned query target =
+  if ascii query && ascii target then completion_score_ascii_cleaned query target
+  else
+    let units value =
+      let rec loop index acc =
+        if index = String.length value then Array.of_list (List.rev acc)
+        else
+          let decoded = String.get_utf_8_uchar value index in
+          let cp = Uchar.to_int (Uchar.utf_decode_uchar decoded) in
+          let acc = if cp < 0x10000 then cp :: acc
+            else let cp = cp - 0x10000 in
+              (0xDC00 + (cp land 0x3FF)) :: (0xD800 + (cp lsr 10)) :: acc in
+          loop (index + Uchar.utf_decode_length decoded) acc in
+      loop 0 [] in
+    let q = units query and s = units target in
+    let qlen = Array.length q and slen = Array.length s in
+    let rec loop qi si mult score =
+      if qi = qlen then score
+        +. (1.0 -. (float_of_int (abs (qlen - slen)) /. float_of_int (max qlen slen)))
+        +. (if String.starts_with ~prefix:query target then 1010.0
+            else if String_kit.includes ~sub:query target then 1000.0 else 0.0)
+        +. (if si = slen then 1.0 else 0.0)
+      else if si = slen then 0.0
+      else if q.(qi) = s.(si) then loop (qi + 1) (si + 1) (mult + 1) (score +. float_of_int mult)
+      else loop qi (si + 1) 1 (score -. 0.1) in
+    loop 0 0 1 0.0
+
+let completion_score query target =
+  completion_score_cleaned (completion_clean_str query) (completion_clean_str target)
 
 let fts_phrase_input input =
   "\"" ^ String_kit.replace input ~match_:"\"" ~replacement:"\"\"" ^ "\"*"
@@ -144,6 +364,94 @@ let create path =
   search_open path;
   { path }
 
+let private_search_node db eid =
+  (Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
+   && not (Graph.entity_is_instance_of db eid "logseq.class/Tag"))
+  || Option.is_some (Graph.value db eid "block/closed-value-property")
+
+let page_title_matches ~limit db query =
+  let query = Dev_query.Unicode.lowercase (String.trim query) in
+  let cleaned_query = completion_clean_str query in
+  if cleaned_query = "" || limit <= 0
+     || Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ()) then []
+  else
+    (* Page names come from the live graph even during an FTS index rebuild. *)
+    let compare_rank (exact_a, score_a, eid_a) (exact_b, score_b, eid_b) =
+      let order = Bool.compare exact_a exact_b in
+      if order <> 0 then order else
+        let order = Float.compare score_a score_b in
+        if order <> 0 then order else Int.compare eid_b eid_a in
+    let module Top = Set.Make (struct
+      type t = (bool * float * int) * Cache_model.entity_summary
+      let compare (a, _) (b, _) = compare_rank a b
+    end) in
+    let best = ref Top.empty in
+    let count = ref 0 in
+    let worst_rank = ref None in
+    let seen = Hashtbl.create limit in
+    let offer rank (page : Cache_model.entity_summary) =
+      let previous = Hashtbl.find_opt seen page.uuid in
+      if Option.fold ~none:true ~some:(fun (old_rank, _) -> compare_rank rank old_rank > 0) previous then (
+        (match previous with
+         | Some old -> best := Top.remove old !best
+         | None ->
+           if !count = limit then (
+             let (_, (removed : Cache_model.entity_summary)) as worst = Top.min_elt !best in
+             best := Top.remove worst !best;
+             Hashtbl.remove seen removed.uuid)
+           else incr count);
+        let entry = rank, page in
+        best := Top.add entry !best;
+        Hashtbl.replace seen page.uuid entry;
+        if !count = limit then worst_rank := Some (fst (Top.min_elt !best))) in
+    (* Index sequences can be single-pass; retain each head until consumed. *)
+    let cursor attr = ref ((Ds.Db.datoms db Ds.Aevt ~a:attr ()) ()) in
+    let names = cursor "block/name" and journals = cursor "block/journal-day" in
+    let rec at cursor eid =
+      match !cursor with
+      | Seq.Cons ((datom : Ds.datom), rest) when datom.e < eid -> cursor := rest (); at cursor eid
+      | Seq.Cons (datom, _) when datom.e = eid -> Some datom.v
+      | _ -> None in
+    let subsequence query target =
+      let rec loop qi si =
+        if qi = String.length query then true
+        else if si = String.length target then false
+        else loop (if query.[qi] = target.[si] then qi + 1 else qi) (si + 1) in
+      loop 0 0 in
+    let ascii_query = ascii cleaned_query in
+    let score_page eid name title =
+      match Graph.string_value name, title with
+      | Some name, Some title ->
+        let score =
+          if ascii_query then match completion_clean_ascii_str title with
+            | Some target ->
+              if subsequence cleaned_query target then completion_score_ascii_cleaned cleaned_query target else 0.0
+            | None -> completion_score_cleaned cleaned_query (completion_clean_str title)
+          else completion_score_cleaned cleaned_query (completion_clean_str title) in
+        if score > 0.0 then (
+          let rank = name = query, score, eid in
+          if Option.fold ~none:true ~some:(fun worst -> compare_rank rank worst > 0) !worst_rank
+             && not (private_search_node db eid) then
+            Option.iter (offer rank) (Graph.page_summary (fun title -> Ok title) db eid))
+      | _ -> () in
+    Ds.Db.fold_datoms (fun () (datom : Ds.datom) ->
+      match at names datom.e with
+      | None -> ()
+      | Some _ as name ->
+        let title = match Graph.int_value (at journals datom.e) with
+          | Some day when Journal.valid_day day -> Graph.entity_title (fun title -> Ok title) db datom.e
+          | _ -> Graph.string_value (Some datom.v) in
+        score_page datom.e name title)
+      () db Ds.Aevt ~a:"block/title" ();
+    Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ()
+    |> Seq.iter (fun (datom : Ds.datom) ->
+      match Graph.int_value (Some datom.v) with
+      | Some day when Journal.valid_day day ->
+        score_page datom.e (Graph.value db datom.e "block/name")
+          (Graph.entity_title (fun title -> Ok title) db datom.e)
+      | _ -> ());
+    Top.elements !best |> List.rev_map snd
+
 let row_of_eid db eid =
   let title_for_uuid uuid =
     match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
@@ -157,12 +465,7 @@ let row_of_eid db eid =
   | Some uuid ->
     (match Graph.entity_title (fun value -> Ok value) db eid with
      | Some title ->
-       let hidden =
-         (Graph.value db eid "logseq.property/built-in?" = Some (Ds.Bool true)
-          && not (Graph.entity_is_instance_of db eid "logseq.class/Tag"))
-         || Option.is_some (Graph.value db eid "block/closed-value-property")
-         || Graph.page_is_hidden db eid
-       in
+       let hidden = private_search_node db eid || Graph.page_is_hidden db eid in
        if String.trim title <> "" && (not hidden) && utf8_length title <= 10000
        then
          let is_page =
@@ -277,7 +580,7 @@ let refresh index db =
 let query_rows index sql binds =
   try search_query index.path sql binds with Failure _ -> []
 
-let full_text_rows ~offset ~limit index query =
+let full_text_rows ?(prioritize_pages = false) ~offset ~limit index query =
   let query = String.trim query in
   let query = if String.starts_with ~prefix:"#" query && not (String.exists whitespace_char query)
     then String.sub query 1 (String.length query - 1) else query in
@@ -291,11 +594,20 @@ let full_text_rows ~offset ~limit index query =
           query ["\\"; "%"; "_"] in
         "title LIKE ? ESCAPE '\\'", "%" ^ escaped ^ "%"
       else "title MATCH ?", get_match_input query in
+    let order, rank_binds =
+      if prioritize_pages then
+        (* Rank page titles before LIMIT/OFFSET. Preserve the existing FTS
+           order within each group so later pages continue where earlier ones ended. *)
+        " ORDER BY CASE WHEN id <> page THEN 3 \
+         WHEN title = ? COLLATE NOCASE THEN 0 \
+         WHEN instr(lower(title), lower(?)) = 1 THEN 1 ELSE 2 END, rowid",
+        [Sqlite3.Data.TEXT query; Sqlite3.Data.TEXT query]
+      else "", [] in
     try Sql.with_search_db index.path (fun connection ->
       Sql.query connection
-        ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ " LIMIT ? OFFSET ?")
-        [Sqlite3.Data.TEXT input; Sqlite3.Data.INT (Int64.of_int limit);
-         Sqlite3.Data.INT (Int64.of_int (max 0 offset))]
+        ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ order ^ " LIMIT ? OFFSET ?")
+        (Sqlite3.Data.TEXT input :: rank_binds @ [Sqlite3.Data.INT (Int64.of_int limit);
+         Sqlite3.Data.INT (Int64.of_int (max 0 offset))])
         (fun row ->
           let uuid = Sqlite3.column_text row 0 and page_uuid = Sqlite3.column_text row 1 in
           {uuid; page_uuid; title = Sqlite3.column_text row 2; is_page = uuid = page_uuid}))
@@ -335,8 +647,6 @@ let hydrate_hits db results =
       })
     results
 
-(* Reference completion restricts short queries to page names. Global search
-   uses the paged API below to include both page titles and block content. *)
 let search_hits limit index db query =
   let query = String.trim query in
   if limit <= 0 || query = "" then []
@@ -352,11 +662,11 @@ let search_hits limit index db query =
     |> Seq.take limit |> List.of_seq
   else hydrate_hits db (search limit index query)
 
-(* Bound the result window before reading graph context. *)
+(* Rank before slicing and only hydrate the requested window. *)
 let search_hits_page ~offset ~limit index db query =
   if limit <= 0 then [], false else
     let limit = min 100 limit in
-    let results = full_text_rows ~offset ~limit:(limit + 1) index query in
+    let results = full_text_rows ~prioritize_pages:true ~offset ~limit:(limit + 1) index query in
     let rec take n acc = function
       | [] -> List.rev acc, false
       | _ when n = 0 -> List.rev acc, true

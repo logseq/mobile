@@ -1666,6 +1666,200 @@ let tag_autocomplete_candidates_use_canonical_graph_identity () =
   check_eq (member "label" (List.hd candidates)) (`String "Project");
   check_eq (member "value" (List.hd candidates)) (`String "tag-uuid")
 
+let with_crowded_page_search f =
+  Search_index_test.with_index (fun index ->
+    let conn = Search_index_test.seeded_conn () in
+    let testpage = "018f7850-0000-7da0-8b3f-6dbb64aa4ee0" in
+    let person = "018f7850-0000-7da0-8b3f-6dbb64aa4ee1" in
+    let person_notes = "018f7850-0000-7da0-8b3f-6dbb64aa4ee2" in
+    let block_rows = List.init 45 (fun i -> 11 + i,
+      Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" (100 + i),
+      Printf.sprintf "A testpa draft about a person %d" i) in
+    let add = Search_index_test.add in
+    ignore (Ds.transact_conn conn ([
+      add 7 "block/uuid" (Ds.Uuid testpage);
+      add 7 "block/name" (Ds.String "testpage");
+      add 7 "block/title" (Ds.String "testpage");
+      add 8 "block/uuid" (Ds.Uuid person);
+      add 8 "block/name" (Ds.String "person");
+      add 8 "block/title" (Ds.String "Person");
+      add 8 "block/tags" (Ds.Ref 10);
+      add 9 "block/uuid" (Ds.Uuid person_notes);
+      add 9 "block/name" (Ds.String "person notes");
+      add 9 "block/title" (Ds.String "Person notes");
+      add 10 "db/ident" (Ds.Keyword "logseq.class/Tag");
+    ] @ List.concat_map (fun (eid, uuid, title) ->
+      [add eid "block/uuid" (Ds.Uuid uuid);
+       add eid "block/title" (Ds.String title);
+       add eid "block/page" (Ds.Ref 1);
+       add eid "block/parent" (Ds.Ref 1)]) block_rows));
+    let db = Ds.conn_db conn in
+    let session = configure_plain_session (Session.create_session {
+      Session.default_options with
+      outliner_projection_limit = Some 32;
+      graph_db = Some (fun () -> Some db);
+      graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+      graph_search_page = Some (fun ~offset ~limit query ->
+        Search.search_hits_page ~offset ~limit index db query);
+    }) in
+    let index_blocks () =
+      Search.search_upsert index.path (List.map (fun (_, uuid, title) ->
+        uuid, title, Search_index_test.page_uuid) block_rows) in
+    let index_pages () = Search.search_upsert index.path [
+      testpage, "testpage", testpage;
+      person_notes, "Person notes", person_notes;
+      person, "Person", person;
+    ] in
+    f session testpage person person_notes index_blocks index_pages)
+
+let page_autocomplete_finds_pages_before_and_during_indexing () =
+  with_crowded_page_search (fun session testpage _ _ index_blocks index_pages ->
+    ignore (outliner_block_event session "tapBlock" "editing");
+    let candidates () =
+      outliner_event session {|{"type":"textChanged","title":"[[testpa]]","caretUTF16Offset":8}|}
+      |> json_items "outlinerAutocompleteCandidates" in
+    let check_first message =
+      check_eq ~msg:message (List.map (member "value") (List.take 1 (candidates ())))
+        [`String testpage] in
+    check_first "an existing page is available before the search index is built";
+    index_blocks ();
+    check_first "the page remains first when only matching blocks have been indexed";
+    index_pages ();
+    check_first "matching blocks cannot push a page out of completion";
+    let completed = outliner_event session (Json.to_string (`Assoc [
+      "type", `String "chooseAutocomplete"; "value", `String testpage])) in
+    check_eq (member "title" (member "editing" (member "outlinerState" completed)))
+      (`String "[[testpage]]"))
+
+let global_search_ranks_exact_tags_before_pagination () =
+  with_crowded_page_search (fun session _ person person_notes index_blocks index_pages ->
+    index_blocks ();
+    index_pages ();
+    let search action payload =
+      response_result (dispatch_json session action payload) in
+    let first = search "searchNodes" "person" in
+    let items = json_items "searchResults" first in
+    check_eq ~msg:"the exact tag and the prefix page are first, despite earlier indexed blocks"
+      (List.take 2 (List.map (member "uuid") items)) [`String person; `String person_notes];
+    check_eq (List.map (member "isPage") (List.take 2 items)) [`Bool true; `Bool true];
+    let next offset = search "searchNodesPage"
+      (Printf.sprintf {|{"query":"person","offset":%d}|} offset) in
+    let second = next 20 in
+    let third = next 40 in
+    check_eq (member "searchHasMore" third) (`Bool false);
+    let ids = List.map (member "uuid")
+      (items @ json_items "searchResults" second @ json_items "searchResults" third) in
+    check_eq (List.length ids) 47;
+    check_eq (List.length (List.sort_uniq compare ids)) 47)
+
+let page_autocomplete_matches_master_order () =
+  Search_index_test.with_index (fun index ->
+    let conn = Ds.create_conn ~schema:(Search_index_test.schema @ [
+      "db/ident", {Storage_codec.default_schema_attr with Ds.unique = Some Ds.Identity};
+      "block/tags", {Storage_codec.default_schema_attr with Ds.value_type = Some Ds.RefType;
+        cardinality = Ds.Many}]) () in
+    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"; "testpa";
+                 "Person"; "Person notes"; "Personal ledger"; "About a person"] in
+    let add = Search_index_test.add in
+    ignore (Ds.transact_conn conn [
+      add 1 "block/uuid" (Ds.Uuid Search_index_test.page_uuid);
+      add 1 "block/name" (Ds.String "movies");
+      add 1 "block/title" (Ds.String "Movies");
+      add 10 "db/ident" (Ds.Keyword "logseq.class/Page")]);
+    List.iteri (fun i title ->
+      let eid = 20 + i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/tags" (Ds.Ref 10);
+        add eid "block/title" (Ds.String title)])) names;
+    let block_uuid = "018f7850-0000-7da0-8b3f-0000000003e8" in
+    ignore (Ds.transact_conn conn [
+      add 1000 "block/uuid" (Ds.Uuid block_uuid);
+      add 1000 "block/title" (Ds.String "testpage block");
+      add 1000 "block/page" (Ds.Ref 1);
+      add 1000 "block/parent" (Ds.Ref 1)]);
+    Search.search_upsert index.path [block_uuid, "testpage block", Search_index_test.page_uuid];
+    let make_session () =
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      session in
+    let candidates session query =
+      outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" in
+    let session = make_session () in
+    List.iter (fun (query, expected) ->
+      check_eq ~msg:("master completion order for " ^ query)
+        (List.map (member "label") (candidates session query))
+        (List.map (fun s -> `String s) expected))
+      ["testpa", ["testpa"; "Test page"; "testpage";
+                  "testpage notes"; "my testpage"; "testpage block"];
+       "TESTPAGE", ["testpage"; "Test page";
+                    "testpage notes"; "my testpage"; "testpage block"];
+       "person", ["Person"; "Person notes";
+                  "Personal ledger"; "About a person"];
+       "testpag", ["New page: testpag"; "Test page"; "testpage";
+                   "testpage notes"; "my testpage"; "testpage block"];
+       "test", ["testpa"; "New page: test"; "Test page"; "testpage";
+                "testpage notes"; "my testpage"; "testpage block"]];
+    List.iter (fun limit ->
+      check_eq ~msg:"the caller's page limit is respected"
+        (List.length (Search.page_title_matches ~limit (Ds.conn_db conn) "testpa")) limit)
+      [0; 1; 2; 3];
+    List.iteri (fun i _ ->
+      let eid = 100 + i in
+      let title = Printf.sprintf "Test pa fuzzy %d" i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/title" (Ds.String title)])) (List.init 200 Fun.id);
+    let labels = List.map (member "label") (candidates (make_session ()) "testpa") in
+    check_eq ~msg:"master's fuzzy tie order survives bounded retrieval"
+      (List.take 3 labels) [`String "testpa"; `String "Test page"; `String "testpage"];
+    List.iter (fun label -> check ~msg:"exact and prefix candidates survive the candidate limit"
+      (List.mem (`String label) labels)) ["testpa"; "testpage"; "testpage notes"];
+    check (List.length labels <= 20))
+
+let page_autocomplete_keeps_late_stronger_matches () =
+  List.iter (fun (query, early, better) ->
+    Search_index_test.with_index (fun index ->
+      let conn = Search_index_test.seeded_conn () in
+      let add = Search_index_test.add in
+      List.iteri (fun i title ->
+        let eid = 20 + i in
+        ignore (Ds.transact_conn conn [
+          add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+          add eid "block/name" (Ds.String (String.lowercase_ascii title));
+          add eid "block/title" (Ds.String title)]))
+        (List.init 25 early @ [better]);
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      let labels = outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" |> List.map (member "label") in
+      let existing = List.filter (fun label -> label <> `String ("New page: " ^ query)) labels in
+      check_eq ~msg:("late stronger match ranks first for " ^ query)
+        (List.hd existing) (`String better)))
+    ["testpage", (fun i -> Printf.sprintf "T-e-s-t-p-a-g-e fuzzy %02d" i), "My testpage";
+     "prefix", (fun i -> Printf.sprintf "prefix a very long title %02d" i), "prefix z"]
+
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->
     let conn = Search_index_test.seeded_conn () in
@@ -6773,6 +6967,12 @@ let cases =
     case "block reference completion saves the selected UUID" block_reference_completion_saves_the_selected_uuid;
     case "page autocomplete searches beyond sidebar and current page"
       page_autocomplete_searches_beyond_sidebar_and_current_page;
+    case "page autocomplete finds pages before and during indexing"
+      page_autocomplete_finds_pages_before_and_during_indexing;
+    case "page autocomplete matches master order" page_autocomplete_matches_master_order;
+    case "page autocomplete keeps late stronger matches" page_autocomplete_keeps_late_stronger_matches;
+    case "global search ranks exact tags before pagination"
+      global_search_ranks_exact_tags_before_pagination;
     case "websocket errors distinguish snapshot recovery from apply failures"
       websocket_errors_distinguish_snapshot_recovery_from_apply_failures;
     case "pending sync rejects stale completions and preserves failed block"

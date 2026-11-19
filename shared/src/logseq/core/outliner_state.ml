@@ -364,6 +364,12 @@ let rec take_n n xs =
   if n <= 0 then []
   else match xs with [] -> [] | x :: rest -> x :: take_n (n - 1) rest
 
+let node_search_candidates (context : outliner_context) query =
+  let pages = match context.db with
+    | Some db -> summary_candidates (Search.page_title_matches ~limit:20 db query)
+    | None -> [] in
+  pages @ context.search_nodes query
+
 let autocomplete_candidates (context : outliner_context) request =
   let resolve (candidate : outliner_candidate) = match context.db with
     | Some db when List.exists Ref_text.is_uuid (Ref_text.page_names candidate.label) ->
@@ -413,7 +419,9 @@ let autocomplete_candidates (context : outliner_context) request =
     | Command | Picker _ -> []) in
   let fuzzy = request.kind = Tag && normalized <> "" in
   let seen = Hashtbl.create 32 in
-  let indexed = if request.kind = Node && query <> "" then List.map resolve (context.search_nodes query) else [] in
+  let indexed = if request.kind = Node && query <> "" then
+      List.map resolve (node_search_candidates context query)
+    else [] in
   let matches = indexed @
     List.filter
       (fun (candidate : outliner_candidate) ->
@@ -431,7 +439,43 @@ let autocomplete_candidates (context : outliner_context) request =
         end) matches
   in
   let matches =
-    take_n 12
+    if request.kind = Node && query <> "" then
+      let pages = Hashtbl.create (List.length context.pages) in
+      List.iter (fun (page : outliner_candidate) -> Hashtbl.replace pages page.value ()) context.pages;
+      let is_page (candidate : outliner_candidate) =
+        match context.db with
+        | Some db -> Option.fold ~none:false ~some:(fun id ->
+            Graph_read.value db id "block/name" <> None)
+            (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))
+        | None -> Hashtbl.mem pages candidate.value in
+      let scored = List.map (fun candidate ->
+        let page = is_page candidate in
+        let score = Search.completion_score query candidate.label in
+        let keyword = score +. (if page then 2.0 else 0.0) in
+        let tagged = match context.db with
+          | Some db -> Option.fold ~none:false ~some:(fun id ->
+              Graph_read.ref_eids db id "block/tags" <> [])
+              (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))
+          | None -> false in
+        let combined = keyword +. 0.000001 *. keyword
+          +. (if page then 0.02 else if tagged then 0.01 else 0.0) in
+        score, page, combined, candidate) matches in
+      let worker = scored
+        |> List.stable_sort (fun (_, _, a, ac) (_, _, b, bc) ->
+          let order = Float.compare b a in
+          if order <> 0 then order else
+            if String.exists (fun ch -> List.mem ch [' '; '\t'; '\r'; '\n'; '\011'; '\012']) query then 0 else
+              Bool.compare (String.lowercase_ascii bc.label = normalized)
+                (String.lowercase_ascii ac.label = normalized))
+        |> take_n 20 in
+      let ranked, unmatched = List.partition (fun (score, _, _, _) -> score > 0.0) worker in
+      let ranked = ranked
+        |> List.stable_sort (fun (a, _, _, _) (b, _, _, _) -> Float.compare b a)
+        |> take_n 50 in
+      ranked @ unmatched
+      |> List.stable_sort (fun (_, ap, _, _) (_, bp, _, _) -> Bool.compare bp ap)
+      |> List.map (fun (_, _, _, candidate) -> candidate)
+    else take_n 12
       (if fuzzy then
          List.sort
            (fun (a : outliner_candidate) (b : outliner_candidate) ->
@@ -459,7 +503,11 @@ let autocomplete_candidates (context : outliner_context) request =
              && (Graph_read.entity_is_instance_of db id "logseq.class/Page"
                  || Graph_read.entity_is_instance_of db id "logseq.class/Journal"))
              (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))) (indexed @ raw)) then
-    matches @ [ { label = "New page: " ^ query; value = query } ]
+    let create = { label = "New page: " ^ query; value = query } in
+    (match matches with
+     | first :: rest when String_kit.starts_with ~prefix:normalized
+         (String.lowercase_ascii first.label) -> first :: create :: rest
+     | _ -> create :: matches)
   else matches
 
 let contains_from value start needle =
@@ -1371,7 +1419,7 @@ let choose_completion context (state : outliner_state) value =
   | Some editing, Some request
     when autocomplete_for editing.title editing.caret = Some request ->
     let context = if request.kind = Node && String_kit.trim request.query <> "" then
-        let pages = context.search_nodes (String_kit.trim request.query) @ context.pages in
+        let pages = node_search_candidates context (String_kit.trim request.query) @ context.pages in
         let label_values = candidate_label_values (pages @ context.tags) in
         { context with pages; label_values; dup_labels = duplicated_of label_values }
       else context in

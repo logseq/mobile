@@ -62,15 +62,42 @@ let search_entry_key = function
   | Search_heading (_, identifier) -> identifier
   | Search_hit hit -> View_base.search_result_identifier hit
 
-let search_result_entries model_source send : t =
-  keyed ~source:(reactive search_entries model_source)
-    ~key:search_entry_key ~cmp:compare
-    ~mount:(fun entry_source -> match Signal.sample entry_source with
+let mount_search_entry send entry_source =
+  match Signal.sample entry_source with
       | Search_heading (title, identifier) -> search_section_heading title identifier
       | Search_hit _ -> fun context parent ->
         let hit = Signal.own_signal context.Lui_ui.ui_scope
           (Signal.map (function Search_hit hit -> hit | _ -> assert false) entry_source) in
-        search_result_row hit send context parent)
+        search_result_row hit send context parent
+
+let search_result_entries model_source send : t =
+  keyed ~source:(reactive search_entries model_source)
+    ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)
+
+let search_result_list model_source send : t =
+ fun context parent ->
+  let load_more last =
+    let current = Signal.sample model_source in
+    if last >= current.Model.search_result_count - 6 then
+      ignore (send Model.LoadMoreSearchResults) in
+  (if Lui_ui.host context = KotlinHost then
+     let count = Signal.own_signal context.Lui_ui.ui_scope
+       (Signal.map (fun current -> List.length (search_entries current)) model_source) in
+     let offset = Signal.own_signal context.Lui_ui.ui_scope
+       (Signal.map (fun _ -> 0) model_source) in
+     virtual_list ~grow:1.0 ~accessibility_identifier:"screen.search.results" [
+       View_rows.paged_keyed ~identifier:"search.results.window" ~item_extent:72
+         ~count ~offset
+         ~on_visible_range:(fun _ last -> load_more last)
+         ~source:(reactive search_entries model_source)
+         ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)]
+   else
+     list ~grow:1.0 ~style:`plain ~track_visible_range:true
+       ~accessibility_identifier:"screen.search.results"
+       ~on_visible_range:(function
+         | VisibleRange (_, _, last) -> load_more last
+         | _ -> ())
+       [search_result_entries model_source send]) context parent
 
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
@@ -101,15 +128,7 @@ let search_screen model_source send : t =
            ]);
       if_
         ~test:(Signal.map View_base.search_results_present_ model_source)
-        (list ~grow:1.0 ~style:`plain ~track_visible_range:true
-           ~accessibility_identifier:"screen.search.results"
-           ~on_visible_range:(function
-             | VisibleRange (_, _, last) ->
-               let current = Signal.sample model_source in
-               if last >= current.Model.search_result_count - 6 then
-                 ignore (send Model.LoadMoreSearchResults)
-             | _ -> ())
-           [search_result_entries model_source send]);
+        (search_result_list model_source send);
     ]
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send

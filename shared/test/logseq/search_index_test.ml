@@ -14,7 +14,7 @@ let schema =
         indexed = true;
         value_type = Some Ds.UuidType;
       } );
-    ("block/name", { one with Ds.value_type = Some Ds.StringType });
+    ("block/name", { one with Ds.value_type = Some Ds.StringType; indexed = true });
     ("block/title", { one with Ds.value_type = Some Ds.StringType });
     ("block/page", { one with Ds.value_type = Some Ds.RefType });
     ("block/parent", { one with Ds.value_type = Some Ds.RefType });
@@ -304,8 +304,37 @@ let builtin_content_tags_are_searchable () =
       (not (List.exists (fun (hit : Search.indexed_search_hit) -> hit.title = "Node title")
         (Search.search_hits 100 index db "Node title"))))
 
+let page_title_matches_joins_sparse_pages_and_dynamic_journals () =
+  let conn = Ds.create_conn ~schema () in
+  check_eq (Search.page_title_matches ~limit:12 (Ds.conn_db conn) "needle") [];
+  ignore (Ds.transact_conn conn [
+    add 20 "block/uuid" (Ds.Uuid page_uuid);
+    add 20 "block/name" (Ds.String "needle prefix long");
+    add 20 "block/title" (Ds.String "Needle prefix long");
+    add 21 "block/uuid" (Ds.Uuid block_uuid);
+    add 21 "block/title" (Ds.String "Needle block");
+    add 40 "block/uuid" (Ds.Uuid ref_block_uuid);
+    add 40 "block/name" (Ds.String "unrelated name");
+    add 40 "block/title" (Ds.String "My Needle");
+    add 60 "block/uuid" (Ds.Uuid journal_uuid);
+    add 60 "block/name" (Ds.String "unrelated journal name");
+    add 60 "block/journal-day" (Ds.Int64 20260816L);
+    add 80 "block/uuid" (Ds.Uuid hidden_uuid);
+    add 80 "block/name" (Ds.String "needle missing title")]);
+  let db = Ds.conn_db conn in
+  let uuids query = Search.page_title_matches ~limit:12 db query
+    |> List.map (fun (page : Cache_model.entity_summary) -> page.uuid) in
+  check_eq (uuids "needle") [page_uuid; ref_block_uuid];
+  let journal_title = Option.get (Graph_read.entity_title (fun title -> Ok title) db 60) in
+  check_eq (uuids journal_title) [journal_uuid];
+  check_eq (uuids "") [];
+  check_eq (uuids "zzzz-no-match") [];
+  check_eq (Search.page_title_matches ~limit:0 db "needle") []
+
 let cases =
   [
+    case "page completion joins sparse pages and dynamic journals"
+      page_title_matches_joins_sparse_pages_and_dynamic_journals;
     case "graph search preserves FTS matches for long queries" graph_search_preserves_fts_matches_for_long_queries;
     case "short queries search pages blocks and literal symbols" short_queries_search_pages_blocks_and_literal_symbols;
     case "built-in content tags are searchable" builtin_content_tags_are_searchable;
