@@ -1,10 +1,6 @@
 open Lui_protocol
 open Lui_elements
 
-let mount_when ~test (elem : t) : t =
-  keyed ~source:(reactive (fun visible -> if visible then [()] else []) test)
-    ~key:Fun.id ~cmp:Unit.compare ~mount:(fun _ -> elem)
-
 let search_result_row hit_source send : t =
  fun context parent ->
    let hit : Model.search_hit = Signal.sample hit_source in
@@ -223,7 +219,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           ~test:(Signal.map View_base.bottom_chrome_selection_
                    model_source)
           (column ~gap:0 ~padding_horizontal:16 [ box ~height:21 [] ]);
-        mount_when
+        if_
           ~test:(reactive View_base.bottom_chrome_editor_ model_source)
           (View_base.with_liquid_glass "container"
              (column ~gap:0 ~padding_horizontal:8 ~padding_vertical:4
@@ -249,7 +245,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
                  [ View_composer.composer_view context model_source send ];
                box ~height:21 [];
              ]);
-        mount_when
+        if_
           ~test:(reactive View_base.bottom_chrome_capture_and_search_ model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
@@ -402,7 +398,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
     =
   stack ~grow:1.0
     [
-      mount_when
+      if_
         ~test:(reactive View_base.journal_tree_retained_ model_source)
         (journal_tree_panes context model_source send);
       if_
@@ -774,7 +770,7 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      (* Keep the chrome anchor present while idle so native route indices stay stable. *)
      ignore
        ((column ~gap:0
-           [mount_when ~test:(reactive View_base.search_editor_active_ model_source)
+           [if_ ~test:(reactive View_base.search_editor_active_ model_source)
               (main_bottom_chrome context model_source send)]) context (Some node));
      ignore ((main_header_connection model_source send) context (Some node));
      ignore
@@ -984,7 +980,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
   let content_children : t list =
     if Lui_ui.platform context = AndroidOS then
       [
-        mount_when
+        if_
           ~test:(reactive View_base.main_screen_visible_ model_source)
           (native_navigation_view context model_source send);
         if_
@@ -992,7 +988,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
             (Signal.map View_base.graph_picker_screen_visible_
                model_source)
           (View_graphs.graph_picker_screen context model_source send);
-        mount_when
+        if_
           ~test:(reactive View_base.model_settings_open_ model_source)
           (View_settings.settings_sheet context model_source send);
         if_
@@ -1020,7 +1016,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
       ]
     else
       [
-        mount_when
+        if_
           ~test:(reactive View_base.main_screen_visible_ model_source)
           (native_search_view ~base:(native_navigation_view context
              (Signal.map (fun (current : Model.logseq_model) ->
@@ -1037,7 +1033,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
             (Signal.map View_base.authentication_screen_visible_
                model_source)
           (authentication_screen context model_source send);
-        mount_when
+        if_
           ~test:(reactive View_base.model_settings_open_ model_source)
           (View_settings.settings_sheet context model_source send);
         if_
@@ -1104,7 +1100,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
               (Signal.map View_base.authentication_screen_visible_
                  model_source)
             (authentication_screen context model_source send);
-          mount_when
+          if_
             ~test:(reactive View_base.application_shell_visible_ model_source)
             (drawer
                ~selected_signal:
@@ -1129,7 +1125,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
               (Signal.map View_base.authentication_screen_visible_
                  model_source)
             (authentication_screen context model_source send);
-          mount_when
+          if_
             ~test:(reactive View_base.application_shell_visible_ model_source)
             (drawer
                ~selected_signal:

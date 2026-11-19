@@ -50,9 +50,8 @@ let logseq_view (context : Lui_ui.ui_context) model_source send =
   in
   Lui_elements.themed ~tokens:(logseq_theme_tokens context)
     ~mode:(reactive logseq_theme_mode model_source)
-    (Lui_elements.keyed ~source:(reactive (fun model -> [language model]) model_source)
-      ~key:Fun.id ~cmp:String.compare
-      ~mount:(fun _ -> View_screens.logseq_view context model_source send))
+    (reactive ~equal:(fun left right -> language left = language right)
+      (fun _ -> View_screens.logseq_view context model_source send) model_source)
 
 let outliner_editor_schema () =
   let open Lui_protocol in
