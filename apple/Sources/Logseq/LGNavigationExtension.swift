@@ -173,6 +173,8 @@ private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
 @MainActor
 enum LGNavigationExtension {
     static let identifier = "native-navigation-stack"
+    static let destinationIdentifier = "native-navigation-title"
+    static let destinationFingerprint = "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none"
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
@@ -277,8 +279,8 @@ enum LGNavigationExtension {
         )
         try registry.registerTweak(
             LUIAppleTweak(
-                identifier: "native-navigation-title",
-                fingerprint: "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none",
+                identifier: destinationIdentifier,
+                fingerprint: destinationFingerprint,
                 properties: [
                     .init(name: "title", kind: .string, isRequired: true),
                 ]
@@ -403,7 +405,6 @@ private struct LGNavigationStack: View {
         LGNavigationContent(
             context: context,
             rootIndex: 0,
-            routeStartIndex: 6,
             synchronizationName: "navigation",
             toolbarStartIndex: 1,
             trailingMenuIndex: nil,
@@ -670,7 +671,6 @@ private struct LGNativeNavigationPop {
 private struct LGNavigationContent: View {
     let context: LUIAppleExtensionViewContext
     let rootIndex: Int
-    let routeStartIndex: Int
     let synchronizationName: String
     let toolbarStartIndex: Int?
     let trailingMenuIndex: Int?
@@ -697,7 +697,7 @@ private struct LGNavigationContent: View {
     private var searchVisible: Bool { search?.isVisible == true }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
-        return Array(search.context.childIDs.dropFirst(4).prefix(max(0, search.depth)))
+        return pageRoutes(in: search.context, depth: search.depth)
     }
     private var showsSearchPage: Bool { searchVisible && (search?.depth ?? 0) > 0 }
     private var chromeContext: LUIAppleExtensionViewContext { showsSearchPage ? search!.context : context }
@@ -973,10 +973,16 @@ private struct LGNavigationContent: View {
                 .accessibilityHidden(searchVisible)
             if active, let search, search.isVisible {
                 if search.context.childIDs.indices.contains(1) {
+                    let background = routeBackground
                     search.context.content(for: search.context.childIDs[1])
                         .environment(\.luiTextHighlightQuery, search.query)
+                        .environment(\.defaultMinListRowHeight, 0)
+                        .transformEnvironment(\.luiSemanticColors) { colors in
+                            colors["background"] = background
+                            colors["surface"] = background
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(routeBackground)
+                        .background(background)
                         // A principal text item creates a horizontal title bar
                         // alongside Duo's vertical controls. Keep the status in
                         // the search surface so dismissing it cannot reflow home.
@@ -987,7 +993,7 @@ private struct LGNavigationContent: View {
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)
-                                    .background(routeBackground)
+                                    .background(background)
                                     .accessibilityIdentifier("search.status")
                             }
                         }
@@ -1122,14 +1128,15 @@ private struct LGNavigationContent: View {
     }
 
     private var desiredPath: [Int] {
-        let childIDs = context.childIDs
-        let availableDepth = max(0, childIDs.count - routeStartIndex)
-        let retainedDepth = min(max(0, depth), availableDepth)
-        var result: [Int] = []
-        for index in 0..<retainedDepth {
-            result.append(childIDs[index + routeStartIndex])
-        }
-        return result + searchRoutes
+        pageRoutes(in: context, depth: depth) + searchRoutes
+    }
+
+    private func pageRoutes(in context: LUIAppleExtensionViewContext, depth: Int) -> [Int] {
+        // Depth can arrive before the destination child. The adjacent capture
+        // controls and file preview must never enter the native stack.
+        Array(context.childIDs.lazy.filter {
+            context.extensionIdentifier(of: $0) == LGNavigationExtension.destinationIdentifier
+        }.prefix(max(0, depth)))
     }
 
     private var trailingToolbarPlacement: ToolbarItemPlacement {

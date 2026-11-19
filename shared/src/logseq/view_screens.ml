@@ -3,9 +3,12 @@ open Lui_elements
 
 let search_result_row hit_source send : t =
  fun context parent ->
-   let hit = Signal.sample hit_source in
+   let hit : Model.search_hit = Signal.sample hit_source in
+   let native_list = Lui_ui.host context = SwiftUIHost in
    let elem =
      list_item ~separator:`hidden
+       ?padding_horizontal:(if native_list then Some 16 else None)
+       ?padding_vertical:(if native_list then Some (if hit.is_page then 3 else 5) else None)
        ~accessibility_identifier:(View_base.search_result_identifier hit)
        ~on_press:(fun _ ->
          ignore
@@ -13,7 +16,8 @@ let search_result_row hit_source send : t =
               (Model.RequestSearchResult
                  (Signal.sample hit_source : Model.search_hit).hit_uuid)))
        [
-         column ~gap:4 ~padding_vertical:6 ~grow:1.0
+         column ~gap:4 ~padding_vertical:3 ~grow:1.0
+           ?min_height:(if native_list then Some 44 else None)
            [
              if_
                ~test:
@@ -47,8 +51,8 @@ let search_section_heading title identifier : t =
    let title = heading ~level:5 ~foreground:"muted-foreground"
      ~accessibility_identifier:identifier ~value:title [] in
    (if Lui_ui.host context = KotlinHost then
-      box ~padding_horizontal:20 ~padding_vertical:8 [title]
-    else list_item ~separator:`hidden [box ~padding_vertical:8 [title]]) context parent
+      box ~padding_horizontal:20 ~padding_vertical:5 [title]
+    else list_item ~separator:`hidden ~padding_horizontal:16 ~padding_vertical:7 [title]) context parent
 
 type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
 
