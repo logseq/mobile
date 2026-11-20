@@ -94,7 +94,7 @@ struct LGMediaPanel: View {
                                   maxSelectionCount: 20, selectionBehavior: .ordered,
                                   matching: .images)
                 } else {
-                    let foreground = isDark ? sheetBackground : Color.white
+                    let foreground = Color.white
                     Button(action: addSelectedPhotos) {
                         HStack(spacing: 8) {
                             if isImporting { ProgressView().tint(foreground) }
@@ -104,7 +104,7 @@ struct LGMediaPanel: View {
                         .foregroundStyle(foreground)
                         .padding(.horizontal, 20)
                         .frame(height: 44)
-                        .background(LogseqThemePolicy.sheetAccent(isDark: isDark), in: Capsule())
+                        .background(LogseqThemePolicy.accent, in: Capsule())
                     }
                     .disabled(isImporting)
                     .accessibilityIdentifier("media.add-selected")

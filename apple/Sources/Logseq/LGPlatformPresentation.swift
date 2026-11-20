@@ -145,7 +145,7 @@ private struct LGSheetSurface: ViewModifier {
         content
             .background(background.ignoresSafeArea())
             .presentationBackground(background)
-            .tint(LogseqThemePolicy.sheetAccent(isDark: dark))
+            .tint(LogseqThemePolicy.accent)
     }
 }
 
@@ -168,9 +168,11 @@ struct LGJournalCalendar: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { dismiss() }
+                            .foregroundStyle(.primary)
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Today") { select(Date()) }
+                            .foregroundStyle(.primary)
                             .accessibilityIdentifier("button.journal-calendar.today")
                     }
                 }

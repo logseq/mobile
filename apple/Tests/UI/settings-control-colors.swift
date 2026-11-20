@@ -98,12 +98,12 @@ import Vision
                 }
             }
             let dark = style == .dark
-            let background = dark ? (0, 45, 56) : (252, 252, 252)
+            let background = dark ? (0, 45, 56) : (242, 242, 247)
             let gutter = CGRect(x: 7, y: (1 - spell.midY) * window.bounds.height - 4, width: 5, height: 8)
             guard matchingPixels(in: gutter, where: { r, g, b in
                 abs(r - background.0) <= 3 && abs(g - background.1) <= 3 && abs(b - background.2) <= 3
-            }) > 20 else { throw failure("Settings sheet must use the graph background") }
-            let accent = dark ? (155, 211, 212) : (3, 125, 186)
+            }) > 20 else { throw failure("Settings sheet must use the themed canvas behind its groups") }
+            let accent = (3, 125, 186)
             func usesAccent(_ r: Int, _ g: Int, _ b: Int) -> Bool {
                 abs(r - accent.0) <= 12 && abs(g - accent.1) <= 12 && abs(b - accent.2) <= 12
             }
