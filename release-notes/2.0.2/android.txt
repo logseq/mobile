@@ -1,4 +1,3 @@
-- Linked references now show nested blocks with correct indentation and independent folding.
-- Match desktop reference behavior for aliases, source-page grouping and ordering.
-- Fix quick capture reopening after hiding the block editor keyboard; preserve unsent drafts.
-- Improve dark-theme contrast, editor overlays and journal feedback.
+- Black is now the default dark theme. You can switch to Solarized in Settings.
+- Embedded pages and blocks now appear as inline outlines. Tap the arrow next to an embed to open its source.
+- Improve dark-mode contrast in the sidebar, sheets, and sign-in screen.
