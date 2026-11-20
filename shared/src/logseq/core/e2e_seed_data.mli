@@ -20,7 +20,7 @@ val outliner_tag_uuid : string
 val entity_has_attr : Datascript.db -> int -> string -> bool
 val entity_built_in : Datascript.db -> int -> bool
 val transact : Datascript.conn -> Datascript.tx_op list -> unit
-val reset_user_page_entities : Datascript.conn -> unit
+val reset_user_page_entities : ?preserve_page_uuid:string -> Datascript.conn -> unit
 val uuid_attr : string -> Datascript.tx_value
 val string_attr : string -> Datascript.tx_value
 val int_attr : int -> Datascript.tx_value
@@ -61,7 +61,7 @@ val tag_attrs :
   string -> string -> string -> (string * Datascript.tx_value) list
 val seed : Datascript.conn -> (unit, string) result
 val seed_outliner : Datascript.conn -> int -> (unit, string) result
-val seed_fixture : Datascript.conn -> (unit, string) result
+val seed_fixture : Datascript.conn -> int -> (unit, string) result
 val performance_page_uuid : int -> string
 val performance_block_uuid : int -> int -> string
 val performance_block_title : int -> int -> string
