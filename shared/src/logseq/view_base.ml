@@ -11,6 +11,7 @@ let property_title current ~attr ~title =
 open Lui_protocol
 
 let main_background = Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#002D38" }
+let grouped_row_background = Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" }
 let dark_accent = "#9BD3D4"
 
 let sheet ?height ?style_class ?detents ?detents_signal ?accessibility_identifier
@@ -22,10 +23,13 @@ let sheet ?height ?style_class ?detents ?detents_signal ?accessibility_identifie
     | { profile_os = IOS; profile_host = SwiftUIHost } ->
       (* The Apple modal host reads theme tokens from the sheet's ancestors. *)
       let accent = Lui_ui.Adaptive { light = "#037DBA"; dark = dark_accent } in
+      let list_sheet = Option.fold ~none:false
+        ~some:(fun style -> List.mem "navigation-list" (String.split_on_char ' ' style)) style_class in
       Lui_elements.themed ~tokens:[
-        "surface", main_background;
-        "card", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" };
-        "input", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" };
+        (* The list presentation uses the background token for the modal itself. *)
+        "surface", (if list_sheet then grouped_row_background else main_background);
+        "card", grouped_row_background;
+        "input", grouped_row_background;
         "primary", accent;
         "input-focus", accent;
       ] (Lui_elements.stack [content]) context parent

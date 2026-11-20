@@ -2,6 +2,7 @@ val tr : Model.logseq_model -> string -> string
 val tr_named : Model.logseq_model -> string -> string -> string
 val property_title : Model.logseq_model -> attr:string -> title:string -> string
 val main_background : Lui_ui.theme_token_value
+val grouped_row_background : Lui_ui.theme_token_value
 val dark_accent : string
 val sheet :
   ?height:int -> ?style_class:string -> ?detents:string ->

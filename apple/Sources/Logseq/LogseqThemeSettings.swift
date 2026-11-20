@@ -73,8 +73,8 @@ enum LogseqThemePolicy {
     static let light = LogseqThemePalette(
         backgroundHex: "#FCFCFC",
         backgroundRGB: (252, 252, 252),
-        surfaceHex: "#F8F8F8",
-        surfaceRGB: (248, 248, 248),
+        surfaceHex: "#FFFFFF",
+        surfaceRGB: (255, 255, 255),
         primaryTextHex: "#171717",
         primaryTextRGB: (23, 23, 23),
         secondaryTextHex: "#6F6F6F",
@@ -84,8 +84,8 @@ enum LogseqThemePolicy {
     static let dark = LogseqThemePalette(
         backgroundHex: "#002D38",
         backgroundRGB: (0, 45, 56),
-        surfaceHex: "#19394D",
-        surfaceRGB: (25, 57, 77),
+        surfaceHex: "#143D48",
+        surfaceRGB: (20, 61, 72),
         primaryTextHex: "#EDFDFD",
         primaryTextRGB: (237, 253, 253),
         secondaryTextHex: "#9BD3D4",
