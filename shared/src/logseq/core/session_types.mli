@@ -19,6 +19,8 @@ type created_journal =
 type transport_operation =
   | Create_block of Cache_model.block
   | Upload_asset of Cache_model.block
+  | Prepare_asset_upload of Cache_model.block * Api.api_file_upload * Api.api_request
+  | Confirm_asset_upload of Cache_model.block * Api.api_request
   | Move_created_asset of moved_asset
   | Update_title of Cache_model.block
   | Update_status of Cache_model.block

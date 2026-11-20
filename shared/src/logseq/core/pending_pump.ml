@@ -65,6 +65,17 @@ let encrypted_title session (config : Api.api_config) title =
   | Some encrypt -> encrypt config.graph_id title
   | None -> Error "encrypted graph title encryption is unavailable"
 
+let start_asset_upload session (pump : Types.pending_sync) block asset_type checksum size path content_type cleanup =
+  let upload = Api.raw_asset_upload_request pump.Types.config block.Model.uuid asset_type
+    checksum path content_type in
+  let control action =
+    { upload.request with method_ = "POST";
+      body = Some (Json.to_string (`Assoc
+        ["action", `String action; "size", `Int size; "checksum", `String checksum])) }
+  in
+  set_pending_active session pump (Types.Json_request (control "prepare"))
+    (Types.Prepare_asset_upload (block, upload, control "complete")) cleanup
+
 let prepare_pending_create_request session (pump : Types.pending_sync) (block : Model.block) title
     page_id =
   let config = pump.Types.config in
@@ -81,26 +92,20 @@ let prepare_pending_create_request session (pump : Types.pending_sync) (block : 
          (Api.task_request page_id config block.uuid status.uuid title))
       (Types.Create_block block) None;
     Ok ()
-  | None, Some source, Some asset_type, Some _, Some checksum ->
+  | None, Some source, Some asset_type, Some size, Some checksum ->
     let source = (Types.host session).resolve_asset_path source in
     if So.selected_graph_is_encrypted session then
       match (Types.host session).encrypt_asset_file with
       | Some encrypt ->
         let ( let* ) = Result.bind in
         let* path, _ = encrypt config.graph_id source in
-        set_pending_active session pump
-          (Types.File_upload
-             (Api.raw_asset_upload_request config block.uuid asset_type
-                checksum path "text/plain"))
-          (Types.Upload_asset block) (Some path);
+        start_asset_upload session pump block asset_type checksum size path
+          "text/plain" (Some path);
         Ok ()
       | None -> Error "encrypted asset encryption is unavailable"
     else begin
-      set_pending_active session pump
-        (Types.File_upload
-           (Api.raw_asset_upload_request config block.uuid asset_type
-              checksum source (Api.content_type_for_asset_type asset_type)))
-        (Types.Upload_asset block) None;
+      start_asset_upload session pump block asset_type checksum size source
+        (Api.content_type_for_asset_type asset_type) None;
       Ok ()
     end
   | None, None, None, None, None ->
@@ -433,6 +438,34 @@ let reconcile_created_block session (pump : Types.pending_sync) (block : Model.b
   pump.Types.active := None;
   prepare_pending_next session pump
 
+let continue_asset_upload session pump active block proxy confirm body =
+  let plan =
+    match Json.from_string body with
+    | plan -> plan
+    | exception Yojson.Json_error _ -> `Null
+  in
+  match json_field "mode" plan, json_field "url" plan, json_field "headers" plan with
+  | `String "proxy", _, _ ->
+    set_pending_active session pump (Types.File_upload proxy) (Types.Upload_asset block)
+      active.Types.cleanup_path
+  | `String "present", _, _ ->
+    cleanup_pending_active session active;
+    set_pending_active session pump (Types.Json_request confirm) (Types.Upload_asset block) None
+  | `String "direct", `String url, `Assoc fields
+    when List.for_all (function _, `String _ -> true | _ -> false) fields ->
+    let headers = List.filter_map (function
+      | key, `String value -> Some (key, value)
+      | _ -> None) fields in
+    let upload =
+      { proxy with Api.request = { method_ = "PUT"; url; body = None; token = "" }; headers }
+    in
+    set_pending_active session pump (Types.File_upload upload)
+      (Types.Confirm_asset_upload (block, confirm)) active.cleanup_path
+  | _ ->
+    cleanup_pending_active session active;
+    Types.debug ("invalid asset upload plan uuid=" ^ block.Model.uuid);
+    finish_pending_block session pump block false
+
 let rec complete_pending_active session (pump : Types.pending_sync)
     (active : Types.pending_active) (response : Api.api_response) =
   if response.status < 200 || response.status > 299 then
@@ -467,6 +500,10 @@ let rec complete_pending_active session (pump : Types.pending_sync)
             ^ journal.block.uuid ^ " message=" ^ message);
          mark_pending_failed session journal.block;
          prepare_pending_next session pump)
+    | Types.Prepare_asset_upload (block, proxy, confirm) ->
+      continue_asset_upload session pump active block proxy confirm response.body
+    | Types.Confirm_asset_upload (block, confirm) ->
+      set_pending_active session pump (Types.Json_request confirm) (Types.Upload_asset block) None
     | Types.Upload_asset block ->
       (match asset_datoms_operation session block Ops.Queued with
        | Error message ->
@@ -725,7 +762,10 @@ let complete_transport_response session (pump : Types.pending_sync)
   try
     let ( let* ) = Result.bind in
     let* response = parse_transport_completion input active.id in
-    cleanup_pending_active session active;
+    (match active.operation, response with
+     | Types.Prepare_asset_upload _, Ok response
+       when response.status >= 200 && response.status < 300 -> ()
+     | _ -> cleanup_pending_active session active);
     (match response with
      | Ok response -> complete_pending_active session pump active response
      | Error message ->
@@ -741,6 +781,14 @@ let complete_transport_response session (pump : Types.pending_sync)
 
 let complete_pending_sync (session : Types.session) payload =
   let input = Json.from_string payload in
+  let input =
+    match (Types.state session).pending_sync, input with
+    | Some pump, `Assoc fields when List.assoc_opt "status" fields = Some (`Int 412) ->
+      (match !(pump.active) with
+       | Some { operation = Types.Confirm_asset_upload _; _ } ->
+         `Assoc (("status", `Int 200) :: List.remove_assoc "status" fields)
+       | _ -> input)
+    | _ -> input in
   let complete ~semantic expected failure_ids label handle =
     let ( let* ) = Result.bind in
     let* _ = validate_completion_id input expected in
@@ -818,7 +866,8 @@ let complete_pending_sync (session : Types.session) payload =
           else
             let block = Types.transport_operation_block active.operation in
             let label = match active.operation with
-              | Types.Upload_asset _ -> "Upload asset"
+              | Types.Upload_asset _ | Types.Prepare_asset_upload _ | Types.Confirm_asset_upload _ ->
+                "Upload asset"
               | Types.Move_created_asset _ -> "Attach asset"
               | Types.Update_title _ -> "Save block"
               | Types.Update_status _ -> "Update task status"

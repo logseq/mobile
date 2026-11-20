@@ -147,6 +147,15 @@ let complete_request session request body =
                ("error", `Null);
              ])))
 
+let proxy_asset_upload session =
+  let prepare = required_pending_request session in
+  check_eq (member "method" prepare) (`String "POST");
+  check_eq (member "action" (member "bodyObject" prepare)) (`String "prepare");
+  let response = complete_request session prepare {|{"mode":"proxy"}|} in
+  match member "pendingSyncRequest" response with
+  | `Assoc _ as request -> request
+  | _ -> failwith "expected a file upload after asset preparation"
+
 let retryable_operation (operation : Ops.pending_operation) =
   match operation.state with
   | Ops.Queued | Ops.Retryable | Ops.Submitted -> true
@@ -1333,7 +1342,7 @@ let required_pending response = match member "pendingSyncRequest" response with
 
 let shared_pending_retry_preserves_upload_and_bounds_attempts () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let request = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let request = proxy_asset_upload session in
   List.iter (fun (status, error, delay) ->
     let result = pending_completion session request status `Null error in
     let retry = required_pending result in
@@ -1351,7 +1360,7 @@ let shared_pending_retry_preserves_upload_and_bounds_attempts () =
 
 let shared_pending_retry_keeps_semantic_transaction_identity () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let retried = required_pending (pending_completion session transaction `Null `Null (`String "connection lost")) in
   check_eq (member "id" retried) (member "id" transaction);
@@ -1364,7 +1373,7 @@ let shared_pending_retry_keeps_semantic_transaction_identity () =
 
 let shared_pending_retry_rejects_raw_upload_conflicts () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let conflict = pending_completion session upload (`Int 409)
     (`String {|{"error":"asset checksum already exists"}|}) `Null in
   check_eq (member "pendingSyncRequest" conflict) `Null;
@@ -1374,7 +1383,7 @@ let shared_pending_retry_rejects_raw_upload_conflicts () =
 
 let shared_pending_retry_reports_transaction_rejection () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let rejected = pending_completion session transaction (`Int 200)
     (`String {|{"type":"tx/reject","reason":"invalid data","error-detail":"should be a datetime"}|}) `Null in
@@ -1385,7 +1394,7 @@ let shared_pending_retry_reports_transaction_rejection () =
 
 let shared_pending_error_summary_preserves_unicode () =
   let session, _, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let detail = String.make 4095 'x' ^ "中over" in
   let body = Json.to_string (`Assoc ["type", `String "tx/reject"; "reason", `String "invalid"; "error-detail", `String detail]) in
@@ -1395,7 +1404,7 @@ let shared_pending_error_summary_preserves_unicode () =
 
 let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   ignore (pending_completion session upload `Null `Null (`String "offline"));
   ignore (response_result (dispatch_json session "cancelPendingSync" ""));
   let late = pending_completion session upload (`Int 200) (`String "{}") `Null in
@@ -1405,7 +1414,7 @@ let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
 
 let shared_pending_retry_graph_changes_discard_old_transport () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let changed = response_result (dispatch_json session "configure"
     {|{"baseUrl":"http://other-server","graphId":"other-graph","token":"access"}|}) in
   check_eq (member "pendingSyncRequest" changed) `Null;
@@ -1415,7 +1424,7 @@ let shared_pending_retry_graph_changes_discard_old_transport () =
 
 let clearing_authentication_cancels_requests_without_dropping_local_edits () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let changed = response_result (dispatch_json session "configure"
     {|{"baseUrl":"http://127.0.0.1:8787","graphId":"encrypted-1","token":""}|}) in
   check_eq ~msg:"logout cancels a request carrying the previous token"
@@ -3964,7 +3973,7 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
               "now", `Int (1788000000000 + index); "assetType", `String "jpg";
               "assetSize", `Int 4; "assetChecksum", `String "abcd";
               "localPath", `String "Assets/photo.jpg" ]))));
-          let upload = required_pending_request session in
+          let upload = proxy_asset_upload session in
           check_eq (member "method" upload) (`String "PUT");
           let transaction =
             member "pendingSyncRequest"
@@ -4196,7 +4205,24 @@ let shared_images_insert_bounded_row_patches_and_normalize_upload_type () =
     check_eq
       (member "url" request)
       (`String "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg");
-    check_eq (member "contentType" request) (`String "image/jpeg")
+    check_eq (member "action" (member "bodyObject" request)) (`String "prepare");
+    let complete request status body =
+      let response = `Assoc ["id", member "id" request; "status", `Int status; "body", `String body] in
+      ignore (response_result (dispatch_json session "completePendingSync" (Json.to_string response)))
+    in
+    complete request 200
+      {|{"mode":"direct","url":"https://test.r2.cloudflarestorage.com/assets/object?signature=fixture","headers":{"content-type":"image/jpeg","if-none-match":"*"}}|};
+    let upload = Option.get (pending_request (dispatch_json session "beginPendingSync" "")) in
+    check_eq (member "method" upload) (`String "PUT");
+    check_eq (member "token" upload) (`String "");
+    check_eq (member "filePath" upload) (`String "Assets/shared-IMG_0002.JPG");
+    check_eq (member "if-none-match" (member "headers" upload)) (`String "*");
+    complete upload 412 "";
+    let confirmation = Option.get (pending_request (dispatch_json session "beginPendingSync" "")) in
+    check_eq (member "url" confirmation)
+      (`String "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg");
+    check_eq (member "action" (member "bodyObject" confirmation)) (`String "complete");
+    check_eq (member "token" confirmation) (`String "access")
   | None -> check false
 
 let pending_assets_wait_for_authentication_and_resume_after_configuration () =
@@ -4678,27 +4704,22 @@ let plain_assets_project_before_upload_and_queue_stable_datom_transactions () =
    | Ops.Create_asset asset -> check_eq asset.uuid uuid
    | _ -> check false);
   check_eq operation.state Ops.Applied;
-  (match pending_request (dispatch_json session "beginPendingSync" "") with
-   | Some upload ->
-     check_eq (member "method" upload) (`String "PUT");
-     check_eq
-       (member "url" upload)
-       (`String
-          (Printf.sprintf "http://127.0.0.1:8787/assets/plain-1/%s.m4a" uuid))
-   | None -> check false);
+  let upload = proxy_asset_upload session in
+  check_eq (member "method" upload) (`String "PUT");
+  check_eq
+    (member "url" upload)
+    (`String (Printf.sprintf "http://127.0.0.1:8787/assets/plain-1/%s.m4a" uuid));
   (match
-     pending_request
-       (dispatch_json session "completePendingSync"
-          "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}")
+     member "pendingSyncRequest" (complete_request session upload {|{"ok":true}|})
    with
-   | Some request ->
+   | `Assoc _ as request ->
      let transactions = json_items "txs" (member "bodyObject" request) in
      check_eq
        (member "url" request)
        (`String "ws://127.0.0.1:8787/sync/plain-1");
      check_eq (List.length transactions) 1;
      check_eq (member "tx-id" (List.hd transactions)) (`String uuid)
-   | None -> check false);
+   | _ -> check false);
   check_eq (List.length !staged) 2;
   let operation = List.nth !staged 1 in
   (match operation.Ops.intent with
@@ -5482,32 +5503,23 @@ let encrypted_asset_upload_stages_datoms_and_cleans_temporary_payload () =
        (Printf.sprintf
           "{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"%s\",\"localPath\":\"Assets/photo.jpg\"}"
           checksum));
-  (match pending_request (dispatch_json session "beginPendingSync" "") with
-   | Some request ->
-     check_eq (json_string (member "method" request)) "PUT";
-     check_eq
-       (json_string (member "filePath" request))
-       "/tmp/photo.transit";
-     check_eq (json_string (member "contentType" request)) "text/plain";
-     check_eq
-       (json_string (member "url" request))
-       "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg";
-     let headers = member "headers" request in
-     check_eq
-       (json_string (member "x-amz-meta-checksum" headers))
-       checksum;
-     check_eq (json_string (member "x-amz-meta-type" headers)) "jpg"
-   | None -> check false);
+  let upload = proxy_asset_upload session in
+  check_eq (json_string (member "method" upload)) "PUT";
+  check_eq (json_string (member "filePath" upload)) "/tmp/photo.transit";
+  check_eq (json_string (member "contentType" upload)) "text/plain";
+  check_eq (json_string (member "url" upload))
+    "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg";
+  let headers = member "headers" upload in
+  check_eq (json_string (member "x-amz-meta-checksum" headers)) checksum;
+  check_eq (json_string (member "x-amz-meta-type" headers)) "jpg";
   (match
-     pending_request
-       (dispatch_json session "completePendingSync"
-          "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}")
+     member "pendingSyncRequest" (complete_request session upload {|{"ok":true}|})
    with
-   | Some request ->
+   | `Assoc _ as request ->
      check_eq
        (json_string (member "url" request))
        "ws://127.0.0.1:8787/sync/encrypted-1"
-   | None -> check false);
+   | _ -> check false);
   check_eq !staged [ "applied"; "queued" ];
   check_eq !cleaned [ "/tmp/photo.transit" ]
 

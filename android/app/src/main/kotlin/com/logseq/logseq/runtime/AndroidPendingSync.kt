@@ -108,7 +108,9 @@ internal object AndroidPendingSyncTransport {
         val connection = openConnection(pending.url)
         try {
             connection.requestMethod = pending.method
-            connection.setRequestProperty("Authorization", "Bearer ${pending.token}")
+            if (pending.token.isNotEmpty()) {
+                connection.setRequestProperty("Authorization", "Bearer ${pending.token}")
+            }
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Content-Type", pending.contentType)
             for ((name, value) in pending.headers) {
@@ -128,14 +130,20 @@ internal object AndroidPendingSyncTransport {
                 }
             }
             val status = connection.responseCode
-            val body = readBody(connection)
+            val body = if (pending.token.isEmpty()) null else readBody(connection)
             AndroidPendingSyncResult(status, body, null)
         } finally {
             connection.disconnect()
         }
     } catch (error: Throwable) {
-        android.util.Log.w("AndroidPendingSync", "HTTP request failed\n${error.stackTraceToString()}")
-        AndroidPendingSyncResult(null, null, if (isNetworkUnavailable(error)) NETWORK_UNAVAILABLE else error.toString())
+        val detail = if (pending.token.isEmpty()) error.javaClass.simpleName else error.stackTraceToString()
+        android.util.Log.w("AndroidPendingSync", "HTTP request failed\n$detail")
+        val message = when {
+            isNetworkUnavailable(error) -> NETWORK_UNAVAILABLE
+            pending.token.isEmpty() -> "Asset upload failed ($detail)"
+            else -> error.toString()
+        }
+        AndroidPendingSyncResult(null, null, message)
     }
 
     private fun openConnection(url: String): HttpURLConnection =

@@ -2685,7 +2685,7 @@ let sync_details_show_every_server_rejection () =
         | Ok value -> value | Error message -> fail message in
       send application (Model.ApplyCoreSnapshot projection); flush application in
     apply (R.response_result (R.dispatch_json session "startWebSocket" ""));
-    let request = R.required_pending (R.response_result (R.dispatch_json session "beginPendingSync" "")) in
+    let request = R.proxy_asset_upload session in
     let request = if semantic then
       R.required_pending (R.pending_completion session request (`Int 200) (`String "{}") `Null)
       else request in
