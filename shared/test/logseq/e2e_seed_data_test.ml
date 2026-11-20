@@ -192,10 +192,26 @@ let outliner_reset_is_idempotent () =
 let standard_reset_is_idempotent () =
   let conn = Ds.create_conn ~schema () in
   for _ = 1 to 2 do
-    ignore (expect_ok (Seed.seed_fixture conn))
+    ignore (expect_ok (Seed.seed_fixture conn 1787893600000))
   done;
   check_eq (Graph.journal_page_count (Ds.conn_db conn)) 8;
   check_eq (List.length (visible (Ds.conn_db conn))) 18
+
+let standard_reset_preserves_the_synced_journal_for_today () =
+  let conn = Ds.create_conn ~schema () in
+  let now = 1787893600000 in
+  let today_uuid = Journal.page_uuid (Cache_model.journal_day_for_ms now) in
+  Seed.seed_current_journal conn now today_uuid Seed.composer_block_uuid
+    "Synced block";
+  Seed.seed_current_journal conn (now - 86400000) Seed.outliner_page_uuid
+    Seed.outliner_block_uuid "Stale block";
+  ignore (expect_ok (Seed.seed_fixture conn now));
+  let db = Ds.conn_db conn in
+  check (exists db today_uuid);
+  check (exists db Seed.composer_block_uuid);
+  check (not (exists db Seed.outliner_page_uuid));
+  check (not (exists db Seed.outliner_block_uuid));
+  check_eq (Graph.journal_page_count db) 9
 
 let performance_reset_retains_one_hundred_journals () =
   let conn = Ds.create_conn ~schema () in
@@ -315,6 +331,8 @@ let cases =
       standard_fixture_links_tags_rich_blocks_and_cards;
     case "outliner reset is idempotent" outliner_reset_is_idempotent;
     case "standard reset is idempotent" standard_reset_is_idempotent;
+    case "standard reset preserves the synced journal for today"
+      standard_reset_preserves_the_synced_journal_for_today;
     case "performance reset retains one hundred journals"
       performance_reset_retains_one_hundred_journals;
     case "performance fixture supports insertion between adjacent blocks"

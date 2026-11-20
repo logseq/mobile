@@ -27,8 +27,20 @@ let entity_built_in db eid =
 let transact conn operations =
   ignore (Ds.transact_conn conn operations : Ds.tx_report)
 
-let reset_user_page_entities conn =
+let reset_user_page_entities ?preserve_page_uuid conn =
   let db = Ds.conn_db conn in
+  let preserved_page =
+    Option.bind preserve_page_uuid (fun uuid ->
+        Ds.entid db "block/uuid" (Ds.Uuid uuid))
+  in
+  let is_preserved eid =
+    match preserved_page with
+    | None -> false
+    | Some page ->
+      eid = page
+      || (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:"block/page" ()
+         |> Seq.exists (fun (datom : Ds.datom) -> datom.v = Ds.Ref page))
+  in
   let operations =
     Ds.Db.datoms db Ds.Aevt ~a:"block/uuid" ()
     |> List.of_seq
@@ -36,7 +48,7 @@ let reset_user_page_entities conn =
            if
              (entity_has_attr db datom.e "block/journal-day"
               || entity_has_attr db datom.e "block/page")
-             && not (entity_built_in db datom.e)
+             && not (entity_built_in db datom.e || is_preserved datom.e)
            then Some (Ds.RetractEntity (Ds.Entity_id datom.e))
            else None)
   in
@@ -294,8 +306,11 @@ let seed_outliner conn now =
             ];
         ])
 
-let seed_fixture conn =
-  reset_user_page_entities conn;
+let seed_fixture conn now =
+  (* The sync server already knows this journal. Removing it from the local
+     fixture would make startup try to create the same journal again. *)
+  let today_uuid = Journal.page_uuid (Model.journal_day_for_ms now) in
+  reset_user_page_entities ~preserve_page_uuid:today_uuid conn;
   seed conn
 
 let performance_page_uuid index =
