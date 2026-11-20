@@ -4,10 +4,11 @@
 <dict>
     <key>UILaunchScreen</key>
     <dict>
+        <!-- Update the asset names when changing these images or colors so iOS refreshes stored launch snapshots. -->
         <key>UIColorName</key>
-        <string>LaunchBackground</string>
+        <string>LaunchBackdrop</string>
         <key>UIImageName</key>
-        <string>LaunchLogo</string>
+        <string>LaunchMark</string>
         <key>UIImageRespectsSafeAreaInsets</key>
         <false/>
     </dict>

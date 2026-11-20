@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 source = ROOT / "apple/App/Info.plist"
-expected = {"UIColorName": "LaunchBackground", "UIImageName": "LaunchLogo",
+expected = {"UIColorName": "LaunchBackdrop", "UIImageName": "LaunchMark",
             "UIImageRespectsSafeAreaInsets": False}
 assert plistlib.loads(source.read_bytes()).get("UILaunchScreen") == expected, \
     "The Xcode app must show the adaptive Logseq logo during system launch"
