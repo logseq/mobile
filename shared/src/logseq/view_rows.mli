@@ -27,7 +27,8 @@ val windowed_keyed :
   ?on_visible_range:(int -> int -> unit) -> ?on_window:('a list -> unit) ->
   ?on_prefetch:('a list -> unit) -> ?is_pinned:('a -> bool) ->
   source:'a list Signal.signal -> key:('a -> string) ->
-  cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
+  cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) ->
+  unit -> Lui_elements.t
 
 type reference_entry =
   | Result_views of string

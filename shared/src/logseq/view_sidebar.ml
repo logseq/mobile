@@ -28,21 +28,22 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
     if_ ~test:(Signal.map (fun icon -> icon = "") icon_source) (item false)]
 
 let sidebar_graph_menu_item model_source graph_source send : t =
- fun context parent ->
+ custom (fun context parent ->
   let graph = sample graph_source in
-  View_base.with_string_prop_signal InlineIconName
-    (Signal.map2 View_base.sidebar_graph_icon_name model_source
-       graph_source)
-    (View_base.with_selected_signal
-       (Signal.map2 View_base.sidebar_graph_selected_ model_source
-          graph_source)
-       (menu_item ?size:(if Lui_ui.host context = KotlinHost then Some `sm else None)
-       ~text:(reactive View_base.graph_title graph_source)
-       ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
-       ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
-       ~on_press:(fun _ ->
-         ignore (send (Model.SelectSidebarGraph (sample graph_source).id)))
-       [])) context parent
+  mount context ?parent
+    (View_base.with_string_prop_signal InlineIconName
+      (Signal.map2 View_base.sidebar_graph_icon_name model_source
+         graph_source)
+      (View_base.with_selected_signal
+         (Signal.map2 View_base.sidebar_graph_selected_ model_source
+            graph_source)
+         (menu_item ?size:(if Lui_ui.host context = KotlinHost then Some `sm else None)
+         ~text:(reactive View_base.graph_title graph_source)
+         ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
+         ~accessibility_identifier:(View_base.sidebar_graph_identifier graph)
+         ~on_press:(fun _ ->
+           ignore (send (Model.SelectSidebarGraph (sample graph_source).id)))
+         []))))
 
 let sidebar_graph_menu_items keyed item model_source send =
   [ keyed
@@ -186,7 +187,8 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               if_
                 ~test:(Signal.map (fun current -> Lui_ui.host context = KotlinHost
                   && View_base.model_graph_menu_open_ current) model_source)
-                (dropdown_menu_view (dropdown_menu ~anchor:`below ~anchor_alignment:`start
+                (dropdown_menu_view (dropdown_menu
+                   ~target:(Menu_anchor { side = `below; align = `start; offset = 0. })
                    ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
                    ~style_class:"anchored-popover" ~gap:0
                    ~on_dismiss:(press send Model.DismissGraphMenu)
@@ -246,7 +248,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
     ]) in
   if native_toolbar then
     box ~accessibility_identifier:"sidebar.navigation" ~grow:1.0
-      [(fun context parent ->
+      [custom (fun context parent ->
           let node = Lui_ui.extension context "native-sidebar" in
           attach context parent node;
           let graph_width = Signal.state context.ui_scheduler 160 in
@@ -257,7 +259,6 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
             | _ -> ());
           let switch = View_base.with_int_prop_signal WidthValue (Signal.value graph_width)
             (sidebar_graph_switch context model_source send) in
-          List.iter (fun child -> ignore (child context (Some node)))
-            [content; switch; settings];
+          mount_children context node [content; switch; settings];
           node)]
   else content

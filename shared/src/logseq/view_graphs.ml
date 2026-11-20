@@ -357,7 +357,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
       ]
 
 let graph_picker_overflow_menu model_source send : t =
- fun context parent ->
+ custom (fun context parent ->
    let kotlin_host = Lui_ui.host context = KotlinHost in
    let entries =
      [ dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings")
@@ -367,15 +367,16 @@ let graph_picker_overflow_menu model_source send : t =
      ]
    in
    if kotlin_host then
-     menu ~icon:(`app "more-vert") ~label:(View_base.tr (Signal.sample model_source) "More")
-       ~accessibility_identifier:"button.overflow-menu" entries context parent
+     mount context ?parent
+       (menu ~icon:(`app "more-vert") ~label:(View_base.tr (Signal.sample model_source) "More")
+         ~accessibility_identifier:"button.overflow-menu" entries)
    else
-     stack ~width:44 ~height:44
-       [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
-           ~border_color:"foreground" [];
-         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
-           ~accessibility_identifier:"button.connection" entries ]
-       context parent
+     mount context ?parent
+       (stack ~width:44 ~height:44
+         [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
+             ~border_color:"foreground" [];
+           menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
+             ~accessibility_identifier:"button.connection" entries ]))
 
 let graph_password_sheet (context : Lui_ui.ui_context) model_source send
     : t =
