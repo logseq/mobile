@@ -12,7 +12,6 @@ open Lui_protocol
 
 let dark_background = function "black" -> "#000000" | _ -> "#002D38"
 let main_background theme = Lui_ui.Adaptive { light = "#FCFCFC"; dark = dark_background theme }
-let sheet_background theme = Lui_ui.Adaptive { light = "#F2F2F7"; dark = dark_background theme }
 let grouped_row_background = Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" }
 let dark_accent = "#9BD3D4"
 
@@ -29,7 +28,8 @@ let sheet ~model_source ?height ?style_class ?detents ?detents_signal ?accessibi
         ~some:(fun style -> List.mem "navigation-list" (String.split_on_char ' ' style)) style_class in
       let theme = Signal.map (fun (model : Model.logseq_model) -> model.dark_theme) model_source in
       let tokens = Signal.map (fun theme ->
-        let background = sheet_background theme in
+        let background = Lui_ui.Adaptive
+          { light = "#F2F2F7"; dark = if theme = "black" then "#1C1C1E" else dark_background theme } in
         [
           "background", background;
           "surface", (if list_sheet then grouped_row_background else background);
@@ -40,6 +40,14 @@ let sheet ~model_source ?height ?style_class ?detents ?detents_signal ?accessibi
         ]) theme in
       Lui_elements.themed ~tokens_signal:tokens
         (Lui_elements.stack [content]) context parent
+    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
+      let tokens = Signal.map (fun (model : Model.logseq_model) ->
+        if model.dark_theme = "black" then [
+          "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#1C1C1E" };
+          "surface", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#2E2E30" };
+          "card", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#2E2E30" };
+        ] else []) model_source in
+      Lui_elements.themed ~tokens_signal:tokens (Lui_elements.stack [content]) context parent
     | _ -> content context parent
 
 let node_icon (current : Model.logseq_model) uuid =
