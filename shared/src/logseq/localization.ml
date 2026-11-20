@@ -1185,6 +1185,10 @@ let dictionaries = [
     ("Back", "Back");
     ("Close", "Close");
     ("Rename page", "Rename");
+    ("Task reminders", "Task reminders");
+    ("Local alerts for scheduled tasks and deadlines.", "Local alerts for scheduled tasks and deadlines.");
+    ("Allow notifications in iOS Settings to enable task reminders.", "Allow notifications in iOS Settings to enable task reminders.");
+    ("Notification permission is unavailable.", "Notification permission is unavailable.");
     ("property.built-in/agent-session-id", "Agent Session ID");
     ("property.built-in/alias", "Alias");
     ("property.built-in/asset", "Asset");
@@ -1433,6 +1437,7 @@ let dictionaries = [
     ("value", "value")
   ]);
   ("es", [
+    ("Task reminders", "Recordatorios de tareas");
     ("Create new block", "Crear bloque nuevo");
     ("Back", "Ir hacia atrás");
     ("Close", "Cerrar");
@@ -1905,6 +1910,7 @@ let dictionaries = [
     ("value", "مقدار")
   ]);
   ("fr", [
+    ("Task reminders", "Rappels de tâches");
     ("Create new block", "Créer un nouveau bloc");
     ("Back", "Retour en arrière");
     ("Close", "Fermer");
@@ -2613,6 +2619,7 @@ let dictionaries = [
     ("value", "Valore")
   ]);
   ("ja", [
+    ("Task reminders", "タスクリマインダー");
     ("Create new block", "新しいブロック");
     ("Back", "戻る");
     ("Close", "閉じる");
@@ -5272,6 +5279,10 @@ let dictionaries = [
     ("Back", "返回");
     ("Close", "关闭");
     ("Rename page", "重命名");
+    ("Task reminders", "任务提醒");
+    ("Local alerts for scheduled tasks and deadlines.", "为已安排的任务和截止日期发送本地提醒。");
+    ("Allow notifications in iOS Settings to enable task reminders.", "请在 iOS 设置中允许通知，以启用任务提醒。");
+    ("Notification permission is unavailable.", "无法使用通知权限。");
     ("property.built-in/agent-session-id", "Agent 会话 ID");
     ("property.built-in/alias", "别名");
     ("property.built-in/asset", "附件");

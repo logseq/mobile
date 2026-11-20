@@ -494,6 +494,41 @@ struct LGRendererTests {
         #expect(resolution.message == "graph_discovery_failed\nConnection refused")
     }
 
+    @Test("catalog completion notifies the observer after graph removal or access revocation",
+          arguments: [true, false])
+    func graphCatalogCompletionNotifiesObserver(succeeded: Bool) async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [EmptyGraphCatalogProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let completion = succeeded
+            ? #"{"apiVersion":1,"ok":true,"result":{"graphs":[],"selectedGraphId":null}}"#
+            : #"{"apiVersion":1,"ok":false,"error":{"code":"graph_discovery_failed","message":"Access revoked"}}"#
+        var actions: [String?] = []
+        var observed: [String] = []
+        var completed = false
+        let executor = LGCoreEffectExecutor(callCore: { request in
+            actions.append(request.params.action)
+            if request.params.action == "prepareGraphCatalog" {
+                return #"{"apiVersion":1,"ok":true,"result":{"baseUrl":"https://catalog.invalid","token":"synthetic","request":{"url":"https://catalog.invalid/graphs","token":"synthetic"}}}"#
+            }
+            #expect(request.params.action == "completeGraphCatalog")
+            let payload = try? JSONSerialization.jsonObject(with: Data((request.params.payload ?? "").utf8)) as? [String: Any]
+            #expect(payload?["status"] as? Int == 200)
+            #expect(payload?["body"] as? String == #"{"graphs":[]}"#)
+            completed = true
+            return completion
+        }, coreResponseObserver: { response in
+            #expect(completed)
+            observed.append(response)
+        }, catalogSession: session)
+
+        let resolution = await executor.execute(LGEffect(id: 32, kind: "refresh-graphs", text: ""))
+        #expect(actions == ["prepareGraphCatalog", "completeGraphCatalog"])
+        #expect(observed == [completion])
+        #expect(resolution.succeeded == succeeded)
+    }
+
     @Test("settings and diagnostics effects stay on the platform boundary")
     func settingsEffectsUsePlatformBoundary() async {
         var platformKinds: [String] = []
@@ -842,7 +877,7 @@ struct LGRendererTests {
         let save = await handler.execute(LGEffect(
             id: 40,
             kind: "save-settings",
-            text: #"{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"sidebarTabs":["journals","graphs"],"baseURL":"https://example.com"}"#
+            text: #"{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":["journals","graphs"],"baseURL":"https://example.com"}"#
         ))
         let refresh = await handler.execute(LGEffect(
             id: 41,
@@ -1236,6 +1271,18 @@ struct LGRendererTests {
         #expect(hapticStyles == ["selection"])
         #expect(presentations == [.pickAttachment(blockID: "target")])
     }
+}
+
+private final class EmptyGraphCatalogProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"graphs":[]}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
 
 private struct FlashcardReviewPayload: Decodable {

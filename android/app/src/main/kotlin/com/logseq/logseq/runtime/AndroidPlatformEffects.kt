@@ -107,6 +107,8 @@ internal data class AndroidHostSettings(
             "systemLanguage" to java.util.Locale.getDefault().toLanguageTag(),
             "spellCheck" to spellCheck,
             "autoCorrection" to autoCorrection,
+            "taskRemindersEnabled" to false,
+            "taskRemindersStatus" to "",
             "sidebarTabs" to sidebarTabs,
             "baseURL" to baseUrl,
             "version" to version,

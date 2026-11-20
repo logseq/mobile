@@ -164,6 +164,79 @@ import Testing
         await coordinator.cancelBackground()
     }
 
+    @Test func cancelingCallerWaitsForItsExpirationCleanup() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+        let cleanupGate = AsyncGate()
+        let request = GraphSyncCoordinator.BackgroundRequest()
+        let background = Task {
+            let result = await coordinator.runBackground(request: request, expirationCleanup: {
+                await events.append("cleanup-start")
+                await cleanupGate.wait()
+                await events.append("cleanup-end")
+            }) {
+                await events.append("sync-start")
+                while !Task.isCancelled { await Task.yield() }
+                await events.append("sync-end")
+                return true
+            }
+            await events.append("caller-returned")
+            return result
+        }
+        await waitForEvent("sync-start", in: events)
+        background.cancel()
+        await waitForEvent("cleanup-start", in: events)
+        await waitForEvent("sync-end", in: events)
+        #expect(!(await events.snapshot().contains("caller-returned")))
+        await cleanupGate.open()
+        #expect(await background.value == false)
+        _ = await coordinator.expireBackground(request: request)
+        let recorded = await events.snapshot()
+        #expect(recorded.filter { $0 == "cleanup-start" }.count == 1)
+        #expect(recorded.suffix(2) == ["cleanup-end", "caller-returned"])
+    }
+
+    @Test func lateExpirationDrainsTheFinishedRunAndPreservesANewerRun() async throws {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+        let cleanupGate = AsyncGate()
+        let newerGate = AsyncGate()
+        let request = GraphSyncCoordinator.BackgroundRequest()
+        #expect(await coordinator.runBackground(request: request, expirationCleanup: {
+            await events.append("old-cleanup-start")
+            await cleanupGate.wait()
+            await events.append("old-cleanup-end")
+        }, operation: { true }))
+
+        let newer = Task {
+            await coordinator.runBackground(expirationCleanup: {
+                await events.append("new-cleanup")
+            }) {
+                await events.append("new-start")
+                await newerGate.wait()
+                return !Task.isCancelled
+            }
+        }
+        await waitForEvent("new-start", in: events)
+        let expiration = Task {
+            let task = await coordinator.expireBackground(request: request)
+            await events.append("expiration-returned")
+            return task
+        }
+        await waitForEvent("old-cleanup-start", in: events)
+        #expect(!(await events.snapshot().contains("expiration-returned")))
+        await cleanupGate.open()
+        let expiredTask = await expiration.value
+        _ = await coordinator.expireBackground(request: request)
+        await newerGate.open()
+        #expect(await newer.value)
+        let capturedTask = try #require(expiredTask)
+        #expect(await capturedTask.value)
+        #expect(await events.snapshot() == [
+            "new-start", "old-cleanup-start", "old-cleanup-end", "expiration-returned",
+        ])
+    }
+
     @Test func networkLossPausesForegroundAndRecoveryRestartsIt() async {
         let coordinator = GraphSyncCoordinator()
         let events = SyncEventRecorder()
@@ -224,16 +297,6 @@ import Testing
 
         #expect(await background.value == false)
         #expect(await events.snapshot() == ["foreground-start"])
-    }
-
-    @Test @MainActor func backgroundTaskCompletionOnlyFinishesOnce() {
-        let completion = BackgroundTaskCompletion()
-        var results: [Bool] = []
-
-        completion.finish(success: true) { results.append($0) }
-        completion.finish(success: false) { results.append($0) }
-
-        #expect(results == [true])
     }
 }
 

@@ -4,13 +4,15 @@ open Host_update
 let settings_fields () =
   match
     decode "settings"
-      "{\"appearance\":\"dark\",\"language\":\"zh-CN\",\"spellCheck\":false,\"autoCorrection\":true,\"sidebarTabs\":[\"journals\",\"graphs\"],\"baseURL\":\"https://example.com\",\"version\":\"1.2.3\",\"revision\":\"abc123\"}"
+      "{\"appearance\":\"dark\",\"language\":\"zh-CN\",\"spellCheck\":false,\"autoCorrection\":true,\"taskRemindersEnabled\":false,\"taskRemindersStatus\":\"\",\"sidebarTabs\":[\"journals\",\"graphs\"],\"baseURL\":\"https://example.com\",\"version\":\"1.2.3\",\"revision\":\"abc123\"}"
   with
   | Ok (Settings settings) ->
     check_eq "dark" settings.appearance;
     check_eq "zh-CN" settings.language;
     check (not settings.spell_check);
     check settings.auto_correction;
+    check (not settings.task_reminders_enabled);
+    check_eq "" settings.task_reminders_status;
     check_eq [ "journals"; "graphs" ] settings.sidebar_tabs;
     check_eq "https://example.com" settings.base_url;
     check_eq "1.2.3" settings.version;
