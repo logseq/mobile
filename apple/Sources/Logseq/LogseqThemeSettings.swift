@@ -62,12 +62,8 @@ enum LogseqThemePolicy {
             : Color(red: 27.0 / 255, green: 104.0 / 255, blue: 152.0 / 255)
     }
 
-    static func sheetAccent(isDark: Bool) -> Color {
-        isDark ? linkColor(isDark: true) : accent
-    }
-
     static func sheetBackground(isDark: Bool) -> Color {
-        (isDark ? dark : light).background
+        isDark ? dark.background : Color(red: 242.0 / 255, green: 242.0 / 255, blue: 247.0 / 255)
     }
 
     static let light = LogseqThemePalette(

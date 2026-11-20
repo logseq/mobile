@@ -808,6 +808,10 @@ private struct LGNavigationContent: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea(.all, edges: .bottom)
+                        // Keep the layout mounted without drawing the capture controls
+                        // beneath the native search bar and its Cancel button.
+                        .opacity(searchVisible ? 0 : 1)
+                        .animation(nil, value: searchVisible)
                         .allowsHitTesting(!searchVisible)
                         .accessibilityHidden(searchVisible)
                     } else {
@@ -1272,9 +1276,12 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
                 }
                 if !controller.isActive {
                     needsInitialFocus = true
-                    controller.isActive = true
+                    // Let editing activate the integrated search bar so UIKit can
+                    // coordinate its expansion with the keyboard in one transition.
+                    if #available(iOS 26.0, *) { focusIfNeeded() }
+                    if !controller.isActive { controller.isActive = true }
                 }
-                if needsInitialFocus, controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
+                if #unavailable(iOS 26.0) { focusIfNeeded() }
             } else if !state.nativePresented, controller.isActive {
                 controller.isActive = false
             } else if !state.isVisible, !controller.isActive {
@@ -1292,11 +1299,13 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             host.navigationItem.searchController = nil
         }
 
+        private func focusIfNeeded() {
+            guard state.nativePresented, needsInitialFocus else { return }
+            if controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
+        }
+
         func didPresentSearchController(_ searchController: UISearchController) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.state.nativePresented else { return }
-                if searchController.searchBar.searchTextField.becomeFirstResponder() { self.needsInitialFocus = false }
-            }
+            DispatchQueue.main.async { [weak self] in self?.focusIfNeeded() }
         }
         func willDismissSearchController(_ searchController: UISearchController) {
             needsInitialFocus = false
