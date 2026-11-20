@@ -45,7 +45,7 @@ enum LogseqCrashReporting {
         case "ui.lifecycle":
             guard let screen = data["screen"] as? String,
                   !screen.isEmpty, screen.count < 200,
-                  screen.range(of: "^[A-Za-z_][A-Za-z0-9_.]*$", options: .regularExpression) != nil else { return nil }
+                  screen.range(of: "^[A-Za-z_][A-Za-z0-9_.]*(?:<[A-Za-z0-9_., <>]+>)?$", options: .regularExpression) != nil else { return nil }
             safe["screen"] = screen
         case "http":
             guard let method = data["method"] as? String,

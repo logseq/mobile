@@ -21,6 +21,7 @@ import SwiftUI
                         ("device.event", ["action": "LOW_MEMORY"], ["action": "LOW_MEMORY"]),
                         ("device.connectivity", ["connectivity": "wifi"], ["connectivity": "wifi"]),
                         ("ui.lifecycle", ["screen": "Logseq.Controller", "title": "private"], ["screen": "Logseq.Controller"]),
+                        ("ui.lifecycle", ["screen": "UIHostingController<ModifiedContent<AnyView, AnyView>>", "title": "private"], ["screen": "UIHostingController<ModifiedContent<AnyView, AnyView>>"]),
                         ("http", ["method": "GET", "url": "https://user:token@example.com/private?q=secret#title"], ["method": "GET", "host": "example.com"]),
                         ("runtime", ["state": "drain_begin"], ["state": "drain_begin"]),
                         ("console", ["message": "private"], nil),
