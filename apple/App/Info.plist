@@ -4,13 +4,9 @@
 <dict>
     <key>UILaunchScreen</key>
     <dict>
-        <!-- Update the asset names when changing these images or colors so iOS refreshes stored launch snapshots. -->
+        <!-- The app draws the launch mark after reading its palette. Rename the canvas asset if the system background changes to refresh stored snapshots. -->
         <key>UIColorName</key>
-        <string>LaunchBackdrop</string>
-        <key>UIImageName</key>
-        <string>LaunchMark</string>
-        <key>UIImageRespectsSafeAreaInsets</key>
-        <false/>
+        <string>LaunchCanvas</string>
     </dict>
     <key>LogseqRevision</key>
     <string>$(LOGSEQ_BUILD_REVISION)</string>

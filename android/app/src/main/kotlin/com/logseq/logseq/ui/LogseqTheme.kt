@@ -107,6 +107,8 @@ internal object LogseqTheme {
     val blackScheme = darkScheme.copy(
         surface = Color.Black,
         background = Color.Black,
+        secondaryContainer = Color(0xff38383a),
+        onSecondaryContainer = Color(0xfff4f4f5),
         onBackground = Color(0xfff4f4f5),
         onSurface = Color(0xfff4f4f5),
         onSurfaceVariant = Color(0xffa1a1aa),
