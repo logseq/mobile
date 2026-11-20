@@ -1,12 +1,9 @@
 package com.logseq.logseq.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.TextStyle
@@ -57,7 +54,7 @@ internal object LogseqTheme {
 
     val accent = Color(0xff1b6898)
     val lightSurface = Color(0xfff8f9ff)
-    val darkSurface = Color(0xff101318)
+    private val solarizedBackground = Color(0xff002d38)
 
     // Material Expressive menus read the tertiary container roles for selection.
     private fun ColorScheme.withMenuSelectionColors() = copy(
@@ -92,20 +89,48 @@ internal object LogseqTheme {
         secondary = Color(0xffb8cad6),
         secondaryContainer = Color(0xff3a4a55),
         onSecondaryContainer = Color(0xffd4e6f2),
-        surface = darkSurface,
-        background = darkSurface,
-        surfaceContainerLowest = Color(0xff0b0e12),
-        surfaceContainerLow = Color(0xff14171d),
-        surfaceContainer = Color(0xff181c22),
-        surfaceContainerHigh = Color(0xff1d2229),
-        surfaceContainerHighest = Color(0xff22272f),
+        surface = solarizedBackground,
+        background = solarizedBackground,
+        onBackground = Color(0xffedfdfd),
+        onSurface = Color(0xffedfdfd),
+        onSurfaceVariant = Color(0xff9ab1b5),
+        surfaceVariant = Color(0xff19394d),
+        surfaceDim = solarizedBackground,
+        surfaceBright = Color(0xff315860),
+        surfaceContainerLowest = Color(0xff00242e),
+        surfaceContainerLow = Color(0xff0b3540),
+        surfaceContainer = Color(0xff143d48),
+        surfaceContainerHigh = Color(0xff1e4651),
+        surfaceContainerHighest = Color(0xff274f5a),
     ).withMenuSelectionColors()
 
+    val blackScheme = darkScheme.copy(
+        surface = Color.Black,
+        background = Color.Black,
+        onBackground = Color(0xfff4f4f5),
+        onSurface = Color(0xfff4f4f5),
+        onSurfaceVariant = Color(0xffa1a1aa),
+        surfaceVariant = Color(0xff242424),
+        surfaceDim = Color.Black,
+        surfaceBright = Color(0xff333333),
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color(0xff0e0e0e),
+        surfaceContainer = Color(0xff141414),
+        surfaceContainerHigh = Color(0xff1c1c1c),
+        surfaceContainerHighest = Color(0xff242424),
+    )
+
+    fun colorScheme(dark: Boolean, darkTheme: String): ColorScheme = when {
+        !dark -> lightScheme
+        darkTheme == "black" -> blackScheme
+        else -> darkScheme
+    }
+
     fun semanticColors(scheme: ColorScheme): Map<String, Color> {
-        val groupedRowBackground = if (scheme.background == darkSurface) {
-            Color.White.copy(alpha = 0.08f).compositeOver(scheme.background)
-        } else {
+        val groupedRowBackground = if (scheme.background == lightScheme.background) {
             Color.White
+        } else {
+            Color.White.copy(alpha = 0.08f).compositeOver(scheme.background)
         }
         return mapOf(
             "background" to scheme.background,

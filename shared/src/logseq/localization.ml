@@ -5564,6 +5564,8 @@ let dictionaries = [
     ("Tags", "标签");
     ("Text", "文本");
     ("Theme", "主题");
+    ("Dark theme", "深色配色");
+    ("Black", "黑色");
     ("Today", "今天");
     ("Tomorrow", "明天");
     ("True", "是");
@@ -5801,6 +5803,8 @@ let dictionaries = [
     ("Tags", "標籤");
     ("Text", "文字");
     ("Theme", "主題");
+    ("Dark theme", "深色配色");
+    ("Black", "黑色");
     ("Today", "今天");
     ("Tomorrow", "明天");
     ("True", "是");

@@ -68,6 +68,7 @@ type task_status =
 
 type settings_projection =
   { appearance : string
+  ; dark_theme : string
   ; language : string
   ; system_language : string option
   ; spell_check : bool
@@ -412,7 +413,9 @@ type logseq_model =
   ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
+  ; dark_theme : string
   ; settings_appearance_menu_open : bool
+  ; settings_dark_theme_menu_open : bool
   ; language : string
   ; system_language : string
   ; language_choices : settings_language_choice list
@@ -604,6 +607,9 @@ type logseq_action =
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
+  | OpenSettingsDarkThemeMenu
+  | CloseSettingsDarkThemeMenu
+  | ChangeDarkTheme of string
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
@@ -778,7 +784,9 @@ let initial () =
     settings_tabs_open = false;
     runtime_log_open = false;
     appearance = "system";
+    dark_theme = "solarized";
     settings_appearance_menu_open = false;
+    settings_dark_theme_menu_open = false;
     language = "system";
     system_language = "en";
     language_choices = settings_language_choices ();
@@ -1420,9 +1428,12 @@ let valid_authentication_state_ state =
   state = "restoring" || state = "signedOut" || state = "signingIn"
   || state = "signedIn" || state = "signingOut"
 
+let normalize_dark_theme = function "black" -> "black" | _ -> "solarized"
+
 let current_settings (current : logseq_model) =
   {
     appearance = current.appearance;
+    dark_theme = current.dark_theme;
     language = current.language;
     system_language = Some current.system_language;
     spell_check = current.spell_check;
@@ -2837,6 +2848,7 @@ let rec update (current : logseq_model) action =
     {
       current with
       appearance = settings.appearance;
+      dark_theme = normalize_dark_theme settings.dark_theme;
       language = settings.language;
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
@@ -2936,6 +2948,7 @@ let rec update (current : logseq_model) action =
       settings_open = true;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
+      settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
       base_url_draft = current.base_url;
@@ -2946,6 +2959,7 @@ let rec update (current : logseq_model) action =
       settings_open = false;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
+      settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
       base_url_draft = current.base_url;
@@ -2963,6 +2977,17 @@ let rec update (current : logseq_model) action =
         current with
         appearance;
         settings_appearance_menu_open = false;
+      }
+  | OpenSettingsDarkThemeMenu ->
+    { current with settings_dark_theme_menu_open = true }
+  | CloseSettingsDarkThemeMenu ->
+    { current with settings_dark_theme_menu_open = false }
+  | ChangeDarkTheme dark_theme ->
+    persist_settings_change current
+      {
+        current with
+        dark_theme = normalize_dark_theme dark_theme;
+        settings_dark_theme_menu_open = false;
       }
   | OpenSettingsLanguageMenu ->
     { current with settings_language_menu_open = true }

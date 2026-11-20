@@ -10,12 +10,13 @@ let property_title current ~attr ~title =
 
 open Lui_protocol
 
-let main_background = Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#002D38" }
-let sheet_background = Lui_ui.Adaptive { light = "#F2F2F7"; dark = "#002D38" }
+let dark_background = function "black" -> "#000000" | _ -> "#002D38"
+let main_background theme = Lui_ui.Adaptive { light = "#FCFCFC"; dark = dark_background theme }
+let sheet_background theme = Lui_ui.Adaptive { light = "#F2F2F7"; dark = dark_background theme }
 let grouped_row_background = Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" }
 let dark_accent = "#9BD3D4"
 
-let sheet ?height ?style_class ?detents ?detents_signal ?accessibility_identifier
+let sheet ~model_source ?height ?style_class ?detents ?detents_signal ?accessibility_identifier
     ?on_dismiss ~title ?title_signal children : Lui_elements.t =
   let content = Lui_elements.sheet ?height ?style_class ?detents ?detents_signal
     ?accessibility_identifier ?on_dismiss ~title ?title_signal children in
@@ -26,15 +27,19 @@ let sheet ?height ?style_class ?detents ?detents_signal ?accessibility_identifie
       let accent = Lui_ui.Fixed "#037DBA" in
       let list_sheet = Option.fold ~none:false
         ~some:(fun style -> List.mem "navigation-list" (String.split_on_char ' ' style)) style_class in
-      Lui_elements.themed ~tokens:[
-        (* The list presentation uses the background token for the modal itself. *)
-        "background", sheet_background;
-        "surface", (if list_sheet then grouped_row_background else sheet_background);
-        "card", grouped_row_background;
-        "input", grouped_row_background;
-        "primary", accent;
-        "input-focus", accent;
-      ] (Lui_elements.stack [content]) context parent
+      let theme = Signal.map (fun (model : Model.logseq_model) -> model.dark_theme) model_source in
+      let tokens = Signal.map (fun theme ->
+        let background = sheet_background theme in
+        [
+          "background", background;
+          "surface", (if list_sheet then grouped_row_background else background);
+          "card", grouped_row_background;
+          "input", grouped_row_background;
+          "primary", accent;
+          "input-focus", accent;
+        ]) theme in
+      Lui_elements.themed ~tokens_signal:tokens
+        (Lui_elements.stack [content]) context parent
     | _ -> content context parent
 
 let node_icon (current : Model.logseq_model) uuid =
@@ -1274,12 +1279,6 @@ let settings_language_title (current : Model.logseq_model) =
   with
   | Some choice -> tr current choice.title
   | None -> tr current "System"
-
-let settings_appearance_title (current : Model.logseq_model) =
-  match current.appearance with
-  | "light" -> tr current "Light"
-  | "dark" -> tr current "Dark"
-  | _ -> tr current "System"
 
 let settings_language_choice_title (choice : Model.settings_language_choice) =
   choice.title

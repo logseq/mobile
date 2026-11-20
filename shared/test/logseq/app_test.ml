@@ -483,6 +483,7 @@ let task_status uuid ident title icon_type icon_id icon_color =
 let settings tabs =
   {
     Model.appearance = "system";
+    dark_theme = "solarized";
     language = "system";
     system_language = None;
     spell_check = true;
@@ -913,6 +914,26 @@ let settings_preferences_persist_without_dismissing_the_sheet () =
       Model.SaveSettingsEffect
         (4, Model.current_settings auto_correction_disabled);
     ]
+
+let settings_dark_theme_persists_independently_of_appearance () =
+  let initial = Model.initial () in
+  check_eq initial.dark_theme "solarized";
+  let opened = Model.update initial Model.OpenSettings in
+  let choosing = Model.update opened Model.OpenSettingsDarkThemeMenu in
+  let black = Model.update choosing (Model.ChangeDarkTheme "black") in
+  check black.settings_open;
+  check (not black.settings_dark_theme_menu_open);
+  check_eq black.appearance "system";
+  check_eq black.dark_theme "black";
+  let saved = Model.current_settings black in
+  check_eq black.pending_effects [ Model.SaveSettingsEffect (1, saved) ];
+  let restored = Model.update initial (Model.ApplySettingsSnapshot saved) in
+  let light = Model.update restored (Model.ChangeAppearance "light") in
+  let dark = Model.update light (Model.ChangeAppearance "dark") in
+  check_eq dark.dark_theme "black";
+  let fallback = Model.update initial
+    (Model.ApplySettingsSnapshot { saved with dark_theme = "unknown" }) in
+  check_eq fallback.dark_theme "solarized"
 
 let settings_reject_invalid_connections_and_preserve_required_tabs () =
   let opened =
@@ -11171,6 +11192,8 @@ let cases =
     case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
+    case "settings dark theme persists independently of appearance"
+      settings_dark_theme_persists_independently_of_appearance;
     case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;
     case "settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary" settings_snapshot_normalizes_sidebar_tabs_at_the_lg_boundary;
     case "runtime-log-filters-refresh-and-successful-results-enter-lg-state" runtime_log_filters_refresh_and_successful_results_enter_lg_state;

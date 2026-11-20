@@ -359,10 +359,14 @@ private struct LGSidebarNavigation: View {
     let context: LUIAppleExtensionViewContext
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
 
     private var background: Color {
-        LogseqThemePolicy.palette(mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-                                  systemIsDark: colorScheme == .dark).background
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark,
+            darkTheme: darkTheme
+        ).background
     }
 
     var body: some View {
@@ -700,6 +704,7 @@ private struct LGNavigationContent: View {
     @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
     @Environment(\.logseqNativeSearch) private var inheritedSearch
     @Environment(\.lgVerticalToolbar) private var verticalToolbar
     @Environment(\.lgPDFWorkspaceOpen) private var pdfWorkspaceOpen
@@ -1037,7 +1042,8 @@ private struct LGNavigationContent: View {
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-            systemIsDark: colorScheme == .dark
+            systemIsDark: colorScheme == .dark,
+            darkTheme: darkTheme
         )
     }
 

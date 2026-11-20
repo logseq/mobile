@@ -139,7 +139,7 @@ let sheet source send : t =
       ~on_press:(action send Auth_flow.Cancel) [];
   ] in
   let sheet_title = if android then Signal.constant context.ui_scheduler "" else title in
-  View_base.sheet ~title:(reactive sheet_title)
+  View_base.sheet ~model_source:source ~title:(reactive sheet_title)
     ~height:680 ~style_class:"navigation-content navigation-inline-title"
     ~detents_signal:(Signal.map (fun current -> match (form current).stage with
       | Auth_flow.Register | NewPassword -> "0.82,large"

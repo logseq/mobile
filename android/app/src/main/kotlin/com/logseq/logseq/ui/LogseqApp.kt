@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -82,13 +83,14 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         else -> systemDark
     }
     val window = LocalActivity.current?.window
+    val colorScheme = LogseqTheme.colorScheme(dark, runtime.effectiveDarkTheme)
     SideEffect {
         if (window != null) {
-            applyAndroidSystemBarAppearance(window, dark)
+            applyAndroidSystemBarAppearance(window, dark, colorScheme.background.toArgb())
         }
     }
     MaterialExpressiveTheme(
-        colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
+        colorScheme = colorScheme,
         typography = LogseqTheme.typography,
     ) {
         androidx.compose.runtime.CompositionLocalProvider(

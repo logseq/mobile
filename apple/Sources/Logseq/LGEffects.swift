@@ -61,6 +61,7 @@ public struct LGEffectResolution: Equatable, Sendable {
 
 public struct LGSettingsPayload: Decodable, Equatable, Sendable {
     public let appearance: String
+    public let darkTheme: String?
     public let language: String
     public let spellCheck: Bool
     public let autoCorrection: Bool

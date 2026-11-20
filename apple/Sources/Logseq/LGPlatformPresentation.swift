@@ -138,10 +138,11 @@ public final class LGPlatformPresentationCoordinator {
 #if os(iOS)
 private struct LGSheetSurface: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
 
     func body(content: Content) -> some View {
         let dark = colorScheme == .dark
-        let background = LogseqThemePolicy.sheetBackground(isDark: dark)
+        let background = LogseqThemePolicy.sheetBackground(isDark: dark, darkTheme: darkTheme)
         content
             .background(background.ignoresSafeArea())
             .presentationBackground(background)

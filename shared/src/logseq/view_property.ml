@@ -84,7 +84,7 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
       (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Add property")
         ~accessibility_identifier:add_id ~on_press:show_picker []) in
     let picker = if_ ~test:(Signal.value adding)
-      (View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+      (View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
         Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
           search_field ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a property") ~label:(View_base.tr (Signal.sample model_source) "Search")
@@ -112,7 +112,7 @@ let tag_properties model_source raw_source send close : t =
   let owner = text (field "ownerUuid" (Signal.sample source)) in
   let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
   (with_add_property_picker ~in_tag_properties:true model_source raw_source send (fun add _ picker ->
-    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
       ~style_class:"navigation-list navigation-inline-title" ~detents:"large"
       ~accessibility_identifier:("sheet.tag-properties." ^ owner) ~on_dismiss:(fun _ -> close ()) [
       Lui_elements.list ~grow:1.0 ~style:`inset_grouped [

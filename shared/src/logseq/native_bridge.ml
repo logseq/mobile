@@ -115,6 +115,7 @@ let host_action (update : Host_update.host_update) =
   | Settings settings ->
     Model.ApplySettingsSnapshot
       { Model.appearance = settings.appearance;
+        dark_theme = settings.dark_theme;
         language = settings.language;
         system_language = settings.system_language;
         spell_check = settings.spell_check;
@@ -228,6 +229,7 @@ let encode_asset_presentation title asset_type local_path =
 
 let encode_settings (settings : Model.settings_projection) =
   "{\"appearance\":" ^ Lui_wire.quoted settings.appearance
+  ^ ",\"darkTheme\":" ^ Lui_wire.quoted settings.dark_theme
   ^ ",\"language\":" ^ Lui_wire.quoted settings.language
   ^ ",\"spellCheck\":" ^ string_of_bool settings.spell_check
   ^ ",\"autoCorrection\":" ^ string_of_bool settings.auto_correction
