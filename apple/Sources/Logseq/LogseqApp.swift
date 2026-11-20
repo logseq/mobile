@@ -64,6 +64,7 @@ public struct LogseqRootView : View {
         // Semantic colors inside the LUI tree come from the `theme` prop the
         // OCaml view emits (adaptive light/dark tokens), not a host-side
         // dictionary — the shell keeps its palette for chrome below.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(themePalette.background.ignoresSafeArea())
         .alert("Error", isPresented: Binding(
             get: { errorFeedback.message != nil },

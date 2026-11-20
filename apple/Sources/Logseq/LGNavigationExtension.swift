@@ -361,18 +361,24 @@ private struct LGSidebarNavigation: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
 
-    private var background: Color {
+    private var palette: LogseqThemePalette {
         LogseqThemePolicy.palette(
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
             systemIsDark: colorScheme == .dark,
             darkTheme: darkTheme
-        ).background
+        )
     }
 
     var body: some View {
         let _ = context.revision
+        let palette = palette
+        let background = palette.background
+        let selectionTint = palette.backgroundHex == LogseqThemePolicy.black.backgroundHex
+            ? Color.white
+            : LogseqThemePolicy.accent
         NavigationStack {
             child(at: 0)
+                .accentColor(selectionTint)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(background.ignoresSafeArea())
                 #if os(iOS)

@@ -33,7 +33,7 @@ import UIKit
             let transition = LogseqLaunchTransition()
             transition.show(in: window, mode: mode, darkTheme: darkTheme)
             guard let cover = window.subviews.first(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
-                throw failure("The first frame must continue the system launch logo")
+                throw failure("The app's first frame must show the themed launch cover")
             }
             guard cover.frame == window.bounds, !cover.isUserInteractionEnabled,
                   cover.accessibilityElementsHidden else {
@@ -41,7 +41,7 @@ import UIKit
             }
             guard let logo = cover.subviews.compactMap({ $0 as? UIImageView }).first,
                   let image = logo.image, image.size == CGSize(width: 128, height: 128) else {
-                throw failure("The launch logo must use the same 128 pt asset as the system screen; actual: \(String(describing: cover.subviews.compactMap { ($0 as? UIImageView)?.image?.size }.first))")
+                throw failure("The launch mark must use the 128 pt asset; actual: \(String(describing: cover.subviews.compactMap { ($0 as? UIImageView)?.image?.size }.first))")
             }
             let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
                 image.draw(at: .zero)
@@ -137,7 +137,7 @@ import UIKit
         guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
             throw failure("A late window attachment must never cover content that is already ready")
         }
-        print("PASS: adaptive system-logo continuity, immediate readiness, interactive content, reduced motion, and no warm-start replay")
+        print("PASS: themed launch mark, immediate readiness, interactive content, reduced motion, and no warm-start replay")
     }
     static func failure(_ message: String) -> NSError {
         NSError(domain: "LaunchTransition", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
