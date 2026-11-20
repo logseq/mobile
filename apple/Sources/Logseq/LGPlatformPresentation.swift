@@ -136,6 +136,19 @@ public final class LGPlatformPresentationCoordinator {
 
 
 #if os(iOS)
+private struct LGSheetSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let dark = colorScheme == .dark
+        let background = LogseqThemePolicy.sheetBackground(isDark: dark)
+        content
+            .background(background.ignoresSafeArea())
+            .presentationBackground(background)
+            .tint(LogseqThemePolicy.sheetAccent(isDark: dark))
+    }
+}
+
 struct LGJournalCalendar: View {
     let onSelect: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -218,6 +231,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                 set: { _ in }
             )) { _ in
                 GraphDownloadProgressView(coordinator: coordinator)
+                    .modifier(LGSheetSurface())
                     .presentationDetents([.height(260)])
                     .interactiveDismissDisabled()
             }
@@ -229,6 +243,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                         catch { logger.error("Could not open journal: \(error.localizedDescription)") }
                     }
                 }
+                .modifier(LGSheetSurface())
                 .presentationDetents([.height(460)])
             }
             .sheet(isPresented: mediaPanelBinding) {
@@ -244,7 +259,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                                            title: "Photo-\(UUID().uuidString).\(fileExtension)")
                     }
                 }
-                .background(Color(uiColor: .systemBackground))
+                .modifier(LGSheetSurface())
                 .presentationDetents([.fraction(0.58), .large])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(32)
@@ -260,6 +275,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                     ), targetBlockID: targetBlockID, transcript: transcript)
                     coordinator.completeAttachment(requestID: request.id)
                 }
+                .modifier(LGSheetSurface())
             }
             #endif
     }

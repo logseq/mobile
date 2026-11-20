@@ -1000,7 +1000,7 @@ let settings_screen (context : Lui_ui.ui_context) model_source send : t =
 let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-content"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.BackSettings)
       [
@@ -1020,7 +1020,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-list"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-list"
       ~accessibility_identifier:"sheet.settings.tabs"
       ~on_dismiss:(press send Model.BackSettings)
       [
@@ -1029,7 +1029,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
-            Lui_elements.toolbar_button ~style_class:"cancellation-action navigation-back-action"
+            Lui_elements.toolbar_button ~style_class:"cancellation-action navigation-back-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.cancel"
               ~on_press:(press send Model.BackSettings)
               ~text:(View_base.tr (Signal.sample model_source) "Settings") [];
@@ -1056,11 +1056,11 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
       ~style_class:"navigation-actions"
       ~accessibility_identifier:"toolbar.settings.actions"
       [
-        Lui_elements.toolbar_button ~style_class:"cancellation-action"
+        Lui_elements.toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
           ~accessibility_identifier:"button.log-refresh"
           ~on_press:(press send Model.RefreshRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
-        Lui_elements.toolbar_button ~style_class:"confirmation-action"
+        Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
           ~accessibility_identifier:"button.connection.apply"
           ~on_press:(press send Model.DismissRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Done") [];
@@ -1068,7 +1068,7 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
 
 let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissRuntimeLog)
       [
@@ -1080,7 +1080,7 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings.log"
       ~on_dismiss:(press send Model.DismissRuntimeLog)
       [
@@ -1091,7 +1091,7 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
 let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Settings") ~height:640
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Settings") ~height:640
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1119,7 +1119,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Settings") ~style_class:"navigation-form navigation-inline-title"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Settings") ~style_class:"navigation-form navigation-inline-title"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1134,11 +1134,11 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
-            Lui_elements.toolbar_button ~style_class:"cancellation-action"
+            Lui_elements.toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.cancel"
               ~on_press:(press send Model.DismissSettings)
               ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-            Lui_elements.toolbar_button ~style_class:"confirmation-action"
+            Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.apply"
               ~disabled_signal:
                 (Signal.map View_base.settings_apply_disabled_
@@ -1230,7 +1230,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
       ]
   in
   if Lui_ui.host context = KotlinHost then
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~height:480
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~height:480
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
@@ -1293,9 +1293,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    View_base.with_string_prop_signal Lui_protocol.Detents
-      (Signal.map (fun current -> "medium") model_source)
-    (sheet ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
@@ -1343,9 +1341,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
         ~style_class:"navigation-actions"
         ~accessibility_identifier:"toolbar.sync.actions"
         [
-          Lui_elements.toolbar_button ~style_class:"confirmation-action"
+          Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
             ~accessibility_identifier:"button.sync.done"
             ~on_press:(press send Model.CloseSyncDetails)
             ~text:(View_base.tr (Signal.sample model_source) "Done") [];
         ];
-    ])
+    ]

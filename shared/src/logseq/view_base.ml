@@ -10,6 +10,27 @@ let property_title current ~attr ~title =
 
 open Lui_protocol
 
+let main_background = Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#002D38" }
+let dark_accent = "#9BD3D4"
+
+let sheet ?height ?style_class ?detents ?detents_signal ?accessibility_identifier
+    ?on_dismiss ~title ?title_signal children : Lui_elements.t =
+  let content = Lui_elements.sheet ?height ?style_class ?detents ?detents_signal
+    ?accessibility_identifier ?on_dismiss ~title ?title_signal children in
+  fun context parent ->
+    match Lui_ui.profile context with
+    | { profile_os = IOS; profile_host = SwiftUIHost } ->
+      (* The Apple modal host reads theme tokens from the sheet's ancestors. *)
+      let accent = Lui_ui.Adaptive { light = "#037DBA"; dark = dark_accent } in
+      Lui_elements.themed ~tokens:[
+        "surface", main_background;
+        "card", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" };
+        "input", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" };
+        "primary", accent;
+        "input-focus", accent;
+      ] (Lui_elements.stack [content]) context parent
+    | _ -> content context parent
+
 let node_icon (current : Model.logseq_model) uuid =
   Option.value ~default:"" (String_map.find_opt uuid current.node_icons)
 

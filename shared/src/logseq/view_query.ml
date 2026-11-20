@@ -369,13 +369,13 @@ let settings_sheet mode owner feature view_source model_source send close : t =
           String_kit.includes ~sub:(String.lowercase_ascii query) (String.lowercase_ascii (jtext (jfield "title" value))))) col (Signal.value query)) in
       let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:(id "values.cancel") ~on_press:(fun _ -> Signal.set selecting false) [] in
-      let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+      let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
         ~accessibility_identifier:(id "values.cancel") ~on_press:(fun _ -> Signal.set selecting false) [] in
       let done_ = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
-      let toolbar_done_ = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
+      let toolbar_done_ = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
         ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
-      sheet ~title:(reactive (own (Signal.map2 property_title model_source col)))
+      View_base.sheet ~title:(reactive (own (Signal.map2 property_title model_source col)))
         ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(id "values.sheet") ~on_dismiss:(fun _ -> Signal.set selecting false) [
         list ~grow:1.0 ~style:`inset_grouped [
@@ -492,17 +492,17 @@ let settings_sheet mode owner feature view_source model_source send close : t =
     ignore (send (Model.SubmitResultView (initial.id, payload owner feature initial.id "save" ["config", config]))) in
   let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
     ~accessibility_identifier:("view.settings.cancel." ^ initial.id) ~on_press:(fun _ -> close ()) [] in
-  let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+  let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
     ~accessibility_identifier:("view.settings.cancel." ^ initial.id) ~on_press:(fun _ -> close ()) [] in
       let save = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
     ~disabled_signal:(own (Signal.map2 (fun waiting filters -> waiting || (mode = "filter" && List.exists (fun draft -> filter_error draft <> None) filters))
       (waiting model_source initial.id) (Signal.value filters)))
     ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save_action [] in
-  let toolbar_save = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
+  let toolbar_save = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
     ~disabled_signal:(own (Signal.map2 (fun waiting filters -> waiting || (mode = "filter" && List.exists (fun draft -> filter_error draft <> None) filters))
       (waiting model_source initial.id) (Signal.value filters)))
     ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save_action [] in
-      (sheet ~title:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+      (View_base.sheet ~title:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.settings.sheet." ^ initial.id)
     ~on_dismiss:(fun _ -> close ()) [
       list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view." ^ mode ^ ".list." ^ initial.id)
@@ -622,14 +622,14 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
       ~on_press:(fun _ -> choose value) []] in
   let controls = if plain || temporal || many then [cancel; confirm] else [cancel] in
   let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel")
-    ~variant:`ghost ~style_class:"cancellation-action"
+    ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
     ~accessibility_identifier:("view.edit.cancel." ^ view.id) ~on_press:(fun () -> close ()) [] in
   let toolbar_confirm = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done")
-    ~variant:`ghost ~style_class:"confirmation-action"
+    ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
     ~accessibility_identifier:("view.edit.save." ^ view.id)
     ~disabled_signal:(waiting model_source view.id) ~on_press:confirm_input [] in
   let toolbar_controls = if plain || temporal || many then [toolbar_cancel; toolbar_confirm] else [toolbar_cancel] in
-  (sheet ~title:(property_title (Signal.sample model_source) col)
+  (View_base.sheet ~title:(property_title (Signal.sample model_source) col)
     ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~track_visible_range:true

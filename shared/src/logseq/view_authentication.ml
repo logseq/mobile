@@ -66,13 +66,11 @@ let fields source send stage attributes choices =
 
 let theme_tokens =
   let open Lui_ui in
-  let dark_accent = "#9BD3D4" in
   [
     "muted-foreground", Adaptive { light = "#686E6B"; dark = "#FFFFFFB3" };
     "input", Adaptive { light = "#FFFFFF"; dark = "#00000000" };
-    "input-focus", Adaptive { light = "#037DBA"; dark = dark_accent };
     "auth-border", Adaptive { light = "#858E88"; dark = "#FFFFFF66" };
-    "auth-action", Adaptive { light = "#101312"; dark = dark_accent };
+    "auth-action", Adaptive { light = "#101312"; dark = View_base.dark_accent };
     "auth-action-text", Adaptive { light = "#FFFFFF"; dark = "#002D38" };
     "auth-disabled", Adaptive { light = "#E2E6E2"; dark = "#FFFFFF14" };
     "auth-disabled-text", Adaptive { light = "#5D655F"; dark = "#FFFFFF8C" };
@@ -136,14 +134,13 @@ let sheet source send : t =
       ~on_press:(action send Auth_flow.Cancel) [];
   ] in
   let navigation_toolbar = toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
-    toolbar_button ~text:close ~variant:`ghost ~style_class:"confirmation-action"
+    toolbar_button ~text:close ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
       ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
       ~on_press:(action send Auth_flow.Cancel) [];
   ] in
   let sheet_title = if android then Signal.constant context.ui_scheduler "" else title in
-  (* Navigation-list sheets use the graph background, as in Settings. *)
-  sheet ~title:(reactive sheet_title)
-    ~height:680 ~style_class:"navigation-list navigation-inline-title"
+  View_base.sheet ~title:(reactive sheet_title)
+    ~height:680 ~style_class:"navigation-content navigation-inline-title"
     ~detents_signal:(Signal.map (fun current -> match (form current).stage with
       | Auth_flow.Register | NewPassword -> "0.82,large"
       | ForgotPassword -> "0.48,large"
