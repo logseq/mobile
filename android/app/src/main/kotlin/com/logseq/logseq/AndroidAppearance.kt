@@ -29,12 +29,11 @@ internal fun applyAndroidApplicationAppearance(context: Context, appearance: Str
     }
 }
 
-internal fun applyAndroidSystemBarAppearance(window: Window, dark: Boolean) {
+internal fun applyAndroidSystemBarAppearance(window: Window, dark: Boolean, background: Int) {
     // These colors are honored on pre-edge-to-edge releases. Newer Android
     // versions draw the app's Scaffold behind the transparent system bars.
     @Suppress("DEPRECATION")
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-        val background = if (dark) 0xff101318.toInt() else 0xfffcfcfc.toInt()
         window.statusBarColor = background
         window.navigationBarColor = background
     }

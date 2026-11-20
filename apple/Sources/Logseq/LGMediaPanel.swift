@@ -13,6 +13,7 @@ struct LGMediaPanel: View {
     let onPhotoData: (Data, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
     @State private var mode: LGAttachmentService
     @State private var selection: [PhotosPickerItem] = []
     @State private var allPhotos = false
@@ -22,7 +23,9 @@ struct LGMediaPanel: View {
     @State private var isImporting = false
 
     private var isDark: Bool { colorScheme == .dark }
-    private var sheetBackground: Color { LogseqThemePolicy.sheetBackground(isDark: isDark) }
+    private var sheetBackground: Color {
+        LogseqThemePolicy.sheetBackground(isDark: isDark, darkTheme: darkTheme)
+    }
 
     init(initialService: LGAttachmentService,
          onPhotos: @escaping ([PhotosPickerItem]) -> Void,
@@ -170,7 +173,7 @@ struct LGMediaPanel: View {
             .background {
                 Circle().fill(mode == .camera
                               ? Color.black.opacity(0.35)
-                              : (isDark ? LogseqThemePolicy.dark : LogseqThemePolicy.light).surface)
+                              : (isDark ? LogseqThemePolicy.darkPalette(darkTheme) : LogseqThemePolicy.light).surface)
             }
     }
 

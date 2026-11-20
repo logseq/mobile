@@ -4,16 +4,17 @@ type retained_outline_row = View_rows.retained_row
    colors ride the wire as adaptive {light,dark} pairs picked by each
    backend's effective color scheme, and `theme-mode` follows the
    appearance setting so every platform hot-switches with one patch. *)
-let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
+let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_value) list =
   let open Lui_ui in
   let surfaces =
     match Lui_ui.platform ui_context, Lui_ui.host ui_context with
     | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
     | _ ->
       [
-        ("background", View_base.main_background);
+        ("background", View_base.main_background dark_theme);
         ("surface", View_base.grouped_row_background);
-        ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
+        ("code-container", Adaptive { light = "#EFEFF0";
+          dark = if dark_theme = "black" then "#242424" else "#19394D" });
         ("card", View_base.grouped_row_background);
       ]
   in
@@ -48,7 +49,9 @@ let logseq_view (context : Lui_ui.ui_context) model_source send =
   let language (model : Model.logseq_model) =
     Localization.resolve model.language model.system_language
   in
-  Lui_elements.themed ~tokens:(logseq_theme_tokens context)
+  let dark_theme (model : Model.logseq_model) = model.dark_theme in
+  Lui_elements.themed
+    ~tokens_signal:(Signal.map (logseq_theme_tokens context) (Signal.map dark_theme model_source))
     ~mode:(reactive logseq_theme_mode model_source)
     (reactive ~equal:(fun left right -> language left = language right)
       (fun _ -> View_screens.logseq_view context model_source send) model_source)

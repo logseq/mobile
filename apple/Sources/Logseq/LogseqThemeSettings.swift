@@ -7,6 +7,21 @@ enum LogseqThemeMode: String, CaseIterable {
     case dark
 }
 
+enum LogseqDarkTheme: String {
+    case solarized
+    case black
+
+    static let storageKey = "logseq.darkTheme"
+
+    init(storedValue: String?) {
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? .solarized
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var logseqDarkTheme = LogseqDarkTheme.solarized
+}
+
 struct LogseqThemePalette {
     let backgroundHex: String
     let surfaceHex: String
@@ -62,8 +77,8 @@ enum LogseqThemePolicy {
             : Color(red: 27.0 / 255, green: 104.0 / 255, blue: 152.0 / 255)
     }
 
-    static func sheetBackground(isDark: Bool) -> Color {
-        isDark ? dark.background : Color(red: 242.0 / 255, green: 242.0 / 255, blue: 247.0 / 255)
+    static func sheetBackground(isDark: Bool, darkTheme: LogseqDarkTheme) -> Color {
+        isDark ? darkPalette(darkTheme).background : Color(red: 242.0 / 255, green: 242.0 / 255, blue: 247.0 / 255)
     }
 
     static let light = LogseqThemePalette(
@@ -88,14 +103,33 @@ enum LogseqThemePolicy {
         secondaryTextRGB: (155, 211, 212)
     )
 
-    static func palette(mode: LogseqThemeMode, systemIsDark: Bool) -> LogseqThemePalette {
+    static let black = LogseqThemePalette(
+        backgroundHex: "#000000",
+        backgroundRGB: (0, 0, 0),
+        surfaceHex: "#141414",
+        surfaceRGB: (20, 20, 20),
+        primaryTextHex: "#F4F4F5",
+        primaryTextRGB: (244, 244, 245),
+        secondaryTextHex: "#A1A1AA",
+        secondaryTextRGB: (161, 161, 170)
+    )
+
+    static func darkPalette(_ theme: LogseqDarkTheme) -> LogseqThemePalette {
+        theme == .black ? black : dark
+    }
+
+    static func palette(
+        mode: LogseqThemeMode,
+        systemIsDark: Bool,
+        darkTheme: LogseqDarkTheme = .solarized
+    ) -> LogseqThemePalette {
         switch mode {
         case .system:
-            return systemIsDark ? dark : light
+            return systemIsDark ? darkPalette(darkTheme) : light
         case .light:
             return light
         case .dark:
-            return dark
+            return darkPalette(darkTheme)
         }
     }
 }

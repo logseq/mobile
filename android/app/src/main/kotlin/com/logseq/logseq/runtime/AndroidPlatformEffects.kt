@@ -92,6 +92,7 @@ internal data class AndroidHostUpdate(val kind: String, val payload: String)
 
 internal data class AndroidHostSettings(
     val appearance: String,
+    val darkTheme: String,
     val language: String,
     val spellCheck: Boolean,
     val autoCorrection: Boolean,
@@ -103,6 +104,7 @@ internal data class AndroidHostSettings(
     val hostPayload: Map<String, Any?>
         get() = mapOf(
             "appearance" to appearance,
+            "darkTheme" to darkTheme,
             "language" to language,
             "systemLanguage" to java.util.Locale.getDefault().toLanguageTag(),
             "spellCheck" to spellCheck,
@@ -116,6 +118,7 @@ internal data class AndroidHostSettings(
     companion object {
         val defaults = AndroidHostSettings(
             appearance = "system",
+            darkTheme = "solarized",
             language = "system",
             spellCheck = true,
             autoCorrection = true,
@@ -132,6 +135,7 @@ internal data class AndroidHostSettings(
                 ?.mapNotNull { it as? String } ?: defaults.sidebarTabs
             return AndroidHostSettings(
                 appearance = value["appearance"] as? String ?: defaults.appearance,
+                darkTheme = if (value["darkTheme"] == "black") "black" else defaults.darkTheme,
                 language = value["language"] as? String ?: defaults.language,
                 spellCheck = value["spellCheck"] as? Boolean ?: defaults.spellCheck,
                 autoCorrection = value["autoCorrection"] as? Boolean ?: defaults.autoCorrection,

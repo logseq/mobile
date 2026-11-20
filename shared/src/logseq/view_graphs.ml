@@ -154,7 +154,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
     View_base.with_int_prop_signal HeightValue
       (Signal.map (fun (current : Model.logseq_model) ->
         if current.new_graph_encrypted && current.new_graph_password_required then 640 else 480) model_source)
-    (View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Add sync graph") ~height:480
+    (View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Add sync graph") ~height:480
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
@@ -218,7 +218,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ])
   else
-    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Add sync graph") ~style_class:"navigation-form"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Add sync graph") ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
       [
@@ -380,7 +380,7 @@ let graph_picker_overflow_menu model_source send : t =
 let graph_password_sheet (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = KotlinHost then
-    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~height:360
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~height:360
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
       [
@@ -424,7 +424,7 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
           ];
       ]
   else
-    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~style_class:"navigation-form"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Unlock encrypted graphs") ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
       [

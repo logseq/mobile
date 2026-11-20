@@ -136,6 +136,7 @@ internal class LogseqRuntime(
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
+    private var darkTheme by mutableStateOf("solarized")
 
     init {
         bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }
@@ -155,6 +156,7 @@ internal class LogseqRuntime(
                 val authenticationCode = platformEffects.initialAuthenticationCode()
                 val storage = platformEffects.loadStorageState()
                 appearance = storage.settings.appearance
+                darkTheme = storage.settings.darkTheme
                 storageBaseUrl = storage.baseUrl
 
                 val lifecycle = AndroidGraphLifecycle(
@@ -547,6 +549,7 @@ internal class LogseqRuntime(
         if (effect.kind == "save-settings" && resolution.succeeded) {
             val storage = platformEffects.loadStorageState()
             appearance = storage.settings.appearance
+            darkTheme = storage.settings.darkTheme
             if (storage.baseUrl != storageBaseUrl) {
                 graphCatalogAutoRefresh?.stopPeriodic()
                 hasOpenGraph = false
@@ -934,6 +937,7 @@ internal class LogseqRuntime(
     }
 
     val effectiveAppearance: String get() = appearance
+    val effectiveDarkTheme: String get() = darkTheme
 }
 
 // Recorded audio asset produced by the recording sheet — payload shape

@@ -97,6 +97,7 @@ enum LatexMarkupDocument {
 
 struct NativeLatexMarkupContent: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
     @ScaledMetric(relativeTo: .body) private var fontSize: CGFloat = 17
     @State private var height: CGFloat = 30
     let nodes: [LogseqMarkupNode]
@@ -107,7 +108,8 @@ struct NativeLatexMarkupContent: View {
     var body: some View {
         #if os(iOS)
         LatexWebContent(html: LatexMarkupDocument.html(nodes: nodes, fontSize: fontSize,
-            foreground: colorScheme == .dark ? LogseqThemePolicy.dark.primaryTextHex : LogseqThemePolicy.light.primaryTextHex),
+            foreground: LogseqThemePolicy.palette(mode: .system,
+                systemIsDark: colorScheme == .dark, darkTheme: darkTheme).primaryTextHex),
             height: $height, allowsLinkInteraction: allowsLinkInteraction,
             onOpenMarkupLink: onOpenMarkupLink, onEdit: onEdit)
             .frame(height: height).frame(maxWidth: .infinity, alignment: .leading)

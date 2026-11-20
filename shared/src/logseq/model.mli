@@ -65,6 +65,7 @@ type task_status =
 
 type settings_projection =
   { appearance : string
+  ; dark_theme : string
   ; language : string
   ; system_language : string option
   ; spell_check : bool
@@ -409,7 +410,9 @@ type logseq_model =
   ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
+  ; dark_theme : string
   ; settings_appearance_menu_open : bool
+  ; settings_dark_theme_menu_open : bool
   ; language : string
   ; system_language : string
   ; language_choices : settings_language_choice list
@@ -601,6 +604,9 @@ type logseq_action =
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
+  | OpenSettingsDarkThemeMenu
+  | CloseSettingsDarkThemeMenu
+  | ChangeDarkTheme of string
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string

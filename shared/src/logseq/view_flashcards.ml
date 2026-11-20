@@ -235,7 +235,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             emit ["action", `String "create"; "kind", `String (Signal.sample (Signal.value kind));
               "targetUuid", `String uuid; "title", `String (Signal.sample (Signal.value name))]) [] in
       request_search "page" "";
-      (View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "New card group") ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+      (View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "New card group") ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.flashcards.deck.create" ~on_dismiss:(fun _ -> Signal.set adding false) [
         list ~grow:1.0 ~style:`inset_grouped [
           list_section [
