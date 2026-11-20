@@ -161,11 +161,11 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
       [context_menu (task_status_context_items model_source send)]
 
 let with_press handler (elem : t) : t =
- fun context parent ->
-  let node = elem context parent in
+ custom (fun context parent ->
+  let node = mount context ?parent elem in
   enable context node Lui_protocol.PressEnabled;
   register_press context node handler;
-  node
+  node)
 
 let composer_send_button model_source context ?send_icon send_disabled on_send : t =
   let android_icon = Option.value send_icon ~default:(`send : icon) in
@@ -197,7 +197,7 @@ let composer_tag_chips model_source send : t =
 
 let composer_tag_picker model_source send : t =
   if_ ~test:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_open && not model.composer_tags_loading) model_source)
-    (fun context parent ->
+    (custom (fun context parent ->
       let model : Model.logseq_model = Signal.sample model_source in
       let seen = Hashtbl.create 32 in
       let options = List.filter (fun (tag : Model.sidebar_page) ->
@@ -210,27 +210,28 @@ let composer_tag_picker model_source send : t =
           `Assoc ["title", `String tag.title; "match", `List [`String tag.uuid]]) options);
         "raw", `Assoc ["type", `String "set"; "value", `List (List.map (fun (tag : Model.sidebar_page) ->
           `Assoc ["type", `String "ref-uuid"; "value", `String tag.uuid]) model.composer_tags)]] in
-      (View_query.property_editor ~id:"composer.tags" ~column:property model_source property
-        (fun () -> ignore (send Model.CloseComposerTags))
-        ~submit:(fun fields ->
-          let strings name = match List.assoc_opt name fields with Some (`List values) ->
-            List.filter_map (function `String value -> Some value | _ -> None) values | _ -> [] in
-          let selected = List.filter_map (fun uuid -> List.find_opt (fun (tag : Model.sidebar_page) -> tag.uuid = uuid) options)
-            (strings "selectedValues") in
-          let created = List.map (fun title -> ({Model.uuid = "new:" ^ Dev_query.Unicode.lowercase title; title} : Model.sidebar_page))
-            (strings "newValues") in
-          let seen = Hashtbl.create 8 in
-          let tags = List.filter (fun (tag : Model.sidebar_page) ->
-            let key = Dev_query.Unicode.lowercase tag.title in
-            if Hashtbl.mem seen key then false else (Hashtbl.add seen key (); true)) (selected @ created) in
-          ignore (send (Model.SetComposerTags tags)))) context parent)
+      mount context ?parent
+        (View_query.property_editor ~id:"composer.tags" ~column:property model_source property
+          (fun () -> ignore (send Model.CloseComposerTags))
+          ~submit:(fun fields ->
+            let strings name = match List.assoc_opt name fields with Some (`List values) ->
+              List.filter_map (function `String value -> Some value | _ -> None) values | _ -> [] in
+            let selected = List.filter_map (fun uuid -> List.find_opt (fun (tag : Model.sidebar_page) -> tag.uuid = uuid) options)
+              (strings "selectedValues") in
+            let created = List.map (fun title -> ({Model.uuid = "new:" ^ Dev_query.Unicode.lowercase title; title} : Model.sidebar_page))
+              (strings "newValues") in
+            let seen = Hashtbl.create 8 in
+            let tags = List.filter (fun (tag : Model.sidebar_page) ->
+              let key = Dev_query.Unicode.lowercase tag.title in
+              if Hashtbl.mem seen key then false else (Hashtbl.add seen key (); true)) (selected @ created) in
+            ignore (send (Model.SetComposerTags tags))))))
 
 let composer_surface model_source ?key ?accessibility_identifier ?attachments ?tag_strip
     ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
     ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
     : t =
- fun context parent ->
+ custom (fun context parent ->
   (* A tap gesture around the whole capsule competes with its native menus.
      Only unused space should request focus; controls own their own touches. *)
   let focus_target ~height ~accessibility_identifier =
@@ -306,7 +307,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
               @ send_button);
          ])
   in
-  surface context parent
+  mount context ?parent surface)
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then

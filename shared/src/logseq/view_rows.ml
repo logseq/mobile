@@ -77,34 +77,35 @@ let retained_row_editing_caret (retained : retained_row) =
 (* Only the native-visible window owns UI scopes and protocol nodes. The
    lightweight collection metadata keeps the entire outline scrollable. *)
 let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~source ~key ~cmp ~mount : Lui_elements.t =
- fun context parent ->
+ Lui_elements.custom (fun context parent ->
   let viewport = Signal.state context.Lui_ui.ui_scheduler (0, 11) in
   let window offset rows (first, last) =
     let overscan = 2 in
     let length = max 1 (last - first + 1) + 2 * overscan in
     let start = max offset (min (first - overscan) (offset + List.length rows - length)) in
     start, List.filteri (fun index _ -> index + offset >= start && index + offset < start + length) rows in
-  (Lui_elements.list ~accessibility_identifier:identifier
-    ~data_attrs:(reactive (fun count offset rows viewport ->
-      let start, rows = window offset rows viewport in
-      ["data-virtual-count", string_of_int count; "data-virtual-start", string_of_int start;
-       "data-virtual-length", string_of_int (List.length rows); "data-item-extent", string_of_int item_extent;
-       "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
-      count offset source (Signal.value viewport)) ~track_visible_range:true
-    ~on_visible_range:(function
-      | Lui_elements.Range { first; last } when first >= 0 && last >= first ->
-        Signal.set viewport (first, last); on_visible_range first last
-      | _ -> ())
-    [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
-      offset source (Signal.value viewport)) ~key ~cmp ~mount]) context parent
+  Lui_elements.mount context ?parent
+    (Lui_elements.list ~accessibility_identifier:identifier
+      ~data_attrs:(reactive (fun count offset rows viewport ->
+        let start, rows = window offset rows viewport in
+        ["data-virtual-count", string_of_int count; "data-virtual-start", string_of_int start;
+         "data-virtual-length", string_of_int (List.length rows); "data-item-extent", string_of_int item_extent;
+         "data-first-section-count", "0"; "data-first-section-inset", "136"; "data-pinned-index", "-1"])
+        count offset source (Signal.value viewport)) ~track_visible_range:true
+      ~on_visible_range:(function
+        | Lui_elements.Range { first; last } when first >= 0 && last >= first ->
+          Signal.set viewport (first, last); on_visible_range first last
+        | _ -> ())
+      [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
+        offset source (Signal.value viewport)) ~key ~cmp ~mount]))
 
 let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
-    ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount : Lui_elements.t =
- fun context parent ->
+    ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount () : Lui_elements.t =
+ Lui_elements.custom (fun context parent ->
   if not (List.mem (Lui_ui.host context) [Lui_protocol.SwiftUIHost; Lui_protocol.KotlinHost]) then
-    Lui_elements.keyed ~source ~key ~cmp ~mount context parent
+    Lui_elements.mount context ?parent (Lui_elements.keyed ~source ~key ~cmp ~mount)
   else
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let items = own (Signal.map Array.of_list source) in
@@ -170,25 +171,27 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
       let following = Array.sub items after (min 16 (Array.length items - after)) |> Array.to_list in
       preceding @ following) window) in
     ignore (Signal.own context.ui_scope (Signal.observe adjacent on_prefetch));
-    Lui_elements.if_ ~test:(own (Signal.map (fun items -> Array.length items > 0) items))
-    (Lui_elements.list ~accessibility_identifier:identifier
-      ~data_attrs_signal:metadata ~track_visible_range:true
-      ~on_visible_range:(function
-        | Lui_elements.Range { first; last } ->
-          on_visible_range first last;
-          let items, start, length = Signal.sample window in
-          let count = Array.length items in
-          if count > 0 && first >= 0 && last >= first then begin
-            let first = min first (count - 1) in
-            let last = min last (count - 1) in
-            if (first < start + 2 && start > 0)
-               || (last >= start + length - 2 && start + length < count) then
-              let next_start = min (max 0 (first - max 0 ((window_size - (last - first + 1)) / 2))) (max 0 (count - window_size)) in
-              if next_start <> start || length < min window_size count then
-                Signal.set range (next_start, window_size)
-          end
-        | _ -> ())
-      [Lui_elements.keyed ~source:visible ~key ~cmp ~mount]) context parent
+    let content =
+      Lui_elements.if_ ~test:(own (Signal.map (fun items -> Array.length items > 0) items))
+        (Lui_elements.list ~accessibility_identifier:identifier
+          ~data_attrs_signal:metadata ~track_visible_range:true
+          ~on_visible_range:(function
+            | Lui_elements.Range { first; last } ->
+              on_visible_range first last;
+              let items, start, length = Signal.sample window in
+              let count = Array.length items in
+              if count > 0 && first >= 0 && last >= first then begin
+                let first = min first (count - 1) in
+                let last = min last (count - 1) in
+                if (first < start + 2 && start > 0)
+                   || (last >= start + length - 2 && start + length < count) then
+                  let next_start = min (max 0 (first - max 0 ((window_size - (last - first + 1)) / 2))) (max 0 (count - window_size)) in
+                  if next_start <> start || length < min window_size count then
+                    Signal.set range (next_start, window_size)
+              end
+            | _ -> ())
+          [Lui_elements.keyed ~source:visible ~key ~cmp ~mount]) in
+    Lui_elements.mount context ?parent content)
 
 type reference_entry =
   | Result_views of string

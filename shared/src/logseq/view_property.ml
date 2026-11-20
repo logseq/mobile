@@ -39,20 +39,21 @@ let display_value property =
     Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
   | _ -> raw
 
-let adaptive_row stacked children : t = fun context parent ->
+let adaptive_row stacked children : t = custom (fun context parent ->
   let node = Lui_ui.extension context "native-property-row" in
   attach context parent node;
   Lui_ui.extension_property_signal context node "stacked" (Signal.map (fun value -> Lui_protocol.BoolValue value) stacked);
-  List.iter (fun child -> ignore (child context (Some node))) children;
-  node
+  mount_children context node children;
+  node)
 
 let with_add_property_picker ?(in_tag_properties = false) model_source raw_source send render : t =
- fun context parent ->
+ custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
   let keys = own (Signal.map2 (fun (model : Model.logseq_model) json ->
     [Option.value ~default:"" model.selected_graph_id ^ ":" ^ text (field "ownerUuid" json)]) model_source source) in
-  (keyed ~source:keys ~key:Fun.id ~cmp:String.compare ~mount:(fun _ -> fun context parent ->
+  mount context ?parent
+  (keyed ~source:keys ~key:Fun.id ~cmp:String.compare ~mount:(fun _ -> custom (fun context parent ->
     let own source = Signal.own_signal context.ui_scope source in
     let owner = text (field "ownerUuid" (Signal.sample source)) in
     let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
@@ -103,14 +104,15 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
           ];
         toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
           ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
-    (render action menu_action picker) context parent)) context parent
+    mount context ?parent (render action menu_action picker)))))
 
 let tag_properties model_source raw_source send close : t =
- fun context parent ->
+ custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
   let owner = text (field "ownerUuid" (Signal.sample source)) in
   let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
+  mount context ?parent
   (with_add_property_picker ~in_tag_properties:true model_source raw_source send (fun add _ picker ->
     View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
       ~style_class:"navigation-list navigation-inline-title" ~detents:"large"
@@ -138,14 +140,15 @@ let tag_properties model_source raw_source send close : t =
       toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [
         Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
           ~accessibility_identifier:("sheet.tag-properties.done." ^ owner) ~on_press:(fun _ -> close ()) []]
-    ])) context parent
+    ])))
 
 let view ?(compact = false) ~render_block model_source raw_source send : t =
- fun context parent ->
+ custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
   let owners = own (Signal.map (fun json -> let owner = text (field "ownerUuid" json) in
     if owner = "" || list (field "properties" json) = [] then [] else [owner]) source) in
+  mount context ?parent
   (keyed ~source:owners ~key:Fun.id ~cmp:String.compare ~mount:(fun owner_source ->
     let owner = Signal.sample owner_source in
     let expanded = Signal.state context.ui_scheduler false in
@@ -159,7 +162,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
         ~accessibility_identifier:("properties." ^ owner) children in
     View_base.with_string_prop Lui_protocol.FontSize (if compact then "14" else "16") (layout [
       keyed ~source:properties ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
-        ~mount:(fun property_source -> fun context parent ->
+        ~mount:(fun property_source -> custom (fun context parent ->
           let own source = Signal.own_signal context.ui_scope source in
           let first = Signal.sample property_source in
           let attr = text (field "attr" first) in
@@ -241,32 +244,33 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                 "value", `String (string_of_bool value)]) [] in
           let fields children = if compact then row ~gap:6 ~cross:`center children
             else adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) children in
-          (column ~gap:2 ~cross:(if compact then `start else `stretch) [
-            fields [
-              label;
-              reactive (fun text_layout -> if text_layout then
-                reactive (fun empty -> if empty then row [value] else box ~opacity:0.72 [
-                  View_query.block_values ~render_block owner (own (Signal.map (fun p ->
-                    match list (field "blocks" p) with
-                    | [] -> `List [`Assoc ["uuid", `String id; "title", field "text" p;
-                        "markup", field "markup" p; "pageId", `String owner]]
-                    | blocks -> `List blocks) property_source)) send_block])
-                  (own (Signal.map (fun p -> list (field "blocks" p) = [] && text (field "text" p) = "") property_source))
-                else row ~gap:0 ~cross:`center ~accessibility_identifier:("property.inline." ^ owner ^ "." ^ attr) [
-                  if field "kind" first = `String "checkbox" then checkbox_value else node_value])
-                (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
-            ];
-            if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-              (reactive (function None -> box [] | Some property ->
-                let open_nodes = List.map (fun reference ->
-                  let uuid = text (field "uuid" reference) in
-                  uuid, View_base.tr_named (Signal.sample model_source) "Open {1}" (text (field "title" reference)),
-                  (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
-                  (list (field "references" property)) in
-                View_query.property_editor ~owner ~send ~open_nodes ~id ~column:property
-                ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
-                model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
-          ]) context parent);
+          mount context ?parent
+            (column ~gap:2 ~cross:(if compact then `start else `stretch) [
+              fields [
+                label;
+                reactive (fun text_layout -> if text_layout then
+                  reactive (fun empty -> if empty then row [value] else box ~opacity:0.72 [
+                    View_query.block_values ~render_block owner (own (Signal.map (fun p ->
+                      match list (field "blocks" p) with
+                      | [] -> `List [`Assoc ["uuid", `String id; "title", field "text" p;
+                          "markup", field "markup" p; "pageId", `String owner]]
+                      | blocks -> `List blocks) property_source)) send_block])
+                    (own (Signal.map (fun p -> list (field "blocks" p) = [] && text (field "text" p) = "") property_source))
+                  else row ~gap:0 ~cross:`center ~accessibility_identifier:("property.inline." ^ owner ^ "." ^ attr) [
+                    if field "kind" first = `String "checkbox" then checkbox_value else node_value])
+                  (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
+              ];
+              if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
+                (reactive (function None -> box [] | Some property ->
+                  let open_nodes = List.map (fun reference ->
+                    let uuid = text (field "uuid" reference) in
+                    uuid, View_base.tr_named (Signal.sample model_source) "Open {1}" (text (field "title" reference)),
+                    (fun () -> ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))))
+                    (list (field "references" property)) in
+                  View_query.property_editor ~owner ~send ~open_nodes ~id ~column:property
+                  ~submit:(fun fields -> submit (("textValueUuid", field "textValueUuid" property) :: fields))
+                  model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
+            ])));
       if_ ~test:(own (Signal.map (fun values -> List.length values > 3) all_properties))
         (button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start ~min_height:32 ~padding:0
           ~icon_signal:(own (Signal.map (fun expanded -> `app (if expanded then "chevron-up" else "chevron-down")) (Signal.value expanded)))
@@ -274,4 +278,4 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             (if expanded then "Collapse" else "Expand")) (Signal.value expanded))))
           ~accessibility_identifier:("properties.expand." ^ owner)
           ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded)))) []);
-    ]))) context parent
+    ]))))

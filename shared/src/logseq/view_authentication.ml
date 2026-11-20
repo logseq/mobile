@@ -6,12 +6,12 @@ let send_action send action = Model.AuthenticationForm action |> send |> ignore
 let action send value = fun _ -> send_action send value
 let tr source value = View_base.tr (Signal.sample source) value
 
-let mobile_input kind control : t = fun context parent ->
+let mobile_input kind control : t = custom (fun context parent ->
   let scope = Lui_ui.extension context "native-auth-input" in
   Lui_ui.extension_property context scope "kind" (StringValue kind);
-  ignore (control context (Some scope));
+  ignore (mount context ~parent:scope control);
   attach context parent scope;
-  scope
+  scope)
 
 let field source send key label kind =
   let value (current : Model.logseq_model) =
@@ -22,7 +22,7 @@ let field source send key label kind =
     | key -> Option.value ~default:"" (List.assoc_opt
         (String.sub key 10 (String.length key - 10)) t.attributes) in
   let input = if kind = "password" || kind = "new-password" then secure_field else text_field in
-  fun context parent ->
+  custom (fun context parent ->
     let android = Lui_ui.host context = KotlinHost in
     let field_style value = if android then None else Some value in
     let control =
@@ -36,11 +36,12 @@ let field source send key label kind =
         ~on_submit:(action send Auth_flow.Submit) [] in
     (* Compose's outlined control fills its parent in a form and supplies its own border. *)
     let control = if android then column ~style_class:"form" [control] else control in
-    column ~key:("auth." ^ key) ~gap:6 ~cross:`stretch [
-      text ~padding_horizontal:(if android then 0 else 14)
-        ~value:(tr source label) ~foreground:"muted-foreground" ~style_class:"subheadline" [];
-      mobile_input kind control;
-    ] context parent
+    mount context ?parent
+      (column ~key:("auth." ^ key) ~gap:6 ~cross:`stretch [
+        text ~padding_horizontal:(if android then 0 else 14)
+          ~value:(tr source label) ~foreground:"muted-foreground" ~style_class:"subheadline" [];
+        mobile_input kind control;
+      ]))
 
 let fields source send stage attributes choices =
   let email = field source send "email" "Email" "email" in
@@ -81,7 +82,7 @@ let sheet source send : t =
   let link id label event = button ~variant:`ghost ~text:(tr source label) ~min_height:44
       ~text_alignment:`center ~accessibility_identifier:id ~disabled_signal:busy ~on_press:(action send event) [] in
   let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
-  fun context parent ->
+  custom (fun context parent ->
   let android = Lui_ui.host context = KotlinHost in
   let title = Signal.map (fun current -> tr source (Auth_flow.title (form current))) source in
   (* SwiftUI renders the sheet outside the node tree. Scope these tokens to its content. *)
@@ -139,13 +140,14 @@ let sheet source send : t =
       ~on_press:(action send Auth_flow.Cancel) [];
   ] in
   let sheet_title = if android then Signal.constant context.ui_scheduler "" else title in
-  View_base.sheet ~model_source:source ~title:(reactive sheet_title)
-    ~height:680 ~style_class:"navigation-content navigation-inline-title"
-    ~detents_signal:(Signal.map (fun current -> match (form current).stage with
-      | Auth_flow.Register | NewPassword -> "0.82,large"
-      | ForgotPassword -> "0.48,large"
-      | Login -> "0.54,large"
-      | _ -> "0.62,large") source)
-    ~accessibility_identifier:"sheet.authentication"
-    ~on_dismiss:(action send Auth_flow.Dismiss)
-    (if android then [header; content] else [content; navigation_toolbar]) context parent
+  mount context ?parent
+    (View_base.sheet ~model_source:source ~title:(reactive sheet_title)
+      ~height:680 ~style_class:"navigation-content navigation-inline-title"
+      ~detents_signal:(Signal.map (fun current -> match (form current).stage with
+        | Auth_flow.Register | NewPassword -> "0.82,large"
+        | ForgotPassword -> "0.48,large"
+        | Login -> "0.54,large"
+        | _ -> "0.62,large") source)
+      ~accessibility_identifier:"sheet.authentication"
+      ~on_dismiss:(action send Auth_flow.Dismiss)
+      (if android then [header; content] else [content; navigation_toolbar])))

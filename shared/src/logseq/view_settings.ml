@@ -2,15 +2,15 @@ open Lui_protocol
 open Lui_elements
 
 let with_native_control_tint role (control : t) : t =
- fun context parent ->
+ custom (fun context parent ->
    match Lui_ui.profile context with
    | { profile_os = IOS; profile_host = SwiftUIHost } ->
      let tweak = Lui_ui.platform_tweak context "native-control-tint" in
      Lui_ui.extension_property context tweak "role" (StringValue role);
-     ignore (control context (Some tweak));
+     ignore (mount context ~parent:tweak control);
      attach context parent tweak;
      tweak
-   | _ -> control context parent
+   | _ -> mount context ?parent control)
 
 let settings_language_choice_radio model_source
     (choice_source : Model.settings_language_choice Signal.signal) send :
@@ -56,7 +56,8 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
           ~test:
             (Signal.map View_base.model_settings_language_menu_open_
                model_source)
-          (dropdown_menu_view (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
+          (dropdown_menu_view (dropdown_menu
+             ~target:(Menu_anchor { side = `below; align = `end_; offset = 0. })
              ~min_width:220
              ~on_dismiss:(press send Model.CloseSettingsLanguageMenu)
              [
@@ -120,7 +121,8 @@ let settings_theme_picker ~id ~label ~choices ~selected ~menu_open
           ~label ~accessibility_identifier:picker_id
           ~on_press:(press send open_menu) [];
         if_ ~test:(Signal.map menu_open model_source)
-          (dropdown_menu_view (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
+          (dropdown_menu_view (dropdown_menu
+             ~target:(Menu_anchor { side = `below; align = `end_; offset = 0. })
              ~min_width:160 ~on_dismiss:(press send close_menu)
              (List.map (fun (choice, title) ->
                dropdown_menu_item ~text:(View_base.tr current title)
