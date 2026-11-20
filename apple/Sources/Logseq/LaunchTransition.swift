@@ -5,16 +5,33 @@ import UIKit
     private var cover: UIView?
     private var finished = false
 
-    func show(in window: UIWindow) {
-        guard !finished, cover == nil, let image = UIImage(named: "LaunchLogo") else { return }
+    func show(in window: UIWindow, mode: LogseqThemeMode, darkTheme: LogseqDarkTheme) {
+        guard !finished, cover == nil else { return }
+        let systemStyle = window.traitCollection.userInterfaceStyle
+        let style: UIUserInterfaceStyle = switch mode {
+        case .system: systemStyle
+        case .light: .light
+        case .dark: .dark
+        }
+        let traits = UITraitCollection(userInterfaceStyle: style)
+        guard let image = UIImage(named: "LaunchLogo", in: nil, compatibleWith: traits) else { return }
+        let palette = LogseqThemePolicy.palette(
+            mode: mode, systemIsDark: systemStyle == .dark, darkTheme: darkTheme
+        )
         let cover = UIView(frame: window.bounds)
         cover.accessibilityIdentifier = "launch.transition"
         cover.isUserInteractionEnabled = false
         cover.accessibilityElementsHidden = true
         cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        cover.overrideUserInterfaceStyle = window.rootViewController?.traitCollection.userInterfaceStyle ?? .unspecified
-        cover.backgroundColor = UIColor(named: "LaunchBackground") ?? .systemBackground
-        let logo = UIImageView(image: image)
+        cover.overrideUserInterfaceStyle = style
+        cover.backgroundColor = UIColor(palette.background)
+        let logoImage = style == .dark && darkTheme == .solarized
+            ? image.withTintColor(
+                UIColor(red: 133.0 / 255, green: 200.0 / 255, blue: 200.0 / 255, alpha: 1),
+                renderingMode: .alwaysOriginal
+            )
+            : image
+        let logo = UIImageView(image: logoImage)
         logo.frame = cover.bounds
         logo.contentMode = .center
         logo.autoresizingMask = [.flexibleWidth, .flexibleHeight]
