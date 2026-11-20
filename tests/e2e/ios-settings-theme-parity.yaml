@@ -3,16 +3,19 @@ appId: com.logseq.logseq
 - runFlow: __LOGSEQ_E2E_SETUP_FLOW__
 - extendedWaitUntil:
     visible:
-      text: "More"
+      id: "button.sidebar"
     timeout: 60000
-- tapOn: "More"
-- tapOn: "Settings"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar.settings"
 - assertVisible:
     id: "screen.settings"
 - assertVisible: "Theme"
 - assertVisible: "Language"
 - tapOn:
     id: "picker.settings.language"
+    point: "90%,50%"
 - scrollUntilVisible:
     element:
       text: "العربية"
@@ -20,6 +23,7 @@ appId: com.logseq.logseq
 - tapOn: "العربية"
 - tapOn:
     id: "picker.settings.language"
+    point: "90%,50%"
 - scrollUntilVisible:
     element:
       text: "System"
