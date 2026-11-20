@@ -76,20 +76,6 @@ public struct LogseqRootView : View {
 
     private var appContent: some View {
         LGRendererRoot(renderer: runtime.lgRuntime.renderer)
-            .onAppear {
-                if let window = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
-                    .first(where: { $0.isKeyWindow }) {
-                    LogseqLaunchTransition.shared.show(
-                        in: window,
-                        mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-                        darkTheme: darkTheme
-                    )
-                }
-                DispatchQueue.main.async {
-                    LogseqLaunchTransition.shared.finish()
-                }
-            }
             .task {
                 await runtime.runLGApplication()
                 logger.info("App logs are viewable in the Xcode console on Apple platforms")

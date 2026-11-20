@@ -4,7 +4,7 @@
 <dict>
     <key>UILaunchScreen</key>
     <dict>
-        <!-- The app draws the launch mark after reading its palette. Rename the canvas asset if the system background changes to refresh stored snapshots. -->
+        <!-- Use a blank system launch canvas. Rename the asset if its background changes to refresh stored snapshots. -->
         <key>UIColorName</key>
         <string>LaunchCanvas</string>
     </dict>
