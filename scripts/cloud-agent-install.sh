@@ -47,7 +47,7 @@ export LD_LIBRARY_PATH="${SDL3_PREFIX}/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH
 export LIBRARY_PATH="${SDL3_PREFIX}/lib\${LIBRARY_PATH:+:\$LIBRARY_PATH}"
 export C_INCLUDE_PATH="${SDL3_PREFIX}/include\${C_INCLUDE_PATH:+:\$C_INCLUDE_PATH}"
 if command -v opam >/dev/null 2>&1; then
-  eval "\$(opam env --switch=5.5.0 2>/dev/null)" || true
+  eval "\$(opam env --switch=5.5.0 --set-switch 2>/dev/null)" || true
 fi
 EOF
 fi
@@ -75,7 +75,7 @@ fi
 if ! opam switch list --short 2>/dev/null | grep -qx '5.5.0'; then
   opam switch create 5.5.0
 fi
-eval "$(opam env --switch=5.5.0)"
+eval "$(opam env --switch=5.5.0 --set-switch)"
 
 git config --global url."https://github.com/".insteadOf "git@github.com:" || true
 git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" || true
