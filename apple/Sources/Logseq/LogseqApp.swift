@@ -79,7 +79,11 @@ public struct LogseqRootView : View {
                 if let window = UIApplication.shared.connectedScenes
                     .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
                     .first(where: { $0.isKeyWindow }) {
-                    LogseqLaunchTransition.shared.show(in: window)
+                    LogseqLaunchTransition.shared.show(
+                        in: window,
+                        mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+                        darkTheme: darkTheme
+                    )
                 }
                 DispatchQueue.main.async {
                     LogseqLaunchTransition.shared.finish()

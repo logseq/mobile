@@ -17,13 +17,21 @@ import UIKit
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
 
-        for style in [UIUserInterfaceStyle.light, .dark] {
-            window.overrideUserInterfaceStyle = style
+        let cases: [(UIUserInterfaceStyle, LogseqThemeMode, LogseqDarkTheme, String)] = [
+            (.light, .system, .black, "light"),
+            (.dark, .system, .black, "black"),
+            (.light, .dark, .solarized, "solarized"),
+            (.dark, .light, .solarized, "forced-light"),
+        ]
+        for (systemStyle, mode, darkTheme, suffix) in cases {
+            window.overrideUserInterfaceStyle = systemStyle
             try await Task.sleep(for: .milliseconds(100))
-            controller.view.backgroundColor = UIColor(LogseqThemePolicy.palette(
-                mode: .system, systemIsDark: style == .dark).background)
+            let isDark = mode == .dark || (mode == .system && systemStyle == .dark)
+            let canvas = UIColor(LogseqThemePolicy.palette(
+                mode: mode, systemIsDark: systemStyle == .dark, darkTheme: darkTheme).background)
+            controller.view.backgroundColor = canvas
             let transition = LogseqLaunchTransition()
-            transition.show(in: window)
+            transition.show(in: window, mode: mode, darkTheme: darkTheme)
             guard let cover = window.subviews.first(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
                 throw failure("The first frame must continue the system launch logo")
             }
@@ -35,9 +43,8 @@ import UIKit
                   let image = logo.image, image.size == CGSize(width: 128, height: 128) else {
                 throw failure("The launch logo must use the same 128 pt asset as the system screen; actual: \(String(describing: cover.subviews.compactMap { ($0 as? UIImageView)?.image?.size }.first))")
             }
-            let rendition = image.imageAsset?.image(with: cover.traitCollection) ?? image
-            let rendered = UIGraphicsImageRenderer(size: rendition.size).image { _ in
-                rendition.draw(at: .zero)
+            let rendered = UIGraphicsImageRenderer(size: image.size).image { _ in
+                image.draw(at: .zero)
             }
             let pixel = rendered.cgImage!.cropping(to: CGRect(
                 x: rendered.scale * 64, y: rendered.scale * 80, width: 1, height: 1))!
@@ -52,9 +59,11 @@ import UIKit
             guard abs(Int(rgba[3]) - Int((expectedAlpha * 255).rounded())) <= 2 else {
                 throw failure("Both launch appearances must use the same subdued logo opacity: \(rgba)")
             }
-            let tint = style == .light
-                ? UIColor(LogseqThemePolicy.light.secondaryText)
-                : UIColor(red: 133.0 / 255, green: 200.0 / 255, blue: 200.0 / 255, alpha: 1)
+            let tint: UIColor = switch (isDark, darkTheme) {
+            case (false, _): UIColor(LogseqThemePolicy.light.secondaryText)
+            case (true, .black): UIColor(white: 200.0 / 255, alpha: 1)
+            case (true, .solarized): UIColor(red: 133.0 / 255, green: 200.0 / 255, blue: 200.0 / 255, alpha: 1)
+            }
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
             tint.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
             for (actual, expected) in zip(rgba.prefix(3), [red, green, blue]) {
@@ -62,22 +71,20 @@ import UIKit
                     throw failure("The translucent logo must retain its theme tint: \(rgba)")
                 }
             }
-            let expected = UIColor(LogseqThemePolicy.palette(mode: .system, systemIsDark: style == .dark).background)
             guard let background = cover.backgroundColor else { throw failure("Missing launch background") }
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             var er: CGFloat = 0, eg: CGFloat = 0, eb: CGFloat = 0, ea: CGFloat = 0
             background.resolvedColor(with: cover.traitCollection).getRed(&r, green: &g, blue: &b, alpha: &a)
-            expected.getRed(&er, green: &eg, blue: &eb, alpha: &ea)
+            canvas.getRed(&er, green: &eg, blue: &eb, alpha: &ea)
             guard abs(r-er) < 0.001, abs(g-eg) < 0.001, abs(b-eb) < 0.001 else {
-                throw failure("Launch background mismatch: style=\(style.rawValue), coverStyle=\(cover.traitCollection.userInterfaceStyle.rawValue), actual=\(r),\(g),\(b), expected=\(er),\(eg),\(eb)")
+                throw failure("Launch background mismatch for \(suffix): actual=\(r),\(g),\(b), expected=\(er),\(eg),\(eb)")
             }
             window.layoutIfNeeded()
             let snapshot = UIGraphicsImageRenderer(bounds: window.bounds).image { context in
                 window.layer.render(in: context.cgContext)
             }
-            let suffix = style == .dark ? "dark" : "light"
             try snapshot.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("launch-logo-\(suffix).png"))
-            let readinessDelay: Duration = style == .light ? .milliseconds(10) : .milliseconds(350)
+            let readinessDelay: Duration = isDark ? .milliseconds(350) : .milliseconds(10)
             try await Task.sleep(for: readinessDelay)
             guard cover.backgroundColor?.cgColor.alpha == 1, logo.alpha == 1 else {
                 throw failure("The launch cover must wait for actual readiness rather than a fixed launch timer")
@@ -113,20 +120,20 @@ import UIKit
             try visibleContent.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("launch-content-visible-\(suffix).png"))
             try await Task.sleep(for: .milliseconds(220))
             guard cover.superview == nil else { throw failure("The cover must be removed when the short fade finishes") }
-            transition.show(in: window)
+            transition.show(in: window, mode: mode, darkTheme: darkTheme)
             guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
                 throw failure("Returning to an already launched app must not replay the logo")
             }
         }
         let reduced = LogseqLaunchTransition()
-        reduced.show(in: window)
+        reduced.show(in: window, mode: .system, darkTheme: .black)
         reduced.finish(reduceMotion: true)
         guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
             throw failure("Reduce Motion must remove the launch cover synchronously")
         }
         let alreadyReady = LogseqLaunchTransition()
         alreadyReady.finish(reduceMotion: false)
-        alreadyReady.show(in: window)
+        alreadyReady.show(in: window, mode: .system, darkTheme: .black)
         guard !window.subviews.contains(where: { $0.accessibilityIdentifier == "launch.transition" }) else {
             throw failure("A late window attachment must never cover content that is already ready")
         }
