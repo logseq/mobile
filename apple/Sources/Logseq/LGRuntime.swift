@@ -146,6 +146,9 @@ public final class LGRuntime {
         authenticationCode: Int = 0
     ) throws {
         guard !isStarted else { return }
+        #if os(iOS)
+        LogseqCrashReporting.runtime(.start)
+        #endif
         lastAuthoritativeCoreResponse = nil
         lastCoreSyncProjection = nil
         authoritativeCoreResponseInvalidated = false
@@ -165,6 +168,9 @@ public final class LGRuntime {
         invalidatePendingPatchApplies()
         try apply(initialPatch)
         isStarted = true
+        #if os(iOS)
+        LogseqCrashReporting.runtime(.started)
+        #endif
         while !pendingCoreResponses.isEmpty {
             let response = pendingCoreResponses.removeFirst()
             try applyCoreResponse(response, synchronously: true)
@@ -436,6 +442,10 @@ public final class LGRuntime {
     }
 
     private func drainEffects() async {
+        #if os(iOS)
+        LogseqCrashReporting.runtime(.drainBegin)
+        defer { LogseqCrashReporting.runtime(.drainEnd) }
+        #endif
         defer { isDrainingEffects = false }
         let epoch = patchApplyEpoch
         while true {

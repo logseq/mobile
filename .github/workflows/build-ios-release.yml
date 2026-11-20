@@ -62,11 +62,8 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
-          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
-            brew install sentry-cli
-          else
-            echo "::warning::SENTRY_AUTH_TOKEN is missing. The iOS dSYMs will stay in the local archive."
-          fi
+          : "${SENTRY_AUTH_TOKEN:?SENTRY_AUTH_TOKEN is required to upload iOS release dSYMs}"
+          brew install sentry-cli
 
       - name: Restore opam root
         id: opam-root
