@@ -149,7 +149,7 @@ let settings_appearance_control context model_source send =
 
 let settings_dark_theme_control context model_source send =
   settings_theme_picker ~id:"dark-theme" ~label:"Dark theme"
-    ~choices:[ "solarized", "Solarized"; "black", "Black" ]
+    ~choices:[ "black", "Black"; "solarized", "Solarized" ]
     ~selected:(fun (model : Model.logseq_model) -> model.dark_theme)
     ~menu_open:(fun model -> model.Model.settings_dark_theme_menu_open)
     ~open_menu:Model.OpenSettingsDarkThemeMenu

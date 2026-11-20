@@ -12,14 +12,15 @@ enum LogseqDarkTheme: String {
     case black
 
     static let storageKey = "logseq.darkTheme"
+    static let defaultTheme: Self = .black
 
     init(storedValue: String?) {
-        self = storedValue.flatMap(Self.init(rawValue:)) ?? .solarized
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? Self.defaultTheme
     }
 }
 
 extension EnvironmentValues {
-    @Entry var logseqDarkTheme = LogseqDarkTheme.solarized
+    @Entry var logseqDarkTheme = LogseqDarkTheme.defaultTheme
 }
 
 struct LogseqThemePalette {
@@ -126,7 +127,7 @@ enum LogseqThemePolicy {
     static func palette(
         mode: LogseqThemeMode,
         systemIsDark: Bool,
-        darkTheme: LogseqDarkTheme = .solarized
+        darkTheme: LogseqDarkTheme = .defaultTheme
     ) -> LogseqThemePalette {
         switch mode {
         case .system:

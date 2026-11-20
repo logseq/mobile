@@ -7,6 +7,11 @@ import android.os.Build
 import android.view.Window
 import androidx.core.view.WindowCompat
 
+internal const val DEFAULT_DARK_THEME = "black"
+
+internal fun normalizedDarkTheme(value: String?): String =
+    if (value == "solarized") value else DEFAULT_DARK_THEME
+
 internal fun androidAppearanceIsDark(appearance: String, configuration: Configuration): Boolean =
     when (appearance) {
         "dark" -> true

@@ -41,7 +41,7 @@ private final class LGCoreResponseRelay {
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 public struct LogseqRootView : View {
     @AppStorage("logseq.appearance") private var appearance = "system"
-    @AppStorage(LogseqDarkTheme.storageKey) private var darkTheme = LogseqDarkTheme.solarized
+    @AppStorage(LogseqDarkTheme.storageKey) private var darkTheme = LogseqDarkTheme.defaultTheme
     @AppStorage("logseq.language") private var language = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase

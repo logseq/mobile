@@ -8,6 +8,7 @@ let settings_fields () =
   with
   | Ok (Settings settings) ->
     check_eq "dark" settings.appearance;
+    check_eq "black" settings.dark_theme;
     check_eq "zh-CN" settings.language;
     check (not settings.spell_check);
     check settings.auto_correction;

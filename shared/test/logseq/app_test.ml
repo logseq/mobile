@@ -483,7 +483,7 @@ let task_status uuid ident title icon_type icon_id icon_color =
 let settings tabs =
   {
     Model.appearance = "system";
-    dark_theme = "solarized";
+    dark_theme = "black";
     language = "system";
     system_language = None;
     spell_check = true;
@@ -917,23 +917,23 @@ let settings_preferences_persist_without_dismissing_the_sheet () =
 
 let settings_dark_theme_persists_independently_of_appearance () =
   let initial = Model.initial () in
-  check_eq initial.dark_theme "solarized";
+  check_eq initial.dark_theme "black";
   let opened = Model.update initial Model.OpenSettings in
   let choosing = Model.update opened Model.OpenSettingsDarkThemeMenu in
-  let black = Model.update choosing (Model.ChangeDarkTheme "black") in
-  check black.settings_open;
-  check (not black.settings_dark_theme_menu_open);
-  check_eq black.appearance "system";
-  check_eq black.dark_theme "black";
-  let saved = Model.current_settings black in
-  check_eq black.pending_effects [ Model.SaveSettingsEffect (1, saved) ];
+  let solarized = Model.update choosing (Model.ChangeDarkTheme "solarized") in
+  check solarized.settings_open;
+  check (not solarized.settings_dark_theme_menu_open);
+  check_eq solarized.appearance "system";
+  check_eq solarized.dark_theme "solarized";
+  let saved = Model.current_settings solarized in
+  check_eq solarized.pending_effects [ Model.SaveSettingsEffect (1, saved) ];
   let restored = Model.update initial (Model.ApplySettingsSnapshot saved) in
   let light = Model.update restored (Model.ChangeAppearance "light") in
   let dark = Model.update light (Model.ChangeAppearance "dark") in
-  check_eq dark.dark_theme "black";
+  check_eq dark.dark_theme "solarized";
   let fallback = Model.update initial
     (Model.ApplySettingsSnapshot { saved with dark_theme = "unknown" }) in
-  check_eq fallback.dark_theme "solarized"
+  check_eq fallback.dark_theme "black"
 
 let settings_reject_invalid_connections_and_preserve_required_tabs () =
   let opened =

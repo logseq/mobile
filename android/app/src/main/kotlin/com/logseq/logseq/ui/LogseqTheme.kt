@@ -124,8 +124,8 @@ internal object LogseqTheme {
 
     fun colorScheme(dark: Boolean, darkTheme: String): ColorScheme = when {
         !dark -> lightScheme
-        darkTheme == "black" -> blackScheme
-        else -> darkScheme
+        darkTheme == "solarized" -> darkScheme
+        else -> blackScheme
     }
 
     fun semanticColors(scheme: ColorScheme): Map<String, Color> {
