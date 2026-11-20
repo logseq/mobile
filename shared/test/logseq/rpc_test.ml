@@ -4176,7 +4176,7 @@ let shared_images_insert_bounded_row_patches_and_normalize_upload_type () =
   let result =
     response_result
       (dispatch_json session "addAsset"
-         "{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}")
+         "{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":209715200,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}")
   in
   let splices = json_items "outlinerRowSplices" result in
   let rows = json_items "rows" (List.hd splices) in
@@ -4187,7 +4187,9 @@ let shared_images_insert_bounded_row_patches_and_normalize_upload_type () =
     (member "uuid" (member "block" (List.hd rows)))
     (`String "shared-image");
   (match Model.read_block (Session.state session).model "shared-image" with
-   | Some asset -> check_eq asset.Model.asset_type (Some "jpeg")
+   | Some asset ->
+     check_eq asset.Model.asset_type (Some "jpeg");
+     check_eq asset.asset_size (Some 209715200)
    | None -> check false);
   match pending_request (dispatch_json session "beginPendingSync" "") with
   | Some request ->
@@ -4228,6 +4230,13 @@ let asset_payload_errors_do_not_create_local_blocks () =
     ];
   check
     (Model.read_block (Session.state session).model "bad" = None);
+  let oversized =
+    dispatch_json session "addAsset"
+      "{\"uuid\":\"oversized\",\"title\":\"Large file\",\"assetType\":\"bin\",\"assetSize\":209715201,\"assetChecksum\":\"hash\",\"localPath\":\"file\"}"
+  in
+  check_eq (member "message" (member "error" oversized))
+    (`String "Asset exceeds the 200 MiB limit");
+  check (Model.read_block (Session.state session).model "oversized" = None);
   List.iter
     (fun (payload, code, message) ->
       let error = member "error" (dispatch_json session "addAsset" payload) in

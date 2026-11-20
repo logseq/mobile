@@ -517,6 +517,8 @@ let apply_sync_event payload apply_event completed =
           else "websocket_apply_failed")
          message)
 
+let max_asset_size = 200 * 1024 * 1024
+
 let asset_metadata fields =
   match
     ( Wire.required_string fields "uuid"
@@ -528,6 +530,9 @@ let asset_metadata fields =
     , Wire.required_string fields "localPath"
     , Wire.optional_string fields "targetBlockId" )
   with
+  | Ok _, Ok _, Ok _, Ok _, Ok (Some asset_size), Ok _, Ok _, Ok _
+    when asset_size > max_asset_size ->
+    Error ("invalid_params", "Asset exceeds the 200 MiB limit")
   | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size)
   , Ok checksum, Ok local_path, Ok target ->
     Ok (uuid, title, now, asset_type, asset_size, checksum, local_path, target)
