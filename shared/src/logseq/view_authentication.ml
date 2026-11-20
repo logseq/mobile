@@ -22,18 +22,25 @@ let field source send key label kind =
     | key -> Option.value ~default:"" (List.assoc_opt
         (String.sub key 10 (String.length key - 10)) t.attributes) in
   let input = if kind = "password" || kind = "new-password" then secure_field else text_field in
-  column ~key:("auth." ^ key) ~gap:8 ~cross:`stretch [
-    row ~padding_horizontal:16 [text ~value:(tr source label) ~foreground:"muted-foreground" ~style_class:"subheadline" []];
-    mobile_input kind
-      (input ~accessibility_identifier:("field.auth." ^ key)
-        ~label:(tr source label) ~placeholder:"" ~min_height:54
-        ~style_class:"plain-input" ~padding_horizontal:18 ~padding_vertical:14
-        ~border_width:1 ~border_color:"auth-border" ~corner_radius:28
+  fun context parent ->
+    let android = Lui_ui.host context = KotlinHost in
+    let field_style value = if android then None else Some value in
+    let control =
+      input ~accessibility_identifier:("field.auth." ^ key)
+        ~label:(tr source label) ~placeholder:""
+        ?border_width:(field_style 1) ?border_color:(field_style "auth-border")
+        ?corner_radius:(field_style 13)
         ~text_signal:(Signal.map value source)
         ~disabled_signal:(Signal.map (fun current -> Auth_flow.busy (form current)) source)
         ~on_input:(on_input send (fun value -> Model.AuthenticationForm (Auth_flow.Edit (key, value))))
-        ~on_submit:(action send Auth_flow.Submit) []);
-  ]
+        ~on_submit:(action send Auth_flow.Submit) [] in
+    (* Compose's outlined control fills its parent in a form and supplies its own border. *)
+    let control = if android then column ~style_class:"form" [control] else control in
+    column ~key:("auth." ^ key) ~gap:6 ~cross:`stretch [
+      text ~padding_horizontal:(if android then 0 else 14)
+        ~value:(tr source label) ~foreground:"muted-foreground" ~style_class:"subheadline" [];
+      mobile_input kind control;
+    ] context parent
 
 let fields source send stage attributes choices =
   let email = field source send "email" "Email" "email" in
@@ -57,19 +64,12 @@ let fields source send stage attributes choices =
   | VerifyMfa -> [text ~accessibility_identifier:"auth.setup-secret"
       ~value:(reactive (fun current -> (form current).setup_secret) source) []; code]
 
-let theme_tokens ui_context =
+let theme_tokens =
   let open Lui_ui in
-  let surfaces =
-    match Lui_ui.platform ui_context, Lui_ui.host ui_context with
-    | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
-    | _ -> [
-      "background", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
-      "surface", Adaptive { light = "#F4F6F3"; dark = "#002D38" };
-    ]
-  in
-  surfaces @ [
+  [
     "muted-foreground", Adaptive { light = "#686E6B"; dark = "#ADBDBD" };
-    "auth-border", Adaptive { light = "#CCD2CE"; dark = "#4D686D" };
+    "input", Adaptive { light = "#FFFFFF"; dark = "#102D3B" };
+    "auth-border", Adaptive { light = "#858E88"; dark = "#648891" };
     "auth-action", Adaptive { light = "#101312"; dark = "#EDF2EF" };
     "auth-action-text", Adaptive { light = "#FFFFFF"; dark = "#102E33" };
     "auth-disabled", Adaptive { light = "#E2E6E2"; dark = "#24434A" };
@@ -82,24 +82,18 @@ let sheet source send : t =
       ~text_alignment:`center ~accessibility_identifier:id ~disabled_signal:busy ~on_press:(action send event) [] in
   let can_submit = Signal.map (fun current -> Auth_flow.can_submit (form current)) source in
   fun context parent ->
-  themed ~tokens:(theme_tokens context) (
-  sheet ~title:(reactive (fun current -> tr source (Auth_flow.title (form current))) source)
-    ~height:680 ~style_class:"navigation-content navigation-inline-title"
-    ~detents_signal:(Signal.map (fun current -> match (form current).stage with
-      | Auth_flow.Register | NewPassword -> "0.82,large"
-      | ForgotPassword -> "0.48,large"
-      | _ -> "0.62,large") source)
-    ~accessibility_identifier:"sheet.authentication"
-    ~on_dismiss:(action send Auth_flow.Dismiss)
-    [
-      scroll ~grow:1.0 ~accessibility_identifier:"scroll.authentication" [
-        column ~gap:28 ~padding_horizontal:20 ~padding_vertical:28 ~max_width:480 ~cross:`stretch [
+  let android = Lui_ui.host context = KotlinHost in
+  let title = Signal.map (fun current -> tr source (Auth_flow.title (form current))) source in
+  (* SwiftUI renders the sheet outside the node tree. Scope these tokens to its content. *)
+  let content = themed ~tokens:theme_tokens (
+      scroll ~accessibility_identifier:"scroll.authentication" [
+        column ~gap:16 ~padding_horizontal:20 ~padding_vertical:20 ~max_width:480 ~cross:`stretch [
           if_ ~test:(Signal.map (fun current -> match (form current).stage with
             | Auth_flow.Login | Register | ForgotPassword -> false | _ -> true) source)
             (text ~foreground:"muted-foreground" ~style_class:"footnote"
               ~value:(reactive (fun current -> tr source (Auth_flow.description (form current))) source) []);
           reactive (fun (stage, attributes, choices) ->
-            column ~gap:24 ~cross:`stretch (fields source send stage attributes choices))
+            column ~gap:16 ~cross:`stretch (fields source send stage attributes choices))
             (Signal.map (fun current -> let t = form current in
               t.stage, List.map fst t.attributes, t.mfa_choices) source);
           if_ ~test:(Signal.map (fun current -> (form current).error <> None) source)
@@ -114,7 +108,7 @@ let sheet source send : t =
               ~background_signal:(Signal.map (fun enabled -> if enabled then "auth-action" else "auth-disabled") can_submit)
               [button ~variant:`ghost ~min_height:54 ~size:`lg ~grow:1.0
                 ~accessibility_identifier:"button.auth.submit"
-                ?text_alignment:(if Lui_ui.host context = KotlinHost then None else Some `center)
+                ?text_alignment:(if android then None else Some `center)
                 ~disabled_signal:(Signal.map not can_submit)
                 ~text:(reactive (fun current -> tr source (Auth_flow.submit_label (form current))) source)
                 ~on_press:(action send Auth_flow.Submit) [
@@ -131,12 +125,27 @@ let sheet source send : t =
             | _ -> [link "button.auth.back" "Back to login" (Auth_flow.Navigate Login)]))
             (Signal.map (fun current -> (form current).stage) source);
         ];
-      ];
-      toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
-        Lui_elements.toolbar_spacer ~grow:1.0 [];
-        Lui_elements.toolbar_icon_button ~icon:(`app "close") ~label:(tr source "Close") ~variant:`ghost
-          ~style_class:"confirmation-action" ~min_height:44
-          ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
-          ~on_press:(action send Auth_flow.Cancel) [];
-      ];
-    ]) context parent
+      ]) in
+  let close = tr source "Close" in
+  let header = row ~cross:`center ~gap:12 ~padding_horizontal:20 [
+    heading ~level:`h2 ~value:(reactive title) ~grow:1.0 [];
+    icon_button ~icon:(`app "close") ~label:close ~variant:`ghost ~min_height:48
+      ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
+      ~on_press:(action send Auth_flow.Cancel) [];
+  ] in
+  let navigation_toolbar = toolbar ~orientation:`horizontal ~label:(tr source "Authentication") [
+    toolbar_button ~text:close ~variant:`ghost ~style_class:"confirmation-action"
+      ~accessibility_identifier:"button.auth.cancel" ~disabled_signal:busy
+      ~on_press:(action send Auth_flow.Cancel) [];
+  ] in
+  let sheet_title = if android then Signal.constant context.ui_scheduler "" else title in
+  sheet ~title:(reactive sheet_title)
+    ~height:680 ~style_class:"navigation-content navigation-inline-title"
+    ~detents_signal:(Signal.map (fun current -> match (form current).stage with
+      | Auth_flow.Register | NewPassword -> "0.82,large"
+      | ForgotPassword -> "0.48,large"
+      | Login -> "0.54,large"
+      | _ -> "0.62,large") source)
+    ~accessibility_identifier:"sheet.authentication"
+    ~on_dismiss:(action send Auth_flow.Dismiss)
+    (if android then [header; content] else [content; navigation_toolbar]) context parent
