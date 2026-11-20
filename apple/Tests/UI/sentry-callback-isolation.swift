@@ -15,6 +15,34 @@ import SwiftUI
                     precondition(!Thread.isMainThread)
                     // Exercise the actual installed callback without uploading test events.
                     let callback = SentrySDK.internal.options.beforeSend!
+                    let beforeBreadcrumb = SentrySDK.internal.options.beforeBreadcrumb!
+                    let cases: [(String, [String: Any], [String: String]?)] = [
+                        ("app.lifecycle", ["state": "active", "title": "private"], ["state": "active"]),
+                        ("device.event", ["action": "LOW_MEMORY"], ["action": "LOW_MEMORY"]),
+                        ("device.connectivity", ["connectivity": "wifi"], ["connectivity": "wifi"]),
+                        ("ui.lifecycle", ["screen": "Logseq.Controller", "title": "private"], ["screen": "Logseq.Controller"]),
+                        ("http", ["method": "GET", "url": "https://user:token@example.com/private?q=secret#title"], ["method": "GET", "host": "example.com"]),
+                        ("runtime", ["state": "drain_begin"], ["state": "drain_begin"]),
+                        ("console", ["message": "private"], nil),
+                        ("ui.click", ["title": "private"], nil),
+                        ("unknown", [:], nil),
+                        ("app.lifecycle", [:], nil),
+                        ("http", ["method": "GET", "url": "not a URL"], nil),
+                        ("ui.lifecycle", ["screen": "private title"], nil)
+                    ]
+                    for (category, data, expected) in cases {
+                        let crumb = Breadcrumb(level: .info, category: category)
+                        crumb.data = data
+                        crumb.message = "private message"
+                        let result = beforeBreadcrumb(crumb)
+                        if let expected {
+                            precondition(result?.data as? [String: String] == expected)
+                            precondition(result?.message == nil)
+                        } else {
+                            precondition(result == nil)
+                        }
+                    }
+                    print("PASS: background beforeBreadcrumb retains only allowlisted diagnostic fields; drops content, empty and malformed breadcrumbs")
                     SentrySDK.close()
                     let event = Event(level: .error)
                     let typed = Exception(value: "private graph/path", type: "ExampleError")
