@@ -14,7 +14,7 @@ import UIKit
         case .dark: .dark
         }
         let traits = UITraitCollection(userInterfaceStyle: style)
-        guard let image = UIImage(named: "LaunchLogo", in: nil, compatibleWith: traits) else { return }
+        guard let image = UIImage(named: "LaunchMark", in: nil, compatibleWith: traits) else { return }
         let palette = LogseqThemePolicy.palette(
             mode: mode, systemIsDark: systemStyle == .dark, darkTheme: darkTheme
         )

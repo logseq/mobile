@@ -1,7 +1,7 @@
 {
   "images": [
     {
-      "filename": "LaunchLogo.pdf",
+      "filename": "LaunchMark.pdf",
       "idiom": "universal"
     },
     {
@@ -11,7 +11,7 @@
           "value": "dark"
         }
       ],
-      "filename": "LaunchLogo-dark.pdf",
+      "filename": "LaunchMark-dark.pdf",
       "idiom": "universal"
     }
   ],
