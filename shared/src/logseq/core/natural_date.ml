@@ -39,3 +39,16 @@ let timestamp ?now_ms text =
       | `Int value -> Some value
       | `Float value when Float.is_finite value -> Some (int_of_float value)
       | _ -> None)
+
+(* A day may start after midnight when a timezone advances its clock.
+   Treat either local midnight or the first second of the day as date-only. *)
+let is_local_day_start millis =
+  let seconds = millis /. 1000. in
+  if not (Float.is_integer seconds) then false else
+  let value = Unix.localtime seconds in
+  let previous = Unix.localtime (seconds -. 1.) in
+  (value.tm_hour = 0 && value.tm_min = 0 && value.tm_sec = 0)
+  || (value.tm_year, value.tm_mon, value.tm_mday) > (previous.tm_year, previous.tm_mon, previous.tm_mday)
+
+let is_task_date_only attr millis =
+  List.mem attr ["logseq.property/scheduled"; "logseq.property/deadline"] && is_local_day_start millis

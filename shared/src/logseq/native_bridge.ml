@@ -621,7 +621,7 @@ let extension_event node identifier name text value =
     | _, "backspace" ->
       [ "title", StringValue text; "selection-length", IntValue value ]
     | _, "caret-change" -> [ "caret-utf16-offset", IntValue value ]
-    | "native-property-date", "change" -> ["value", StringValue text]
+    | "native-property-date", ("change" | "clear-time") -> ["value", StringValue text]
     | _, "query-changed" -> [ "query", StringValue text ]
     | "native-table-viewport", "viewport-changed" ->
       ["offset", IntValue (Option.value ~default:0 (int_of_string_opt text)); "width", IntValue value]

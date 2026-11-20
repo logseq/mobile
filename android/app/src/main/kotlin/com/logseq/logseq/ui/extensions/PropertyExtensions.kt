@@ -87,13 +87,16 @@ internal fun LuiExtensionRegistry.registerProperties() {
             }) { Children() }
     }
     register("native-property-date",
-        "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
+        "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required],10:clear-time[5:value:string:required]",
         properties = listOf(
             LuiExtensionProperty("identifier", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("kind", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true),
         ),
-        events = listOf(LuiExtensionEventSchema("change", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true)))),
+        events = listOf(
+            LuiExtensionEventSchema("change", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true))),
+            LuiExtensionEventSchema("clear-time", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true))),
+        ),
     ) { PropertyDatePicker(this) }
 }
 

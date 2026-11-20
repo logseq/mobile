@@ -36,7 +36,8 @@ let display_value property =
       else let months = [|"Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"|] in
         Printf.sprintf "%s %d%s" months.(value.tm_mon) value.tm_mday
           (if value.tm_year = now.tm_year then "" else ", " ^ string_of_int (value.tm_year + 1900)) in
-    Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
+    if Natural_date.is_task_date_only (text (field "attr" property)) millis then date
+    else Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
   | _ -> raw
 
 let adaptive_row stacked children : t = fun context parent ->

@@ -85,7 +85,9 @@ let property_display db p value =
     match number (content db value) with
     | Some millis when abs_float millis <= 8640000000000000. ->
       let t = Unix.localtime (millis /. 1000.) in
-      Printf.sprintf "%04d-%02d-%02d %02d:%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min
+      let date = Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday in
+      if Natural_date.is_task_date_only p.attr millis then date
+      else Printf.sprintf "%s %02d:%02d" date t.tm_hour t.tm_min
     | _ -> ""
   else if p.attr = "block/title" then G.display_title (fun text -> Ok text) db (display (content db value))
   else display (content db value)

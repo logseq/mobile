@@ -1,5 +1,7 @@
 let () =
-  Alcotest.run "logseq"
+  match Sys.getenv_opt "LOGSEQ_TEST_TIMEZONE" with
+  | Some zone -> Natural_date_test.timezone_case zone
+  | None -> Alcotest.run "logseq"
     [
       "asset_files", Asset_files_test.cases;
       "pdf_annotation", Pdf_annotation_test.cases;
