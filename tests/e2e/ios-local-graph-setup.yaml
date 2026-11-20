@@ -18,12 +18,14 @@ appId: com.logseq.logseq
       - tapOn:
           id: "field.auth.password"
       - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - hideKeyboard
+      # Submit from the password field without tapping through the sheet.
+      - pressKey: ENTER
       - tapOn:
-          id: "button.auth.submit"
+          text: "Not Now"
+          optional: true
       - extendedWaitUntil:
           visible:
-            id: "screen.graph-picker|button.composer.expand"
+            id: "button.graph-add|button.composer.expand"
           timeout: 60000
 - runFlow:
     when:
