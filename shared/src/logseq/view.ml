@@ -11,14 +11,14 @@ let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
     | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
     | _ ->
       [
-        ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
+        ("background", View_base.main_background);
         ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
         ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
         ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
       ]
   in
   surfaces @ [
-    ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
+    ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
     (* Retain the status hues while lifting dark-mode icons off the background. *)

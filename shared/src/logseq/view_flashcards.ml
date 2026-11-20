@@ -213,7 +213,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
       let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:"button.flashcards.deck.cancel"
         ~disabled_signal:(Signal.value submitting) ~on_press:(fun _ -> Signal.set adding false) [] in
-      let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+      let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
         ~accessibility_identifier:"button.flashcards.deck.cancel"
         ~disabled_signal:(Signal.value submitting) ~on_press:(fun _ -> Signal.set adding false) [] in
       let create = button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~style_class:"confirmation-action"
@@ -225,7 +225,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             Signal.set submitting true;
             emit ["action", `String "create"; "kind", `String (Signal.sample (Signal.value kind));
               "targetUuid", `String uuid; "title", `String (Signal.sample (Signal.value name))]) [] in
-      let toolbar_create = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~style_class:"confirmation-action"
+      let toolbar_create = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Create") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
         ~accessibility_identifier:"button.flashcards.deck.create" ~disabled_signal:invalid
         ~on_press:(fun _ ->
           if not (Signal.sample invalid) then match Signal.sample (Signal.value target) with
@@ -235,7 +235,7 @@ let flashcard_group_controls model_source send : t = fun context parent ->
             emit ["action", `String "create"; "kind", `String (Signal.sample (Signal.value kind));
               "targetUuid", `String uuid; "title", `String (Signal.sample (Signal.value name))]) [] in
       request_search "page" "";
-      (sheet ~title:(View_base.tr (Signal.sample model_source) "New card group") ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
+      (View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "New card group") ~detents:"medium,large" ~style_class:"navigation-list navigation-inline-title"
         ~accessibility_identifier:"sheet.flashcards.deck.create" ~on_dismiss:(fun _ -> Signal.set adding false) [
         list ~grow:1.0 ~style:`inset_grouped [
           list_section [

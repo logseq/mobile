@@ -12,6 +12,7 @@ struct LGMediaPanel: View {
     let onCapture: (Data) -> Void
     let onPhotoData: (Data, String) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var mode: LGAttachmentService
     @State private var selection: [PhotosPickerItem] = []
     @State private var allPhotos = false
@@ -19,6 +20,9 @@ struct LGMediaPanel: View {
     @State private var selectedPhotos: [PHPickerResult] = []
     @State private var importedPhotoIDs: Set<String> = []
     @State private var isImporting = false
+
+    private var isDark: Bool { colorScheme == .dark }
+    private var sheetBackground: Color { LogseqThemePolicy.sheetBackground(isDark: isDark) }
 
     init(initialService: LGAttachmentService,
          onPhotos: @escaping ([PhotosPickerItem]) -> Void,
@@ -49,7 +53,7 @@ struct LGMediaPanel: View {
                 }
                 .disabled(isImporting)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    controls.background(Color(uiColor: .systemBackground))
+                    controls.background(sheetBackground)
                 }
             }
         }
@@ -81,7 +85,7 @@ struct LGMediaPanel: View {
                     Button { allPhotos = true } label: {
                         Text("All Photos")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(Color(uiColor: .systemBackground))
+                            .foregroundStyle(sheetBackground)
                             .padding(.horizontal, 20)
                             .frame(height: 44)
                             .background(Color(uiColor: .label), in: Capsule())
@@ -90,16 +94,17 @@ struct LGMediaPanel: View {
                                   maxSelectionCount: 20, selectionBehavior: .ordered,
                                   matching: .images)
                 } else {
+                    let foreground = isDark ? sheetBackground : Color.white
                     Button(action: addSelectedPhotos) {
                         HStack(spacing: 8) {
-                            if isImporting { ProgressView().tint(.white) }
+                            if isImporting { ProgressView().tint(foreground) }
                             Text(selectedPhotos.count == 1 ? "Add 1 item" : "Add \(selectedPhotos.count) items")
                                 .font(.body.weight(.semibold))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(foreground)
                         .padding(.horizontal, 20)
                         .frame(height: 44)
-                        .background(Color.blue, in: Capsule())
+                        .background(LogseqThemePolicy.sheetAccent(isDark: isDark), in: Capsule())
                     }
                     .disabled(isImporting)
                     .accessibilityIdentifier("media.add-selected")

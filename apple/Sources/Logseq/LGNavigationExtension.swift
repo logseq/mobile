@@ -170,6 +170,20 @@ private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
 }
 #endif
 
+private struct LGSheetControlTint: ViewModifier {
+    let isSwitch: Bool
+    @Environment(\.luiSemanticColors) private var colors
+
+    func body(content: Content) -> some View {
+        let tint = colors["primary"] ?? LogseqThemePolicy.accent
+        if isSwitch {
+            content.toggleStyle(SwitchToggleStyle(tint: tint)).tint(tint)
+        } else {
+            content.tint(tint)
+        }
+    }
+}
+
 @MainActor
 enum LGNavigationExtension {
     static let identifier = "native-navigation-stack"
@@ -196,6 +210,7 @@ enum LGNavigationExtension {
                     .keyboardType(kind == "email" ? .emailAddress : kind == "code" ? .numberPad : .default)
                     .textContentType(kind == "email" ? .username : kind == "code" ? .oneTimeCode :
                         kind == "password" ? .password : kind == "new-password" ? .newPassword : nil)
+                    .modifier(LGSheetControlTint(isSwitch: false))
                     .submitLabel(.done))
                 #else
                 return AnyView(content.autocorrectionDisabled())
@@ -209,8 +224,7 @@ enum LGNavigationExtension {
                 properties: [.init(name: "role", kind: .string, isRequired: true)]
             ) { content, context in
                 if case .string("switch") = context.property("role") {
-                    return AnyView(content.toggleStyle(SwitchToggleStyle(tint: LogseqThemePolicy.accent))
-                        .tint(LogseqThemePolicy.accent))
+                    return AnyView(content.modifier(LGSheetControlTint(isSwitch: true)))
                 }
                 return AnyView(content.tint(.primary))
             }

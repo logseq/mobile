@@ -84,7 +84,7 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
       (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Add property")
         ~accessibility_identifier:add_id ~on_press:show_picker []) in
     let picker = if_ ~test:(Signal.value adding)
-      (sheet ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+      (View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
         Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
           search_field ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a property") ~label:(View_base.tr (Signal.sample model_source) "Search")
@@ -101,7 +101,7 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
               ~accessibility_identifier:(add_id ^ ".create") ~disabled_signal:(View_query.waiting model_source add_id)
               ~on_press:(fun _ -> add ["action", `String "create"; "title", `String (String.trim (Signal.sample (Signal.value search)))]) []]]);
           ];
-        toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+        toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
           ~accessibility_identifier:(add_id ^ ".cancel") ~on_press:(fun _ -> Signal.set adding false) []]]) in
     (render action menu_action picker) context parent)) context parent
 
@@ -112,7 +112,7 @@ let tag_properties model_source raw_source send close : t =
   let owner = text (field "ownerUuid" (Signal.sample source)) in
   let graph = Option.value ~default:"" (Signal.sample model_source).Model.selected_graph_id in
   (with_add_property_picker ~in_tag_properties:true model_source raw_source send (fun add _ picker ->
-    sheet ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
+    View_base.sheet ~title:(View_base.tr (Signal.sample model_source) "Tag properties")
       ~style_class:"navigation-list navigation-inline-title" ~detents:"large"
       ~accessibility_identifier:("sheet.tag-properties." ^ owner) ~on_dismiss:(fun _ -> close ()) [
       Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
@@ -136,7 +136,7 @@ let tag_properties model_source raw_source send close : t =
           (list_section [list_section_item [add]])];
       picker;
       toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [
-        Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
+        Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
           ~accessibility_identifier:("sheet.tag-properties.done." ^ owner) ~on_press:(fun _ -> close ()) []]
     ])) context parent
 
