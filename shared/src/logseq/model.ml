@@ -784,7 +784,7 @@ let initial () =
     settings_tabs_open = false;
     runtime_log_open = false;
     appearance = "system";
-    dark_theme = "solarized";
+    dark_theme = "black";
     settings_appearance_menu_open = false;
     settings_dark_theme_menu_open = false;
     language = "system";
@@ -1428,7 +1428,7 @@ let valid_authentication_state_ state =
   state = "restoring" || state = "signedOut" || state = "signingIn"
   || state = "signedIn" || state = "signingOut"
 
-let normalize_dark_theme = function "black" -> "black" | _ -> "solarized"
+let normalize_dark_theme = function "solarized" -> "solarized" | _ -> "black"
 
 let current_settings (current : logseq_model) =
   {

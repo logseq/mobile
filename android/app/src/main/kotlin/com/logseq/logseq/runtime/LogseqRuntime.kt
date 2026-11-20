@@ -14,6 +14,7 @@ import com.logseq.logseq.AndroidAudioRecorder
 import com.logseq.logseq.AndroidAudioTranscriber
 import com.logseq.logseq.AndroidPlatformServices
 import com.logseq.logseq.CognitoAuthProvider
+import com.logseq.logseq.DEFAULT_DARK_THEME
 import com.logseq.logseq.isNetworkUnavailable
 import com.logseq.logseq.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
@@ -136,7 +137,7 @@ internal class LogseqRuntime(
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
-    private var darkTheme by mutableStateOf("solarized")
+    private var darkTheme by mutableStateOf(DEFAULT_DARK_THEME)
 
     init {
         bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }

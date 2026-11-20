@@ -24,6 +24,7 @@ import SwiftUI
         let window = UIWindow(windowScene: scene)
         defer { window.isHidden = true; runtime.stop() }
         window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer)
+            .environment(\.logseqDarkTheme, .solarized)
             .preferredColorScheme(.dark)
             .transaction { $0.disablesAnimations = true; $0.animation = nil })
         window.makeKeyAndVisible()

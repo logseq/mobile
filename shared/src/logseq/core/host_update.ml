@@ -73,7 +73,7 @@ let settings value =
   Settings
     {
       appearance = string_field "appearance" value;
-      dark_theme = (match Util.member "darkTheme" value with `String theme -> theme | _ -> "solarized");
+      dark_theme = (match Util.member "darkTheme" value with `String theme -> theme | _ -> "black");
       language = string_field "language" value;
       system_language = (match Util.member "systemLanguage" value with `String value -> Some value | _ -> None);
       spell_check = bool_field "spellCheck" value;

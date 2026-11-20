@@ -19,11 +19,12 @@ import Testing
         #expect(LogseqThemeMode(rawValue: "unknown") == nil)
     }
 
-    @Test func darkPaletteFollowsAppearanceAndDefaultsToSolarized() {
-        #expect(LogseqDarkTheme(storedValue: nil) == .solarized)
-        #expect(LogseqDarkTheme(storedValue: "unknown") == .solarized)
-        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true).backgroundHex == "#002D38")
-        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true, darkTheme: .black).backgroundHex == "#000000")
+    @Test func darkPaletteFollowsAppearanceAndDefaultsToBlack() {
+        #expect(LogseqDarkTheme(storedValue: nil) == .black)
+        #expect(LogseqDarkTheme(storedValue: "unknown") == .black)
+        #expect(LogseqDarkTheme(storedValue: "solarized") == .solarized)
+        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true).backgroundHex == "#000000")
+        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true, darkTheme: .solarized).backgroundHex == "#002D38")
         #expect(LogseqThemePolicy.palette(mode: .dark, systemIsDark: false, darkTheme: .black).backgroundHex == "#000000")
         #expect(LogseqThemePolicy.palette(mode: .light, systemIsDark: true, darkTheme: .black).backgroundHex == "#FCFCFC")
     }
