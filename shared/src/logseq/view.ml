@@ -12,9 +12,9 @@ let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
     | _ ->
       [
         ("background", View_base.main_background);
-        ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
+        ("surface", View_base.grouped_row_background);
         ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
-        ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
+        ("card", View_base.grouped_row_background);
       ]
   in
   surfaces @ [

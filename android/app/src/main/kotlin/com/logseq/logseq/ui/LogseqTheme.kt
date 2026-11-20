@@ -8,6 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -100,12 +101,19 @@ internal object LogseqTheme {
         surfaceContainerHighest = Color(0xff22272f),
     ).withMenuSelectionColors()
 
-    fun semanticColors(scheme: ColorScheme): Map<String, Color> = mapOf(
-        "background" to scheme.background,
-        "surface" to scheme.surfaceContainerLow,
-        "card" to scheme.surfaceContainerHigh,
-        "code-container" to scheme.surfaceContainerHighest,
-    )
+    fun semanticColors(scheme: ColorScheme): Map<String, Color> {
+        val groupedRowBackground = if (scheme.background == darkSurface) {
+            Color.White.copy(alpha = 0.08f).compositeOver(scheme.background)
+        } else {
+            Color.White
+        }
+        return mapOf(
+            "background" to scheme.background,
+            "surface" to groupedRowBackground,
+            "card" to groupedRowBackground,
+            "code-container" to scheme.surfaceContainerHighest,
+        )
+    }
 }
 
 internal fun logseqThemeMode(appearance: String): String = when (appearance) {

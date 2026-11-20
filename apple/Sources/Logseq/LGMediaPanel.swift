@@ -170,7 +170,7 @@ struct LGMediaPanel: View {
             .background {
                 Circle().fill(mode == .camera
                               ? Color.black.opacity(0.35)
-                              : Color(uiColor: .secondarySystemBackground))
+                              : (isDark ? LogseqThemePolicy.dark : LogseqThemePolicy.light).surface)
             }
     }
 
