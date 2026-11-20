@@ -78,7 +78,12 @@ enum LogseqThemePolicy {
     }
 
     static func sheetBackground(isDark: Bool, darkTheme: LogseqDarkTheme) -> Color {
-        isDark ? darkPalette(darkTheme).background : Color(red: 242.0 / 255, green: 242.0 / 255, blue: 247.0 / 255)
+        guard isDark else {
+            return Color(red: 242.0 / 255.0, green: 242.0 / 255.0, blue: 247.0 / 255.0)
+        }
+        return darkTheme == .black
+            ? Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0)
+            : dark.background
     }
 
     static let light = LogseqThemePalette(

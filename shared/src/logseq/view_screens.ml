@@ -1143,19 +1143,36 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                drawer_main drawer_panel);
         ]
   else
-    drawer
-      ~selected_signal:
-        (Signal.map View_base.drawer_selected_ model_source)
-      ~disabled_signal:
-        (Signal.map View_base.drawer_disabled_ model_source)
-      ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
-      ~accessibility_identifier:"application.shell"
-      ~on_toggle:(fun open_ ->
-          ignore
-            (send
-               (if open_ then Model.OpenSidebar else Model.CloseSidebar))
-        )
-      drawer_main drawer_panel
+    let ios_drawer = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+    let dark_theme = Signal.map (fun (current : Model.logseq_model) -> current.dark_theme) model_source in
+    let drawer_main =
+      if ios_drawer then
+        let tokens = Signal.map (function
+          | "black" -> [ "background", View_base.main_background "black" ]
+          | _ -> []) dark_theme in
+        themed ~tokens_signal:tokens drawer_main
+      else drawer_main in
+    let shell =
+      drawer
+        ~selected_signal:
+          (Signal.map View_base.drawer_selected_ model_source)
+        ~disabled_signal:
+          (Signal.map View_base.drawer_disabled_ model_source)
+        ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
+        ~accessibility_identifier:"application.shell"
+        ~on_toggle:(fun open_ ->
+            ignore
+              (send
+                 (if open_ then Model.OpenSidebar else Model.CloseSidebar))
+          )
+        drawer_main drawer_panel in
+    if ios_drawer then
+      (* The drawer fades the moving page toward its own background token. *)
+      let tokens = Signal.map (function
+        | "black" -> [ "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#2C2C2C" } ]
+        | _ -> []) dark_theme in
+      themed ~tokens_signal:tokens shell
+    else shell
 
 let application_view (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context <> SwiftUIHost && Lui_ui.host context <> KotlinHost then

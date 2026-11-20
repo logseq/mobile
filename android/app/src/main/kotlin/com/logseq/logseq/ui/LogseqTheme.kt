@@ -114,10 +114,10 @@ internal object LogseqTheme {
         surfaceDim = Color.Black,
         surfaceBright = Color(0xff333333),
         surfaceContainerLowest = Color.Black,
-        surfaceContainerLow = Color(0xff0e0e0e),
-        surfaceContainer = Color(0xff141414),
-        surfaceContainerHigh = Color(0xff1c1c1c),
-        surfaceContainerHighest = Color(0xff242424),
+        surfaceContainerLow = Color(0xff1c1c1e),
+        surfaceContainer = Color(0xff222224),
+        surfaceContainerHigh = Color(0xff28282a),
+        surfaceContainerHighest = Color(0xff303032),
     )
 
     fun colorScheme(dark: Boolean, darkTheme: String): ColorScheme = when {
