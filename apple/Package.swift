@@ -44,7 +44,7 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "87fcf6af90728bca313b9de991e5bf30564bbc05"),
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "852d3a2d3bb3e1768b2d90670ea6694d0907638a"),
         .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.27.0")
     ],
     targets: [
