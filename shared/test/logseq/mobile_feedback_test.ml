@@ -478,10 +478,11 @@ let node_pickers_exclude_values_outside_configured_tags () = R.with_runtime (fun
   check_choices (N.property node_property (N.result (N.read session Q.page)));
   let table = R.find_view R.table_view (R.read session) in
   check_choices (List.find (fun col -> member "attr" col = `String node_property) (items "columns" table));
-  with_ui session Q.page (fun _ find click ->
+  with_ui session Q.page (fun app find click ->
     let expand = "properties.expand." ^ Q.page in
     if find expand <> -1 then click expand;
     click ("property.value." ^ Q.page ^ "." ^ node_property);
+    R.load_property_values session app;
     let option uuid = "view.edit.option.property." ^ Q.page ^ "." ^ node_property ^ "." ^ uuid in
     check_eq ~msg:"the native node picker excludes out-of-scope nodes" (find (option Q.beta)) (-1);
     check (find (option person) <> -1)))
