@@ -176,10 +176,10 @@ struct OutlinerTextRow: UIViewRepresentable {
         title.attributedText = value
         title.accessibilityCustomActions = actions
         title.accessibilityIdentifier = "outliner.block-action." + row.uuid
-        title.accessibilityLabel = "Edit block " + row.title
+        title.accessibilityLabel = row.editAccessibilityLabel
         title.accessibilityTraits = .button
         bullet.accessibilityIdentifier = "button.outliner.zoom." + row.uuid + "." + row.title
-        bullet.accessibilityLabel = "Open block"
+        bullet.accessibilityLabel = row.openAccessibilityLabel
         let bulletAsset = row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet"
         bullet.setImage(row.nodeIcon.flatMap { NodeIconExtension.image($0, size: 18, traits: traitCollection) }
             ?? UIImage(named: bulletAsset, in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
@@ -223,7 +223,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 10)), for: .normal)
         disclosure.tintColor = .secondaryLabel
         disclosure.accessibilityIdentifier = "button.outliner.collapse." + row.uuid
-        disclosure.accessibilityLabel = row.collapsed ? "Expand block" : "Collapse block"
+        disclosure.accessibilityLabel = row.collapseAccessibilityLabel
         failure.isHidden = !row.syncFailed
         failure.accessibilityIdentifier = "outliner.sync-failed." + row.uuid
         while tags.count > row.tags.count { tags.removeLast().removeFromSuperview() }

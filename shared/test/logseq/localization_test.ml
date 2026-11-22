@@ -163,7 +163,8 @@ let simplified_chinese_uses_one_catalog () =
      "Filter by", "筛选"; "Card group", "卡片组";
      "Tag any block with #Card to review it here.", "给块加上 #Card 标签后即可在这里复习。";
      "All cards", "全部卡片"; "Page reference", "页面引用"; "Tag", "标签"; "System", "跟随系统";
-     "Journals", "日记"; "Flashcards", "闪卡"; "Graphs", "图谱"; "Version", "版本"; "Photo", "照片";
+     "Journals", "日记"; "Flashcards", "闪卡"; "Graphs", "图谱"; "Version", "版本";
+     "Photo", "照片"; "Take photo", "拍照";
      "Unavailable group", "不可用的卡片组"; "Report bug", "报告问题"; "GitHub", "GitHub";
      "English", "English"; "Unknown note title", "Unknown note title"];
   let current = { (Model.initial ()) with language = "zh-CN"; system_language = "en";

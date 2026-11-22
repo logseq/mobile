@@ -554,6 +554,9 @@ let native_outliner_row model_source retained_source row_source send : t =
       "hasCustomContent", `Bool (View_rows.retained_row_editing_ retained || row.row_display_type = Some "code");
       "canRemoveTags", `Bool (Model.node_can_set_tags current row.row_uuid);
       "removeTagTitle", `String (View_base.tr current "Remove tag");
+      "openLabel", `String (View_base.outliner_row_zoom_label current row);
+      "editLabel", `String (View_base.outliner_row_action_label current row);
+      "collapseLabel", `String (View_base.outliner_row_collapse_label current row);
       "opensAsPage", `Bool row.opens_as_page;
       "journalBullet", `Bool false;
       "syncFailed", `Bool (View_base.outliner_row_sync_failed_ row);
@@ -1310,7 +1313,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
             line_break;
             toolbar_button model_source (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
-            toolbar_button model_source (`app "toolbar-camera") "Photo"
+            toolbar_button model_source (`app "toolbar-camera") "Take photo"
               "button.outliner.editor.camera" "camera" send;
             toolbar_button model_source (`app "toolbar-audio") "Record audio"
               "button.outliner.editor.audio" "audio" send;
@@ -1354,7 +1357,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
         toolbar_line_break;
         apple_icon_button (`app "toolbar-tag") "Tag"
           "button.outliner.editor.tag" "tag";
-        apple_icon_button (`app "toolbar-camera") "Photo"
+        apple_icon_button (`app "toolbar-camera") "Take photo"
           "button.outliner.editor.camera" "camera";
         apple_icon_button (`app "toolbar-audio") "Record audio"
           "button.outliner.editor.audio" "audio";
