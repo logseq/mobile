@@ -1516,7 +1516,7 @@ let page_share_asset_paths rows =
 let cancels_outliner_autosave = function
   | OutlinerToolbarEffect (_, action) ->
     (* Movement and media actions retain the draft without committing it. *)
-    List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "lineBreak"; "delete" ]
+    List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
   | PasteOutlinerTextEffect _ | EditorOutlinerEventEffect _
   | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
@@ -2509,7 +2509,8 @@ let rec update (current : logseq_model) action =
          | _ -> resolved in
        let edited_uuid = match eff with
          | PasteOutlinerTextEffect (_, uuid, _, _) | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
-         | EditorOutlinerEventEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
+         | EditorOutlinerEventEffect _ | OutlinerToolbarEffect (_, "lineBreak") ->
+           Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | BackspaceOutlinerEditorEffect (_, uuid, _, _) -> Some uuid
          | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | _ -> None in
