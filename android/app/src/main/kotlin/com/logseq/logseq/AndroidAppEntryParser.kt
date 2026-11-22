@@ -1,5 +1,6 @@
 package com.logseq.logseq
 
+import android.net.Uri
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -14,6 +15,15 @@ internal object AndroidAppEntryParser {
         }
         return mapOf("kind" to "deep-link", "scheme" to uri.scheme, "host" to uri.host, "path" to decode(uri.rawPath.orEmpty()), "query" to query)
     }
+    fun initialWidgetBlock(value: String?): Map<String, Any?>? {
+        val uri = value?.let(Uri::parse) ?: return null
+        if (uri.scheme != "logseq" || uri.host != "graph" ||
+            uri.getQueryParameter("widget-action") != "open-block" ||
+            uri.getQueryParameter("block-id").isNullOrEmpty()
+        ) return null
+        return deepLink(value)
+    }
+
     fun blockURL(graphName: String, blockID: String): String =
         URI("logseq", "graph", "/$graphName", "block-id=$blockID", null).toASCIIString()
 }

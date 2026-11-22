@@ -36,6 +36,12 @@ public struct SharedDeepLink: Codable, Sendable, Equatable {
 }
 
 extension SharedDeepLink {
+    var opensWidgetBlock: Bool {
+        scheme == "logseq" && host == "graph"
+            && query.contains { $0.name == "widget-action" && $0.value == "open-block" }
+            && query.contains { $0.name == "block-id" && $0.value?.isEmpty == false }
+    }
+
     static func blockURL(graphName: String, blockID: String) -> String {
         var components = URLComponents()
         components.scheme = "logseq"

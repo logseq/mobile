@@ -52,6 +52,9 @@ typealias AppType = UIApplication
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        for context in options.urlContexts {
+            LogseqLogseqRuntime.shared.prepareInitialWidgetLink(context.url)
+        }
         let configuration = session.configuration
         configuration.delegateClass = QuickActionSceneDelegate.self
         return configuration

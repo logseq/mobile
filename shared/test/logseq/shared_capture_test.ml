@@ -88,6 +88,38 @@ let graph_deep_links_resolve_graphs_pages_and_blocks () =
   ignore (Rpc_test.dispatch_json session "configure" {|{"baseUrl":"http://127.0.0.1:8787","graphId":"other","token":"access"}|});
   check_eq (U.member "deepLinkNodeUuid" (result "/Other 中文 +" ["page", "Workspace"])) (`String Query_block_test.page)
 
+let widget_block_links_open_in_the_initial_projection () =
+  let open Query_block_test in
+  let db = fixture "A test block" in
+  let session = Rpc_session.create_session { Rpc_session.default_options with
+    load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
+    graph_db = Some (fun () -> Some db);
+    graph_page_blocks = Some (fun uuid -> Some (Graph_read.blocks_for_page (fun s -> Ok s) db uuid));
+    graph_node_destination = Some (Graph_read.node_destination (fun s -> Ok s) db) } in
+  ignore (Rpc_test.configure_plain_session session);
+  let open_widget uuid =
+    let query = ["graph-id", "plain-1"; "block-id", uuid; "widget-action", "open-block"] in
+    call session "handleDeepLink" ["scheme", `String "logseq"; "host", `String "graph";
+      "query", `List (List.map (fun (name, value) -> `Assoc ["name", `String name; "value", `String value]) query)] in
+  let launch uuid =
+    let response = open_widget uuid in
+    let result = Rpc_test.response_result response in
+    check_eq (U.member "widgetBlockUuid" result) (`String uuid);
+    check_eq (items "nodeRoutes" result |> List.map (U.member "uuid")) [`String uuid];
+    match Response_snapshot.decode_json_response response with
+    | Ok snapshot -> Model.ApplyCoreSnapshot snapshot
+    | Error message -> fail message in
+  let launched = Model.update (Model.initial ()) (launch alpha) in
+  check_eq (Model.app_node_routes launched |> List.map (fun route -> route.Model.node_uuid)) [alpha];
+  let composing = Model.update launched Model.ExpandComposer in
+  check composing.composer_expanded;
+  check composing.composer_autofocus;
+  let repeated = Model.update composing (launch alpha) in
+  check repeated.composer_expanded;
+  let switched = Model.update repeated (launch beta) in
+  check_eq (Model.app_node_routes switched |> List.map (fun route -> route.Model.node_uuid)) [beta];
+  check_eq (U.member "ok" (open_widget "missing")) (`Bool false)
+
 let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let module Ds = Datascript in
   let open Query_block_test in
@@ -191,6 +223,7 @@ let widgets_project_more_tasks_for_taller_widgets () =
   check_eq (List.hd titles) (`String "Task 19")
 
 let cases = [
+  case "widget links publish a ready block route and its composer" widget_block_links_open_in_the_initial_projection;
   case "widgets project enough tasks for larger sizes" widgets_project_more_tasks_for_taller_widgets;
   case "widgets show eligible blocks and stage status only in the task graph"
     widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph;

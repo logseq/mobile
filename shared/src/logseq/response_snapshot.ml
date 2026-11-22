@@ -523,6 +523,7 @@ let core_projection fields =
     pdf_update = (match List.assoc_opt "pdfWorkspace" fields with
       | Some (`Assoc _ as value) -> Some (Yojson.Basic.to_string value) | _ -> None);
     is_pdf_patch = bool_member "isPdfPatch" fields;
+    widget_block_uuid = string_member "widgetBlockUuid" fields;
     query_update = (if bool_member "isQueryPatch" fields then
       Option.bind (string_member "queryOwnerUuid" fields) (fun uuid ->
         match List.assoc_opt "query" fields with

@@ -80,7 +80,13 @@ public struct LogseqRootView : View {
     }
 
     private var appContent: some View {
-        LGRendererRoot(renderer: runtime.lgRuntime.renderer)
+        Group {
+            if runtime.isOpeningInitialWidgetBlock {
+                ProgressView()
+            } else {
+                LGRendererRoot(renderer: runtime.lgRuntime.renderer)
+            }
+        }
             .task {
                 await runtime.runLGApplication()
                 logger.info("App logs are viewable in the Xcode console on Apple platforms")
@@ -143,6 +149,10 @@ public struct LogseqRootView : View {
 
 }
 
+@MainActor @Observable private final class WidgetLaunchPresentation {
+    var isOpeningBlock = false
+}
+
 @MainActor public final class LogseqLogseqRuntime {
     public static let shared = LogseqLogseqRuntime()
 
@@ -151,6 +161,10 @@ public struct LogseqRootView : View {
     public let authentication: LogseqAuthenticationStore
     public let presentationCoordinator: LGPlatformPresentationCoordinator
     private let widgetContent = WidgetContentPublisher()
+    private let widgetLaunchPresentation = WidgetLaunchPresentation()
+    private var initialWidgetURL: URL?
+    var isOpeningInitialWidgetBlock: Bool { widgetLaunchPresentation.isOpeningBlock }
+
     var widgetTaskError: String? {
         get { widgetContent.linkError }
         set { widgetContent.linkError = newValue }
@@ -444,6 +458,15 @@ public struct LogseqRootView : View {
                 try lgRuntime.applyHostUpdate(kind: "restore-ui-session", payload: session)
             } catch {
                 logger.error("Could not restore UI session: \(error)")
+            }
+        }
+        if let url = initialWidgetURL {
+            let opened = await openSharedLink(SharedDeepLink(url), id: UUID().uuidString.lowercased())
+            await lgRuntime.waitForQueuedPatches()
+            initialWidgetURL = nil
+            widgetLaunchPresentation.isOpeningBlock = false
+            if !opened {
+                widgetTaskError = String(localized: "The linked block could not be opened.")
             }
         }
         isLGApplicationReady = true
@@ -741,7 +764,16 @@ public struct LogseqRootView : View {
         }
     }
 
+    public func prepareInitialWidgetLink(_ url: URL) {
+        guard !isLGApplicationReady, initialWidgetURL == nil,
+              SharedDeepLink(url).opensWidgetBlock else { return }
+        initialWidgetURL = url
+        widgetLaunchPresentation.isOpeningBlock = true
+    }
+
     public func acceptSharedCaptureURL(_ url: URL) {
+        prepareInitialWidgetLink(url)
+        if url == initialWidgetURL { return }
         if url.scheme == "logseq", url.host == "audio", presentationCoordinator.attachmentService == .audio {
             return
         }
@@ -806,7 +838,8 @@ public struct LogseqRootView : View {
     }
 
     private func drainSharedCapturesIfReady() {
-        guard didApplyLocalLaunchResult, sharedCaptureTask == nil else { return }
+        guard didApplyLocalLaunchResult, !isOpeningInitialWidgetBlock,
+              sharedCaptureTask == nil else { return }
         sharedCaptureTask = Task { [weak self] in
             guard let self else { return }
             await SharedCaptureProcessor.process(inbox: SharedCaptureInbox.shared) { item in
@@ -818,32 +851,8 @@ public struct LogseqRootView : View {
                     guard let payload = item.capturePayload else { return true }
                     return await self.store.captureShared(text: payload.text, title: payload.title, url: payload.url, id: item.id)
                 case .deepLink:
-                    guard var link = item.captureLink else { return true }
-                    link.uuid = item.id
-                    guard let data = try? JSONEncoder().encode(link) else { return false }
-                    let payload = String(decoding: data, as: UTF8.self)
-                    let isWidgetLink = link.query.contains { $0.name == "widget-action" }
-                    guard await self.store.handleDeepLink(payload) else {
-                        return self.acknowledgeRejectedWidgetLink(isWidgetLink)
-                    }
-                    if let graphID = self.store.deepLinkGraphId {
-                        let opened = await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
-                        guard opened.succeeded else { return false }
-                        guard await self.store.handleDeepLink(payload) else {
-                            return self.acknowledgeRejectedWidgetLink(isWidgetLink)
-                        }
-                        guard self.store.deepLinkGraphId == nil else { return false }
-                    }
-                    if let uuid = self.store.deepLinkNodeUuid {
-                        guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
-                        do { try self.lgRuntime.applyHostUpdate(kind: "open-node", payload: String(decoding: encoded, as: UTF8.self)) }
-                        catch { return false }
-                    }
-                    if let action = self.store.deepLinkQuickAction {
-                        self.pendingQuickAction = action
-                        self.presentPendingQuickAction()
-                    }
-                    return true
+                    guard let link = item.captureLink else { return true }
+                    return await self.openSharedLink(link, id: item.id)
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
                     guard let graphID = self.store.snapshot.selectedGraphId, !graphID.isEmpty else { return false }
@@ -867,6 +876,34 @@ public struct LogseqRootView : View {
             }
             self.sharedCaptureTask = nil
         }
+    }
+
+    private func openSharedLink(_ original: SharedDeepLink, id: String) async -> Bool {
+        var link = original
+        link.uuid = id
+        guard let data = try? JSONEncoder().encode(link) else { return false }
+        let payload = String(decoding: data, as: UTF8.self)
+        guard await store.handleDeepLink(payload) else {
+            return acknowledgeRejectedWidgetLink(link.opensWidgetBlock)
+        }
+        if let graphID = store.deepLinkGraphId {
+            let opened = await graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
+            guard opened.succeeded else { return false }
+            guard await store.handleDeepLink(payload) else {
+                return acknowledgeRejectedWidgetLink(link.opensWidgetBlock)
+            }
+            guard store.deepLinkGraphId == nil else { return false }
+        }
+        if let uuid = store.deepLinkNodeUuid {
+            guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
+            do { try lgRuntime.applyHostUpdate(kind: "open-node", payload: String(decoding: encoded, as: UTF8.self)) }
+            catch { return false }
+        }
+        if let action = store.deepLinkQuickAction {
+            pendingQuickAction = action
+            presentPendingQuickAction()
+        }
+        return true
     }
 
     private func acknowledgeRejectedWidgetLink(_ isWidgetLink: Bool) -> Bool {

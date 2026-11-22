@@ -117,6 +117,9 @@ internal class LogseqRuntime(
 
     var rootNodeId by mutableStateOf<Long?>(null)
         private set
+    var isOpeningInitialWidgetBlock by mutableStateOf(false)
+        private set
+    private var initialWidgetEntry: AndroidAppEntry? = null
     var startupError by mutableStateOf<Throwable?>(null)
         private set
     var graphProgress by mutableStateOf<AndroidGraphProgress?>(null)
@@ -149,7 +152,9 @@ internal class LogseqRuntime(
         logRuntime("info", "ui", "Kotlin host initialized")
     }
 
-    fun start() {
+    fun start(initialWidgetLink: Map<String, Any?>? = null) {
+        initialWidgetEntry = initialWidgetLink?.let(AndroidAppEntry::fromMap)
+        isOpeningInitialWidgetBlock = initialWidgetEntry != null
         scope.launch {
             try {
                 NativeCoreSession.gate.lock(this@LogseqRuntime)
@@ -226,6 +231,7 @@ internal class LogseqRuntime(
                 throw cancelled
             } catch (error: Throwable) {
                 startupError = error
+                isOpeningInitialWidgetBlock = false
                 reportError(error)
             }
         }
@@ -717,6 +723,16 @@ internal class LogseqRuntime(
             )
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
+            initialWidgetEntry?.let { entry ->
+                try {
+                    handleAppEntry(entry)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    reportError(error)
+                    LogseqDialogs.notifyError(error.message ?: "The linked block could not be opened.")
+                }
+            }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
             // The catalog patch carries the authentication snapshot the UI
             // renders against; by now auth state is published either way.
@@ -734,6 +750,9 @@ internal class LogseqRuntime(
         } catch (error: Throwable) {
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+        } finally {
+            initialWidgetEntry = null
+            isOpeningInitialWidgetBlock = false
         }
     }
 
@@ -792,7 +811,8 @@ internal class LogseqRuntime(
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
-            throw AndroidAppEntryRejected("The native core rejected the Android app entry")
+            val message = decoded.optJSONObject("error")?.optString("message")?.takeIf(String::isNotBlank)
+            throw AndroidAppEntryRejected(message ?: "The native core rejected the Android app entry")
         }
         applyCoreResponse(response)
         val result = decoded.optJSONObject("result")

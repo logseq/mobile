@@ -259,6 +259,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
         val link = Uri.Builder().scheme("logseq").authority("graph")
             .appendQueryParameter("graph-id", graphId)
             .appendQueryParameter("block-id", block.getString("uuid"))
+            .appendQueryParameter("widget-action", "open-block")
         return RemoteViews(context.packageName, R.layout.widget_graph_row).apply {
             setTextViewText(R.id.widget_block_title, title)
             setOnClickPendingIntent(R.id.widget_block_title, entryPointIntent(context, link.build().toString(), 5))

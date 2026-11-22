@@ -56,8 +56,11 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
+        val initialWidgetLink = if (!entryHandled && intent?.action == Intent.ACTION_VIEW) {
+            AndroidAppEntryParser.initialWidgetBlock(intent.dataString)
+        } else null
         runtime = LogseqRuntime(this, lifecycleScope)
-        runtime.start()
+        runtime.start(initialWidgetLink)
 
         AndroidLaunchMetrics.activity = this
         setContent {
@@ -77,7 +80,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (!entryHandled) enqueueIntent(intent)
+        if (initialWidgetLink != null) {
+            entryHandled = true
+            setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+        } else if (!entryHandled) enqueueIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
