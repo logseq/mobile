@@ -115,6 +115,14 @@ jobs:
             _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
           key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
+      - name: Restore legacy iOS OCaml toolchain cache
+        id: ios-toolchain-legacy
+        if: steps.ios-toolchain.outputs.cache-primary-key != '' && steps.ios-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/apple-toolchains
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
+
       - name: Restore iOS Simulator Dune cache
         id: ios-dune
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
