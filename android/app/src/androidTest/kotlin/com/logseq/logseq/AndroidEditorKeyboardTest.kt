@@ -257,7 +257,9 @@ class AndroidEditorKeyboardTest {
         val connection = inputConnection()
         ui.runOnIdle {
             connection.beginBatchEdit()
+            assertTrue(connection.setSelection(0, 0))
             assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.setSelection(0, 0))
             assertTrue(backspaceEvents().isEmpty())
             connection.endBatchEdit()
             val backspace = backspaceEvents().single()
@@ -289,11 +291,27 @@ class AndroidEditorKeyboardTest {
             connection.beginBatchEdit()
             connection.beginBatchEdit()
             assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertTrue(connection.setSelection(0, 0))
             assertTrue(connection.deleteSurroundingText(1, 0))
             connection.endBatchEdit()
             assertTrue(backspaceEvents().isEmpty())
             connection.endBatchEdit()
             assertEquals("", backspaceEvents().single().values["title"])
+        }
+        editor.assertTextEquals("")
+    }
+
+    @Test fun movingTheCaretDuringAnImeBatchKeepsTheBlock() {
+        val editor = render("a")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.setSelection(1, 1))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
         }
         editor.assertTextEquals("")
     }

@@ -569,23 +569,24 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 }
 
 private class BatchedBackspace(private val text: CharSequence) {
-    private var remaining = text.length
+    var caret = text.length
+        private set
     var removeEmptyBlock = false
         private set
 
     fun deleteBackward(length: Int, codePoints: Boolean) {
         // A delete that consumes the last character is different from one on an empty block.
-        if (remaining == 0) {
+        if (caret == 0) {
             if (length == 1) removeEmptyBlock = true
             return
         }
         if (codePoints) {
             repeat(length) {
-                if (remaining == 0) return
-                remaining -= Character.charCount(Character.codePointBefore(text, remaining))
+                if (caret == 0) return
+                caret -= Character.charCount(Character.codePointBefore(text, caret))
             }
         } else {
-            remaining = (remaining - length).coerceAtLeast(0)
+            caret = (caret - length).coerceAtLeast(0)
         }
     }
 }
@@ -687,8 +688,10 @@ private fun OutlinerTextInput(
                         super.replaceText(start, end, text, newCursorPosition, textAttribute)
                     }
 
-                    override fun setSelection(start: Int, end: Int): Boolean = otherEdit {
-                        super.setSelection(start, end)
+                    override fun setSelection(start: Int, end: Int): Boolean {
+                        // The queued deletes have already moved the tracked caret.
+                        if (start != end || start != batchedBackspace?.caret) batchedBackspace = null
+                        return super.setSelection(start, end)
                     }
 
                     override fun setComposingRegion(start: Int, end: Int): Boolean = otherEdit {
