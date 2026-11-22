@@ -50,6 +50,7 @@ type outliner_toolbar =
   | Attachment
   | Hide_keyboard
   | New_block
+  | Line_break
   | Copy
   | Delete
   | Copy_reference
@@ -745,6 +746,14 @@ let insert_at_caret (editing : editor_draft) text backward_utf16 =
     editing with
     title = replace_range editing.title index index inserted;
     caret = utf16_length (prefix ^ inserted) - backward_utf16;
+  }
+
+let insert_line_break (editing : editor_draft) =
+  let index = byte_index_of_utf16 editing.title editing.caret in
+  {
+    editing with
+    title = replace_range editing.title index index "\n";
+    caret = editing.caret + 1;
   }
 
 let compare_blocks (left : Model.block) (right : Model.block) =
@@ -1663,6 +1672,13 @@ let update context (state : outliner_state) message =
   | Toolbar New_block ->
     (match state.editing with
      | Some editing -> split_or_outdent context {state with autocomplete = None} editing
+     | None -> step state [])
+  | Toolbar Line_break ->
+    (match state.editing with
+     | Some editing ->
+       step
+         { state with editing = Some (insert_line_break editing); autocomplete = None }
+         [ Haptic Impact ]
      | None -> step state [])
   | Toolbar Hide_keyboard ->
     step

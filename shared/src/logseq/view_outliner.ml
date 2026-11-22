@@ -1230,6 +1230,21 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
         ~label:(View_base.tr (Signal.sample model_source) "Create new block")
         ~accessibility_identifier:"button.outliner.editor.newBlock"
         ~on_press:(fun _ -> ignore (send (Model.PerformOutlinerToolbarAction "newBlock"))) []) in
+  let editing_non_code_block (current : Model.logseq_model) =
+    Option.fold ~none:false ~some:(fun editing ->
+      not (List.exists (fun (row : Model.outline_row) -> row.row_uuid = editing.Model.editing_uuid
+        && row.row_display_type = Some "code") current.outliner_rows)) current.outliner_editing in
+  let line_break_label = View_base.tr (Signal.sample model_source) "Line break" in
+  let line_break =
+    if_ ~test:(reactive editing_non_code_block model_source)
+      (toolbar_button model_source (`app "toolbar-line-break") line_break_label
+         "button.outliner.editor.lineBreak" "lineBreak" send) in
+  let toolbar_line_break =
+    if_toolbar ~test:(reactive editing_non_code_block model_source)
+      (Lui_elements.toolbar_icon_button ~icon:(`app "toolbar-line-break") ~variant:`ghost
+         ~width:38 ~height:42 ~label:line_break_label
+         ~accessibility_identifier:"button.outliner.editor.lineBreak"
+         ~on_press:(fun () -> ignore (send (Model.PerformOutlinerToolbarAction "lineBreak"))) []) in
   let toolbar_new_block =
     if_toolbar ~test:(reactive (fun (current : Model.logseq_model) ->
       Option.fold ~none:false ~some:(fun editing ->
@@ -1288,6 +1303,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
             toolbar_button model_source (`app "toolbar-move-down") "Move down"
               "button.outliner.editor.moveDown" "moveDown" send;
             new_block;
+            line_break;
             toolbar_button model_source (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
             toolbar_button model_source (`app "toolbar-camera") "Photo"
@@ -1330,6 +1346,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
         apple_icon_button (`app "toolbar-move-down") "Move down"
           "button.outliner.editor.moveDown" "moveDown";
         toolbar_new_block;
+        toolbar_line_break;
         apple_icon_button (`app "toolbar-tag") "Tag"
           "button.outliner.editor.tag" "tag";
         apple_icon_button (`app "toolbar-camera") "Photo"

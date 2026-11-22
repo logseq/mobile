@@ -585,6 +585,13 @@ let toolbar_inserts_at_caret_and_finishes_editing_for_media () =
       (State.Tag_action, "Alpha #Beta", 7, State.Tag);
       (State.Page_reference, "Alpha [[]]Beta", 8, State.Node);
     ];
+  let next, commands =
+    step context (start context "a" "AlphaBeta" 5) (State.Toolbar State.Line_break)
+  in
+  check_eq (State.editing_title next) (Some "Alpha\nBeta");
+  check_eq (Option.map (fun (d : State.editor_draft) -> d.caret) next.editing) (Some 6);
+  check_eq (State.autocomplete next) None;
+  check_eq commands [ State.Haptic State.Impact ];
   let current = fst (step context State.empty (State.Tap_block "a")) in
   List.iter
     (fun (action, expected) ->

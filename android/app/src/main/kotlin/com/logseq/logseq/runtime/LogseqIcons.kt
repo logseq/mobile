@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -225,6 +226,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "toolbar-delete" to Icons.Outlined.Delete,
     "toolbar-hide-keyboard" to Icons.Outlined.KeyboardHide,
     "toolbar-indent" to Icons.AutoMirrored.Filled.ArrowForward,
+    "toolbar-line-break" to Icons.AutoMirrored.Filled.KeyboardReturn,
     "toolbar-move-down" to Icons.Filled.ArrowDownward,
     "toolbar-move-up" to Icons.Filled.ArrowUpward,
     "toolbar-outdent" to Icons.AutoMirrored.Filled.ArrowBack,
