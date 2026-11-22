@@ -10,6 +10,7 @@ wait prop:accessibility-identifier=query.rows.query-block
 press prop:accessibility-identifier=view.filter.view-1
 wait prop:accessibility-identifier=view.settings.sheet.view-1
 press prop:accessibility-identifier=view.filter.add.view-1
+expect prop:accessibility-identifier=view.filter.row.view-1.1
 press prop:accessibility-identifier=view.settings.save.view-1
 expect-absent prop:accessibility-identifier=view.settings.sheet.view-1
 expect text:"Filtered hit"

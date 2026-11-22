@@ -160,8 +160,8 @@ type host =
   ; mutable page_tags : bool
   ; mutable schema_attrs : string list
   ; mutable query_expanded : bool
-  ; mutable query_filtered : bool
-  ; mutable query_sorted : bool
+  ; mutable query_filters : Yojson.Basic.t option
+  ; mutable query_sorting : Yojson.Basic.t option
   ; mutable query_type : string
   ; mutable scenario : string
   }
@@ -345,10 +345,13 @@ let append_older_journal host id =
   in
   host.rows <- row :: host.rows
 
-let append_capture host id title ?status ?(tags = []) () =
+let append_capture host id title ?status ?(tags = []) ?uuid () =
+  let row_uuid =
+    match uuid with Some uuid -> uuid | None -> Printf.sprintf "capture-%d" id
+  in
   let row =
-    App_test.journal_outline_row (Printf.sprintf "capture-%d" id) "journal"
-      title "Today" 20260828 (List.length host.rows)
+    App_test.journal_outline_row row_uuid "journal" title "Today" 20260828
+      (List.length host.rows)
   in
   let row =
     match status with None -> row | Some status -> { row with row_status = Some status }
@@ -384,8 +387,7 @@ let map_row host uuid f =
       (fun (row : Model.outline_row) -> if row.row_uuid = uuid then f row else row)
       host.rows
 
-let query_document ?(view_type = "list") ?(filtered = false) ?(sorted = false) expanded
-    =
+let query_document ?(view_type = "list") ?filters ?sorting expanded =
   let view_fields =
     [
       ("uuid", `String "view-1");
@@ -399,32 +401,8 @@ let query_document ?(view_type = "list") ?(filtered = false) ?(sorted = false) e
       ("revision", `String "1");
       ("projectionRevision", `String "1");
     ]
-    @ (if filtered then
-         [
-           ( "filters"
-           , `Assoc
-               [
-                 ("or", `Bool false);
-                 ( "clauses"
-                 , `List
-                     [
-                       `List
-                         [
-                           `String "block/title";
-                           `String "text-contains";
-                           `String "";
-                         ];
-                     ] );
-               ] );
-         ]
-       else [])
-    @ (if sorted then
-         [
-           ( "sorting"
-           , `List
-               [ `Assoc [ ("id", `String "block/title"); ("asc", `Bool true) ] ] );
-         ]
-       else [])
+    @ (match filters with Some filters -> [ ("filters", filters) ] | None -> [])
+    @ (match sorting with Some sorting -> [ ("sorting", sorting) ] | None -> [])
   in
   `Assoc
     [
@@ -471,8 +449,8 @@ let failed_sync_row (row : Model.outline_row) =
 
 let live_query_json host =
   Yojson.Basic.to_string
-    (query_document ~view_type:host.query_type ~filtered:host.query_filtered
-       ~sorted:host.query_sorted host.query_expanded)
+    (query_document ~view_type:host.query_type ?filters:host.query_filters
+       ?sorting:host.query_sorting host.query_expanded)
 
 let set_query_expanded host expanded =
   host.query_expanded <- expanded;
@@ -557,8 +535,8 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       page_tags = false;
       schema_attrs = [];
       query_expanded = false;
-      query_filtered = false;
-      query_sorted = false;
+      query_filters = None;
+      query_sorting = None;
       query_type = "list";
       scenario;
     }

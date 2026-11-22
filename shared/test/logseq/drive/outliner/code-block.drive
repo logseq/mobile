@@ -10,5 +10,9 @@ expect text:"ocaml"
 ext ext:outliner-block-row outliner-block-row edit '{"uuid":"code-1"}'
 wait prop:accessibility-identifier=button.outliner.editor.newBlock
 press prop:accessibility-identifier=button.outliner.editor.newBlock
-expect text:"New block"
-expect prop:accessibility-identifier=toolbar.outliner.editor
+expect-prop ext:outliner-editor block-id "new-block"
+expect-prop ext:outliner-editor title "New block"
+expect-absent prop:accessibility-identifier=button.outliner.editor.newBlock
+expect prop:accessibility-identifier=button.outliner.editor.lineBreak
+expect text:'"uuid":"new-block"'&text:'"editing":true'
+expect text:'"uuid":"code-1"'&text:'"editing":false'
