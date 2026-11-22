@@ -664,11 +664,18 @@ private struct LGNativeSearchHost: ViewModifier {
                         .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
-                    content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
-                        placement: .navigationBarDrawer(displayMode: .always), prompt: Text(search.title))
-                        .onChange(of: search.nativePresented) { _, presented in
-                            LogseqCrashReporting.uiState(nativeSearchActive: presented)
+                    Group {
+                        // The drawer is always visible while attached, so attach it only during search.
+                        if search.nativePresented {
+                            content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                                placement: .navigationBarDrawer(displayMode: .always), prompt: Text(search.title))
+                        } else {
+                            content
                         }
+                    }
+                    .onChange(of: search.nativePresented) { _, presented in
+                        LogseqCrashReporting.uiState(nativeSearchActive: presented)
+                    }
                 }
                 #else
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
