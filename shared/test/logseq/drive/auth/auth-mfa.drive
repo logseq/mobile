@@ -1,0 +1,13 @@
+# A software-token challenge accepts the authenticator code and signs in.
+expect prop:accessibility-identifier=screen.authentication
+press prop:accessibility-identifier=button.sign-in
+expect prop:accessibility-identifier=sheet.authentication
+type prop:accessibility-identifier=field.auth.email "mfa@example.com"
+type prop:accessibility-identifier=field.auth.password "fixture-password"
+press prop:accessibility-identifier=button.auth.submit
+wait prop:accessibility-identifier=field.auth.code
+expect text:"Enter the code from your authenticator app."
+type prop:accessibility-identifier=field.auth.code "654321"
+press prop:accessibility-identifier=button.auth.submit
+wait prop:accessibility-identifier=button.graph-add
+expect-absent prop:accessibility-identifier=sheet.authentication

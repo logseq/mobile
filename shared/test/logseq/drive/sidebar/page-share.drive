@@ -1,0 +1,17 @@
+# Sharing a page records the share in the runtime log.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+press kind:menu-item&text:"Share"
+expect prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=link.sidebar.journals
+expect-absent prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=button.runtime-log
+wait text:"Shared Favorite Doc"

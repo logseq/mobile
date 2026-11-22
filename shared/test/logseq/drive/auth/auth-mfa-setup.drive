@@ -1,0 +1,15 @@
+# Authenticator setup shows the shared secret, then a code signs in.
+expect prop:accessibility-identifier=screen.authentication
+press prop:accessibility-identifier=button.sign-in
+expect prop:accessibility-identifier=sheet.authentication
+type prop:accessibility-identifier=field.auth.email "setup@example.com"
+type prop:accessibility-identifier=field.auth.password "fixture-password"
+press prop:accessibility-identifier=button.auth.submit
+wait text:"Set up your authenticator"
+press prop:accessibility-identifier=button.auth.submit
+wait prop:accessibility-identifier=auth.setup-secret
+expect-prop prop:accessibility-identifier=auth.setup-secret text "ABCD1234"
+type prop:accessibility-identifier=field.auth.code "654321"
+press prop:accessibility-identifier=button.auth.submit
+wait prop:accessibility-identifier=button.graph-add
+expect-absent prop:accessibility-identifier=sheet.authentication

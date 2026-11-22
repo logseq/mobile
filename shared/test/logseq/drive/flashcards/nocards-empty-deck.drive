@@ -1,0 +1,11 @@
+# A deck with nothing due explains how to add cards and hides practice.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=link.sidebar.flashcards
+wait prop:accessibility-identifier=flashcards.empty
+expect text:"No cards due"
+expect text:"Tag any block with #Card to review it here."
+expect-absent prop:accessibility-identifier=button.flashcards.practice-again

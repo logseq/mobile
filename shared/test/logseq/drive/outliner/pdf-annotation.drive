@@ -1,0 +1,11 @@
+# Opening a PDF loads its workspace, and saving a note shows the paragraph.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.pdf-1
+ext ext:native-pdf-workspace native-pdf-workspace event '{"payload":"{\"action\":\"open\",\"uuid\":\"pdf-1\",\"title\":\"Notes.pdf\",\"path\":\"/tmp/Notes.pdf\"}"}'
+expect text:"Notes.pdf"
+ext ext:native-pdf-workspace native-pdf-workspace event '{"payload":"{\"action\":\"save\"}"}'
+expect text:"Noted paragraph"

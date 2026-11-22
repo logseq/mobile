@@ -11,18 +11,28 @@ let handle (host : Drive_host.host) model = function
       :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
              { projection with Model.flashcards = host.Drive_host.flashcards })
       :: Drive_host.resolved id)
-  | Model.ReviewFlashcardEffect (id, uuid, _rating) ->
-    host.flashcards <-
-      List.filter
-        (fun (card : Model.flashcard) -> card.flashcard_uuid <> uuid)
-        host.flashcards;
-    host.deck_completed <- host.flashcards = [];
+  | Model.ReviewFlashcardEffect (id, uuid, rating) ->
+    if rating = "again" then host.Drive_host.deck_practicing <- true
+    else begin
+      host.flashcards <-
+        List.filter
+          (fun (card : Model.flashcard) -> card.flashcard_uuid <> uuid)
+          host.flashcards;
+      host.deck_completed <- host.flashcards = [];
+      host.deck_practicing <- false
+    end;
     Some (Model.DequeueEffect id :: snapshot host model :: Drive_host.resolved id)
   | Model.FlashcardDeckEffect (id, payload) ->
     let fields = Drive_host.json_fields payload in
     (match Drive_host.json_string fields "action" with
     | Some "select" -> host.deck_selected <- Drive_host.json_string fields "uuid"
-    | Some "search" -> host.deck_targets <- [ ("page-1", "Alpha Doc") ]
+    | Some "search" ->
+      let kind = Option.value (Drive_host.json_string fields "kind") ~default:"page" in
+      host.deck_search_kind <- kind;
+      host.deck_search_query <-
+        Option.value (Drive_host.json_string fields "query") ~default:"";
+      host.deck_targets <-
+        if kind = "tag" then [ ("tag-1", "Project") ] else [ ("page-1", "Alpha Doc") ]
     | Some "create" ->
       let title =
         Option.value (Drive_host.json_string fields "title") ~default:"Card group"
@@ -32,6 +42,8 @@ let handle (host : Drive_host.host) model = function
       host.deck_items <- host.deck_items @ [ ("deck-created", title) ]
     | Some "practice" ->
       host.deck_completed <- false;
+      host.deck_practicing <- true;
+      host.deck_total <- None;
       host.flashcards <- [ Drive_host.flashcard_seed ]
     | _ -> ());
     Some (Model.DequeueEffect id :: snapshot host model :: Drive_host.resolved id)

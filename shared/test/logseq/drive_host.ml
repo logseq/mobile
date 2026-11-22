@@ -57,6 +57,12 @@ let page_candidate =
 let search_block =
   App_test.journal_outline_row "block-1" "page-1" "alpha block" "Today" 20260828 0
 
+let priority_seed =
+  [
+    App_test.task_status "pri-1" (Some "logseq.property/priority.high") "High"
+      None (Some "priorityLvlHigh") None;
+  ]
+
 let default_settings =
   {
     Model.appearance = "system";
@@ -88,9 +94,19 @@ let json_fields payload =
 let json_string fields key =
   match List.assoc_opt key fields with Some (`String value) -> Some value | _ -> None
 
+let json_assoc fields key =
+  match List.assoc_opt key fields with Some (`Assoc value) -> value | _ -> []
+
+let json_strings fields key =
+  match List.assoc_opt key fields with
+  | Some (`List values) ->
+    List.filter_map (function `String value -> Some value | _ -> None) values
+  | _ -> []
+
 let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?(rows = journal_rows)
     ?sidebar ?(flashcards = []) ?(sync_connected = false) ?(node_routes = [])
-    ?(selected_block_ids = []) ?(task_statuses = []) ?(has_older_journals = false)
+    ?(selected_block_ids = []) ?(task_statuses = [])
+    ?(task_priorities = priority_seed) ?(has_older_journals = false)
     ?(decks_json = "") ?(applied_server_t = Some 1) graphs =
   {
     (App_test.empty_core_projection ()) with
@@ -108,6 +124,7 @@ let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?(rows = journal
     node_routes;
     projection_outliner_selected_block_ids = selected_block_ids;
     task_statuses;
+    task_priorities;
     has_older_journals;
     sidebar =
       (match sidebar with
@@ -131,11 +148,95 @@ type host =
   ; mutable deck_created : string option
   ; mutable deck_targets : (string * string) list
   ; mutable deck_items : (string * string) list
+  ; mutable deck_practicing : bool
+  ; mutable deck_total : int option
+  ; mutable deck_search_kind : string
+  ; mutable deck_search_query : string
   ; mutable removed_blocks : string list
   ; mutable completion_dismissed : bool
   ; mutable editing_title : string
   ; mutable saved_settings : Model.settings_projection option
+  ; mutable property_done : bool
+  ; mutable page_tags : bool
+  ; mutable schema_attrs : string list
+  ; mutable query_expanded : bool
   }
+
+let property_json ~attr ~title ~kind ~text ~raw =
+  `Assoc
+    [
+      ("attr", `String attr);
+      ("title", `String title);
+      ("kind", `String kind);
+      ("editable", `Bool true);
+      ("text", `String text);
+      ("raw", raw);
+    ]
+
+let page_properties host (page : Model.sidebar_page) =
+  let properties =
+    [ property_json ~attr:"done" ~title:"Done" ~kind:"checkbox"
+        ~text:(if host.property_done then "Yes" else "No")
+        ~raw:(`Assoc [ ("type", `String "boolean"); ("value", `Bool host.property_done) ]) ]
+    @
+    if host.page_tags then
+      [ property_json ~attr:"tags" ~title:"Tags" ~kind:"ref" ~text:"Project"
+          ~raw:(`Assoc [ ("type", `String "set"); ("value", `List [ `String "tag-1" ]) ]) ]
+    else []
+  in
+  Yojson.Basic.to_string
+    (`Assoc
+       [
+         ("ownerUuid", `String page.uuid);
+         ("canAdd", `Bool true);
+         ("classSchema", `Bool true);
+         ( "rename"
+         , `Assoc
+             [
+               ("attr", `String "block/title");
+               ("editable", `Bool true);
+               ("title", `String "Title");
+               ("text", `String page.title);
+               ("editorValue", `String page.title);
+               ( "raw"
+               , `Assoc [ ("type", `String "string"); ("value", `String page.title) ] );
+             ] );
+         ( "tagPicker"
+         , `Assoc
+             [
+               ("attr", `String "block/tags");
+               ("title", `String "Tags");
+               ("kind", `String "ref");
+               ("many", `Bool true);
+               ("ref", `Bool true);
+               ("valuesDeferred", `Bool false);
+               ( "filterValues"
+               , `List
+                   [
+                     `Assoc
+                       [
+                         ("title", `String "Project");
+                         ("match", `List [ `String "tag-1" ]);
+                       ];
+                   ] );
+             ] );
+         ( "schemaProperties"
+         , `List
+             (List.map
+                (fun attr -> `Assoc [ ("attr", `String attr); ("title", `String "Alias") ])
+                host.schema_attrs) );
+         ( "availableProperties"
+         , `List
+             [
+               `Assoc
+                 [
+                   ("attr", `String "alias");
+                   ("title", `String "Alias");
+                   ("kind", `String "default");
+                 ];
+             ] );
+         ("properties", `List properties);
+       ])
 
 let host_sidebar host =
   {
@@ -143,6 +244,10 @@ let host_sidebar host =
     Model.favorites = host.favorites;
     recent_pages = host.recents;
     selected_page = host.selected_page;
+    properties_json =
+      (match host.selected_page with
+      | None -> ""
+      | Some page -> page_properties host page);
   }
 
 let decks_json host =
@@ -160,14 +265,18 @@ let decks_json host =
                 host.deck_items) );
          ("selectedUuid", string_field host.deck_selected);
          ( "totalCards"
-         , `Int (if host.deck_completed then 0 else List.length host.flashcards) );
+         , `Int
+             (match host.deck_total with
+             | Some count -> count
+             | None -> if host.deck_completed then 0 else List.length host.flashcards) );
          ("completed", `Bool host.deck_completed);
+         ("practicing", `Bool host.deck_practicing);
          ("createdUuid", string_field host.deck_created);
          ( "targetSearch"
          , `Assoc
              [
-               ("kind", `String "page");
-               ("query", `String "");
+               ("kind", `String host.deck_search_kind);
+               ("query", `String host.deck_search_query);
                ( "items"
                , `List
                    (List.map
@@ -257,11 +366,75 @@ let editing_snapshot ~uuid ~title ~caret ?(autocomplete = None) ?(candidates = [
     projection_outliner_autocomplete_candidates = candidates;
   }
 
+let rename_page host uuid title =
+  let update (page : Model.sidebar_page) =
+    if page.uuid = uuid then { page with title } else page
+  in
+  host.favorites <- List.map update host.favorites;
+  host.recents <- List.map update host.recents;
+  host.selected_page <- Option.map update host.selected_page
+
+let map_row host uuid f =
+  host.rows <-
+    List.map
+      (fun (row : Model.outline_row) -> if row.row_uuid = uuid then f row else row)
+      host.rows
+
+let query_document expanded =
+  `Assoc
+    [
+      ("ownerUuid", `String "query-block");
+      ("featureType", `String "query-result");
+      ("expanded", `Bool expanded);
+      ( "views"
+      , `List
+          [
+            `Assoc
+              [
+                ("uuid", `String "view-1");
+                ("type", `String "list");
+                ("name", `String "All");
+                ("rowsDeferred", `Bool true);
+                ("rowCount", `Int 1);
+                ("rowOffset", `Int 0);
+                ("rows", `List []);
+                ("input", `String "");
+                ("revision", `String "1");
+                ("projectionRevision", `String "1");
+              ];
+          ] );
+    ]
+
+let query_json expanded = Yojson.Basic.to_string (query_document expanded)
+
+let query_row expanded =
+  let row =
+    App_test.journal_outline_row "query-block" "journal" "Query block" "Today" 20260828 2
+  in
+  { row with Model.query_json = query_json expanded }
+
+let pdf_row =
+  let row =
+    App_test.journal_outline_row "pdf-1" "journal" "Notes.pdf" "Today" 20260828 2
+  in
+  {
+    row with
+    Model.is_asset = true;
+    asset_type = Some "pdf";
+    local_path = Some "/tmp/Notes.pdf";
+  }
+
+let set_query_expanded host expanded =
+  host.query_expanded <- expanded;
+  map_row host "query-block" (fun row -> { row with Model.query_json = query_json expanded })
+
 let find_graph host id =
   List.find_opt (fun (g : Model.graph) -> g.id = id) host.graphs
 
 let graph_ids host =
-  List.map (fun (g : Model.graph) -> g.id) host.graphs
+  List.filter_map
+    (fun (g : Model.graph) -> if g.id = "RemoteGraph" then None else Some g.id)
+    host.graphs
 
 let current_graph_projection host model ~extra =
   match Option.map (find_graph host) model.Model.selected_graph_id |> Option.join with
@@ -298,12 +471,13 @@ let host_responses host model =
   List.concat_map (respond host model) model.Model.pending_effects
 
 let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
-    ?(rows = journal_rows) ?(has_older = false) () =
+    ?(rows = journal_rows) ?(has_older = false) ?(flashcards = [ flashcard_seed ])
+    ?(deck_total = None) () =
   let host =
     {
       graphs = [];
       rows;
-      flashcards = [ flashcard_seed ];
+      flashcards;
       favorites = [ { Model.uuid = "fav-1"; title = "Favorite Doc" } ];
       recents = [ { Model.uuid = "recent-1"; title = "Recent Doc" } ];
       selected_page = None;
@@ -320,10 +494,18 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       deck_created = None;
       deck_targets = [];
       deck_items = [ ("deck-1", "Project cards") ];
+      deck_practicing = false;
+      deck_total;
+      deck_search_kind = "page";
+      deck_search_query = "";
       removed_blocks = [];
       completion_dismissed = false;
       editing_title = "";
       saved_settings = None;
+      property_done = false;
+      page_tags = false;
+      schema_attrs = [];
+      query_expanded = false;
     }
   in
   let self = ref None in
@@ -364,11 +546,20 @@ let run_scenario dir name () =
     if has_prefix "auth-" name then "signedOut" else "signedIn"
   in
   let fail_sign_in = name = "auth-signin-error.drive" in
-  let rows = if has_prefix "empty-" name then [] else journal_rows in
+  let rows =
+    let rows = if has_prefix "empty-" name then [] else journal_rows in
+    let rows = if has_prefix "query-" name then rows @ [ query_row false ] else rows in
+    if has_prefix "pdf-" name then rows @ [ pdf_row ] else rows
+  in
   let has_older = has_prefix "history-" name in
+  let flashcards, deck_total =
+    if has_prefix "nocards-" name then ([], Some 0)
+    else if has_prefix "practice-" name then ([], Some 3)
+    else ([ flashcard_seed ], None)
+  in
   let session =
     mount ~profile:(ios_profile ()) ~authentication ~fail_sign_in ~rows
-      ~has_older ()
+      ~has_older ~flashcards ~deck_total ()
   in
   let failures =
     Drive.Scenario.run
