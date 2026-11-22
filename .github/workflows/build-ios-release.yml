@@ -121,8 +121,16 @@ jobs:
             _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0
           key: apple-toolchain-${{ runner.os }}-xcode27.2-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
+      - name: Restore legacy iOS OCaml toolchain cache
+        id: ios-toolchain-legacy
+        if: steps.ios-toolchain.outputs.cache-primary-key != '' && steps.ios-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/apple-toolchains
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
+
       - name: Bootstrap iOS OCaml toolchain (device)
-        if: steps.ios-toolchain.outputs.cache-hit != 'true'
+        if: steps.ios-toolchain.outputs.cache-hit != 'true' && steps.ios-toolchain-legacy.outputs.cache-hit != 'true'
         run: ./scripts/bootstrap-ios-ocaml.sh device
 
       - name: Restore iOS device Dune cache
