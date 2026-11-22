@@ -666,6 +666,9 @@ private struct LGNativeSearchHost: ViewModifier {
                 } else {
                     content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
                         placement: .navigationBarDrawer(displayMode: .always), prompt: Text(search.title))
+                        .onChange(of: search.nativePresented) { _, presented in
+                            LogseqCrashReporting.uiState(nativeSearchActive: presented)
+                        }
                 }
                 #else
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
