@@ -24,8 +24,7 @@ jobs:
           ref: ${{ inputs.git-ref }}
       - uses: ./.github/actions/ocaml-vendor
         with:
-          populate: "true"
-          checkout-pins: "false"
+          mode: prepare
 
   build-app:
     needs: duniverse

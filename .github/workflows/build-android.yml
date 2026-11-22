@@ -127,7 +127,7 @@ jobs:
 
       - uses: ./.github/actions/ocaml-vendor
         with:
-          populate: "true"
+          mode: populate
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

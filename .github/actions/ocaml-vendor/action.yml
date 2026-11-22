@@ -1,12 +1,9 @@
 name: Vendored OCaml sources
 description: Restore the lockfile dependencies and fetch additional pins at their requested revisions.
 inputs:
-  populate:
-    description: Populate a cold cache on Linux with opam-monorepo.
-    default: "false"
-  checkout-pins:
-    description: Fetch pins that are outside the lockfile's vendored source tree.
-    default: "true"
+  mode:
+    description: Choose restore, populate with existing tools, or prepare a cache for another job.
+    default: "restore"
 runs:
   using: composite
   steps:
@@ -19,13 +16,13 @@ runs:
         enableCrossOsArchive: true
 
     - name: Prepare vendoring tools
-      if: steps.sources.outputs.cache-hit != 'true' && inputs.populate == 'true'
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode == 'prepare'
       uses: ./.github/actions/ocaml-tools
       with:
         image: ubuntu-26.04
 
     - name: Pull lockfile sources
-      if: steps.sources.outputs.cache-hit != 'true' && inputs.populate == 'true'
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode != 'restore'
       shell: bash
       run: |
         # Call the binary directly because the plugin shim checks the opam version.
@@ -38,7 +35,7 @@ runs:
         done
 
     - name: Save lockfile sources
-      if: steps.sources.outputs.cache-hit != 'true' && inputs.populate == 'true'
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode != 'restore'
       uses: actions/cache/save@v4
       with:
         path: duniverse
@@ -46,14 +43,14 @@ runs:
         enableCrossOsArchive: true
 
     - name: Require lockfile sources
-      if: steps.sources.outputs.cache-hit != 'true' && inputs.populate != 'true'
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode == 'restore'
       shell: bash
       run: |
         echo "::error::The Linux vendoring job did not populate the lockfile cache."
         exit 1
 
     - name: Check out pins
-      if: inputs.checkout-pins == 'true'
+      if: inputs.mode != 'prepare'
       shell: bash
       run: |
         while IFS= read -r pin; do

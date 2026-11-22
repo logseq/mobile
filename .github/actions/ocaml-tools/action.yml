@@ -20,15 +20,13 @@ runs:
       if: steps.tools.outputs.cache-hit == 'true'
       shell: bash
       run: |
-        if ! command -v opam >/dev/null; then
-          if [[ "$RUNNER_OS" == macOS ]]; then
-            brew install opam
-          else
-            mkdir -p "$HOME/.local/bin"
-            curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o "$HOME/.local/bin/opam"
-            chmod +x "$HOME/.local/bin/opam"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          fi
+        if [[ "$RUNNER_OS" == macOS ]]; then
+          brew install opam
+        else
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o "$HOME/.local/bin/opam"
+          chmod +x "$HOME/.local/bin/opam"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
         fi
 
     - name: Set up the compiler on a cache miss
