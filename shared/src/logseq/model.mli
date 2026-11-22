@@ -248,6 +248,7 @@ type core_projection =
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
+  ; is_graph_snapshot_recovery : bool
   ; projection_search_query : string
   ; search_offset : int
   ; search_has_more : bool

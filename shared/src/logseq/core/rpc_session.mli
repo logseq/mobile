@@ -191,6 +191,7 @@ val node_routes_json :
   (Cache_model.block -> Yojson.Basic.t) ->
   Yojson.Basic.t
 val snapshot :
+  ?graph_snapshot_recovery:bool ->
   Session_types.session ->
   Cache_model.block list ->
   Cache_model.block list ->
@@ -223,7 +224,7 @@ val discover_graphs :
 val resolve_graph : Api.api_config -> (Api.api_config, string) result
 val dispatch_outliner_event : Session_types.session -> string -> string
 val switch_graph_model :
-  Session_types.session -> string -> (unit, string) result
+  ?preserve_navigation:bool -> Session_types.session -> string -> (unit, string) result
 val with_object :
   string ->
   string option ->

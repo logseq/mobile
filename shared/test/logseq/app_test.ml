@@ -363,6 +363,7 @@ let empty_core_projection () =
     pending_sync_error = None;
     is_pending_sync_patch = false;
     is_pending_sync_projection = false;
+    is_graph_snapshot_recovery = false;
     is_graph_catalog_patch = false;
     projection_search_query = "";
     search_offset = 0;
@@ -6157,6 +6158,69 @@ let native_header_title_follows_the_active_destination () =
        { initial with Model.destination = Model.GraphsDestination })
     "Graphs"
 
+let recovered_snapshot_prunes_deleted_navigation_routes () =
+  let project = node_projection "project" "project" "Project" [] [] in
+  let drafts = node_projection "drafts" "drafts" "Drafts" [] [] in
+  let result = { (node_projection "result" "result" "Result" [] []) with
+    Model.node_scroll_target = Some "search-hit" } in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [project; drafts; result];
+    app_navigation_path = [Model.NodeRoute "project"; Model.NodeRoute "drafts"];
+    app_navigation_previews = [project; drafts];
+    search_navigation_path = [Model.NodeRoute "search-hit"; Model.NodeRoute "pending"] } in
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [project] } in
+  let ordinary = Model.update opened (Model.ApplyCoreSnapshot projection) in
+  check_eq ordinary.app_navigation_path opened.app_navigation_path;
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot
+    { projection with is_graph_snapshot_recovery = true }) in
+  check_eq recovered.app_navigation_path [Model.NodeRoute "project"];
+  check_eq recovered.app_navigation_previews [project];
+  check_eq recovered.search_navigation_path [Model.NodeRoute "pending"];
+  let backed = Model.update recovered (Model.BackAppNavigation 1) in
+  check_eq backed.app_navigation_path [];
+  check_eq backed.pending_effects [Model.CloseAppNodeEffect (1, "project")];
+  let reopened = Model.update backed (Model.RequestAppNode "project") in
+  check_eq reopened.app_navigation_path [Model.NodeRoute "project"];
+  check_eq reopened.pending_effects [Model.CloseAppNodeEffect (1, "project");
+    Model.OpenAppNodeEffect (2, "project")]
+
+let recovered_snapshot_keeps_a_zoomed_search_result () =
+  let page = { (node_projection "page" "page" "Page" [] []) with
+    Model.node_scroll_target = Some "block" } in
+  let block = node_projection "block" "page" "Block" [] [] in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [page; block];
+    search_navigation_path = [Model.NodeRoute "page"; Model.NodeRoute "block"] } in
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [page; block];
+    is_graph_snapshot_recovery = true }) in
+  check_eq recovered.search_navigation_path opened.search_navigation_path;
+  let breadcrumb = Model.update recovered (Model.RequestSearchNode "page") in
+  check_eq breadcrumb.search_navigation_path
+    [Model.NodeRoute "page"; Model.NodeRoute "block"; Model.NodeRoute "page"];
+  check_eq breadcrumb.pending_effects [Model.OpenSearchNodeEffect (1, "page")]
+
+let recovered_snapshot_prunes_search_beneath_an_app_link () =
+  let drafts = node_projection "drafts" "drafts" "Drafts" [] [] in
+  let link = node_projection "link" "link" "Linked page" [] [] in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph"; search_open = true;
+    node_routes = [drafts; link];
+    app_navigation_path = [Model.NodeRoute "link"];
+    search_navigation_path = [Model.NodeRoute "drafts"] } in
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [link];
+    is_graph_snapshot_recovery = true }) in
+  check_eq recovered.search_navigation_path [];
+  let closed = Model.update recovered Model.CloseSearch in
+  check_eq closed.app_navigation_path [Model.NodeRoute "link"];
+  check_eq closed.pending_effects []
+
 let native_header_title_follows_the_optimistic_navigation_path () =
   let initial = Model.initial () in
   let route_a = node_projection "node-a" "page-a" "Project" [] [] in
@@ -11177,6 +11241,9 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "recovered snapshot prunes deleted navigation routes" recovered_snapshot_prunes_deleted_navigation_routes;
+    case "recovered snapshot keeps a zoomed search result" recovered_snapshot_keeps_a_zoomed_search_result;
+    case "recovered snapshot prunes search beneath an app link" recovered_snapshot_prunes_search_beneath_an_app_link;
     case "native bridge preserves reentrant flush batches" native_bridge_preserves_reentrant_flush_batches;
     case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;

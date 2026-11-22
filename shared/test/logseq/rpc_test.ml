@@ -1253,6 +1253,31 @@ let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
   ignore (sync_event session (sync_generation recover) "snapshot-applied" []);
   check_eq (sync_command_kinds (begin_sync_transport session)) ["connect"]
 
+let shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds () =
+  let session, _, _, _ = sync_driver_session () in
+  let connect () =
+    let response = begin_sync_transport session in
+    check_eq (sync_command_kinds response) ["connect"];
+    let generation = sync_generation response in
+    ignore (sync_event session generation "opened" []);
+    generation in
+  let reset generation =
+    sync_event session generation "frame" ["body", `String {|{"type":"reset"}|}] in
+  let generation = connect () in
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"];
+  ignore (sync_event session generation "snapshot-applied" []);
+  List.iter (fun delay ->
+    let repeated = reset (connect ()) in
+    check_eq (sync_command_kinds repeated) ["close"; "retry"];
+    check_eq (member "delayMs" (List.nth (sync_commands repeated) 1)) (`Int delay);
+    let recovery = begin_sync_transport session in
+    check_eq (sync_command_kinds recovery) ["snapshot"];
+    ignore (sync_event session (sync_generation recovery) "snapshot-applied" []))
+    [1000; 2000; 4000; 8000; 16000; 30000; 30000];
+  let generation = connect () in
+  ignore (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":10}|}]);
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"]
+
 let shared_sync_driver_reports_malformed_frames_and_cancels_without_retry () =
   let session, _, _, _ = sync_driver_session () in
   let generation = sync_generation (begin_sync_transport session) in
@@ -6901,11 +6926,49 @@ let forced_snapshot_import_rejects_a_changed_graph () =
   check_eq ~msg:"a late download cannot switch the graph back" !imported 0;
   check_eq (response_error_code response) "graph_changed"
 
+let forced_snapshot_import_restores_existing_destinations () =
+  let refreshed = ref false in
+  let summary uuid title : Model.entity_summary =
+    { uuid; title = title ^ (if !refreshed then " updated" else "") } in
+  let sidebar () = summary "sidebar" "Sidebar" in
+  let linked () = summary "linked" "Linked" in
+  let session = configure_plain_session (Session.create_session {
+    Session.default_options with
+    open_graph = Some (fun _ -> Ok ());
+    import_snapshot = Some (fun _ -> refreshed := true; Ok ());
+    model_for_graph = Some (fun _ -> Model.create None);
+    graph_sidebar_pages = Some (fun () -> Some {
+      Graph_read.favorites = [sidebar ()]; recent_pages = [] });
+    graph_node_destination = Some (function
+      | "sidebar" -> Some (sidebar (), false)
+      | "linked" -> Some (linked (), false)
+      | "anchor" -> Some (linked (), true)
+      | "removed" when not !refreshed -> Some (summary "removed" "Removed", false)
+      | _ -> None);
+  }) in
+  ignore (response_result (dispatch_json session "openGraph" {|{"graphId":"plain-1"}|}));
+  ignore (response_result (dispatch_json session "selectPage" "sidebar"));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"anchor","reveal":true}|}));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"removed"}|}));
+  let updated = response_result (dispatch_json session "importSnapshot"
+    {|{"graphId":"plain-1","forceSnapshot":true}|}) in
+  check_eq (member "isGraphSnapshotRecovery" updated) (`Bool true);
+  check_eq (member "title" (member "selectedPage" updated)) (`String "Sidebar updated");
+  let routes = json_items "nodeRoutes" updated in
+  check_eq (List.map (member "uuid") routes) [`String "linked"];
+  let route = List.hd routes in
+  check_eq (member "title" (member "page" route)) (`String "Linked updated");
+  check_eq (member "scrollTarget" route) (`String "anchor");
+  let back = response_result (dispatch_json session "closeNode" "") in
+  check_eq (json_items "nodeRoutes" back) [];
+  check_eq (member "uuid" (member "selectedPage" back)) (`String "sidebar")
+
 let cases =
   [
     case "search results are loaded in bounded pages" search_results_are_loaded_in_bounded_pages;
     case "idle sync recovery resets after a healthy pull" shared_sync_driver_idle_recovery_resets_after_a_healthy_pull;
     case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
+    case "forced snapshot import restores existing destinations" forced_snapshot_import_restores_existing_destinations;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
     case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;
@@ -6921,6 +6984,7 @@ let cases =
  case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
     case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
+    case "shared sync driver backs off repeated snapshot recovery" shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds;
     case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
  case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
  case "journal refresh keeps the edited page beyond the launch window" journal_refresh_keeps_the_edited_page_beyond_the_launch_window;

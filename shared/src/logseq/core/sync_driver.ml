@@ -20,6 +20,7 @@ type t =
   ; response_t : int option
   ; attempt : int
   ; snapshot_required : bool
+  ; snapshot_recovered : bool
   ; commands : command list
   ; error : string option
   }
@@ -37,7 +38,7 @@ type event =
 let empty =
   { generation = 0; graph_id = ""; phase = Idle; pull_in_flight = false;
     notified_t = -1; applied_t = -1; response_t = None; attempt = 0;
-    snapshot_required = false; commands = []; error = None }
+    snapshot_required = false; snapshot_recovered = false; commands = []; error = None }
 
 let generation state = state.generation
 let graph_id state = state.graph_id
@@ -54,14 +55,18 @@ let reconnect_delay attempt =
   match attempt with
   | 0 -> 1000 | 1 -> 2000 | 2 -> 4000 | 3 -> 8000 | 4 -> 16000 | _ -> 30000
 
-let fail message state =
+let retry state =
   { state with phase = Waiting; pull_in_flight = false;
     attempt = min 5 (state.attempt + 1);
-    commands = [Close; Retry (reconnect_delay state.attempt)]; error = Some message }
+    commands = [Close; Retry (reconnect_delay state.attempt)] }
+
+let fail message state = retry { state with error = Some message }
 
 let require_snapshot ~editing state =
-  { state with phase = Waiting; snapshot_required = true; pull_in_flight = false;
-    commands = [Close; (if editing then Retry 1000 else Snapshot)] }
+  let state = { state with phase = Waiting; snapshot_required = true; pull_in_flight = false } in
+  if editing then { state with commands = [Close; Retry 1000] }
+  else if state.snapshot_recovered then retry state
+  else { state with commands = [Close; Snapshot] }
 
 let socket_url = Api.sync_websocket_url
 
@@ -124,7 +129,7 @@ let receive_frame ~cursor ~editing ~apply_frame body state =
          | Ok (Some cursor) ->
            let pending = state.notified_t > cursor in
            { state with pull_in_flight = pending; response_t = int_field "t" frame;
-             applied_t = cursor; attempt = 0;
+             applied_t = cursor; attempt = 0; snapshot_recovered = false;
              commands = (if pending then [Sync_pending; pull cursor] else [Sync_pending]); error = None })
     | Some "reset" -> require_snapshot ~editing state
     | Some "error" ->
@@ -140,7 +145,11 @@ let receive ~cursor ~editing ~apply_frame event previous =
   match event with
   | Cancelled -> { state with phase = Stopped; pull_in_flight = false; commands = [Close] }
   | Snapshot_applied when state.snapshot_required ->
-    { state with phase = Idle; snapshot_required = false; attempt = 0; error = None }
+    (* A successful import is only verified when the server accepts a pull. *)
+    (match cursor with
+     | None -> fail "Snapshot did not provide a sync cursor" state
+     | Some _ -> { state with phase = Idle; snapshot_required = false;
+         snapshot_recovered = true; error = None })
   | Network false when state.phase <> Stopped ->
     { state with phase = Offline; pull_in_flight = false; commands = [Close] }
   | Network true when state.phase = Offline ->

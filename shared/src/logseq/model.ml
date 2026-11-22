@@ -251,6 +251,7 @@ type core_projection =
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
+  ; is_graph_snapshot_recovery : bool
   ; projection_search_query : string
   ; search_offset : int
   ; search_has_more : bool
@@ -3393,18 +3394,51 @@ and apply_core_snapshot (current : logseq_model)
         else current.local_graph_ids @ [ graph_id ]
       | None -> current.local_graph_ids
     in
+    let reconcile_path path previous =
+      let rec take_route matches skipped = function
+        | [] -> None
+        | route :: rest when matches route -> Some (route, List.rev_append skipped rest)
+        | route :: rest -> take_route matches (route :: skipped) rest in
+      let rec reconcile kept previous = function
+        | [] -> List.rev kept, previous
+        | (NodeRoute uuid as requested) :: rest ->
+          let matched = match take_route (fun route -> route.node_uuid = uuid) [] previous with
+            | Some _ as exact -> exact
+            | None -> take_route (fun route -> route.node_scroll_target = Some uuid) [] previous in
+          (match matched with
+           | None -> reconcile (requested :: kept) previous rest (* Still pending. *)
+           | Some (route, remaining) ->
+             let kept = if node_route_by_uuid projection.node_routes route.node_uuid = None then kept
+               else NodeRoute route.node_uuid :: kept in
+             reconcile kept remaining rest) in
+      reconcile [] previous path
+    in
+    let app_navigation_path, search_path =
+      if projection.is_graph_snapshot_recovery && not selected_graph_changed then
+        let app_path, previous = reconcile_path current.app_navigation_path current.node_routes in
+        let search_path, _ = reconcile_path current.search_navigation_path previous in
+        app_path, search_path
+      else current.app_navigation_path, current.search_navigation_path
+    in
+    let app_navigation_previews =
+      if app_navigation_path = current.app_navigation_path then current.app_navigation_previews
+      else List.filter (fun (preview : node_projection) ->
+        List.mem (NodeRoute preview.node_uuid) app_navigation_path) current.app_navigation_previews
+    in
     let search_navigation_path =
-      match last_opt projection.node_routes, last_opt current.search_navigation_path with
+      match last_opt projection.node_routes, last_opt search_path with
       | Some { node_scroll_target = Some target; node_uuid; _ }, Some (NodeRoute requested)
         when target = requested
              && List.length projection.node_routes =
-                List.length current.app_navigation_path + List.length current.search_navigation_path ->
-        pop_route current.search_navigation_path @ [NodeRoute node_uuid]
-      | _ -> current.search_navigation_path
+                List.length app_navigation_path + List.length search_path ->
+        pop_route search_path @ [NodeRoute node_uuid]
+      | _ -> search_path
     in
     let updated =
       {
         (composer_for_graph current projection.selected_graph_id) with
+        app_navigation_path;
+        app_navigation_previews;
         search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;
