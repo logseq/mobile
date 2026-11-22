@@ -13,7 +13,7 @@ let visible db attr =
      | Some id -> get db id "logseq.property/hide?" <> Ds.Bool true
      | None -> String.starts_with ~prefix:"user.property/" attr
 
-let render db ~owner ~encode_block =
+let render ?(defer_values = false) db ~owner ~encode_block =
   match Ds.entid db "block/uuid" (Ds.Uuid owner) with
   | None -> Error "Object no longer exists"
   | Some id ->
@@ -36,7 +36,7 @@ let render db ~owner ~encode_block =
       else `Null in
     let class_ = Node_title.is_class db id in
     let schema_attrs = G.ref_eids db id "logseq.property.class/properties" |> List.filter_map (ident db) in
-    let property attr = Result_view.property_json ~include_candidates:false db ~owner ~attr ~encode_block in
+    let property attr = Result_view.property_json ~include_candidates:false ~defer_values db ~owner ~attr ~encode_block in
     let catalog = Ds.Db.datoms db Ds.Aevt ~a:"db/ident" () |> Seq.filter_map (fun (d : Ds.datom) ->
       match d.v with Ds.Keyword attr when visible db attr && Node_title.is_property db d.e
         && not (List.mem attr (if class_ then schema_attrs else attrs)) ->
@@ -55,7 +55,7 @@ let render db ~owner ~encode_block =
       "tagPicker", tag_picker; "canAdd", `Bool (Node_title.can_edit db id); "classSchema", `Bool class_;
       "availableProperties", `List catalog; "schemaProperties", `List (List.map property schema_attrs);
       "rename", rename; "properties", `List (List.map (fun attr ->
-        Result_view.property_json db ~owner ~attr ~encode_block) attrs)])
+        Result_view.property_json ~defer_values db ~owner ~attr ~encode_block) attrs)])
 
 let attach db owner attr =
   let id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with Some id -> id | None -> invalid_arg "Object no longer exists" in

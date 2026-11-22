@@ -588,7 +588,7 @@ public struct LogseqSnapshot: Codable {
     public let selectedPage: LogseqSidebarPage?
     public let selectedPageIsTag: Bool?
     public let selectedPageIsProperty: Bool?
-    public let appliedServerT: Int?
+    public private(set) var appliedServerT: Int?
     public let syncConnected: Bool?
     public let relatedBlocks: [LogseqBlock]?
     public let linkedReferenceBlocks: [LogseqBlock]?
@@ -599,7 +599,7 @@ public struct LogseqSnapshot: Codable {
     public let taskStatuses: [LogseqTaskStatus]?
     public let isGraphEncrypted: Bool?
     public let isGraphUnlocked: Bool?
-    public let pendingSyncRequest: LogseqPendingSyncRequest?
+    public private(set) var pendingSyncRequest: LogseqPendingSyncRequest?
     public let outlinerState: LogseqOutlinerState
     public let outlinerCommandRevision: Int
     public let outlinerCommands: [LogseqOutlinerCommand]
@@ -607,7 +607,7 @@ public struct LogseqSnapshot: Codable {
     public let outlinerRows: [LogseqOutlineRow]
     public let deletedBlockIds: [String]
     public let outlinerRowSplices: [LogseqOutlinerRowSplice]
-    public let hasPendingSemanticOperations: Bool
+    public private(set) var hasPendingSemanticOperations: Bool
     public let hasOlderJournals: Bool
     public let isOutlinerPatch: Bool
     public let isPendingSyncPatch: Bool
@@ -678,6 +678,12 @@ public struct LogseqSnapshot: Codable {
         self.hasOlderJournals = hasOlderJournals
         self.isOutlinerPatch = isOutlinerPatch
         self.isPendingSyncPatch = isPendingSyncPatch
+    }
+
+    mutating func applyPendingSyncPatch(_ patch: LogseqSnapshot) {
+        appliedServerT = patch.appliedServerT
+        pendingSyncRequest = patch.pendingSyncRequest
+        hasPendingSemanticOperations = patch.hasPendingSemanticOperations
     }
 
     private enum CodingKeys: String, CodingKey {

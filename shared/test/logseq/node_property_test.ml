@@ -57,6 +57,18 @@ let projection_and_navigation () =
   let snapshot = Rpc_test.response_result (J.from_string (Rpc_session.snapshot_visible session)) in
   let route = List.hd (items "nodeRoutes" snapshot) in
   check_eq (member "text" (property R.summary route)) (`String "Writing");
+  let score = property R.score block in
+  ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+  let snapshot = Rpc_test.response_result (J.from_string (Rpc_session.snapshot_visible session)) in
+  let projected_score = property R.score (List.hd (List.rev (items "nodeRoutes" snapshot))) in
+  check_eq (member "valuesDeferred" projected_score) (`Bool true);
+  check_eq (member "raw" projected_score) (member "raw" score);
+  check (List.length (items "filterValues" projected_score) < List.length (items "filterValues" score));
+  let loaded = result (Rpc_test.dispatch_json session "propertyValues" (J.to_string (`Assoc [
+      "key", `String "score"; "ownerUuid", `String Q.alpha; "attr", `String R.score;
+      "mode", `String "property"]))) in
+  check_eq (items "filterValues" (member "column" (member "propertyValues" loaded)))
+    (items "filterValues" score);
   check ~msg:"ordinary rows do not carry full property panels" (List.for_all (fun row ->
     member "nodeProperties" (member "block" row) = `Null) (items "outlinerRows" route))
 

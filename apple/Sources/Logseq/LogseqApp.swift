@@ -163,6 +163,7 @@ public struct LogseqRootView : View {
     private let widgetContent = WidgetContentPublisher()
     private let widgetLaunchPresentation = WidgetLaunchPresentation()
     private var initialWidgetURL: URL?
+    private var initialWidgetURLAwaitingDelivery: URL?
     var isOpeningInitialWidgetBlock: Bool { widgetLaunchPresentation.isOpeningBlock }
 
     var widgetTaskError: String? {
@@ -182,6 +183,7 @@ public struct LogseqRootView : View {
     private var didStartLGRenderer = false
     private var didStartLGApplication = false
     private var isLGApplicationReady = false
+    private var didFinishLaunchWork = false
     private var isResumingLGApplication = false
     private var didResumeCurrentActivation = false
     private var refreshedJournalDay: String?
@@ -369,7 +371,10 @@ public struct LogseqRootView : View {
             platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
-        lgRuntime.didApplyCoreResponse = { [weak widgetContent] in widgetContent?.scheduleRefresh() }
+        lgRuntime.didApplyCoreResponse = { [weak self] in
+            guard let self, self.didFinishLaunchWork else { return }
+            self.widgetContent.scheduleRefresh()
+        }
         responseRelay.apply = { [weak lgRuntime] response in
             do {
                 try lgRuntime?.applyCoreResponse(response)
@@ -450,8 +455,12 @@ public struct LogseqRootView : View {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
         startLGRenderer()
-        await waitForAuthenticationRestore()
-        publishAuthenticationState()
+        let opensWidgetBlock = initialWidgetURL != nil
+        // A cached widget target can render while authentication restores.
+        if !opensWidgetBlock {
+            await waitForAuthenticationRestore()
+            publishAuthenticationState()
+        }
         await waitForLocalLaunchLoad()
         if let session = UserDefaults.standard.string(forKey: "logseq.uiSession") {
             do {
@@ -471,7 +480,17 @@ public struct LogseqRootView : View {
         }
         isLGApplicationReady = true
         presentPendingQuickAction()
+        if opensWidgetBlock {
+            await waitForAuthenticationRestore()
+            publishAuthenticationState()
+        }
         await resumeLGApplication()
+        // A successful graph bootstrap loads the sidebar as part of its projection.
+        if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
+            await store.loadLaunchSidebar(graphID: graphID)
+        }
+        didFinishLaunchWork = true
+        refreshWidgetsOnActivation()
         await store.runPendingSyncLoop()
     }
 
@@ -537,6 +556,9 @@ public struct LogseqRootView : View {
     }
 
     public func pauseLGApplication() {
+        if isLGApplicationReady {
+            initialWidgetURLAwaitingDelivery = nil
+        }
         if didApplyLocalLaunchResult {
             do {
                 try lgRuntime.applyHostUpdate(kind: "save-ui-session", payload: "null")
@@ -710,7 +732,8 @@ public struct LogseqRootView : View {
             store.applyLaunchResponse(
                 graphResponse,
                 actionName: "openGraph",
-                databasePath: databasePath
+                databasePath: databasePath,
+                loadSidebar: false
             )
         } else {
             store.applyLaunchResponse(
@@ -768,12 +791,17 @@ public struct LogseqRootView : View {
         guard !isLGApplicationReady, initialWidgetURL == nil,
               SharedDeepLink(url).opensWidgetBlock else { return }
         initialWidgetURL = url
+        initialWidgetURLAwaitingDelivery = url
         widgetLaunchPresentation.isOpeningBlock = true
     }
 
     public func acceptSharedCaptureURL(_ url: URL) {
         prepareInitialWidgetLink(url)
-        if url == initialWidgetURL { return }
+        // SwiftUI can forward the scene's launch URL after the initial route is visible.
+        if url == initialWidgetURL || url == initialWidgetURLAwaitingDelivery {
+            initialWidgetURLAwaitingDelivery = nil
+            return
+        }
         if url.scheme == "logseq", url.host == "audio", presentationCoordinator.attachmentService == .audio {
             return
         }
@@ -834,6 +862,7 @@ public struct LogseqRootView : View {
     }
 
     func refreshWidgetsOnActivation() {
+        guard didFinishLaunchWork else { return }
         widgetContent.scheduleRefresh(forceTaskReload: true)
     }
 
@@ -887,6 +916,7 @@ public struct LogseqRootView : View {
             return acknowledgeRejectedWidgetLink(link.opensWidgetBlock)
         }
         if let graphID = store.deepLinkGraphId {
+            if isOpeningInitialWidgetBlock { await waitForAuthenticationRestore() }
             let opened = await graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
             guard opened.succeeded else { return false }
             guard await store.handleDeepLink(payload) else {
