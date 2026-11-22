@@ -163,7 +163,9 @@ jobs:
           always() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
           steps.ios-toolchain.outputs.cache-hit != 'true' &&
           hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
-          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-5.5.0/.logseq-toolchain-complete') != ''
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0/.libffi-*-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0/lib/libffi.a') != ''
         uses: actions/cache/save@v4
         with:
           path: |
