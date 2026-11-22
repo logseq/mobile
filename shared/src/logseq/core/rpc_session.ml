@@ -1984,30 +1984,29 @@ let widget_random_interval_ms = 60 * 60 * 1000
 
 let widget_random_sample db visible =
   let module Ds = Datascript in
-  let attr = "block/title" in
+  let attr = "block/page" in
   let first_eid seq = match Seq.uncons seq with
     | Some ((datom : Ds.datom), _) when datom.a = attr -> Some datom.e
     | _ -> None in
-  match first_eid (Ds.Db.seek_datoms db Ds.Aevt ~a:attr ()),
-        first_eid (Ds.Db.rseek_datoms db Ds.Aevt ~a:attr ()) with
+  let first_page_block = Ds.Db.seek_datoms db Ds.Aevt ~a:attr () in
+  let last_page_block = Ds.Db.rseek_datoms db Ds.Aevt ~a:attr () in
+  match first_eid first_page_block, first_eid last_page_block with
   | Some first, Some last ->
     let visited = Hashtbl.create 64 in
-    let window eid =
-      Ds.Db.seek_datoms db Ds.Aevt ~a:attr ~e:eid ()
-      |> Seq.take 16
-      |> Seq.take_while (fun (datom : Ds.datom) -> datom.a = attr) in
-    (* Eight small indexed windows spread across the title index, plus a
-       bounded prefix for small or sparse graphs. No walk of the full index. *)
-    let starts = List.init 8 (fun _ -> Random.int_in_range ~min:first ~max:last) @ [first] in
-    starts |> List.to_seq |> Seq.flat_map window
-    |> Seq.filter_map (fun (datom : Ds.datom) ->
+    let bounded datoms =
+      datoms |> Seq.take 16 |> Seq.take_while (fun (datom : Ds.datom) -> datom.a = attr) in
+    let window eid = bounded (Ds.Db.seek_datoms db Ds.Aevt ~a:attr ~e:eid ()) in
+    (* Seek across the page membership index so built-in pages and properties
+       do not crowd out blocks in sparse graphs. Bound both fallback windows. *)
+    let starts = List.init 8 (fun _ -> Random.int_in_range ~min:first ~max:last) in
+    let candidates = Seq.append (List.to_seq starts |> Seq.flat_map window)
+      (Seq.append (bounded first_page_block) (bounded last_page_block)) in
+    candidates |> Seq.filter_map (fun (datom : Ds.datom) ->
       if Hashtbl.mem visited datom.e then None else (
         Hashtbl.add visited datom.e ();
-        match datom.v with
-        | Ds.String title when String.length title >= 5 && visible datom.e
-            && not (Graph_read.entity_is_instance_of db datom.e "logseq.class/Asset") ->
+        if visible datom.e && not (Graph_read.entity_is_instance_of db datom.e "logseq.class/Asset") then
           Option.map (fun _ -> datom.e) (widget_title ~minimum:5 db datom.e)
-        | _ -> None))
+        else None))
     |> Seq.take 24 |> List.of_seq
   | _ -> []
 
