@@ -121,108 +121,13 @@ jobs:
           keytool -list -keystore "$RUNNER_TEMP/android-keystore.jks" \
             -storepass:env ANDROID_KEYSTORE_PASSWORD > /dev/null
 
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-tools
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
+          image: ubuntu-26.04
 
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-vendor
         with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      # See ci.yml: on a dual cache hit only the opam binary is needed.
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
-          chmod +x ~/.local/bin/opam
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          eval "$(opam env)"
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval "$(opam env)"
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install . --deps-only --yes --with-test --assume-depexts
-          # Drop installed copies of lockfile-vendored packages (see ci.yml).
-          comm -12 \
-            <(grep -oE '"[a-zA-Z0-9_.-]+" \{= "[^"]*" & \?vendor\}' logseq.opam.locked | cut -d'"' -f2 | sort) \
-            <(opam list --installed --short | sort) \
-            | xargs -r opam remove -y
-          opam install -y melange.7.0.1-55
-          opam install -y opam-monorepo.0.3.6
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      # Share ci.yml's duniverse cache key so a CI-populated cache is reused.
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      - name: Pull vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          eval "$(opam env)"
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
-          for attempt in 1 2 3; do
-            opam exec -- opam-monorepo pull && break
-            [ "$attempt" -lt 3 ] || exit 1
-            echo "opam-monorepo pull failed (attempt $attempt); retrying" >&2
-            sleep 10
-          done
-          while IFS= read -r pin; do
-            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            if [ -d "duniverse/$name" ]; then
-              continue
-            fi
-            git clone --quiet "https://github.com/$url" "duniverse/$name"
-            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
-            fi
-          done < <(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u)
-
-      - name: Save duniverse
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
+          populate: "true"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

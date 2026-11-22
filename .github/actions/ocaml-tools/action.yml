@@ -1,0 +1,69 @@
+name: OCaml build tools
+description: Restore the compiler and host tools used to build the vendored OCaml sources.
+inputs:
+  image:
+    description: Runner image family used to partition the binary cache.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore OCaml tools
+      id: tools
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.opam
+          _opam
+        key: ocaml-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.image }}-${{ hashFiles('.github/actions/ocaml-tools/action.yml') }}
+
+    - name: Install opam on a cache hit
+      if: steps.tools.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        if ! command -v opam >/dev/null; then
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install opam
+          else
+            mkdir -p "$HOME/.local/bin"
+            curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o "$HOME/.local/bin/opam"
+            chmod +x "$HOME/.local/bin/opam"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+        fi
+
+    - name: Set up the compiler on a cache miss
+      if: steps.tools.outputs.cache-hit != 'true'
+      uses: ocaml/setup-ocaml@v3
+      with:
+        ocaml-compiler: "5.5.0"
+        opam-pin: false
+        cache: false
+
+    - name: Install host tools
+      if: steps.tools.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # The build resolves its libraries from duniverse, so only install the
+        # host tools here. In particular, opam-monorepo runs only on Linux.
+        packages=(dune.3.24.2)
+        if [[ "$RUNNER_OS" == Linux ]]; then
+          packages+=(opam-monorepo.0.3.6)
+        fi
+        opam install --yes --assume-depexts "${packages[@]}"
+        # Build directories are transient and inflate the cache considerably.
+        opam clean --switch="$GITHUB_WORKSPACE" --logs --download-cache --switch-cleanup
+
+    - name: Save OCaml tools
+      if: steps.tools.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.opam
+          _opam
+        key: ${{ steps.tools.outputs.cache-primary-key }}
+
+    - name: Verify the compiler and Dune
+      shell: bash
+      run: |
+        opam exec -- ocamlc -version
+        opam exec -- dune --version
