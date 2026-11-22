@@ -523,6 +523,8 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
       let host = Lui_app.runtime app in
       let button = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.newBlock" in
       check ~msg:"the software keyboard exposes New block for Code and Calculator" (button <> -1);
+      check_eq ~msg:"Code and Calculator keep Return for line breaks"
+        (App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.lineBreak") (-1);
       let neighbor = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.moveDown" in
       List.iter (fun key -> check_eq ~msg:"New block matches neighboring toolbar controls"
         (App_test.property host button key) (App_test.property host neighbor key))
@@ -536,6 +538,30 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
     check ~msg:"the new block receives editor focus" (member "uuid" (draft response) <> `String Q.alpha);
     check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "6*7\nlast*3"))))
     ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
+
+let toolbar_inserts_line_break_without_a_hardware_keyboard () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
+    ignore (start session "AlphaBeta"); ignore (type_at session "AlphaBeta" 5);
+    let before = List.length (Graph_runtime.blocks_for_page runtime Q.page) in
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let root = Lui_app.root_node app in
+      let button = App_test.descendant_with_identifier host root "button.outliner.editor.lineBreak" in
+      check ~msg:"the software keyboard exposes Line break for ordinary blocks" (button <> -1);
+      check_eq ~msg:"ordinary blocks keep Return for New block"
+        (App_test.descendant_with_identifier host root "button.outliner.editor.newBlock") (-1);
+      App_test.dispatch app (Lui_protocol.Press button); App_test.flush app;
+      check ~msg:"the native toolbar forwards the shared line break action"
+        (List.exists (function Model.OutlinerToolbarEffect (_, "lineBreak") -> true | _ -> false)
+          (App.model app).pending_effects));
+    let response = event session "toolbar" ["action", `String "lineBreak"] in
+    check_eq ~msg:"the line break stays in the edited block" (member "uuid" (draft response)) (`String Q.alpha);
+    check_eq (member "title" (draft response)) (`String "Alpha\nBeta");
+    check_eq (member "caretUTF16Offset" (draft response)) (`Int 6);
+    save session;
+    check_eq (List.length (Graph_runtime.blocks_for_page runtime Q.page)) before;
+    check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "Alpha\nBeta"))))
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let temporal_command_inputs_open_empty () =
   List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session _ _ ->
@@ -1300,6 +1326,7 @@ let cases = [
   case "date commands accept natural language on both hosts" date_command_accepts_natural_language;
   case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
   case "Code and Calculator toolbars create blocks with software keyboards" code_toolbar_creates_a_block_without_a_hardware_keyboard;
+  case "toolbar inserts a line break with software keyboards" toolbar_inserts_line_break_without_a_hardware_keyboard;
   case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;
   case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
   case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;

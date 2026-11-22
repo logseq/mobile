@@ -48,6 +48,7 @@ let toolbar_action wire =
   | "attachment" -> Ok Outliner.Attachment
   | "hideKeyboard" -> Ok Outliner.Hide_keyboard
   | "newBlock" -> Ok Outliner.New_block
+  | "lineBreak" -> Ok Outliner.Line_break
   | "copy" -> Ok Outliner.Copy
   | "delete" -> Ok Outliner.Delete
   | "copyReference" -> Ok Outliner.Copy_reference

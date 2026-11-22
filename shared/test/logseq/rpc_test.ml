@@ -5948,6 +5948,7 @@ let toolbar_wire_actions_preserve_all_public_mappings () =
       ("audio", Outliner.Audio);
       ("attachment", Outliner.Attachment);
       ("hideKeyboard", Outliner.Hide_keyboard);
+      ("lineBreak", Outliner.Line_break);
       ("copy", Outliner.Copy);
       ("delete", Outliner.Delete);
       ("copyReference", Outliner.Copy_reference);

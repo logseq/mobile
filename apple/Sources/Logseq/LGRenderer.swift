@@ -120,6 +120,7 @@ enum LGIconPolicy {
             "toolbar-delete": .systemName("trash"),
             "toolbar-hide-keyboard": .assetName("toolbar_hide_keyboard"),
             "toolbar-indent": .assetName("toolbar_indent"),
+            "toolbar-line-break": .systemName("return"),
             "toolbar-move-down": .systemName("arrow.down"),
             "toolbar-move-up": .systemName("arrow.up"),
             "toolbar-outdent": .assetName("toolbar_outdent"),
@@ -143,6 +144,7 @@ enum LGIconPolicy {
         result["toolbar-camera"] = .systemName("camera")
         result["toolbar-hide-keyboard"] = .systemName("keyboard.chevron.compact.down")
         result["toolbar-indent"] = .systemName("arrow.right")
+        result["toolbar-line-break"] = .systemName("return")
         result["toolbar-move-down"] = .systemName("arrow.down")
         result["toolbar-move-up"] = .systemName("arrow.up")
         result["toolbar-outdent"] = .systemName("arrow.left")

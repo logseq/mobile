@@ -1516,7 +1516,7 @@ let page_share_asset_paths rows =
 let cancels_outliner_autosave = function
   | OutlinerToolbarEffect (_, action) ->
     (* Movement and media actions retain the draft without committing it. *)
-    List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
+    List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "lineBreak"; "delete" ]
   | PasteOutlinerTextEffect _ | EditorOutlinerEventEffect _
   | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _

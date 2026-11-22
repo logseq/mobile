@@ -10099,7 +10099,7 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
       else List.concat_map actions (children renderer id) in
     actions toolbar in
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 11;
+    (List.length buttons) 12;
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -10112,14 +10112,18 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
     buttons;
-  let page_reference = List.nth buttons 9 in
+  let line_break = List.nth buttons 5 in
+  check_eq ~msg:"line break follows the structural editor actions"
+    (property_string renderer line_break Lui_protocol.AccessibilityIdentifier)
+    "button.outliner.editor.lineBreak";
+  let page_reference = List.nth buttons 10 in
   check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "app:toolbar-page-reference";
   check_eq ~msg:"page reference renders as an icon button"
     (property_string renderer page_reference Lui_protocol.TextValue)
     "<missing>";
-  dispatch application (Lui_protocol.Press (List.nth buttons 10));
+  dispatch application (Lui_protocol.Press (List.nth buttons 11));
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"
     (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true
@@ -10260,16 +10264,17 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       (2, "app:toolbar-indent");
       (3, "app:toolbar-move-up");
       (4, "app:toolbar-move-down");
-      (5, "app:toolbar-tag");
-      (6, "app:toolbar-camera");
-      (7, "app:toolbar-audio");
+      (5, "app:toolbar-line-break");
+      (6, "app:toolbar-tag");
+      (7, "app:toolbar-camera");
+      (8, "app:toolbar-audio");
     ];
   check_eq ~msg:"the iOS editor toolbar omits the file picker"
     (descendant_with_identifier renderer editor_toolbar
        "button.outliner.editor.attachment")
     (-1);
-  let page_reference_button = List.nth editor_buttons 8 in
-  let hide_keyboard_button = List.nth editor_buttons 9 in
+  let page_reference_button = List.nth editor_buttons 9 in
+  let hide_keyboard_button = List.nth editor_buttons 10 in
   check_eq ~msg:"page reference retains main's compact symbolic label"
     (property_string renderer page_reference_button Lui_protocol.TextValue)
     "[[]]";
