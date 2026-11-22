@@ -5707,7 +5707,6 @@ let dictionaries = [
     ("Views", "视图");
     ("Visible tabs", "显示的标签页");
     ("Waiting to save", "等待保存");
-    ("YYYY-MM-DD / tomorrow / next Friday", "YYYY-MM-DD / 明天 / 下周五");
     ("Zoom into {1}", "聚焦到 {1}");
     ("{1}, off", "{1}，已关闭");
     ("{1}, on", "{1}，已开启");
