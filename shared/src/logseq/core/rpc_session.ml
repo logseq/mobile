@@ -354,7 +354,7 @@ let empty_journals_json session =
     `Assoc ["uuid", `String page.uuid; "title", `String page.title;
       "journalDay", `Int day]) pages)
 
-let snapshot session context_blocks blocks =
+let snapshot ?(graph_snapshot_recovery = false) session context_blocks blocks =
   let s = state session in
   let h = host session in
   let sidebar = sidebar_pages session in
@@ -468,6 +468,7 @@ let snapshot session context_blocks blocks =
              | Some value -> `Int value
              | None -> `Null )
          ; ("syncConnected", `Bool s.sync_connected)
+         ; ("isGraphSnapshotRecovery", `Bool graph_snapshot_recovery)
          ; ("syncTransport", Sync_driver.to_yojson s.sync_transport)
          ; ( "taskPriorities"
            , Rpc.json_list (List.map Rpc.status_response_json
@@ -553,7 +554,7 @@ let structural_outliner_patch anchored session before_context before_state
   in
   outliner_patch_result session after_context blocks deleted splices
 
-let snapshot_visible session =
+let visible_snapshot ~graph_snapshot_recovery session =
   let s = state session in
   let h = host session in
   let context_blocks =
@@ -596,12 +597,14 @@ let snapshot_visible session =
     then context_blocks
     else Model.visible_from s.model context_blocks
   in
-  snapshot session context_blocks blocks
+  snapshot ~graph_snapshot_recovery session context_blocks blocks
 
-let sidebar_snapshot session =
+let snapshot_visible session = visible_snapshot ~graph_snapshot_recovery:false session
+
+let sidebar_snapshot ?(graph_snapshot_recovery = false) session =
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = false };
-  snapshot_visible session
+  visible_snapshot ~graph_snapshot_recovery session
 
 let graph_catalog_snapshot session =
   let s = state session in
@@ -2698,9 +2701,13 @@ let rec dispatch session action payload =
       Rpc.failure "graph_changed" "The graph operation changed during snapshot download"
     else if forced && sync_transport_editing session then
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
-    else Rpc.import_snapshot payload h.Types.import_snapshot
-      (fun payload -> switch_graph_model ~preserve_navigation:forced session payload)
-      (fun () -> sidebar_snapshot session)
+    else
+      let graph_snapshot_recovery = forced && match s.active_graph_id with
+        | Some id -> graph_id = `String id
+        | None -> false in
+      Rpc.import_snapshot payload h.Types.import_snapshot
+        (fun payload -> switch_graph_model ~preserve_navigation:graph_snapshot_recovery session payload)
+        (fun () -> sidebar_snapshot ~graph_snapshot_recovery session)
   | "closeGraph" -> object_action (fun _ fields ->
     match Rpc.required_string fields "graphId", h.Types.close_graph with
     | Ok graph_id, Some close ->

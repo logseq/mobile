@@ -183,6 +183,9 @@ class AndroidEditorKeyboardTest {
         val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
         ui.runOnIdle { assertTrue(typingConnection.commitText("你", 1)) }
         next.assertIsFocused().assertTextEquals("你")
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
+            it.name == "text-change" && it.values["title"] == "你"
+        } }
     }
 
     @Test fun softwareKeyboardNextCommitsCompositionBeforeSplitting() {

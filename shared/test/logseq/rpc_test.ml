@@ -6952,6 +6952,7 @@ let forced_snapshot_import_restores_existing_destinations () =
   ignore (response_result (dispatch_json session "openNode" {|{"uuid":"removed"}|}));
   let updated = response_result (dispatch_json session "importSnapshot"
     {|{"graphId":"plain-1","forceSnapshot":true}|}) in
+  check_eq (member "isGraphSnapshotRecovery" updated) (`Bool true);
   check_eq (member "title" (member "selectedPage" updated)) (`String "Sidebar updated");
   let routes = json_items "nodeRoutes" updated in
   check_eq (List.map (member "uuid") routes) [`String "linked"];

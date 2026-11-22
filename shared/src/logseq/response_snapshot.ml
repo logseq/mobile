@@ -551,7 +551,8 @@ let core_projection fields =
     pending_sync_error = string_member "pendingSyncError" fields;
     is_pending_sync_patch = bool_member "isPendingSyncPatch" fields;
     is_pending_sync_projection = bool_member "isPendingSyncProjection" fields;
-    is_graph_catalog_patch = bool_member "isGraphCatalogPatch" fields }
+    is_graph_catalog_patch = bool_member "isGraphCatalogPatch" fields;
+    is_graph_snapshot_recovery = bool_member "isGraphSnapshotRecovery" fields }
 
 let error_message fields =
   let error = object_member "error" fields in
