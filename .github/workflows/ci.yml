@@ -25,14 +25,18 @@ jobs:
         with:
           mode: populate
 
-      - name: Restore build caches
+      - name: Select build cache week
+        id: cache-week
+        run: date -u '+value=%G-W%V' >> "$GITHUB_OUTPUT"
+
+      - name: Restore OCaml core Dune cache
+        id: dune
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ~/.cache/dune
-          key: build-cache-${{ github.ref_name }}-${{ github.sha }}
+          path: ~/.cache/dune
+          key: ocaml-core-dune-v1-${{ runner.arch }}-${{ steps.cache-week.outputs.value }}
           restore-keys: |
-            build-cache-${{ github.ref_name }}-
+            ocaml-core-dune-v1-${{ runner.arch }}-
             build-cache-main-
 
       - name: Enable dune shared cache
@@ -43,10 +47,14 @@ jobs:
       - name: Build and test OCaml core
         run: opam exec -- dune build @shared/native/runtest
 
-      - name: Save build caches
-        if: always()
+      - name: Trim OCaml core Dune cache
+        # PR jobs can restore from main. Their own caches cannot be reused by main.
+        if: github.ref == 'refs/heads/main' && steps.dune.outputs.cache-hit != 'true'
+        run: opam exec -- dune cache trim --size=512MiB
+
+      - name: Save OCaml core Dune cache
+        if: github.ref == 'refs/heads/main' && steps.dune.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            ~/.cache/dune
-          key: build-cache-${{ github.ref_name }}-${{ github.sha }}
+          path: ~/.cache/dune
+          key: ${{ steps.dune.outputs.cache-primary-key }}
