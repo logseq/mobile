@@ -136,7 +136,7 @@ let search_screen model_source send : t =
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = KotlinHost then
-    row ~grow:1.0 ~gap:10 ~cross:`center
+    row ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;

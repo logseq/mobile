@@ -55,7 +55,7 @@ private struct AppearanceCheckRoot: View {
         for (index, mode) in ["dark", "light", "dark", "system", "dark"].enumerated() {
             UserDefaults.standard.set(mode, forKey: "logseq.appearance")
             try runtime.applyHostUpdate(kind: "settings", payload:
-                "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"check\",\"revision\":\"check\"}")
+                "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"taskRemindersEnabled\":false,\"taskRemindersStatus\":\"\",\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"check\",\"revision\":\"check\"}")
             let orientation: UIInterfaceOrientation = index.isMultiple(of: 2) ? .landscapeRight : .portrait
             let mask: UIInterfaceOrientationMask = index.isMultiple(of: 2) ? .landscapeRight : .portrait
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in

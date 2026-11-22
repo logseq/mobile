@@ -312,7 +312,7 @@ import Vision
             ("system", UIUserInterfaceStyle.light, false), ("system", .dark, true),
             ("light", .dark, false), ("dark", .light, true)
         ] {
-            try runtime.applyHostUpdate(kind: "settings", payload: "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"test\",\"revision\":\"test\"}")
+            try runtime.applyHostUpdate(kind: "settings", payload: "{\"appearance\":\"\(mode)\",\"language\":\"system\",\"spellCheck\":true,\"autoCorrection\":true,\"taskRemindersEnabled\":false,\"taskRemindersStatus\":\"\",\"sidebarTabs\":[],\"baseURL\":\"https://api.logseq.io\",\"version\":\"test\",\"revision\":\"test\"}")
             window.overrideUserInterfaceStyle = style
             _ = try await capture("query-search-\(mode)-\(style == .dark ? "dark" : "light").png")
             guard let field = fields(in: window.rootViewController!.view).first(where: { $0.placeholder == "Search results" }) else {
@@ -345,7 +345,7 @@ import Vision
                 }
             }
         }
-        try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}"#)
+        try runtime.applyHostUpdate(kind: "settings", payload: #"{"appearance":"system","language":"system","spellCheck":true,"autoCorrection":true,"taskRemindersEnabled":false,"taskRemindersStatus":"","sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"test","revision":"test"}"#)
         try backend.performPress(node: find("view.type.option.gallery.table")!)
         try await wait("The type icon must save the active view's type") {
             effects.viewEdits.contains { ($0["viewUuid"] as? String) == "gallery"

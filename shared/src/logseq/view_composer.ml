@@ -273,7 +273,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
   in
   let surface =
     if Lui_ui.host context = KotlinHost then
-      column ?key ?accessibility_identifier ~grow:1.0 ~gap:4 ~padding:8
+      column ?key ?accessibility_identifier ~gap:4 ~padding:8
         ~background:"surface-container-highest" ~corner_radius:28
         (attachment_strip
          @ [ field;
@@ -311,7 +311,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
-    row ~grow:1.0 ~height:56 ~gap:0 ~cross:`center
+    row ~height:56 ~gap:0 ~cross:`center
       ~padding_horizontal:4 ~background:"surface-container-low" ~corner_radius:28
       [ icon_button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
           ~width:48 ~height:48 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")

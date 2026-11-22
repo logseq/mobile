@@ -63,7 +63,7 @@ let priority_seed =
       None (Some "priorityLvlHigh") None;
   ]
 
-let default_settings =
+let default_settings : Model.settings_projection =
   {
     Model.appearance = "system";
     dark_theme = "black";
@@ -71,6 +71,8 @@ let default_settings =
     system_language = Some "en";
     spell_check = true;
     auto_correction = true;
+    task_reminders_enabled = false;
+    task_reminders_status = "";
     sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
     base_url = "https://api.logseq.io";
     version = "Development";
