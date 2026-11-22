@@ -5460,7 +5460,7 @@ let dictionaries = [
     ("Open runtime log", "打开运行日志");
     ("Outdent", "减少缩进");
     ("Pages", "页面");
-    ("Photo", "拍照");
+    ("Photo", "照片");
     ("Photos", "照片");
     ("Plain text", "纯文本");
     ("Recent", "最近访问");
