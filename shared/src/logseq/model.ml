@@ -3394,18 +3394,30 @@ and apply_core_snapshot (current : logseq_model)
         else current.local_graph_ids @ [ graph_id ]
       | None -> current.local_graph_ids
     in
-    let reconcile_path path =
-      if not projection.is_graph_snapshot_recovery || selected_graph_changed then path
-      else List.filter_map (fun (NodeRoute uuid as requested) ->
-        match List.find_opt (fun (route : node_projection) ->
-          route.node_uuid = uuid || route.node_scroll_target = Some uuid) current.node_routes with
-        | None -> Some requested (* An open request may still be pending. *)
-        | Some previous ->
-          Option.map (fun (route : node_projection) -> NodeRoute route.node_uuid)
-            (node_route_by_uuid projection.node_routes previous.node_uuid)) path
+    let reconcile_path path previous =
+      let rec take_route uuid = function
+        | [] -> None
+        | (route : node_projection) :: rest
+          when route.node_uuid = uuid || route.node_scroll_target = Some uuid -> Some (route, rest)
+        | _ :: rest -> take_route uuid rest in
+      let rec reconcile kept previous = function
+        | [] -> List.rev kept, previous
+        | (NodeRoute uuid as requested) :: rest ->
+          (match take_route uuid previous with
+           | None -> reconcile (requested :: kept) previous rest (* Still pending. *)
+           | Some (route, remaining) ->
+             let kept = if node_route_by_uuid projection.node_routes route.node_uuid = None then kept
+               else NodeRoute route.node_uuid :: kept in
+             reconcile kept remaining rest) in
+      reconcile [] previous path
     in
-    let app_navigation_path = reconcile_path current.app_navigation_path in
-    let search_path = reconcile_path current.search_navigation_path in
+    let app_navigation_path, search_path =
+      if projection.is_graph_snapshot_recovery && not selected_graph_changed then
+        let app_path, previous = reconcile_path current.app_navigation_path current.node_routes in
+        let search_path, _ = reconcile_path current.search_navigation_path previous in
+        app_path, search_path
+      else current.app_navigation_path, current.search_navigation_path
+    in
     let app_navigation_previews =
       if app_navigation_path = current.app_navigation_path then current.app_navigation_previews
       else List.filter (fun (preview : node_projection) ->
