@@ -94,6 +94,7 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let asset = "10000000-0000-4000-8000-000000000021" in
   let db = ref (Ds.db_with [
     put alpha "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+    Ds.Add (Ds.Entity_id 900021, "block/uuid", Ds.Uuid asset);
     put asset "block/page" (Ds.Ref_to (ref_uuid page));
     put asset "block/title" (Ds.String "A photo attachment");
     put asset "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Asset"));
@@ -126,6 +127,9 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let ids key content = items key content |> List.map (U.member "uuid") |> List.sort compare in
   check_eq (ids "tasks" (snapshot ())) [`String alpha];
   check_eq (ids "randomBlocks" (snapshot ())) [`String definition; `String alpha];
+  let refreshed = call session "widgetSnapshot" ["resampleRandomBlocks", `Bool true]
+    |> Rpc_test.response_result in
+  check_eq (ids "randomBlocks" refreshed) [`String definition; `String alpha];
   let original = List.hd (items "tasks" (snapshot ())) in
   let choose task ident =
     items "statusChoices" task |> List.find (fun choice -> U.member "ident" choice = `String ident) in
