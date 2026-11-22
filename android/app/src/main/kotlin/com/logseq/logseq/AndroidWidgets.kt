@@ -6,14 +6,18 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.icu.text.BreakIterator
 import android.util.AtomicFile
 import android.util.Log
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
+import androidx.core.os.BundleCompat
 import com.logseq.logseq.runtime.AndroidBackgroundSync
 import com.logseq.logseq.runtime.NativeCoreSession
 import com.logseq.logseq.runtime.WidgetTaskStatusChange
@@ -183,8 +187,18 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             characters.next(5) != BreakIterator.DONE
         }.shuffled().take(4)
         for (widgetId in appWidgetIds) {
-            val visibleRows = if (showsTasks) blocks.take(taskRowLimit(appWidgetManager, widgetId)) else blocks
-            val views = blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, visibleRows)
+            val graphLocked = content?.optBoolean("graphLocked") == true
+            fun render(rows: List<JSONObject>) = blockList(context, widgetId, graphId, graphLocked, rows)
+            val views = if (showsTasks) {
+                val options = appWidgetManager.getAppWidgetOptions(widgetId)
+                taskViews(context, options) { height ->
+                    // The layout uses 36dp for the header, 20dp for padding and 34dp per row.
+                    val rowLimit = ((height - 56) / 34).toInt().coerceAtLeast(1)
+                    render(blocks.take(rowLimit))
+                }
+            } else {
+                render(blocks)
+            }
             appWidgetManager.updateAppWidget(widgetId, views)
         }
     }
@@ -196,10 +210,16 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
         if (showsTasks) onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
     }
 
-    private fun taskRowLimit(manager: AppWidgetManager, widgetId: Int): Int {
-        val height = manager.getAppWidgetOptions(widgetId).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 158)
-        // The widget layout reserves 36dp for its header and 20dp for vertical padding.
-        return ((height - 56) / 34).coerceAtLeast(1)
+    private fun taskViews(context: Context, options: Bundle, render: (Float) -> RemoteViews): RemoteViews {
+        if (Build.VERSION.SDK_INT >= 31) {
+            val sizes = BundleCompat.getParcelableArrayList(options, AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
+            if (!sizes.isNullOrEmpty()) {
+                return RemoteViews(sizes.associateWith { render(it.height) })
+            }
+        }
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val heightKey = if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT
+        return render(options.getInt(heightKey, 158).toFloat())
     }
 
     private fun blockList(
