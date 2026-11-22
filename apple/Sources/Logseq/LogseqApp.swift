@@ -866,6 +866,10 @@ public struct LogseqRootView : View {
         widgetContent.scheduleRefresh(forceTaskReload: true)
     }
 
+    public func resumePendingWidgetRefresh() {
+        widgetContent.resumePendingRefresh()
+    }
+
     private func drainSharedCapturesIfReady() {
         guard didApplyLocalLaunchResult, isLGApplicationReady, !isOpeningInitialWidgetBlock,
               sharedCaptureTask == nil else { return }

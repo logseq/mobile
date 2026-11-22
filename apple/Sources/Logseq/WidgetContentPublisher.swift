@@ -1,6 +1,7 @@
 import Foundation
 import LogseqModel
 import Observation
+import UIKit
 import WidgetKit
 
 @MainActor @Observable final class WidgetContentPublisher {
@@ -9,37 +10,49 @@ import WidgetKit
     private var refreshTask: Task<Void, Never>?
     private var needsRefresh = false
     private var forceTaskReload = false
-    private var refreshRevision = 0
-    private var publishedRevision = 0
+    private var forceRandomReload = false
 
-    func scheduleRefresh(forceTaskReload: Bool = false) {
+    func scheduleRefresh(forceTaskReload: Bool = false, forceRandomReload: Bool = false) {
         needsRefresh = true
         self.forceTaskReload = self.forceTaskReload || forceTaskReload
-        guard refreshTask == nil else { return }
+        self.forceRandomReload = self.forceRandomReload || forceRandomReload
+        resumePendingRefresh()
+    }
+
+    func resumePendingRefresh() {
+        guard needsRefresh, refreshTask == nil, UIApplication.shared.isProtectedDataAvailable else { return }
         refreshTask = Task {
-            while needsRefresh {
+            while needsRefresh && UIApplication.shared.isProtectedDataAvailable {
                 needsRefresh = false
-                let forceReload = self.forceTaskReload
+                let forceTaskReload = self.forceTaskReload
+                let forceRandomReload = self.forceRandomReload
                 self.forceTaskReload = false
-                await refresh(forceTaskReload: forceReload)
+                self.forceRandomReload = false
+                await publishSnapshot(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
             }
             refreshTask = nil
         }
     }
 
     func refresh(forceTaskReload: Bool = false, forceRandomReload: Bool = false) async {
+        scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+        await refreshTask?.value
+    }
+
+    private func publishSnapshot(forceTaskReload: Bool, forceRandomReload: Bool) async {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: SharedCaptureStorage.appGroupIdentifier
         ) else { return }
         let file = container.appendingPathComponent("widget-content.json")
-        refreshRevision += 1
-        let revision = refreshRevision
         let response = await LogseqCore.callAsync(LogseqRPCRequest(
             method: "dispatch", params: LogseqRPCParams(
                 action: "widgetSnapshot", payload: forceRandomReload ? #"{"resampleRandomBlocks":true}"# : nil
             )
         ))
-        guard revision > publishedRevision else { return }
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+            return
+        }
         do {
             guard let envelope = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any],
                   envelope["ok"] as? Bool == true,
@@ -67,7 +80,9 @@ import WidgetKit
             if forceRandomReload || graphChanged || randomVersionChanged || hadRandomBlocks != hasRandomBlocks {
                 WidgetCenter.shared.reloadTimelines(ofKind: "RandomBlocksWidget")
             }
-            publishedRevision = revision
+        } catch let error as CocoaError
+            where error.code == .fileWriteNoPermission && !UIApplication.shared.isProtectedDataAvailable {
+            scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
         } catch {
             logger.error("Could not publish widget content: \(error)")
         }
