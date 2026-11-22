@@ -17,7 +17,7 @@ EXTENSIONS = {
     "LogseqShareExtension.appex": ("com.logseq.logseq.ShareViewController", "com.apple.share-services"),
 }
 WIDGET_ACTIONS = {"QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent"}
-WIDGET_STATUS_ACTION = "SetWidgetTaskStatusIntent"
+WIDGET_STATUS_ACTIONS = {"SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent"}
 APP_ACTIONS = WIDGET_ACTIONS | {"CaptureToJournalIntent"}
 WIDGET_KINDS = {
     "TodayJournalWidget", "CaptureWidget", "TaskListWidget", "RandomBlocksWidget",
@@ -60,7 +60,7 @@ def verify_app(app, args):
     bundles = [(app, "com.logseq.logseq", None)]
     bundles.extend((app / "PlugIns" / name, *expected) for name, expected in EXTENSIONS.items())
 
-    app_intents = read_intents(app, APP_ACTIONS | {WIDGET_STATUS_ACTION})
+    app_intents = read_intents(app, APP_ACTIONS | WIDGET_STATUS_ACTIONS)
     shortcuts = {shortcut["actionIdentifier"] for shortcut in app_intents.get("autoShortcuts", [])}
     require(APP_ACTIONS <= shortcuts, f"Missing registered App Shortcuts: {sorted(APP_ACTIONS - shortcuts)}")
     home_shortcuts = {item["UIApplicationShortcutItemType"] for item in info.get("UIApplicationShortcutItems", [])}
@@ -68,10 +68,11 @@ def verify_app(app, args):
     require("audio" in info.get("UIBackgroundModes", []), "Background recording is not enabled")
     require({"logseq://audio", "logseq://capture"} <= home_shortcuts, "Missing home screen quick actions")
     widget = app / "PlugIns/LogseqWidgets.appex"
-    widget_intents = read_intents(widget, WIDGET_ACTIONS | {WIDGET_STATUS_ACTION})
+    widget_intents = read_intents(widget, WIDGET_ACTIONS | WIDGET_STATUS_ACTIONS)
     for intents in (app_intents, widget_intents):
-        require(not intents["actions"][WIDGET_STATUS_ACTION].get("openAppWhenRun"),
-                "Widget task status must run without opening the app")
+        for action in WIDGET_STATUS_ACTIONS:
+            require(not intents["actions"][action].get("openAppWhenRun"),
+                    "Widget task status must run without opening the app")
     widget_binary = widget / read_info(widget)["CFBundleExecutable"]
     widget_data = widget_binary.read_bytes()
     missing_kinds = {kind for kind in WIDGET_KINDS if kind.encode() not in widget_data}

@@ -92,6 +92,7 @@ public struct LogseqRootView : View {
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
+                runtime.refreshWidgetsOnActivation()
                 while !Task.isCancelled {
                     await runtime.refreshLocalJournalDay()
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -793,6 +794,10 @@ public struct LogseqRootView : View {
         await widgetContent.refresh()
         if saved { LogseqBackgroundRefresh.syncNow() }
         return saved
+    }
+
+    func refreshWidgetsOnActivation() {
+        widgetContent.scheduleRefresh(reloadUnchanged: true)
     }
 
     private func drainSharedCapturesIfReady() {
