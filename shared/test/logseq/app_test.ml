@@ -363,6 +363,7 @@ let empty_core_projection () =
     pending_sync_error = None;
     is_pending_sync_patch = false;
     is_pending_sync_projection = false;
+    is_graph_snapshot_recovery = false;
     is_graph_catalog_patch = false;
     projection_search_query = "";
     search_offset = 0;
@@ -380,7 +381,7 @@ let empty_core_projection () =
     is_outliner_patch = false;
     is_outliner_content_patch = false;
     reference_update = None;
-    pdf_update = None; is_pdf_patch = false; query_update = None;
+    pdf_update = None; is_pdf_patch = false; widget_block_uuid = None; query_update = None;
     pending_reference_uuid = None;
     hydrated_rows = [];
     is_search_patch = false;
@@ -447,6 +448,8 @@ let journal_outline_row uuid page_id title journal_title journal_day depth =
     row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
+    row_embed_source_uuid = None;
+    row_embed_children = [];
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -481,6 +484,7 @@ let task_status uuid ident title icon_type icon_id icon_color =
 let settings tabs =
   {
     Model.appearance = "system";
+    dark_theme = "black";
     language = "system";
     system_language = None;
     spell_check = true;
@@ -989,6 +993,26 @@ let native_settings_refresh_preserves_dirty_connection_draft () =
     check_eq ~msg:"native status update reaches the model" (model ()).task_reminders_status "authorized";
     ignore (Native_bridge.flush_action Model.DismissSettings);
     check_eq ~msg:"native dismissal adopts the latest host URL" (model ()).base_url_draft "https://new.example")
+
+let settings_dark_theme_persists_independently_of_appearance () =
+  let initial = Model.initial () in
+  check_eq initial.dark_theme "black";
+  let opened = Model.update initial Model.OpenSettings in
+  let choosing = Model.update opened Model.OpenSettingsDarkThemeMenu in
+  let solarized = Model.update choosing (Model.ChangeDarkTheme "solarized") in
+  check solarized.settings_open;
+  check (not solarized.settings_dark_theme_menu_open);
+  check_eq solarized.appearance "system";
+  check_eq solarized.dark_theme "solarized";
+  let saved = Model.current_settings solarized in
+  check_eq solarized.pending_effects [ Model.SaveSettingsEffect (1, saved) ];
+  let restored = Model.update initial (Model.ApplySettingsSnapshot saved) in
+  let light = Model.update restored (Model.ChangeAppearance "light") in
+  let dark = Model.update light (Model.ChangeAppearance "dark") in
+  check_eq dark.dark_theme "solarized";
+  let fallback = Model.update initial
+    (Model.ApplySettingsSnapshot { saved with dark_theme = "unknown" }) in
+  check_eq fallback.dark_theme "black"
 
 let settings_reject_invalid_connections_and_preserve_required_tabs () =
   let opened =
@@ -1726,6 +1750,26 @@ let kotlin_settings_use_full_width_material_controls () =
     ~msg:
       "Material preferences use the native list surface without an Apple card"
     (property renderer general_card Lui_protocol.BackgroundValue) None;
+  List.iter
+    (fun identifier ->
+      let heading = descendant_with_identifier renderer root identifier in
+      check_eq ~msg:(identifier ^ " keeps the Material primary ink")
+        (property_string renderer heading Lui_protocol.ForegroundValue)
+        "primary")
+    [
+      "label.settings.general";
+      "label.settings.editor";
+      "label.settings.sync-server";
+      "label.settings.advanced";
+      "label.settings.about";
+      "label.settings.community";
+    ];
+  let tabs = descendant_with_identifier renderer root "link.settings.tabs" in
+  List.iter
+    (fun padding ->
+      check_eq ~msg:"Tabs keeps native list padding like Theme and Language"
+        (property renderer tabs padding) None)
+    [Lui_protocol.PaddingValue; Lui_protocol.PaddingHorizontal];
   check_eq ~msg:"Settings actions use the Material tonal surface"
     (property_string renderer actions Lui_protocol.BackgroundValue)
     "surface-container-low";
@@ -2562,9 +2606,12 @@ let kotlin_loading_and_errors_use_material_feedback_surfaces () =
   check_eq ~msg:"Android graph restore uses Material progress feedback"
     (node renderer spinner)
     (Some Lui_protocol.Spinner);
-  check_eq ~msg:"Android graph restore stays centered in the viewport"
-    (property_string renderer loading Lui_protocol.MainAlignment)
+  check_eq ~msg:"Android graph restore is centered by the surrounding stack"
+    (property_string renderer loading Lui_protocol.AlignmentValue)
     "center";
+  let label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) (children renderer loading) in
+  check_eq ~msg:"An empty catalog shows the graph loading label"
+    (property_string renderer label Lui_protocol.TextValue) "Loading graphs";
   send application (Model.ApplyGraphLoading false);
   send application
     (Model.ApplyCoreSnapshot
@@ -2720,7 +2767,7 @@ let sync_details_show_every_server_rejection () =
         | Ok value -> value | Error message -> fail message in
       send application (Model.ApplyCoreSnapshot projection); flush application in
     apply (R.response_result (R.dispatch_json session "startWebSocket" ""));
-    let request = R.required_pending (R.response_result (R.dispatch_json session "beginPendingSync" "")) in
+    let request = R.proxy_asset_upload session in
     let request = if semantic then
       R.required_pending (R.pending_completion session request (`Int 200) (`String "{}") `Null)
       else request in
@@ -2952,6 +2999,8 @@ let outline_row uuid title =
     row_metadata_json = "{}"; row_task_dates_json = ""; row_list_number = None;
     row_display_type = None;
     row_is_embed = false;
+    row_embed_source_uuid = None;
+    row_embed_children = [];
     row_title = title;
     markup_json = "[]"; query_json = "";
     youtube_target_url = None;
@@ -6196,6 +6245,69 @@ let native_header_title_follows_the_active_destination () =
        { initial with Model.destination = Model.GraphsDestination })
     "Graphs"
 
+let recovered_snapshot_prunes_deleted_navigation_routes () =
+  let project = node_projection "project" "project" "Project" [] [] in
+  let drafts = node_projection "drafts" "drafts" "Drafts" [] [] in
+  let result = { (node_projection "result" "result" "Result" [] []) with
+    Model.node_scroll_target = Some "search-hit" } in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [project; drafts; result];
+    app_navigation_path = [Model.NodeRoute "project"; Model.NodeRoute "drafts"];
+    app_navigation_previews = [project; drafts];
+    search_navigation_path = [Model.NodeRoute "search-hit"; Model.NodeRoute "pending"] } in
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [project] } in
+  let ordinary = Model.update opened (Model.ApplyCoreSnapshot projection) in
+  check_eq ordinary.app_navigation_path opened.app_navigation_path;
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot
+    { projection with is_graph_snapshot_recovery = true }) in
+  check_eq recovered.app_navigation_path [Model.NodeRoute "project"];
+  check_eq recovered.app_navigation_previews [project];
+  check_eq recovered.search_navigation_path [Model.NodeRoute "pending"];
+  let backed = Model.update recovered (Model.BackAppNavigation 1) in
+  check_eq backed.app_navigation_path [];
+  check_eq backed.pending_effects [Model.CloseAppNodeEffect (1, "project")];
+  let reopened = Model.update backed (Model.RequestAppNode "project") in
+  check_eq reopened.app_navigation_path [Model.NodeRoute "project"];
+  check_eq reopened.pending_effects [Model.CloseAppNodeEffect (1, "project");
+    Model.OpenAppNodeEffect (2, "project")]
+
+let recovered_snapshot_keeps_a_zoomed_search_result () =
+  let page = { (node_projection "page" "page" "Page" [] []) with
+    Model.node_scroll_target = Some "block" } in
+  let block = node_projection "block" "page" "Block" [] [] in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph";
+    node_routes = [page; block];
+    search_navigation_path = [Model.NodeRoute "page"; Model.NodeRoute "block"] } in
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [page; block];
+    is_graph_snapshot_recovery = true }) in
+  check_eq recovered.search_navigation_path opened.search_navigation_path;
+  let breadcrumb = Model.update recovered (Model.RequestSearchNode "page") in
+  check_eq breadcrumb.search_navigation_path
+    [Model.NodeRoute "page"; Model.NodeRoute "block"; Model.NodeRoute "page"];
+  check_eq breadcrumb.pending_effects [Model.OpenSearchNodeEffect (1, "page")]
+
+let recovered_snapshot_prunes_search_beneath_an_app_link () =
+  let drafts = node_projection "drafts" "drafts" "Drafts" [] [] in
+  let link = node_projection "link" "link" "Linked page" [] [] in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph"; search_open = true;
+    node_routes = [drafts; link];
+    app_navigation_path = [Model.NodeRoute "link"];
+    search_navigation_path = [Model.NodeRoute "drafts"] } in
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [link];
+    is_graph_snapshot_recovery = true }) in
+  check_eq recovered.search_navigation_path [];
+  let closed = Model.update recovered Model.CloseSearch in
+  check_eq closed.app_navigation_path [Model.NodeRoute "link"];
+  check_eq closed.pending_effects []
+
 let native_header_title_follows_the_optimistic_navigation_path () =
   let initial = Model.initial () in
   let route_a = node_projection "node-a" "page-a" "Project" [] [] in
@@ -8207,7 +8319,7 @@ let native_page_title_waits_for_the_content_heading_to_scroll () =
   check_eq (property_string renderer heading Lui_protocol.StyleClass) "scroll-section-title"
 
 let search_uses_a_regular_list_and_paginates_on_scroll () =
-  List.iter (fun backend ->
+  List.iter (fun (backend, android) ->
     let application = App.create (backend ()) in
     start application;
     send application (Model.SelectGraph "Work");
@@ -8221,11 +8333,17 @@ let search_uses_a_regular_list_and_paginates_on_scroll () =
     let root () = main_root renderer application in
     let results () = descendant_with_identifier renderer (root ()) "screen.search.results" in
     let list_id = results () in
-    check_eq ~msg:"search uses the regular native list surface"
-      (node renderer list_id) (Some Lui_protocol.ListContainer);
-    check_eq ~msg:"search has no custom virtual data window"
-      (descendant_with_identifier renderer (root ()) "search.window") (-1);
-    check ~msg:"all fetched results retain ordinary keyed rows"
+    check_eq ~msg:"search uses a native scrolling surface"
+      (node renderer list_id)
+      (Some (if android then Lui_protocol.VirtualList else Lui_protocol.ListContainer));
+    let viewport () = if android then
+        descendant_with_identifier renderer (root ()) "search.results.window"
+      else results () in
+    if android then begin
+      dispatch application (Lui_protocol.VisibleRange (viewport (), 395, 410));
+      flush application
+    end;
+    check ~msg:"scrolled fetched results are addressable"
       (descendant_with_identifier renderer (root ()) "search.result.hit-400" <> -1);
     let patch offset has_more rows =
       match Response_snapshot.decode_response (Yojson.Basic.to_string (`Assoc ["ok", `Bool true;
@@ -8238,22 +8356,35 @@ let search_uses_a_regular_list_and_paginates_on_scroll () =
     flush application;
     check_eq ~msg:"paging updates keep the same native scroll surface" (results ()) list_id;
     let before = List.length (App.model application).pending_effects in
-    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
-    dispatch application (Lui_protocol.VisibleRange (results (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 14, 19));
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 14, 19));
     flush application;
     check_eq ~msg:"repeated visible-range events enqueue only one next page"
       (List.length (App.model application).pending_effects) (before + 1);
-    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
-    send application (patch 20 false (List.init 5 (fun i -> i + 20)));
+    send application (patch 20 true (List.init 20 (fun i -> i + 20)));
+    send application (patch 20 true (List.init 20 (fun i -> i + 20)));
     flush application;
     check_eq ~msg:"duplicate pages cannot duplicate results"
-      (App.model application).search_result_count 25;
+      (App.model application).search_result_count 40;
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 34, 39));
+    flush application;
+    check ~msg:"scrolling the second page requests offset 40"
+      (List.exists (function Model.LoadSearchPageEffect (_, "needle", 40) -> true | _ -> false)
+        (App.model application).pending_effects);
+    send application (patch 40 false (List.init 9 (fun i -> i + 40)));
+    flush application;
+    check_eq ~msg:"all 49 matches are loaded" (App.model application).search_result_count 49;
+    let before = List.length (App.model application).pending_effects in
+    dispatch application (Lui_protocol.VisibleRange (viewport (), 44, 48));
+    flush application;
+    check_eq ~msg:"the final page stops paging"
+      (List.length (App.model application).pending_effects) before;
     send application (Model.ChangeSearchQuery "new query");
     send application (patch 25 false [25]);
     flush application;
     check_eq ~msg:"late pages cannot leak old hits into a new query"
       (App.model application).search_result_pages []
-  ) [ios_backend; kotlin_backend]
+  ) [ios_backend, false; kotlin_backend, true]
 
 let search_navigation_preserves_the_result_list () =
   let application = App.create (ios_backend ()) in
@@ -9515,6 +9646,131 @@ let outliner_task_status_selection_uses_the_core_event_boundary () =
     chosen.pending_effects
     [ Model.SetOutlinerTaskStatusEffect (1, "block-a", done_status) ]
 
+let tweak_order_backend () =
+  let open Lui_protocol in
+  let descendants = Hashtbl.create 64 in
+  let tweaks = Hashtbl.create 16 in
+  let failures = ref [] in
+  let children id = Option.value ~default:[] (Hashtbl.find_opt descendants id) in
+  let unlink id =
+    Hashtbl.filter_map_inplace (fun _ values -> Some (List.filter ((<>) id) values)) descendants
+  in
+  let rec drop id =
+    List.iter drop (children id);
+    Hashtbl.remove descendants id;
+    Hashtbl.remove tweaks id
+  in
+  let rec validate id =
+    if Hashtbl.mem tweaks id then
+      match children id with
+      | [child] -> validate child
+      | values -> failures := (id, List.length values) :: !failures
+  in
+  let backend = { backend_profile = profile IOS SwiftUIHost;
+    apply_batch = (fun batch ->
+      List.iter (function
+        | CreateExtension (id, identifier, _) ->
+          if List.mem identifier ["liquid-glass"; "native-adaptive-insets";
+            "native-navigation-title"; "native-control-tint"] then
+            Hashtbl.replace tweaks id ()
+        | InsertChild (parent, child, index) ->
+          validate child;
+          let values = children parent in
+          Hashtbl.replace descendants parent
+            (List.filteri (fun i _ -> i < index) values @ [child]
+             @ List.filteri (fun i _ -> i >= index) values)
+        | RemoveChild (parent, child) ->
+          Hashtbl.replace descendants parent (List.filter ((<>) child) (children parent))
+        | DetachSubtree id -> unlink id; drop id
+        | DropNode id -> unlink id; Hashtbl.remove descendants id; Hashtbl.remove tweaks id
+        | _ -> ()) batch.ops;
+      true) } in
+  backend, failures
+
+let ios_tweak_mounts_keep_children_before_attachment () =
+  let backend, failures = tweak_order_backend () in
+  let application = App.create backend in
+  let assert_order stage =
+    flush application;
+    check_eq ~msg:(stage ^ " attaches only complete platform tweaks") !failures []
+  in
+  start application;
+  assert_order "signed out";
+  let row = outline_row "editing" "Draft" in
+  let todo = Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo" in
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = Some "test-graph"; outliner_rows = [row]; task_statuses = [todo] } in
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "journals";
+  let editing = { Model.editing_uuid = "editing"; editing_title = "Draft"; caret_utf16_offset = 5 } in
+  let editing_projection = { projection with projection_outliner_editing = Some editing } in
+  send application (Model.ApplyCoreSnapshot editing_projection);
+  assert_order "editor";
+  let find_toolbar_control identifier =
+    descendant_with_identifier (Lui_app.runtime application)
+      (extension_node application "native-search-presentation") identifier
+  in
+  check ~msg:"editing mounts the toolbar"
+    (find_toolbar_control "button.outliner.editor.hideKeyboard" <> -1);
+  send application (Model.ChangeOutlinerText ("editing", "Draft text", 10));
+  assert_order "typing";
+  send application (Model.SetOutlinerTaskStatus ("editing", "todo"));
+  send application (Model.ApplyCoreSnapshot { editing_projection with
+    task_statuses = [todo]; outliner_rows = [{ row with row_status = Some todo }];
+    projection_outliner_editing = Some { editing with editing_title = "Draft text"; caret_utf16_offset = 10 } });
+  assert_order "Todo";
+  check_eq ~msg:"the toolbar reflects the changed task status"
+    (property_string (Lui_app.runtime application)
+       (find_toolbar_control "button.outliner.editor.task") Lui_protocol.AccessibilityLabel)
+    "Task: Todo";
+  send application (Model.PerformOutlinerToolbarAction "hideKeyboard");
+  let resolve_effects () =
+    List.iter (fun eff ->
+      let id = Model.effect_id eff in
+      send application (Model.DequeueEffect id);
+      send application (Model.ResolveEffect (id, true, "")))
+      (App.model application).pending_effects
+  in
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "hide keyboard";
+  check ~msg:"hide keyboard restores capture and search"
+    (descendant_with_identifier (Lui_app.runtime application)
+       (native_bottom_chrome (Lui_app.runtime application) application) "button.search" <> -1);
+  send application (Model.ApplyCoreSnapshot { projection with
+    projection_outliner_selected_block_ids = ["editing"] });
+  assert_order "selection toolbar";
+  send application (Model.PerformOutlinerToolbarAction "delete");
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot projection);
+  assert_order "selection delete returns to capture";
+  send application Model.OpenSettings;
+  assert_order "settings";
+  send application (Model.ChooseSettingsLanguage "zh-CN");
+  assert_order "language change";
+  send application Model.DismissSettings;
+  assert_order "dismiss settings";
+  send application Model.OpenSearch;
+  send application (Model.RequestSearchNode "page");
+  resolve_effects ();
+  let route = { (node_projection "page" "page" "Page" [] []) with
+    node_outliner_rows = [row]; node_outliner_editing = Some editing } in
+  send application (Model.ApplyCoreSnapshot { projection with node_routes = [route];
+    projection_outliner_editing = Some editing });
+  assert_order "search editor";
+  check ~msg:"the search destination mounts its editor toolbar"
+    (find_toolbar_control "button.outliner.editor.hideKeyboard" <> -1);
+  send application (Model.PerformOutlinerToolbarAction "hideKeyboard");
+  resolve_effects ();
+  send application (Model.ApplyCoreSnapshot { projection with
+    node_routes = [{ route with node_outliner_editing = None }] });
+  assert_order "hide search keyboard";
+  let invalid_backend, invalid = tweak_order_backend () in
+  ignore (invalid_backend.Lui_protocol.apply_batch { generation = 1; ops = [
+    Lui_protocol.CreateExtension (2, "liquid-glass", "");
+    Lui_protocol.InsertChild (1, 2, 0)] });
+  check_eq ~msg:"the ordering check rejects an incomplete tweak" !invalid [(2, 0)]
+
 let kotlin_outliner_markers_match_ios_visual_metrics () =
   let application = App.create (kotlin_backend ()) in
   let todo =
@@ -9781,15 +10037,16 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
          caption;
        check_eq ~msg:"selection actions retain main's fixed widths"
          (property_int renderer button Lui_protocol.WidthValue)
-         (if index = 6 then 52 else 50))
+         (if index = 7 then 52 else 50))
     [
       (0, "app:toolbar-copy", "Copy");
-      (1, "app:toolbar-outdent", "Outdent");
-      (2, "app:toolbar-indent", "Indent");
-      (3, "app:toolbar-delete", "Delete");
-      (4, "app:toolbar-copy-reference", "Copy reference");
-      (5, "app:toolbar-copy-url", "Copy URL");
-      (6, "app:toolbar-unselect", "Unselect");
+      (1, "app:toolbar-tag", "Tag");
+      (2, "app:toolbar-outdent", "Outdent");
+      (3, "app:toolbar-indent", "Indent");
+      (4, "app:toolbar-delete", "Delete");
+      (5, "app:toolbar-copy-reference", "Copy reference");
+      (6, "app:toolbar-copy-url", "Copy URL");
+      (7, "app:toolbar-unselect", "Unselect");
     ];
   check_eq ~msg:"selection replaces Capture"
     (descendant_with_identifier renderer chrome "surface.composer.root")
@@ -9802,6 +10059,38 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   check_eq ~msg:"selection toolbar actions cross the typed core boundary"
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
+
+let typed_toolbars_keep_reactive_width_and_labels () =
+  let application = App.create (ios_backend ()) in
+  Fun.protect ~finally:(fun () -> ignore (Lui_app.dispose application)) (fun () ->
+    start application;
+    let row = outline_row "block-a" "Block" in
+    let snapshot editing selected rows =
+      send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
+        editing None [] selected rows false []);
+      flush application in
+    let renderer = Lui_app.runtime application in
+    let find identifier =
+      descendant_with_identifier renderer (Lui_app.root_node application) identifier in
+    snapshot None [row.row_uuid] [row];
+    List.iter (fun (viewport, width) ->
+      send application (Model.ApplyViewportWidth viewport);
+      flush application;
+      Alcotest.(check int) "typed selection actions keep responsive widths" width
+        (property_int renderer (find "button.outliner.selection.copy") Lui_protocol.WidthValue))
+      [375, 46; 393, 50; 768, 58; 375, 46];
+    let editing = Some {Model.editing_uuid = row.row_uuid; editing_title = row.row_title; caret_utf16_offset = 0} in
+    let done_status = Some {Model.uuid = "done"; ident = None; title = "Done";
+      icon_type = None; icon_id = None; icon_color = None} in
+    List.iter (fun status ->
+      snapshot editing [] [{row with row_status = status}];
+      check_eq ~msg:"typed editor actions retain their live accessibility label"
+        (property_string renderer (find "button.outliner.editor.task") Lui_protocol.AccessibilityLabel)
+        (View_base.outliner_editor_task_label (App.model application)))
+      [None; done_status; None];
+    snapshot None [] [];
+    check_eq ~msg:"empty selection removes the toolbar" (find "toolbar.outliner.selection") (-1);
+    check_eq ~msg:"ending editing removes the editor toolbar" (find "toolbar.outliner.editor") (-1))
 
 let parent_selection_highlights_visible_descendants () =
   List.iter (fun (ios, backend) ->
@@ -9909,7 +10198,7 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
     (property_int renderer toolbar Lui_protocol.Gap)
     4;
   check_eq ~msg:"all selection actions remain directly reachable"
-    (List.length buttons) 7;
+    (List.length buttons) 8;
   List.iter
     (fun button ->
        check_eq ~msg:"Android selection actions use compact 48dp targets"
@@ -9961,7 +10250,7 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
       else List.concat_map actions (children renderer id) in
     actions toolbar in
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 11;
+    (List.length buttons) 12;
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -9974,14 +10263,18 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
     buttons;
-  let page_reference = List.nth buttons 9 in
+  let line_break = List.nth buttons 5 in
+  check_eq ~msg:"line break follows the structural editor actions"
+    (property_string renderer line_break Lui_protocol.AccessibilityIdentifier)
+    "button.outliner.editor.lineBreak";
+  let page_reference = List.nth buttons 10 in
   check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "app:toolbar-page-reference";
   check_eq ~msg:"page reference renders as an icon button"
     (property_string renderer page_reference Lui_protocol.TextValue)
     "<missing>";
-  dispatch application (Lui_protocol.Press (List.nth buttons 10));
+  dispatch application (Lui_protocol.Press (List.nth buttons 11));
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"
     (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true
@@ -10122,16 +10415,17 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       (2, "app:toolbar-indent");
       (3, "app:toolbar-move-up");
       (4, "app:toolbar-move-down");
-      (5, "app:toolbar-tag");
-      (6, "app:toolbar-camera");
-      (7, "app:toolbar-audio");
+      (5, "app:toolbar-line-break");
+      (6, "app:toolbar-tag");
+      (7, "app:toolbar-camera");
+      (8, "app:toolbar-audio");
     ];
   check_eq ~msg:"the iOS editor toolbar omits the file picker"
     (descendant_with_identifier renderer editor_toolbar
        "button.outliner.editor.attachment")
     (-1);
-  let page_reference_button = List.nth editor_buttons 8 in
-  let hide_keyboard_button = List.nth editor_buttons 9 in
+  let page_reference_button = List.nth editor_buttons 9 in
+  let hide_keyboard_button = List.nth editor_buttons 10 in
   check_eq ~msg:"page reference retains main's compact symbolic label"
     (property_string renderer page_reference_button Lui_protocol.TextValue)
     "[[]]";
@@ -11034,6 +11328,9 @@ let quick_actions_open_from_existing_navigation () =
     current
 let cases =
   [
+    case "recovered snapshot prunes deleted navigation routes" recovered_snapshot_prunes_deleted_navigation_routes;
+    case "recovered snapshot keeps a zoomed search result" recovered_snapshot_keeps_a_zoomed_search_result;
+    case "recovered snapshot prunes search beneath an app link" recovered_snapshot_prunes_search_beneath_an_app_link;
     case "native bridge preserves reentrant flush batches" native_bridge_preserves_reentrant_flush_batches;
     case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
@@ -11056,6 +11353,8 @@ let cases =
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
     case "settings-snapshots-preserve-dirty-connection-drafts" settings_snapshots_preserve_dirty_connection_drafts;
     case "native-settings-refresh-preserves-dirty-connection-draft" native_settings_refresh_preserves_dirty_connection_draft;
+    case "settings dark theme persists independently of appearance"
+      settings_dark_theme_persists_independently_of_appearance;
     case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;
     case "settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary" settings_snapshot_normalizes_sidebar_tabs_at_the_lg_boundary;
     case "runtime-log-filters-refresh-and-successful-results-enter-lg-state" runtime_log_filters_refresh_and_successful_results_enter_lg_state;
@@ -11253,12 +11552,14 @@ let cases =
     case "native-toolbar-navigation-replay" native_toolbar_navigation_replay;
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
+    case "ios-tweak-mounts-keep-children-before-attachment" ios_tweak_mounts_keep_children_before_attachment;
     case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;
     case "ios rows use one native layout and keep typed actions" ios_rows_use_one_native_layout_and_keep_typed_actions;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "existing-outliner-tags-remove-from-the-owning-node" existing_outliner_tag_menus_remove_from_the_owning_node;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
     case "parent selection highlights visible descendants" parent_selection_highlights_visible_descendants;
+    case "typed toolbars keep reactive width and labels" typed_toolbars_keep_reactive_width_and_labels;
     case "pushed-node-selection-has-a-destination-toolbar" pushed_node_selection_has_a_destination_toolbar;
     case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
     case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;

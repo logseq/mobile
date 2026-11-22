@@ -15,6 +15,7 @@ val outliner_rich_block_view :
   string Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_collapse_button :
   Lui_ui.ui_context ->
+  Model.logseq_model Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_indent_view : int Signal.signal -> Lui_elements.t
@@ -39,7 +40,7 @@ val outliner_zoom_control :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   Model.outline_row Signal.signal ->
-  (Model.logseq_action -> 'a) -> bool -> Lui_elements.t
+  (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_status_icon :
   string ->
   (Model.outline_row -> bool) -> Lui_elements.icon -> Model.outline_row Signal.signal -> Lui_elements.t
@@ -59,7 +60,7 @@ val outliner_row_content :
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->
   Model.outline_row Signal.signal ->
-  (Model.logseq_action -> bool) -> bool -> Lui_elements.t
+  (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_row :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

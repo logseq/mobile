@@ -11,7 +11,7 @@ val composer_asset_view : Model.logseq_model Signal.signal -> Lui_ui.ui_context 
 val task_status_row :
   Model.logseq_model Signal.signal ->
   Model.task_status Signal.signal ->
-  (Model.logseq_action -> 'a) -> Lui_elements.t
+  (Model.logseq_action -> 'a) -> Lui_elements.dropdown_menu_item_el
 val composer_view :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
@@ -19,4 +19,8 @@ val composer_view :
 val outliner_task_status_row :
   Model.outline_row Signal.signal ->
   Model.task_status Signal.signal ->
-  (Model.logseq_action -> 'a) -> Lui_elements.t
+  (Model.logseq_action -> 'a) -> Lui_elements.dropdown_menu_item_el
+val outliner_task_status_context_row :
+  Model.outline_row Signal.signal ->
+  Model.task_status Signal.signal ->
+  (Model.logseq_action -> 'a) -> Lui_elements.context_menu_item_el

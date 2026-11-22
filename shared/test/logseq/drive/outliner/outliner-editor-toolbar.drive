@@ -1,0 +1,32 @@
+# The editor toolbar exposes the shared formatting and insert actions.
+# Page reference opens suggestions; choosing one inserts the page.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+ext ext:outliner-block-row outliner-block-row edit '{"uuid":"journal-block-1"}'
+wait prop:accessibility-identifier=toolbar.outliner.editor
+expect prop:accessibility-identifier=button.outliner.editor.task
+expect prop:accessibility-identifier=button.outliner.editor.outdent
+expect prop:accessibility-identifier=button.outliner.editor.indent
+expect prop:accessibility-identifier=button.outliner.editor.moveUp
+expect prop:accessibility-identifier=button.outliner.editor.moveDown
+expect prop:accessibility-identifier=button.outliner.editor.lineBreak
+expect prop:accessibility-identifier=button.outliner.editor.tag
+expect prop:accessibility-identifier=button.outliner.editor.camera
+expect prop:accessibility-identifier=button.outliner.editor.audio
+expect prop:accessibility-identifier=button.outliner.editor.pageReference
+expect prop:accessibility-identifier=button.outliner.editor.hideKeyboard
+press prop:accessibility-identifier=button.outliner.editor.indent
+expect prop:accessibility-identifier=toolbar.outliner.editor
+press prop:accessibility-identifier=button.outliner.editor.pageReference
+wait prop:accessibility-identifier=toolbar.outliner.autocomplete
+expect prop:accessibility-identifier=button.outliner.autocomplete.0
+press prop:accessibility-identifier=button.outliner.autocomplete.0
+expect-absent prop:accessibility-identifier=toolbar.outliner.autocomplete
+expect-prop ext:outliner-editor title "[[Alpha Doc]]"
+press prop:accessibility-identifier=button.outliner.editor.hideKeyboard
+expect-absent prop:accessibility-identifier=toolbar.outliner.editor
+expect prop:accessibility-identifier=outliner.block.journal-block-1

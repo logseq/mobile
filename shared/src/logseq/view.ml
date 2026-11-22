@@ -4,30 +4,27 @@ type retained_outline_row = View_rows.retained_row
    colors ride the wire as adaptive {light,dark} pairs picked by each
    backend's effective color scheme, and `theme-mode` follows the
    appearance setting so every platform hot-switches with one patch. *)
-let logseq_theme_tokens ui_context : (string * Lui_ui.theme_token_value) list =
+let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_value) list =
   let open Lui_ui in
   let surfaces =
     match Lui_ui.platform ui_context, Lui_ui.host ui_context with
     | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost -> []
     | _ ->
       [
-        ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
-        ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
-        ("code-container", Adaptive { light = "#EFEFF0"; dark = "#19394D" });
-        ("card", Adaptive { light = "#FFFFFF"; dark = "#1C4556" });
+        ("background", View_base.main_background dark_theme);
+        ("surface", View_base.grouped_row_background);
+        ("code-container", Adaptive { light = "#EFEFF0";
+          dark = if dark_theme = "black" then "#242424" else "#19394D" });
+        ("card", View_base.grouped_row_background);
       ]
   in
-  surfaces @ [
-    ("link", Adaptive { light = "#1B6898"; dark = "#9BD3D4" });
+  let task_colors = Task_status_style.palette |> List.map (fun (name, (light, dark)) ->
+    let color = if light = dark then Fixed light else Adaptive { light; dark } in
+    "task-" ^ name, color) in
+  surfaces @ task_colors @ [
+    ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
-    (* Retain the status hues while lifting dark-mode icons off the background. *)
-    ("task-backlog", Adaptive { light = "#E8E8E8"; dark = "#92979E" });
-    ("task-todo", Adaptive { light = "#858585"; dark = "#7E7E7E" });
-    ("task-doing", Adaptive { light = "#EBBC00"; dark = "#D9B94C" });
-    ("task-in-review", Fixed "#0090FF");
-    ("task-done", Adaptive { light = "#5BB98C"; dark = "#6BC394" });
-    ("task-canceled", Adaptive { light = "#EB9091"; dark = "#EF9298" });
     ("flashcard-again-background", Fixed "#FF3B301F");
     ("flashcard-again-foreground", Adaptive { light = "#B42318"; dark = "#FFB4AB" });
     ("flashcard-hard-background", Fixed "#FF95001F");
@@ -44,14 +41,52 @@ let logseq_theme_mode (model : Model.logseq_model) : Lui_ui.theme_mode =
   | "dark" -> `dark
   | _ -> `system
 
+let with_ui_state model_source elem =
+  Lui_elements.custom (fun context parent ->
+    match Lui_ui.profile context with
+    | { Lui_protocol.profile_os = IOS; profile_host = SwiftUIHost } ->
+      let node = Lui_ui.platform_tweak context "ui-state" in
+      let previous = ref None in
+      ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (model : Model.logseq_model) ->
+        let screen =
+          if model.authentication_form.opened || View_base.authentication_screen_visible_ model then "authentication"
+          else if model.settings_open || model.settings_tabs_open || model.runtime_log_open then "settings"
+          else if View_base.graph_picker_screen_visible_ model then "graphs"
+          else if model.pdf_workspace <> None then "pdf"
+          else if model.search_open then
+            (if model.search_navigation_path = [] then "search" else "page")
+          else match model.destination with
+            | GraphsDestination -> "graphs"
+            | FlashcardsDestination -> "flashcards"
+            | JournalsDestination ->
+              if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
+        in
+        let editor = model.outliner_editing <> None in
+        let presentation = model.authentication_form.opened || model.settings_open || model.settings_tabs_open || model.runtime_log_open
+          || model.sync_details_open || model.create_graph_open || model.graph_password_open
+          || model.pending_sign_out || model.pending_node_deletion <> None || model.pending_graph_deletion <> None in
+        let state = screen, editor, presentation in
+        if !previous <> Some state then (
+          previous := Some state;
+          Lui_ui.extension_property context node "screen" (StringValue screen);
+          Lui_ui.extension_property context node "editor-active" (BoolValue editor);
+          Lui_ui.extension_property context node "presentation-open" (BoolValue presentation)))));
+      let child = Lui_elements.mount context elem in
+      Lui_ui.append context node child;
+      Lui_elements.attach context parent node;
+      node
+    | _ -> Lui_elements.mount context ?parent elem)
+
 let logseq_view (context : Lui_ui.ui_context) model_source send =
   let language (model : Model.logseq_model) =
     Localization.resolve model.language model.system_language
   in
-  Lui_elements.themed ~tokens:(logseq_theme_tokens context)
+  let dark_theme (model : Model.logseq_model) = model.dark_theme in
+  with_ui_state model_source (Lui_elements.themed
+    ~tokens_signal:(Signal.map (logseq_theme_tokens context) (Signal.map dark_theme model_source))
     ~mode:(reactive logseq_theme_mode model_source)
     (reactive ~equal:(fun left right -> language left = language right)
-      (fun _ -> View_screens.logseq_view context model_source send) model_source)
+      (fun _ -> View_screens.logseq_view context model_source send) model_source))
 
 let outliner_editor_schema () =
   let open Lui_protocol in
@@ -266,6 +301,11 @@ let pdf_workspace_schema () =
 
 let extension_registry () =
   let registry = Lui_extension.registry () in
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "ui-state" [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+       [Lui_extension.property "screen" StringScalar true None;
+        Lui_extension.property "editor-active" BoolScalar true None;
+        Lui_extension.property "presentation-open" BoolScalar true None]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-auth-input"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;

@@ -10,6 +10,47 @@ let property_title current ~attr ~title =
 
 open Lui_protocol
 
+let dark_background = function "black" -> "#000000" | _ -> "#002D38"
+let main_background theme = Lui_ui.Adaptive { light = "#FCFCFC"; dark = dark_background theme }
+let grouped_row_background = Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#FFFFFF14" }
+let dark_accent = "#9BD3D4"
+
+let sheet ~model_source ?height ?style_class ?detents ?detents_signal ?accessibility_identifier
+    ?on_dismiss ~title ?title_signal children : Lui_elements.t =
+  let content = Lui_elements.sheet ?height ?style_class ?detents ?detents_signal
+    ?accessibility_identifier ?on_dismiss ~title ?title_signal children in
+  Lui_elements.custom (fun context parent ->
+    match Lui_ui.profile context with
+    | { profile_os = IOS; profile_host = SwiftUIHost } ->
+      (* The Apple modal host reads theme tokens from the sheet's ancestors. *)
+      let accent = Lui_ui.Fixed "#037DBA" in
+      let list_sheet = Option.fold ~none:false
+        ~some:(fun style -> List.mem "navigation-list" (String.split_on_char ' ' style)) style_class in
+      let theme = Signal.map (fun (model : Model.logseq_model) -> model.dark_theme) model_source in
+      let tokens = Signal.map (fun theme ->
+        let background = Lui_ui.Adaptive
+          { light = "#F2F2F7"; dark = if theme = "black" then "#1C1C1E" else dark_background theme } in
+        [
+          "background", background;
+          "surface", (if list_sheet then grouped_row_background else background);
+          "card", grouped_row_background;
+          "input", grouped_row_background;
+          "primary", accent;
+          "input-focus", accent;
+        ]) theme in
+      Lui_elements.mount context ?parent
+        (Lui_elements.themed ~tokens_signal:tokens (Lui_elements.stack [content]))
+    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
+      let tokens = Signal.map (fun (model : Model.logseq_model) ->
+        if model.dark_theme = "black" then [
+          "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#1C1C1E" };
+          "surface", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#2E2E30" };
+          "card", Lui_ui.Adaptive { light = "#FFFFFF"; dark = "#2E2E30" };
+        ] else []) model_source in
+      Lui_elements.mount context ?parent
+        (Lui_elements.themed ~tokens_signal:tokens (Lui_elements.stack [content]))
+    | _ -> Lui_elements.mount context ?parent content)
+
 let node_icon (current : Model.logseq_model) uuid =
   Option.value ~default:"" (String_map.find_opt uuid current.node_icons)
 
@@ -19,13 +60,13 @@ let outliner_node_icon current (row : Model.outline_row) =
 
 let node_icon_view ?(muted = false) ~size source : Lui_elements.t =
   Lui_elements.if_ ~test:(Signal.map (fun value -> value <> "") source)
-    (fun context parent ->
+    (Lui_elements.custom (fun context parent ->
       let node = Lui_ui.extension context "node-icon" in
       Lui_elements.attach context parent node;
       Lui_ui.extension_property_signal context node "payload" (Signal.map (fun value -> StringValue value) source);
       Lui_ui.extension_property context node "size" (IntValue size);
       Lui_ui.extension_property context node "muted" (BoolValue muted);
-      node)
+      node))
 
 let string_wire_value value = StringValue value
 let int_wire_value value = IntValue value
@@ -161,38 +202,44 @@ let handle_outliner_block_content_event input_event model_source send =
 let graph_label (current : Model.logseq_model) =
   match current.selected_graph with
   | Some graph_name -> graph_name
-  | None -> "No graph selected"
+  | None -> tr current "No graph selected"
 
 let sync_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Sync failed" else
-  match current.sync_state with
-  | OfflineState -> "Offline"
-  | FailedState _ -> "Sync failed"
-  | _ ->
-    if
-      current.has_pending_semantic_operations
-      || current.has_pending_sync_request
-    then "Syncing"
-    else
-      (match current.sync_state with
-       | SyncedState -> "Up to date"
-       | _ -> "Syncing")
+  let source =
+    if current.pending_sync_error <> None then "Sync failed" else
+    match current.sync_state with
+    | OfflineState -> "Offline"
+    | FailedState _ -> "Sync failed"
+    | _ ->
+      if
+        current.has_pending_semantic_operations
+        || current.has_pending_sync_request
+      then "Syncing"
+      else
+        (match current.sync_state with
+         | SyncedState -> "Up to date"
+         | _ -> "Syncing")
+  in
+  tr current source
 
 let sync_indicator_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Sync failed" else
-  match current.sync_state with
-  | OfflineState -> "Not connected"
-  | FailedState _ -> "Sync failed"
-  | _ ->
-    if
-      current.has_pending_semantic_operations
-      || current.has_pending_sync_request
-    then "Syncing"
-    else
-      (match current.sync_state with
-       | SyncedState -> "Synced"
-       | SyncingState -> "Syncing"
-       | _ -> "Not connected")
+  let source =
+    if current.pending_sync_error <> None then "Sync failed" else
+    match current.sync_state with
+    | OfflineState -> "Not connected"
+    | FailedState _ -> "Sync failed"
+    | _ ->
+      if
+        current.has_pending_semantic_operations
+        || current.has_pending_sync_request
+      then "Syncing"
+      else
+        (match current.sync_state with
+         | SyncedState -> "Synced"
+         | SyncingState -> "Syncing"
+         | _ -> "Not connected")
+  in
+  tr current source
 
 let sync_accessibility_identifier (current : Model.logseq_model) =
   if current.pending_sync_error <> None then "sync.failed" else
@@ -211,22 +258,24 @@ let sync_indicator_foreground (current : Model.logseq_model) =
   | _ -> "warning-foreground"
 
 let sync_connection_label (current : Model.logseq_model) =
-  match current.sync_state with
-  | OfflineState | FailedState _ -> "Disconnected"
-  | _ -> "Connected"
+  tr current
+    (match current.sync_state with
+     | OfflineState | FailedState _ -> "Disconnected"
+     | _ -> "Connected")
 
 let sync_pending_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Not saved" else
-  if
-    current.has_pending_semantic_operations
-    || current.has_pending_sync_request
-  then "Waiting to save"
-  else "Saved"
+  tr current
+    (if current.pending_sync_error <> None then "Not saved" else
+     if
+       current.has_pending_semantic_operations
+       || current.has_pending_sync_request
+     then "Waiting to save"
+     else "Saved")
 
 let sync_cursor_label (current : Model.logseq_model) =
   match current.applied_server_t with
   | Some cursor -> string_of_int cursor
-  | None -> "Unavailable"
+  | None -> tr current "Unavailable"
 
 let active_page_actions_visible_ (current : Model.logseq_model) =
   match Model.active_page current with
@@ -372,43 +421,9 @@ let task_status_identifier (status : Model.task_status) =
 let task_status_title (status : Model.task_status) = status.title
 
 let task_status_style (status : Model.task_status) =
-  let value =
-    String.lowercase_ascii
-      (match status.ident with
-       | Some ident -> ident
-       | None ->
-         (match status.icon_id with
-          | Some icon_id -> icon_id
-          | None -> status.title))
-  in
-  if String_kit.includes value ~sub:"backlog" then "backlog"
-  else if
-    String_kit.includes value ~sub:"in-review"
-    || String_kit.includes value ~sub:"inreview"
-  then "in-review"
-  else if
-    String_kit.includes value ~sub:"doing"
-    || String_kit.includes value ~sub:"inprogress"
-    || String_kit.includes value ~sub:"progress"
-  then "doing"
-  else if
-    String_kit.includes value ~sub:"done"
-    || String_kit.includes value ~sub:"circle-check"
-  then "done"
-  else if
-    String_kit.includes value ~sub:"cancel"
-    || String_kit.includes value ~sub:"circle-x"
-  then "canceled"
-  else "todo"
+  Task_status_style.style ~ident:status.ident ~icon_id:status.icon_id ~title:status.title
 
-let task_status_icon_name status =
-  match task_status_style status with
-  | "backlog" -> "app:task-backlog"
-  | "doing" -> "app:task-doing"
-  | "in-review" -> "app:task-review"
-  | "done" -> "app:task-done"
-  | "canceled" -> "app:task-canceled"
-  | _ -> "app:task-todo"
+let task_status_icon_name status = Task_status_style.icon (task_status_style status)
 
 let task_priority_icon_name (priority : Model.task_status) =
   let level = match priority.ident, priority.icon_id with
@@ -489,9 +504,11 @@ let outliner_row_title (row : Model.outline_row) = row.row_title
 let outliner_row_indent (row : Model.outline_row) = row.depth * 22
 let outliner_row_has_children (row : Model.outline_row) = row.has_children
 
-let outliner_row_zoom_label (row : Model.outline_row) =
-  "Zoom into "
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+let outliner_row_label_title (current : Model.logseq_model) (row : Model.outline_row) =
+  if row.row_title = "" then tr current "Untitled block" else row.row_title
+
+let outliner_row_zoom_label (current : Model.logseq_model) (row : Model.outline_row) =
+  tr_named current "Zoom into {1}" (outliner_row_label_title current row)
 
 let outliner_row_zoom_identifier (row : Model.outline_row) =
   "button.outliner.zoom." ^ row.row_uuid ^ "."
@@ -499,13 +516,16 @@ let outliner_row_zoom_identifier (row : Model.outline_row) =
 
 let outliner_row_action_label (current : Model.logseq_model)
     (row : Model.outline_row) =
-  (if current.outliner_selected_block_ids = [] then "Edit block "
-   else "Select block ")
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+  let template =
+    if current.outliner_selected_block_ids = [] then "Edit block {1}"
+    else "Select block {1}"
+  in
+  tr_named current template (outliner_row_label_title current row)
 
-let outliner_row_collapse_label (row : Model.outline_row) =
-  (if row.is_collapsed then "Expand " else "Collapse ")
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+let outliner_row_collapse_label (current : Model.logseq_model)
+    (row : Model.outline_row) =
+  let template = if row.is_collapsed then "Expand {1}" else "Collapse {1}" in
+  tr_named current template (outliner_row_label_title current row)
 
 let outliner_row_collapse_glyph (row : Model.outline_row) =
   if row.is_collapsed then "›" else "⌄"
@@ -755,7 +775,7 @@ let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
 let active_node_title (current : Model.logseq_model) =
   match active_node_projection current with
   | Some route -> route.node_title
-  | None -> "Untitled"
+  | None -> tr current "Untitled"
 
 let outliner_scroll_identity (current : Model.logseq_model) =
   let graph = Option.value ~default:"local" current.selected_graph_id in
@@ -926,19 +946,17 @@ let outliner_task_status_canceled_ row =
   outliner_task_status_style_is_ row "canceled"
 
 let outliner_editor_task_label (current : Model.logseq_model) =
-  match current.outliner_editing with
-  | Some editing ->
-    (match
-       Model.row_index current.outliner_rows editing.editing_uuid
-     with
-     | Some index ->
-       "Task: "
-       ^
-       (match (List.nth current.outliner_rows index).row_status with
-        | Some status -> status.title
-        | None -> "None")
-     | None -> "Task: None")
-  | None -> "Task: None"
+  let status =
+    match current.outliner_editing with
+    | Some editing ->
+      (match Model.row_index current.outliner_rows editing.editing_uuid with
+       | Some index -> (List.nth current.outliner_rows index).row_status
+       | None -> None)
+    | None -> None
+  in
+  match status with
+  | Some status -> tr_named current "Task: {1}" status.title
+  | None -> tr current "Task: None"
 
 let outliner_row_has_tags_ (row : Model.outline_row) = row.tags <> []
 
@@ -1248,21 +1266,17 @@ let settings_language_title (current : Model.logseq_model) =
   | Some choice -> tr current choice.title
   | None -> tr current "System"
 
-let settings_appearance_title (current : Model.logseq_model) =
-  match current.appearance with
-  | "light" -> tr current "Light"
-  | "dark" -> tr current "Dark"
-  | _ -> tr current "System"
-
-let settings_language_choice_title (choice : Model.settings_language_choice) =
-  choice.title
+let settings_language_choice_title (current : Model.logseq_model)
+    (choice : Model.settings_language_choice) =
+  tr current choice.title
 
 let settings_language_choice_identifier
     (choice : Model.settings_language_choice) =
   "button.settings.language." ^ choice.id
 
-let settings_community_link_title (link : Model.settings_community_link) =
-  link.title
+let settings_community_link_title (current : Model.logseq_model)
+    (link : Model.settings_community_link) =
+  tr current link.title
 
 let settings_community_link_identifier
     (link : Model.settings_community_link) =
@@ -1284,7 +1298,8 @@ let settings_tab_title tab =
   | _ -> "Graphs"
 
 let settings_tabs_summary (current : Model.logseq_model) =
-  String.concat " · " (List.map settings_tab_title current.sidebar_tabs)
+  String.concat " · "
+    (List.map (fun tab -> tr current (settings_tab_title tab)) current.sidebar_tabs)
 
 let runtime_log_visible_ (current : Model.logseq_model) =
   current.runtime_log_open
@@ -1293,8 +1308,9 @@ let tab_enabled_ (current : Model.logseq_model) tab =
   Model.string_vector_contains_ current.sidebar_tabs tab
 
 let tab_toggle_label (current : Model.logseq_model) tab =
-  let title = settings_tab_title tab in
-  title ^ (if tab_enabled_ current tab then ", on" else ", off")
+  let title = tr current (settings_tab_title tab) in
+  let template = if tab_enabled_ current tab then "{1}, on" else "{1}, off" in
+  tr_named current template title
 
 let tab_selection_glyph (current : Model.logseq_model) tab =
   if tab_enabled_ current tab then "✓" else "○"
@@ -1363,10 +1379,11 @@ let runtime_log_errors_label (current : Model.logseq_model) =
   if current.runtime_log_errors_only then "All" else "Errors only"
 
 let runtime_log_order_label (current : Model.logseq_model) =
-  if current.runtime_log_newest_first then "Oldest first" else "Newest first"
+  tr current
+    (if current.runtime_log_newest_first then "Oldest first" else "Newest first")
 
 let runtime_log_source_label (current : Model.logseq_model) =
-  if current.runtime_log_source = "ui" then "Core log" else "UI log"
+  tr current (if current.runtime_log_source = "ui" then "Core log" else "UI log")
 
 let sync_error_present_ (current : Model.logseq_model) =
   if current.pending_sync_error <> None then true else
@@ -1541,59 +1558,59 @@ let drawer_disabled_ (current : Model.logseq_model) =
   || sidebar_drag_disabled_ current
 
 let with_label label (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.string_property context node AccessibilityLabel label;
-   node
+   node)
 
 let with_label_signal label (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.string_property_signal context node AccessibilityLabel label;
-   node
+   node)
 
 let with_selected_signal selected (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.bool_property_signal context node Selected selected;
-   node
+   node)
 
 let with_string_prop prop value (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.string_property context node prop value;
-   node
+   node)
 
 let with_string_prop_signal prop signal_ (elem : Lui_elements.t)
     : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.string_property_signal context node prop signal_;
-   node
+   node)
 
 let with_bool_prop_signal prop signal_ (elem : Lui_elements.t)
     : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.bool_property_signal context node prop signal_;
-   node
+   node)
 
 let with_int_prop_signal prop signal_ (elem : Lui_elements.t)
     : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.int_property_signal context node prop signal_;
-   node
+   node)
 
 let with_float_prop_signal prop signal_ (elem : Lui_elements.t)
     : Lui_elements.t =
- fun context parent ->
-   let node = elem context parent in
+ Lui_elements.custom (fun context parent ->
+   let node = Lui_elements.mount context ?parent elem in
    Lui_ui.float_property_signal context node prop signal_;
-   node
+   node)
 
 let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
+ Lui_elements.custom (fun context parent ->
    match Lui_ui.profile context with
    | { Lui_protocol.profile_os = Lui_protocol.IOS;
        profile_host = Lui_protocol.SwiftUIHost;
@@ -1601,23 +1618,23 @@ let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
      let tweak = Lui_ui.platform_tweak context "liquid-glass" in
      Lui_ui.extension_property context tweak "shape"
        (StringValue shape);
-     ignore (elem context (Some tweak));
+     ignore (Lui_elements.mount context ~parent:tweak elem);
      Lui_elements.attach context parent tweak;
      tweak
-   | _ -> elem context parent
+   | _ -> Lui_elements.mount context ?parent elem)
 
 let with_reading_insets (elem : Lui_elements.t) : Lui_elements.t =
- fun context parent ->
+ Lui_elements.custom (fun context parent ->
    match Lui_ui.profile context with
    | { profile_os = IOS; profile_host = SwiftUIHost }
    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
      let tweak = Lui_ui.platform_tweak context "native-adaptive-insets" in
      Lui_ui.extension_property context tweak "breakpoint" (IntValue Model.wide_content_breakpoint);
      Lui_ui.extension_property context tweak "wide-inset" (IntValue 16);
-     ignore (elem context (Some tweak));
+     ignore (Lui_elements.mount context ~parent:tweak elem);
      Lui_elements.attach context parent tweak;
      tweak
-   | _ -> elem context parent
+   | _ -> Lui_elements.mount context ?parent elem)
 
 let icon_of_wire_name (name : string) : Lui_elements.icon =
   if String_kit.starts_with ~prefix:"app:" name then

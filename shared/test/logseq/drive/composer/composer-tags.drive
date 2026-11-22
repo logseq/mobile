@@ -1,0 +1,31 @@
+# The composer tag picker loads choices, keeps a selected tag as a chip,
+# and sends that tagged capture into the journal.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=surface.composer.root
+press prop:accessibility-identifier=button.composer.expand
+wait prop:accessibility-identifier=field.composer
+press prop:accessibility-identifier=button.composer.tags
+wait prop:accessibility-identifier=view.edit.sheet.composer.tags
+wait prop:accessibility-identifier=view.edit.option.composer.tags.tag-1
+poll
+press prop:accessibility-identifier=view.edit.option.composer.tags.tag-1
+press prop:accessibility-identifier=view.edit.save.composer.tags
+wait prop:accessibility-identifier=button.composer.tag.remove.tag-1
+press prop:accessibility-identifier=button.composer.tag.remove.tag-1
+expect-absent prop:accessibility-identifier=button.composer.tag.remove.tag-1
+press prop:accessibility-identifier=button.composer.tags
+wait prop:accessibility-identifier=view.edit.option.composer.tags.tag-1
+poll
+press prop:accessibility-identifier=view.edit.option.composer.tags.tag-1
+press prop:accessibility-identifier=view.edit.save.composer.tags
+wait prop:accessibility-identifier=button.composer.tag.remove.tag-1
+type prop:accessibility-identifier=field.composer "tagged note"
+press prop:accessibility-identifier=button.send
+expect-prop prop:accessibility-identifier=field.composer text ""
+wait text:"tagged note"
+expect text:'"title":"tagged note"'&text:'"uuid":"tag-1"'
+expect-absent prop:accessibility-identifier=button.composer.tag.remove.tag-1

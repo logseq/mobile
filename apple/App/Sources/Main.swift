@@ -52,6 +52,9 @@ typealias AppType = UIApplication
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        for context in options.urlContexts {
+            LogseqLogseqRuntime.shared.prepareInitialWidgetLink(context.url)
+        }
         let configuration = session.configuration
         configuration.delegateClass = QuickActionSceneDelegate.self
         return configuration
@@ -63,6 +66,10 @@ typealias AppType = UIApplication
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         AppDelegate.shared.onLowMemory()
+    }
+
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        LogseqLogseqRuntime.shared.resumePendingWidgetRefresh()
     }
 
     // Support notification token retrieval from the app runtime.

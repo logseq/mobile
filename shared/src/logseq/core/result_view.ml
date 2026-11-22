@@ -617,7 +617,7 @@ let edit_cell db ~now ~fresh_uuid owner feature _view json =
   then invalid_arg "This object is no longer in the view";
   edit_property db ~now ~fresh_uuid json
 
-let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
+let property_json ?(include_candidates = true) ?(defer_values = false) db ~owner ~attr ~encode_block =
   let id = eid db owner in
   let p = property ~owner:id db attr in
   let assigned = attr_values db id attr in
@@ -626,13 +626,18 @@ let property_json ?(include_candidates = true) db ~owner ~attr ~encode_block =
     Option.bind (ref_id db value) (fun id -> Option.map encode_block
       (G.block (fun value -> Ok value) db id))) assigned in
   let references = property_references db p assigned in
-  let metadata = match column_json ~include_candidates:false db [] p with `Assoc fields -> fields | _ -> [] in
+  let metadata = match column_json ~include_candidates:false ~include_values:(not defer_values) db [] p with
+    | `Assoc fields -> fields | _ -> [] in
   let text = String.concat ", " (List.map (property_display db p) assigned) in
-  let candidates = if text_layout || not include_candidates then [] else
+  let candidates = if text_layout || defer_values || not include_candidates then [] else
     if not p.closed && List.mem p.typ ["node"; "entity"; "page"; "class"; "property"] then reference_candidates db p
     else
     Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun (d : Ds.datom) -> d.v) |> List.of_seq in
   let candidates = scoped_reference_values db p (assigned @ candidates) |> List.sort_uniq compare in
+  let candidates = if attr <> "block/tags" then candidates else
+    List.filter (fun value ->
+      Option.fold ~none:false ~some:(G.tag_available_for_completion db) (ref_id db value))
+      candidates in
   let filter_values = List.map (fun value -> `Assoc [
     "title", `String (property_display db p value); "value", plain value;
     "match", (match ref_id db value with Some id -> `List [`String (uuid db id)] | None -> `List [plain value])]) candidates in

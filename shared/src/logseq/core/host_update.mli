@@ -24,6 +24,7 @@ type host_ui_session =
 
 type host_settings =
   { appearance : string
+  ; dark_theme : string
   ; language : string
   ; system_language : string option
   ; spell_check : bool

@@ -10,6 +10,7 @@ let properties response = items "properties" (member "nodeProperties" response)
 let property attr response = List.find (fun p -> member "attr" p = `String attr) (properties response)
 let read session uuid = Rpc_test.dispatch_json session "nodeProperties" uuid
 let result response = check_eq ~msg:(J.to_string response) (member "ok" response) (`Bool true); member "result" response
+
 let edit session uuid p value extra =
   Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc ([
     "blockUuid", `String uuid; "attr", member "attr" p; "expected", member "raw" p;
@@ -57,6 +58,18 @@ let projection_and_navigation () =
   let snapshot = Rpc_test.response_result (J.from_string (Rpc_session.snapshot_visible session)) in
   let route = List.hd (items "nodeRoutes" snapshot) in
   check_eq (member "text" (property R.summary route)) (`String "Writing");
+  let score = property R.score block in
+  ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+  let snapshot = Rpc_test.response_result (J.from_string (Rpc_session.snapshot_visible session)) in
+  let projected_score = property R.score (List.hd (List.rev (items "nodeRoutes" snapshot))) in
+  check_eq (member "valuesDeferred" projected_score) (`Bool true);
+  check_eq (member "raw" projected_score) (member "raw" score);
+  check (List.length (items "filterValues" projected_score) < List.length (items "filterValues" score));
+  let loaded = result (Rpc_test.dispatch_json session "propertyValues" (J.to_string (`Assoc [
+      "key", `String "score"; "ownerUuid", `String Q.alpha; "attr", `String R.score;
+      "mode", `String "property"]))) in
+  check_eq (items "filterValues" (member "column" (member "propertyValues" loaded)))
+    (items "filterValues" score);
   check ~msg:"ordinary rows do not carry full property panels" (List.for_all (fun row ->
     member "nodeProperties" (member "block" row) = `Null) (items "outlinerRows" route))
 
@@ -155,6 +168,7 @@ let native_labels_layout_and_editor () =
       click (id R.score);
       let editor = "property." ^ Q.alpha ^ "." ^ R.score in
       check (find ("view.edit.sheet." ^ editor) <> -1);
+      R.load_property_values session app;
       click ("view.edit.cancel." ^ editor);
       check_eq (App.model app).pending_effects [];
       let editor = "property." ^ Q.alpha ^ "." ^ R.ready in
@@ -640,7 +654,8 @@ let node_property_values_open_select_and_navigate () =
           check ~msg:"Node selection uses search, not a block editor"
             (find ("view.edit.value." ^ id) <> -1);
           check ~msg:"opening select never navigates" (not (List.exists (function
-            | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects)) in
+            | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects));
+          R.load_property_values session app in
         let initial = member "raw" (property R.summary (result (read session owner))) in
         open_select ();
         let search_project () =

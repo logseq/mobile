@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -82,13 +84,14 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         else -> systemDark
     }
     val window = LocalActivity.current?.window
+    val colorScheme = LogseqTheme.colorScheme(dark, runtime.effectiveDarkTheme)
     SideEffect {
         if (window != null) {
-            applyAndroidSystemBarAppearance(window, dark)
+            applyAndroidSystemBarAppearance(window, dark, colorScheme.background.toArgb())
         }
     }
     MaterialExpressiveTheme(
-        colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
+        colorScheme = colorScheme,
         typography = LogseqTheme.typography,
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
@@ -101,18 +104,17 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 }
             }
             Scaffold { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .consumeWindowInsets(padding)
-                        .logseqContentHostInsets()
-                        // Expose LUI accessibility-identifier testTags as
-                        // resource-ids so Maestro `id:` selectors resolve.
-                        .semantics { testTagsAsResourceId = true },
-                ) {
-                    val rootId = runtime.rootNodeId
-                    if (rootId != null) {
+                // Expose test tags as accessibility resource IDs for Maestro.
+                val host = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }
+                val rootId = runtime.rootNodeId
+                val loading = runtime.isOpeningInitialWidgetBlock || runtime.isRestoringInitialGraph ||
+                    (rootId == null && runtime.startupError == null)
+                if (loading) {
+                    Box(host, contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.testTag("spinner.graph-loading"))
+                    }
+                } else if (rootId != null) {
+                    Box(host.padding(padding).consumeWindowInsets(padding).logseqContentHostInsets()) {
                         runtime.backend.Content(rootId)
                     }
                 }

@@ -4,10 +4,10 @@ import Testing
 @Suite struct LogseqThemeSettingsTests {
     @Test func classicPaletteMatchesTheOfficialLogseqThemeTokens() {
         #expect(LogseqThemePolicy.light.backgroundHex == "#FCFCFC")
-        #expect(LogseqThemePolicy.light.surfaceHex == "#F8F8F8")
+        #expect(LogseqThemePolicy.light.surfaceHex == "#FFFFFF")
         #expect(LogseqThemePolicy.light.primaryTextHex == "#171717")
         #expect(LogseqThemePolicy.dark.backgroundHex == "#002D38")
-        #expect(LogseqThemePolicy.dark.surfaceHex == "#19394D")
+        #expect(LogseqThemePolicy.dark.surfaceHex == "#143D48")
         #expect(LogseqThemePolicy.dark.primaryTextHex == "#EDFDFD")
         #expect(LogseqThemePolicy.accentHex == "#037DBA")
     }
@@ -17,6 +17,16 @@ import Testing
         #expect(LogseqThemeMode(rawValue: "light") == .light)
         #expect(LogseqThemeMode(rawValue: "dark") == .dark)
         #expect(LogseqThemeMode(rawValue: "unknown") == nil)
+    }
+
+    @Test func darkPaletteFollowsAppearanceAndDefaultsToBlack() {
+        #expect(LogseqDarkTheme(storedValue: nil) == .black)
+        #expect(LogseqDarkTheme(storedValue: "unknown") == .black)
+        #expect(LogseqDarkTheme(storedValue: "solarized") == .solarized)
+        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true).backgroundHex == "#000000")
+        #expect(LogseqThemePolicy.palette(mode: .system, systemIsDark: true, darkTheme: .solarized).backgroundHex == "#002D38")
+        #expect(LogseqThemePolicy.palette(mode: .dark, systemIsDark: false, darkTheme: .black).backgroundHex == "#000000")
+        #expect(LogseqThemePolicy.palette(mode: .light, systemIsDark: true, darkTheme: .black).backgroundHex == "#FCFCFC")
     }
 
     @Test func languageChoicesCoverEveryShippedLocalization() {

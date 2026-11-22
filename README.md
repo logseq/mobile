@@ -98,7 +98,8 @@ profile APK used by `scripts/test-android-e2e.sh` is `:app:assembleProfile`
 `./gradlew test`.
 
 Run the **Build-Android** GitHub Actions workflow to build signed release APK
-and AAB artifacts and publish the AAB to Google Play **Internal testing**.
+and AAB artifacts and publish the AAB to Google Play **Closed testing (alpha)**
+by default. Select `play-track=internal` for **Internal testing**.
 `git-ref` selects the source branch or tag. CI assigns an increasing Android
 version code using the workflow run number and retry attempt; local builds
 default to `1` (override with `-PlogseqVersionCode=123`). Start a new workflow
@@ -108,8 +109,8 @@ alignment for Google Play and devices using 16 KB pages.
 
 Release notes live in `release-notes/<version>/ios.txt` and `android.txt`.
 The TestFlight lane uploads the iOS notes as What to Test. Android CI includes
-the Android notes in its artifacts and uploads them to Google Play internal
-testing; keep those notes within Google's 500-character limit.
+the Android notes in its artifacts and uploads them to the selected Google Play
+testing track. Keep those notes within Google's 500-character limit.
 
 Release builds report crashes to Sentry's `logseq-android` and `logseq-ios`
 projects. Both release workflows read the `SENTRY_AUTH_TOKEN` Actions secret

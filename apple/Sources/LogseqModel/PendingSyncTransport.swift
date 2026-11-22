@@ -116,7 +116,8 @@ public enum LogseqPendingSyncHTTPTransport {
                 let fileSize = attributes?[.size] as? NSNumber
                 print(
                     "LOGSEQ_ASSET_SYNC request id=\(pending.id) method=\(pending.method) "
-                        + "url=\(pending.url) file=\(uploadURL.path) size=\(fileSize?.intValue ?? -1) "
+                        + "host=\(url.host ?? "") path=\(url.path) file=\(uploadURL.path) "
+                        + "size=\(fileSize?.intValue ?? -1) "
                         + "content_type=\(pending.contentType)"
                 )
             } else {
@@ -131,7 +132,9 @@ public enum LogseqPendingSyncHTTPTransport {
             // budget than the small JSON requests used by the sync protocol.
             var request = URLRequest(url: url, timeoutInterval: uploadURL == nil ? 30 : 120)
             request.httpMethod = pending.method
-            request.setValue("Bearer \(pending.token)", forHTTPHeaderField: "Authorization")
+            if !pending.token.isEmpty {
+                request.setValue("Bearer \(pending.token)", forHTTPHeaderField: "Authorization")
+            }
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             request.setValue(pending.contentType, forHTTPHeaderField: "Content-Type")
             for (name, value) in pending.headers {
@@ -151,7 +154,7 @@ public enum LogseqPendingSyncHTTPTransport {
             guard let http = response as? HTTPURLResponse else {
                 return LogseqPendingSyncResult(status: nil, body: nil, error: "Pending sync response was not HTTP")
             }
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            let responseBody = pending.token.isEmpty ? "" : String(data: data, encoding: .utf8) ?? ""
             if !(200..<300).contains(http.statusCode) {
                 LogseqRuntimeLog.shared.append(
                     level: .info,
@@ -178,15 +181,18 @@ public enum LogseqPendingSyncHTTPTransport {
         } catch {
             // The shared pump owns retries and reports terminal failures. A
             // single interrupted attempt must not produce a failure toast.
+            let message = pending.token.isEmpty
+                ? "Asset upload failed (\((error as NSError).code))"
+                : String(describing: error)
             LogseqRuntimeLog.shared.append(
                 level: .info,
                 source: .core,
-                message: "Pending sync transport failed: \(error)"
+                message: "Pending sync transport failed: \(message)"
             )
             #if DEBUG
-            print("LOGSEQ_ASSET_SYNC transport_error id=\(pending.id) error=\(error)")
+            print("LOGSEQ_ASSET_SYNC transport_error id=\(pending.id) error=\(message)")
             #endif
-            return LogseqPendingSyncResult(status: nil, body: nil, error: "\(error)")
+            return LogseqPendingSyncResult(status: nil, body: nil, error: message)
         }
     }
 

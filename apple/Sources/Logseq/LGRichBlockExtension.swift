@@ -13,6 +13,7 @@ import QuickLook
 enum LGExtensionRegistry {
     static func makeRegistry() throws -> LUIAppleExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
+        try LGUIStateTweak.register(in: registry)
         try LGLiquidGlassTweak.register(in: registry)
         try LGNavigationExtension.register(in: registry)
         try LGPDFWorkspaceExtension.register(in: registry)

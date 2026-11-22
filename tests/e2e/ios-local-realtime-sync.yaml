@@ -1,7 +1,6 @@
 appId: com.logseq.logseq
 ---
-- launchApp:
-    clearState: true
+- launchApp
 - runFlow:
     when:
       visible:
@@ -19,16 +18,17 @@ appId: com.logseq.logseq
       - tapOn:
           id: "field.auth.password"
       - inputText: "__LOGSEQ_E2E_PASSWORD__"
-      - hideKeyboard
+      - pressKey: ENTER
       - tapOn:
-          id: "button.auth.submit"
+          text: "Not Now"
+          optional: true
       - extendedWaitUntil:
           visible:
-            id: "screen.graph-picker|button.composer.expand"
+            id: "button.graph-add|button.composer.expand"
           timeout: 60000
 - extendedWaitUntil:
     visible:
-      id: "screen.graph-picker"
+      id: "button.graph-add"
     timeout: 30000
 - tapOn: "__LOGSEQ_E2E_GRAPH_NAME__"
 - extendedWaitUntil:
@@ -37,9 +37,17 @@ appId: com.logseq.logseq
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: "__LOGSEQ_E2E_DESKTOP_BLOCK__"
+      id: "outliner.block-action.*"
+      text: "Edit block __LOGSEQ_E2E_DESKTOP_BLOCK__"
     direction: DOWN
     timeout: 30000
+- tapOn:
+    id: "sync.connected"
+- copyTextFrom:
+    id: "sync.cursor"
+- evalScript: ${output.cursorBefore = Number(maestro.copiedText)}
+- tapOn:
+    id: "button.sync.done"
 - tapOn:
     id: "button.composer.expand"
 - tapOn:
@@ -47,16 +55,32 @@ appId: com.logseq.logseq
 - inputText: "__LOGSEQ_E2E_MOBILE_BLOCK__"
 - tapOn:
     id: "button.send"
+- tapOn:
+    id: "surface.composer.dismiss"
+- tapOn:
+    id: "sync.connected"
 - extendedWaitUntil:
     visible:
-      id: "sync.cursor-advanced"
+      id: "sync.pending"
+      text: "Saved"
     timeout: 30000
-- assertVisible: "__LOGSEQ_E2E_MOBILE_BLOCK__"
+- copyTextFrom:
+    id: "sync.cursor"
+- assertTrue: ${Number(maestro.copiedText) > output.cursorBefore}
+- tapOn:
+    id: "button.sync.done"
+- assertVisible:
+    id: "outliner.block-action.*"
+    text: "Edit block __LOGSEQ_E2E_MOBILE_BLOCK__"
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: "__LOGSEQ_E2E_DESKTOP_BLOCK__"
+    visible:
+      id: "outliner.block-action.*"
+      text: "Edit block __LOGSEQ_E2E_DESKTOP_BLOCK__"
     timeout: 30000
-- assertVisible: "__LOGSEQ_E2E_MOBILE_BLOCK__"
+- assertVisible:
+    id: "outliner.block-action.*"
+    text: "Edit block __LOGSEQ_E2E_MOBILE_BLOCK__"
 - assertVisible:
     id: "sync.connected"

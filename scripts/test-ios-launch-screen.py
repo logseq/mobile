@@ -9,10 +9,9 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 source = ROOT / "apple/App/Info.plist"
-expected = {"UIColorName": "LaunchBackground", "UIImageName": "LaunchLogo",
-            "UIImageRespectsSafeAreaInsets": False}
+expected = {"UIColorName": "LaunchCanvas"}
 assert plistlib.loads(source.read_bytes()).get("UILaunchScreen") == expected, \
-    "The Xcode app must show the adaptive Logseq logo during system launch"
+    "The system launch screen must show only the adaptive canvas"
 with tempfile.TemporaryDirectory(prefix="logseq-launch-screen-") as directory:
     for platform in ("iPhoneOS", "iPhoneSimulator"):
         target = Path(directory) / (platform + ".plist")
@@ -34,4 +33,4 @@ with tempfile.TemporaryDirectory(prefix="logseq-launch-screen-") as directory:
                    check=True, capture_output=True, env=environment)
     version = plistlib.loads(target.read_bytes())["CFBundleVersion"]
     assert version.isdecimal() and int(version) > 1, "Default builds must not reuse the constant build number 1"
-print("PASS: Xcode and repeated device/simulator configuration share the adaptive launch logo")
+print("PASS: Xcode and repeated device/simulator configuration share the adaptive launch canvas")

@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,13 +58,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
-import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
@@ -167,13 +165,14 @@ internal fun OutlinerBlockContent(
     val completed = context.flag("is-completed")
     val isAsset = context.flag("is-asset")
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
+    val currentContext by rememberUpdatedState(context)
+    val selectBlock: () -> Unit = { currentContext.emit("drag-start", "uuid" to uuid) }
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current.density
     var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
-    var dragging by remember { mutableStateOf(false) }
     val hoverColor by animateColorAsState(
         if (dragHover) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         label = "dropHighlight",
@@ -232,26 +231,14 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .then(if (linkOnly) Modifier else Modifier.dragAndDropSource(
-                drawDragDecoration = {},
-                block = {
-                    detectTapGestures(
-                        onTap = {
-                            context.emit("edit", "uuid" to uuid)
-                        },
-                        onLongPress = {
-                            dragging = true
-                            context.emit("drag-start", "uuid" to uuid)
-                            startTransfer(
-                                DragAndDropTransferData(
-                                    android.content.ClipData.newPlainText("block", uuid),
-                                )
-                            )
-                            dragging = false
-                        },
-                    )
-                },
-            ))
+            .then(if (linkOnly) Modifier else Modifier.pointerInput(uuid) {
+                detectTapGestures(
+                    onTap = {
+                        currentContext.emit("edit", "uuid" to uuid)
+                    },
+                    onLongPress = { selectBlock() },
+                )
+            })
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
@@ -260,7 +247,7 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = rowModifier,
     ) {
-        Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
+        Column {
             if (isAsset) {
                 ProjectedAsset(
                     uuid = uuid,
@@ -271,6 +258,7 @@ internal fun OutlinerBlockContent(
                     onPreview = onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
+                    onLongPress = selectBlock,
                 )
             } else {
                 CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
@@ -773,12 +761,13 @@ private fun AndroidLinkedImage(url: String, alt: String) {
 private fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
+    onLongPress: () -> Unit,
 ) {
     when {
         assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
             PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         isImageAsset(assetType, localPath) ->
-            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview)
+            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onLongPress)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->
             AndroidAudioPlaybackRow(title = title, path = localPath)
         else -> AssetFallback(title)
@@ -962,6 +951,7 @@ internal fun GraphImagePreview(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?,
     onPreview: ((String) -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
 ) {
     var retry by remember(uuid, localPath) { mutableIntStateOf(0) }
     var loadedPath by remember(uuid, localPath) { mutableStateOf("") }
@@ -990,7 +980,12 @@ internal fun GraphImagePreview(
     if (image != null) {
         Image(bitmap = image, contentDescription = title,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .then(if (onPreview != null) Modifier.clickable { onPreview(loadedPath) } else Modifier)
+                .then(if (onPreview != null) Modifier.combinedClickable(
+                    onClick = { onPreview(loadedPath) },
+                    onLongClick = onLongPress,
+                    // Block selection already sends haptic feedback through the shared core.
+                    hapticFeedbackEnabled = false,
+                ) else Modifier)
                 .testTag("asset.preview.image"), contentScale = ContentScale.FillWidth)
     } else if (failed) {
         Row(verticalAlignment = Alignment.CenterVertically) {

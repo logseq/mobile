@@ -3,11 +3,12 @@ appId: com.logseq.logseq
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "button.overflow-menu"
+      id: "button.sidebar"
     timeout: 30000
 - tapOn:
-    id: "button.overflow-menu"
-- tapOn: "Settings"
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar.settings"
 - extendedWaitUntil:
     visible:
       id: "screen.settings"
@@ -26,12 +27,11 @@ appId: com.logseq.logseq
     id: "button.connection.apply"
 - extendedWaitUntil:
     visible:
-      id: "button.overflow-menu"
+      id: "button.sidebar.settings"
     timeout: 10000
 - takeScreenshot: "android-settings-dark-theme"
 - tapOn:
-    id: "button.overflow-menu"
-- tapOn: "Settings"
+    id: "button.sidebar.settings"
 - tapOn:
     id: "picker.settings.appearance"
 - tapOn: "System"
@@ -39,11 +39,10 @@ appId: com.logseq.logseq
     id: "button.connection.apply"
 - extendedWaitUntil:
     visible:
-      id: "button.overflow-menu"
+      id: "button.sidebar.settings"
     timeout: 10000
 - tapOn:
-    id: "button.overflow-menu"
-- tapOn: "Settings"
+    id: "button.sidebar.settings"
 - extendedWaitUntil:
     visible:
       id: "screen.settings"
@@ -167,4 +166,4 @@ appId: com.logseq.logseq
 - tapOn:
     id: "button.connection.cancel"
 - assertVisible:
-    id: "button.overflow-menu"
+    id: "button.sidebar.settings"

@@ -28,6 +28,8 @@ val utf8_chars : string -> string list
 val clean_str : string -> string
 val str_len_distance : string -> string -> float
 val fuzzy_score : string -> string -> float
+val completion_score : string -> string -> float
+val page_title_matches : limit:int -> Datascript.db -> string -> Cache_model.entity_summary list
 val get_match_input : string -> string
 val create : string -> search_index
 val row_of_eid : Datascript.db -> int -> (string * string * string) option

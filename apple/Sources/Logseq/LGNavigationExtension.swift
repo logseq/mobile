@@ -170,9 +170,25 @@ private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
 }
 #endif
 
+private struct LGSheetControlTint: ViewModifier {
+    let isSwitch: Bool
+    @Environment(\.luiSemanticColors) private var colors
+
+    func body(content: Content) -> some View {
+        let tint = colors["primary"] ?? LogseqThemePolicy.accent
+        if isSwitch {
+            content.toggleStyle(SwitchToggleStyle(tint: tint)).tint(tint)
+        } else {
+            content.tint(tint)
+        }
+    }
+}
+
 @MainActor
 enum LGNavigationExtension {
     static let identifier = "native-navigation-stack"
+    static let destinationIdentifier = "native-navigation-title"
+    static let destinationFingerprint = "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none"
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
@@ -194,6 +210,7 @@ enum LGNavigationExtension {
                     .keyboardType(kind == "email" ? .emailAddress : kind == "code" ? .numberPad : .default)
                     .textContentType(kind == "email" ? .username : kind == "code" ? .oneTimeCode :
                         kind == "password" ? .password : kind == "new-password" ? .newPassword : nil)
+                    .modifier(LGSheetControlTint(isSwitch: false))
                     .submitLabel(.done))
                 #else
                 return AnyView(content.autocorrectionDisabled())
@@ -207,8 +224,7 @@ enum LGNavigationExtension {
                 properties: [.init(name: "role", kind: .string, isRequired: true)]
             ) { content, context in
                 if case .string("switch") = context.property("role") {
-                    return AnyView(content.toggleStyle(SwitchToggleStyle(tint: LogseqThemePolicy.accent))
-                        .tint(LogseqThemePolicy.accent))
+                    return AnyView(content.modifier(LGSheetControlTint(isSwitch: true)))
                 }
                 return AnyView(content.tint(.primary))
             }
@@ -277,8 +293,8 @@ enum LGNavigationExtension {
         )
         try registry.registerTweak(
             LUIAppleTweak(
-                identifier: "native-navigation-title",
-                fingerprint: "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none",
+                identifier: destinationIdentifier,
+                fingerprint: destinationFingerprint,
                 properties: [
                     .init(name: "title", kind: .string, isRequired: true),
                 ]
@@ -343,16 +359,26 @@ private struct LGSidebarNavigation: View {
     let context: LUIAppleExtensionViewContext
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
 
-    private var background: Color {
-        LogseqThemePolicy.palette(mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-                                  systemIsDark: colorScheme == .dark).background
+    private var palette: LogseqThemePalette {
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark,
+            darkTheme: darkTheme
+        )
     }
 
     var body: some View {
         let _ = context.revision
+        let palette = palette
+        let background = palette.background
+        let selectionTint = palette.backgroundHex == LogseqThemePolicy.black.backgroundHex
+            ? Color.white
+            : LogseqThemePolicy.accent
         NavigationStack {
             child(at: 0)
+                .accentColor(selectionTint)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(background.ignoresSafeArea())
                 #if os(iOS)
@@ -403,7 +429,6 @@ private struct LGNavigationStack: View {
         LGNavigationContent(
             context: context,
             rootIndex: 0,
-            routeStartIndex: 6,
             synchronizationName: "navigation",
             toolbarStartIndex: 1,
             trailingMenuIndex: nil,
@@ -670,7 +695,6 @@ private struct LGNativeNavigationPop {
 private struct LGNavigationContent: View {
     let context: LUIAppleExtensionViewContext
     let rootIndex: Int
-    let routeStartIndex: Int
     let synchronizationName: String
     let toolbarStartIndex: Int?
     let trailingMenuIndex: Int?
@@ -686,6 +710,7 @@ private struct LGNavigationContent: View {
     @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
     @Environment(\.logseqNativeSearch) private var inheritedSearch
     @Environment(\.lgVerticalToolbar) private var verticalToolbar
     @Environment(\.lgPDFWorkspaceOpen) private var pdfWorkspaceOpen
@@ -697,7 +722,7 @@ private struct LGNavigationContent: View {
     private var searchVisible: Bool { search?.isVisible == true }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
-        return Array(search.context.childIDs.dropFirst(4).prefix(max(0, search.depth)))
+        return pageRoutes(in: search.context, depth: search.depth)
     }
     private var showsSearchPage: Bool { searchVisible && (search?.depth ?? 0) > 0 }
     private var chromeContext: LUIAppleExtensionViewContext { showsSearchPage ? search!.context : context }
@@ -780,6 +805,11 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private func navigationSurface<Content: View>(_ content: Content, active: Bool) -> some View {
         content
+            .overlay {
+                if active && composerDismissalEnabled {
+                    composerDismissalTarget
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if active && bottomOccupiesLayoutSpace && showsBottomChrome {
                     sizedBottomChrome
@@ -794,6 +824,10 @@ private struct LGNavigationContent: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea(.all, edges: .bottom)
+                        // Keep the layout mounted without drawing the capture controls
+                        // beneath the native search bar and its Cancel button.
+                        .opacity(searchVisible ? 0 : 1)
+                        .animation(nil, value: searchVisible)
                         .allowsHitTesting(!searchVisible)
                         .accessibilityHidden(searchVisible)
                     } else {
@@ -814,6 +848,22 @@ private struct LGNavigationContent: View {
             .background(routeBackground.ignoresSafeArea())
     }
 
+    private var composerDismissalTarget: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture(perform: emitDismissComposer)
+            .accessibilityLabel("Dismiss composer")
+            .accessibilityIdentifier("surface.composer.dismiss")
+    }
+
+    private func composerDismissalToolbar<Content: View>(_ content: Content) -> some View {
+        content.overlay {
+            if composerDismissalEnabled {
+                composerDismissalTarget.accessibilityHidden(true)
+            }
+        }
+    }
+
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
         let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
@@ -827,16 +877,7 @@ private struct LGNavigationContent: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .background(routeBackground)
-                .overlay {
-                    if composerDismissalEnabled {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture(perform: emitDismissComposer)
-                            .accessibilityLabel("Dismiss composer")
-                            .accessibilityIdentifier("surface.composer.dismiss")
-                    }
-                }, active: path.isEmpty)
+                .background(routeBackground), active: path.isEmpty)
                 .navigationDestination(for: Int.self) { childID in
                     navigationSurface(destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
@@ -860,7 +901,7 @@ private struct LGNavigationContent: View {
                         if !pdfWorkspaceOpen {
                             if #available(iOS 26.0, *) {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    context.content(for: leadingID)
+                                    composerDismissalToolbar(context.content(for: leadingID))
                                         .id(context.contentRevision(for: leadingID))
                                         .modifier(LGLiquidGlassSurface(shape: .circle))
                                         .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
@@ -872,7 +913,7 @@ private struct LGNavigationContent: View {
                                 .lgPrefersVerticalAxis()
                             } else {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    context.content(for: leadingID)
+                                    composerDismissalToolbar(context.content(for: leadingID))
                                 }
                             }
                         }
@@ -973,10 +1014,16 @@ private struct LGNavigationContent: View {
                 .accessibilityHidden(searchVisible)
             if active, let search, search.isVisible {
                 if search.context.childIDs.indices.contains(1) {
+                    let background = routeBackground
                     search.context.content(for: search.context.childIDs[1])
                         .environment(\.luiTextHighlightQuery, search.query)
+                        .environment(\.defaultMinListRowHeight, 0)
+                        .transformEnvironment(\.luiSemanticColors) { colors in
+                            colors["background"] = background
+                            colors["surface"] = background
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(routeBackground)
+                        .background(background)
                         // A principal text item creates a horizontal title bar
                         // alongside Duo's vertical controls. Keep the status in
                         // the search surface so dismissing it cannot reflow home.
@@ -987,7 +1034,7 @@ private struct LGNavigationContent: View {
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)
-                                    .background(routeBackground)
+                                    .background(background)
                                     .accessibilityIdentifier("search.status")
                             }
                         }
@@ -1013,7 +1060,8 @@ private struct LGNavigationContent: View {
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-            systemIsDark: colorScheme == .dark
+            systemIsDark: colorScheme == .dark,
+            darkTheme: darkTheme
         )
     }
 
@@ -1045,7 +1093,7 @@ private struct LGNavigationContent: View {
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
         if let item = trailingToolbarItem(searchPage: searchPage) {
             ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
-                item.content
+                composerDismissalToolbar(item.content)
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
@@ -1122,14 +1170,15 @@ private struct LGNavigationContent: View {
     }
 
     private var desiredPath: [Int] {
-        let childIDs = context.childIDs
-        let availableDepth = max(0, childIDs.count - routeStartIndex)
-        let retainedDepth = min(max(0, depth), availableDepth)
-        var result: [Int] = []
-        for index in 0..<retainedDepth {
-            result.append(childIDs[index + routeStartIndex])
-        }
-        return result + searchRoutes
+        pageRoutes(in: context, depth: depth) + searchRoutes
+    }
+
+    private func pageRoutes(in context: LUIAppleExtensionViewContext, depth: Int) -> [Int] {
+        // Depth can arrive before the destination child. The adjacent capture
+        // controls and file preview must never enter the native stack.
+        Array(context.childIDs.lazy.filter {
+            context.extensionIdentifier(of: $0) == LGNavigationExtension.destinationIdentifier
+        }.prefix(max(0, depth)))
     }
 
     private var trailingToolbarPlacement: ToolbarItemPlacement {
@@ -1155,6 +1204,7 @@ private struct LGNavigationContent: View {
                 LGInteractionDiagnostics.event("navigation.binding", "node=\(context.nodeID) path=\(path) new=\(newPath) desired=\(desiredPath)")
                 let removedCount = max(0, path.count - newPath.count)
                 if removedCount > 0 {
+                    if composerDismissalEnabled { emitDismissComposer() }
                     nativePop = LGNativeNavigationPop(original: nativePop?.original ?? desiredPath, target: newPath)
                     #if os(iOS)
                     // Keep the outgoing route alive until UIKit finishes its pop.
@@ -1251,9 +1301,12 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
                 }
                 if !controller.isActive {
                     needsInitialFocus = true
-                    controller.isActive = true
+                    // Let editing activate the integrated search bar so UIKit can
+                    // coordinate its expansion with the keyboard in one transition.
+                    if #available(iOS 26.0, *) { focusIfNeeded() }
+                    if !controller.isActive { controller.isActive = true }
                 }
-                if needsInitialFocus, controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
+                if #unavailable(iOS 26.0) { focusIfNeeded() }
             } else if !state.nativePresented, controller.isActive {
                 controller.isActive = false
             } else if !state.isVisible, !controller.isActive {
@@ -1271,13 +1324,19 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             host.navigationItem.searchController = nil
         }
 
+        private func focusIfNeeded() {
+            guard state.nativePresented, needsInitialFocus else { return }
+            if controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
+        }
+
+        func willPresentSearchController(_ searchController: UISearchController) {
+            LogseqCrashReporting.uiState(nativeSearchActive: true)
+        }
         func didPresentSearchController(_ searchController: UISearchController) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.state.nativePresented else { return }
-                if searchController.searchBar.searchTextField.becomeFirstResponder() { self.needsInitialFocus = false }
-            }
+            DispatchQueue.main.async { [weak self] in self?.focusIfNeeded() }
         }
         func willDismissSearchController(_ searchController: UISearchController) {
+            LogseqCrashReporting.uiState(nativeSearchActive: false)
             needsInitialFocus = false
             state.nativeWillDismiss()
         }

@@ -1,0 +1,67 @@
+name: Vendored OCaml sources
+description: Restore the lockfile dependencies and fetch additional pins at their requested revisions.
+inputs:
+  mode:
+    description: Choose restore, populate with existing tools, or prepare a cache for another job.
+    default: "restore"
+runs:
+  using: composite
+  steps:
+    - name: Restore lockfile sources
+      id: sources
+      uses: actions/cache/restore@v4
+      with:
+        path: duniverse
+        key: ocaml-vendor-v1-${{ hashFiles('logseq.opam.locked') }}
+        enableCrossOsArchive: true
+
+    - name: Prepare vendoring tools
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode == 'prepare'
+      uses: ./.github/actions/ocaml-tools
+      with:
+        image: ubuntu-26.04
+
+    - name: Pull lockfile sources
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode != 'restore'
+      shell: bash
+      run: |
+        # Call the binary directly because the plugin shim checks the opam version.
+        for attempt in 1 2 3; do
+          opam exec -- opam-monorepo pull && break
+          if (( attempt == 3 )); then
+            exit 1
+          fi
+          sleep 10
+        done
+
+    - name: Save lockfile sources
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode != 'restore'
+      uses: actions/cache/save@v4
+      with:
+        path: duniverse
+        key: ${{ steps.sources.outputs.cache-primary-key }}
+        enableCrossOsArchive: true
+
+    - name: Require lockfile sources
+      if: steps.sources.outputs.cache-hit != 'true' && inputs.mode == 'restore'
+      shell: bash
+      run: |
+        echo "::error::The Linux vendoring job did not populate the lockfile cache."
+        exit 1
+
+    - name: Check out pins
+      if: inputs.mode != 'prepare'
+      shell: bash
+      run: |
+        while IFS= read -r pin; do
+          repository=${pin%%#*}
+          revision=${pin##*#}
+          checkout="duniverse/$(basename "$repository" .git)"
+          # Leave the source directories provided by the lockfile intact.
+          if [[ -d "$checkout" ]]; then
+            continue
+          fi
+          git init --quiet "$checkout"
+          git -C "$checkout" fetch --quiet --depth=1 "https://github.com/$repository" "$revision"
+          git -C "$checkout" checkout --quiet --detach FETCH_HEAD
+        done < <(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u)

@@ -293,7 +293,9 @@ let ten_composer_photos_recover_after_interrupted_upload encrypted failed_index 
     let rec drain response = match next response with
       | `Null -> ()
       | request ->
-        let after = if member "method" request = `String "WS" then begin
+        let after = if member "action" (member "bodyObject" request) = `String "prepare" then
+            complete_request session request {|{"mode":"proxy"}|}
+          else if member "method" request = `String "WS" then begin
             check_eq ~msg:"All remaining photos upload before waiting for the graph socket"
               (List.length !uploaded) (if !position <= 10 then 9 else 10);
             ack session (request_from response)

@@ -14,3 +14,4 @@ val to_text :
   (string -> string option) -> (string -> string option) -> string -> string
 val to_ids :
   (string -> string option) -> (string -> string option) -> string -> string
+val remap_page_ids : (string -> string option) -> string -> string

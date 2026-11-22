@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.logseq.logseq.runtime.LogseqNativeBridge
 import com.logseq.logseq.runtime.LuiPatchFilter
@@ -42,13 +43,13 @@ class AndroidDateFormatTest {
         val root = bridge.initialize(authenticationCode = 3)
         filter.applyJson(bridge.applySnapshot(snapshot("demo", "yyyy-MM-dd")))
         bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
-        bridge.applyHostUpdate("restore-ui-session", """{"graphId":"demo","destination":"journals","assets":[],"composerExpanded":false,"searchOpen":false,"query":"","appPath":[],"searchPath":[],"selectedPageId":null,"settingsOpen":true,"recentGraphIds":[]}""")
-            .takeIf { it.isNotEmpty() }?.let(filter::applyJson)
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.darkScheme, typography = LogseqTheme.typography) {
                 Surface(Modifier.fillMaxSize(), color = LogseqTheme.darkScheme.background) { backend.Content(root) }
             }
         }
+        ui.onNodeWithTag("button.sidebar").performClick()
+        ui.onNodeWithTag("button.sidebar.settings").performClick()
         ui.onNodeWithTag("picker.settings.date-format").assertDoesNotExist()
         ui.onNodeWithText("Date format").assertDoesNotExist()
         ui.onNodeWithTag("switch.settings.spell-check").assertIsDisplayed()

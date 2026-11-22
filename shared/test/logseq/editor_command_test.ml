@@ -405,27 +405,84 @@ let switching_linked_rows_preserves_unsaved_content () = R.with_runtime (fun ses
 let templates_clone_without_mutating_the_source () = R.with_runtime (fun session runtime conn ->
   let child = "30000000-0000-4000-8000-000000000004" in
   let grandchild = "30000000-0000-4000-8000-000000000005" in
-  rebase runtime conn ([put Q.beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Template"))]
-    @ R.entity 103 child "Meeting <%current page%>"
+  let target = "30000000-0000-4000-8000-000000000006" in
+  rebase runtime conn (R.entity 105 target "" @ [
+      put target "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+      put target "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page)); put target "block/order" (Ds.String "a5");
+      put Q.beta "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Template"))]
+    @ R.entity 103 child "Meeting <%current page%> #Task"
     @ [put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
        put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta)); put child "block/order" (Ds.String "a0");
+       put child "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+       put child "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing"));
        put child "logseq.property/heading" (Ds.Int64 2L)]
     @ R.entity 104 grandchild "Nested note"
     @ [put grandchild "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
        put grandchild "block/parent" (Ds.Ref_to (Q.ref_uuid child)); put grandchild "block/order" (Ds.String "a0")]);
-  ignore (run session "Template");
+  ignore (event session "tapBlock" ["uuid", `String target]);
+  ignore (type_at session "/" 1);
+  ignore (command session "Template");
   ignore (event session "searchAutocomplete" ["query", `String "Beta"]);
   ignore (choose session Q.beta); save session;
-  let inserted = value runtime Q.alpha "block/title" in
+  let inserted = value runtime target "block/title" in
   check ~msg:"templates insert their children and resolve target-page variables"
     (match inserted with Some (Ds.String title) -> String_kit.starts_with ~prefix:"Meeting [[" title | _ -> false);
-  check_eq (value runtime Q.alpha "logseq.property/heading") (Some (Ds.Int64 2L));
-  let children = Graph_runtime.blocks_for_page runtime Q.page |> List.filter (fun (b : Cache_model.block) ->
-    b.parent_id = Some Q.alpha) in
+  check_eq (value runtime target "logseq.property/heading") (Some (Ds.Int64 2L));
+  let blocks = Graph_runtime.blocks_for_page runtime Q.page in
+  let inserted = List.find (fun (b : Cache_model.block) -> b.uuid = target) blocks in
+  check_eq ~msg:"templates preserve task status alongside inline tags"
+    (Option.bind inserted.status (fun status -> status.Cache_model.ident)) (Some "logseq.property/status.doing");
+  let children = List.filter (fun (b : Cache_model.block) -> b.parent_id = Some target) blocks in
   check ~msg:"nested template children have new identities" (List.exists (fun (b : Cache_model.block) ->
     b.title = "Nested note" && b.uuid <> grandchild) children);
   check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Beta result"));
-  check_eq ~msg:"template application does not create a live link" (value runtime Q.alpha "block/link") None)
+  check_eq (value runtime target "block/link") None)
+
+let templates_apply_to_new_tags_and_resolve_missing_dates () = R.with_runtime (fun _ runtime conn ->
+  let source = "30000000-0000-4000-8000-000000000021" in
+  let item = "30000000-0000-4000-8000-000000000022" in
+  let existing = "30000000-0000-4000-8000-000000000023" in
+  let journal_template = "30000000-0000-4000-8000-000000000024" in
+  let journal_entry = "30000000-0000-4000-8000-000000000025" in
+  let node n uuid title parent = R.entity n uuid title @
+    [put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid parent));
+     put uuid "block/page" (Ds.Ref_to (Q.ref_uuid Q.page)); put uuid "block/order" (Ds.String "a0")] in
+  rebase runtime conn (R.entity 121 source "Project template"
+    @ [put source "logseq.property/template-applied-to" (Ds.Ref_to (Q.ref_uuid Q.project))]
+    @ node 122 item "Follow up <%tomorrow%>" source
+    @ node 123 existing "Existing child" Q.beta
+    @ R.entity 124 journal_template "Journal template"
+    @ [put journal_template "logseq.property/template-applied-to" (Ds.Ref_to (Ds.Ident "logseq.class/Journal"));
+       put journal_entry "block/parent" (Ds.Ref_to (Q.ref_uuid journal_template));
+       put journal_entry "block/page" (Ds.Ref_to (Q.ref_uuid journal_template));
+       put journal_entry "block/order" (Ds.String "a0")]
+    @ R.entity 125 journal_entry "Journal entry");
+  let stage_intent operation_id intent =
+    check_ok (Graph_runtime.stage runtime {Pending_ops.operation_id; base_t = 42; state = Pending_ops.Queued; intent}) in
+  let stage operation_id = stage_intent operation_id (Pending_ops.Add_tag {uuid = Q.beta; tag_uuid = Q.project}) in
+  let retitle operation_id title =
+    let expected_title = match value runtime Q.beta "block/title" with
+      | Some (Ds.String title) -> title | _ -> "" in
+    stage_intent operation_id (Pending_ops.Save_title {uuid = Q.beta; expected_title; title}) in
+  let following_seconds, _ = Unix.mktime (let now = Unix.localtime (Unix.gettimeofday ()) in
+    {now with tm_mday = now.tm_mday + 1}) in
+  let tomorrow = Cache_model.journal_day_for_ms (int_of_float (following_seconds *. 1000.)) in
+  stage "apply-tag-template";
+  stage "repeat-tag";
+  retitle "retain-tag" "Beta result #Project";
+  retitle "edit-with-retained-tag" "Beta edited #Project";
+  let children = Graph_runtime.blocks_for_page runtime Q.page
+    |> List.filter (fun (b : Cache_model.block) -> b.parent_id = Some Q.beta)
+    |> List.sort Outliner_state.compare_blocks in
+  let db = Graph_runtime.db runtime in
+  let tomorrow_uuid = Option.get (Graph_read.journal_page_uuid db tomorrow) in
+  check_eq (List.map (fun (block : Cache_model.block) -> block.title) children)
+    ["Follow up [[" ^ tomorrow_uuid ^ "]]"; "Existing child"];
+  let copied = List.hd children in
+  check_eq (List.map (fun (ref : Cache_model.entity_summary) -> ref.uuid) copied.references) [tomorrow_uuid];
+  check_eq ~msg:"a journal created by a template date gets the journal template"
+    (List.map (fun (block : Cache_model.block) -> block.title) (Graph_runtime.blocks_for_page runtime tomorrow_uuid))
+    ["Journal entry"])
 
 let typed_quote_marker_converts_only_ordinary_blocks () =
   R.with_runtime (fun session runtime _ ->
@@ -466,6 +523,8 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
       let host = Lui_app.runtime app in
       let button = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.newBlock" in
       check ~msg:"the software keyboard exposes New block for Code and Calculator" (button <> -1);
+      check_eq ~msg:"Code and Calculator keep Return for line breaks"
+        (App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.lineBreak") (-1);
       let neighbor = App_test.descendant_with_identifier host (Lui_app.root_node app) "button.outliner.editor.moveDown" in
       List.iter (fun key -> check_eq ~msg:"New block matches neighboring toolbar controls"
         (App_test.property host button key) (App_test.property host neighbor key))
@@ -479,6 +538,30 @@ let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
     check ~msg:"the new block receives editor focus" (member "uuid" (draft response) <> `String Q.alpha);
     check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "6*7\nlast*3"))))
     ["Code block"; "Calculator"]) [App_test.ios_backend; App_test.kotlin_backend]
+
+let toolbar_inserts_line_break_without_a_hardware_keyboard () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
+    ignore (start session "AlphaBeta"); ignore (type_at session "AlphaBeta" 5);
+    let before = List.length (Graph_runtime.blocks_for_page runtime Q.page) in
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let root = Lui_app.root_node app in
+      let button = App_test.descendant_with_identifier host root "button.outliner.editor.lineBreak" in
+      check ~msg:"the software keyboard exposes Line break for ordinary blocks" (button <> -1);
+      check_eq ~msg:"ordinary blocks keep Return for New block"
+        (App_test.descendant_with_identifier host root "button.outliner.editor.newBlock") (-1);
+      App_test.dispatch app (Lui_protocol.Press button); App_test.flush app;
+      check ~msg:"the native toolbar forwards the shared line break action"
+        (List.exists (function Model.OutlinerToolbarEffect (_, "lineBreak") -> true | _ -> false)
+          (App.model app).pending_effects));
+    let response = event session "toolbar" ["action", `String "lineBreak"] in
+    check_eq ~msg:"the line break stays in the edited block" (member "uuid" (draft response)) (`String Q.alpha);
+    check_eq (member "title" (draft response)) (`String "Alpha\nBeta");
+    check_eq (member "caretUTF16Offset" (draft response)) (`Int 6);
+    save session;
+    check_eq (List.length (Graph_runtime.blocks_for_page runtime Q.page)) before;
+    check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "Alpha\nBeta"))))
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let temporal_command_inputs_open_empty () =
   List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session _ _ ->
@@ -656,6 +739,12 @@ let calculator_last_tracks_successful_lines () = R.with_runtime (fun session _ _
 
 let command_output_has_native_presentation () = R.with_runtime (fun session runtime _ ->
   let block () = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" (snapshot session)) in
+  ignore (start session "## Title"); save session;
+  let heading level = Markup.to_yojson [Markup.Markup_emphasis (level, [Markup.Markup_text "Title"])] in
+  check_eq (member "markup" (block ())) (heading "heading-2");
+  check_eq (member "title" (block ())) (`String "## Title");
+  ignore (start session "## Title /"); ignore (command session "Heading 3"); save session;
+  check_eq (member "markup" (block ())) (heading "heading-3");
   ignore (run session "Heading 2"); save session;
   check ~msg:"heading formatting reaches the renderer"
     (String_kit.includes ~sub:"heading-2" (J.to_string (member "markup" (block ()))));
@@ -672,7 +761,17 @@ let command_output_has_native_presentation () = R.with_runtime (fun session runt
   check ~msg:"embedded nodes render their source content" (String_kit.includes ~sub:"Beta result" markup);
   check_eq ~msg:"rendered embed identity stays the wrapper UUID" (member "uuid" (block ())) (`String Q.alpha))
 
-let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ ->
+let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runtime conn ->
+  let child = "30000000-0000-4000-8000-000000000003" in
+  let grandchild = "30000000-0000-4000-8000-000000000004" in
+  rebase runtime conn (R.entity 102 child "Source child" @ [
+    put child "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+    put child "block/parent" (Ds.Ref_to (Q.ref_uuid Q.beta));
+    put child "block/order" (Ds.String "a0")]
+    @ R.entity 103 grandchild "Grandchild" @ [
+    put grandchild "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+    put grandchild "block/parent" (Ds.Ref_to (Q.ref_uuid child));
+    put grandchild "block/order" (Ds.String "a0")]);
   ignore (run session "Number list"); save session;
   ignore (run session "Node embed"); ignore (choose session Q.beta);
   let response = snapshot session in
@@ -680,6 +779,8 @@ let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ 
   check_eq ~msg:"only linked wrapper rows carry the embed marker" (member "isEmbed" embedded) (`Bool true);
   let ordinary = List.find (fun block -> member "uuid" block = `String Q.beta) (items "blocks" response) in
   check ~msg:"source blocks retain their ordinary bullet" (member "isEmbed" ordinary <> `Bool true);
+  check ~msg:"the child title is separate from the embedded source title"
+    (not (String_kit.includes ~sub:"Source child" (J.to_string (member "markup" embedded))));
   List.iter (fun (backend, ios) -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
     let host = Lui_app.runtime app in
     let row = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.block." ^ Q.alpha) in
@@ -693,8 +794,61 @@ let embedded_outliner_bullets_match_master () = R.with_runtime (fun session _ _ 
       match App_test.extension_property app icon "payload" with
       | Some (Lui_protocol.StringValue raw) -> J.from_string raw
       | _ -> `Null) in
-    check_eq ~msg:"both platforms render master's arrow-narrow-right" (member "id" descriptor) (`String "arrow-narrow-right")))
-    [App_test.ios_backend, true; App_test.kotlin_backend, false])
+    check_eq ~msg:"both platforms render the embed arrow" (member "id" descriptor) (`String "arrow-narrow-right");
+    let open Lui_protocol in
+    let entry = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.entry." ^ Q.alpha) in
+    let find_child uuid = App_test.descendant_with_identifier host entry ("outliner.block." ^ uuid) in
+    let child_row = find_child child in
+    check ~msg:"the embedded child has its own row" (child_row <> -1);
+    let grandchild_row = find_child grandchild in
+    check ~msg:"the embedded outline renders the grandchild too" (grandchild_row <> -1);
+    if ios then begin
+      check_eq (member "depth" (App_test.native_row_payload app child_row)) (`Int 1);
+      check_eq (member "depth" (App_test.native_row_payload app grandchild_row)) (`Int 2)
+    end;
+    let collapse = if ios then
+      ExtensionEvent (App_test.native_row app row, "outliner-block-row", "collapse",
+        String_map.singleton "uuid" (StringValue Q.alpha))
+    else
+      Press (App_test.descendant_with_identifier host row ("button.outliner.collapse." ^ Q.alpha)) in
+    App_test.dispatch app collapse;
+    App_test.flush app;
+    check_eq ~msg:"collapsing the embed hides its outline" (find_child child) (-1);
+    App_test.dispatch app collapse;
+    App_test.flush app;
+    check ~msg:"expanding restores the embedded outline" (find_child grandchild <> -1);
+    let event = if ios then
+      let target = member "embedSourceUuid" (App_test.native_row_payload app row) in
+      check_eq ~msg:"the native bullet receives the source UUID" target (`String Q.beta);
+      ExtensionEvent (App_test.native_row app row, "outliner-block-row", "open-node",
+        String_map.singleton "uuid" (StringValue (text target)))
+    else
+      let bullet = App_test.descendant_with_identifier host row
+        ("button.outliner.zoom." ^ Q.alpha ^ ".Beta result") in
+      check ~msg:"the embed arrow is interactive" (bullet <> -1);
+      Press bullet in
+    App_test.dispatch app event;
+    App_test.flush app;
+    check_eq (App.model app).app_navigation_path [Model.NodeRoute Q.beta]))
+    [App_test.ios_backend, true; App_test.kotlin_backend, false];
+  ignore (event session "tapBlock" ["uuid", `String child]);
+  ignore (type_at session "Updated child" 13);
+  let changed = event session "saveEditing" [] in
+  let embed = List.find (fun block -> member "uuid" block = `String Q.alpha) (items "blocks" changed) in
+  check_eq ~msg:"saving a child refreshes the embedded outline"
+    (List.map (member "title") (items "embedChildren" embed)) [`String "Updated child"];
+  let response = Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.beta])) in
+  let route = Rpc_test.first_node_route response in
+  let visible = List.map (fun row -> member "uuid" (member "block" row)) (items "outlinerRows" route) in
+  check_eq ~msg:"the source opens with its children" visible [`String Q.beta; `String child; `String grandchild];
+  let response = event session "tapBlock" ["uuid", `String Q.beta] in
+  let editing = draft (Rpc_test.first_node_route response) in
+  check_eq (member "uuid" editing) (`String Q.beta);
+  check_eq (member "title" editing) (`String "Beta result");
+  ignore (type_at session "Edited source" 13);
+  save session;
+  check_eq (value runtime Q.beta "block/title") (Some (Ds.String "Edited source"));
+  check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "")))
 
 let embedding_in_text_preserves_the_original_block () = R.with_runtime (fun session runtime _ ->
   ignore (start session "Keep this /");
@@ -1172,10 +1326,11 @@ let cases = [
   case "date commands accept natural language on both hosts" date_command_accepts_natural_language;
   case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
   case "Code and Calculator toolbars create blocks with software keyboards" code_toolbar_creates_a_block_without_a_hardware_keyboard;
+  case "toolbar inserts a line break with software keyboards" toolbar_inserts_line_break_without_a_hardware_keyboard;
   case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;
   case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
   case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;
-  case "embedded outliner bullets use the master arrow" embedded_outliner_bullets_match_master;
+  case "embedded outliner bullets open the source" embedded_outliner_bullets_open_source;
   case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "unrelated edits do not create issue number tags" unrelated_edit_does_not_create_issue_number_tags;
@@ -1216,6 +1371,7 @@ let cases = [
   case "linked blocks preserve source formatting" linked_blocks_preserve_source_formatting;
   case "linked content keeps outline boundaries" linked_content_keeps_outline_boundaries;
   case "templates clone without mutating the source" templates_clone_without_mutating_the_source;
+  case "templates apply once to new tags and created journals" templates_apply_to_new_tags_and_resolve_missing_dates;
   case "numbered lists toggle" numbered_lists_toggle_without_changing_source_text;
   case "shared panel for commands pages and tags" shared_panel_for_commands_pages_and_tags;
 ]

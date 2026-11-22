@@ -19,6 +19,8 @@ type created_journal =
 type transport_operation =
   | Create_block of Cache_model.block
   | Upload_asset of Cache_model.block
+  | Prepare_asset_upload of Cache_model.block * Api.api_file_upload * Api.api_request
+  | Confirm_asset_upload of Cache_model.block * Api.api_request
   | Move_created_asset of moved_asset
   | Update_title of Cache_model.block
   | Update_status of Cache_model.block
@@ -179,6 +181,8 @@ type session =
   ; reference_collapsed : (string option * string, bool) Hashtbl.t
   ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
+  ; widget_snapshot : (string * Datascript.db * string) option ref
+  ; widget_random_sample : (string * int * int list) option ref
   ; reference_generation : (string option * int option * int) option ref
   }
 

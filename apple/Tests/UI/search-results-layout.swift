@@ -99,6 +99,11 @@ import Vision
         guard let list = views(window).compactMap({ $0 as? UICollectionView }).first(where: {
             $0.bounds.height > 200 && $0.contentSize.height > $0.bounds.height
         }) else { throw failure("Missing the native search results list") }
+        let firstRows = list.visibleCells.sorted { $0.frame.minY < $1.frame.minY }.prefix(2)
+        let heights = firstRows.map { $0.bounds.height }
+        guard heights.count == 2, (32..<38).contains(heights[0]), (48..<54).contains(heights[1]) else {
+            throw failure("Search headings and single-line results must retain vertical spacing; got \(heights)")
+        }
         for offset: CGFloat in [0, 300, 2400, 2900] {
             list.setContentOffset(CGPoint(x: 0, y: min(offset, list.contentSize.height - list.bounds.height)), animated: false)
             try await Task.sleep(for: .milliseconds(150))

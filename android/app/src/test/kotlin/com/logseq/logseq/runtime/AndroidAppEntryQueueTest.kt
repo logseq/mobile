@@ -32,6 +32,42 @@ class AndroidAppEntryQueueTest {
         } finally { first.cancel(); second.cancel(); directory.deleteRecursively() }
     }
 
+    @Test fun coldWidgetIsRestoredAndOpensBeforeNormalQueueDelivery() = runBlocking {
+        val directory = kotlin.io.path.createTempDirectory("entry-startup-widget").toFile()
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val second = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val captureId = "c07fceba-58c0-4bc0-bf39-2479d7491a31"
+        try {
+            val original = AndroidAppEntryCoordinator(first, { fail("Delivered during graph restore") }, {}, directory)
+            original.publish(mapOf("kind" to "shared-text", "text" to "Earlier share"))
+            original.publish(mapOf(
+                "kind" to "deep-link", "scheme" to "logseq", "host" to "graph",
+                "query" to listOf(mapOf("name" to "widget-action", "value" to "open-block")),
+                "captureUuid" to captureId,
+            ), initialWidgetBlock = true)
+            first.cancel()
+
+            val openedWidget = CompletableDeferred<AndroidAppEntry>()
+            val deliveredShare = CompletableDeferred<AndroidAppEntry>()
+            val restarted = AndroidAppEntryCoordinator(second, {
+                if (it.initialWidgetBlock) assertTrue("Widget delivered more than once", openedWidget.complete(it))
+                else deliveredShare.complete(it)
+            }, {}, directory)
+            assertTrue(restarted.hasInitialWidgetBlocks())
+            restarted.deliverInitialWidgetBlocks { fail(it.message) }
+            assertEquals(captureId, withTimeout(3_000) { openedWidget.await() }.captureUuid)
+            assertFalse(restarted.hasInitialWidgetBlocks())
+            assertFalse(deliveredShare.isCompleted)
+
+            restarted.markReady()
+            assertEquals("Earlier share", withTimeout(3_000) { deliveredShare.await() }.text)
+        } finally {
+            first.cancel()
+            second.cancel()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun cancellationRetainsStableCaptureIdentifierAndAttachmentBytesOutsideCache() = runBlocking {
         val root = kotlin.io.path.createTempDirectory("entry-asset").toFile()
         val cache = File(root, "cache").apply { mkdirs() }
@@ -59,5 +95,26 @@ class AndroidAppEntryQueueTest {
             assertArrayEquals(byteArrayOf(1, 2, 3, -1), File(restored.asset.localPath).readBytes())
             assertFalse("Activity cancellation is not an import error", errorReported)
         } finally { first.cancel(); second.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun rejectedShareIsDiscardedSoLaterSharesStillArrive() = runBlocking {
+        val directory = kotlin.io.path.createTempDirectory("entry-rejected").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val delivered = mutableListOf<String?>()
+            val errors = mutableListOf<Throwable>()
+            val queue = AndroidAppEntryCoordinator(scope, {
+                if (it.text == "Rejected") throw AndroidAppEntryRejected("rejected")
+                delivered += it.text
+            }, { errors += it }, directory)
+            queue.publish(mapOf("kind" to "shared-text", "text" to "Rejected"))
+            queue.publish(mapOf("kind" to "shared-text", "text" to "Later"))
+            queue.markReady()
+            withTimeout(3_000) { while (delivered.isEmpty()) delay(10) }
+            assertEquals(listOf("Later"), delivered)
+            assertTrue(errors.single() is AndroidAppEntryRejected)
+            AndroidAppEntryCoordinator(scope, { fail("Rejected share replayed") }, {}, directory).markReady()
+            delay(100)
+        } finally { scope.cancel(); directory.deleteRecursively() }
     }
 }

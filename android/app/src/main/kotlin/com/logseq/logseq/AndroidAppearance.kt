@@ -7,6 +7,11 @@ import android.os.Build
 import android.view.Window
 import androidx.core.view.WindowCompat
 
+internal const val DEFAULT_DARK_THEME = "black"
+
+internal fun normalizedDarkTheme(value: String?): String =
+    if (value == "solarized") value else DEFAULT_DARK_THEME
+
 internal fun androidAppearanceIsDark(appearance: String, configuration: Configuration): Boolean =
     when (appearance) {
         "dark" -> true
@@ -29,12 +34,11 @@ internal fun applyAndroidApplicationAppearance(context: Context, appearance: Str
     }
 }
 
-internal fun applyAndroidSystemBarAppearance(window: Window, dark: Boolean) {
+internal fun applyAndroidSystemBarAppearance(window: Window, dark: Boolean, background: Int) {
     // These colors are honored on pre-edge-to-edge releases. Newer Android
     // versions draw the app's Scaffold behind the transparent system bars.
     @Suppress("DEPRECATION")
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-        val background = if (dark) 0xff101318.toInt() else 0xfffcfcfc.toInt()
         window.statusBarColor = background
         window.navigationBarColor = background
     }

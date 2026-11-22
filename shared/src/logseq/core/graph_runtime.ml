@@ -639,7 +639,32 @@ let stage runtime (operation : Ops.pending_operation) =
       let ( let* ) = Result.bind in
       let* normalized = Ops.normalize_operation before operation in
       let* operations = Projection.compile before normalized.intent in
-      let projected, tx, reversed = Journal_sync.capture ?creator:(runtime.current_creator ()) before operations in
+      let report = Ds.with_tx (Dev_sync.Sync_replay.display_db_from_server before) operations in
+      let now = int_of_float (Unix.gettimeofday () *. 1000.) in
+      (* Template copies can add tags too (a date variable creates a journal), so
+         repeat until no new template applies; each template applies in one pass. *)
+      let rec apply_templates applied templates additions txs db pass =
+        let* template = Editor_command_effects.tag_template_intent ~applied pass ~now ~fresh_uuid in
+        match template with
+        | None -> Ok (templates, additions, txs, db)
+        | Some template ->
+          let* operations = Projection.compile db template in
+          let pass = Ds.with_tx db operations in
+          let applied = List.fold_left (fun applied (d : Ds.datom) ->
+            if d.added && d.a = "logseq.property/used-template" then
+              match Datascript_value.ref_eid pass.db_after d.a d.v with
+              | Some source -> source :: applied | None -> applied
+            else applied) applied pass.tx_data in
+          apply_templates applied (template :: templates) (operations :: additions)
+            (pass.tx_data :: txs) pass.db_after pass in
+      let* templates, additions, txs, db_after = apply_templates [] [] [] [] report.db_after report in
+      let normalized, operations, report = match templates with
+        | [] -> normalized, operations, report
+        | _ ->
+          {normalized with intent = Ops.Atomic (normalized.intent :: List.rev templates)},
+          List.concat (operations :: List.rev additions),
+          {report with db_after; tx_data = List.concat (report.tx_data :: List.rev txs)} in
+      let projected, tx, reversed = Journal_sync.capture_report ?creator:(runtime.current_creator ()) report in
       let local_properties = local_property_changes normalized.intent in
       let local_only = local_properties <> [] && tx = "[]" in
       if local_only then Graph_sqlite.store_local_properties runtime.path local_properties

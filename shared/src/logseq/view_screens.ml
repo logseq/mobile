@@ -2,10 +2,13 @@ open Lui_protocol
 open Lui_elements
 
 let search_result_row hit_source send : t =
- fun context parent ->
-   let hit = Signal.sample hit_source in
+ custom @@ fun context parent ->
+   let hit : Model.search_hit = Signal.sample hit_source in
+   let native_list = Lui_ui.host context = SwiftUIHost in
    let elem =
      list_item ~separator:`hidden
+       ?padding_horizontal:(if native_list then Some 16 else None)
+       ?padding_vertical:(if native_list then Some (if hit.is_page then 3 else 5) else None)
        ~accessibility_identifier:(View_base.search_result_identifier hit)
        ~on_press:(fun _ ->
          ignore
@@ -13,42 +16,41 @@ let search_result_row hit_source send : t =
               (Model.RequestSearchResult
                  (Signal.sample hit_source : Model.search_hit).hit_uuid)))
        [
-         column ~gap:4 ~padding_vertical:6 ~grow:1.0
+         column ~gap:4 ~padding_vertical:3 ~grow:1.0
+           ?min_height:(if native_list then Some 44 else None)
            [
              if_
                ~test:
                  (Signal.map View_base.search_result_context_present_
                     hit_source)
                (text
-                  ~value_signal:
-                    (Signal.map View_base.search_result_breadcrumb
-                       hit_source)
+                  ~value:
+                    (reactive View_base.search_result_breadcrumb hit_source)
                   ~style_class:"caption single-line"
                   ~foreground:"muted-foreground"
                   ~accessibility_identifier:
                     ("search.result.context." ^ hit.hit_uuid)
                   []);
              text
-               ~value_signal:(Signal.map View_base.search_result_title
-                                hit_source)
+               ~value:(reactive View_base.search_result_title hit_source)
                ~style_class:"search-match line-clamp-3"
                ~accessibility_identifier:("search.result.title." ^ hit.hit_uuid)
                [];
            ];
        ]
    in
-   let node = elem context parent in
+   let node = mount context ?parent elem in
    if hit.is_page then
      Lui_ui.string_property context node InlineIconName "app:document";
    node
 
 let search_section_heading title identifier : t =
- fun context parent ->
-   let title = heading ~level:5 ~foreground:"muted-foreground"
+ custom @@ fun context parent ->
+   let title = heading ~level:`h5 ~foreground:"muted-foreground"
      ~accessibility_identifier:identifier ~value:title [] in
-   (if Lui_ui.host context = KotlinHost then
-      box ~padding_horizontal:20 ~padding_vertical:8 [title]
-    else list_item ~separator:`hidden [box ~padding_vertical:8 [title]]) context parent
+   mount context ?parent (if Lui_ui.host context = KotlinHost then
+      box ~padding_horizontal:20 ~padding_vertical:5 [title]
+    else list_item ~separator:`hidden ~padding_horizontal:16 ~padding_vertical:7 [title])
 
 type search_entry = Search_heading of string * string | Search_hit of Model.search_hit
 
@@ -62,15 +64,42 @@ let search_entry_key = function
   | Search_heading (_, identifier) -> identifier
   | Search_hit hit -> View_base.search_result_identifier hit
 
-let search_result_entries model_source send : t =
-  keyed ~source:(reactive search_entries model_source)
-    ~key:search_entry_key ~cmp:compare
-    ~mount:(fun entry_source -> match Signal.sample entry_source with
+let mount_search_entry send entry_source =
+  match Signal.sample entry_source with
       | Search_heading (title, identifier) -> search_section_heading title identifier
-      | Search_hit _ -> fun context parent ->
+      | Search_hit _ -> custom @@ fun context parent ->
         let hit = Signal.own_signal context.Lui_ui.ui_scope
           (Signal.map (function Search_hit hit -> hit | _ -> assert false) entry_source) in
-        search_result_row hit send context parent)
+        mount context ?parent (search_result_row hit send)
+
+let search_result_entries model_source send : t =
+  keyed ~source:(reactive search_entries model_source)
+    ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)
+
+let search_result_list model_source send : t =
+ custom @@ fun context parent ->
+  let load_more last =
+    let current = Signal.sample model_source in
+    if last >= current.Model.search_result_count - 6 then
+      ignore (send Model.LoadMoreSearchResults) in
+  mount context ?parent (if Lui_ui.host context = KotlinHost then
+     let count = Signal.own_signal context.Lui_ui.ui_scope
+       (Signal.map (fun current -> List.length (search_entries current)) model_source) in
+     let offset = Signal.own_signal context.Lui_ui.ui_scope
+       (Signal.map (fun _ -> 0) model_source) in
+     virtual_list ~grow:1.0 ~accessibility_identifier:"screen.search.results" [
+       View_rows.paged_keyed ~identifier:"search.results.window" ~item_extent:72
+         ~count ~offset
+         ~on_visible_range:(fun _ last -> load_more last)
+         ~source:(reactive search_entries model_source)
+         ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)]
+   else
+     list ~grow:1.0 ~style:`plain ~track_visible_range:true
+       ~accessibility_identifier:"screen.search.results"
+       ~on_visible_range:(function
+         | Range { last; _ } -> load_more last
+         | _ -> ())
+       [search_result_entries model_source send])
 
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
@@ -85,31 +114,23 @@ let search_screen model_source send : t =
                ~foreground:"muted-foreground"
                ~accessibility_identifier:"search.empty.icon" [];
              text
-               ~value_signal:
-                 (Signal.map View_base.search_empty_message model_source)
+               ~value:
+                 (reactive View_base.search_empty_message model_source)
                ~style_class:"headline" ~text_alignment:`center
                ~accessibility_identifier:"search.empty" [];
              text
-               ~value_signal:
-                 (Signal.map
+               ~value:
+                 (reactive (Signal.map
                     (fun (model : Model.logseq_model) ->
                       View_base.search_empty_supporting_message
                         (View_base.model_search_query model))
-                    model_source)
+                    model_source))
                ~foreground:"muted-foreground" ~text_alignment:`center
                ~accessibility_identifier:"search.empty.supporting" [];
            ]);
       if_
         ~test:(Signal.map View_base.search_results_present_ model_source)
-        (list ~grow:1.0 ~style:`plain ~track_visible_range:true
-           ~accessibility_identifier:"screen.search.results"
-           ~on_visible_range:(function
-             | VisibleRange (_, _, last) ->
-               let current = Signal.sample model_source in
-               if last >= current.Model.search_result_count - 6 then
-                 ignore (send Model.LoadMoreSearchResults)
-             | _ -> ())
-           [search_result_entries model_source send]);
+        (search_result_list model_source send);
     ]
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
@@ -119,7 +140,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:56
+        icon_button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:56
           ~height:56 ~background:"surface-container-low" ~corner_radius:28
           ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
           ~accessibility_identifier:"button.search"
@@ -132,7 +153,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       [
         View_composer.composer_view context model_source send;
         View_base.with_liquid_glass "circle"
-          (button ~icon:(`app "search") ~variant:`ghost ~size:`icon
+          (icon_button ~icon:(`app "search") ~variant:`ghost ~size:`icon
              ~width:58 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
              ~accessibility_identifier:"button.search"
              ~on_press:(press send Model.OpenSearch)
@@ -199,7 +220,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
                    model_source)
           (column ~gap:0 ~padding_horizontal:16 [ box ~height:21 [] ]);
         if_
-          ~test:(Signal.map View_base.bottom_chrome_editor_ model_source)
+          ~test:(reactive View_base.bottom_chrome_editor_ model_source)
           (View_base.with_liquid_glass "container"
              (column ~gap:0 ~padding_horizontal:8 ~padding_vertical:4
                 [
@@ -225,9 +246,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
                box ~height:21 [];
              ]);
         if_
-          ~test:
-            (Signal.map View_base.bottom_chrome_capture_and_search_
-               model_source)
+          ~test:(reactive View_base.bottom_chrome_capture_and_search_ model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
              [
@@ -268,13 +287,12 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                      row ~gap:8 ~cross:`center [
                      View_base.node_icon_view ~size:28 (Signal.map (fun (current : Model.logseq_model) ->
                        match current.selected_page with Some page -> View_base.node_icon current page.uuid | None -> "") model_source);
-                     heading ~level:3 ~style_class:"scroll-section-title"
-                       ~value_signal:
-                         (Signal.map View_base.selected_page_title
-                            model_source)
+                     heading ~level:`h3 ~style_class:"scroll-section-title"
+                       ~value:
+                         (reactive View_base.selected_page_title model_source)
                        ~accessibility_identifier:"title.selected-page" []];
                    ];
-                 dyn (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
+                 reactive (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
                    (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);
                ]);
           View_outliner.node_properties ~root:true context model_source send;
@@ -361,16 +379,17 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =
   if Lui_ui.host context = KotlinHost then
-    column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
-      ~background:"background"
-      ~accessibility_identifier:"journals.loading"
-      [
-        spinner ~accessibility_identifier:"spinner.graph-loading" [];
-        text
-          ~value_signal:
-            (Signal.map View_base.graph_loading_message model_source)
-          ~foreground:"muted-foreground" [];
-      ]
+    View_base.with_string_prop AlignmentValue "center"
+      (column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
+         ~background:"background"
+         ~accessibility_identifier:"journals.loading"
+         [
+           spinner ~accessibility_identifier:"spinner.graph-loading" [];
+           text
+             ~value:
+               (reactive View_base.graph_loading_message model_source)
+             ~foreground:"muted-foreground" ~text_alignment:`center [];
+         ])
   else
     column ~grow:1.0 ~main:`center ~cross:`center
       ~accessibility_identifier:"journals.loading"
@@ -381,7 +400,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
   stack ~grow:1.0
     [
       if_
-        ~test:(Signal.map View_base.journal_tree_retained_ model_source)
+        ~test:(reactive View_base.journal_tree_retained_ model_source)
         (journal_tree_panes context model_source send);
       if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
@@ -410,7 +429,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
                Lui_ui.host context = KotlinHost
                && View_base.node_screen_visible_ current)
              model_source)
-        (button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
+        (icon_button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
            ~label:(View_base.tr (Signal.sample model_source) "Back")
            ~accessibility_identifier:"button.navigation.back"
            ~on_press:(fun _ ->
@@ -420,7 +439,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
         ~test:
           (Signal.map View_base.primary_sidebar_button_visible_
              model_source)
-        (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
+        (icon_button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
            ~width:44 ~height:44
            ~label:(View_base.tr (Signal.sample model_source) "Toggle sidebar")
            ~style_class:"drawer-toggle"
@@ -444,8 +463,8 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
   let android = Lui_ui.host context = KotlinHost in
   text
     ?grow:(if android then Some 1.0 else None)
-    ?white_space:(if android then Some "nowrap" else None)
-    ?text_overflow:(if android then Some "ellipsis" else None)
+    ?white_space:(if android then Some `nowrap else None)
+    ?text_overflow:(if android then Some `ellipsis else None)
     ~value:
       (reactive
          (fun current ->
@@ -461,7 +480,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
           (Signal.map View_base.connection_control_visible_ model_source)
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
-           (button
+           (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
               ~icon:(`app "status-dot")
               ~variant:`ghost ~size:`icon
               ~foreground_signal:
@@ -480,7 +499,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
     ]
 
 let active_overflow_menu model_source send : t =
- fun context parent ->
+ custom @@ fun context parent ->
    let page_actions_source =
      Signal.map View_base.active_page_actions_visible_ model_source
    in
@@ -514,13 +533,15 @@ let active_overflow_menu model_source send : t =
    let kotlin_host = Lui_ui.host context = KotlinHost in
    (* iOS menu items carry no icons; the Kotlin popup did. *)
    let item_icon name = if kotlin_host then Some (`app name) else None in
-   (View_property.with_add_property_picker model_source raw_source send (fun add_property add_picker ->
+   mount context ?parent (View_property.with_add_property_picker model_source raw_source send (fun _ add_property add_picker ->
    let entries =
-     [ if_ ~test:page_actions_source
+     [ if_dropdown_menu_item ~test:page_actions_source
          (if kotlin_host then
-            menu_item
+            dropdown_menu_item
               ~text_signal:
-                (Signal.map View_base.active_page_favorite_label model_source)
+                (Signal.map (fun current ->
+                   View_base.tr current (View_base.active_page_favorite_label current))
+                   model_source)
               ~icon_signal:
                 (Signal.map
                    (fun current ->
@@ -533,13 +554,15 @@ let active_overflow_menu model_source send : t =
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []
           else
-            menu_item
+            dropdown_menu_item
               ~text_signal:
-                (Signal.map View_base.active_page_favorite_label model_source)
+                (Signal.map (fun current ->
+                   View_base.tr current (View_base.active_page_favorite_label current))
+                   model_source)
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []);
-       if_ ~test:(own (Signal.map (fun source -> Option.is_some source) rename_source))
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Rename page") ~accessibility_identifier:"button.page.rename"
+       if_dropdown_menu_item ~test:(own (Signal.map (fun source -> Option.is_some source) rename_source))
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Rename page") ~accessibility_identifier:"button.page.rename"
            ~on_press:(fun _ ->
              let current = Signal.sample model_source in
              match Signal.sample rename_source with
@@ -548,8 +571,8 @@ let active_overflow_menu model_source send : t =
                finished := Option.map (fun (_, revision, _) -> revision)
                  (List.find_opt (fun (key, _, _) -> key = "page.rename." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "rename", property))) []);
-       if_ ~test:(own (Signal.map Option.is_some tag_source))
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Set tags") ~accessibility_identifier:"button.page.tags"
+       if_dropdown_menu_item ~test:(own (Signal.map Option.is_some tag_source))
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Set tags") ~accessibility_identifier:"button.page.tags"
            ~on_press:(fun _ -> match Signal.sample tag_source with
              | None -> ()
              | Some (owner, property) -> let current = Signal.sample model_source in
@@ -557,30 +580,30 @@ let active_overflow_menu model_source send : t =
                  (List.find_opt (fun (key, _, _) -> key = "page.tags." ^ owner) current.Model.result_view_feedback);
                Signal.set editing (Some (current.selected_graph_id, owner, "tags", property))) []);
        add_property;
-       if_ ~test:tag_schema_source
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Tag properties")
+       if_dropdown_menu_item ~test:tag_schema_source
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Tag properties")
            ~accessibility_identifier:"button.page.tag-properties"
            ~on_press:(fun _ ->
              tag_properties_owner := Some ((Signal.sample model_source).Model.selected_graph_id,
                View_property.owner_uuid (Signal.sample raw_source));
              Signal.set tag_properties_open true) []);
-       if_ ~test:page_actions_source
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Share") ?icon:(item_icon "share")
+       if_dropdown_menu_item ~test:page_actions_source
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Share") ?icon:(item_icon "share")
             ~on_press:(press send Model.ShareActivePage)
             []);
-       keyed ~source:(own (Signal.map (fun model -> Option.to_list (Model.active_delete_target model)) model_source))
+       keyed_dropdown_menu_item ~source:(own (Signal.map (fun model -> Option.to_list (Model.active_delete_target model)) model_source))
          ~key:(function Model.BlockToDelete _ -> `Block | Model.PageToDelete _ -> `Page) ~cmp:compare
          ~mount:(fun source -> match Signal.sample source with
          | Model.BlockToDelete _ ->
-           menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete block") ~variant:`destructive
+           dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete block") ~variant:`destructive
              ~accessibility_identifier:"button.block.delete" ?icon:(item_icon "toolbar-delete")
              ~on_press:(press send Model.RequestDeleteActiveNode) []
          | Model.PageToDelete _ ->
-           menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete") ~variant:`destructive
+           dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Delete") ~variant:`destructive
              ~accessibility_identifier:"button.page.delete" ?icon:(item_icon "toolbar-delete")
              ~on_press:(press send Model.RequestDeleteActiveNode) []);
-       if_ ~test:settings_source
-         (menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings") ?icon:(item_icon "settings")
+       if_dropdown_menu_item ~test:settings_source
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings") ?icon:(item_icon "settings")
             ~on_press:(press send Model.OpenSettings)
             []);
      ]
@@ -596,7 +619,7 @@ let active_overflow_menu model_source send : t =
      if_ ~test:(Signal.value tag_properties_open)
        (View_property.tag_properties model_source raw_source send (fun () -> Signal.set tag_properties_open false));
      if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-       (dyn (function None -> box [] | Some (graph, owner, action, property) ->
+       (reactive (function None -> box [] | Some (graph, owner, action, property) ->
          let column = if action <> "rename" then property else match property with `Assoc fields ->
            `Assoc (("title", `String "Rename page") :: List.remove_assoc "title" fields) | value -> value in
          View_query.property_editor ~owner ~send ~id:("page." ^ action ^ "." ^ owner) ~column
@@ -605,7 +628,7 @@ let active_overflow_menu model_source send : t =
                ("graphId", `String (Option.value ~default:"" graph)) ::
                (if action = "tags" then ("action", `String "setTags") :: fields else fields)))))))
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
-   ])) context parent
+   ]))
 
 let main_header_connection model_source send : t =
   stack
@@ -613,22 +636,22 @@ let main_header_connection model_source send : t =
       if_
         ~test:
           (Signal.map View_base.connection_control_visible_ model_source)
-        (fun context parent ->
-          (stack [
+        (custom @@ fun context parent ->
+          mount context ?parent (stack [
                if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
-                 (button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
+                 (icon_button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
                     ~variant:`ghost ~size:`icon ~width:44 ~height:44
                     ~accessibility_identifier:"button.journal-calendar"
                     ~on_press:(press send Model.OpenJournalCalendar) []);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
-                 (active_overflow_menu model_source send) ] context parent));
+                 (active_overflow_menu model_source send)]));
     ]
 
 let native_node_destination ~source:title_source content : t =
- fun context parent ->
+ custom @@ fun context parent ->
    let node = Lui_ui.platform_tweak context "native-navigation-title" in
    Lui_ui.extension_property_signal context node "title" title_source;
-   ignore (content context (Some node));
+   ignore (mount context ~parent:node content);
    attach context parent node;
    node
 
@@ -678,7 +701,7 @@ let native_node_stack context model_source ~source:routes_source send =
 
 let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
     t =
- fun context parent ->
+ custom @@ fun context parent ->
    let node = Lui_ui.extension context "native-search-presentation" in
    attach context parent node;
    let presented_source =
@@ -714,7 +737,7 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
        ignore (View_base.handle_native_search_event input_event send));
    if Lui_ui.host context = KotlinHost then
      let _ =
-       stack ~grow:1.0
+       mount context ~parent:node (stack ~grow:1.0
          [
            column ~grow:1.0
              ~display_signal:(Signal.map (fun current ->
@@ -733,37 +756,33 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
                 [ search_screen model_source send ]);
            native_node_stack context model_source
              ~source:(Signal.map View_base.search_node_routes model_source) send;
-         ]
-         context (Some node)
+         ])
      in
-     ignore ((if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+     ignore (mount context ~parent:node (if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
        current.search_open && current.search_navigation_path <> []) model_source)
-       (active_overflow_menu model_source send)) context (Some node));
+       (active_overflow_menu model_source send)));
      node
    else (
      ignore
-       ((match base with
+       (mount context ~parent:node (match base with
          | Some view -> box ~grow:1.0 [view]
-         | None -> logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send)
-          context (Some node));
+         | None -> logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send));
      ignore
-       ((column ~grow:1.0 [ search_screen model_source send ]) context
-          (Some node));
+       (mount context ~parent:node (column ~grow:1.0 [ search_screen model_source send ]));
      (* Keep the chrome anchor present while idle so native route indices stay stable. *)
      ignore
-       ((column ~gap:0
-           [if_ ~test:(Signal.map View_base.search_editor_active_ model_source)
-              (main_bottom_chrome context model_source send)]) context (Some node));
-     ignore ((main_header_connection model_source send) context (Some node));
+       (mount context ~parent:node (column ~gap:0
+           [if_ ~test:(reactive View_base.search_editor_active_ model_source)
+              (main_bottom_chrome context model_source send)]));
+     ignore (mount context ~parent:node (main_header_connection model_source send));
      ignore
-       ((native_node_stack context model_source
-           ~source:(reactive View_base.search_node_routes model_source) send)
-          context (Some node));
+       (mount context ~parent:node (native_node_stack context model_source
+           ~source:(reactive View_base.search_node_routes model_source) send));
      node)
 
 let native_navigation_view (_context : Lui_ui.ui_context) model_source send
     : t =
- fun context parent ->
+ custom @@ fun context parent ->
    let node = Lui_ui.extension context "native-navigation-stack" in
    attach context parent node;
    let depth_source =
@@ -808,7 +827,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
         bottomChromeIndex); inside the content column its internal `grow`
         props would starve the weighted journal content. *)
      ignore
-       ((stack ~grow:1.0
+       (mount context ~parent:node (stack ~grow:1.0
            [
              column ~grow:1.0
                [
@@ -840,75 +859,70 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
                     (Signal.map View_base.asset_preview_path model_source)
                   ~on_dismiss:(press send Model.DismissAssetPreview)
                   []);
-           ])
-          context (Some node));
+           ]));
      ignore
-       ((main_bottom_chrome context model_source send) context (Some node));
+       (mount context ~parent:node (main_bottom_chrome context model_source send));
      node)
    else (
      ignore
-       ((column
+       (mount context ~parent:node (column
            [
              logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send;
              if_
                ~test:(Signal.map View_base.bottom_chrome_selection_
                         model_source)
                (View_outliner.outliner_selection_toolbar context model_source send);
-           ])
-          context (Some node));
+           ]));
      ignore
-       ((main_header_leading context model_source send) context
-          (Some node));
-     ignore ((main_header_title context model_source) context (Some node));
+       (mount context ~parent:node (main_header_leading context model_source send));
+     ignore (mount context ~parent:node (main_header_title context model_source));
      ignore
-       ((main_header_sync context model_source send) context (Some node));
+       (mount context ~parent:node (main_header_sync context model_source send));
      ignore
-       ((main_header_connection model_source send) context (Some node));
+       (mount context ~parent:node (main_header_connection model_source send));
      ignore
-       ((main_bottom_chrome context model_source send) context (Some node));
+       (mount context ~parent:node (main_bottom_chrome context model_source send));
      ignore
-       ((native_node_stack context model_source
-           ~source:(reactive Model.app_node_routes model_source) send)
-          context (Some node));
+       (mount context ~parent:node (native_node_stack context model_source
+           ~source:(reactive Model.app_node_routes model_source) send));
      ignore
-       ((if_
+       (mount context ~parent:node (if_
            ~test:(Signal.map View_base.asset_preview_ model_source)
            (file_preview
               ~path_signal:
                 (Signal.map View_base.asset_preview_path model_source)
               ~on_dismiss:(press send Model.DismissAssetPreview)
-              []))
-          context (Some node));
+              [])));
      if Lui_ui.host context = SwiftUIHost then
        ignore
-         ((column ~gap:0 ~width:44
+         (mount context ~parent:node (column ~gap:0 ~width:44
              ~accessibility_identifier:"navigation.capture-controls"
              [
-               button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
+               icon_button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
                  ~style_class:"system-toolbar-icon"
                  ~width:44 ~height:44 ~foreground:"foreground"
                  ~label:(View_base.tr (Signal.sample model_source) "Take photo")
                  ~accessibility_identifier:"button.navigation.camera"
                  ~on_press:(press send (Model.ChooseAttachment "camera")) [];
-               button ~icon:(`app "toolbar-audio") ~variant:`ghost ~size:`icon
+               icon_button ~icon:(`app "toolbar-audio") ~variant:`ghost ~size:`icon
                  ~style_class:"system-toolbar-icon"
                  ~width:44 ~height:44 ~foreground:"foreground"
                  ~label:(View_base.tr (Signal.sample model_source) "Audio recording")
                  ~accessibility_identifier:"button.navigation.audio"
                  ~on_press:(press send (Model.ChooseAttachment "audio")) [];
-               button ~icon:(`app "search") ~variant:`ghost ~size:`icon
+               icon_button ~icon:(`app "search") ~variant:`ghost ~size:`icon
                  ~style_class:"system-toolbar-icon"
                  ~width:44 ~height:44 ~foreground:"foreground"
                  ~label:(View_base.tr (Signal.sample model_source) "Search")
                  ~accessibility_identifier:"button.navigation.search"
                  ~on_press:(press send Model.OpenSearch) [];
-               button ~icon:(`app "composer-add") ~variant:`ghost ~size:`icon
+               icon_button ~icon:(`app "composer-add") ~variant:`ghost ~size:`icon
                  ~style_class:"system-toolbar-icon"
                  ~width:44 ~height:44 ~foreground:"foreground"
                  ~label:(View_base.tr (Signal.sample model_source) "Capture")
                  ~accessibility_identifier:"button.navigation.capture"
                  ~on_press:(press send Model.ExpandComposer) [];
-             ]) context (Some node));
+             ]));
      node)
 
 let authentication_content (context : Lui_ui.ui_context) model_source
@@ -935,7 +949,7 @@ let authentication_content (context : Lui_ui.ui_context) model_source
              icon ~name:(`app "logo") ~width:96 ~height:96 []);
         ];
       box ~height:28 [];
-      heading ~level:1 ~value:(View_base.tr (Signal.sample model_source) "Logseq") [];
+      heading ~level:`h1 ~value:(View_base.tr (Signal.sample model_source) "Logseq") [];
       box ~height:10 [];
       text ~foreground:"muted-foreground" ~text_alignment:`center
         ~value:(View_base.tr (Signal.sample model_source) "Capture, sync, and review your notes anywhere.") [];
@@ -963,7 +977,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
     if Lui_ui.platform context = AndroidOS then
       [
         if_
-          ~test:(Signal.map View_base.main_screen_visible_ model_source)
+          ~test:(reactive View_base.main_screen_visible_ model_source)
           (native_navigation_view context model_source send);
         if_
           ~test:
@@ -971,7 +985,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
                model_source)
           (View_graphs.graph_picker_screen context model_source send);
         if_
-          ~test:(Signal.map View_base.model_settings_open_ model_source)
+          ~test:(reactive View_base.model_settings_open_ model_source)
           (View_settings.settings_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.model_create_graph_open_
@@ -999,7 +1013,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
     else
       [
         if_
-          ~test:(Signal.map View_base.main_screen_visible_ model_source)
+          ~test:(reactive View_base.main_screen_visible_ model_source)
           (native_search_view ~base:(native_navigation_view context
              (Signal.map (fun (current : Model.logseq_model) ->
                let base = if current.search_open then View_base.without_outliner_interaction current else current in
@@ -1016,7 +1030,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
                model_source)
           (authentication_screen context model_source send);
         if_
-          ~test:(Signal.map View_base.model_settings_open_ model_source)
+          ~test:(reactive View_base.model_settings_open_ model_source)
           (View_settings.settings_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.model_create_graph_open_
@@ -1054,10 +1068,10 @@ let application_main_content (context : Lui_ui.ui_context) model_source
           [text ~value:(View_base.tr (Signal.sample model_source) "✅") ~accessibility_identifier:"capture.confirmation.icon" [];
            text ~value:(View_base.tr (Signal.sample model_source) "Added to today") ~accessibility_identifier:"capture.confirmation" []] in
         if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
-          box [(fun context parent ->
+          box [(custom @@ fun context parent ->
             let node = Lui_ui.extension context "native-top-notification" in
             attach context parent node;
-            ignore (notification context (Some node));
+            ignore (mount context ~parent:node notification);
             node)]
         else notification) in
   let content = if stack_grow then
@@ -1083,9 +1097,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                  model_source)
             (authentication_screen context model_source send);
           if_
-            ~test:
-              (Signal.map View_base.application_shell_visible_
-                 model_source)
+            ~test:(reactive View_base.application_shell_visible_ model_source)
             (drawer
                ~selected_signal:
                  (Signal.map View_base.drawer_selected_ model_source)
@@ -1093,14 +1105,12 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                  (Signal.map View_base.drawer_disabled_ model_source)
                ~width:320 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
                ~accessibility_identifier:"application.shell"
-               ~on_toggle:(fun input_event ->
-                 match input_event with
-                 | ToggleChanged (_node, open_) ->
+               ~on_toggle:(fun open_ ->
                    ignore
                      (send
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
-                 | _ -> ())
+                 )
                drawer_main drawer_panel);
         ]
     else
@@ -1112,9 +1122,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                  model_source)
             (authentication_screen context model_source send);
           if_
-            ~test:
-              (Signal.map View_base.application_shell_visible_
-                 model_source)
+            ~test:(reactive View_base.application_shell_visible_ model_source)
             (drawer
                ~selected_signal:
                  (Signal.map View_base.drawer_selected_ model_source)
@@ -1122,37 +1130,50 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                  (Signal.map View_base.drawer_disabled_ model_source)
                ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
                ~accessibility_identifier:"application.shell"
-               ~on_toggle:(fun input_event ->
-                 match input_event with
-                 | ToggleChanged (_node, open_) ->
+               ~on_toggle:(fun open_ ->
                    ignore
                      (send
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
-                 | _ -> ())
+                 )
                drawer_main drawer_panel);
         ]
   else
-    drawer
-      ~selected_signal:
-        (Signal.map View_base.drawer_selected_ model_source)
-      ~disabled_signal:
-        (Signal.map View_base.drawer_disabled_ model_source)
-      ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
-      ~accessibility_identifier:"application.shell"
-      ~on_toggle:(fun input_event ->
-        match input_event with
-        | ToggleChanged (_node, open_) ->
-          ignore
-            (send
-               (if open_ then Model.OpenSidebar else Model.CloseSidebar))
-        | _ -> ())
-      drawer_main drawer_panel
+    let ios_drawer = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+    let dark_theme = Signal.map (fun (current : Model.logseq_model) -> current.dark_theme) model_source in
+    let drawer_main =
+      if ios_drawer then
+        let tokens = Signal.map (function
+          | "black" -> [ "background", View_base.main_background "black" ]
+          | _ -> []) dark_theme in
+        themed ~tokens_signal:tokens drawer_main
+      else drawer_main in
+    let shell =
+      drawer
+        ~selected_signal:
+          (Signal.map View_base.drawer_selected_ model_source)
+        ~disabled_signal:
+          (Signal.map View_base.drawer_disabled_ model_source)
+        ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
+        ~accessibility_identifier:"application.shell"
+        ~on_toggle:(fun open_ ->
+            ignore
+              (send
+                 (if open_ then Model.OpenSidebar else Model.CloseSidebar))
+          )
+        drawer_main drawer_panel in
+    if ios_drawer then
+      (* The drawer fades the moving page toward its own background token. *)
+      let tokens = Signal.map (function
+        | "black" -> [ "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#2C2C2C" } ]
+        | _ -> []) dark_theme in
+      themed ~tokens_signal:tokens shell
+    else shell
 
 let application_view (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context <> SwiftUIHost && Lui_ui.host context <> KotlinHost then
     application_drawer_view context model_source send
-  else fun context parent ->
+  else custom @@ fun context parent ->
     let node = Lui_ui.extension context "native-pdf-workspace" in
     attach context parent node;
     Lui_ui.extension_property_signal context node "payload"
@@ -1164,7 +1185,7 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
          | Some (StringValue payload) -> ignore (send (Model.PdfWorkspaceEvent payload))
          | _ -> ())
       | _ -> ());
-    ignore ((application_drawer_view context model_source send) context (Some node));
+    ignore (mount context ~parent:node (application_drawer_view context model_source send));
     node
 
 let logseq_view context model_source send : t =

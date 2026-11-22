@@ -120,6 +120,7 @@ enum LGIconPolicy {
             "toolbar-delete": .systemName("trash"),
             "toolbar-hide-keyboard": .assetName("toolbar_hide_keyboard"),
             "toolbar-indent": .assetName("toolbar_indent"),
+            "toolbar-line-break": .systemName("return"),
             "toolbar-move-down": .systemName("arrow.down"),
             "toolbar-move-up": .systemName("arrow.up"),
             "toolbar-outdent": .assetName("toolbar_outdent"),
@@ -143,6 +144,7 @@ enum LGIconPolicy {
         result["toolbar-camera"] = .systemName("camera")
         result["toolbar-hide-keyboard"] = .systemName("keyboard.chevron.compact.down")
         result["toolbar-indent"] = .systemName("arrow.right")
+        result["toolbar-line-break"] = .systemName("return")
         result["toolbar-move-down"] = .systemName("arrow.down")
         result["toolbar-move-up"] = .systemName("arrow.up")
         result["toolbar-outdent"] = .systemName("arrow.left")
@@ -277,6 +279,8 @@ public final class LGRenderer {
 
 public struct LGRendererRoot: View {
     private let renderer: LGRenderer
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
 
     public init(renderer: LGRenderer) {
         self.renderer = renderer
@@ -290,6 +294,14 @@ public struct LGRendererRoot: View {
                 .menuOrder(.fixed)
                 .modifier(LGImagePreviewModifier(store: renderer.imagePreviews))
                 #if os(iOS)
+                .transformEnvironment(\.luiSemanticColors) { colors in
+                    // The sheet can still animate out after the core drops its theme scope.
+                    let background = LogseqThemePolicy.sheetBackground(
+                        isDark: colorScheme == .dark, darkTheme: darkTheme
+                    )
+                    colors["background"] = colors["background"] ?? background
+                    colors["surface"] = colors["surface"] ?? background
+                }
                 .modifier(LGFileDownloadFeedbackHost())
                 #endif
         } else {

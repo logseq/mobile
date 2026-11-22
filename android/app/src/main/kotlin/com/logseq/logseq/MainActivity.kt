@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -14,6 +15,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.logseq.logseq.runtime.AndroidLaunchMetrics
 import com.logseq.logseq.runtime.LogseqRuntime
 import com.logseq.logseq.ui.LogseqApp
+import com.logseq.logseq.ui.LogseqTheme
 import kotlinx.coroutines.launch
 import com.logseq.logseq.AndroidE2EECrypto
 import com.logseq.logseq.AndroidHttpTransport
@@ -31,8 +33,9 @@ class MainActivity : ComponentActivity() {
         if (hasFocus && ::runtime.isInitialized) {
             // Window/decor focus can restore flags from the platform theme
             // after Compose's first SideEffect, including after a dialog closes.
-            applyAndroidSystemBarAppearance(window,
-                androidAppearanceIsDark(runtime.effectiveAppearance, resources.configuration))
+            val dark = androidAppearanceIsDark(runtime.effectiveAppearance, resources.configuration)
+            val background = LogseqTheme.colorScheme(dark, runtime.effectiveDarkTheme).background
+            applyAndroidSystemBarAppearance(window, dark, background.toArgb())
         }
     }
 
@@ -53,8 +56,17 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
+        val initialWidgetLink = if (!entryHandled && intent?.action == Intent.ACTION_VIEW) {
+            AndroidAppEntryParser.initialWidgetBlock(intent.dataString)
+        } else null
+        val token = entryToken
         runtime = LogseqRuntime(this, lifecycleScope)
-        runtime.start()
+        runtime.start(initialWidgetLink?.plus("captureUuid" to entryId(token, "link"))) {
+            if (entryToken == token) {
+                entryHandled = true
+                setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+            }
+        }
 
         AndroidLaunchMetrics.activity = this
         setContent {
@@ -74,7 +86,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (!entryHandled) enqueueIntent(intent)
+        if (initialWidgetLink == null && !entryHandled) enqueueIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {

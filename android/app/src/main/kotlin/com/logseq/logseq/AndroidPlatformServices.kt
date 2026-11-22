@@ -46,6 +46,7 @@ class AndroidPlatformServices(private val context: Context) {
             "composerDraft" to preferences.getString("logseq.composerDraft", "").orEmpty(),
             "settings" to mapOf(
                 "appearance" to preferences.getString("logseq.appearance", "system").orEmpty(),
+                "darkTheme" to normalizedDarkTheme(preferences.getString("logseq.darkTheme", null)),
                 "language" to preferences.getString("logseq.language", "system").orEmpty(),
                 "spellCheck" to preferences.getBoolean("logseq.editor.spellCheck", true),
                 "autoCorrection" to preferences.getBoolean(
@@ -71,6 +72,9 @@ class AndroidPlatformServices(private val context: Context) {
         val settings = JSONObject(encoded)
         preferences.edit()
             .putString("logseq.appearance", settings.optString("appearance", "system"))
+            .putString("logseq.darkTheme", normalizedDarkTheme(settings.optString(
+                "darkTheme", preferences.getString("logseq.darkTheme", DEFAULT_DARK_THEME),
+            )))
             .putString("logseq.language", settings.optString("language", "system"))
             .putBoolean("logseq.editor.spellCheck", settings.optBoolean("spellCheck", true))
             .putBoolean(

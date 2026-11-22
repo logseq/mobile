@@ -8,145 +8,22 @@ on:
 
 jobs:
   ocaml-core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libsdl3-dev libpango1.0-dev
 
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-tools
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
+          image: ubuntu-26.04
 
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-vendor
         with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      # setup-ocaml runs `opam update` unconditionally (~40s). When both the
-      # root and the switch are cache hits the env is already complete, so
-      # only the opam binary is needed.
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
-          chmod +x ~/.local/bin/opam
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          eval $(opam env)
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-          # "cache" (default true) caches the opam root + switch.
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          # opam clears file-based git config for its fetch subprocesses, but
-          # GIT_CONFIG_* env pairs pass through; rewrite the ssh pin-depends
-          # URLs to https (the pinned repos are public, no credential needed).
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=3
-          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
-          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
-          export GIT_CONFIG_KEY_2="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_2="git+ssh://git@github.com/"
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install . --deps-only --yes --with-test --assume-depexts
-          # `opam install --deps-only` installs the pin-depends too, so the
-          # switch and `duniverse/` end up providing the same public libraries
-          # (e.g. persistent_sorted_set_ocaml) and dune aborts on the conflict.
-          # Drop the installed copies of every lockfile-vendored package; the
-          # vendored sources are what the build uses.
-          comm -12 \
-            <(grep -oE '"[a-zA-Z0-9_.-]+" \{= "[^"]*" & \?vendor\}' logseq.opam.locked | cut -d'"' -f2 | sort) \
-            <(opam list --installed --short | sort) \
-            | xargs -r opam remove -y
-          # ocaml-signal compiles melange emit rules but does not depend on the
-          # melange package, so a parallel deps build can run it before melc
-          # exists; keep melange in the switch to pin the ordering (removal
-          # above cascades to it via ppxlib/menhir).
-          opam install -y melange.7.0.1-55
-          # 0.3.x matches the lockfile's x-opam-monorepo-version; 0.5 embeds an
-          # opam lib too new for the runner's opam root layout.
-          opam install -y opam-monorepo.0.3.6
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      - name: Pull vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          eval $(opam env)
-          # The lockfile only lists public deps; pin-depends are cloned at
-          # their pinned commits below over public https.
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
-          # Call the binary directly: the `opam monorepo` plugin shim rejects
-          # plugins built under a different opam version (restored caches).
-          # Retry: release-tarball downloads occasionally fail with HTTP 5xx.
-          for attempt in 1 2 3; do
-            opam exec -- opam-monorepo pull && break
-            [ "$attempt" -lt 3 ] || exit 1
-            echo "opam-monorepo pull failed (attempt $attempt); retrying" >&2
-            sleep 10
-          done
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u); do
-            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            # opam monorepo pull already vendors lockfile entries at the right
-            # commits (without .git dirs — `git -C` there would hit the parent
-            # repo and detach the whole checkout). Only clone what's missing.
-            if [ -d "duniverse/$name" ]; then
-              continue
-            fi
-            git clone --quiet "https://github.com/$url" "duniverse/$name"
-            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
-            fi
-          done
-
-      - name: Save duniverse
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
+          mode: populate
 
       - name: Restore build caches
         uses: actions/cache/restore@v4
@@ -164,9 +41,7 @@ jobs:
           printf '(lang dune 3.0)\n(cache enabled)\n' > ~/.config/dune/config
 
       - name: Build and test OCaml core
-        run: |
-          eval $(opam env)
-          dune build @shared/native/runtest
+        run: opam exec -- dune build @shared/native/runtest
 
       - name: Save build caches
         if: always()

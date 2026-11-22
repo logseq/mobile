@@ -1,0 +1,23 @@
+# Deleting the open favorite asks for confirmation. Cancel keeps the page;
+# confirm removes it and returns to the journals.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=button.page.delete
+wait prop:accessibility-identifier=dialog.page-delete
+expect text:"Delete page?"
+press prop:accessibility-identifier=button.page-delete.cancel
+expect-absent prop:accessibility-identifier=dialog.page-delete
+expect prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=button.page.delete
+wait prop:accessibility-identifier=dialog.page-delete
+press prop:accessibility-identifier=button.page-delete.confirm
+expect-absent prop:accessibility-identifier=dialog.page-delete
+expect-absent prop:accessibility-identifier=title.selected-page
+expect-absent prop:accessibility-identifier=link.sidebar.page.fav-1
+expect prop:accessibility-identifier=pane.journals

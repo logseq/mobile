@@ -7,6 +7,22 @@ enum LogseqThemeMode: String, CaseIterable {
     case dark
 }
 
+enum LogseqDarkTheme: String {
+    case solarized
+    case black
+
+    static let storageKey = "logseq.darkTheme"
+    static let defaultTheme: Self = .black
+
+    init(storedValue: String?) {
+        self = storedValue.flatMap(Self.init(rawValue:)) ?? Self.defaultTheme
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var logseqDarkTheme = LogseqDarkTheme.defaultTheme
+}
+
 struct LogseqThemePalette {
     let backgroundHex: String
     let surfaceHex: String
@@ -62,11 +78,20 @@ enum LogseqThemePolicy {
             : Color(red: 27.0 / 255, green: 104.0 / 255, blue: 152.0 / 255)
     }
 
+    static func sheetBackground(isDark: Bool, darkTheme: LogseqDarkTheme) -> Color {
+        guard isDark else {
+            return Color(red: 242.0 / 255.0, green: 242.0 / 255.0, blue: 247.0 / 255.0)
+        }
+        return darkTheme == .black
+            ? Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0)
+            : dark.background
+    }
+
     static let light = LogseqThemePalette(
         backgroundHex: "#FCFCFC",
         backgroundRGB: (252, 252, 252),
-        surfaceHex: "#F8F8F8",
-        surfaceRGB: (248, 248, 248),
+        surfaceHex: "#FFFFFF",
+        surfaceRGB: (255, 255, 255),
         primaryTextHex: "#171717",
         primaryTextRGB: (23, 23, 23),
         secondaryTextHex: "#6F6F6F",
@@ -76,22 +101,41 @@ enum LogseqThemePolicy {
     static let dark = LogseqThemePalette(
         backgroundHex: "#002D38",
         backgroundRGB: (0, 45, 56),
-        surfaceHex: "#19394D",
-        surfaceRGB: (25, 57, 77),
+        surfaceHex: "#143D48",
+        surfaceRGB: (20, 61, 72),
         primaryTextHex: "#EDFDFD",
         primaryTextRGB: (237, 253, 253),
         secondaryTextHex: "#9BD3D4",
         secondaryTextRGB: (155, 211, 212)
     )
 
-    static func palette(mode: LogseqThemeMode, systemIsDark: Bool) -> LogseqThemePalette {
+    static let black = LogseqThemePalette(
+        backgroundHex: "#000000",
+        backgroundRGB: (0, 0, 0),
+        surfaceHex: "#141414",
+        surfaceRGB: (20, 20, 20),
+        primaryTextHex: "#F4F4F5",
+        primaryTextRGB: (244, 244, 245),
+        secondaryTextHex: "#A1A1AA",
+        secondaryTextRGB: (161, 161, 170)
+    )
+
+    static func darkPalette(_ theme: LogseqDarkTheme) -> LogseqThemePalette {
+        theme == .black ? black : dark
+    }
+
+    static func palette(
+        mode: LogseqThemeMode,
+        systemIsDark: Bool,
+        darkTheme: LogseqDarkTheme = .defaultTheme
+    ) -> LogseqThemePalette {
         switch mode {
         case .system:
-            return systemIsDark ? dark : light
+            return systemIsDark ? darkPalette(darkTheme) : light
         case .light:
             return light
         case .dark:
-            return dark
+            return darkPalette(darkTheme)
         }
     }
 }

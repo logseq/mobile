@@ -1,3 +1,4 @@
-- Linked references now show nested blocks with correct indentation and independent folding.
-- Match desktop reference behavior for aliases, source-page grouping and ordering.
-- Fix quick capture reopening and taking focus after hiding the block editor keyboard. Unsent capture drafts are preserved.
+- Black is now the default dark theme. You can switch to Solarized in Settings.
+- Embedded pages and blocks now appear as inline outlines. Tap the arrow next to an embed to open its source.
+- Refine search transitions and improve the colors and contrast of sheets and the sidebar in dark mode.
+- Simplify the launch screen so it blends into the app when opening Logseq.

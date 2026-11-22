@@ -14,11 +14,40 @@ on:
         default: "main"
 
 jobs:
+  duniverse:
+    name: Vendor duniverse
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    outputs:
+      source-revision: ${{ steps.checkout.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          ref: ${{ inputs.git-ref }}
+
+      - name: Load OCaml actions from the release workflow revision
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          # The selected app ref may predate these workflow actions.
+          if [[ "$(git rev-parse HEAD)" != "$WORKFLOW_SHA" ]]; then
+            git fetch --quiet --no-tags --depth=1 origin "$WORKFLOW_SHA"
+            git archive "$WORKFLOW_SHA" .github/actions/ocaml-tools .github/actions/ocaml-vendor | tar -xf -
+          fi
+
+      - uses: ./.github/actions/ocaml-vendor
+        with:
+          mode: prepare
+
   build-app:
+    needs: duniverse
     runs-on: xcode-27
     timeout-minutes: 120
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      DUNE_CACHE: enabled
+      DUNE_CACHE_STORAGE_MODE: copy
       GIT_TERMINAL_PROMPT: "0"
       GIT_CONFIG_COUNT: 4
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
@@ -32,8 +61,19 @@ jobs:
       GIT_CONFIG_VALUE_3: "ssh://git@github.com/logseq/certificates.git"
     steps:
       - uses: actions/checkout@v4
+        id: checkout
         with:
-          ref: ${{ github.event.inputs.git-ref }}
+          ref: ${{ needs.duniverse.outputs.source-revision }}
+
+      - name: Load OCaml actions from the release workflow revision
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          # The selected app ref may predate these workflow actions.
+          if [[ "$(git rev-parse HEAD)" != "$WORKFLOW_SHA" ]]; then
+            git fetch --quiet --no-tags --depth=1 origin "$WORKFLOW_SHA"
+            git archive "$WORKFLOW_SHA" .github/actions/ocaml-tools .github/actions/ocaml-vendor | tar -xf -
+          fi
 
       - name: Prepare signing repository access
         run: |
@@ -62,101 +102,44 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
-          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
-            brew install sentry-cli
-          else
-            echo "::warning::SENTRY_AUTH_TOKEN is missing. The iOS dSYMs will stay in the local archive."
-          fi
+          : "${SENTRY_AUTH_TOKEN:?SENTRY_AUTH_TOKEN is required to upload iOS release dSYMs}"
+          brew install sentry-cli
 
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-tools
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
+          image: xcode-27
 
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      # On a dual cache hit only the opam binary is needed (see e2e.yml).
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          brew install opam
-          eval $(opam env)
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install -y melange.7.0.1-55
-          opam install . --deps-only --yes --with-test --assume-depexts
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-
-      # opam-monorepo doesn't build on macOS arm64 (see e2e.yml): the linux
-      # jobs populate this cache, so a plain restore is all we can do here.
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
-          enableCrossOsArchive: true
-
-      - name: Require vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: echo "duniverse cache miss; run CI for this ref first so the duniverse cache is populated" >&2 && exit 1
+      - uses: ./.github/actions/ocaml-vendor
 
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain
         uses: actions/cache/restore@v4
         with:
-          path: _build/apple-toolchains
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0
           key: apple-toolchain-${{ runner.os }}-xcode27.2-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
-      - name: Bootstrap iOS OCaml toolchain (device)
-        if: steps.ios-toolchain.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          ./scripts/bootstrap-ios-ocaml.sh device
-
-      - name: Restore iOS core build cache
-        # Dune rebuilds incrementally, so a stale object tree still saves most
-        # of the cross-compile time on unchanged sources.
+      - name: Restore legacy iOS OCaml toolchain cache
+        id: ios-toolchain-legacy
+        if: steps.ios-toolchain.outputs.cache-primary-key != '' && steps.ios-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
-          path: _build/ios-core
-          key: ios-core-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            ios-core-${{ runner.os }}-
+          path: _build/apple-toolchains
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
+
+      - name: Bootstrap iOS OCaml toolchain (device)
+        if: steps.ios-toolchain.outputs.cache-hit != 'true' && steps.ios-toolchain-legacy.outputs.cache-hit != 'true'
+        run: ./scripts/bootstrap-ios-ocaml.sh device
+
+      - name: Restore iOS device Dune cache
+        id: ios-dune
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/dune
+          key: ios-device-dune-v1-${{ runner.arch }}-xcode27.2-${{ steps.checkout.outputs.commit }}
+          restore-keys: ios-device-dune-v1-${{ runner.arch }}-xcode27.2-
 
       - name: Restore Xcode build caches
         uses: actions/cache/restore@v4
@@ -172,24 +155,35 @@ jobs:
         # Produces _build/ios-core/device/native-link-inputs.txt, which the
         # fastlane beta lane exports as LOGSEQ_NATIVE_LINK_INPUTS so the
         # SwiftPM manifest links the OCaml core into the archive.
-        run: |
-          eval $(opam env)
-          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
-          export DUNE="$(command -v dune)"
-          LOGSEQ_IOS_LINK_INPUTS_ONLY=1 ./scripts/build-mobile-ios-device.sh
+        run: opam exec -- env LOGSEQ_IOS_LINK_INPUTS_ONLY=1 ./scripts/build-mobile-ios-device.sh
 
       - name: Save iOS OCaml toolchain
-        if: always() && steps.ios-toolchain.outputs.cache-hit != 'true'
+        # Keep a completed toolchain even if a later compilation failed.
+        if: >-
+          always() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
+          steps.ios-toolchain.outputs.cache-hit != 'true' &&
+          hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0/.libffi-*-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0/lib/libffi.a') != ''
         uses: actions/cache/save@v4
         with:
-          path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-xcode27.2-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
-      - name: Save iOS core build cache
+      - name: Bound the iOS device Dune cache
+        if: steps.ios-dune.outputs.cache-hit != 'true'
+        run: opam exec -- dune cache trim --size=512MiB
+
+      - name: Save iOS device Dune cache
+        if: steps.ios-dune.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: _build/ios-core
-          key: ios-core-${{ runner.os }}-${{ github.sha }}
+          path: ~/.cache/dune
+          key: ${{ steps.ios-dune.outputs.cache-primary-key }}
 
       - name: Restore bundler gems
         uses: actions/cache/restore@v4

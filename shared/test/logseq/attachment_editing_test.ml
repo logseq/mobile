@@ -152,7 +152,7 @@ let toolbar_image_upload_reaches_the_transaction_queue persisted encrypted () =
     let cache = (Rpc_session.state session).Session_types.model in
     ignore (Cache.mark_block_sync_failed cache uuid);
     Graph_sqlite.record_sync_failure runtime.path uuid (Some "Update block failed on build 45");
-    let upload = Rpc_test.required_pending_request session in
+    let upload = Rpc_test.proxy_asset_upload session in
     check_eq ~msg:("toolbar images upload their binary first: " ^ Yojson.Basic.to_string upload) (Q.member "method" upload) (`String "PUT");
     check_eq ~msg:"encrypted graphs upload encrypted image bytes"
       (Q.member "contentType" upload) (`String (if encrypted then "text/plain" else "image/png"));

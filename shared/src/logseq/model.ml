@@ -68,6 +68,7 @@ type task_status =
 
 type settings_projection =
   { appearance : string
+  ; dark_theme : string
   ; language : string
   ; system_language : string option
   ; spell_check : bool
@@ -132,6 +133,8 @@ type outline_row =
   ; row_list_number : int option
   ; row_display_type : string option
   ; row_is_embed : bool
+  ; row_embed_source_uuid : string option
+  ; row_embed_children : outline_row list
   ; markup_json : string
   ; query_json : string
   ; youtube_target_url : string option
@@ -250,6 +253,7 @@ type core_projection =
   ; is_pending_sync_patch : bool
   ; is_pending_sync_projection : bool
   ; is_graph_catalog_patch : bool
+  ; is_graph_snapshot_recovery : bool
   ; projection_search_query : string
   ; search_offset : int
   ; search_has_more : bool
@@ -257,6 +261,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pdf_update : string option
   ; is_pdf_patch : bool
+  ; widget_block_uuid : string option
   ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
@@ -412,7 +417,9 @@ type logseq_model =
   ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
+  ; dark_theme : string
   ; settings_appearance_menu_open : bool
+  ; settings_dark_theme_menu_open : bool
   ; language : string
   ; system_language : string
   ; language_choices : settings_language_choice list
@@ -446,6 +453,7 @@ type logseq_model =
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
   ; outliner_editing : outliner_editing option
+  ; outliner_edit_scope : string option
   ; outliner_selection_revision : int
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
@@ -498,6 +506,7 @@ type logseq_action =
   | ApplyCoreSnapshot of core_projection
   | BeginOutlinerEdit of string
   | BeginOutlinerEditAt of string * int
+  | BeginEmbeddedOutlinerEdit of string * string * int option
   | EditorCompletion of string * string
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
@@ -604,6 +613,9 @@ type logseq_action =
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
+  | OpenSettingsDarkThemeMenu
+  | CloseSettingsDarkThemeMenu
+  | ChangeDarkTheme of string
   | OpenSettingsLanguageMenu
   | CloseSettingsLanguageMenu
   | ChooseSettingsLanguage of string
@@ -779,7 +791,9 @@ let initial () =
     settings_tabs_open = false;
     runtime_log_open = false;
     appearance = "system";
+    dark_theme = "black";
     settings_appearance_menu_open = false;
+    settings_dark_theme_menu_open = false;
     language = "system";
     system_language = "en";
     language_choices = settings_language_choices ();
@@ -813,6 +827,7 @@ let initial () =
     outliner_rows = [];
     outliner_selected_block_ids = [];
     outliner_editing = None;
+    outliner_edit_scope = None;
     outliner_selection_revision = 0;
     outliner_autocomplete = None;
     outliner_autocomplete_candidates = [];
@@ -1422,9 +1437,12 @@ let valid_authentication_state_ state =
   state = "restoring" || state = "signedOut" || state = "signingIn"
   || state = "signedIn" || state = "signingOut"
 
+let normalize_dark_theme = function "solarized" -> "solarized" | _ -> "black"
+
 let current_settings (current : logseq_model) =
   {
     appearance = current.appearance;
+    dark_theme = current.dark_theme;
     language = current.language;
     system_language = Some current.system_language;
     spell_check = current.spell_check;
@@ -1538,7 +1556,7 @@ let enqueue_effect (current : logseq_model) eff =
   }
 
 let cancel_outliner_editing (current : logseq_model) =
-  let current = cancel_outliner_autosave current in
+  let current = { (cancel_outliner_autosave current) with outliner_edit_scope = None } in
   match current.outliner_editing with
   | Some _ ->
     let updated =
@@ -2133,6 +2151,25 @@ let rec update (current : logseq_model) action =
       { current with search_result_pages = [results]; search_result_count = List.length results; search_loading = false; search_loading_more = false; search_has_more = false }
     else current
   | ApplyCoreSnapshot projection ->
+    let current = match projection.widget_block_uuid with
+      | Some uuid when current.app_navigation_path <> [NodeRoute uuid]
+          || current.search_open || current.destination <> JournalsDestination ->
+        { (cancel_outliner_autosave current) with
+          destination = JournalsDestination;
+          app_navigation_path = [NodeRoute uuid];
+          app_navigation_previews = [];
+          search_open = false;
+          search_navigation_path = [];
+          settings_open = false;
+          sidebar_open = false;
+          graph_menu_open = false;
+          pdf_workspace = None;
+          asset_preview = None;
+          outliner_editing = None;
+          outliner_edit_scope = None;
+          composer_expanded = false;
+          composer_autofocus = false }
+      | _ -> current in
     let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
     (* The block editor takes ownership of keyboard focus. Retaining an expanded
        composer here would remount its autofocus field when editing ends. *)
@@ -2172,11 +2209,16 @@ let rec update (current : logseq_model) action =
      | _ -> updated)
   | BeginOutlinerEdit uuid ->
     let id = current.next_effect_id in
-    enqueue_effect current (TapOutlinerBlockEffect (id, uuid))
+    enqueue_effect {current with outliner_edit_scope = None} (TapOutlinerBlockEffect (id, uuid))
   | BeginOutlinerEditAt (uuid, caret) ->
-    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+    enqueue_effect {current with outliner_edit_scope = None} (EditorOutlinerEventEffect (current.next_effect_id,
       Yojson.Basic.to_string (`Assoc ["type", `String "tapBlock"; "uuid", `String uuid;
         "caretUTF16Offset", `Int caret])))
+  | BeginEmbeddedOutlinerEdit (scope, uuid, caret) ->
+    let action = match caret with
+      | Some offset -> BeginOutlinerEditAt (uuid, offset)
+      | None -> BeginOutlinerEdit uuid in
+    { (update current action) with outliner_edit_scope = Some scope }
   | EditorCompletion (kind, value) ->
     let fields = if kind = "searchAutocomplete" then ["query", `String value]
       else if kind = "submitAutocomplete" then ["value", `String value] else [] in
@@ -2497,7 +2539,8 @@ let rec update (current : logseq_model) action =
          | _ -> resolved in
        let edited_uuid = match eff with
          | PasteOutlinerTextEffect (_, uuid, _, _) | ChangeOutlinerTextEffect (_, uuid, _, _) -> Some uuid
-         | EditorOutlinerEventEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
+         | EditorOutlinerEventEffect _ | OutlinerToolbarEffect (_, "lineBreak") ->
+           Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | BackspaceOutlinerEditorEffect (_, uuid, _, _) -> Some uuid
          | ChooseOutlinerAutocompleteEffect _ -> Option.map (fun editing -> editing.editing_uuid) resolved.outliner_editing
          | _ -> None in
@@ -2609,7 +2652,7 @@ let rec update (current : logseq_model) action =
     if List.exists (function AddRootBlockEffect (_, parent) -> parent = uuid | _ -> false)
       (current.pending_effects @ current.in_flight_effects) then current
     else let id = current.next_effect_id in
-      enqueue_effect current (AddRootBlockEffect (id, uuid))
+      enqueue_effect {current with outliner_edit_scope = None} (AddRootBlockEffect (id, uuid))
   | LoadOlderJournals ->
     if current.graph_loading || load_older_journals_active_ current then current
     else begin
@@ -2663,7 +2706,7 @@ let rec update (current : logseq_model) action =
     if reusable then updated
     else enqueue_effect updated (SelectSidebarPageEffect (updated.next_effect_id, uuid))
   | OpenQuickAction kind ->
-    if not (kind = "capture" || kind = "audio" || kind = "journal") then
+    if not (kind = "capture" || kind = "audio" || kind = "journal" || kind = "task") then
       current
     else begin
       let updated =
@@ -2680,7 +2723,16 @@ let rec update (current : logseq_model) action =
           graph_menu_open = false;
           destination = JournalsDestination;
           composer_expanded = kind <> "journal";
-          composer_autofocus = kind = "capture";
+          composer_autofocus = kind = "capture" || kind = "task";
+          selected_task_status =
+            (if kind = "task" then begin
+               let statuses = available_task_statuses current.task_statuses in
+               match List.find_opt (fun (status : task_status) ->
+                 status.ident = Some "logseq.property/status.todo") statuses with
+               | Some _ as todo -> todo
+               | None -> List.nth_opt statuses 0
+             end
+             else current.selected_task_status);
         }
       in
       let cleared =
@@ -2836,6 +2888,7 @@ let rec update (current : logseq_model) action =
     {
       current with
       appearance = settings.appearance;
+      dark_theme = normalize_dark_theme settings.dark_theme;
       language = settings.language;
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
@@ -2939,6 +2992,7 @@ let rec update (current : logseq_model) action =
       settings_open = true;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
+      settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
       base_url_draft = current.base_url;
@@ -2949,6 +3003,7 @@ let rec update (current : logseq_model) action =
       settings_open = false;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
+      settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
       base_url_draft = current.base_url;
@@ -2966,6 +3021,17 @@ let rec update (current : logseq_model) action =
         current with
         appearance;
         settings_appearance_menu_open = false;
+      }
+  | OpenSettingsDarkThemeMenu ->
+    { current with settings_dark_theme_menu_open = true }
+  | CloseSettingsDarkThemeMenu ->
+    { current with settings_dark_theme_menu_open = false }
+  | ChangeDarkTheme dark_theme ->
+    persist_settings_change current
+      {
+        current with
+        dark_theme = normalize_dark_theme dark_theme;
+        settings_dark_theme_menu_open = false;
       }
   | OpenSettingsLanguageMenu ->
     { current with settings_language_menu_open = true }
@@ -3343,18 +3409,51 @@ and apply_core_snapshot (current : logseq_model)
         else current.local_graph_ids @ [ graph_id ]
       | None -> current.local_graph_ids
     in
+    let reconcile_path path previous =
+      let rec take_route matches skipped = function
+        | [] -> None
+        | route :: rest when matches route -> Some (route, List.rev_append skipped rest)
+        | route :: rest -> take_route matches (route :: skipped) rest in
+      let rec reconcile kept previous = function
+        | [] -> List.rev kept, previous
+        | (NodeRoute uuid as requested) :: rest ->
+          let matched = match take_route (fun route -> route.node_uuid = uuid) [] previous with
+            | Some _ as exact -> exact
+            | None -> take_route (fun route -> route.node_scroll_target = Some uuid) [] previous in
+          (match matched with
+           | None -> reconcile (requested :: kept) previous rest (* Still pending. *)
+           | Some (route, remaining) ->
+             let kept = if node_route_by_uuid projection.node_routes route.node_uuid = None then kept
+               else NodeRoute route.node_uuid :: kept in
+             reconcile kept remaining rest) in
+      reconcile [] previous path
+    in
+    let app_navigation_path, search_path =
+      if projection.is_graph_snapshot_recovery && not selected_graph_changed then
+        let app_path, previous = reconcile_path current.app_navigation_path current.node_routes in
+        let search_path, _ = reconcile_path current.search_navigation_path previous in
+        app_path, search_path
+      else current.app_navigation_path, current.search_navigation_path
+    in
+    let app_navigation_previews =
+      if app_navigation_path = current.app_navigation_path then current.app_navigation_previews
+      else List.filter (fun (preview : node_projection) ->
+        List.mem (NodeRoute preview.node_uuid) app_navigation_path) current.app_navigation_previews
+    in
     let search_navigation_path =
-      match last_opt projection.node_routes, last_opt current.search_navigation_path with
+      match last_opt projection.node_routes, last_opt search_path with
       | Some { node_scroll_target = Some target; node_uuid; _ }, Some (NodeRoute requested)
         when target = requested
              && List.length projection.node_routes =
-                List.length current.app_navigation_path + List.length current.search_navigation_path ->
-        pop_route current.search_navigation_path @ [NodeRoute node_uuid]
-      | _ -> current.search_navigation_path
+                List.length app_navigation_path + List.length search_path ->
+        pop_route search_path @ [NodeRoute node_uuid]
+      | _ -> search_path
     in
     let updated =
       {
         (composer_for_graph current projection.selected_graph_id) with
+        app_navigation_path;
+        app_navigation_previews;
         search_navigation_path;
         selected_graph = projection.graph_name;
         selected_graph_id = projection.selected_graph_id;

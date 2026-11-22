@@ -12,8 +12,10 @@ import com.logseq.logseq.AndroidAssetImporter
 import com.logseq.logseq.AndroidAudioPlayer
 import com.logseq.logseq.AndroidAudioRecorder
 import com.logseq.logseq.AndroidAudioTranscriber
+import com.logseq.logseq.AndroidWidgetContent
 import com.logseq.logseq.AndroidPlatformServices
 import com.logseq.logseq.CognitoAuthProvider
+import com.logseq.logseq.DEFAULT_DARK_THEME
 import com.logseq.logseq.isNetworkUnavailable
 import com.logseq.logseq.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
@@ -22,6 +24,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -45,6 +49,8 @@ internal class LogseqRuntime(
     private val runtimeJob = SupervisorJob(parentScope.coroutineContext[kotlinx.coroutines.Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
     private var ownsCore = false
+    private var widgetRefreshJob: Job? = null
+    private var widgetRefreshPending = false
 
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext)
@@ -55,6 +61,13 @@ internal class LogseqRuntime(
     companion object {
         private const val LOGO_IMAGE_ID = 1
     }
+
+    private data class InitialState(
+        val storage: AndroidStorageState,
+        val rootNode: Long,
+        val hasStoredSession: Boolean,
+        val hasInitialWidgetBlock: Boolean,
+    )
 
     private val platformEffects = AndroidPlatformEffects(
         authentication = CognitoAndroidAuthentication(authentication),
@@ -99,7 +112,7 @@ internal class LogseqRuntime(
     private var effectDrain: NativeEffectDrain? = null
     private var graphCatalogAutoRefresh: GraphCatalogAutoRefresh? = null
     private val appEntries = AndroidAppEntryCoordinator(
-        scope, ::handleAppEntry, ::reportError, java.io.File(activity.filesDir, "incoming-shares"),
+        scope, ::handleAppEntry, ::reportQueuedAppEntryError, java.io.File(activity.filesDir, "incoming-shares"),
     )
     private val outlinerCommands = OutlinerPlatformCommandDispatcher(
         onBatch = ::handleOutlinerCommandBatch,
@@ -110,6 +123,10 @@ internal class LogseqRuntime(
     )
 
     var rootNodeId by mutableStateOf<Long?>(null)
+        private set
+    var isRestoringInitialGraph by mutableStateOf(false)
+        private set
+    var isOpeningInitialWidgetBlock by mutableStateOf(false)
         private set
     var startupError by mutableStateOf<Throwable?>(null)
         private set
@@ -136,25 +153,53 @@ internal class LogseqRuntime(
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
+    private var darkTheme by mutableStateOf(DEFAULT_DARK_THEME)
 
     init {
         bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }
         logRuntime("info", "ui", "Kotlin host initialized")
     }
 
-    fun start() {
+    fun start(initialWidgetLink: Map<String, Any?>?, onInitialWidgetRetained: () -> Unit) {
+        isOpeningInitialWidgetBlock = initialWidgetLink != null
         scope.launch {
             try {
                 NativeCoreSession.gate.lock(this@LogseqRuntime)
                 ownsCore = true
+                if (initialWidgetLink != null) {
+                    try {
+                        appEntries.publish(initialWidgetLink, initialWidgetBlock = true)
+                        onInitialWidgetRetained()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        reportWidgetLinkError(error)
+                    }
+                }
                 AndroidGraphImportProgress.listener = { graphId, phase, completed, total ->
                     val current = graphProgress
                     if (current?.graphId == graphId && phase in setOf("importing", "opening"))
                         graphProgress = current.copy(phase = phase, completed = completed, total = total)
                 }
-                val authenticationCode = platformEffects.initialAuthenticationCode()
-                val storage = platformEffects.loadStorageState()
+                // Prepare the retained tree while the activity draws its first frame.
+                val (storage, rootNode, hasStoredSession, hasInitialWidgetBlock) = withContext(patchDispatcher) {
+                    val (authenticationCode, savedStorage, pendingWidgetBlock) = withContext(Dispatchers.IO) {
+                        Triple(
+                            platformEffects.initialAuthenticationCode(),
+                            platformEffects.loadStorageState(),
+                            appEntries.hasInitialWidgetBlocks(),
+                        )
+                    }
+                    val root = bridge.initialize(authenticationCode = authenticationCode)
+                    for (update in savedStorage.startupHostUpdates) {
+                        applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
+                    }
+                    InitialState(savedStorage, root, authenticationCode == 3, pendingWidgetBlock)
+                }
+                isOpeningInitialWidgetBlock = hasInitialWidgetBlock
+                isRestoringInitialGraph = hasStoredSession && storage.selectedGraphId in storage.localGraphIds
                 appearance = storage.settings.appearance
+                darkTheme = storage.settings.darkTheme
                 storageBaseUrl = storage.baseUrl
 
                 val lifecycle = AndroidGraphLifecycle(
@@ -202,18 +247,20 @@ internal class LogseqRuntime(
                 )
                 effectDrain = drain
 
-                val rootNode = bridge.initialize(authenticationCode = authenticationCode)
-                for (update in storage.startupHostUpdates) {
-                    applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
-                }
                 rootNodeId = rootNode
                 NativeCoreSession.syncActive = ::syncInBackground
+                NativeCoreSession.updateActiveWidgetTask = ::setWidgetTaskStatus
+                NativeCoreSession.refreshActiveRandomWidget = {
+                    AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore, resampleRandom = true)
+                }
                 scope.launch { drain.drain(scope) }
-                restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
+                restoreCore(hasStoredSession, storage)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 startupError = error
+                isRestoringInitialGraph = false
+                isOpeningInitialWidgetBlock = false
                 reportError(error)
             }
         }
@@ -235,6 +282,7 @@ internal class LogseqRuntime(
     }.await()
 
     fun onLifecycleResumed(resumed: Boolean) {
+        if (resumed && ownsCore) scheduleWidgetRefresh()
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         ensureGraphEventsSync()
@@ -326,6 +374,7 @@ internal class LogseqRuntime(
     // snapshot; cache them so the WebSocket loop can pull entity changes
     // without holding client-side state of its own (iOS snapshot fields).
     private fun trackSyncState(response: String) {
+        scheduleWidgetRefresh()
         graphSyncEligibility.update(response)
         if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
             pendingSyncRequested = false
@@ -340,6 +389,29 @@ internal class LogseqRuntime(
                 selectedGraphId = result.getString("selectedGraphId")
             }
         }
+    }
+
+    private fun scheduleWidgetRefresh() {
+        widgetRefreshPending = true
+        if (widgetRefreshJob?.isActive == true) return
+        widgetRefreshJob = scope.launch {
+            while (widgetRefreshPending) {
+                delay(750)
+                widgetRefreshPending = false
+                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+            }
+        }
+    }
+
+    private suspend fun setWidgetTaskStatus(change: WidgetTaskStatusChange): Boolean {
+        val response = bridge.callCore(change.request())
+        val saved = JSONObject(response).optBoolean("ok")
+        AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+        if (saved) {
+            applyCoreResponse(response)
+            requestSyncNow()
+        }
+        return saved
     }
 
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
@@ -547,6 +619,7 @@ internal class LogseqRuntime(
         if (effect.kind == "save-settings" && resolution.succeeded) {
             val storage = platformEffects.loadStorageState()
             appearance = storage.settings.appearance
+            darkTheme = storage.settings.darkTheme
             if (storage.baseUrl != storageBaseUrl) {
                 graphCatalogAutoRefresh?.stopPeriodic()
                 hasOpenGraph = false
@@ -679,6 +752,15 @@ internal class LogseqRuntime(
             )
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
+            if (isOpeningInitialWidgetBlock) {
+                try {
+                    appEntries.deliverInitialWidgetBlocks(::reportWidgetLinkError)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    reportWidgetLinkError(error)
+                }
+            }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
             // The catalog patch carries the authentication snapshot the UI
             // renders against; by now auth state is published either way.
@@ -696,6 +778,9 @@ internal class LogseqRuntime(
         } catch (error: Throwable) {
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+        } finally {
+            isRestoringInitialGraph = false
+            isOpeningInitialWidgetBlock = false
         }
     }
 
@@ -709,6 +794,21 @@ internal class LogseqRuntime(
     }
 
     // --- App entries (deep links + share intents) ---
+
+    private fun reportQueuedAppEntryError(error: Throwable) {
+        if (error is AndroidAppEntryRejected &&
+            (error.code == "outliner_effect_failed" || error.code == "outliner_command_failed")
+        ) {
+            reportWidgetLinkError(error)
+        } else {
+            reportError(error)
+        }
+    }
+
+    private fun reportWidgetLinkError(error: Throwable) {
+        reportError(error)
+        LogseqDialogs.notifyError(error.message ?: "The linked block could not be opened.")
+    }
 
     private suspend fun handleAppEntry(entry: AndroidAppEntry) {
         logRuntime("info", "ui", "Handling Android app entry ${entry.kind}")
@@ -726,8 +826,10 @@ internal class LogseqRuntime(
                     .toString()
             )
             AndroidAppEntryKind.SharedText, AndroidAppEntryKind.DeepLink -> applyAppEntryCoreRequest(entry.coreRequest())
-            AndroidAppEntryKind.SharedAsset ->
+            AndroidAppEntryKind.SharedAsset -> {
+                check(hasOpenGraph) { "Open a graph before adding a shared attachment" }
                 addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
+            }
         }
     }
 
@@ -752,7 +854,9 @@ internal class LogseqRuntime(
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
-            error("The native core rejected the Android app entry")
+            val error = decoded.optJSONObject("error")
+            val message = error?.optString("message")?.takeIf(String::isNotBlank)
+            throw AndroidAppEntryRejected(message ?: "The native core rejected the Android app entry", error?.optString("code"))
         }
         applyCoreResponse(response)
         val result = decoded.optJSONObject("result")
@@ -915,7 +1019,11 @@ internal class LogseqRuntime(
         graphCatalogAutoRefresh?.dispose()
         effectDrain?.dispose()
         bridge.onCoreIdle = null
-        if (ownsCore) NativeCoreSession.syncActive = null
+        if (ownsCore) {
+            NativeCoreSession.syncActive = null
+            NativeCoreSession.updateActiveWidgetTask = null
+            NativeCoreSession.refreshActiveRandomWidget = null
+        }
         runtimeJob.cancel()
         NativeCoreSession.cleanupScope.launch {
             runtimeJob.join()
@@ -932,6 +1040,7 @@ internal class LogseqRuntime(
     }
 
     val effectiveAppearance: String get() = appearance
+    val effectiveDarkTheme: String get() = darkTheme
 }
 
 // Recorded audio asset produced by the recording sheet — payload shape

@@ -3,6 +3,7 @@ val settings_language_choice_radio :
   Model.settings_language_choice Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.radio_el
 val settings_language_choice_menu_item :
+  Model.logseq_model Signal.signal ->
   Model.settings_language_choice Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val settings_language_control :
@@ -37,9 +38,9 @@ val runtime_log_screen :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_toggle_spell_check :
-  (Model.logseq_action -> 'a) -> Lui_protocol.event -> unit
+  (Model.logseq_action -> 'a) -> bool -> unit
 val settings_toggle_auto_correction :
-  (Model.logseq_action -> 'a) -> Lui_protocol.event -> unit
+  (Model.logseq_action -> 'a) -> bool -> unit
 val settings_general_card :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

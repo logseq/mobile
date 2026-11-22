@@ -60,7 +60,7 @@ let seed_mode conn mode =
   | Header_navigation -> Seed.seed_header_navigation conn
   | Composer -> Seed.seed_composer conn (now_ms ())
   | Outliner -> Seed.seed_outliner conn (now_ms ())
-  | Fixture -> Seed.seed_fixture conn
+  | Fixture -> Seed.seed_fixture conn (now_ms ())
   | Performance -> Seed.seed_performance conn (now_ms ())
   | PerformanceSized (journals, blocks) ->
     Seed.seed_performance_sized conn (now_ms ()) journals blocks

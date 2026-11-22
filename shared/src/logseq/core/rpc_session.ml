@@ -308,7 +308,7 @@ let route_breadcrumbs context (route : Types.node_route) =
 let node_properties_for session uuid =
   match query_db session with
   | None -> `Null
-  | Some db -> (match Node_property.render db ~owner:uuid ~encode_block:(result_block_encoder db) with
+  | Some db -> (match Node_property.render ~defer_values:true db ~owner:uuid ~encode_block:(result_block_encoder db) with
       | Ok value -> value | Error _ -> `Null)
 
 let reference_blocks_json session current serialize blocks =
@@ -377,7 +377,7 @@ let empty_journals_json session =
     `Assoc ["uuid", `String page.uuid; "title", `String page.title;
       "journalDay", `Int day]) pages)
 
-let snapshot session context_blocks blocks =
+let snapshot ?(graph_snapshot_recovery = false) session context_blocks blocks =
   let s = state session in
   let h = host session in
   let sidebar = sidebar_pages session in
@@ -491,6 +491,7 @@ let snapshot session context_blocks blocks =
              | Some value -> `Int value
              | None -> `Null )
          ; ("syncConnected", `Bool s.sync_connected)
+         ; ("isGraphSnapshotRecovery", `Bool graph_snapshot_recovery)
          ; ("syncTransport", Sync_driver.to_yojson s.sync_transport)
          ; ( "taskPriorities"
            , Rpc.json_list (List.map Rpc.status_response_json
@@ -539,11 +540,15 @@ let outliner_patch_result session context blocks deleted splices =
     else match query_db session with
       | None -> blocks
       | Some db ->
-        let queries = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
-        List.iter (fun uuid -> Hashtbl.replace queries uuid ()) (Query_block.owner_uuids db);
+        let dependent_rows = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
+        List.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ()) (Query_block.owner_uuids db);
+        Seq.iter (fun (datom : Datascript.datom) ->
+          Option.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ())
+            (Graph_read.uuid_for_eid db datom.e))
+          (Datascript.Db.datoms db Datascript.Aevt ~a:"block/link" ());
         List.iter (fun (block : Model.block) -> Hashtbl.replace included block.uuid ()) blocks;
         let refreshed = List.filter (fun (block : Model.block) ->
-          Hashtbl.mem queries block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
+          Hashtbl.mem dependent_rows block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
         List.rev_append (List.rev blocks) refreshed in
   let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
     ?sync_error:(Pump.pending_sync_error session)
@@ -572,7 +577,7 @@ let structural_outliner_patch anchored session before_context before_state
   in
   outliner_patch_result session after_context blocks deleted splices
 
-let snapshot_visible session =
+let visible_snapshot ~graph_snapshot_recovery session =
   let s = state session in
   let h = host session in
   let context_blocks =
@@ -615,12 +620,14 @@ let snapshot_visible session =
     then context_blocks
     else Model.visible_from s.model context_blocks
   in
-  snapshot session context_blocks blocks
+  snapshot ~graph_snapshot_recovery session context_blocks blocks
 
-let sidebar_snapshot session =
+let snapshot_visible session = visible_snapshot ~graph_snapshot_recovery:false session
+
+let sidebar_snapshot ?(graph_snapshot_recovery = false) session =
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = false };
-  snapshot_visible session
+  visible_snapshot ~graph_snapshot_recovery session
 
 let graph_catalog_snapshot session =
   let s = state session in
@@ -844,6 +851,11 @@ let dispatch_outliner_event session payload =
              refresh_reference_metadata session aggregate projected
                operations
            in
+           let template_copies = match operations, query_db session with
+             | _ :: _, Some db -> So.unseen_template_copies db projected operations
+             | _ -> [] in
+           let projected = if template_copies = [] then projected
+             else {projected with Outliner.blocks = projected.Outliner.blocks @ template_copies} in
            let next_state =
              List.fold_left
                (fun current (operation : Ops.pending_operation) ->
@@ -884,7 +896,8 @@ let dispatch_outliner_event session payload =
            if reference_toggle <> None || external_results || (state session).node_routes <> [] then
              snapshot_visible session
            else
-             (match event_patch_plan ?db:context.Outliner.db message operations with
+             (match if template_copies <> [] then So.Structural_diff
+                    else event_patch_plan ?db:context.Outliner.db message operations with
               | So.Patch_blocks changed ->
                 outliner_patch session projected changed
               | So.Structural_diff ->
@@ -895,7 +908,46 @@ let dispatch_outliner_event session payload =
                     previous projected))
     end
 
-let switch_graph_model session payload =
+let set_sidebar_page session (page : Model.entity_summary) ~zoom =
+  session.Types.state := { (state session) with selected_sidebar_page = Some page };
+  session.state := { (state session) with related_blocks =
+    (if selected_page_is_tag session then [] else So.references_for_node session page.uuid) };
+  reset_outliner session;
+  if zoom then begin
+    let outliner_state, _ = Outliner.update (base_outliner_context_live session)
+      (state session).outliner_state (Outliner.Zoom_in page.uuid) in
+    session.state := { (state session) with outliner_state }
+  end
+
+let describe_node_route session ~uuid ~page ~scroll_target ~zoom_to_block =
+  let h = host session in
+  let is_tag = Option.exists (fun check -> check uuid) h.Types.graph_node_is_tag in
+  let is_property = Option.exists (fun check -> check uuid) h.Types.graph_node_is_property in
+  let related_blocks =
+    if not is_tag then So.references_for_node session uuid
+    else if So.uses_paged_tag_objects session then []
+    else Option.value ~default:[] (Option.bind h.graph_tag_objects (fun load -> load uuid)) in
+  { Types.uuid; is_tag; is_property; page; scroll_target; zoom_to_block;
+    related_blocks; state = Outliner.empty }
+
+let restore_snapshot_navigation session (previous : Types.session_state) =
+  match (host session).Types.graph_node_destination with
+  | None -> ()
+  | Some resolve ->
+    Option.iter (fun (selected : Model.entity_summary) ->
+      Option.iter (fun (page, zoom) ->
+        set_sidebar_page session (if zoom then selected else page) ~zoom)
+        (resolve selected.uuid)) previous.selected_sidebar_page;
+    List.iter (fun (route : Types.node_route) ->
+      Option.iter (fun ((page : Model.entity_summary), zoom_to_block) ->
+        let scroll_target = Option.bind route.scroll_target (fun uuid ->
+          match resolve uuid with
+          | Some (target, true) when target.uuid = page.uuid -> Some uuid
+          | _ -> None) in
+        push_node_route session (describe_node_route session ~uuid:route.uuid ~page
+          ~scroll_target ~zoom_to_block)) (resolve route.uuid)) previous.node_routes
+
+let switch_graph_model ?(preserve_navigation = false) session payload =
   match (host session).Types.model_for_graph with
   | Some load ->
     (try
@@ -908,9 +960,10 @@ let switch_graph_model session payload =
             if uuid = "" then
               Error "graph storage payload requires graphId"
             else begin
+              let previous = state session in
               session.Types.state :=
                 {
-                  !(session.state) with
+                  previous with
                   model = load uuid;
                   active_graph_id = Some uuid;
                   task_reminder_ready_generation = Some (state session).task_reminder_generation;
@@ -923,8 +976,10 @@ let switch_graph_model session payload =
                 };
               clear_node_navigation session;
               session.state :=
-                { !(session.state) with selected_sidebar_page = None };
+                { !(session.state) with selected_sidebar_page = None; related_blocks = [] };
               reset_outliner session;
+              if preserve_navigation && previous.active_graph_id = Some uuid then
+                restore_snapshot_navigation session previous;
               Ok ()
             end
           | _ -> Error "graph storage payload requires graphId")
@@ -1268,7 +1323,9 @@ let ensure_journal session payload =
   | None -> Rpc.failure "invalid_params" "A journal date is required"
   | Some day when not (Journal.valid_day day) -> Rpc.failure "invalid_params" "The journal date is invalid"
   | Some day ->
-    let existing = Option.bind (host session).Types.journal_page_id (fun find -> find day) in
+    let existing = match (host session).Types.journal_page_id with
+      | Some find -> find day
+      | None -> Option.bind (query_db session) (fun db -> Graph_read.journal_page_uuid db day) in
     let result = match existing, projection_server_t session, (state session).config with
       | Some uuid, _, _ -> Ok uuid
       | None, Some base_t, Some _ ->
@@ -1327,32 +1384,27 @@ let select_page session payload =
      with
      | Some page ->
        clear_node_navigation session;
-       session.Types.state :=
-         { !(session.state) with selected_sidebar_page = Some page };
-       session.state :=
-         {
-           !(session.state) with
-           related_blocks =
-             (if selected_page_is_tag session then []
-              else
-                So.references_for_node session page.Model.uuid);
-         };
-       reset_outliner session;
        let _, zoom = So.sidebar_node_destination session page in
-       if zoom then begin
-         let outliner_state, _ = Outliner.update
-           (So.base_outliner_context_live session) (state session).outliner_state
-           (Outliner.Zoom_in page.uuid) in
-         session.state := { !(session.state) with outliner_state }
-       end;
+       set_sidebar_page session page ~zoom;
        snapshot_visible session
      | None ->
        Rpc.failure "unknown_page" "The selected page is not available")
   | _ -> Rpc.failure "invalid_params" "selectPage requires a page id"
 
-let open_node session fields =
+let after_finishing_outliner_edit session navigate =
+  match Outliner.editing_uuid (state session).outliner_state with
+  | None -> navigate ()
+  | Some _ ->
+    let response = dispatch_outliner_event session {|{"type":"cancelEditing"}|} in
+    if Json.Util.member "ok" (Json.from_string response) = `Bool true then navigate ()
+    else response
+
+let open_node_with_route ~replace session fields =
   match Rpc.required_string fields "uuid" with
   | Error message -> Rpc.failure "invalid_params" message
+  | Ok uuid when replace && (match (state session).node_routes with
+      | [route] -> route.uuid = uuid
+      | _ -> false) -> snapshot_visible session
   | Ok uuid ->
     (match
        (match (host session).Types.graph_node_destination with
@@ -1366,40 +1418,19 @@ let open_node session fields =
        let reveal = zoom && List.assoc_opt "reveal" fields = Some (`Bool true) in
        let scroll_target = if reveal then Some uuid else None in
        let uuid = if reveal then page.uuid else uuid in
-       let tag =
-         match (host session).graph_node_is_tag with
-         | Some check -> check uuid
-         | None -> false
-       in
-       let property =
-         match (host session).graph_node_is_property with
-         | Some check -> check uuid
-         | None -> false
-       in
-       let related =
-         if tag && So.uses_paged_tag_objects session then []
-         else if tag then
-           match (host session).graph_tag_objects with
-           | Some load -> Option.value ~default:[] (load uuid)
-           | None -> []
-         else So.references_for_node session uuid
-       in
-       let route =
-         {
-           Types.uuid;
-           is_tag = tag;
-           is_property = property;
-           page;
-           scroll_target;
-           zoom_to_block = zoom && not reveal;
-           related_blocks = related;
-           state = Outliner.empty;
-         }
-       in
-       push_node_route session route;
-       snapshot_visible session
+       let route = describe_node_route session ~uuid ~page ~scroll_target
+         ~zoom_to_block:(zoom && not reveal) in
+       let open_route () =
+         if replace then clear_node_navigation session;
+         push_node_route session route;
+         snapshot_visible session in
+       if replace then after_finishing_outliner_edit session open_route
+       else open_route ()
      | None ->
-       Rpc.failure "unknown_node" "The referenced node is not available")
+       if replace then Rpc.failure "invalid_deep_link" "The linked block is not available"
+       else Rpc.failure "unknown_node" "The referenced node is not available")
+
+let open_node session fields = open_node_with_route ~replace:false session fields
 
 let send_message session payload =
   match Rpc.send_payload payload with
@@ -1949,14 +1980,200 @@ let child_context session parent_id =
      | None -> current)
   | None -> current
 
-let deep_link_response session extra =
-  match Json.from_string (snapshot_visible session) with
+let append_deep_link_result response extra =
+  match Json.from_string response with
   | `Assoc envelope ->
-    let fields = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
-    Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
+    (match List.assoc_opt "result" envelope with
+     | Some (`Assoc fields) ->
+       Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
+     | _ -> response)
   | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"
 
-let graph_deep_link session graph page block =
+let deep_link_response session extra =
+  append_deep_link_result (snapshot_visible session) extra
+
+let widget_decrypt text = Ok text
+
+let widget_block_is_visible db visible eid =
+  Graph_read.value db eid "block/page" <> None
+  && Graph_read.value db eid "block/name" = None
+  && Graph_read.value db eid "logseq.property/built-in?" <> Some (Datascript.Bool true)
+  && visible eid
+
+let widget_title ?(minimum = 1) db eid =
+  Option.bind (Graph_read.entity_summary widget_decrypt db eid) (fun (block : Model.entity_summary) ->
+    let title = String.trim block.title in
+    let rec preview offset length =
+      if offset = String.length title || length = 160 then
+        if length >= minimum then Some { block with title = String.sub title 0 offset } else None
+      else
+        let char = String.get_utf_8_uchar title offset in
+        preview (offset + Uchar.utf_decode_length char) (length + 1)
+    in
+    preview 0 0)
+
+let widget_block_fields (block : Model.entity_summary) =
+  ["uuid", `String block.uuid; "title", `String block.title]
+
+let widget_status = "logseq.property/status"
+let widget_task_limit = 10
+
+let widget_status_choices db eid =
+  match Datascript.entid db "db/ident" (Datascript.Keyword widget_status) with
+  | None -> []
+  | Some property ->
+    Graph_read.closed_value_eids db property
+    |> Graph_read.scope_closed_value_eids db ~owner:eid
+    |> List.filter_map (Graph_read.choice_metadata widget_decrypt db)
+
+let widget_status_appearance (status : Model.status) =
+  let style = Task_status_style.style ~ident:status.ident ~icon_id:status.icon_id ~title:status.title in
+  let light, dark = Task_status_style.colors style ~custom:status.icon_color in
+  `Assoc ["icon", `String (Task_status_style.icon style);
+          "light", `String light; "dark", `String dark]
+
+let widget_status_choice (status : Model.status) =
+  match Rpc.status_response_json status with
+  | `Assoc fields -> `Assoc (("appearance", widget_status_appearance status) :: fields)
+  | json -> json
+
+let widget_db session graph_id =
+  match (host session).Types.model_for_graph with
+  | Some _ when (state session).active_graph_id <> Some graph_id -> None
+  | _ -> query_db session
+
+let widget_graph_locked session =
+  selected_graph_is_encrypted session && not (selected_graph_is_unlocked session)
+
+let active_widget_db session =
+  match (state session).config with
+  | Some config when config.Api.graph_id <> "" && not (widget_graph_locked session) ->
+    (* The mobile host opens an encrypted local graph only after loading its key.
+       The local projection can already be open while the catalog is loading. *)
+    Option.map (fun db -> config.graph_id, db) (widget_db session config.graph_id)
+  | _ -> None
+
+let widget_random_interval_ms = 60 * 60 * 1000
+
+let widget_random_sample db visible =
+  let module Ds = Datascript in
+  let attr = "block/page" in
+  let first_eid seq = match Seq.uncons seq with
+    | Some ((datom : Ds.datom), _) when datom.a = attr -> Some datom.e
+    | _ -> None in
+  let first_page_block = Ds.Db.seek_datoms db Ds.Aevt ~a:attr () in
+  let last_page_block = Ds.Db.rseek_datoms db Ds.Aevt ~a:attr () in
+  match first_eid first_page_block, first_eid last_page_block with
+  | Some first, Some last ->
+    let visited = Hashtbl.create 64 in
+    let bounded datoms =
+      datoms |> Seq.take 16 |> Seq.take_while (fun (datom : Ds.datom) -> datom.a = attr) in
+    let window eid = bounded (Ds.Db.seek_datoms db Ds.Aevt ~a:attr ~e:eid ()) in
+    (* Seek across the page membership index so built-in pages and properties
+       do not crowd out blocks in sparse graphs. Bound both fallback windows. *)
+    let starts = List.init 8 (fun _ -> Random.int_in_range ~min:first ~max:last) in
+    let candidates = Seq.append (List.to_seq starts |> Seq.flat_map window)
+      (Seq.append (bounded first_page_block) (bounded last_page_block)) in
+    candidates |> Seq.filter_map (fun (datom : Ds.datom) ->
+      if Hashtbl.mem visited datom.e then None else (
+        Hashtbl.add visited datom.e ();
+        if visible datom.e && not (Graph_read.entity_is_instance_of db datom.e "logseq.class/Asset") then
+          Option.map (fun _ -> datom.e) (widget_title ~minimum:5 db datom.e)
+        else None))
+    |> Seq.take 24 |> List.of_seq
+  | _ -> []
+
+let widget_random_blocks db visible eids =
+  eids |> List.filter_map (fun eid ->
+    if visible eid && not (Graph_read.entity_is_instance_of db eid "logseq.class/Asset") then
+      Option.map (fun block -> `Assoc (widget_block_fields block)) (widget_title ~minimum:5 db eid)
+    else None)
+
+let widget_snapshot ?(resample = false) session =
+  let module Ds = Datascript in
+  match active_widget_db session with
+  | Some (graph_id, db) ->
+    let now = now_ms () in
+    let still_fresh = match !(session.Types.widget_random_sample) with
+      | Some (id, sampled_at, _) ->
+        id = graph_id && now >= sampled_at && now - sampled_at < widget_random_interval_ms
+      | None -> false in
+    (match !(session.Types.widget_snapshot) with
+     | Some (id, previous, response) when id = graph_id && db == previous && still_fresh && not resample -> response
+     | _ ->
+       let visible = widget_block_is_visible db (Graph_read.related_candidate_is_visible db) in
+       let tasks = ref [] in
+       let add_task (datom : Ds.datom) =
+         let eid = datom.e in
+         if visible eid && not (List.exists (fun (_, _, id, _, _) -> id = eid) !tasks) then
+           match Graph_read.status_for_eid widget_decrypt db eid, widget_title db eid with
+           | Some status, Some block ->
+             let completed = List.mem status.ident
+               [Some "logseq.property/status.done"; Some "logseq.property/status.canceled"] in
+             let updated = Option.value ~default:0
+               (Graph_read.int_value (Graph_read.value db eid "block/updated-at")) in
+             tasks := take widget_task_limit (List.sort (fun (a, t, id, _, _) (b, u, other, _, _) ->
+               compare (a, -t, id) (b, -u, other)) ((completed, updated, eid, block, status) :: !tasks))
+           | _ -> () in
+       Ds.Db.datoms db Ds.Aevt ~a:widget_status () |> Seq.iter add_task;
+       Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task")
+       |> Option.iter (fun root -> Graph_read.class_descendants db root |> List.iter (fun tag ->
+         Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" tag |> Seq.iter add_task));
+       let random_eids = match !(session.widget_random_sample) with
+         | Some (_, _, eids) when still_fresh && not resample -> eids
+         | _ ->
+           let eids = widget_random_sample db visible in
+           session.widget_random_sample := Some (graph_id, now, eids);
+           eids in
+       let random_blocks = widget_random_blocks db visible random_eids in
+       let tasks = List.map (fun (_, _, eid, block, (status : Model.status)) ->
+         let choices = widget_status_choices db eid |> List.map widget_status_choice in
+         `Assoc (["status", `String status.title; "statusUuid", `String status.uuid;
+           "statusAppearance", widget_status_appearance status; "statusChoices", `List choices] @ widget_block_fields block)) !tasks in
+       let response = Rpc.success (`Assoc ["graphId", `String graph_id; "tasks", `List tasks;
+         "randomBlocks", `List random_blocks; "randomBlocksVersion", `Int 2]) in
+       session.widget_snapshot := Some (graph_id, db, response);
+       response)
+  | None ->
+    session.widget_snapshot := None;
+    session.widget_random_sample := None;
+    Rpc.success (`Assoc ["tasks", `List []; "randomBlocks", `List [];
+      "graphLocked", `Bool (widget_graph_locked session)])
+
+let widget_task session graph_id uuid =
+  let open Datascript in
+  let ( let* ) = Option.bind in
+  let* active_graph_id, db = active_widget_db session in
+  if active_graph_id <> graph_id then None else
+  let* eid = entid db "block/uuid" (Uuid uuid) in
+  if not (widget_block_is_visible db (Graph_read.related_candidate_is_visible db) eid) then None else
+  let* status = Graph_read.status_for_eid widget_decrypt db eid in
+  Some (db, status, widget_status_choices db eid)
+
+let set_widget_task_status session fields =
+  let ( let* ) = Result.bind in
+  let update =
+    let* graph_id = Rpc.required_string fields "graphId" in
+    let* uuid = Rpc.required_string fields "uuid" in
+    let* expected_uuid = Rpc.required_string fields "expectedStatusUuid" in
+    let* status_uuid = Rpc.required_string fields "statusUuid" in
+    let* db, current, choices = match widget_task session graph_id uuid with
+      | Some task -> Ok task | None -> Error "The task is no longer available" in
+    if current.uuid = status_uuid then Ok None
+    else if current.uuid <> expected_uuid then Error "The task status has changed" else
+    let* status = match List.find_opt (fun (status : Model.status) -> status.uuid = status_uuid) choices with
+      | Some status -> Ok status | None -> Error "The task status is no longer available" in
+    Ok (Some (Ops.Set_property { uuid; attr = widget_status;
+      expected = Effects.stored_status_value db uuid; value = Some (Effects.status_reference status) })) in
+  match update with
+  | Error message -> Rpc.failure "invalid_widget_task" message
+  | Ok None -> snapshot_visible session
+  | Ok (Some intent) ->
+    (match editing_cursor session with
+     | Ok cursor -> stage_result session (fresh_squuid ()) cursor intent
+     | Error (code, message) -> Rpc.failure code message)
+
+let graph_deep_link ?(from_widget = false) session graph page block =
   let current = state session in
   let graph = if graph = "" then Option.fold ~none:"" ~some:(fun (c : Api.api_config) -> c.graph_id) current.config else graph in
   let matches (candidate : Api.api_graph) = candidate.id = graph || candidate.name = graph in
@@ -1974,7 +2191,9 @@ let graph_deep_link session graph page block =
   match target with
   | Error message -> Rpc.failure "invalid_deep_link" message
   | Ok target when Option.map (fun (config : Api.api_config) -> config.graph_id) current.config <> Some target ->
-    deep_link_response session ["deepLinkGraphId", `String target]
+    let switch_graph () = deep_link_response session ["deepLinkGraphId", `String target] in
+    if from_widget then after_finishing_outliner_edit session switch_graph
+    else switch_graph ()
   | Ok _ ->
     (match block, page with
      | None, None -> deep_link_response session ["deepLinkQuickAction", `String "journal"]
@@ -1989,6 +2208,12 @@ let graph_deep_link session graph page block =
                | None -> Datascript.entid db "block/uuid" (Datascript.Uuid target)) in
          Option.bind id (Graph_read.uuid_for_eid db)) in
        match uuid with
+       | Some uuid when from_widget ->
+         let response = open_node_with_route ~replace:true session ["uuid", `String uuid] in
+         let json = Json.from_string response in
+         if Yojson.Basic.Util.member "ok" json = `Bool true then
+           append_deep_link_result response ["widgetBlockUuid", `String uuid]
+         else response
        | Some uuid -> deep_link_response session ["deepLinkNodeUuid", `String uuid]
        | None -> Rpc.failure "invalid_deep_link" "The linked page or block is not available")
 
@@ -2001,6 +2226,12 @@ let rec dispatch session action payload =
       handle
   in
   match action with
+  | "widgetSnapshot" ->
+    (match payload with
+     | None -> widget_snapshot session
+     | Some _ -> object_action (fun _ fields ->
+       widget_snapshot ~resample:(List.assoc_opt "resampleRandomBlocks" fields = Some (`Bool true)) session))
+  | "setWidgetTaskStatus" -> object_action (fun _ -> set_widget_task_status session)
   | "completeAssetTranscription" -> object_action (fun _ fields ->
     match Rpc.required_string fields "parentId", Rpc.required_string fields "text" with
     | Ok parent_id, Ok text ->
@@ -2026,6 +2257,7 @@ let rec dispatch session action payload =
     | Ok (`Capture text) -> dispatch session "captureShared" (Some (Json.to_string
         (`Assoc (("text", `String text) :: List.filter (fun (key, _) -> key <> "text" && key <> "title" && key <> "url") fields))))
     | Ok (`Graph (graph, page, block)) -> graph_deep_link session graph page block
+    | Ok (`Widget_block (graph, uuid)) -> graph_deep_link ~from_widget:true session graph None (Some uuid)
     | Ok action ->
       let quick_action = match action with `Quick_action value -> `String value | _ -> `Null in
       let response = Json.from_string (snapshot_visible session) in
@@ -2529,9 +2761,13 @@ let rec dispatch session action payload =
       Rpc.failure "graph_changed" "The graph operation changed during snapshot download"
     else if forced && sync_transport_editing session then
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
-    else Rpc.import_snapshot payload h.Types.import_snapshot
-      (fun payload -> switch_graph_model session payload)
-      (fun () -> sidebar_snapshot session)
+    else
+      let graph_snapshot_recovery = forced && match s.active_graph_id with
+        | Some id -> graph_id = `String id
+        | None -> false in
+      Rpc.import_snapshot payload h.Types.import_snapshot
+        (fun payload -> switch_graph_model ~preserve_navigation:graph_snapshot_recovery session payload)
+        (fun () -> sidebar_snapshot ~graph_snapshot_recovery session)
   | "closeGraph" -> object_action (fun _ fields ->
     match Rpc.required_string fields "graphId", h.Types.close_graph with
     | Ok graph_id, Some close ->
@@ -2658,13 +2894,16 @@ let rec dispatch session action payload =
       (fun _config operation -> enqueue_semantic session operation)
       fresh_squuid (fun () -> snapshot_visible session)
   | "beginPendingSync" ->
+    let revision = s.model.revision in
     (match s.config with
      | Some config ->
        (match resolve_graph config with
         | Ok config -> begin_pending_sync session config
         | Error _ -> ())
      | None -> ());
-    pending_sync_patch session
+    (* Request preparation can mark blocks failed. Publish those changes if it did. *)
+    if (state session).model.revision = revision then pending_sync_patch session
+    else snapshot_visible session
   | "completePendingSync" ->
     (match payload with
      | Some payload ->

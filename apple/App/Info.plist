@@ -4,12 +4,9 @@
 <dict>
     <key>UILaunchScreen</key>
     <dict>
+        <!-- Use a blank system launch canvas. Rename the asset if its background changes to refresh stored snapshots. -->
         <key>UIColorName</key>
-        <string>LaunchBackground</string>
-        <key>UIImageName</key>
-        <string>LaunchLogo</string>
-        <key>UIImageRespectsSafeAreaInsets</key>
-        <false/>
+        <string>LaunchCanvas</string>
     </dict>
     <key>LogseqRevision</key>
     <string>$(LOGSEQ_BUILD_REVISION)</string>

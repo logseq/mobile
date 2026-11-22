@@ -1,5 +1,11 @@
 package com.logseq.logseq
 
+import android.os.Build
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inspector.WindowInspector
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -154,13 +160,193 @@ class AndroidEditorKeyboardTest {
 
     @Test fun softwareKeyboardNextCreatesOneBlockWithoutCommittingANewline() {
         val editor = render("")
-        assertEquals(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT,
-            editorInfo().imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION)
+        assertEquals(EditorInfo.IME_ACTION_NEXT, editorInfo().imeOptions and EditorInfo.IME_MASK_ACTION)
         editor.performTextInput("Native keyboard")
         editor.performImeAction()
         editor.assertTextEquals("Native keyboard")
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange("Native keyboard".length)))
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
+    }
+
+    @Test fun softwareKeyboardNextHandsOffWhileTheNextWordIsComposing() {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle { assertTrue(connection.commitText("Hello", 1)) }
+        editor.assertTextEquals("Hello")
+        ui.runOnIdle {
+            assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+        }
+        assertSplit("Hello")
+        val typingConnection = inputConnection()
+        ui.runOnIdle { assertTrue(typingConnection.setComposingText("ni", 1)) }
+        acknowledge("next-block", "", 0)
+        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
+        ui.runOnIdle { assertTrue(typingConnection.commitText("你", 1)) }
+        next.assertIsFocused().assertTextEquals("你")
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
+            it.name == "text-change" && it.values["title"] == "你"
+        } }
+    }
+
+    @Test fun softwareKeyboardCanConfirmACandidateInTheCurrentBlock() {
+        val editor = render("Draft ")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(connection.setComposingText("nihao", 1))
+            assertTrue(connection.commitText("你好", 1))
+        }
+        assertCommittedInCurrentBlock(editor, "Draft 你好")
+    }
+
+    @Test fun softwareKeyboardNextSplitsImmediatelyWithAnActiveComposition() {
+        render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(connection.setComposingText("Hello", 1))
+            connection.beginBatchEdit()
+            assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            connection.endBatchEdit()
+            // Some IMEs reopen composition on the submitted word before the model acknowledges the split.
+            assertTrue(connection.setComposingRegion(0, "Hello".length))
+        }
+        assertSplit("Hello")
+        acknowledge("next-block", "", 0)
+        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("")
+        next.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, null))
+        val nextConnection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(nextConnection.setComposingText("World", 1))
+            assertTrue(nextConnection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            val returns = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "return" }
+            assertEquals(listOf("Hello", "World"), returns.map { it.values["title"] })
+        }
+    }
+
+    @Test fun hardwareEnterCommitsCompositionBeforeSplitting() {
+        val editor = render("")
+        ui.runOnIdle {
+            val view = requireNotNull(findEditorView())
+            val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+            assertTrue(connection.setComposingText("日本語", 1))
+            assertTrue(view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, AndroidKeyEvent.KEYCODE_ENTER)))
+            view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, AndroidKeyEvent.KEYCODE_ENTER))
+        }
+        assertCommittedInCurrentBlock(editor, "日本語")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        assertSplit("日本語")
+    }
+
+    @Test fun keyboardNewlineCommitsCompositionBeforeSplitting() {
+        val editor = render("Draft ")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(connection.setComposingText("你好", 1))
+            assertTrue(connection.commitText("\n", 1))
+        }
+        assertCommittedInCurrentBlock(editor, "Draft 你好")
+        val nextConnection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(if (Build.VERSION.SDK_INT >= 33) nextConnection.commitText("\n", 1, null)
+                else nextConnection.commitText("\n", 1))
+        }
+        assertSplit("Draft 你好")
+    }
+
+    @Test fun softwareBackspaceOnAnEmptyBlockRequestsOneStructuralDelete() {
+        render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(backspaceEvents().isEmpty())
+            connection.endBatchEdit()
+            val backspace = backspaceEvents().single()
+            assertEquals("", backspace.values["title"])
+            assertEquals(0, backspace.values["selection-length"])
+        }
+    }
+
+    @Test fun softwareBackspaceInCodePointsDeletesTextBeforeRemovingTheEmptyBlock() {
+        val editor = render("🙂")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            connection.endBatchEdit()
+        }
+        editor.assertTextEquals("")
+        ui.runOnIdle {
+            assertTrue(backspaceEvents().isEmpty())
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertEquals(1, backspaceEvents().size)
+        }
+    }
+
+    @Test fun repeatedSoftwareBackspaceInOneImeBatchRemovesTheEmptyBlock() {
+        val editor = render("🙂")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            connection.beginBatchEdit()
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
+            connection.endBatchEdit()
+            assertEquals("", backspaceEvents().single().values["title"])
+        }
+        editor.assertTextEquals("")
+    }
+
+    @Test fun movingTheCaretDuringAnImeBatchKeepsTheBlock() {
+        val editor = render("a")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.setSelection(1, 1))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
+        }
+        editor.assertTextEquals("")
+    }
+
+    @Test fun deletingNewTextInTheSameImeBatchKeepsTheBlock() {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.commitText("x", 1))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
+        }
+        editor.assertTextEquals("")
+    }
+
+    private fun backspaceEvents() = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "backspace" }
+
+    private fun assertCommittedInCurrentBlock(editor: SemanticsNodeInteraction, title: String) {
+        editor.assertIsFocused().assertTextEquals(title)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(title.length)))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, null))
+        ui.runOnIdle { assertFalse(events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" }) }
+        ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
+            it.name == "text-change" && it.values["title"] == title
+        } }
+    }
+
+    private fun assertSplit(title: String) {
+        ui.runOnIdle {
+            val split = events.filterIsInstance<LuiEvent.Extension>().single { it.name == "return" }
+            assertEquals(title, split.values["title"])
+            assertEquals(title.length, split.values["caret-utf16-offset"])
+        }
     }
 
     @Test fun shiftEnterInsertsANewlineWithoutSplittingTheBlock() {
@@ -266,17 +452,20 @@ class AndroidEditorKeyboardTest {
         }
     }
 
-    private fun editorInfo(): android.view.inputmethod.EditorInfo {
-        var info: android.view.inputmethod.EditorInfo? = null
-        fun find(view: android.view.View) {
-            if (view.onCheckIsTextEditor()) {
-                val attributes = android.view.inputmethod.EditorInfo()
-                if (view.onCreateInputConnection(attributes) != null) info = attributes
+    private fun editorInfo() = EditorInfo().also { inputConnection(it) }
+
+    private fun findEditorView(): View? {
+        fun find(view: View): View? {
+            if (view.onCheckIsTextEditor()) return view
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) find(view.getChildAt(index))?.let { return it }
             }
-            if (view is android.view.ViewGroup) for (index in 0 until view.childCount) find(view.getChildAt(index))
+            return null
         }
-        ui.runOnIdle { android.view.inspector.WindowInspector.getGlobalWindowViews().forEach(::find) }
-        return requireNotNull(info) { "No native editor connection" }
+        return WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::find)
     }
 
+    private fun inputConnection(attributes: EditorInfo = EditorInfo()) = ui.runOnIdle {
+        requireNotNull(findEditorView()?.onCreateInputConnection(attributes)) { "No native editor connection" }
+    }
 }

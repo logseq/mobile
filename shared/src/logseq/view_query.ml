@@ -35,7 +35,7 @@ let decode_json json =
 let decode raw = try decode_json (Yojson.Basic.from_string raw) with _ -> invalid_query
 
 let result_item owner render_block send source : t =
- fun context parent ->
+ custom @@ fun context parent ->
   let initial = Signal.sample source in
   let expanded = Signal.state context.ui_scheduler Expanded.empty in
   let rows = Signal.own_signal context.ui_scope (Signal.map2 (fun item expanded ->
@@ -54,24 +54,24 @@ let result_item owner render_block send source : t =
       true
     | action -> send action in
   let identifier = "query.result." ^ owner ^ "." ^ string_of_int initial.index in
-  (box ~padding:0 ~accessibility_identifier:identifier [
+  mount context ?parent (box ~padding:0 ~accessibility_identifier:identifier [
     (match initial.block with
      | Some _ -> keyed ~source:rows ~key:(fun row -> row.Model.row_uuid) ~cmp:String.compare
          ~mount:(fun source -> render_block source send)
-     | None -> text ~value_signal:(Signal.map (fun item -> item.title) source) ~text_alignment:`start [])]) context parent
+     | None -> text ~value:(reactive (Signal.map (fun item -> item.title) source)) ~text_alignment:`start [])])
 
 let results_disclosure context identifier expanded label =
   let size = if Lui_ui.host context = KotlinHost then 24 else 10 in
   row ~gap:8 ~cross:`center [
-    icon ~name_signal:(Signal.map (fun expanded ->
-      `app (if expanded then "disclosure-down" else "disclosure-right")) expanded)
+    icon ~name:(reactive (Signal.map (fun expanded ->
+      `app (if expanded then "disclosure-down" else "disclosure-right")) expanded))
       ~width:size ~height:size ~foreground:"muted-foreground"
       ~accessibility_identifier:identifier [];
-    text ~value_signal:label [];
+    text ~value:(reactive label) [];
   ]
 
 let legacy_view ~render_block model_source row_source send : t =
- fun context parent ->
+ custom @@ fun context parent ->
   let owner = (Signal.sample row_source).Model.row_uuid in
   let identifier name = "query." ^ name ^ "." ^ owner in
   let own source = Signal.own_signal context.Lui_ui.ui_scope source in
@@ -85,11 +85,11 @@ let legacy_view ~render_block model_source row_source send : t =
       | row :: rest -> take (row :: acc) (count - 1) rest in
     take [] count query.rows) query (Signal.value limit)) in
   let visible = own (Signal.map (fun row -> row.Model.query_json <> "" && not row.is_collapsed) row_source) in
-  (if_ ~test:visible
+  mount context ?parent (if_ ~test:visible
     (box ~padding_horizontal:16 ~padding_vertical:8
       ~accessibility_identifier:(identifier "block")
       [column ~gap:4 [
-        button ~variant:`ghost ~text_alignment:`start ~min_height:44
+        button ~text:"" ~variant:`ghost ~text_alignment:`start ~min_height:44
           ~label:(View_base.tr (Signal.sample model_source) "Toggle query results") ~accessibility_identifier:(identifier "toggle")
           ~on_press:(fun _ -> Signal.set expanded (not (Signal.sample (Signal.value expanded))))
           [results_disclosure context (identifier "disclosure") (Signal.value expanded)
@@ -98,8 +98,8 @@ let legacy_view ~render_block model_source row_source send : t =
           (column ~gap:4 ~accessibility_identifier:(identifier "rows") [
 
             if_ ~test:(own (Signal.map (fun query -> query.error = None && query.rows = []) query))
-              (text ~value_signal:(own (Signal.map (fun query ->
-                if String.trim query.source = "" then "No query defined" else "No results") query))
+              (text ~value:(reactive (own (Signal.map (fun query ->
+                if String.trim query.source = "" then "No query defined" else "No results") query)))
                 ~foreground:"muted-foreground" ~accessibility_identifier:(identifier "empty") []);
             keyed ~source:entries ~key:(fun row -> Option.value ~default:"cell" row.uuid ^ ":" ^ string_of_int row.index)
               ~cmp:String.compare ~mount:(fun source -> result_item owner render_block send source);
@@ -107,7 +107,7 @@ let legacy_view ~render_block model_source row_source send : t =
               (button ~variant:`ghost ~text:(View_base.tr (Signal.sample model_source) "Show more") ~accessibility_identifier:(identifier "more")
                 ~on_press:(fun _ -> Signal.set limit (Signal.sample (Signal.value limit) + 20)) []);
           ]);
-      ]])) context parent
+      ]]))
 
 let block_values ~render_block owner source send =
   let render_block source send =
@@ -140,7 +140,7 @@ let input_value = function `List values -> String.concat ", " (List.map text_val
       | Some (`Int day) -> Printf.sprintf "%04d-%02d-%02d" (day / 10000) (day / 100 mod 100) (day mod 100)
       | _ -> "")
   | value -> text_value value
-let local_input set = function Lui_protocol.TextChanged (_, value) -> set value | _ -> ()
+let local_input set value = set value
 let list_take count values = List.filteri (fun index _ -> index < count) values
 
 type saved_view = {id : string; name : string; typ : string; data : Json.t}
@@ -224,7 +224,7 @@ let temporal_default kind =
   if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
   else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
 
-let temporal_picker ?on_submit model_source kind id source set : t = fun context parent ->
+let temporal_picker ?on_submit model_source kind id source set : t = custom @@ fun context parent ->
   let picker_value value =
     try
       if kind = "date" then Option.map (fun day ->
@@ -252,7 +252,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = fun context
   let update value =
     observed := value;
     set value in
-  let calendar : t = fun context parent ->
+  let calendar : t = custom @@ fun context parent ->
   let node = Lui_ui.extension context "native-property-date" in
   attach context parent node;
   Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
@@ -272,17 +272,17 @@ let temporal_picker ?on_submit model_source kind id source set : t = fun context
        | _ -> ())
     | _ -> ());
   node in
-  (column ~gap:8 [
+  mount context ?parent (column ~gap:8 [
       text_field ~text_signal:(Signal.value input)
+        (* The date parser accepts these English tokens, so the hint stays untranslated. *)
         ~placeholder:"YYYY-MM-DD / tomorrow / next Friday"
         ~label:(View_base.tr (Signal.sample model_source) "Date picker")
         ~accessibility_identifier:("view.edit.date.input." ^ id)
-        ~on_input:(function Lui_protocol.TextChanged (_, value) ->
+        ~on_input:(fun value ->
           Signal.set input value;
-          Option.iter update (sync value)
-          | _ -> ())
+          Option.iter update (sync value))
         ?on_submit [];
-      calendar]) context parent
+      calendar])
 
 let filter_transition op value =
   let number = function `Int _ | `Float _ -> true | _ -> false in
@@ -306,7 +306,7 @@ let filter_error (draft : filter_draft) =
   then Some "Enter a valid number." else None
 
 let settings_sheet mode owner feature view_source model_source send close : t =
- fun context parent ->
+ custom @@ fun context parent ->
   let initial = Signal.sample view_source in
   let own value = Signal.own_signal context.ui_scope value in
   let state value = Signal.state context.ui_scheduler value in
@@ -324,11 +324,11 @@ let settings_sheet mode owner feature view_source model_source send close : t =
   let update_sort key change = Signal.set sorts (List.map (fun (value : sort_draft) -> if value.key = key then change value else value)
       (Signal.sample (Signal.value sorts))) in
   let choose_property label value choose = menu ~text_signal:label ~label:(View_base.tr (Signal.sample model_source) "Property") [
-    keyed ~source:(own (Signal.map property_choices view_source)) ~key:(fun col -> jtext (jfield "attr" col)) ~cmp:String.compare
+    keyed_dropdown_menu_item ~source:(own (Signal.map property_choices view_source)) ~key:(fun col -> jtext (jfield "attr" col)) ~cmp:String.compare
       ~mount:(fun col -> let col = Signal.sample col in
-        menu_item ~text:(property_title (Signal.sample model_source) col) ~selected_signal:(own (Signal.map ((=) (jtext (jfield "attr" col))) value))
+        dropdown_menu_item ~text:(property_title (Signal.sample model_source) col) ~selected_signal:(own (Signal.map ((=) (jtext (jfield "attr" col))) value))
           ~on_press:(fun _ -> choose (jtext (jfield "attr" col))) [])] in
-  let filter_row source : t = fun context parent ->
+  let filter_row source : t = custom @@ fun context parent ->
     let own value = Signal.own_signal context.ui_scope value in
     let state value = Signal.state context.ui_scheduler value in
     let first : filter_draft = Signal.sample source in
@@ -355,9 +355,9 @@ let settings_sheet mode owner feature view_source model_source send close : t =
           `List (List.init 2 (fun i -> if i = index then numeric text else
             Option.value ~default:`Null (List.nth_opt (jlist draft.value) i)))}))) [] in
     let choose_values = button ~variant:`ghost ~text_alignment:`start ~min_height:44 ~grow:1.0
-      ~text_signal:(own (Signal.map2 (fun col (draft : filter_draft) ->
+      ~text:(reactive (own (Signal.map2 (fun col (draft : filter_draft) ->
         match draft.value with `Null | `List [] -> "Select values" | `String "empty" -> "Empty"
-        | `Bool b -> if b then "Checked" else "Unchecked" | value -> filter_value_title col value) col source))
+        | `Bool b -> if b then "Checked" else "Unchecked" | value -> filter_value_title col value) col source)))
       ~accessibility_identifier:(id "values") ~on_press:(fun _ ->
         Signal.set selection (Signal.sample source).value; Signal.set query ""; Signal.set selecting true) [] in
     let values_sheet =
@@ -370,25 +370,29 @@ let settings_sheet mode owner feature view_source model_source send close : t =
           String_kit.includes ~sub:(String.lowercase_ascii query) (String.lowercase_ascii (jtext (jfield "title" value))))) col (Signal.value query)) in
       let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:(id "values.cancel") ~on_press:(fun _ -> Signal.set selecting false) [] in
+      let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
+        ~accessibility_identifier:(id "values.cancel") ~on_press:(fun _ -> Signal.set selecting false) [] in
       let done_ = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
-      sheet ~text_signal:(own (Signal.map2 property_title model_source col))
+      let toolbar_done_ = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
+        ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
+      View_base.sheet ~model_source ~title:(reactive (own (Signal.map2 property_title model_source col)))
         ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(id "values.sheet") ~on_dismiss:(fun _ -> Signal.set selecting false) [
         list ~grow:1.0 ~style:`inset_grouped [
-          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text_field ~placeholder:(View_base.tr (Signal.sample model_source) "Search values") ~label:(View_base.tr (Signal.sample model_source) "Search values")
+          list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text_field ~placeholder:(View_base.tr (Signal.sample model_source) "Search values") ~label:(View_base.tr (Signal.sample model_source) "Search values")
             ~accessibility_identifier:(id "values.search") ~text_signal:(Signal.value query)
             ~on_input:(local_input (Signal.set query)) []]];
-          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "empty" "Empty" (`String "empty")];
-            list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "any" "Any value" `Null]];
-          dyn (fun col -> if jfield "kind" col = `String "checkbox" then
-            list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "true" "Checked" (`Bool true)]; list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "false" "Unchecked" (`Bool false)]]
+          list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "empty" "Empty" (`String "empty")];
+            list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "any" "Any value" `Null]];
+          reactive (fun col -> if jfield "kind" col = `String "checkbox" then
+            list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "true" "Checked" (`Bool true)]; list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "false" "Unchecked" (`Bool false)]]
             else list_section [
-              keyed ~source:(own (Signal.map (List.mapi (fun i value -> i, value)) filtered))
+              keyed_list_section_item ~source:(own (Signal.map (List.mapi (fun i value -> i, value)) filtered))
                 ~key:(fun (_, value) -> Json.to_string value) ~cmp:String.compare ~mount:(fun value ->
                   let index, value = Signal.sample value in
                   let matched = jlist (jfield "match" value) in
-                  list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [button ~text:(jtext (jfield "title" value)) ~variant:`ghost ~min_height:44 ~text_alignment:`start
+                  list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [button ~text:(jtext (jfield "title" value)) ~variant:`ghost ~min_height:44 ~text_alignment:`start
                     ~accessibility_identifier:(id "choice" ^ "." ^ string_of_int index)
                     ~icon_signal:(own (Signal.map (fun selected -> `app (if matched <> [] &&
                       List.for_all (fun value -> List.mem value (jlist selected)) matched then "task-done" else "outliner-bullet")) (Signal.value selection)))
@@ -397,7 +401,7 @@ let settings_sheet mode owner feature view_source model_source send close : t =
                         List.filter (fun value -> not (List.mem value matched)) current
                         else current @ List.filter (fun value -> not (List.mem value current)) matched))) []])]) col];
         (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; done_]
-         else toolbar ~style_class:"navigation-actions" [cancel; done_])
+         else toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" [toolbar_cancel; toolbar_done_])
       ] in
     let temporal kind =
       let value = own (Signal.map (fun (draft : filter_draft) ->
@@ -410,36 +414,36 @@ let settings_sheet mode owner feature view_source model_source send close : t =
       menu ~label:(View_base.tr (Signal.sample model_source) "Date range") ~accessibility_identifier:(id "timestamp")
         ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> match draft.value with
           | `String label -> label | `Int _ | `Float _ -> "Custom date" | _ -> "Choose date") source))
-        (List.map (fun (key, label) -> menu_item ~text:label ~accessibility_identifier:(id "preset" ^ "." ^ key)
+        (List.map (fun (key, label) -> dropdown_menu_item ~text:label ~accessibility_identifier:(id "preset" ^ "." ^ key)
           ~on_press:(fun _ -> Signal.set custom false; set_value (`String label)) [])
           ["day", "1 day ago"; "three-days", "3 days ago"; "week", "1 week ago";
            "month", "1 month ago"; "three-months", "3 months ago"; "year", "1 year ago"] @
-         [menu_item ~text:(View_base.tr (Signal.sample model_source) "Custom date…") ~accessibility_identifier:(id "custom")
+         [dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Custom date…") ~accessibility_identifier:(id "custom")
            ~on_press:(fun _ -> Signal.set custom true; let current = (Signal.sample source).value in
              match current with `Int _ | `Float _ -> () | _ ->
                set_value (`Int (int_of_string (temporal_default "datetime")))) []]);
       if_ ~test:(own (Signal.map2 (fun custom (draft : filter_draft) -> custom ||
         match draft.value with `Int _ | `Float _ -> true | _ -> false) (Signal.value custom) source)) (temporal "datetime")
     ] in
-    (list_section [
-      list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [row ~gap:4 ~cross:`center ~accessibility_identifier:(id "row") [
+    mount context ?parent (list_section [
+      list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [row ~gap:4 ~cross:`center ~accessibility_identifier:(id "row") [
         box ~grow:1.0 [menu ~text_signal:(own (Signal.map2 property_title model_source col)) ~label:(View_base.tr (Signal.sample model_source) "Property") [
-          keyed ~source:(own (Signal.map property_choices view_source)) ~key:(fun col -> jtext (jfield "attr" col)) ~cmp:String.compare
+          keyed_dropdown_menu_item ~source:(own (Signal.map property_choices view_source)) ~key:(fun col -> jtext (jfield "attr" col)) ~cmp:String.compare
             ~mount:(fun col -> let col = Signal.sample col in let attr = jtext (jfield "attr" col) in
-              menu_item ~text:(property_title (Signal.sample model_source) col) ~accessibility_identifier:(id "property" ^ "." ^ attr)
+              dropdown_menu_item ~text:(property_title (Signal.sample model_source) col) ~accessibility_identifier:(id "property" ^ "." ^ attr)
                 ~on_press:(fun _ -> Signal.set custom false; change (fun draft ->
                   {draft with attr; op = (if jbool (jfield "filterTimestamp" col) then "after" else "is"); value = `Null})) [])]];
         menu ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> operator_title draft.op) source)) ~label:(View_base.tr (Signal.sample model_source) "Operator") [
-          keyed ~source:(own (Signal.map operators col)) ~key:Fun.id ~cmp:String.compare
-            ~mount:(fun op -> let op = Signal.sample op in menu_item ~text:(operator_title op)
+          keyed_dropdown_menu_item ~source:(own (Signal.map operators col)) ~key:Fun.id ~cmp:String.compare
+            ~mount:(fun op -> let op = Signal.sample op in dropdown_menu_item ~text:(operator_title op)
               ~accessibility_identifier:(id "operator" ^ "." ^ op)
               ~on_press:(fun _ -> Signal.set custom false; change (fun draft -> {draft with op; value = filter_transition op draft.value})) [])];
-        button ~icon:(`app "close") ~variant:`ghost ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Remove filter")
+        icon_button ~icon:(`app "close") ~variant:`ghost ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Remove filter")
           ~accessibility_identifier:(id "remove") ~on_press:(fun _ -> Signal.set filters
             (List.filter (fun (draft : filter_draft) -> draft.key <> first.key) (Signal.sample (Signal.value filters)))) []]];
-      if_ ~test:loading (list_item [spinner []]);
+      if_list_section_item ~test:loading (list_section_item [spinner []]);
 
-      list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [dyn (fun op -> match op with
+      list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [reactive (fun op -> match op with
         | "is" | "is-not" -> choose_values
         | "between" -> row ~gap:8 [number_input "minimum" "Minimum" (Some 0); number_input "maximum" "Maximum" (Some 1)]
         | "number-gt" | "number-lt" | "number-gte" | "number-lte" -> number_input "value" "Number" None
@@ -449,38 +453,38 @@ let settings_sheet mode owner feature view_source model_source send close : t =
             ~text_signal:(own (Signal.map (fun (draft : filter_draft) -> input_value draft.value) source))
             ~on_input:(local_input (fun value -> set_value (`String value))) [])
         (own (Signal.map (fun (draft : filter_draft) -> draft.op) source))];
-      if_ ~test:(own (Signal.map (fun draft -> filter_error draft <> None) source))
-        (list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text ~foreground:"destructive" ~accessibility_identifier:(id "error")
-          ~value_signal:(own (Signal.map (fun draft -> Option.value ~default:"" (filter_error draft)) source)) []]);
-      if_ ~test:(Signal.value selecting) (list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [values_sheet]);
-    ]) context parent in
+      if_list_section_item ~test:(own (Signal.map (fun draft -> filter_error draft <> None) source))
+        (list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text ~foreground:"destructive" ~accessibility_identifier:(id "error")
+          ~value:(reactive (own (Signal.map (fun draft -> Option.value ~default:"" (filter_error draft)) source))) []]);
+      if_list_section_item ~test:(Signal.value selecting) (list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [values_sheet]);
+    ]) in
   let sort_row source : t =
     let first : sort_draft = Signal.sample source in
     let attr_source = own (Signal.map (fun (value : sort_draft) -> value.attr) source) in
-    list_section ~header:(text ~value_signal:(own (Signal.map (fun values ->
+    list_section ~header:(text ~value:(reactive (own (Signal.map (fun values ->
       let rec position index = function
         | [] -> index | (value : sort_draft) :: _ when value.key = first.key -> index
         | _ :: rest -> position (index + 1) rest in
-      "Sort " ^ string_of_int (position 1 values)) (Signal.value sorts))) []) [
-      list_item [row ~gap:8 ~main:`space_between ~cross:`center [
+      "Sort " ^ string_of_int (position 1 values)) (Signal.value sorts)))) []) [
+      list_section_item [row ~gap:8 ~main:`space_between ~cross:`center [
         choose_property (own (Signal.map2 (fun view attr -> property_title (Signal.sample model_source) (view_column view attr)) view_source attr_source)) attr_source
           (fun attr -> update_sort first.key (fun value -> {value with attr}));
         menu ~text_signal:(own (Signal.map (fun (value : sort_draft) -> if value.asc then "Ascending" else "Descending") source))
-          ~label:(View_base.tr (Signal.sample model_source) "Sort direction") (List.map (fun asc -> menu_item ~text:(if asc then "Ascending" else "Descending")
+          ~label:(View_base.tr (Signal.sample model_source) "Sort direction") (List.map (fun asc -> dropdown_menu_item ~text:(if asc then "Ascending" else "Descending")
             ~selected_signal:(own (Signal.map (fun (value : sort_draft) -> value.asc = asc) source))
             ~on_press:(fun _ -> update_sort first.key (fun value -> {value with asc})) []) [true; false]);
         menu ~icon:(`app "more-horiz") ~label:(View_base.tr (Signal.sample model_source) "Sort actions") [
-          menu_item ~text:(View_base.tr (Signal.sample model_source) "Move up") ~on_press:(fun _ ->
+          dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Move up") ~on_press:(fun _ ->
             let rec move = function
               | previous :: (value : sort_draft) :: rest when value.key = first.key -> value :: previous :: rest
               | value :: rest -> value :: move rest | [] -> [] in
             Signal.set sorts (move (Signal.sample (Signal.value sorts)))) [];
-          menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove") ~variant:`destructive ~on_press:(fun _ ->
+          dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Remove") ~variant:`destructive ~on_press:(fun _ ->
             Signal.set sorts (List.filter (fun (value : sort_draft) -> value.key <> first.key) (Signal.sample (Signal.value sorts)))) [];
         ];
       ]];
     ] in
-  let save _ =
+  let save_action () =
     let filters = Signal.sample (Signal.value filters) and sorts = Signal.sample (Signal.value sorts) in
     let config = `Assoc (if mode = "filter" then [
       "filters", `Assoc ["or", `Bool (Signal.sample (Signal.value or_)); "clauses", `List (List.map (fun (value : filter_draft) ->
@@ -489,36 +493,42 @@ let settings_sheet mode owner feature view_source model_source send close : t =
     ignore (send (Model.SubmitResultView (initial.id, payload owner feature initial.id "save" ["config", config]))) in
   let cancel = button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
     ~accessibility_identifier:("view.settings.cancel." ^ initial.id) ~on_press:(fun _ -> close ()) [] in
-  let save = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
+  let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel") ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
+    ~accessibility_identifier:("view.settings.cancel." ^ initial.id) ~on_press:(fun _ -> close ()) [] in
+      let save = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
     ~disabled_signal:(own (Signal.map2 (fun waiting filters -> waiting || (mode = "filter" && List.exists (fun draft -> filter_error draft <> None) filters))
       (waiting model_source initial.id) (Signal.value filters)))
-    ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save [] in
-  (sheet ~text:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+    ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save_action [] in
+  let toolbar_save = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
+    ~disabled_signal:(own (Signal.map2 (fun waiting filters -> waiting || (mode = "filter" && List.exists (fun draft -> filter_error draft <> None) filters))
+      (waiting model_source initial.id) (Signal.value filters)))
+    ~accessibility_identifier:("view.settings.save." ^ initial.id) ~on_press:save_action [] in
+      mount context ?parent (View_base.sheet ~model_source ~title:(if mode = "filter" then "Filters" else "Sort") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.settings.sheet." ^ initial.id)
     ~on_dismiss:(fun _ -> close ()) [
       list ~grow:1.0 ~style:`inset_grouped ~accessibility_identifier:("view." ^ mode ^ ".list." ^ initial.id)
         (
         (if mode = "filter" then [
-          list_section [list_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [menu ~label:(View_base.tr (Signal.sample model_source) "Match conditions")
+          list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [menu ~label:(View_base.tr (Signal.sample model_source) "Match conditions")
             ~text_signal:(own (Signal.map (fun any -> if any then "Match any condition" else "Match all conditions") (Signal.value or_)))
-            (List.map (fun any -> menu_item ~text:(if any then "Any condition" else "All conditions")
+            (List.map (fun any -> dropdown_menu_item ~text:(if any then "Any condition" else "All conditions")
               ~accessibility_identifier:("view.filter.match." ^ initial.id ^ "." ^ string_of_bool any)
               ~selected_signal:(own (Signal.map ((=) any) (Signal.value or_))) ~on_press:(fun _ -> Signal.set or_ any) []) [false; true])]];
           if_ ~test:(own (Signal.map ((=) []) (Signal.value filters)))
-            (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Created in the last month") ~icon:(`app "calendar") ~variant:`ghost
+            (list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Created in the last month") ~icon:(`app "calendar") ~variant:`ghost
               ~accessibility_identifier:("view.filter.recent." ^ initial.id) ~on_press:(fun _ ->
                 Signal.set filters [{key = next (); attr = "block/created-at"; op = "after"; value = `String "1 month ago"}]) []]]);
           keyed ~source:(Signal.value filters) ~key:(fun (value : filter_draft) -> value.key) ~cmp:Int.compare ~mount:filter_row;
-          list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Add filter") ~variant:`ghost ~accessibility_identifier:("view.filter.add." ^ initial.id)
+          list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Add filter") ~variant:`ghost ~accessibility_identifier:("view.filter.add." ^ initial.id)
             ~on_press:(fun _ -> Signal.set filters (Signal.sample (Signal.value filters) @ [{key = next (); attr = "block/title"; op = "text-contains"; value = `String ""}])) []]];
         ] else [
           keyed ~source:(Signal.value sorts) ~key:(fun (value : sort_draft) -> value.key) ~cmp:Int.compare ~mount:sort_row;
-          list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Add sort") ~variant:`ghost ~accessibility_identifier:("view.sort.add." ^ initial.id)
+          list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Add sort") ~variant:`ghost ~accessibility_identifier:("view.sort.add." ^ initial.id)
             ~on_press:(fun _ -> Signal.set sorts (Signal.sample (Signal.value sorts) @ [{key = next (); attr = "block/title"; asc = true}])) []]];
         ]));
       (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; save]
-       else toolbar ~label:(View_base.tr (Signal.sample model_source) "View settings actions") ~style_class:"navigation-actions" [cancel; save]);
-    ]) context parent
+       else toolbar ~label:(View_base.tr (Signal.sample model_source) "View settings actions") ~style_class:"navigation-actions" [toolbar_cancel; toolbar_save]);
+    ])
 
 let rec raw_selection_values raw =
   match jtext (jfield "type" raw) with
@@ -528,7 +538,7 @@ let rec raw_selection_values raw =
   | _ -> [text_value (jfield "value" raw)]
 
 let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nodes = []) ~id ~column:col ~submit:save model_source property close : t =
- fun context parent ->
+ custom @@ fun context parent ->
   let view = {id; name = ""; typ = ""; data = `Null} in
   let own value = Signal.own_signal context.ui_scope value in
   let state value = Signal.state context.ui_scheduler value in
@@ -559,6 +569,16 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
     `Assoc (("valuesDeferred", `Bool false) :: List.remove_assoc "valuesDeferred" (fields col)) else col in
   let column, loading, load_error = loaded_column context ~id:view.id ~owner ~mode:"property" ~feature:""
     (Signal.constant context.ui_scheduler column) model_source send in
+  let property_error model load_error =
+    let submit_error = List.find_opt (fun (key, _, _) -> key = view.id) model.Model.result_view_feedback in
+    let message = match submit_error with
+      | Some (_, _, Some message) -> Some (View_base.tr model message)
+      | _ when load_error <> "" -> Some load_error
+      | _ -> None in
+    match message with
+    | Some message -> text ~value:message ~foreground:"destructive" ~style_class:"footnote"
+        ~accessibility_identifier:("view.edit.error." ^ view.id) []
+    | None -> box [] in
   let options = own (Signal.map (fun col ->
     let choices = jlist (jfield "choices" col) in
     if closed then List.map (fun choice ->
@@ -595,39 +615,47 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
   let confirm = button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action"
     ~accessibility_identifier:("view.edit.save." ^ view.id)
     ~disabled_signal:(waiting model_source view.id) ~on_press:confirm_input [] in
-  let option_row (value, title) = list_item ~height:44 ~padding_vertical:0 [
+  let option_row (value, title) = list_section_item ~height:44 ~padding_vertical:0 [
     menu_item ~text:title ~height:44 ~padding_vertical:0
       ~selected_signal:(own (Signal.map (List.mem value) (Signal.value selected)))
       ~disabled_signal:(waiting model_source view.id)
       ~accessibility_identifier:("view.edit.option." ^ view.id ^ "." ^ value)
       ~on_press:(fun _ -> choose value) []] in
   let controls = if plain || temporal || many then [cancel; confirm] else [cancel] in
-  (sheet ~text:(property_title (Signal.sample model_source) col)
+  let toolbar_cancel = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Cancel")
+    ~variant:`ghost ~style_class:"cancellation-action" ~foreground:"foreground"
+    ~accessibility_identifier:("view.edit.cancel." ^ view.id) ~on_press:(fun () -> close ()) [] in
+  let toolbar_confirm = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done")
+    ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
+    ~accessibility_identifier:("view.edit.save." ^ view.id)
+    ~disabled_signal:(waiting model_source view.id) ~on_press:confirm_input [] in
+  let toolbar_controls = if plain || temporal || many then [toolbar_cancel; toolbar_confirm] else [toolbar_cancel] in
+  mount context ?parent (View_base.sheet ~model_source ~title:(property_title (Signal.sample model_source) col)
     ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~track_visible_range:true
       ~accessibility_identifier:("view.edit.list." ^ view.id)
-      ~on_visible_range:(function Lui_protocol.VisibleRange (_, _, last) ->
+      ~on_visible_range:(function Range { last; _ } ->
         let limit = Signal.sample (Signal.value visible_limit) in
         let total = List.length (Signal.sample visible) in
         if last >= limit - 6 && limit < total then Signal.set visible_limit (min total (limit + 50))
         | _ -> ())
-      ((match open_node with None -> [] | Some (label, open_) -> [list_section [list_item [
+      ((match open_node with None -> [] | Some (label, open_) -> [list_section [list_section_item [
           menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id)
             ~on_press:(fun _ -> close (); open_ ()) []]]]) @
        (if open_nodes = [] then [] else [list_section (List.map (fun (uuid, label, open_) ->
-          list_item [menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id ^ "." ^ uuid)
+          list_section_item [menu_item ~text:label ~min_height:44 ~accessibility_identifier:("view.edit.open." ^ id ^ "." ^ uuid)
             ~on_press:(fun _ -> close (); open_ ()) []]) open_nodes)]) @
-       (if temporal then [list_section [list_item ~padding_horizontal:0 ~padding_vertical:0 [
+       (if temporal then [list_section [list_section_item ~padding_horizontal:0 ~padding_vertical:0 [
         temporal_picker ~on_submit:confirm_input model_source kind view.id (Signal.value query) (Signal.set query)]]]
-        else if plain then [list_section [list_item [
+        else if plain then [list_section [list_section_item [
         (if jbool (jfield "textLayout" property) then textarea ~min_height:120 ~max_height:260 ~submit_on_enter:false
           ~text_signal:(Signal.value query) ~label:(View_base.tr (Signal.sample model_source) "Set value") ~placeholder:(View_base.tr (Signal.sample model_source) "Set value") ~autofocus:true
           ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) []
         else text_field ~text_signal:(Signal.value query)
           ~label:(View_base.tr (Signal.sample model_source) "Set value") ~placeholder:(View_base.tr (Signal.sample model_source) "Set value") ~autofocus:true ~accessibility_identifier:("view.edit.value." ^ view.id)
           ~on_input:(local_input (Signal.set query)) [])]]]
-        else if checkbox then [list_section (List.map (fun value -> list_item [
+        else if checkbox then [list_section (List.map (fun value -> list_section_item [
           menu_item ~text:(View_base.tr (Signal.sample model_source) (if value then "True" else "False")) ~min_height:44
             ~selected:(jfield "value" (jfield "raw" property) = `Bool value)
             ~accessibility_identifier:("view.edit.bool." ^ string_of_bool value ^ "." ^ view.id)
@@ -637,15 +665,15 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
             ~text_signal:(Signal.value query) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a choice") ~label:(View_base.tr (Signal.sample model_source) "Search")
             ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) [];
           list_section [
-            if_ ~test:loading (list_item [spinner ~accessibility_identifier:("view.edit.loading." ^ id) []]);
+            if_list_section_item ~test:loading (list_section_item [spinner ~accessibility_identifier:("view.edit.loading." ^ id) []]);
 
-            keyed ~source:mounted_options ~key:fst ~cmp:String.compare ~mount:(fun source -> option_row (Signal.sample source));
-            keyed ~source:(Signal.value created) ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
-              let value = Signal.sample source in list_item ~height:44 ~padding_vertical:0 [menu_item ~height:44 ~padding_vertical:0 ~text:value ~selected:true
+            keyed_list_section_item ~source:mounted_options ~key:fst ~cmp:String.compare ~mount:(fun source -> option_row (Signal.sample source));
+            keyed_list_section_item ~source:(Signal.value created) ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
+              let value = Signal.sample source in list_section_item ~height:44 ~padding_vertical:0 [menu_item ~height:44 ~padding_vertical:0 ~text:value ~selected:true
                 ~on_press:(fun _ -> Signal.set created (List.filter ((<>) value) (Signal.sample (Signal.value created)))) []]);
-            if_ ~test:create_visible (list_item [button ~variant:`ghost ~text_alignment:`start ~min_height:44
-              ~text_signal:(own (Signal.map (fun input -> View_base.tr_named (Signal.sample model_source)
-                "Create {1}" (String.trim input)) (Signal.value query)))
+            if_list_section_item ~test:create_visible (list_section_item [button ~variant:`ghost ~text_alignment:`start ~min_height:44
+              ~text:(reactive (own (Signal.map (fun input -> View_base.tr_named (Signal.sample model_source)
+                "Create {1}" (String.trim input)) (Signal.value query))))
               ~accessibility_identifier:("view.edit.create." ^ view.id) ~disabled_signal:(waiting model_source view.id)
               ~on_press:(fun _ -> let value = String.trim (Signal.sample (Signal.value query)) in
                 if many then (Signal.set created (Signal.sample (Signal.value created) @ [value]); Signal.set query "")
@@ -653,14 +681,15 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
           ];
         ]) @ [
         if_ ~test:(Signal.constant context.ui_scheduler (attr <> "block/title"))
-        (list_section [list_item [button ~text:(View_base.tr (Signal.sample model_source) "Clear") ~variant:`ghost ~min_height:44
+        (list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Clear") ~variant:`ghost ~min_height:44
           ~accessibility_identifier:("view.edit.clear." ^ view.id) ~disabled_signal:(waiting model_source view.id)
           ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]]);
 
       ]);
+    reactive property_error model_source load_error;
     (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 controls
-     else toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" controls);
-  ]) context parent
+     else toolbar ~label:(View_base.tr (Signal.sample model_source) "Actions") ~style_class:"navigation-actions" toolbar_controls);
+  ])
 
 let value_sheet owner feature view model_source send item property close =
   let column = view_column view (jtext (jfield "attr" property)) in
@@ -692,7 +721,7 @@ let gallery_image (row : Model.outline_row) =
   let normalized = String.lowercase_ascii format in
   if String.starts_with ~prefix:"image/" normalized
     || List.mem normalized ["jpg"; "jpeg"; "png"; "gif"; "heic"; "heif"; "webp"; "avif"; "bmp"; "wbmp"]
-  then Some (fun context parent ->
+  then Some (custom @@ fun context parent ->
     let node = Lui_ui.extension context "outliner-block-content" in
     attach context parent node;
     List.iter (fun (key, value) -> Lui_ui.extension_property context node key (Lui_protocol.StringValue value))
@@ -720,7 +749,7 @@ let table_column_window columns (offset, width) =
   collect 0 0 [] total columns
 
 let table_viewport ~fill_height identifier viewport children : t =
-  let mount context parent =
+  let viewport_el = custom @@ fun context parent ->
     let node = Lui_ui.extension context "native-table-viewport" in
     attach context parent node;
     Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue identifier);
@@ -731,9 +760,9 @@ let table_viewport ~fill_height identifier viewport children : t =
            Signal.set viewport (max 0 offset, width)
          | _ -> ())
       | _ -> ());
-    List.iter (fun child -> ignore (child context (Some node))) children;
+    mount_children context node children;
     node in
-  if fill_height then box ~grow:1.0 [mount] else mount
+  if fill_height then box ~grow:1.0 [viewport_el] else viewport_el
 
 let loaded_rows context ~owner ~feature view_source input model_source send =
   let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
@@ -852,7 +881,7 @@ let loaded_rows context ~owner ~feature view_source input model_source send =
   own (Signal.cutoff (=) (Signal.value page)), visible, Signal.value loading, Signal.value error, retry
 
 let collection_json ?(fill_height = false) ~render_block model_source parsed send : t =
- fun context parent ->
+ custom @@ fun context parent ->
   let own value = Signal.own_signal context.ui_scope value in
   let initial = Signal.sample parsed in
   let grow = if fill_height then 1.0 else 0.0 in
@@ -874,7 +903,7 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
       string_of_int (List.fold_left (fun count view -> max count (row_count view.data)) 0 views) ^ " results")
       views (Signal.value expanded)) in
     View_base.with_label_signal label
-      (button ~variant:`ghost ~text_alignment:`start ~grow:1.0
+      (button ~text:"" ~variant:`ghost ~text_alignment:`start ~grow:1.0
         ~accessibility_identifier:("query.toggle." ^ owner)
         ~disabled_signal:(waiting model_source owner)
         ~on_press:(fun _ ->
@@ -884,7 +913,7 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
           else Signal.set expanded next)
         [results_disclosure context ("query.disclosure." ^ owner) (Signal.value expanded) label]) in
   let mount view_source : t =
-   fun context parent ->
+   custom @@ fun context parent ->
     let own value = Signal.own_signal context.ui_scope value in
     let view_source, visible_rows, rows_loading, rows_error, retry_rows =
       loaded_rows context ~owner ~feature view_source (Signal.value search) model_source send in
@@ -923,8 +952,9 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
       (if before = 0 then [] else [box ~width:before []]) @ cells @
       (if after = 0 then [] else [box ~width:after []]) in
     let table_row item_source : t =
-     fun row_context parent ->
-      (dyn (fun ((view, item), ((_, visible_columns, _) as window)) -> row ~gap:0 ~cross:`stretch (windowed_cells window (table_cells view.id
+     custom @@ fun row_context parent ->
+      Lui_elements.mount row_context ?parent
+        (reactive (fun ((view, item), ((_, visible_columns, _) as window)) -> row ~gap:0 ~cross:`stretch (windowed_cells window (table_cells view.id
         (Option.value ~default:(string_of_int item.index) item.uuid)
         (List.map (fun col -> let attr = jtext (jfield "attr" col) in attr,
         if String.starts_with ~prefix:"query.result/" attr then
@@ -951,10 +981,11 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
         else text ~value ~text_alignment:`start ~style_class:"single-line" ~width ~min_height:48 ~padding:12
           ~accessibility_identifier:identifier []) visible_columns))))
         (Signal.own_signal row_context.Lui_ui.ui_scope (Signal.map2 (fun values window -> values, window)
-          (Signal.map2 (fun view item -> view, item) view_source item_source) column_window))) row_context parent in
+          (Signal.map2 (fun view item -> view, item) view_source item_source) column_window))) in
     let gallery_card item_source : t =
-     fun card_context parent ->
-      (dyn (fun (view, item) ->
+     custom @@ fun card_context parent ->
+      Lui_elements.mount card_context ?parent
+        (reactive (fun (view, item) ->
         let image = Option.bind item.block (fun block -> gallery_image block.row) in
         column ~gap:10 ~padding:16 ~background:"secondary" ~border_color:"border" ~border_width:1 ~corner_radius:12
         ~accessibility_identifier:("view.card." ^ view.id ^ "." ^ Option.value ~default:"" item.uuid)
@@ -965,13 +996,14 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
             |> List.map (fun col -> let property = cell view item (jtext (jfield "attr" col)) in
               row ~gap:12 ~main:`space_between [text ~value:(property_title (Signal.sample model_source) col) ~foreground:"muted-foreground" ~style_class:"caption" [];
                 text ~value:(jtext (jfield "text" property)) ~style_class:"caption" []]))]))
-        (Signal.own_signal card_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) card_context parent in
+        (Signal.own_signal card_context.Lui_ui.ui_scope (Signal.map2 (fun view item -> view, item) view_source item_source))) in
     let item_key item = match item.uuid with
       | Some uuid -> "block:" ^ uuid | None -> "tuple:" ^ string_of_int item.index in
     let result_window ?width ?(gap = 0) ?(columns = 1) ~identifier ~extent ~source ~key ~mount () : t =
-     fun window_context parent ->
+     custom @@ fun window_context parent ->
       let own signal = Signal.own_signal window_context.Lui_ui.ui_scope signal in
       let searches = own (Signal.map (fun input -> [input]) (Signal.value search)) in
+      Lui_elements.mount window_context ?parent
       (if jfield "rowsDeferred" view.data = `Bool true then
         keyed ~source:searches ~key:Fun.id ~cmp:String.compare ~mount:(fun _ ->
           virtual_list ?width ?height:(if fill_height then None else Some 480) ~grow ~gap ~accessibility_identifier:identifier [
@@ -980,17 +1012,17 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
               ~offset:(own (Signal.map (fun view -> jint (jfield "rowOffset" view.data) / columns) view_source))
               ~on_visible_range:(fun first last -> visible_rows columns (first * columns) ((last + 1) * columns - 1))
               ~source ~key ~cmp:String.compare ~mount])
-      else dyn (fun large ->
+      else reactive (fun large ->
         if large || fill_height then
           (* Search owns a fresh viewport; ordinary value refreshes retain it. *)
           keyed ~source:searches
             ~key:Fun.id ~cmp:String.compare ~mount:(fun _ ->
               virtual_list ?width ?height:(if fill_height then None else Some 480) ~grow ~gap ~accessibility_identifier:identifier [
                 View_rows.windowed_keyed ~window_size:12 ~identifier:("view.window." ^ view.id)
-                  ~item_extent:extent ~source ~key ~cmp:String.compare ~mount])
+                  ~item_extent:extent ~source ~key ~cmp:String.compare ~mount ()])
         else column ?width ~gap ~accessibility_identifier:identifier [
           keyed ~source ~key ~cmp:String.compare ~mount])
-        (own (Signal.map (fun rows -> List.length rows > 20) source))) window_context parent in
+        (own (Signal.map (fun rows -> List.length rows > 20) source))) in
     let gallery_columns = own (Signal.map (fun (model : Model.logseq_model) ->
       if model.viewport_width >= 700 then 2 else 1) model_source) in
     let gallery_rows = own (Signal.map2 (fun columns items ->
@@ -1006,24 +1038,24 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
       && Json.equal sorting next_sorting && Json.equal filters next_filters)
       (own (Signal.map (fun view -> view.typ, choices view,
         jfield "sorting" view.data, jfield "filters" view.data) view_source))) in
-    (column ~grow ~gap:8 ~cross:`stretch [
+    Lui_elements.mount context ?parent (column ~grow ~gap:8 ~cross:`stretch [
       row ~gap:0 ~cross:`center ~accessibility_identifier:("view.toolbar." ^ owner) [
         (if feature = "query-result" then results_toggle () else
           row ~grow:1.0 ~cross:`center [
             View_base.with_string_prop TextAlignment "start"
               (menu ~text_signal:(own (Signal.map2 saved_view_title model_source view_source))
               ~label:(View_base.tr (Signal.sample model_source) "Views") ~accessibility_identifier:("view.select." ^ owner) [
-              keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
+              keyed_dropdown_menu_item ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
                 let saved = Signal.sample source in
-                menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
+                dropdown_menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
                   ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
                   ~on_press:(fun _ -> Signal.set active saved.id) [])]);
             box ~grow:1.0 []]);
-        button ~icon:(`app "view-filter") ~label:(View_base.tr (Signal.sample model_source) "Filters") ~variant:`ghost ~width:40 ~height:44
+        icon_button ~icon:(`app "view-filter") ~label:(View_base.tr (Signal.sample model_source) "Filters") ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.filter." ^ view.id) ~on_press:(fun _ -> Signal.set settings "filter") [];
-        button ~icon:(`app "view-sort") ~label:(View_base.tr (Signal.sample model_source) "Sort") ~variant:`ghost ~width:40 ~height:44
+        icon_button ~icon:(`app "view-sort") ~label:(View_base.tr (Signal.sample model_source) "Sort") ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.sort." ^ view.id) ~on_press:(fun _ -> Signal.set settings "sort") [];
-        button ~icon:(`app "search") ~label:(View_base.tr (Signal.sample model_source) "Search results") ~variant:`ghost ~width:40 ~height:44
+        icon_button ~icon:(`app "search") ~label:(View_base.tr (Signal.sample model_source) "Search results") ~variant:`ghost ~width:40 ~height:44
           ~accessibility_identifier:("view.search.toggle." ^ owner)
           ~on_press:(fun _ ->
             let was_open = Signal.sample (Signal.value search_open) in
@@ -1033,13 +1065,13 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
           ~label:(View_base.tr (Signal.sample model_source) "View type") ~accessibility_identifier:("view.type." ^ view.id)
           ~disabled_signal:(waiting model_source view.id)
           ((if feature = "query-result" then [
-            submenu ~text:(View_base.tr (Signal.sample model_source) "Saved views") [
-              keyed ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
+            dropdown_menu_submenu ~text:(View_base.tr (Signal.sample model_source) "Saved views") [
+              keyed_dropdown_menu_item ~source:views ~key:(fun view -> view.id) ~cmp:String.compare ~mount:(fun source ->
                 let saved = Signal.sample source in
-                menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
+                dropdown_menu_item ~text_signal:(own (Signal.map2 saved_view_title model_source source))
                   ~selected:(saved.id = view.id) ~accessibility_identifier:("view.tab." ^ saved.id)
                   ~on_press:(fun _ -> Signal.set active saved.id) [])]
-          ] else []) @ List.map (fun (typ, title) -> menu_item ~text:title ~icon:(`app ("view-" ^ typ))
+          ] else []) @ List.map (fun (typ, title) -> dropdown_menu_item ~text:title ~icon:(`app ("view-" ^ typ))
             ~selected_signal:(own (Signal.map (fun view -> view.typ = typ) view_source))
             ~accessibility_identifier:("view.type.option." ^ view.id ^ "." ^ typ)
             ~on_press:(fun _ ->
@@ -1063,10 +1095,10 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
             (if jfield "rowsDeferred" view.data = `Bool true then row_count view.data = 0 else rows = []) && not loading)
             (own (Signal.map2 (fun view rows -> view, rows) view_source rows)) rows_loading))
             (text ~value:(View_base.tr (Signal.sample model_source) "No results") ~foreground:"muted-foreground" ~accessibility_identifier:("query.empty." ^ owner) []);
-          (dyn (fun (typ, columns, _, _) -> match typ with
+          (reactive (fun (typ, columns, _, _) -> match typ with
           | "table" -> table_viewport ~fill_height ("view.table.scroll." ^ view.id) horizontal_viewport [
               column ~grow ~gap:0 ~cross:`stretch ~border_color:"border" ~border_width:1 ~corner_radius:10 [
-                dyn (fun ((_, visible_columns, _) as window) -> row ~gap:0 ~cross:`stretch
+                reactive (fun ((_, visible_columns, _) as window) -> row ~gap:0 ~cross:`stretch
                   (windowed_cells window (table_cells view.id "header" (List.map (fun col -> jtext (jfield "attr" col),
                     text ~value:(property_title (Signal.sample model_source) col) ~style_class:"subheadline single-line"
                     ~width:(table_column_width col) ~min_height:48 ~padding:12 ~background:"secondary" []) visible_columns)))) column_window;
@@ -1077,14 +1109,15 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
                     (max 0 (List.length columns - 1)) columns)
                   ~source:rows ~key:item_key
                   ~mount:(fun source -> column ~gap:0 [table_row source; separator []]) ()]]
-          | "gallery" -> dyn (fun count ->
+          | "gallery" -> reactive (fun count ->
               result_window ~identifier:("view.gallery." ^ view.id) ~gap:12 ~columns:count
                 ~extent:(96 + 24 * max 0 (List.length columns - 1))
                 ~source:gallery_rows ~key:(fun items -> item_key (List.hd items))
-                ~mount:(fun source grid_context parent -> (grid ~columns:count ~gap:12 [
-                  keyed ~source ~key:item_key ~cmp:String.compare ~mount:gallery_card;
-                  if_ ~test:(Signal.own_signal grid_context.Lui_ui.ui_scope
-                    (Signal.map (fun items -> List.length items < count) source)) (box [])]) grid_context parent) ())
+                ~mount:(fun source -> custom @@ fun grid_context parent ->
+                  Lui_elements.mount grid_context ?parent (grid ~columns:count ~gap:12 [
+                    keyed ~source ~key:item_key ~cmp:String.compare ~mount:gallery_card;
+                    if_ ~test:(Signal.own_signal grid_context.Lui_ui.ui_scope
+                      (Signal.map (fun items -> List.length items < count) source)) (box [])])) ())
               gallery_columns
           | _ when fill_height || jfield "rowsDeferred" view.data = `Bool true ->
               result_window ~identifier:("query.rows." ^ owner) ~extent:64 ~source:rows ~key:item_key
@@ -1097,12 +1130,12 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
             (button ~text:(View_base.tr (Signal.sample model_source) "Show more") ~variant:`ghost ~accessibility_identifier:("query.more." ^ owner)
               ~on_press:(fun _ -> Signal.set limit (Signal.sample (Signal.value limit) + 20)) [])]);
       if_ ~test:(own (Signal.map ((<>) "") (Signal.value settings)))
-        (dyn (fun mode -> settings_sheet mode owner feature view_source model_source send (fun () -> Signal.set settings "")) (Signal.value settings));
+        (reactive (fun mode -> settings_sheet mode owner feature view_source model_source send (fun () -> Signal.set settings "")) (Signal.value settings));
       if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
-        (dyn (function None -> box [] | Some (item, property) ->
+        (reactive (function None -> box [] | Some (item, property) ->
           value_sheet owner feature view model_source send item property (fun () -> Signal.set editing None)) (Signal.value editing));
-    ]) context parent in
-  (column ~grow ~gap:8 ~cross:`stretch ~accessibility_identifier:("query.block." ^ owner) [
+    ]) in
+  Lui_elements.mount context ?parent (column ~grow ~gap:8 ~cross:`stretch ~accessibility_identifier:("query.block." ^ owner) [
 
     (if feature = "query-result" then
       if_ ~test:(own (Signal.map not (Signal.value expanded)))
@@ -1111,22 +1144,23 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
 
     if_ ~test:(Signal.value expanded) (column ~grow ~gap:8
       ([keyed ~source:chosen ~key:(fun view -> view.id) ~cmp:String.compare ~mount] @
-       if fill_height then [] else [box ~height:24 ~accessibility_identifier:("view.results-gap." ^ owner) []]))]) context parent
+       if fill_height then [] else [box ~height:24 ~accessibility_identifier:("view.results-gap." ^ owner) []]))])
 
-let collection ?fill_height ~render_block model_source raw_source send : t = fun context parent ->
+let collection ?fill_height ~render_block model_source raw_source send : t = custom @@ fun context parent ->
   let own value = Signal.own_signal context.Lui_ui.ui_scope value in
   let raw = own (Signal.cutoff String.equal raw_source) in
   let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw) in
-  collection_json ?fill_height ~render_block model_source parsed send context parent
+  Lui_elements.mount context ?parent
+    (collection_json ?fill_height ~render_block model_source parsed send)
 
-let view ~render_block model_source row_source send : t = fun context parent ->
+let view ~render_block model_source row_source send : t = custom @@ fun context parent ->
   let own value = Signal.own_signal context.Lui_ui.ui_scope value in
   let raw_source = own (Signal.cutoff String.equal
     (own (Signal.map (fun (row : Model.outline_row) -> row.query_json) row_source))) in
   let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw_source) in
-  (dyn (fun has_views ->
+  Lui_elements.mount context ?parent (reactive (fun has_views ->
     if has_views then if_ ~test:(Signal.map (fun (row : Model.outline_row) -> not row.is_collapsed) row_source)
         (collection_json ~render_block model_source parsed send)
     else legacy_view ~render_block model_source row_source send)
     (own (Signal.cutoff Bool.equal (own (Signal.map (fun json -> saved_views_json json <> [] ||
-      member "expanded" json <> None) parsed))))) context parent
+      member "expanded" json <> None) parsed)))))

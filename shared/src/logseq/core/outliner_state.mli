@@ -48,6 +48,7 @@ type outliner_toolbar =
   | Attachment
   | Hide_keyboard
   | New_block
+  | Line_break
   | Copy
   | Delete
   | Copy_reference

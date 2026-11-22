@@ -4,8 +4,9 @@ appId: com.logseq.logseq
     file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - tapOn:
-    id: "button.connection"
-- tapOn: "Settings"
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar.settings"
 - assertVisible:
     id: "screen.settings"
 - tapOn:
@@ -24,17 +25,12 @@ appId: com.logseq.logseq
 - assertVisible: "Flashcards, off"
 - tapOn: "Settings"
 - tapOn: "Cancel"
-- tapOn:
-    id: "button.sidebar"
 - assertNotVisible:
     id: "link.sidebar.flashcards"
 - assertVisible:
     id: "link.sidebar.graphs"
 - tapOn:
-    id: "button.sidebar.dismiss"
-- tapOn:
-    id: "button.connection"
-- tapOn: "Settings"
+    id: "button.sidebar.settings"
 - tapOn:
     id: "link.settings.tabs"
 - tapOn:
@@ -42,7 +38,5 @@ appId: com.logseq.logseq
 - assertVisible: "Flashcards, on"
 - tapOn: "Settings"
 - tapOn: "Cancel"
-- tapOn:
-    id: "button.sidebar"
 - assertVisible:
     id: "link.sidebar.flashcards"

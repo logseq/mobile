@@ -2,6 +2,7 @@
 let dictionaries = [
   ("af", [
     ("Create new block", "Skep 'n nuwe blok");
+    ("Line break", "Reëlbreuk");
     ("Back", "Terug");
     ("Close", "Sluit");
     ("Rename page", "Hernoem");
@@ -238,6 +239,7 @@ let dictionaries = [
   ]);
   ("ar", [
     ("Create new block", "إنشاء كتلة جديدة");
+    ("Line break", "سطر جديد");
     ("Back", "رجوع");
     ("Close", "إغلاق");
     ("Rename page", "إعادة تسمية");
@@ -474,6 +476,7 @@ let dictionaries = [
   ]);
   ("ca", [
     ("Create new block", "Crear bloc nou");
+    ("Line break", "Salt de línia");
     ("Back", "Enrere");
     ("Close", "Tanca");
     ("Rename page", "Reanomenar");
@@ -710,6 +713,7 @@ let dictionaries = [
   ]);
   ("cs", [
     ("Create new block", "Vytvořit nový blok");
+    ("Line break", "Zalomení řádku");
     ("Back", "Zpět");
     ("Close", "Zavřít");
     ("Rename page", "Přejmenovat");
@@ -946,6 +950,7 @@ let dictionaries = [
   ]);
   ("de", [
     ("Create new block", "Neuen Block erstellen");
+    ("Line break", "Zeilenumbruch");
     ("Back", "Zurück");
     ("Close", "Schließen");
     ("Rename page", "Umbenennen");
@@ -1182,6 +1187,7 @@ let dictionaries = [
   ]);
   ("en", [
     ("Create new block", "Create new block");
+    ("Line break", "Line break");
     ("Back", "Back");
     ("Close", "Close");
     ("Rename page", "Rename");
@@ -1439,6 +1445,7 @@ let dictionaries = [
   ("es", [
     ("Task reminders", "Recordatorios de tareas");
     ("Create new block", "Crear bloque nuevo");
+    ("Line break", "Salto de línea");
     ("Back", "Ir hacia atrás");
     ("Close", "Cerrar");
     ("Rename page", "Renombrar");
@@ -1675,6 +1682,7 @@ let dictionaries = [
   ]);
   ("fa", [
     ("Create new block", "بلوک جدید");
+    ("Line break", "شکستن خط");
     ("Back", "بازگشت");
     ("Close", "بستن");
     ("Rename page", "تغییر نام");
@@ -1912,6 +1920,7 @@ let dictionaries = [
   ("fr", [
     ("Task reminders", "Rappels de tâches");
     ("Create new block", "Créer un nouveau bloc");
+    ("Line break", "Saut de ligne");
     ("Back", "Retour en arrière");
     ("Close", "Fermer");
     ("Rename page", "Renommer");
@@ -2148,6 +2157,7 @@ let dictionaries = [
   ]);
   ("id", [
     ("Create new block", "Buat blok baru");
+    ("Line break", "Baris baru");
     ("Back", "Kembali");
     ("Close", "Tutup");
     ("Rename page", "Ganti nama");
@@ -2384,6 +2394,7 @@ let dictionaries = [
   ]);
   ("it", [
     ("Create new block", "Crea un nuovo blocco");
+    ("Line break", "Interruzione di riga");
     ("Back", "Indietro");
     ("Close", "Chiudi");
     ("Rename page", "Rinomina");
@@ -2621,6 +2632,7 @@ let dictionaries = [
   ("ja", [
     ("Task reminders", "タスクリマインダー");
     ("Create new block", "新しいブロック");
+    ("Line break", "改行");
     ("Back", "戻る");
     ("Close", "閉じる");
     ("Rename page", "名前を変更");
@@ -2857,6 +2869,7 @@ let dictionaries = [
   ]);
   ("ko", [
     ("Create new block", "블록 만들기");
+    ("Line break", "줄바꿈");
     ("Back", "뒤로");
     ("Close", "닫기");
     ("Rename page", "이름 변경");
@@ -3093,6 +3106,7 @@ let dictionaries = [
   ]);
   ("nb-no", [
     ("Create new block", "Opprett ny blokk");
+    ("Line break", "Linjeskift");
     ("Back", "Tilbake");
     ("Close", "Lukk");
     ("Rename page", "Gi nytt navn");
@@ -3329,6 +3343,7 @@ let dictionaries = [
   ]);
   ("nl", [
     ("Create new block", "Maak nieuw blok");
+    ("Line break", "Regeleinde");
     ("Back", "Terug");
     ("Close", "Sluiten");
     ("Rename page", "Hernoemen");
@@ -3565,6 +3580,7 @@ let dictionaries = [
   ]);
   ("pl", [
     ("Create new block", "Utwórz nowy blok");
+    ("Line break", "Podział wiersza");
     ("Back", "Wstecz");
     ("Close", "Zamknij");
     ("Rename page", "Zmień nazwę");
@@ -3801,6 +3817,7 @@ let dictionaries = [
   ]);
   ("pt-br", [
     ("Create new block", "Criar novo bloco");
+    ("Line break", "Quebra de linha");
     ("Back", "Voltar");
     ("Close", "Fechar");
     ("Rename page", "Renomear");
@@ -4037,6 +4054,7 @@ let dictionaries = [
   ]);
   ("pt-pt", [
     ("Create new block", "Criar novo bloco");
+    ("Line break", "Quebra de linha");
     ("Back", "Voltar");
     ("Close", "Fechar");
     ("Rename page", "Renomear");
@@ -4273,6 +4291,7 @@ let dictionaries = [
   ]);
   ("ru", [
     ("Create new block", "Создать новый блок");
+    ("Line break", "Перенос строки");
     ("Back", "Назад");
     ("Close", "Закрыть");
     ("Rename page", "Переименовать");
@@ -4509,6 +4528,7 @@ let dictionaries = [
   ]);
   ("sk", [
     ("Create new block", "Vytvoriť nový blok");
+    ("Line break", "Zalomenie riadku");
     ("Back", "Späť");
     ("Close", "Zavrieť");
     ("Rename page", "Premenovať");
@@ -4745,6 +4765,7 @@ let dictionaries = [
   ]);
   ("tr", [
     ("Create new block", "Yeni blok oluştur");
+    ("Line break", "Satır sonu");
     ("Back", "Geri");
     ("Close", "Kapat");
     ("Rename page", "Yeniden adlandır");
@@ -4988,6 +5009,7 @@ let dictionaries = [
   ]);
   ("uk", [
     ("Create new block", "Створити новий блок");
+    ("Line break", "Розрив рядка");
     ("Back", "Повернутися");
     ("Close", "Закрити");
     ("Rename page", "Перейменувати");
@@ -5231,6 +5253,7 @@ let dictionaries = [
   ]);
   ("vi", [
     ("Create new block", "Tạo khối mới");
+    ("Line break", "Xuống dòng");
     ("Back", "Quay lại");
     ("Close", "Đóng");
     ("Back", "Quay lại");
@@ -5274,8 +5297,10 @@ let dictionaries = [
     ("Yesterday", "Hôm qua");
     ("month", "tháng")
   ]);
+  (* Simplified Chinese has one catalog. Locale ids such as zh-cn and zh-Hans resolve to zh-CN. *)
   ("zh-CN", [
     ("Create new block", "创建块");
+    ("Line break", "换行");
     ("Back", "返回");
     ("Close", "关闭");
     ("Rename page", "重命名");
@@ -5446,7 +5471,7 @@ let dictionaries = [
     ("Open runtime log", "打开运行日志");
     ("Outdent", "减少缩进");
     ("Pages", "页面");
-    ("Photo", "拍照");
+    ("Photo", "照片");
     ("Photos", "照片");
     ("Plain text", "纯文本");
     ("Recent", "最近访问");
@@ -5467,37 +5492,24 @@ let dictionaries = [
     ("System", "跟随系统");
     ("Tabs", "标签页");
     ("Tag", "标签");
-    ("Version", "版本")
-  ]);
-  ("zh-cn", [
-    ("Create new block", "创建块");
+    ("Version", "版本");
     ("1 day ago", "1 天前");
     ("1 month ago", "1 个月前");
     ("1 week ago", "1 周前");
     ("1 year ago", "1 年前");
     ("3 days ago", "3 天前");
     ("3 months ago", "3 个月前");
-    ("About", "关于");
-    ("Account", "账户");
     ("Add property", "添加属性");
     ("Advanced", "高级");
     ("Again", "重来");
     ("All", "全部");
     ("All cards", "全部卡片");
-    ("Appearance", "外观");
-    ("Apply", "应用");
     ("Ascending", "升序");
-    ("Audio", "音频");
     ("Calculator", "计算器");
-    ("Cancel", "取消");
-    ("Capture", "速记");
     ("Check log", "查看日志");
     ("Checked", "已检查");
-    ("Close", "关闭");
     ("Collapse", "折叠");
     ("Commands", "命令");
-    ("Comment", "评论");
-    ("Comments", "评论");
     ("Community", "社区");
     ("Copy", "复制");
     ("Create", "创建");
@@ -5510,31 +5522,20 @@ let dictionaries = [
     ("Delete the local copy of \"{1}\" from this device?", "要从此设备删除“{1}”的本地副本吗？");
     ("Cloud copies are not deleted. Unsynced changes on this device will be lost.", "不会删除云端副本。此设备上未同步的更改将丢失。");
     ("Descending", "降序");
-    ("Done", "已完成");
     ("Easy", "简单");
-    ("Editor", "编辑器");
     ("Empty", "空");
     ("Errors only", "仅错误");
     ("Expand", "展开");
     ("False", "否");
-    ("Favorites", "收藏页面");
     ("File", "文件");
-    ("Files", "文件");
     ("Filters", "筛选条件");
-    ("Flashcards", "记忆卡片");
-    ("General", "常规");
     ("Good", "良好");
     ("Graph", "图谱");
     ("Graph name", "图谱名称");
-    ("Graphs", "图谱");
     ("Hard", "困难");
     ("Image link", "图片链接");
-    ("Indent", "缩进");
-    ("Journals", "日志");
     ("Label", "标签");
-    ("Language", "语言");
     ("Link", "链接");
-    ("Linked references", "转到注解");
     ("More", "更多");
     ("Name", "名称");
     ("Navigation", "移动");
@@ -5546,21 +5547,14 @@ let dictionaries = [
     ("Come back later or practice again now.", "稍后再来，或现在再次练习。");
     ("Number", "数字");
     ("Offline", "离线");
-    ("Outdent", "取消缩进");
     ("Page reference", "页面引用");
-    ("Pages", "页面");
-    ("Photo", "照片");
     ("Preparing", "加载中");
     ("Priority", "优先级");
     ("Property", "属性");
-    ("Recent", "最近使用");
     ("Refresh", "刷新");
     ("Remove", "移除");
     ("Remove filter", "移除筛选");
-    ("Revision", "修订");
     ("Scheduled", "计划日期");
-    ("Search", "搜索");
-    ("Settings", "设置");
     ("Share", "分享");
     ("Show more", "更多");
     ("Sign Out", "退出登录");
@@ -5568,20 +5562,18 @@ let dictionaries = [
     ("Status", "状态");
     ("Synced", "已同步");
     ("Syncing", "同步中");
-    ("System", "系统");
-    ("Tabs", "标签页");
-    ("Tag", "标签");
     ("Tagged nodes", "已标记节点");
     ("Tags", "标签");
     ("Text", "文本");
     ("Theme", "主题");
+    ("Dark theme", "深色配色");
+    ("Black", "黑色");
     ("Today", "今天");
     ("Tomorrow", "明天");
     ("True", "是");
     ("URL", "网址");
     ("Unselect", "取消选择");
     ("Untitled", "无标题");
-    ("Version", "版本");
     ("Yesterday", "昨天");
     ("after", "晚于");
     ("before", "早于");
@@ -5599,10 +5591,143 @@ let dictionaries = [
     ("search", "搜索");
     ("system", "跟随系统");
     ("title", "标题");
-    ("value", "值")
+    ("value", "值");
+    ("Add", "添加");
+    ("Add filter", "添加筛选");
+    ("Add sort", "添加排序");
+    ("Added to today", "已添加到今天");
+    ("Authentication", "身份验证");
+    ("Available tabs", "可用标签页");
+    ("Back to Settings", "返回设置");
+    ("Capture, sync, and review your notes anywhere.", "随时随地记录、同步和复习笔记。");
+    ("Card group", "卡片组");
+    ("Card group actions", "卡片组操作");
+    ("Card group name", "卡片组名称");
+    ("Categories", "分类");
+    ("Choose a graph", "选择图谱");
+    ("Choose an E2EE password for your encrypted graphs. Keep it safe; you will need it on other devices.", "为加密图谱设置端到端加密密码。请妥善保管，在其他设备上需要使用同一密码。");
+    ("Clear priority", "清除优先级");
+    ("Clear task status", "清除任务状态");
+    ("Close suggestions", "关闭建议");
+    ("Collapse {1}", "折叠 {1}");
+    ("Confirm E2EE password", "确认端到端加密密码");
+    ("Connected", "已连接");
+    ("Copy URL", "复制链接");
+    ("Copy reference", "复制引用");
+    ("Core log", "核心日志");
+    ("Created in the last month", "最近一个月内创建");
+    ("Creating graph…", "正在创建图谱…");
+    ("Custom date…", "自定义日期…");
+    ("Date range", "日期范围");
+    ("Delete block", "删除块");
+    ("Deleting graph…", "正在删除图谱…");
+    ("Disconnected", "已断开");
+    ("E2EE password", "端到端加密密码");
+    ("Edit block {1}", "编辑块 {1}");
+    ("Encrypted", "已加密");
+    ("Encryption cannot be changed after the sync graph is created.", "同步图谱创建后无法更改加密设置。");
+    ("End-to-end encryption", "端到端加密");
+    ("Enter a valid HTTP or HTTPS URL.", "请输入有效的 HTTP 或 HTTPS 地址。");
+    ("Enter your E2EE password to unlock this graph.", "输入端到端加密密码以解锁此图谱。");
+    ("Expand {1}", "展开 {1}");
+    ("Favorite", "收藏");
+    ("Filter by", "筛选");
+    ("Filter value", "筛选值");
+    ("Find a page or tag", "查找页面或标签");
+    ("Focus capture", "聚焦快速记录");
+    ("Go to journal", "转到日记");
+    ("Graph creation actions", "创建图谱操作");
+    ("Graph deletion actions", "删除图谱操作");
+    ("Graph is not ready for sync.", "图谱尚未准备好同步。");
+    ("Graph unlock actions", "解锁图谱操作");
+    ("Insert", "插入");
+    ("Insert content", "插入内容");
+    ("Journals and Graphs are always available. Use the arrows to reorder tabs.", "日记和图谱始终可用。使用箭头调整标签页顺序。");
+    ("Label (optional)", "标签（可选）");
+    ("Last error", "最近的错误");
+    ("Local changes", "本地更改");
+    ("Local graphs", "本地图谱");
+    ("Log", "日志");
+    ("Log actions", "日志操作");
+    ("Log filters", "日志筛选");
+    ("Match conditions", "匹配条件");
+    ("Move tab down", "下移标签页");
+    ("Move tab up", "上移标签页");
+    ("New card group", "新建卡片组");
+    ("New view", "新建视图");
+    ("Newest first", "新的在前");
+    ("No favorites yet", "还没有收藏");
+    ("No graph selected", "未选择图谱");
+    ("No local graphs", "没有本地图谱");
+    ("No log entries", "没有日志");
+    ("No matching pages or tags", "没有匹配的页面或标签");
+    ("No recent pages", "没有最近页面");
+    ("No sync graphs yet", "还没有同步图谱");
+    ("Not connected", "未连接");
+    ("Not saved", "未保存");
+    ("Oldest first", "旧的在前");
+    ("Operator", "运算符");
+    ("Outliner editor", "大纲编辑器");
+    ("Outliner selection", "大纲选区");
+    ("Page deletion actions", "删除页面操作");
+    ("Privacy Policy", "隐私政策");
+    ("Refresh graphs", "刷新图谱");
+    ("Remote graphs", "远程图谱");
+    ("Remote tx", "远程事务");
+    ("Remove attachment", "移除附件");
+    ("Request account deletion", "申请删除账户");
+    ("Saved", "已保存");
+    ("Saved views", "已保存的视图");
+    ("Search pages or tags", "搜索页面或标签");
+    ("Search results", "搜索结果");
+    ("Search values", "搜索值");
+    ("Select block {1}", "选择块 {1}");
+    ("Send", "发送");
+    ("Server URL", "服务器地址");
+    ("Settings actions", "设置操作");
+    ("Shared by others", "他人分享");
+    ("Show answer", "显示答案");
+    ("Show cloze", "显示填空");
+    ("Sign out actions", "退出登录操作");
+    ("Sign out?", "退出登录？");
+    ("Sort", "排序");
+    ("Sort actions", "排序操作");
+    ("Sort direction", "排序方向");
+    ("Sync failed", "同步失败");
+    ("Sync server", "同步服务器");
+    ("Sync status", "同步状态");
+    ("Sync status actions", "同步状态操作");
+    ("Tabs actions", "标签页操作");
+    ("Tag any block with #Card to review it here.", "给块加上 #Card 标签后即可在这里复习。");
+    ("Task status", "任务状态");
+    ("Task: None", "任务：无");
+    ("Task: {1}", "任务：{1}");
+    ("Toggle query results", "展开或折叠查询结果");
+    ("Toggle sidebar", "切换侧边栏");
+    ("UI log", "界面日志");
+    ("Unavailable", "不可用");
+    ("Unavailable group", "不可用的卡片组");
+    ("Unfavorite", "取消收藏");
+    ("Unlock", "解锁");
+    ("Unlock encrypted graphs", "解锁加密图谱");
+    ("Untitled block", "无标题块");
+    ("Up to date", "已是最新");
+    ("Upload asset", "上传附件");
+    ("View settings actions", "视图设置操作");
+    ("View type", "视图类型");
+    ("Views", "视图");
+    ("Visible tabs", "显示的标签页");
+    ("Waiting to save", "等待保存");
+    ("Zoom into {1}", "聚焦到 {1}");
+    ("{1}, off", "{1}，已关闭");
+    ("{1}, on", "{1}，已开启");
+    ("Discord community", "Discord 社区");
+    ("Forum", "论坛");
+    ("Report bug", "报告问题")
   ]);
   ("zh-hant", [
     ("Create new block", "建立塊");
+    ("Line break", "換行");
     ("Back", "返回");
     ("Close", "關閉");
     ("Rename page", "重新命名");
@@ -5812,6 +5937,8 @@ let dictionaries = [
     ("Tags", "標籤");
     ("Text", "文字");
     ("Theme", "主題");
+    ("Dark theme", "深色配色");
+    ("Black", "黑色");
     ("Today", "今天");
     ("Tomorrow", "明天");
     ("True", "是");

@@ -76,6 +76,14 @@ let () =
       "special_block_continuation", Special_block_continuation_test.cases;
       "localization", Localization_test.cases;
       "autosave", Autosave_test.cases;
-      "drive", Drive_scenario_test.cases;
+      "drive_auth", Drive_auth_test.cases;
+      "drive_composer", Drive_composer_test.cases;
+      "drive_flashcards", Drive_flashcards_test.cases;
+      "drive_graphs", Drive_graphs_test.cases;
+      "drive_journal", Drive_journal_test.cases;
+      "drive_outliner", Drive_outliner_test.cases;
+      "drive_search", Drive_search_test.cases;
+      "drive_settings", Drive_settings_test.cases;
+      "drive_sidebar", Drive_sidebar_test.cases;
       "repro", Repro_wedge_test.cases;
     ])

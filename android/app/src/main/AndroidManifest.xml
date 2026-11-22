@@ -68,6 +68,13 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <activity
+            android:name=".WidgetStatusMenuActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity="${applicationId}.widgetStatus"
+            android:theme="@style/WidgetStatusMenuTheme" />
         <receiver
             android:name=".TodayJournalWidgetProvider"
             android:exported="false"
@@ -89,6 +96,28 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/capture_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".TaskListWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_tasks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/task_list_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".RandomBlocksWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_random_blocks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/random_blocks_widget_info" />
         </receiver>
         <service
             android:name=".AudioRecordingService"

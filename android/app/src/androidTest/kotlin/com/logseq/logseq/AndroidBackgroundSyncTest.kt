@@ -9,6 +9,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.logseq.runtime.AndroidBackgroundSync
+import com.logseq.logseq.runtime.AndroidGraphEventsSync
 import com.logseq.logseq.runtime.BackgroundSyncResult
 import com.logseq.logseq.runtime.NativeCoreSession
 import java.io.File
@@ -84,6 +85,31 @@ class AndroidBackgroundSyncTest {
         }
     }
 
+    @Test fun aResetDuringTheInitialPullDoesNotStartPendingWrites(): Unit = runBlocking {
+        SocketServer(reset = true).use { server ->
+            val url = "ws://127.0.0.1:${server.port}/sync/background-qa"
+            var pendingStarted = false
+            val sync = AndroidGraphEventsSync(
+                callCore = { request ->
+                    val params = JSONObject(request).getJSONObject("params")
+                    val commands = when (params.getString("action")) {
+                        "beginSyncTransport" -> """[{"type":"connect","url":"$url"}]"""
+                        else -> when (JSONObject(params.getString("payload")).getString("type")) {
+                            "opened" -> """[{"type":"send","body":"pull"},{"type":"sync-pending"}]"""
+                            "frame" -> """[{"type":"close"},{"type":"snapshot"}]"""
+                            else -> error("Unexpected sync transport event")
+                        }
+                    }
+                    """{"ok":true,"result":{"syncTransport":{"generation":1,"graphId":"background-qa","commands":$commands}}}"""
+                },
+                applyResponse = {}, onChangesApplied = { pendingStarted = true }, isCancelled = { false },
+            )
+            val result = sync.runSession(AndroidGraphEventsSync.Connection("background-qa", url, "token"))
+            assertEquals(AndroidGraphEventsSync.SessionOutcome.SnapshotRequired, result)
+            assertFalse("Pending writes must wait for a successful pull", pendingStarted)
+        }
+    }
+
     @Test fun failedNetworkRequestsAreRetriedAndCancellationReleasesTheCore(): Unit = runBlocking {
         SocketServer(reject = true).use { server ->
             prepare(server.port)
@@ -138,7 +164,8 @@ class AndroidBackgroundSyncTest {
         isolated.getSharedPreferences("logseq-cognito-auth", 0).edit().putString("tokens", encrypted).commit()
     }
 
-    private class SocketServer(private val reject: Boolean = false, private val stall: Boolean = false) : AutoCloseable {
+    private class SocketServer(private val reject: Boolean = false, private val stall: Boolean = false,
+        private val reset: Boolean = false) : AutoCloseable {
         private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val port get() = server.localPort
         val received = CompletableFuture<String>()
@@ -167,7 +194,10 @@ class AndroidBackgroundSyncTest {
                         val payload = ByteArray(length).apply { for (i in indices) this[i] = (input.read() xor mask[i % 4].toInt()).toByte() }
                         received.complete(header.toString() + String(payload))
                         if (!stall) {
-                            val frame = """{"type":"pull/ok","t":1,"t-before":0,"txs":[]}""".toByteArray()
+                            // Give the client time to start the pump if it accepts the open command early.
+                            if (reset) Thread.sleep(200)
+                            val frame = (if (reset) """{"type":"reset"}"""
+                                else """{"type":"pull/ok","t":1,"t-before":0,"txs":[]}""").toByteArray()
                             output.write(byteArrayOf(0x81.toByte(), frame.size.toByte()) + frame); output.flush()
                         }
                         while (input.read() >= 0) { }

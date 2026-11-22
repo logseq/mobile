@@ -44,6 +44,7 @@ private final class LGCoreResponseRelay {
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 public struct LogseqRootView : View {
     @AppStorage("logseq.appearance") private var appearance = "system"
+    @AppStorage(LogseqDarkTheme.storageKey) private var darkTheme = LogseqDarkTheme.defaultTheme
     @AppStorage("logseq.language") private var language = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -56,6 +57,7 @@ public struct LogseqRootView : View {
 
     public var body: some View {
         appContent
+        .environment(\.logseqDarkTheme, darkTheme)
         .preferredColorScheme(
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
@@ -65,27 +67,29 @@ public struct LogseqRootView : View {
         // Semantic colors inside the LUI tree come from the `theme` prop the
         // OCaml view emits (adaptive light/dark tokens), not a host-side
         // dictionary — the shell keeps its palette for chrome below.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(themePalette.background.ignoresSafeArea())
         .alert("Error", isPresented: Binding(
-            get: { errorFeedback.message != nil },
-            set: { if !$0 { errorFeedback.dismiss() } }
+            get: { runtime.widgetTaskError != nil || errorFeedback.message != nil },
+            set: { presented in
+                if !presented {
+                    runtime.widgetTaskError = nil
+                    errorFeedback.dismiss()
+                }
+            }
         )) {
             Button("OK", role: .cancel) {}
-        } message: { Text(errorFeedback.message ?? "") }
+        } message: { Text(runtime.widgetTaskError ?? errorFeedback.message ?? "") }
     }
 
     private var appContent: some View {
-        LGRendererRoot(renderer: runtime.lgRuntime.renderer)
-            .onAppear {
-                if let window = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
-                    .first(where: { $0.isKeyWindow }) {
-                    LogseqLaunchTransition.shared.show(in: window)
-                }
-                DispatchQueue.main.async {
-                    LogseqLaunchTransition.shared.finish()
-                }
+        Group {
+            if runtime.isOpeningInitialWidgetBlock {
+                ProgressView()
+            } else {
+                LGRendererRoot(renderer: runtime.lgRuntime.renderer)
             }
+        }
             .task {
                 await runtime.runLGApplication()
                 logger.info("App logs are viewable in the Xcode console on Apple platforms")
@@ -98,6 +102,7 @@ public struct LogseqRootView : View {
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 runtime.refreshTaskReminderProjection(checkPermission: true)
+                runtime.refreshWidgetsOnActivation()
                 while !Task.isCancelled {
                     await runtime.refreshLocalJournalDay()
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -146,10 +151,15 @@ public struct LogseqRootView : View {
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
-            systemIsDark: colorScheme == .dark
+            systemIsDark: colorScheme == .dark,
+            darkTheme: darkTheme
         )
     }
 
+}
+
+@MainActor @Observable private final class WidgetLaunchPresentation {
+    var isOpeningBlock = false
 }
 
 @MainActor public final class LogseqLogseqRuntime {
@@ -159,6 +169,16 @@ public struct LogseqRootView : View {
     public let lgRuntime: LGRuntime
     public let authentication: LogseqAuthenticationStore
     public let presentationCoordinator: LGPlatformPresentationCoordinator
+    private let widgetContent = WidgetContentPublisher()
+    private let widgetLaunchPresentation = WidgetLaunchPresentation()
+    private var initialWidgetURL: URL?
+    private var initialWidgetURLAwaitingDelivery: URL?
+    var isOpeningInitialWidgetBlock: Bool { widgetLaunchPresentation.isOpeningBlock }
+
+    var widgetTaskError: String? {
+        get { widgetContent.linkError }
+        set { widgetContent.linkError = newValue }
+    }
     let syncCoordinator: GraphSyncCoordinator
     private struct LocalLaunchResult: Sendable {
         let catalogResponse: String
@@ -172,6 +192,7 @@ public struct LogseqRootView : View {
     private var didStartLGRenderer = false
     private var didStartLGApplication = false
     private var isLGApplicationReady = false
+    private var didFinishLaunchWork = false
     private var isResumingLGApplication = false
     private var didResumeCurrentActivation = false
     private var refreshedJournalDay: String?
@@ -190,6 +211,7 @@ public struct LogseqRootView : View {
 
     private struct SettingsHostPayload: Encodable {
         let appearance: String
+        let darkTheme: String
         let language: String
         let systemLanguage: String
         let spellCheck: Bool
@@ -253,6 +275,9 @@ public struct LogseqRootView : View {
                 let defaults = UserDefaults.standard
                 let previousBaseURL = LogseqSettingsPolicy.storedBaseURL(in: defaults)
                 defaults.set(settings.appearance, forKey: "logseq.appearance")
+                if let darkTheme = settings.darkTheme {
+                    defaults.set(LogseqDarkTheme(storedValue: darkTheme).rawValue, forKey: LogseqDarkTheme.storageKey)
+                }
                 defaults.set(
                     LogseqSettingsPolicy.normalizedLanguageID(settings.language),
                     forKey: "logseq.language"
@@ -398,6 +423,10 @@ public struct LogseqRootView : View {
             platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
+        lgRuntime.didApplyCoreResponse = { [weak self] in
+            guard let self, self.didFinishLaunchWork else { return }
+            self.widgetContent.scheduleRefresh()
+        }
         responseRelay.apply = { [weak lgRuntime] response in
             do {
                 try lgRuntime?.applyCoreResponse(response)
@@ -498,8 +527,12 @@ public struct LogseqRootView : View {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
         startLGRenderer()
-        await waitForAuthenticationRestore()
-        publishAuthenticationState()
+        let opensWidgetBlock = initialWidgetURL != nil
+        // A cached widget target can render while authentication restores.
+        if !opensWidgetBlock {
+            await waitForAuthenticationRestore()
+            publishAuthenticationState()
+        }
         await waitForLocalLaunchLoad()
         if let session = UserDefaults.standard.string(forKey: "logseq.uiSession") {
             do {
@@ -508,9 +541,28 @@ public struct LogseqRootView : View {
                 logger.error("Could not restore UI session: \(error)")
             }
         }
+        if let url = initialWidgetURL {
+            let opened = await openSharedLink(SharedDeepLink(url), id: UUID().uuidString.lowercased())
+            await lgRuntime.waitForQueuedPatches()
+            initialWidgetURL = nil
+            widgetLaunchPresentation.isOpeningBlock = false
+            if !opened {
+                widgetTaskError = String(localized: "The linked block could not be opened.")
+            }
+        }
         isLGApplicationReady = true
         presentPendingQuickAction()
+        if opensWidgetBlock {
+            await waitForAuthenticationRestore()
+            publishAuthenticationState()
+        }
         await resumeLGApplication()
+        // A successful graph bootstrap loads the sidebar as part of its projection.
+        if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
+            await store.loadLaunchSidebar(graphID: graphID)
+        }
+        didFinishLaunchWork = true
+        refreshWidgetsOnActivation()
         await store.runPendingSyncLoop()
     }
 
@@ -586,6 +638,9 @@ public struct LogseqRootView : View {
     }
 
     public func pauseLGApplication() {
+        if isLGApplicationReady {
+            initialWidgetURLAwaitingDelivery = nil
+        }
         if didApplyLocalLaunchResult {
             do {
                 try lgRuntime.applyHostUpdate(kind: "save-ui-session", payload: "null")
@@ -630,6 +685,7 @@ public struct LogseqRootView : View {
         let rawTabs = defaults.string(forKey: "logseq.mobile.sidebarTabs") ?? ""
         let payload = SettingsHostPayload(
             appearance: defaults.string(forKey: "logseq.appearance") ?? "system",
+            darkTheme: LogseqDarkTheme(storedValue: defaults.string(forKey: LogseqDarkTheme.storageKey)).rawValue,
             language: LogseqSettingsPolicy.normalizedLanguageID(
                 defaults.string(forKey: "logseq.language") ?? "system"
             ),
@@ -872,7 +928,8 @@ public struct LogseqRootView : View {
             store.applyLaunchResponse(
                 graphResponse,
                 actionName: "openGraph",
-                databasePath: databasePath
+                databasePath: databasePath,
+                loadSidebar: false
             )
         } else {
             store.applyLaunchResponse(
@@ -926,7 +983,21 @@ public struct LogseqRootView : View {
         }
     }
 
+    public func prepareInitialWidgetLink(_ url: URL) {
+        guard !isLGApplicationReady, initialWidgetURL == nil,
+              SharedDeepLink(url).opensWidgetBlock else { return }
+        initialWidgetURL = url
+        initialWidgetURLAwaitingDelivery = url
+        widgetLaunchPresentation.isOpeningBlock = true
+    }
+
     public func acceptSharedCaptureURL(_ url: URL) {
+        prepareInitialWidgetLink(url)
+        // SwiftUI can forward the scene's launch URL after the initial route is visible.
+        if url == initialWidgetURL || url == initialWidgetURLAwaitingDelivery {
+            initialWidgetURLAwaitingDelivery = nil
+            return
+        }
         if url.scheme == "logseq", url.host == "audio", presentationCoordinator.attachmentService == .audio {
             return
         }
@@ -966,8 +1037,38 @@ public struct LogseqRootView : View {
         drainSharedCapturesIfReady()
     }
 
+    public func setWidgetTaskStatus(
+        graphId: String,
+        uuid: String,
+        expectedStatusUuid: String,
+        statusUuid: String
+    ) async -> Bool {
+        await waitForLocalLaunchLoad()
+        let saved = await store.setWidgetTaskStatus(
+            graphId: graphId, uuid: uuid, expectedStatusUuid: expectedStatusUuid, statusUuid: statusUuid
+        )
+        await widgetContent.refresh()
+        if saved { LogseqBackgroundRefresh.syncNow() }
+        return saved
+    }
+
+    public func refreshRandomBlocksWidget() async {
+        await waitForLocalLaunchLoad()
+        await widgetContent.refresh(forceRandomReload: true)
+    }
+
+    func refreshWidgetsOnActivation() {
+        guard didFinishLaunchWork else { return }
+        widgetContent.scheduleRefresh(forceTaskReload: true)
+    }
+
+    public func resumePendingWidgetRefresh() {
+        widgetContent.resumePendingRefresh()
+    }
+
     private func drainSharedCapturesIfReady() {
-        guard didApplyLocalLaunchResult, sharedCaptureTask == nil else { return }
+        guard didApplyLocalLaunchResult, isLGApplicationReady, !isOpeningInitialWidgetBlock,
+              sharedCaptureTask == nil else { return }
         sharedCaptureTask = Task { [weak self] in
             guard let self else { return }
             await SharedCaptureProcessor.process(inbox: SharedCaptureInbox.shared) { item in
@@ -979,28 +1080,8 @@ public struct LogseqRootView : View {
                     guard let payload = item.capturePayload else { return true }
                     return await self.store.captureShared(text: payload.text, title: payload.title, url: payload.url, id: item.id)
                 case .deepLink:
-                    guard var link = item.captureLink else { return true }
-                    link.uuid = item.id
-                    guard let data = try? JSONEncoder().encode(link) else { return false }
-                    let payload = String(decoding: data, as: UTF8.self)
-                    guard await self.store.handleDeepLink(payload) else { return false }
-                    if let graphID = self.store.deepLinkGraphId {
-                        let opened = await self.taskReminderCoordinator.withGraphMutation {
-                            await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
-                        }
-                        self.taskReminderCoordinator.graphMutationDidFinish(succeeded: opened.succeeded)
-                        guard opened.succeeded, await self.store.handleDeepLink(payload), self.store.deepLinkGraphId == nil else { return false }
-                    }
-                    if let uuid = self.store.deepLinkNodeUuid {
-                        guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
-                        do { try self.lgRuntime.applyHostUpdate(kind: "open-node", payload: String(decoding: encoded, as: UTF8.self)) }
-                        catch { return false }
-                    }
-                    if let action = self.store.deepLinkQuickAction {
-                        self.pendingQuickAction = action
-                        self.presentPendingQuickAction()
-                    }
-                    return true
+                    guard let link = item.captureLink else { return true }
+                    return await self.openSharedLink(link, id: item.id)
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
                     guard let graphID = self.store.snapshot.selectedGraphId, !graphID.isEmpty else { return false }
@@ -1023,6 +1104,49 @@ public struct LogseqRootView : View {
                 }
             }
             self.sharedCaptureTask = nil
+        }
+    }
+
+    private func openSharedLink(_ original: SharedDeepLink, id: String) async -> Bool {
+        var link = original
+        link.uuid = id
+        guard let data = try? JSONEncoder().encode(link) else { return false }
+        let payload = String(decoding: data, as: UTF8.self)
+        guard await store.handleDeepLink(payload) else {
+            return acknowledgeRejectedWidgetLink(link.opensWidgetBlock)
+        }
+        if let graphID = store.deepLinkGraphId {
+            if isOpeningInitialWidgetBlock { await waitForAuthenticationRestore() }
+            let opened = await taskReminderCoordinator.withGraphMutation {
+                await graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
+            }
+            taskReminderCoordinator.graphMutationDidFinish(succeeded: opened.succeeded)
+            guard opened.succeeded else { return false }
+            guard await store.handleDeepLink(payload) else {
+                return acknowledgeRejectedWidgetLink(link.opensWidgetBlock)
+            }
+            guard store.deepLinkGraphId == nil else { return false }
+        }
+        if let uuid = store.deepLinkNodeUuid {
+            guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
+            do { try lgRuntime.applyHostUpdate(kind: "open-node", payload: String(decoding: encoded, as: UTF8.self)) }
+            catch { return false }
+        }
+        if let action = store.deepLinkQuickAction {
+            pendingQuickAction = action
+            presentPendingQuickAction()
+        }
+        return true
+    }
+
+    private func acknowledgeRejectedWidgetLink(_ isWidgetLink: Bool) -> Bool {
+        guard isWidgetLink, let error = store.lastError else { return false }
+        switch error.code {
+        case "invalid_deep_link", "outliner_effect_failed", "outliner_command_failed":
+            widgetTaskError = error.message
+            return true
+        default:
+            return false
         }
     }
 

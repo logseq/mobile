@@ -95,7 +95,8 @@ internal class AndroidGraphEventsSync(
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
         var socket: WebSocket? = null
-        var receivedFrame = false
+        var submissionSocket: AndroidPendingWebSocket? = null
+        var pullSucceeded = false
         val pendingJob: Job = launch {
             for (signal in pendingSignals) {
                 onChangesApplied()
@@ -120,7 +121,7 @@ internal class AndroidGraphEventsSync(
                             val request = Request.Builder().url(command.getString("url"))
                                 .header("Authorization", "Bearer ${connection.accessToken}").build()
                             socket = openSocket(client, request, frames, isCancelled)
-                            pendingWebSocket = AndroidPendingWebSocket(socket, command.getString("url"))
+                            submissionSocket = AndroidPendingWebSocket(socket, command.getString("url"))
                             transport = event("opened")
                             enqueue(transport)
                         }
@@ -132,7 +133,11 @@ internal class AndroidGraphEventsSync(
                         )
                         "snapshot" -> return@coroutineScope SessionOutcome.SnapshotRequired
                         "sync-pending" -> {
-                            pendingSignals.trySend(Unit)
+                            // The initial pull can reject our cursor and close this socket.
+                            if (pullSucceeded) {
+                                pendingWebSocket = submissionSocket
+                                pendingSignals.trySend(Unit)
+                            }
                         }
                         else -> error("Unsupported sync transport command")
                     }
@@ -143,13 +148,13 @@ internal class AndroidGraphEventsSync(
                         event("frame", body = frame.value).also { state ->
                             val commands = state.getJSONArray("commands")
                             if ((0 until commands.length()).any { commands.getJSONObject(it).getString("type") == "sync-pending" })
-                                receivedFrame = true
+                                pullSucceeded = true
                         }
                     }
                     is Frame.Failure -> event("failed", message = frame.message)
                     Frame.Closed -> event("closed")
                     Frame.PumpFinished -> {
-                        if (stopAfterFirstPull && receivedFrame) {
+                        if (stopAfterFirstPull && pullSucceeded) {
                             val response = callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
                             applyResponse(response)
                             val result = JSONObject(response).getJSONObject("result")
@@ -175,8 +180,8 @@ internal class AndroidGraphEventsSync(
                 else error.message ?: error.toString())
             return@coroutineScope retryOutcome(transport)
         } finally {
-            pendingWebSocket?.close()
             pendingWebSocket = null
+            submissionSocket?.close()
             pendingSignals.close()
             pendingJob.cancel()
             socket?.cancel()

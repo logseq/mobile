@@ -1,6 +1,14 @@
 val tr : Model.logseq_model -> string -> string
 val tr_named : Model.logseq_model -> string -> string -> string
 val property_title : Model.logseq_model -> attr:string -> title:string -> string
+val main_background : string -> Lui_ui.theme_token_value
+val grouped_row_background : Lui_ui.theme_token_value
+val dark_accent : string
+val sheet :
+  model_source:Model.logseq_model Signal.signal -> ?height:int -> ?style_class:string -> ?detents:string ->
+  ?detents_signal:string Signal.signal -> ?accessibility_identifier:string ->
+  ?on_dismiss:(unit -> unit) -> title:string -> ?title_signal:string Signal.signal ->
+  Lui_elements.t list -> Lui_elements.t
 val outliner_node_icon : Model.logseq_model -> Model.outline_row -> string
 val node_icon : Model.logseq_model -> string -> string
 val node_icon_view : ?muted:bool -> size:int -> string Signal.signal -> Lui_elements.t
@@ -116,11 +124,13 @@ val outliner_row_action_identifier : Model.outline_row -> string
 val outliner_row_title : Model.outline_row -> string
 val outliner_row_indent : Model.outline_row -> int
 val outliner_row_has_children : Model.outline_row -> bool
-val outliner_row_zoom_label : Model.outline_row -> string
+val outliner_row_zoom_label :
+  Model.logseq_model -> Model.outline_row -> string
 val outliner_row_zoom_identifier : Model.outline_row -> string
 val outliner_row_action_label :
   Model.logseq_model -> Model.outline_row -> string
-val outliner_row_collapse_label : Model.outline_row -> string
+val outliner_row_collapse_label :
+  Model.logseq_model -> Model.outline_row -> string
 val outliner_row_collapse_glyph : Model.outline_row -> string
 val outliner_collapse_icon_name : bool -> string
 val outliner_collapse_identifier : Model.outline_row -> string
@@ -312,11 +322,12 @@ val settings_apply_disabled_ : Model.logseq_model -> bool
 val settings_version : Model.logseq_model -> string
 val settings_revision : Model.logseq_model -> string
 val settings_language_title : Model.logseq_model -> string
-val settings_appearance_title : Model.logseq_model -> string
-val settings_language_choice_title : Model.settings_language_choice -> string
+val settings_language_choice_title :
+  Model.logseq_model -> Model.settings_language_choice -> string
 val settings_language_choice_identifier :
   Model.settings_language_choice -> string
-val settings_community_link_title : Model.settings_community_link -> string
+val settings_community_link_title :
+  Model.logseq_model -> Model.settings_community_link -> string
 val settings_community_link_identifier :
   Model.settings_community_link -> string
 val settings_community_link_needs_separator_ :

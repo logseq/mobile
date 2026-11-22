@@ -26,6 +26,8 @@ type created_journal =
 type transport_operation =
   | Create_block of Model.block
   | Upload_asset of Model.block
+  | Prepare_asset_upload of Model.block * Api.api_file_upload * Api.api_request
+  | Confirm_asset_upload of Model.block * Api.api_request
   | Move_created_asset of moved_asset
   | Update_title of Model.block
   | Update_status of Model.block
@@ -186,6 +188,8 @@ type session =
   ; reference_collapsed : (string option * string, bool) Hashtbl.t
   ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
+  ; widget_snapshot : (string * Datascript.db * string) option ref
+  ; widget_random_sample : (string * int * int list) option ref
   ; reference_generation : (string option * int option * int) option ref
   }
 
@@ -311,6 +315,8 @@ let create_session options =
     result_view_cache = Result_view.create_cache ();
     reference_generation = ref None;
     pdf_workspace = ref None;
+    widget_snapshot = ref None;
+    widget_random_sample = ref None;
     state =
       ref
         {
@@ -354,6 +360,7 @@ let empty_sidebar = { Graph.favorites = []; recent_pages = [] }
 
 let transport_operation_block operation =
   match operation with
+  | Prepare_asset_upload (block, _, _) | Confirm_asset_upload (block, _)
   | Create_block block | Upload_asset block | Update_title block
   | Update_status block -> block
   | Move_created_asset moved -> moved.block

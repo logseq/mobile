@@ -715,8 +715,11 @@ let embedded_queries_execute_and_render () =
     let markup = Json.to_string (member "markup" block) in
     check ~msg:"embedded queries must not display their definition as code"
       (not (contains markup source));
-    check ~msg:"ordinary embedded child code remains visible"
-      (contains markup "Ordinary child code");
+    let children = items "embedChildren" block in
+    check_eq ~msg:"query definitions are omitted from the embedded outline"
+      (List.map (member "uuid") children) [`String note];
+    check ~msg:"ordinary child code renders in its own row"
+      (contains (Json.to_string (member "markup" (List.hd children))) "Ordinary child code");
     let collapsed = expand_query session embedded false in
     check_eq (member "expanded" (member "query" collapsed)) (`Bool false);
     List.iter (fun backend -> with_ui backend (Json.to_string (`Assoc ["ok", `Bool true; "result", response])) (fun app ->
@@ -777,7 +780,9 @@ let embedded_queries_follow_live_source_and_links () =
   check ~msg:"interactive refresh includes transitive embedded query owners"
     (List.mem embedded owners && List.mem nested_embed owners);
   let hydrated = dispatch session "hydrateOutlinerRows" (Json.to_string (`List [`String nested_embed])) in
-  check_eq (row_ids (member "query" (List.hd (items "hydratedBlocks" hydrated)))) [beta];
+  let block = List.hd (items "hydratedBlocks" hydrated) in
+  check_eq (row_ids (member "query" block)) [beta];
+  check_eq (member "embedSourceUuid" block) (`String owner);
   set_db (Ds.db_with [put definition "block/title" (Ds.String "#Project")] db);
   check_eq (row_ids (q ())) [alpha];
   let missing = Ds.db_with [Ds.RetractEntity (ref_uuid definition)] db in

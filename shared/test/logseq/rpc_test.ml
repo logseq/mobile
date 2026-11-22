@@ -147,6 +147,15 @@ let complete_request session request body =
                ("error", `Null);
              ])))
 
+let proxy_asset_upload session =
+  let prepare = required_pending_request session in
+  check_eq (member "method" prepare) (`String "POST");
+  check_eq (member "action" (member "bodyObject" prepare)) (`String "prepare");
+  let response = complete_request session prepare {|{"mode":"proxy"}|} in
+  match member "pendingSyncRequest" response with
+  | `Assoc _ as request -> request
+  | _ -> failwith "expected a file upload after asset preparation"
+
 let retryable_operation (operation : Ops.pending_operation) =
   match operation.state with
   | Ops.Queued | Ops.Retryable | Ops.Submitted -> true
@@ -1244,6 +1253,31 @@ let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
   ignore (sync_event session (sync_generation recover) "snapshot-applied" []);
   check_eq (sync_command_kinds (begin_sync_transport session)) ["connect"]
 
+let shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds () =
+  let session, _, _, _ = sync_driver_session () in
+  let connect () =
+    let response = begin_sync_transport session in
+    check_eq (sync_command_kinds response) ["connect"];
+    let generation = sync_generation response in
+    ignore (sync_event session generation "opened" []);
+    generation in
+  let reset generation =
+    sync_event session generation "frame" ["body", `String {|{"type":"reset"}|}] in
+  let generation = connect () in
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"];
+  ignore (sync_event session generation "snapshot-applied" []);
+  List.iter (fun delay ->
+    let repeated = reset (connect ()) in
+    check_eq (sync_command_kinds repeated) ["close"; "retry"];
+    check_eq (member "delayMs" (List.nth (sync_commands repeated) 1)) (`Int delay);
+    let recovery = begin_sync_transport session in
+    check_eq (sync_command_kinds recovery) ["snapshot"];
+    ignore (sync_event session (sync_generation recovery) "snapshot-applied" []))
+    [1000; 2000; 4000; 8000; 16000; 30000; 30000];
+  let generation = connect () in
+  ignore (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":10}|}]);
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"]
+
 let shared_sync_driver_reports_malformed_frames_and_cancels_without_retry () =
   let session, _, _, _ = sync_driver_session () in
   let generation = sync_generation (begin_sync_transport session) in
@@ -1331,9 +1365,29 @@ let required_pending response = match member "pendingSyncRequest" response with
   | `Assoc _ as request -> request
   | _ -> failwith "expected an active pending request"
 
+let asset_upload_falls_back_when_prepare_method_is_unsupported () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let prepare = required_pending_request session in
+  check_eq (member "method" prepare) (`String "POST");
+  check_eq (member "action" (member "bodyObject" prepare)) (`String "prepare");
+  let fallback = pending_completion session prepare (`Int 405) (`String "method not allowed") `Null in
+  check_eq (member "pendingSyncError" fallback) `Null;
+  let upload = required_pending fallback in
+  check_eq (member "method" upload) (`String "PUT");
+  check_eq (member "url" upload) (member "url" prepare);
+  check_eq (member "token" upload) (member "token" prepare);
+  check_eq (member "filePath" upload) (`String "/tmp/encrypted-retry-asset");
+  check_eq (member "contentType" upload) (`String "text/plain");
+  check_eq (member "x-amz-meta-checksum" (member "headers" upload)) (`String "abc");
+  check_eq !cleaned [];
+  check_eq (List.length !staged) 1;
+  let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
+  check_eq (member "url" transaction) (`String "ws://127.0.0.1:8787/sync/encrypted-1");
+  check_eq !cleaned ["/tmp/encrypted-retry-asset"]
+
 let shared_pending_retry_preserves_upload_and_bounds_attempts () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let request = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let request = proxy_asset_upload session in
   List.iter (fun (status, error, delay) ->
     let result = pending_completion session request status `Null error in
     let retry = required_pending result in
@@ -1351,7 +1405,7 @@ let shared_pending_retry_preserves_upload_and_bounds_attempts () =
 
 let shared_pending_retry_keeps_semantic_transaction_identity () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let retried = required_pending (pending_completion session transaction `Null `Null (`String "connection lost")) in
   check_eq (member "id" retried) (member "id" transaction);
@@ -1364,7 +1418,7 @@ let shared_pending_retry_keeps_semantic_transaction_identity () =
 
 let shared_pending_retry_rejects_raw_upload_conflicts () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let conflict = pending_completion session upload (`Int 409)
     (`String {|{"error":"asset checksum already exists"}|}) `Null in
   check_eq (member "pendingSyncRequest" conflict) `Null;
@@ -1374,7 +1428,7 @@ let shared_pending_retry_rejects_raw_upload_conflicts () =
 
 let shared_pending_retry_reports_transaction_rejection () =
   let session, staged, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let rejected = pending_completion session transaction (`Int 200)
     (`String {|{"type":"tx/reject","reason":"invalid data","error-detail":"should be a datetime"}|}) `Null in
@@ -1385,7 +1439,7 @@ let shared_pending_retry_reports_transaction_rejection () =
 
 let shared_pending_error_summary_preserves_unicode () =
   let session, _, _ = retry_asset_session () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
   let detail = String.make 4095 'x' ^ "中over" in
   let body = Json.to_string (`Assoc ["type", `String "tx/reject"; "reason", `String "invalid"; "error-detail", `String detail]) in
@@ -1395,7 +1449,7 @@ let shared_pending_error_summary_preserves_unicode () =
 
 let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   ignore (pending_completion session upload `Null `Null (`String "offline"));
   ignore (response_result (dispatch_json session "cancelPendingSync" ""));
   let late = pending_completion session upload (`Int 200) (`String "{}") `Null in
@@ -1405,7 +1459,7 @@ let shared_pending_retry_cancellation_cleans_once_and_ignores_late_results () =
 
 let shared_pending_retry_graph_changes_discard_old_transport () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let changed = response_result (dispatch_json session "configure"
     {|{"baseUrl":"http://other-server","graphId":"other-graph","token":"access"}|}) in
   check_eq (member "pendingSyncRequest" changed) `Null;
@@ -1415,7 +1469,7 @@ let shared_pending_retry_graph_changes_discard_old_transport () =
 
 let clearing_authentication_cancels_requests_without_dropping_local_edits () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
-  let upload = required_pending (response_result (dispatch_json session "beginPendingSync" "")) in
+  let upload = proxy_asset_upload session in
   let changed = response_result (dispatch_json session "configure"
     {|{"baseUrl":"http://127.0.0.1:8787","graphId":"encrypted-1","token":""}|}) in
   check_eq ~msg:"logout cancels a request carrying the previous token"
@@ -1665,6 +1719,200 @@ let tag_autocomplete_candidates_use_canonical_graph_identity () =
   check_eq (List.length candidates) 1;
   check_eq (member "label" (List.hd candidates)) (`String "Project");
   check_eq (member "value" (List.hd candidates)) (`String "tag-uuid")
+
+let with_crowded_page_search f =
+  Search_index_test.with_index (fun index ->
+    let conn = Search_index_test.seeded_conn () in
+    let testpage = "018f7850-0000-7da0-8b3f-6dbb64aa4ee0" in
+    let person = "018f7850-0000-7da0-8b3f-6dbb64aa4ee1" in
+    let person_notes = "018f7850-0000-7da0-8b3f-6dbb64aa4ee2" in
+    let block_rows = List.init 45 (fun i -> 11 + i,
+      Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" (100 + i),
+      Printf.sprintf "A testpa draft about a person %d" i) in
+    let add = Search_index_test.add in
+    ignore (Ds.transact_conn conn ([
+      add 7 "block/uuid" (Ds.Uuid testpage);
+      add 7 "block/name" (Ds.String "testpage");
+      add 7 "block/title" (Ds.String "testpage");
+      add 8 "block/uuid" (Ds.Uuid person);
+      add 8 "block/name" (Ds.String "person");
+      add 8 "block/title" (Ds.String "Person");
+      add 8 "block/tags" (Ds.Ref 10);
+      add 9 "block/uuid" (Ds.Uuid person_notes);
+      add 9 "block/name" (Ds.String "person notes");
+      add 9 "block/title" (Ds.String "Person notes");
+      add 10 "db/ident" (Ds.Keyword "logseq.class/Tag");
+    ] @ List.concat_map (fun (eid, uuid, title) ->
+      [add eid "block/uuid" (Ds.Uuid uuid);
+       add eid "block/title" (Ds.String title);
+       add eid "block/page" (Ds.Ref 1);
+       add eid "block/parent" (Ds.Ref 1)]) block_rows));
+    let db = Ds.conn_db conn in
+    let session = configure_plain_session (Session.create_session {
+      Session.default_options with
+      outliner_projection_limit = Some 32;
+      graph_db = Some (fun () -> Some db);
+      graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+      graph_search_page = Some (fun ~offset ~limit query ->
+        Search.search_hits_page ~offset ~limit index db query);
+    }) in
+    let index_blocks () =
+      Search.search_upsert index.path (List.map (fun (_, uuid, title) ->
+        uuid, title, Search_index_test.page_uuid) block_rows) in
+    let index_pages () = Search.search_upsert index.path [
+      testpage, "testpage", testpage;
+      person_notes, "Person notes", person_notes;
+      person, "Person", person;
+    ] in
+    f session testpage person person_notes index_blocks index_pages)
+
+let page_autocomplete_finds_pages_before_and_during_indexing () =
+  with_crowded_page_search (fun session testpage _ _ index_blocks index_pages ->
+    ignore (outliner_block_event session "tapBlock" "editing");
+    let candidates () =
+      outliner_event session {|{"type":"textChanged","title":"[[testpa]]","caretUTF16Offset":8}|}
+      |> json_items "outlinerAutocompleteCandidates" in
+    let check_first message =
+      check_eq ~msg:message (List.map (member "value") (List.take 1 (candidates ())))
+        [`String testpage] in
+    check_first "an existing page is available before the search index is built";
+    index_blocks ();
+    check_first "the page remains first when only matching blocks have been indexed";
+    index_pages ();
+    check_first "matching blocks cannot push a page out of completion";
+    let completed = outliner_event session (Json.to_string (`Assoc [
+      "type", `String "chooseAutocomplete"; "value", `String testpage])) in
+    check_eq (member "title" (member "editing" (member "outlinerState" completed)))
+      (`String "[[testpage]]"))
+
+let global_search_ranks_exact_tags_before_pagination () =
+  with_crowded_page_search (fun session _ person person_notes index_blocks index_pages ->
+    index_blocks ();
+    index_pages ();
+    let search action payload =
+      response_result (dispatch_json session action payload) in
+    let first = search "searchNodes" "person" in
+    let items = json_items "searchResults" first in
+    check_eq ~msg:"the exact tag and the prefix page are first, despite earlier indexed blocks"
+      (List.take 2 (List.map (member "uuid") items)) [`String person; `String person_notes];
+    check_eq (List.map (member "isPage") (List.take 2 items)) [`Bool true; `Bool true];
+    let next offset = search "searchNodesPage"
+      (Printf.sprintf {|{"query":"person","offset":%d}|} offset) in
+    let second = next 20 in
+    let third = next 40 in
+    check_eq (member "searchHasMore" third) (`Bool false);
+    let ids = List.map (member "uuid")
+      (items @ json_items "searchResults" second @ json_items "searchResults" third) in
+    check_eq (List.length ids) 47;
+    check_eq (List.length (List.sort_uniq compare ids)) 47)
+
+let page_autocomplete_matches_master_order () =
+  Search_index_test.with_index (fun index ->
+    let conn = Ds.create_conn ~schema:(Search_index_test.schema @ [
+      "db/ident", {Storage_codec.default_schema_attr with Ds.unique = Some Ds.Identity};
+      "block/tags", {Storage_codec.default_schema_attr with Ds.value_type = Some Ds.RefType;
+        cardinality = Ds.Many}]) () in
+    let names = ["Test page"; "my testpage"; "testpage notes"; "testpage"; "testpa";
+                 "Person"; "Person notes"; "Personal ledger"; "About a person"] in
+    let add = Search_index_test.add in
+    ignore (Ds.transact_conn conn [
+      add 1 "block/uuid" (Ds.Uuid Search_index_test.page_uuid);
+      add 1 "block/name" (Ds.String "movies");
+      add 1 "block/title" (Ds.String "Movies");
+      add 10 "db/ident" (Ds.Keyword "logseq.class/Page")]);
+    List.iteri (fun i title ->
+      let eid = 20 + i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/tags" (Ds.Ref 10);
+        add eid "block/title" (Ds.String title)])) names;
+    let block_uuid = "018f7850-0000-7da0-8b3f-0000000003e8" in
+    ignore (Ds.transact_conn conn [
+      add 1000 "block/uuid" (Ds.Uuid block_uuid);
+      add 1000 "block/title" (Ds.String "testpage block");
+      add 1000 "block/page" (Ds.Ref 1);
+      add 1000 "block/parent" (Ds.Ref 1)]);
+    Search.search_upsert index.path [block_uuid, "testpage block", Search_index_test.page_uuid];
+    let make_session () =
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      session in
+    let candidates session query =
+      outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" in
+    let session = make_session () in
+    List.iter (fun (query, expected) ->
+      check_eq ~msg:("master completion order for " ^ query)
+        (List.map (member "label") (candidates session query))
+        (List.map (fun s -> `String s) expected))
+      ["testpa", ["testpa"; "Test page"; "testpage";
+                  "testpage notes"; "my testpage"; "testpage block"];
+       "TESTPAGE", ["testpage"; "Test page";
+                    "testpage notes"; "my testpage"; "testpage block"];
+       "person", ["Person"; "Person notes";
+                  "Personal ledger"; "About a person"];
+       "testpag", ["New page: testpag"; "Test page"; "testpage";
+                   "testpage notes"; "my testpage"; "testpage block"];
+       "test", ["testpa"; "New page: test"; "Test page"; "testpage";
+                "testpage notes"; "my testpage"; "testpage block"]];
+    List.iter (fun limit ->
+      check_eq ~msg:"the caller's page limit is respected"
+        (List.length (Search.page_title_matches ~limit (Ds.conn_db conn) "testpa")) limit)
+      [0; 1; 2; 3];
+    List.iteri (fun i _ ->
+      let eid = 100 + i in
+      let title = Printf.sprintf "Test pa fuzzy %d" i in
+      ignore (Ds.transact_conn conn [
+        add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+        add eid "block/name" (Ds.String (String.lowercase_ascii title));
+        add eid "block/title" (Ds.String title)])) (List.init 200 Fun.id);
+    let labels = List.map (member "label") (candidates (make_session ()) "testpa") in
+    check_eq ~msg:"master's fuzzy tie order survives bounded retrieval"
+      (List.take 3 labels) [`String "testpa"; `String "Test page"; `String "testpage"];
+    List.iter (fun label -> check ~msg:"exact and prefix candidates survive the candidate limit"
+      (List.mem (`String label) labels)) ["testpa"; "testpage"; "testpage notes"];
+    check (List.length labels <= 20))
+
+let page_autocomplete_keeps_late_stronger_matches () =
+  List.iter (fun (query, early, better) ->
+    Search_index_test.with_index (fun index ->
+      let conn = Search_index_test.seeded_conn () in
+      let add = Search_index_test.add in
+      List.iteri (fun i title ->
+        let eid = 20 + i in
+        ignore (Ds.transact_conn conn [
+          add eid "block/uuid" (Ds.Uuid (Printf.sprintf "018f7850-0000-7da0-8b3f-%012x" eid));
+          add eid "block/name" (Ds.String (String.lowercase_ascii title));
+          add eid "block/title" (Ds.String title)]))
+        (List.init 25 early @ [better]);
+      let db = Ds.conn_db conn in
+      let session = configure_plain_session (Session.create_session {
+        Session.default_options with
+        graph_db = Some (fun () -> Some db);
+        graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
+        graph_search_page = Some (fun ~offset ~limit query ->
+          Search.search_hits_page ~offset ~limit index db query);
+      }) in
+      ignore (outliner_block_event session "tapBlock" "editing");
+      let labels = outliner_event session (Json.to_string (`Assoc [
+        "type", `String "textChanged"; "title", `String ("[[" ^ query);
+        "caretUTF16Offset", `Int (2 + String.length query)]))
+        |> json_items "outlinerAutocompleteCandidates" |> List.map (member "label") in
+      let existing = List.filter (fun label -> label <> `String ("New page: " ^ query)) labels in
+      check_eq ~msg:("late stronger match ranks first for " ^ query)
+        (List.hd existing) (`String better)))
+    ["testpage", (fun i -> Printf.sprintf "T-e-s-t-p-a-g-e fuzzy %02d" i), "My testpage";
+     "prefix", (fun i -> Printf.sprintf "prefix a very long title %02d" i), "prefix z"]
 
 let page_autocomplete_searches_beyond_sidebar_and_current_page () =
   Search_index_test.with_index (fun index ->
@@ -3770,7 +4018,7 @@ let asset_acknowledgements_preserve_applied_cursor_across_replay_timings () =
               "now", `Int (1788000000000 + index); "assetType", `String "jpg";
               "assetSize", `Int 4; "assetChecksum", `String "abcd";
               "localPath", `String "Assets/photo.jpg" ]))));
-          let upload = required_pending_request session in
+          let upload = proxy_asset_upload session in
           check_eq (member "method" upload) (`String "PUT");
           let transaction =
             member "pendingSyncRequest"
@@ -3982,7 +4230,7 @@ let shared_images_insert_bounded_row_patches_and_normalize_upload_type () =
   let result =
     response_result
       (dispatch_json session "addAsset"
-         "{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}")
+         "{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":209715200,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}")
   in
   let splices = json_items "outlinerRowSplices" result in
   let rows = json_items "rows" (List.hd splices) in
@@ -3993,14 +4241,33 @@ let shared_images_insert_bounded_row_patches_and_normalize_upload_type () =
     (member "uuid" (member "block" (List.hd rows)))
     (`String "shared-image");
   (match Model.read_block (Session.state session).model "shared-image" with
-   | Some asset -> check_eq asset.Model.asset_type (Some "jpeg")
+   | Some asset ->
+     check_eq asset.Model.asset_type (Some "jpeg");
+     check_eq asset.asset_size (Some 209715200)
    | None -> check false);
   match pending_request (dispatch_json session "beginPendingSync" "") with
   | Some request ->
     check_eq
       (member "url" request)
       (`String "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg");
-    check_eq (member "contentType" request) (`String "image/jpeg")
+    check_eq (member "action" (member "bodyObject" request)) (`String "prepare");
+    let complete request status body =
+      let response = `Assoc ["id", member "id" request; "status", `Int status; "body", `String body] in
+      ignore (response_result (dispatch_json session "completePendingSync" (Json.to_string response)))
+    in
+    complete request 200
+      {|{"mode":"direct","url":"https://test.r2.cloudflarestorage.com/assets/object?signature=fixture","headers":{"content-type":"image/jpeg","if-none-match":"*"}}|};
+    let upload = Option.get (pending_request (dispatch_json session "beginPendingSync" "")) in
+    check_eq (member "method" upload) (`String "PUT");
+    check_eq (member "token" upload) (`String "");
+    check_eq (member "filePath" upload) (`String "Assets/shared-IMG_0002.JPG");
+    check_eq (member "if-none-match" (member "headers" upload)) (`String "*");
+    complete upload 412 "";
+    let confirmation = Option.get (pending_request (dispatch_json session "beginPendingSync" "")) in
+    check_eq (member "url" confirmation)
+      (`String "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg");
+    check_eq (member "action" (member "bodyObject" confirmation)) (`String "complete");
+    check_eq (member "token" confirmation) (`String "access")
   | None -> check false
 
 let pending_assets_wait_for_authentication_and_resume_after_configuration () =
@@ -4034,6 +4301,13 @@ let asset_payload_errors_do_not_create_local_blocks () =
     ];
   check
     (Model.read_block (Session.state session).model "bad" = None);
+  let oversized =
+    dispatch_json session "addAsset"
+      "{\"uuid\":\"oversized\",\"title\":\"Large file\",\"assetType\":\"bin\",\"assetSize\":209715201,\"assetChecksum\":\"hash\",\"localPath\":\"file\"}"
+  in
+  check_eq (member "message" (member "error" oversized))
+    (`String "Asset exceeds the 200 MiB limit");
+  check (Model.read_block (Session.state session).model "oversized" = None);
   List.iter
     (fun (payload, code, message) ->
       let error = member "error" (dispatch_json session "addAsset" payload) in
@@ -4475,27 +4749,22 @@ let plain_assets_project_before_upload_and_queue_stable_datom_transactions () =
    | Ops.Create_asset asset -> check_eq asset.uuid uuid
    | _ -> check false);
   check_eq operation.state Ops.Applied;
-  (match pending_request (dispatch_json session "beginPendingSync" "") with
-   | Some upload ->
-     check_eq (member "method" upload) (`String "PUT");
-     check_eq
-       (member "url" upload)
-       (`String
-          (Printf.sprintf "http://127.0.0.1:8787/assets/plain-1/%s.m4a" uuid))
-   | None -> check false);
+  let upload = proxy_asset_upload session in
+  check_eq (member "method" upload) (`String "PUT");
+  check_eq
+    (member "url" upload)
+    (`String (Printf.sprintf "http://127.0.0.1:8787/assets/plain-1/%s.m4a" uuid));
   (match
-     pending_request
-       (dispatch_json session "completePendingSync"
-          "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}")
+     member "pendingSyncRequest" (complete_request session upload {|{"ok":true}|})
    with
-   | Some request ->
+   | `Assoc _ as request ->
      let transactions = json_items "txs" (member "bodyObject" request) in
      check_eq
        (member "url" request)
        (`String "ws://127.0.0.1:8787/sync/plain-1");
      check_eq (List.length transactions) 1;
      check_eq (member "tx-id" (List.hd transactions)) (`String uuid)
-   | None -> check false);
+   | _ -> check false);
   check_eq (List.length !staged) 2;
   let operation = List.nth !staged 1 in
   (match operation.Ops.intent with
@@ -5279,32 +5548,23 @@ let encrypted_asset_upload_stages_datoms_and_cleans_temporary_payload () =
        (Printf.sprintf
           "{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"%s\",\"localPath\":\"Assets/photo.jpg\"}"
           checksum));
-  (match pending_request (dispatch_json session "beginPendingSync" "") with
-   | Some request ->
-     check_eq (json_string (member "method" request)) "PUT";
-     check_eq
-       (json_string (member "filePath" request))
-       "/tmp/photo.transit";
-     check_eq (json_string (member "contentType" request)) "text/plain";
-     check_eq
-       (json_string (member "url" request))
-       "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg";
-     let headers = member "headers" request in
-     check_eq
-       (json_string (member "x-amz-meta-checksum" headers))
-       checksum;
-     check_eq (json_string (member "x-amz-meta-type" headers)) "jpg"
-   | None -> check false);
+  let upload = proxy_asset_upload session in
+  check_eq (json_string (member "method" upload)) "PUT";
+  check_eq (json_string (member "filePath" upload)) "/tmp/photo.transit";
+  check_eq (json_string (member "contentType" upload)) "text/plain";
+  check_eq (json_string (member "url" upload))
+    "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg";
+  let headers = member "headers" upload in
+  check_eq (json_string (member "x-amz-meta-checksum" headers)) checksum;
+  check_eq (json_string (member "x-amz-meta-type" headers)) "jpg";
   (match
-     pending_request
-       (dispatch_json session "completePendingSync"
-          "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}")
+     member "pendingSyncRequest" (complete_request session upload {|{"ok":true}|})
    with
-   | Some request ->
+   | `Assoc _ as request ->
      check_eq
        (json_string (member "url" request))
        "ws://127.0.0.1:8787/sync/encrypted-1"
-   | None -> check false);
+   | _ -> check false);
   check_eq !staged [ "applied"; "queued" ];
   check_eq !cleaned [ "/tmp/photo.transit" ]
 
@@ -5733,6 +5993,7 @@ let toolbar_wire_actions_preserve_all_public_mappings () =
       ("audio", Outliner.Audio);
       ("attachment", Outliner.Attachment);
       ("hideKeyboard", Outliner.Hide_keyboard);
+      ("lineBreak", Outliner.Line_break);
       ("copy", Outliner.Copy);
       ("delete", Outliner.Delete);
       ("copyReference", Outliner.Copy_reference);
@@ -6648,6 +6909,10 @@ let snapshot_projection_replaces_native_patch_reduction () =
   check_full pending;
   check_eq (List.map (member "uuid") (json_items "blocks" pending)) [`String "second"];
   check (member "pendingSyncRequest" pending <> `Null);
+  let patch = response_result (dispatch_json session "beginPendingSync" "") in
+  check_eq (member "isPendingSyncPatch" patch) (`Bool true);
+  check_eq (json_items "blocks" patch) [];
+  check_eq (member "pendingSyncRequest" patch) (member "pendingSyncRequest" pending);
   let failure = snapshot_dispatch session "unknown" "" in
   check_eq (response_error_code failure) "unknown_action"
 
@@ -6681,15 +6946,54 @@ let forced_snapshot_import_rejects_a_changed_graph () =
   check_eq ~msg:"a late download cannot switch the graph back" !imported 0;
   check_eq (response_error_code response) "graph_changed"
 
+let forced_snapshot_import_restores_existing_destinations () =
+  let refreshed = ref false in
+  let summary uuid title : Model.entity_summary =
+    { uuid; title = title ^ (if !refreshed then " updated" else "") } in
+  let sidebar () = summary "sidebar" "Sidebar" in
+  let linked () = summary "linked" "Linked" in
+  let session = configure_plain_session (Session.create_session {
+    Session.default_options with
+    open_graph = Some (fun _ -> Ok ());
+    import_snapshot = Some (fun _ -> refreshed := true; Ok ());
+    model_for_graph = Some (fun _ -> Model.create None);
+    graph_sidebar_pages = Some (fun () -> Some {
+      Graph_read.favorites = [sidebar ()]; recent_pages = [] });
+    graph_node_destination = Some (function
+      | "sidebar" -> Some (sidebar (), false)
+      | "linked" -> Some (linked (), false)
+      | "anchor" -> Some (linked (), true)
+      | "removed" when not !refreshed -> Some (summary "removed" "Removed", false)
+      | _ -> None);
+  }) in
+  ignore (response_result (dispatch_json session "openGraph" {|{"graphId":"plain-1"}|}));
+  ignore (response_result (dispatch_json session "selectPage" "sidebar"));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"anchor","reveal":true}|}));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"removed"}|}));
+  let updated = response_result (dispatch_json session "importSnapshot"
+    {|{"graphId":"plain-1","forceSnapshot":true}|}) in
+  check_eq (member "isGraphSnapshotRecovery" updated) (`Bool true);
+  check_eq (member "title" (member "selectedPage" updated)) (`String "Sidebar updated");
+  let routes = json_items "nodeRoutes" updated in
+  check_eq (List.map (member "uuid") routes) [`String "linked"];
+  let route = List.hd routes in
+  check_eq (member "title" (member "page" route)) (`String "Linked updated");
+  check_eq (member "scrollTarget" route) (`String "anchor");
+  let back = response_result (dispatch_json session "closeNode" "") in
+  check_eq (json_items "nodeRoutes" back) [];
+  check_eq (member "uuid" (member "selectedPage" back)) (`String "sidebar")
+
 let cases =
   [
     case "search results are loaded in bounded pages" search_results_are_loaded_in_bounded_pages;
     case "idle sync recovery resets after a healthy pull" shared_sync_driver_idle_recovery_resets_after_a_healthy_pull;
     case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
+    case "forced snapshot import restores existing destinations" forced_snapshot_import_restores_existing_destinations;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
     case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;
     case "shared pending error summary preserves unicode" shared_pending_error_summary_preserves_unicode;
+    case "asset upload falls back when prepare is unsupported" asset_upload_falls_back_when_prepare_method_is_unsupported;
     case "shared pending retry preserves uploads and bounds attempts" shared_pending_retry_preserves_upload_and_bounds_attempts;
     case "shared pending retry keeps semantic transaction identity" shared_pending_retry_keeps_semantic_transaction_identity;
     case "shared pending retry rejects raw upload conflicts" shared_pending_retry_rejects_raw_upload_conflicts;
@@ -6701,6 +7005,7 @@ let cases =
  case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
     case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
+    case "shared sync driver backs off repeated snapshot recovery" shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds;
     case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
  case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
  case "journal refresh keeps the edited page beyond the launch window" journal_refresh_keeps_the_edited_page_beyond_the_launch_window;
@@ -6773,6 +7078,12 @@ let cases =
     case "block reference completion saves the selected UUID" block_reference_completion_saves_the_selected_uuid;
     case "page autocomplete searches beyond sidebar and current page"
       page_autocomplete_searches_beyond_sidebar_and_current_page;
+    case "page autocomplete finds pages before and during indexing"
+      page_autocomplete_finds_pages_before_and_during_indexing;
+    case "page autocomplete matches master order" page_autocomplete_matches_master_order;
+    case "page autocomplete keeps late stronger matches" page_autocomplete_keeps_late_stronger_matches;
+    case "global search ranks exact tags before pagination"
+      global_search_ranks_exact_tags_before_pagination;
     case "websocket errors distinguish snapshot recovery from apply failures"
       websocket_errors_distinguish_snapshot_recovery_from_apply_failures;
     case "pending sync rejects stale completions and preserves failed block"

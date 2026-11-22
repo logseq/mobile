@@ -48,6 +48,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
     }
     let uuid: String
+    let embedSourceUuid: String?
     let title: String
     let markup: [LogseqMarkupNode]
     let depth: Int
@@ -74,6 +75,16 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let canRemoveTags: Bool?
     let removeTagTitle: String?
     let pdfAnnotation: PDFReference?
+    /// Translated in the shared catalog. Older payloads fall back to the English source.
+    let openLabel: String?
+    let editLabel: String?
+    let collapseLabel: String?
+
+    var openAccessibilityLabel: String { openLabel ?? "Open block" }
+    var editAccessibilityLabel: String { editLabel ?? "Edit block " + title }
+    var collapseAccessibilityLabel: String {
+        collapseLabel ?? (collapsed ? "Expand block" : "Collapse block")
+    }
 }
 
 @MainActor enum OutlinerRowExtension {
@@ -192,7 +203,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .foregroundStyle(bulletForeground)
                         .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 } else {
-                    Button { emit("open-node") } label: {
+                    Button { emit("open-node", uuid: row.embedSourceUuid) } label: {
                         if let number = row.listNumber {
                             Text("\(number).").font(.subheadline).frame(width: 24, height: 24)
                                 .accessibilityIdentifier("outliner.number." + row.uuid)
@@ -204,7 +215,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(bulletForeground)
-                    .accessibilityLabel("Open block")
+                    .accessibilityLabel(row.openAccessibilityLabel)
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
             }
@@ -277,7 +288,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 } else {
                     title
                         .accessibilityIdentifier("outliner.block-action." + row.uuid)
-                        .accessibilityLabel("Edit block " + row.title)
+                        .accessibilityLabel(row.editAccessibilityLabel)
                         .contentShape(Rectangle())
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
                         .onTapGesture(coordinateSpace: .local) { point in
@@ -327,7 +338,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         }
                         .buttonStyle(.plain)
                         .offset(y: -10)
-                        .accessibilityLabel(row.collapsed ? "Expand block" : "Collapse block")
+                        .accessibilityLabel(row.collapseAccessibilityLabel)
                         .accessibilityIdentifier("button.outliner.collapse." + row.uuid)
                     }
             }

@@ -1,0 +1,25 @@
+# The iOS navigation controls open capture and search, and both can be
+# dismissed back to the journal shell.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=button.navigation.camera
+expect prop:accessibility-identifier=button.navigation.audio
+expect prop:accessibility-identifier=button.navigation.search
+expect prop:accessibility-identifier=button.navigation.capture
+expect prop:accessibility-identifier=button.journal-calendar
+press prop:accessibility-identifier=button.navigation.capture
+wait prop:accessibility-identifier=field.composer
+ext ext:native-navigation-stack native-navigation-stack dismiss-composer '{}'
+expect-absent prop:accessibility-identifier=field.composer
+press prop:accessibility-identifier=button.navigation.search
+wait prop:accessibility-identifier=screen.search
+ext ext:native-search-presentation native-search-presentation dismiss '{}'
+expect-prop ext:native-search-presentation presented false
+expect prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=button.journal-calendar
+wait prop:accessibility-identifier=screen.node
+expect text:"Aug 27th, 2026"
+expect text:"Calendar journal note"

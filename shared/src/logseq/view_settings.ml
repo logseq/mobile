@@ -2,15 +2,15 @@ open Lui_protocol
 open Lui_elements
 
 let with_native_control_tint role (control : t) : t =
- fun context parent ->
+ custom (fun context parent ->
    match Lui_ui.profile context with
    | { profile_os = IOS; profile_host = SwiftUIHost } ->
      let tweak = Lui_ui.platform_tweak context "native-control-tint" in
      Lui_ui.extension_property context tweak "role" (StringValue role);
-     ignore (control context (Some tweak));
+     ignore (mount context ~parent:tweak control);
      attach context parent tweak;
      tweak
-   | _ -> control context parent
+   | _ -> mount context ?parent control)
 
 let settings_language_choice_radio model_source
     (choice_source : Model.settings_language_choice Signal.signal) send :
@@ -26,13 +26,15 @@ let settings_language_choice_radio model_source
       (View_base.settings_language_choice_identifier choice)
     ~on_change:(fun _ ->
       ignore (send (Model.ChooseSettingsLanguage choice.id)))
-    ~text:(View_base.settings_language_choice_title choice) []
+    ~text:(View_base.settings_language_choice_title
+             (Signal.sample model_source) choice) []
 
-let settings_language_choice_menu_item choice_source send : t =
+let settings_language_choice_menu_item model_source choice_source send : t =
   let choice = Signal.sample choice_source in
   menu_item
     ~text_signal:
-      (Signal.map View_base.settings_language_choice_title choice_source)
+      (Signal.map2 View_base.settings_language_choice_title model_source
+         choice_source)
     ~accessibility_identifier:
       (View_base.settings_language_choice_identifier choice)
     ~on_press:(fun _ ->
@@ -56,11 +58,12 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
           ~test:
             (Signal.map View_base.model_settings_language_menu_open_
                model_source)
-          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
+          (dropdown_menu_view (dropdown_menu
+             ~target:(Menu_anchor { side = `below; align = `end_; offset = 0. })
              ~min_width:220
              ~on_dismiss:(press send Model.CloseSettingsLanguageMenu)
              [
-               keyed
+               keyed_dropdown_menu_item
                  ~source:
                    (Signal.map View_base.model_language_choices
                       model_source)
@@ -68,11 +71,11 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
                  ~cmp:compare
                  ~mount:(fun choice_source ->
                    let choice = Signal.sample choice_source in
-                   menu_item
+                   dropdown_menu_item
                      ~text_signal:
-                       (Signal.map
+                       (Signal.map2
                           View_base.settings_language_choice_title
-                          choice_source)
+                          model_source choice_source)
                      ~selected_signal:
                        (Signal.map
                           (fun (model : Model.logseq_model) ->
@@ -86,7 +89,7 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
                        ignore
                          (send (Model.ChooseSettingsLanguage choice.id)))
                      []);
-             ]);
+             ]));
       ]
   else
     radio_group ~label:(View_base.tr (Signal.sample model_source) "Language") ~style_class:"menu"
@@ -101,85 +104,61 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
       ]
     |> with_native_control_tint "picker"
 
-let settings_appearance_control (context : Lui_ui.ui_context) model_source
-    send : t =
+let settings_theme_picker ~id ~label ~choices ~selected ~menu_open
+    ~open_menu ~close_menu ~choose context model_source send : t =
+  let current = Signal.sample model_source in
+  let label = View_base.tr current label in
+  let picker_id = "picker.settings." ^ id in
+  let option_id choice = picker_id ^ ".option." ^ choice in
+  let selected_signal choice =
+    Signal.map (fun model -> selected model = choice) model_source in
   if Lui_ui.host context = KotlinHost then
-    let appearance_item id title : t =
-      menu_item ~text:title
-        ~selected_signal:
-          (Signal.map
-             (fun (model : Model.logseq_model) -> model.appearance = id)
-             model_source)
-        ~accessibility_identifier:
-          ("picker.settings.appearance.option." ^ id)
-        ~on_press:(fun _ ->
-          ignore (send (Model.ChangeAppearance id)))
-        []
-    in
-    stack
-      ~accessibility_identifier:"layout.settings.appearance-control"
+    stack ~accessibility_identifier:("layout.settings." ^ id ^ "-control")
       [
         select
-          ~text_signal:
-            (Signal.map View_base.settings_appearance_title model_source)
-          ~label:(View_base.tr (Signal.sample model_source) "Theme")
-          ~accessibility_identifier:"picker.settings.appearance"
-          ~on_press:(press send Model.OpenSettingsAppearanceMenu)
-          [];
-        if_
-          ~test:
-            (Signal.map View_base.model_settings_appearance_menu_open_
-               model_source)
-          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
-             ~min_width:160
-             ~on_dismiss:(press send Model.CloseSettingsAppearanceMenu)
-             [
-               appearance_item "system" "System";
-               appearance_item "light" "Light";
-               appearance_item "dark" "Dark";
-             ]);
+          ~text_signal:(Signal.map (fun current ->
+            match List.assoc_opt (selected current) choices with
+            | Some title -> View_base.tr current title
+            | None -> "") model_source)
+          ~label ~accessibility_identifier:picker_id
+          ~on_press:(press send open_menu) [];
+        if_ ~test:(Signal.map menu_open model_source)
+          (dropdown_menu_view (dropdown_menu
+             ~target:(Menu_anchor { side = `below; align = `end_; offset = 0. })
+             ~min_width:160 ~on_dismiss:(press send close_menu)
+             (List.map (fun (choice, title) ->
+               dropdown_menu_item ~text:(View_base.tr current title)
+                 ~selected_signal:(selected_signal choice)
+                 ~accessibility_identifier:(option_id choice)
+                 ~on_press:(press send (choose choice)) []) choices)));
       ]
   else
-    (* Menu-style radio group renders as the native inline picker:
-       label on the left, current value + dropdown on the right. *)
-    radio_group ~label:(View_base.tr (Signal.sample model_source) "Theme") ~style_class:"menu"
-      ~accessibility_identifier:"picker.settings.appearance"
-      [
-        radio ~text:(View_base.tr (Signal.sample model_source) "System")
-          ~checked_signal:
-            (Signal.map
-               (fun (model : Model.logseq_model) ->
-                 model.appearance = "system")
-               model_source)
-          ~accessibility_identifier:
-            "picker.settings.appearance.option.system"
-          ~on_change:(fun _ ->
-            ignore (send (Model.ChangeAppearance "system")))
-          [];
-        radio ~text:(View_base.tr (Signal.sample model_source) "Light")
-          ~checked_signal:
-            (Signal.map
-               (fun (model : Model.logseq_model) ->
-                 model.appearance = "light")
-               model_source)
-          ~accessibility_identifier:
-            "picker.settings.appearance.option.light"
-          ~on_change:(fun _ ->
-            ignore (send (Model.ChangeAppearance "light")))
-          [];
-        radio ~text:(View_base.tr (Signal.sample model_source) "Dark")
-          ~checked_signal:
-            (Signal.map
-               (fun (model : Model.logseq_model) ->
-                 model.appearance = "dark")
-               model_source)
-          ~accessibility_identifier:
-            "picker.settings.appearance.option.dark"
-          ~on_change:(fun _ ->
-            ignore (send (Model.ChangeAppearance "dark")))
-          [];
-      ]
+    radio_group ~label ~style_class:"menu" ~accessibility_identifier:picker_id
+      (List.map (fun (choice, title) ->
+        radio ~text:(View_base.tr current title)
+          ~checked_signal:(selected_signal choice)
+          ~accessibility_identifier:(option_id choice)
+          ~on_change:(fun _ -> ignore (send (choose choice))) []) choices)
     |> with_native_control_tint "picker"
+
+let settings_appearance_control context model_source send =
+  settings_theme_picker ~id:"appearance" ~label:"Theme"
+    ~choices:[ "system", "System"; "light", "Light"; "dark", "Dark" ]
+    ~selected:(fun (model : Model.logseq_model) ->
+      match model.appearance with "light" | "dark" -> model.appearance | _ -> "system")
+    ~menu_open:View_base.model_settings_appearance_menu_open_
+    ~open_menu:Model.OpenSettingsAppearanceMenu
+    ~close_menu:Model.CloseSettingsAppearanceMenu ~choose:(fun mode -> Model.ChangeAppearance mode)
+    context model_source send
+
+let settings_dark_theme_control context model_source send =
+  settings_theme_picker ~id:"dark-theme" ~label:"Dark theme"
+    ~choices:[ "black", "Black"; "solarized", "Solarized" ]
+    ~selected:(fun (model : Model.logseq_model) -> model.dark_theme)
+    ~menu_open:(fun model -> model.Model.settings_dark_theme_menu_open)
+    ~open_menu:Model.OpenSettingsDarkThemeMenu
+    ~close_menu:Model.CloseSettingsDarkThemeMenu ~choose:(fun theme -> Model.ChangeDarkTheme theme)
+    context model_source send
 
 let settings_community_link_row (context : Lui_ui.ui_context) model_source
     link_source send : t =
@@ -189,8 +168,8 @@ let settings_community_link_row (context : Lui_ui.ui_context) model_source
       [
         list_item
           ~text_signal:
-            (Signal.map View_base.settings_community_link_title
-               link_source)
+            (Signal.map2 View_base.settings_community_link_title
+               model_source link_source)
           ~icon:(`app "open-external") ~padding:0
           ~accessibility_identifier:
             (View_base.settings_community_link_identifier link)
@@ -213,8 +192,8 @@ let settings_community_link_row (context : Lui_ui.ui_context) model_source
       [
         list_item
           ~text_signal:
-            (Signal.map View_base.settings_community_link_title
-               link_source)
+            (Signal.map2 View_base.settings_community_link_title
+               model_source link_source)
           ~padding:0
           ~accessibility_identifier:
             (View_base.settings_community_link_identifier link)
@@ -241,8 +220,8 @@ let runtime_log_row record_source : t =
           if_
             ~test:(Signal.map View_base.runtime_log_error_ record_source)
             (text
-               ~value_signal:
-                 (Signal.map View_base.runtime_log_level record_source)
+               ~value:
+                 (reactive View_base.runtime_log_level record_source)
                ~style_class:"caption semibold" ~foreground:"red" []);
           if_
             ~test:
@@ -251,23 +230,24 @@ let runtime_log_row record_source : t =
                    not (View_base.runtime_log_error_ record))
                  record_source)
             (text
-               ~value_signal:
-                 (Signal.map View_base.runtime_log_level record_source)
+               ~value:
+                 (reactive View_base.runtime_log_level record_source)
                ~style_class:"caption semibold" ~foreground:"secondary" []);
           text
-            ~value_signal:
-              (Signal.map View_base.runtime_log_timestamp record_source)
+            ~value:
+              (reactive View_base.runtime_log_timestamp record_source)
             ~style_class:"caption" ~foreground:"secondary" [];
         ];
       text
-        ~value_signal:
-          (Signal.map View_base.runtime_log_message record_source)
+        ~value:
+          (reactive View_base.runtime_log_message record_source)
         ~style_class:"caption" [];
       separator [];
     ]
 
 let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
     send : t =
+  let title = View_base.tr (Signal.sample model_source) title in
   let label_source =
     Signal.map (fun (current : Model.logseq_model) ->
         View_base.tab_toggle_label current tab)
@@ -322,7 +302,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                     ~text:title []));
             spacer [];
             if_ ~test:movement_visible_source
-              (button ~icon:(`app "arrow-up") ~size:`icon
+              (icon_button ~icon:(`app "arrow-up") ~size:`icon
                  ~disabled_signal:up_disabled_source ~variant:`ghost
                  ~label:(View_base.tr (Signal.sample model_source) "Move tab up")
                  ~accessibility_identifier:(View_base.tab_up_identifier tab)
@@ -330,7 +310,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                    ignore (send (Model.MoveSidebarTab (tab, -1))))
                  []);
             if_ ~test:movement_visible_source
-              (button ~icon:(`app "arrow-down") ~size:`icon
+              (icon_button ~icon:(`app "arrow-down") ~size:`icon
                  ~disabled_signal:down_disabled_source ~variant:`ghost
                  ~label:(View_base.tr (Signal.sample model_source) "Move tab down")
                  ~accessibility_identifier:
@@ -354,7 +334,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                  ~on_press:(fun _ ->
                    ignore (send (Model.ToggleSidebarTab tab)))
                  ~text:title []);
-            text ~value_signal:selection_glyph_source
+            text ~value:(reactive selection_glyph_source)
               ~foreground:"accent" [];
             if_ ~test:movement_visible_source
               (button ~disabled_signal:up_disabled_source ~variant:`ghost
@@ -402,8 +382,8 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
                  "Flashcards" send);
             text ~style_class:"footnote" ~foreground:"muted-foreground"
               ~value:
-                "Journals and Graphs are always available. Use the \
-                 arrows to reorder tabs."
+                (View_base.tr (Signal.sample model_source)
+                   "Journals and Graphs are always available. Use the arrows to reorder tabs.")
               [];
             if_
               ~test:
@@ -423,7 +403,7 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
   else
     list ~accessibility_identifier:"screen.settings.tabs"
       [
-        heading ~level:3 ~value:(View_base.tr (Signal.sample model_source) "Visible tabs") [];
+        heading ~level:`h3 ~value:(View_base.tr (Signal.sample model_source) "Visible tabs") [];
         settings_tab_row context model_source "journals" "Journals" send;
         if_
           ~test:
@@ -440,14 +420,14 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
              "Flashcards" send);
         text ~style_class:"footnote" ~foreground:"muted-foreground"
           ~value:
-            "Journals and Graphs are always available. Use the arrows \
-             to reorder tabs."
+            (View_base.tr (Signal.sample model_source)
+               "Journals and Graphs are always available. Use the arrows to reorder tabs.")
           [];
         if_
           ~test:
             (Signal.map View_base.settings_available_tabs_present_
                model_source)
-          (heading ~level:3
+          (heading ~level:`h3
              ~accessibility_identifier:"text.settings.tabs.available"
              ~value:(View_base.tr (Signal.sample model_source) "Available tabs") []);
         if_
@@ -460,12 +440,11 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
 
 let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
     =
-  let log_button text_signal label identifier action : t =
-    View_base.with_label label
-      (button ~text_signal ~variant:`secondary
+  let log_button text_signal label identifier action : toolbar_el =
+      Lui_elements.toolbar_button ~label ~text:(reactive text_signal) ~variant:`secondary
          ~accessibility_identifier:identifier
          ~on_press:(press send action)
-         [])
+         []
   in
   if Lui_ui.host context = KotlinHost then
     column ~gap:8 ~cross:`stretch
@@ -491,7 +470,7 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
               (Signal.map View_base.runtime_log_source_label model_source)
               "Toggle log source" "button.log-source"
               Model.ToggleRuntimeLogSource;
-            button ~variant:`secondary
+            Lui_elements.toolbar_button ~variant:`secondary
               ~accessibility_identifier:"button.log-copy"
               ~on_press:(press send Model.CopyRuntimeLog)
               ~text:(View_base.tr (Signal.sample model_source) "Copy") [];
@@ -513,7 +492,7 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
           (Signal.map View_base.runtime_log_source_label model_source)
           "Toggle log source" "button.log-source"
           Model.ToggleRuntimeLogSource;
-        button ~variant:`secondary
+        Lui_elements.toolbar_button ~variant:`secondary
           ~accessibility_identifier:"button.log-copy"
           ~on_press:(press send Model.CopyRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Copy") [];
@@ -525,12 +504,12 @@ let runtime_last_error model_source : t =
     ~key:View_base.runtime_log_record_identifier ~cmp:compare
     ~mount:(fun record ->
       column ~gap:6 ~accessibility_identifier:"log.last-error"
-        [ heading ~level:5 ~value:(View_base.tr (Signal.sample model_source) "Last error") [];
+        [ heading ~level:`h5 ~value:(View_base.tr (Signal.sample model_source) "Last error") [];
           text ~style_class:"caption" ~foreground:"muted-foreground"
-            ~value_signal:(Signal.map (fun (value : Model.runtime_log_record) ->
+            ~value:(reactive (fun (value : Model.runtime_log_record) ->
               value.timestamp ^ " · " ^ String.uppercase_ascii value.source) record) [];
           text ~style_class:"caption" ~accessibility_identifier:"log.last-error.message"
-            ~value_signal:(Signal.map View_base.runtime_log_message record) [];
+            ~value:(reactive (Signal.map View_base.runtime_log_message record)) [];
           separator [] ])
 
 let runtime_log_screen (context : Lui_ui.ui_context) model_source send : t =
@@ -556,17 +535,11 @@ let runtime_log_screen (context : Lui_ui.ui_context) model_source send : t =
         ];
     ]
 
-let settings_toggle_spell_check send input_event =
-  match input_event with
-  | ToggleChanged (_node, enabled) ->
-    ignore (send (Model.ToggleSpellCheck enabled))
-  | _ -> ()
+let settings_toggle_spell_check send enabled =
+  ignore (send (Model.ToggleSpellCheck enabled))
 
-let settings_toggle_auto_correction send input_event =
-  match input_event with
-  | ToggleChanged (_node, enabled) ->
-    ignore (send (Model.ToggleAutoCorrection enabled))
-  | _ -> ()
+let settings_toggle_auto_correction send enabled =
+  ignore (send (Model.ToggleAutoCorrection enabled))
 
 let settings_toggle_task_reminders send input_event =
   match input_event with
@@ -581,8 +554,9 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
       ~accessibility_identifier:"layout.settings.general-card"
       [
         settings_appearance_control context model_source send;
+        settings_dark_theme_control context model_source send;
         settings_language_control context model_source send;
-        list_item ~padding:0
+        list_item
           ~accessibility_identifier:"link.settings.tabs"
           ~on_press:(press send Model.OpenSettingsTabs)
           [
@@ -593,9 +567,9 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
                   [
                     text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
                     text
-                      ~value_signal:
-                        (Signal.map View_base.settings_tabs_summary
-                           model_source)
+                      ~value:
+                        (reactive (Signal.map View_base.settings_tabs_summary
+                           model_source))
                       ~style_class:"footnote"
                       ~foreground:"muted-foreground"
                       ~accessibility_identifier:
@@ -620,6 +594,13 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
         separator [];
         row ~cross:`center
           [
+            text ~value:(View_base.tr (Signal.sample model_source) "Dark theme") [];
+            spacer [];
+            settings_dark_theme_control context model_source send;
+          ];
+        separator [];
+        row ~cross:`center
+          [
             text ~value:(View_base.tr (Signal.sample model_source) "Language") [];
             spacer [];
             settings_language_control context model_source send;
@@ -634,9 +615,9 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
                 text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
                 spacer [];
                 text
-                  ~value_signal:
-                    (Signal.map View_base.settings_tabs_summary
-                       model_source)
+                  ~value:
+                    (reactive (Signal.map View_base.settings_tabs_summary
+                       model_source))
                   ~style_class:"single-line" ~foreground:"secondary"
                   ~accessibility_identifier:"text.settings.tabs.selection"
                   [];
@@ -717,8 +698,8 @@ let sign_in_label ?(centered = false) model_source : t =
   row ~main:(if centered then `center else `start) ~gap:8 ~cross:`center [
     if_ ~test:(Signal.map View_base.authentication_signing_in_ model_source)
       (spinner ~width:16 ~height:16 ~accessibility_identifier:"sign-in.loading" []);
-    text ~value_signal:(Signal.map (fun current ->
-      if View_base.authentication_signing_in_ current then "Signing in…" else "Sign in") model_source) [];
+    text ~value:(reactive (Signal.map (fun current ->
+      if View_base.authentication_signing_in_ current then "Signing in…" else "Sign in") model_source)) [];
   ]
 
 let settings_account_row context model_source send : t =
@@ -751,12 +732,12 @@ let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
                   ~label:(View_base.tr (Signal.sample model_source) "Sign out actions")
                   ~accessibility_identifier:"toolbar.sign-out"
                   [
-                    button ~variant:`ghost ~style_class:"cancellation-action"
+                    Lui_elements.toolbar_button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.sign-out.cancel"
                       ~on_press:(press send Model.CancelSignOut)
                       ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-                    button ~variant:`destructive
+                    Lui_elements.toolbar_button ~variant:`destructive
                       ~accessibility_identifier:
                         "button.sign-out.confirm"
                       ~on_press:(press send Model.SignOut)
@@ -855,8 +836,8 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                   text ~value:(View_base.tr (Signal.sample model_source) "Version") [];
                   spacer [];
                   text
-                    ~value_signal:
-                      (Signal.map View_base.settings_version model_source)
+                    ~value:
+                      (reactive (Signal.map View_base.settings_version model_source))
                     ~foreground:"secondary" [];
                 ];
               row
@@ -864,8 +845,8 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                   text ~value:(View_base.tr (Signal.sample model_source) "Revision") [];
                   spacer [];
                   text
-                    ~value_signal:
-                      (Signal.map View_base.settings_revision model_source)
+                    ~value:
+                      (reactive (Signal.map View_base.settings_revision model_source))
                     ~foreground:"secondary" [];
                 ];
               settings_runtime_log_row model_source context send;
@@ -912,9 +893,9 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
   let version_row label value_signal identifier : t =
     row ~cross:`center ~accessibility_identifier:identifier
       [
-        text ~value:label [];
+        text ~value:(View_base.tr (Signal.sample model_source) label) [];
         spacer [];
-        text ~value_signal ~foreground:"secondary" [];
+        text ~value:(reactive value_signal) ~foreground:"secondary" [];
       ]
   in
   column ~style_class:"form"
@@ -923,6 +904,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
       heading ~value:(View_base.tr (Signal.sample model_source) "General") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.general" [];
       settings_appearance_control context model_source send;
+      settings_dark_theme_control context model_source send;
       settings_language_control context model_source send;
       list_item ~accessibility_identifier:"link.settings.tabs"
         ~on_press:(press send Model.OpenSettingsTabs)
@@ -932,9 +914,9 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
               text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
               spacer [];
               text
-                ~value_signal:
-                  (Signal.map View_base.settings_tabs_summary
-                     model_source)
+                ~value:
+                  (reactive (Signal.map View_base.settings_tabs_summary
+                     model_source))
                 ~style_class:"single-line" ~foreground:"secondary"
                 ~accessibility_identifier:
                   "text.settings.tabs.selection" [];
@@ -1007,8 +989,8 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ~mount:(fun link_source ->
           list_item
             ~text_signal:
-              (Signal.map View_base.settings_community_link_title
-                 link_source)
+              (Signal.map2 View_base.settings_community_link_title
+                 model_source link_source)
             ~accessibility_identifier:
               (View_base.settings_community_link_identifier
                  (Signal.sample link_source))
@@ -1033,7 +1015,7 @@ let settings_screen (context : Lui_ui.ui_context) model_source send : t =
 let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-content"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.BackSettings)
       [
@@ -1053,7 +1035,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-list"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-list"
       ~accessibility_identifier:"sheet.settings.tabs"
       ~on_dismiss:(press send Model.BackSettings)
       [
@@ -1062,7 +1044,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
-            button ~style_class:"cancellation-action navigation-back-action"
+            Lui_elements.toolbar_button ~style_class:"cancellation-action navigation-back-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.cancel"
               ~on_press:(press send Model.BackSettings)
               ~text:(View_base.tr (Signal.sample model_source) "Settings") [];
@@ -1089,11 +1071,11 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
       ~style_class:"navigation-actions"
       ~accessibility_identifier:"toolbar.settings.actions"
       [
-        button ~style_class:"cancellation-action"
+        Lui_elements.toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
           ~accessibility_identifier:"button.log-refresh"
           ~on_press:(press send Model.RefreshRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
-        button ~style_class:"confirmation-action"
+        Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
           ~accessibility_identifier:"button.connection.apply"
           ~on_press:(press send Model.DismissRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Done") [];
@@ -1101,7 +1083,7 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
 
 let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissRuntimeLog)
       [
@@ -1113,7 +1095,7 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Log") ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings.log"
       ~on_dismiss:(press send Model.DismissRuntimeLog)
       [
@@ -1124,7 +1106,7 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
 let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Settings") ~height:640
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Settings") ~height:640
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1152,7 +1134,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Settings") ~style_class:"navigation-form navigation-inline-title"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Settings") ~style_class:"navigation-form navigation-inline-title"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1167,11 +1149,11 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
-            button ~style_class:"cancellation-action"
+            Lui_elements.toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.cancel"
               ~on_press:(press send Model.DismissSettings)
               ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-            button ~style_class:"confirmation-action"
+            Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
               ~accessibility_identifier:"button.connection.apply"
               ~disabled_signal:
                 (Signal.map View_base.settings_apply_disabled_
@@ -1210,7 +1192,7 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
       [
         column ~gap:16 ~cross:`stretch
           [
-            text ~value_signal:description ~grow:1.0 [];
+            text ~value:(reactive description) ~grow:1.0 [];
             spacer ~grow:1.0 [];
             row ~main:`end_
               [
@@ -1218,12 +1200,12 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
                   ~label:(View_base.tr (Signal.sample model_source) "Page deletion actions")
                   ~accessibility_identifier:"toolbar.page-delete"
                   [
-                    button ~variant:`ghost ~style_class:"cancellation-action"
+                    Lui_elements.toolbar_button ~variant:`ghost ~style_class:"cancellation-action"
                       ~accessibility_identifier:
                         "button.page-delete.cancel"
                       ~on_press:(press send Model.CancelDeleteActiveNode)
                       ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-                    button ~variant:`destructive
+                    Lui_elements.toolbar_button ~variant:`destructive
                       ~accessibility_identifier:
                         "button.page-delete.confirm"
                       ~on_press:(press send Model.ConfirmDeleteActiveNode)
@@ -1239,7 +1221,7 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
       ~accessibility_identifier:"dialog.page-delete"
       ~on_dismiss:(press send Model.CancelDeleteActiveNode)
       [
-        text ~value_signal:description [];
+        text ~value:(reactive description) [];
         button ~style_class:"cancellation-action"
           ~accessibility_identifier:"button.page-delete.cancel"
           ~on_press:(press send Model.CancelDeleteActiveNode)
@@ -1256,14 +1238,14 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
       [
         row ~grow:1.0 ~cross:`center ~main:`space_between
           [
-            text ~value:label [];
-            text ~value_signal ~foreground:"secondary"
+            text ~value:(View_base.tr (Signal.sample model_source) label) [];
+            text ~value:(reactive value_signal) ~foreground:"secondary"
               ~text_alignment:`end_ [];
           ];
       ]
   in
   if Lui_ui.host context = KotlinHost then
-    sheet ~text:(View_base.tr (Signal.sample model_source) "Sync status") ~height:480
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~height:480
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
@@ -1285,9 +1267,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                           [
                             text ~value:(View_base.tr (Signal.sample model_source) "Local changes") [];
                             text
-                              ~value_signal:
-                                (Signal.map View_base.sync_pending_label
-                                   model_source)
+                              ~value:
+                                (reactive (Signal.map View_base.sync_pending_label
+                                   model_source))
                               ~foreground:"secondary" ~text_alignment:`end_
                               ~accessibility_identifier:"sync.pending" [];
                   ];
@@ -1298,9 +1280,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                   [
                     text ~value:(View_base.tr (Signal.sample model_source) "Remote tx") [];
                     text
-                      ~value_signal:
-                        (Signal.map View_base.sync_cursor_label
-                           model_source)
+                      ~value:
+                        (reactive (Signal.map View_base.sync_cursor_label
+                           model_source))
                       ~foreground:"secondary" ~text_alignment:`end_
                       ~accessibility_identifier:"sync.cursor" [];
                   ];
@@ -1326,9 +1308,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   else
-    View_base.with_string_prop_signal Lui_protocol.Detents
-      (Signal.map (fun current -> "medium") model_source)
-    (sheet ~text:(View_base.tr (Signal.sample model_source) "Sync status") ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
+    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~style_class:"navigation-form navigation-inline-title" ~detents:"medium"
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)
       [
@@ -1347,9 +1327,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                 [
                   text ~value:(View_base.tr (Signal.sample model_source) "Local changes") [];
                   text
-                    ~value_signal:
-                      (Signal.map View_base.sync_pending_label
-                         model_source)
+                    ~value:
+                      (reactive (Signal.map View_base.sync_pending_label
+                         model_source))
                     ~foreground:"secondary" ~text_alignment:`end_
                     ~accessibility_identifier:"sync.pending" [];
                 ];
@@ -1360,8 +1340,8 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                 [
                   text ~value:(View_base.tr (Signal.sample model_source) "Remote tx") [];
                   text
-                    ~value_signal:
-                      (Signal.map View_base.sync_cursor_label model_source)
+                    ~value:
+                      (reactive (Signal.map View_base.sync_cursor_label model_source))
                     ~foreground:"secondary" ~text_alignment:`end_
                     ~accessibility_identifier:"sync.cursor" [];
                 ];
@@ -1376,9 +1356,9 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
         ~style_class:"navigation-actions"
         ~accessibility_identifier:"toolbar.sync.actions"
         [
-          button ~style_class:"confirmation-action"
+          Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
             ~accessibility_identifier:"button.sync.done"
             ~on_press:(press send Model.CloseSyncDetails)
             ~text:(View_base.tr (Signal.sample model_source) "Done") [];
         ];
-    ])
+    ]

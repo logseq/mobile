@@ -204,6 +204,21 @@ let toolbar_actions_that_keep_editing_preserve_autosave () =
     check_eq ~msg:(action ^ " cannot strand the draft") (!saved).Cache_model.title "Draft"))
     ["indent"; "outdent"; "moveUp"; "moveDown"; "task"; "camera"; "audio"; "attachment"]
 
+let toolbar_line_break_saves_the_draft () = with_editor (fun session saved ->
+  type_text session "Draft";
+  let rec next_ready () =
+    let pending = take_ready () in
+    if kind pending = "sync-pending" then next_ready () else pending in
+  apply_effect session (next_ready ()) ["type", `String "saveEditing"];
+  send (Model.PerformOutlinerToolbarAction "lineBreak");
+  let toolbar = next_ready () in
+  check_eq (kind toolbar) "outliner-toolbar";
+  apply_effect session toolbar ["type", `String "toolbar"; "action", `String "lineBreak"];
+  let save = next_ready () in
+  check_eq (kind save) "save-outliner-editing";
+  apply_effect session save ["type", `String "saveEditing"];
+  check_eq ~msg:"a line break without further typing is saved" (!saved).Cache_model.title "Draft\n")
+
 let an_old_noop_save_cannot_mark_newer_typing_synced () = with_editor (fun session _ ->
   ignore (Native_bridge.apply_response (Rpc_session.call session
     {|{"apiVersion":1,"method":"dispatch","params":{"action":"startWebSocket"}}|}));
@@ -361,6 +376,7 @@ let cases = [
   case "deleting text saves the latest content" deleting_text_replaces_the_save_with_the_latest_content;
   case "an old no-op save cannot mark newer typing synced" an_old_noop_save_cannot_mark_newer_typing_synced;
   case "toolbar actions that keep editing preserve autosave" toolbar_actions_that_keep_editing_preserve_autosave;
+  case "toolbar line break saves the draft" toolbar_line_break_saves_the_draft;
   case "rapid editing and reparenting settles after the last save" rapid_editing_and_reparenting_settles_after_the_last_save;
   case "full pending responses never restart their own pump" full_pending_responses_do_not_restart_a_completed_pump;
   case "external pending work wakes sync once" externally_restored_pending_work_wakes_sync_once;

@@ -80,50 +80,76 @@ let decorate db =
           Hashtbl.add numbers parent table
         end;
         Hashtbl.find_opt (Hashtbl.find numbers parent) eid in
-  let rec markup seen budget eid =
-    if budget <= 0 || List.mem eid seen then [M.Markup_text "Embedded node unavailable"] else
+  let markup eid =
     let title = Option.value ~default:"" (Read.string_value (Read.value db eid "block/title")) in
     let summaries attr = Read.entity_summaries (fun x -> Ok x) db eid attr in
-    let parsed = match Read.ref_eids db eid "block/link" with
-      | source :: _ ->
-        let definitions = Read.ref_eids db source "logseq.property/query" in
-        let children = Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" source
-          |> Seq.filter_map (fun (d : Ds.datom) ->
-            if List.mem d.e definitions then None else Some d.e)
-          |> List.of_seq
-          |> List.sort (fun a b -> compare (Read.string_value (Read.value db a "block/order"), a)
-            (Read.string_value (Read.value db b "block/order"), b)) in
-        markup (eid :: seen) (budget - 1) source @
-          List.concat_map (fun child -> M.Markup_text "\n" :: markup (eid :: seen) (budget - 1) child) children
-      | [] -> (match Read.display_type_for_eid db eid with
+    let parsed = match Read.display_type_for_eid db eid with
         | Some "code" ->
           let language = Read.string_value (Read.value db eid "logseq.property.code/lang") in
           [M.Markup_code_block (language, if language = Some "calc" then calculator title else title)]
         | Some "math" -> [M.Markup_math (title, true)]
         | Some "quote" -> [M.Markup_quote (M.parse (summaries "block/refs") (summaries "block/tags") title)]
-        | _ -> M.parse (summaries "block/refs") (summaries "block/tags") title) in
+        | _ -> M.parse (summaries "block/refs") (summaries "block/tags") title in
     match Read.int_value (Read.value db eid "logseq.property/heading") with
-    | Some level when level >= 1 && level <= 6 -> [M.Markup_emphasis ("heading-" ^ string_of_int level, parsed)]
+    | Some level when level >= 1 && level <= 6 ->
+      let content = List.concat_map (function
+        | M.Markup_emphasis (style, children) when String.starts_with ~prefix:"heading-" style -> children
+        | node -> [node]) parsed in
+      [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
     | _ -> parsed in
-  let rec source_title seen budget eid =
+  let rec embed_source seen budget eid =
     if budget <= 0 || List.mem eid seen then None
     else match Read.ref_eids db eid "block/link" with
-      | source :: _ -> source_title (eid :: seen) (budget - 1) source
-      | [] -> Read.string_value (Read.value db eid "block/title") in
-  fun uuid encoded -> match Ds.entid db "block/uuid" (Ds.Uuid uuid), encoded with
+      | source :: _ -> embed_source (eid :: seen) (budget - 1) source
+      | [] -> Some (eid, eid :: seen) in
+  let decode_title title = Ok title in
+  let read_block eid =
+    match Read.block ~with_breadcrumbs:false decode_title db eid with
+    | Some _ as block -> block
+    | None -> Read.page_block decode_title db eid in
+  let children parent source =
+    let definitions = Read.ref_eids db source "logseq.property/query" in
+    let definitions = List.filter_map (Read.uuid_for_eid db) definitions in
+    Read.children_for_block decode_title db parent
+    |> List.filter (fun (block : Cache_model.block) -> not (List.mem block.uuid definitions)) in
+  let rec decorate path remaining in_embed uuid encoded =
+    match Ds.entid db "block/uuid" (Ds.Uuid uuid), encoded with
     | Some eid, `Assoc fields ->
       let embedded = Read.ref_eids db eid "block/link" <> [] in
+      let resolved =
+        if embedded then embed_source path 16 eid
+        else Some (eid, eid :: path) in
+      let body = Option.fold ~none:eid ~some:fst resolved in
       let decorated = embedded
-        || Read.value db eid "logseq.property/heading" <> None
-        || Read.value db eid "logseq.property.code/lang" <> None in
-      let fields = if decorated then ("markup", M.to_yojson (markup [] 16 eid)) :: List.remove_assoc "markup" fields else fields in
-      let fields = if embedded then match source_title [] 16 eid with
-        | Some title -> ("sourceTitle", `String title) :: fields
-        | None -> fields
-        else fields in
+        || Read.value db body "logseq.property/heading" <> None
+        || Read.value db body "logseq.property.code/lang" <> None in
+      let fields = if not decorated then fields else
+        let nodes = if resolved = None then [M.Markup_text "Embedded node unavailable"] else markup body in
+        ("markup", M.to_yojson nodes) :: List.remove_assoc "markup" fields in
+      let fields = match resolved with
+        | Some (source, path) when in_embed || embedded ->
+          (match read_block source with
+           | None -> fields
+           | Some block ->
+             let rows = if remaining = 0 then [] else
+               children block source |> List.filter_map (fun (child : Cache_model.block) ->
+                 match Ds.entid db "block/uuid" (Ds.Uuid child.uuid) with
+                 | Some child_eid when not (List.mem child_eid path) ->
+                   let collapsed = Read.value db child_eid "block/collapsed?" = Some (Ds.Bool true) in
+                   let encoded = match Rpc_encode.block_json child with
+                     | `Assoc fields -> `Assoc (("isCollapsed", `Bool collapsed) :: fields)
+                     | value -> value in
+                   Some (decorate path (remaining - 1) true child.uuid encoded)
+                 | _ -> None) in
+             let fields = if rows = [] then fields else ("embedChildren", `List rows) :: fields in
+             if embedded then
+               ("sourceTitle", `String block.title) :: ("embedSourceUuid", `String block.uuid) :: fields
+             else fields)
+        | _ -> fields in
       let fields = match Pdf_annotation.reference db uuid with
         | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
         :: ("reactions", `List (reactions db eid))
         :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
-    | _ -> encoded
+    | _ -> encoded in
+  decorate [] 128 false

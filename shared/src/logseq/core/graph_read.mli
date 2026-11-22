@@ -15,6 +15,7 @@ val int_value : Datascript.value option -> int option
 val uuid_for_eid : Datascript.db -> int -> string option
 val has_ref : Datascript.db -> int -> string -> int -> bool
 val ref_eids : Datascript.db -> int -> string -> int list
+val recycled : Datascript.db -> int -> bool
 val block_classes_provide_property : Datascript.db -> int -> string -> bool
 val class_descendants : Datascript.db -> int -> int list
 val entity_is_instance_of : Datascript.db -> int -> string -> bool
@@ -165,6 +166,8 @@ val node_icon : Datascript.db -> string -> Yojson.Basic.t option
 
 val scope_closed_value_eids : Datascript.db -> owner:int -> int list -> int list
 val closed_value_eids : Datascript.db -> int -> int list
+val choice_metadata : (string -> (string, string) result) -> Datascript.db -> int -> Cache_model.status option
+val related_candidate_is_visible : Datascript.db -> int -> bool
 
 val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list
 

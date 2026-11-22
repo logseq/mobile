@@ -1,0 +1,14 @@
+# The sidebar destinations move between journals, flashcards, and graphs.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=link.sidebar.flashcards
+wait prop:accessibility-identifier=screen.flashcards
+press prop:accessibility-identifier=link.sidebar.graphs
+wait prop:accessibility-identifier=screen.graphs
+press prop:accessibility-identifier=link.sidebar.journals
+wait prop:accessibility-identifier=pane.journals
+expect-absent prop:accessibility-identifier=screen.flashcards
+expect-absent prop:accessibility-identifier=screen.graphs

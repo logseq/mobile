@@ -27,128 +27,16 @@ env:
   ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
 
 jobs:
-  # opam-monorepo.0.3.6 (needed for `monorepo pull`) vendors an old base whose
-  # -mpopcnt C flag fails to compile on macOS arm64. duniverse/ is pure source
-  # — platform-independent — so vendor it once on Linux and share via cache.
+  # The lockfile's source archive is shared across Linux and macOS.
   duniverse:
     name: Vendor duniverse
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
-      - name: System dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
-
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-vendor
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
-          chmod +x ~/.local/bin/opam
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          eval $(opam env)
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=3
-          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
-          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
-          export GIT_CONFIG_KEY_2="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_2="git+ssh://git@github.com/"
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install -y melange.7.0.1-55
-          opam install . --deps-only --yes --with-test --assume-depexts
-          # 0.3.x matches the lockfile's x-opam-monorepo-version.
-          opam install -y opam-monorepo.0.3.6
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
-          enableCrossOsArchive: true
-
-      - name: Pull vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          eval $(opam env)
-          # All pins are public; ssh URLs just need rewriting to https.
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
-          # Call the binary directly: the `opam monorepo` plugin shim rejects
-          # plugins built under a different opam version (restored caches).
-          # Retry: release-tarball downloads occasionally fail with HTTP 5xx.
-          for attempt in 1 2 3; do
-            opam exec -- opam-monorepo pull && break
-            [ "$attempt" -lt 3 ] || exit 1
-            echo "opam-monorepo pull failed (attempt $attempt); retrying" >&2
-            sleep 10
-          done
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u); do
-            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            if [ -d "duniverse/$name" ]; then
-              continue
-            fi
-            git clone --quiet "https://github.com/$url" "duniverse/$name"
-            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
-            fi
-          done
-
-      - name: Save duniverse
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
-          enableCrossOsArchive: true
+          mode: prepare
 
   ios-e2e:
     name: iOS e2e
@@ -179,89 +67,16 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-tools
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
+          image: macos-15
 
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      # See ci.yml: on a dual cache hit only the opam binary is needed.
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          brew install opam
-          eval $(opam env)
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=3
-          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
-          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
-          export GIT_CONFIG_KEY_2="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_2="git+ssh://git@github.com/"
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install -y melange.7.0.1-55
-          opam install . --deps-only --yes --with-test --assume-depexts
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      # Produced by the linux `duniverse` job — opam-monorepo doesn't build on
-      # macOS arm64, and a plain restore keeps this job off that toolchain.
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
-          enableCrossOsArchive: true
-
-      - name: Require vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
+      - uses: ./.github/actions/ocaml-vendor
 
       - name: Select Xcode 26
         # lui declares swift-tools-version 6.2; the image default (16.4) ships
         # Swift 6.1, so select the Xcode 26 toolchain (Swift 6.2).
         run: sudo xcode-select --switch /Applications/Xcode_26.3.app
-
-      - name: Restore iOS OCaml toolchain
-        id: ios-toolchain
-        uses: actions/cache/restore@v4
-        with:
-          path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Boot an iOS simulator
         # simctl boot returns as soon as the boot is initiated; the device
@@ -287,53 +102,69 @@ jobs:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
 
-      - name: Restore iOS build artifacts
-        # Restore Dune dependency records and installed-library links together.
-        id: ios-build-artifacts
+      - name: Restore iOS OCaml toolchain
+        id: ios-toolchain
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
-            apple/.build
-            _build/.db
-            _build/.digest-db
-            _build/.actions
-            _build/install
-            _build/default
-            _build/mobile_host
-            _build/ios_simulator
-            _build/ios-core
-            ~/.cache/dune
-          key: ios-build-v4-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            ios-build-v4-${{ runner.os }}-xcode26.3-${{ hashFiles('logseq.opam', 'logseq.opam.locked', 'apple/Package.swift', 'apple/Package.resolved') }}-
-            ios-build-v4-${{ runner.os }}-xcode26.3-
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
-      - name: Restore legacy SwiftPM artifacts on a cold build cache
-        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && steps.ios-build-artifacts.outputs.cache-matched-key == ''
+      - name: Restore legacy iOS OCaml toolchain cache
+        id: ios-toolchain-legacy
+        if: steps.ios-toolchain.outputs.cache-primary-key != '' && steps.ios-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
-          # Cache versions include the path list; the expanded Dune cache
-          # cannot restore the original SwiftPM-only cache directly.
-          path: apple/.build
-          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
-          restore-keys: ios-build-artifacts-${{ runner.os }}-xcode26.3-
+          path: _build/apple-toolchains
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
+
+      - name: Restore iOS Simulator Dune cache
+        id: ios-dune
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/dune
+          key: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-${{ github.sha }}
+          restore-keys: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-
+
+      - name: Read the Sentry pin
+        id: sentry
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        run: |
+          revision=$(jq -er '.pins[] | select(.identity == "sentry-cocoa") | .state.revision' apple/Package.resolved)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Swift package downloads
+        id: swift-downloads
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apple/.build/repositories
+            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
+          key: ios-simulator-swift-downloads-v1-${{ runner.arch }}-xcode26.3-${{ steps.sentry.outputs.revision }}
 
       - name: Build iOS app for the simulator
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
-          export DUNE="$(command -v dune)"
-          ./scripts/build-mobile-ios-simulator.sh
+        run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save Swift package downloads
+        if: steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apple/.build/repositories
+            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
+          key: ${{ steps.swift-downloads.outputs.cache-primary-key }}
 
       - name: Build iOS E2E fixture seed tool
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && env.IOS_MODULE != 'smoke' && env.IOS_MODULE != 'composer'
-        run: |
-          eval $(opam env)
-          dune build shared/native/logseq_e2e_seed.exe
+        run: opam exec -- dune build shared/native/logseq_e2e_seed.exe
 
       - name: Save iOS E2E binaries
         if: success() && steps.ios-e2e-binaries.outputs.cache-hit != 'true'
@@ -344,31 +175,33 @@ jobs:
             _build/default/shared/native/logseq_e2e_seed.exe
           key: ${{ steps.ios-e2e-binaries.outputs.cache-primary-key }}
 
-      - name: Save iOS build artifacts
-        if: success() && steps.ios-build-artifacts.outputs.cache-primary-key != '' && steps.ios-build-artifacts.outputs.cache-hit != 'true'
+      - name: Bound the iOS Simulator Dune cache
+        if: steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
+        run: opam exec -- dune cache trim --size=512MiB
+
+      - name: Save iOS Simulator Dune cache
+        if: steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/dune
+          key: ${{ steps.ios-dune.outputs.cache-primary-key }}
+
+      - name: Save iOS OCaml toolchain
+        # Keep a completed toolchain even if a later compilation failed.
+        if: >-
+          always() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
+          steps.ios-toolchain.outputs.cache-hit != 'true' &&
+          hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/.libffi-*-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/lib/libffi.a') != ''
         uses: actions/cache/save@v4
         with:
           path: |
-            apple/.build
-            _build/.db
-            _build/.digest-db
-            _build/.actions
-            _build/install
-            _build/default
-            _build/mobile_host
-            _build/ios_simulator
-            _build/ios-core
-            ~/.cache/dune
-          key: ${{ steps.ios-build-artifacts.outputs.cache-primary-key }}
-
-      - name: Save iOS OCaml toolchain
-        # always(): even when e2e fails, preserve the expensive toolchain
-        # build — bootstrap stamp files keep partial builds safe to cache.
-        if: always() && steps.ios-toolchain.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
       - name: Wait for db-sync and the simulator
         run: |
@@ -389,12 +222,10 @@ jobs:
 
       - name: Run iOS e2e module
         timeout-minutes: ${{ env.IOS_MODULE == 'smoke' && 20 || 60 }}
-        run: |
-          eval $(opam env)
-          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
-          export DUNE="$(command -v dune)"
-          export LOGSEQ_E2E_SEED_BIN="$GITHUB_WORKSPACE/_build/default/shared/native/logseq_e2e_seed.exe"
-          LOGSEQ_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
+        env:
+          LOGSEQ_E2E_SEED_BIN: ${{ github.workspace }}/_build/default/shared/native/logseq_e2e_seed.exe
+          LOGSEQ_IOS_SKIP_BUILD: "1"
+        run: opam exec -- ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
       - name: Upload Maestro debug artifacts
         if: failure()
@@ -408,7 +239,7 @@ jobs:
   android-e2e:
     name: Android e2e
     needs: duniverse
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
@@ -427,80 +258,13 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libpango1.0-dev
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libsdl3-dev libpango1.0-dev
 
-      - name: Restore opam root
-        id: opam-root
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/ocaml-tools
         with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
+          image: ubuntu-26.04
 
-      - name: Restore opam switch
-        id: opam-switch
-        uses: actions/cache/restore@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      - name: Install opam binary
-        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
-        run: |
-          mkdir -p ~/.local/bin
-          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
-          chmod +x ~/.local/bin/opam
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          eval $(opam env)
-          opam --version && ocaml -version
-
-      - uses: ocaml/setup-ocaml@v3
-        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
-        with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-
-      - name: Save opam root
-        if: steps.opam-root.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.opam
-          key: opam-root-${{ runner.os }}-ocaml-5.5
-
-      - name: Install opam dependencies
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        run: |
-          eval $(opam env)
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=3
-          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
-          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
-          export GIT_CONFIG_KEY_2="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_2="git+ssh://git@github.com/"
-          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
-          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
-          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
-          opam install -y melange.7.0.1-55
-          opam install . --deps-only --yes --with-test --assume-depexts
-
-      - name: Save opam switch
-        if: steps.opam-switch.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
-
-      # Produced by the `duniverse` job — shared via cross-OS cache.
-      - name: Restore duniverse
-        id: duniverse
-        uses: actions/cache/restore@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
-          enableCrossOsArchive: true
-
-      - name: Require vendored dependencies
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
+      - uses: ./.github/actions/ocaml-vendor
 
       - name: Set up Java
         uses: actions/setup-java@v4
