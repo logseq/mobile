@@ -14,6 +14,7 @@ import android.icu.text.BreakIterator
 import android.util.AtomicFile
 import android.util.Log
 import android.util.SizeF
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
@@ -177,8 +178,9 @@ class RandomBlocksWidgetProvider : GraphWidgetProvider(showsTasks = false) {
 
 abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetProvider() {
     private val itemLimit = 10
-    private val rowHeight = 20
-    private val rowPadding = if (showsTasks) 7 else 3
+    private val rowHeight = 22
+    private val rowPadding = 4
+    private val rowTextSize = 15f
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val content = AndroidWidgetContent.read(context)
@@ -192,12 +194,15 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             characters.next(5) != BreakIterator.DONE
         }.shuffled()
         val blocks = eligible.take(itemLimit)
+        val metrics = context.resources.displayMetrics
+        val titleHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, rowTextSize, metrics) * 1.2f / metrics.density
+        val rowSlot = maxOf(rowHeight.toFloat(), titleHeight) + 2 * rowPadding
         for (widgetId in appWidgetIds) {
             val options = appWidgetManager.getAppWidgetOptions(widgetId)
             val views = graphViews(context, options) { height ->
                 // The layout reserves 36dp for the header and 20dp for padding.
-                val columns = if (blocks.size * (rowHeight + 2 * rowPadding) <= height - 56) 1 else 2
-                blockList(context, widgetId, graphId, graphLocked, blocks, columns)
+                val rowLimit = ((height - 56) / rowSlot).toInt().coerceAtLeast(1)
+                blockList(context, widgetId, graphId, graphLocked, blocks.take(rowLimit))
             }
             appWidgetManager.updateAppWidget(widgetId, views)
         }
@@ -223,7 +228,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
     }
 
     private fun blockList(
-        context: Context, widgetId: Int, graphId: String?, graphLocked: Boolean, blocks: List<JSONObject>, columns: Int,
+        context: Context, widgetId: Int, graphId: String?, graphLocked: Boolean, blocks: List<JSONObject>,
     ) = RemoteViews(context.packageName, R.layout.widget_graph).apply {
         setTextViewText(R.id.widget_graph_title, context.getString(
             if (showsTasks) R.string.widget_tasks else R.string.widget_random_blocks
@@ -237,8 +242,6 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             setOnClickPendingIntent(R.id.widget_graph_add, RandomBlocksWidgetProvider.refreshIntent(context))
         }
         removeAllViews(R.id.widget_graph_rows)
-        removeAllViews(R.id.widget_graph_rows_secondary)
-        setViewVisibility(R.id.widget_graph_rows_secondary, if (columns == 2) View.VISIBLE else View.GONE)
         val empty = graphId == null || blocks.isEmpty()
         setViewVisibility(R.id.widget_graph_empty, if (empty) View.VISIBLE else View.GONE)
         if (empty) {
@@ -251,11 +254,9 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             setTextViewText(R.id.widget_graph_empty, context.getString(message))
             setOnClickPendingIntent(R.id.widget_graph_empty, entryPointIntent(context, "logseq://journal", 1))
         }
-        val rowsPerColumn = (blocks.size + columns - 1) / columns
-        val padding = if (columns == 1) (rowPadding * context.resources.displayMetrics.density).toInt() else 0
-        if (graphId != null) blocks.forEachIndexed { index, block ->
-            val column = if (index < rowsPerColumn) R.id.widget_graph_rows else R.id.widget_graph_rows_secondary
-            addView(column, blockRow(context, widgetId, graphId, block, padding))
+        val padding = (rowPadding * context.resources.displayMetrics.density).toInt()
+        if (graphId != null) blocks.forEach { block ->
+            addView(R.id.widget_graph_rows, blockRow(context, widgetId, graphId, block, padding))
         }
     }
 

@@ -230,7 +230,9 @@ private struct GraphWidgetContent: Decodable {
     }
 }
 
-private let graphWidgetItemLimit = 10
+private func graphWidgetItemLimit(_ family: WidgetFamily) -> Int {
+    family == .systemMedium ? 4 : 10
+}
 
 private struct GraphWidgetEntry: TimelineEntry {
     let date: Date
@@ -256,11 +258,11 @@ private struct GraphWidgetProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (GraphWidgetEntry) -> Void) {
-        completion(context.isPreview ? placeholder(in: context) : entry())
+        completion(context.isPreview ? placeholder(in: context) : entry(in: context))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GraphWidgetEntry>) -> Void) {
-        let entry = entry()
+        let entry = entry(in: context)
         let policy: TimelineReloadPolicy
         if let selection = entry.selection {
             policy = .after(selection.expiresAt)
@@ -272,12 +274,12 @@ private struct GraphWidgetProvider: TimelineProvider {
         completion(Timeline(entries: [entry], policy: policy))
     }
 
-    private func entry() -> GraphWidgetEntry {
+    private func entry(in context: Context) -> GraphWidgetEntry {
         let content = GraphWidgetContent.read()
         let eligibleBlocks = content.randomBlocks.filter {
             $0.title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 5
         }
-        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(graphWidgetItemLimit))
+        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(graphWidgetItemLimit(context.family)))
         let selection = showsTasks ? WidgetTaskStatusSelection.read() : nil
         return GraphWidgetEntry(date: .now, content: content, randomBlocks: blocks, selection: selection)
     }
@@ -288,13 +290,18 @@ private struct GraphWidgetView: View {
     let showsTasks: Bool
 
     @Environment(\.colorScheme) private var colorScheme
-    private let headerHeight: CGFloat = 26
+    @Environment(\.widgetFamily) private var family
+    private let maxRowHeight: CGFloat = 30
+
+    private var isCompact: Bool { family == .systemMedium }
+    private var headerHeight: CGFloat { isCompact ? 22 : 26 }
+    private var rowSpacing: CGFloat { isCompact ? 4 : 5 }
 
     private var blocks: [GraphWidgetContent.Block] {
-        showsTasks ? Array(entry.content.tasks.prefix(graphWidgetItemLimit)) : entry.randomBlocks
+        Array((showsTasks ? entry.content.tasks : entry.randomBlocks).prefix(graphWidgetItemLimit(family)))
     }
 
-    private var selectedTask: (WidgetTaskStatusSelection, GraphWidgetContent.Block, Int)? {
+    private func selectedTask(in blocks: [GraphWidgetContent.Block]) -> (WidgetTaskStatusSelection, GraphWidgetContent.Block, Int)? {
         guard let selection = entry.selection, entry.content.graphId == selection.graphId,
               let match = blocks.enumerated().first(where: {
                   $0.element.uuid == selection.uuid && $0.element.statusUuid == selection.statusUuid
@@ -304,30 +311,28 @@ private struct GraphWidgetView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let availableHeight = geometry.size.height - headerHeight
-            let columns = availableHeight >= CGFloat(blocks.count) * 27 ? 1 : 2
-            let rowsPerColumn = max(1, (blocks.count + columns - 1) / columns)
-            let rowSpacing: CGFloat = columns == 1 ? 5 : 2
-            let rowHeight = max(0, min(28, availableHeight / CGFloat(rowsPerColumn) - rowSpacing))
-            blockList(rowsPerColumn: rowsPerColumn, rowHeight: rowHeight, rowSpacing: rowSpacing)
+            let availableHeight = geometry.size.height - headerHeight - rowSpacing
+            let selectedTask = selectedTask(in: blocks)
+            let rowHeight = max(0, min(maxRowHeight,
+                (availableHeight + rowSpacing) / CGFloat(max(1, blocks.count)) - rowSpacing))
+            blockList(blocks, rowHeight: rowHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .accessibilityHidden(selectedTask != nil)
                 .allowsHitTesting(selectedTask == nil)
                 .overlay(alignment: .topLeading) {
                     if let (selection, task, index) = selectedTask,
                        let choices = task.statusChoices, !choices.isEmpty {
-                        let row = index % rowsPerColumn
-                        let rowBottom = headerHeight + CGFloat(row + 1) * (rowHeight + rowSpacing)
+                        let rowBottom = headerHeight + CGFloat(index + 1) * (rowHeight + rowSpacing)
                         statusPopup(for: task, choices: choices, selection: selection, rowBottom: rowBottom)
                             .privacySensitive()
                     }
                 }
+                .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
         }
         .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
     }
 
-    private func blockList(rowsPerColumn: Int, rowHeight: CGFloat, rowSpacing: CGFloat) -> some View {
+    private func blockList(_ blocks: [GraphWidgetContent.Block], rowHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: rowSpacing) {
             HStack {
                 if showsTasks {
@@ -339,14 +344,14 @@ private struct GraphWidgetView: View {
                 if showsTasks, let url = URL(string: "logseq://task") {
                     Link(destination: url) {
                         Image(systemName: "plus")
-                            .frame(width: 30, height: 26)
+                            .frame(width: 30, height: headerHeight)
                             .background(.quaternary, in: Capsule())
                     }
                     .accessibilityLabel("Add task")
                 } else if !showsTasks, entry.content.graphId != nil {
                     Button(intent: RefreshRandomBlocksWidgetIntent()) {
                         Image(systemName: "arrow.clockwise")
-                            .frame(width: 30, height: 26)
+                            .frame(width: 30, height: headerHeight)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -363,37 +368,29 @@ private struct GraphWidgetView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
             } else {
-                HStack(alignment: .top, spacing: 8) {
-                    blockColumn(blocks.prefix(rowsPerColumn), rowHeight: rowHeight, spacing: rowSpacing)
-                    if blocks.count > rowsPerColumn {
-                        blockColumn(blocks.dropFirst(rowsPerColumn), rowHeight: rowHeight, spacing: rowSpacing)
-                    }
+                ForEach(blocks) { block in
+                    blockRow(block, rowHeight: rowHeight)
                 }
             }
         }
     }
 
-    private func blockColumn(_ blocks: ArraySlice<GraphWidgetContent.Block>, rowHeight: CGFloat, spacing: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: spacing) {
-            ForEach(blocks) { block in
-                HStack(spacing: 5) {
-                    if let status = block.status {
-                        statusControl(for: block, status: status, rowHeight: rowHeight)
-                    }
-                    if let url = blockURL(block) {
-                        Link(destination: url) {
-                            Text(block.title)
-                                .lineLimit(1).truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
+    private func blockRow(_ block: GraphWidgetContent.Block, rowHeight: CGFloat) -> some View {
+        HStack(spacing: 6) {
+            if let status = block.status {
+                statusControl(for: block, status: status, rowHeight: rowHeight)
+            }
+            if let url = blockURL(block) {
+                Link(destination: url) {
+                    Text(block.title)
+                        .lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .font(rowHeight < 22 ? .caption : .subheadline)
-                .frame(height: rowHeight)
-                .privacySensitive()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, minHeight: rowHeight, maxHeight: rowHeight, alignment: .leading)
+        .privacySensitive()
     }
 
     private var emptyMessage: Text {
@@ -545,7 +542,7 @@ private struct RandomBlocksWidget: Widget {
             GraphWidgetView(entry: entry, showsTasks: false)
         }
         .configurationDisplayName("Random Blocks")
-        .description("Rediscover up to 10 blocks from your graph.")
+        .description("Rediscover blocks from your graph.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
