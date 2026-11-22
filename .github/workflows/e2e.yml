@@ -132,17 +132,35 @@ jobs:
           key: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-${{ github.sha }}
           restore-keys: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-
 
-      - name: Cache Swift package downloads
+      - name: Read the Sentry pin
+        id: sentry
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
+        run: |
+          revision=$(jq -er '.pins[] | select(.identity == "sentry-cocoa") | .state.revision' apple/Package.resolved)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Swift package downloads
+        id: swift-downloads
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
         with:
-          path: apple/.build/repositories
-          key: ios-simulator-swift-repos-v1-${{ hashFiles('apple/Package.resolved') }}
-          restore-keys: ios-simulator-swift-repos-v1-
+          path: |
+            apple/.build/repositories
+            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
+          key: ios-simulator-swift-downloads-v1-${{ runner.arch }}-xcode26.3-${{ steps.sentry.outputs.revision }}
 
       - name: Build iOS app for the simulator
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save Swift package downloads
+        if: steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apple/.build/repositories
+            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
+          key: ${{ steps.swift-downloads.outputs.cache-primary-key }}
 
       - name: Build iOS E2E fixture seed tool
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true' && env.IOS_MODULE != 'smoke' && env.IOS_MODULE != 'composer'
