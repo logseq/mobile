@@ -188,17 +188,38 @@ class AndroidEditorKeyboardTest {
         } }
     }
 
-    @Test fun softwareKeyboardNextCommitsCompositionBeforeSplitting() {
+    @Test fun softwareKeyboardCanConfirmACandidateInTheCurrentBlock() {
         val editor = render("Draft ")
         val connection = inputConnection()
         ui.runOnIdle {
-            assertTrue(connection.setComposingText("你好", 1))
-            assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            assertTrue(connection.setComposingText("nihao", 1))
+            assertTrue(connection.commitText("你好", 1))
         }
         assertCommittedInCurrentBlock(editor, "Draft 你好")
+    }
+
+    @Test fun softwareKeyboardNextSplitsImmediatelyWithAnActiveComposition() {
+        render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(connection.setComposingText("Hello", 1))
+            connection.beginBatchEdit()
+            assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            connection.endBatchEdit()
+            // Some IMEs reopen composition on the submitted word before the model acknowledges the split.
+            assertTrue(connection.setComposingRegion(0, "Hello".length))
+        }
+        assertSplit("Hello")
+        acknowledge("next-block", "", 0)
+        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("")
+        next.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, null))
         val nextConnection = inputConnection()
-        ui.runOnIdle { assertTrue(nextConnection.performEditorAction(EditorInfo.IME_ACTION_NEXT)) }
-        assertSplit("Draft 你好")
+        ui.runOnIdle {
+            assertTrue(nextConnection.setComposingText("World", 1))
+            assertTrue(nextConnection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            val returns = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "return" }
+            assertEquals(listOf("Hello", "World"), returns.map { it.values["title"] })
+        }
     }
 
     @Test fun hardwareEnterCommitsCompositionBeforeSplitting() {
