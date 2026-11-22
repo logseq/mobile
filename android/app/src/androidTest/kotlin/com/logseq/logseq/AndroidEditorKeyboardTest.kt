@@ -269,13 +269,33 @@ class AndroidEditorKeyboardTest {
     @Test fun softwareBackspaceInCodePointsDeletesTextBeforeRemovingTheEmptyBlock() {
         val editor = render("🙂")
         val connection = inputConnection()
-        ui.runOnIdle { assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0)) }
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            connection.endBatchEdit()
+        }
         editor.assertTextEquals("")
         ui.runOnIdle {
             assertTrue(backspaceEvents().isEmpty())
             assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
             assertEquals(1, backspaceEvents().size)
         }
+    }
+
+    @Test fun repeatedSoftwareBackspaceInOneImeBatchRemovesTheEmptyBlock() {
+        val editor = render("🙂")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            connection.beginBatchEdit()
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
+            connection.endBatchEdit()
+            assertEquals("", backspaceEvents().single().values["title"])
+        }
+        editor.assertTextEquals("")
     }
 
     @Test fun deletingNewTextInTheSameImeBatchKeepsTheBlock() {
