@@ -65,6 +65,7 @@ let handle (host : Drive_host.host) _model = function
                   , `Assoc [ ("Destination", `String "n***@example.com") ] );
                 ])
          | Some "ConfirmSignUp" | Some "ConfirmForgotPassword" -> reply id (`Assoc [])
+         | Some "ResendConfirmationCode" -> reply id (`Assoc [])
          | Some "ForgotPassword" ->
            reply id
              (`Assoc

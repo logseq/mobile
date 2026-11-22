@@ -1,0 +1,9 @@
+# Back from sign-up returns to the login submit label.
+expect prop:accessibility-identifier=screen.authentication
+press prop:accessibility-identifier=button.sign-in
+expect prop:accessibility-identifier=sheet.authentication
+press prop:accessibility-identifier=button.auth.create-account
+wait text:"Create account"
+press prop:accessibility-identifier=button.auth.back
+wait text:"Sign in"
+expect-absent prop:accessibility-identifier=field.auth.username

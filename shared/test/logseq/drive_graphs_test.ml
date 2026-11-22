@@ -79,6 +79,10 @@ let handle (host : Drive_host.host) model = function
       | None ->
         [ Model.DequeueEffect id
         ; Model.ResolveEffect (id, false, "unknown graph") ])
+  | Model.UnlockGraphEffect (id, "wrong") ->
+    Some
+      [ Model.DequeueEffect id
+      ; Model.ResolveEffect (id, false, "authenticationFailure") ]
   | Model.UnlockGraphEffect (id, _) ->
     Some
       (match

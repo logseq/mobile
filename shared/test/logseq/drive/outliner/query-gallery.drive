@@ -1,0 +1,11 @@
+# Choosing the gallery type mounts the gallery result window.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=query.toggle.query-block
+press prop:accessibility-identifier=query.toggle.query-block
+wait prop:accessibility-identifier=query.rows.query-block
+press prop:accessibility-identifier=view.type.option.view-1.gallery
+wait prop:accessibility-identifier=view.gallery.view-1

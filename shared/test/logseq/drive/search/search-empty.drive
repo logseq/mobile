@@ -1,0 +1,14 @@
+# A query with no hits shows the empty search state.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Alpha"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
+wait prop:accessibility-identifier=screen.search
+ext ext:native-search-presentation native-search-presentation query-changed '{"query":"missing"}'
+wait text:"No results"
+expect text:"Try a different keyword."
+expect-absent prop:accessibility-identifier=search.result.page-1
+expect-absent prop:accessibility-identifier=search.result.block-1

@@ -1,0 +1,11 @@
+# A wrong E2EE password leaves the unlock sheet open.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+wait prop:accessibility-identifier=sheet.graph-create
+type prop:accessibility-identifier=field.graph-name "Locked"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=sheet.graph-unlock
+type prop:accessibility-identifier=field.graph-password "wrong"
+press prop:accessibility-identifier=button.graph-unlock
+expect prop:accessibility-identifier=sheet.graph-unlock
+expect-prop prop:accessibility-identifier=field.graph-password text "wrong"

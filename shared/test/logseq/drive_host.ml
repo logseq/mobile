@@ -160,6 +160,10 @@ type host =
   ; mutable page_tags : bool
   ; mutable schema_attrs : string list
   ; mutable query_expanded : bool
+  ; mutable query_filtered : bool
+  ; mutable query_sorted : bool
+  ; mutable query_type : string
+  ; mutable scenario : string
   }
 
 let property_json ~attr ~title ~kind ~text ~raw =
@@ -380,29 +384,54 @@ let map_row host uuid f =
       (fun (row : Model.outline_row) -> if row.row_uuid = uuid then f row else row)
       host.rows
 
-let query_document expanded =
+let query_document ?(view_type = "list") ?(filtered = false) ?(sorted = false) expanded
+    =
+  let view_fields =
+    [
+      ("uuid", `String "view-1");
+      ("type", `String view_type);
+      ("name", `String "All");
+      ("rowsDeferred", `Bool true);
+      ("rowCount", `Int 1);
+      ("rowOffset", `Int 0);
+      ("rows", `List []);
+      ("input", `String "");
+      ("revision", `String "1");
+      ("projectionRevision", `String "1");
+    ]
+    @ (if filtered then
+         [
+           ( "filters"
+           , `Assoc
+               [
+                 ("or", `Bool false);
+                 ( "clauses"
+                 , `List
+                     [
+                       `List
+                         [
+                           `String "block/title";
+                           `String "text-contains";
+                           `String "";
+                         ];
+                     ] );
+               ] );
+         ]
+       else [])
+    @ (if sorted then
+         [
+           ( "sorting"
+           , `List
+               [ `Assoc [ ("id", `String "block/title"); ("asc", `Bool true) ] ] );
+         ]
+       else [])
+  in
   `Assoc
     [
       ("ownerUuid", `String "query-block");
       ("featureType", `String "query-result");
       ("expanded", `Bool expanded);
-      ( "views"
-      , `List
-          [
-            `Assoc
-              [
-                ("uuid", `String "view-1");
-                ("type", `String "list");
-                ("name", `String "All");
-                ("rowsDeferred", `Bool true);
-                ("rowCount", `Int 1);
-                ("rowOffset", `Int 0);
-                ("rows", `List []);
-                ("input", `String "");
-                ("revision", `String "1");
-                ("projectionRevision", `String "1");
-              ];
-          ] );
+      ("views", `List [ `Assoc view_fields ]);
     ]
 
 let query_json expanded = Yojson.Basic.to_string (query_document expanded)
@@ -424,9 +453,31 @@ let pdf_row =
     local_path = Some "/tmp/Notes.pdf";
   }
 
+let code_row =
+  let row =
+    App_test.journal_outline_row "code-1" "journal" "let x = 1" "Today" 20260828 0
+  in
+  { row with Model.row_display_type = Some "code" }
+
+let tag_row (row : Model.outline_row) =
+  if row.row_uuid = "journal-block-1" then
+    { row with tags = [ { Model.uuid = "tag-1"; title = "Project" } ] }
+  else row
+
+let failed_sync_row (row : Model.outline_row) =
+  if row.row_uuid = "journal-block-1" then
+    { row with sync_status = Some "failed" }
+  else row
+
+let live_query_json host =
+  Yojson.Basic.to_string
+    (query_document ~view_type:host.query_type ~filtered:host.query_filtered
+       ~sorted:host.query_sorted host.query_expanded)
+
 let set_query_expanded host expanded =
   host.query_expanded <- expanded;
-  map_row host "query-block" (fun row -> { row with Model.query_json = query_json expanded })
+  map_row host "query-block" (fun row ->
+      { row with Model.query_json = live_query_json host })
 
 let find_graph host id =
   List.find_opt (fun (g : Model.graph) -> g.id = id) host.graphs
@@ -472,7 +523,7 @@ let host_responses host model =
 
 let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
     ?(rows = journal_rows) ?(has_older = false) ?(flashcards = [ flashcard_seed ])
-    ?(deck_total = None) () =
+    ?(deck_total = None) ?(scenario = "") () =
   let host =
     {
       graphs = [];
@@ -506,6 +557,10 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       page_tags = false;
       schema_attrs = [];
       query_expanded = false;
+      query_filtered = false;
+      query_sorted = false;
+      query_type = "list";
+      scenario;
     }
   in
   let self = ref None in
@@ -549,7 +604,10 @@ let run_scenario dir name () =
   let rows =
     let rows = if has_prefix "empty-" name then [] else journal_rows in
     let rows = if has_prefix "query-" name then rows @ [ query_row false ] else rows in
-    if has_prefix "pdf-" name then rows @ [ pdf_row ] else rows
+    let rows = if has_prefix "pdf-" name then rows @ [ pdf_row ] else rows in
+    let rows = if has_prefix "code-" name then rows @ [ code_row ] else rows in
+    let rows = if has_prefix "tag-" name then List.map tag_row rows else rows in
+    if has_prefix "sync-row-" name then List.map failed_sync_row rows else rows
   in
   let has_older = has_prefix "history-" name in
   let flashcards, deck_total =
@@ -559,7 +617,7 @@ let run_scenario dir name () =
   in
   let session =
     mount ~profile:(ios_profile ()) ~authentication ~fail_sign_in ~rows
-      ~has_older ~flashcards ~deck_total ()
+      ~has_older ~flashcards ~deck_total ~scenario:name ()
   in
   let failures =
     Drive.Scenario.run

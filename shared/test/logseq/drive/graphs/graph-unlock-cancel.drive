@@ -1,0 +1,9 @@
+# Cancel closes the unlock sheet without unlocking.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+wait prop:accessibility-identifier=sheet.graph-create
+type prop:accessibility-identifier=field.graph-name "Locked"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=sheet.graph-unlock
+press prop:accessibility-identifier=button.graph-unlock.cancel
+expect-absent prop:accessibility-identifier=sheet.graph-unlock
