@@ -8,11 +8,31 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- tapOn:
+    id: "button.outliner.zoom.*E2E anchor B __LOGSEQ_E2E_RUN_ID__"
+- assertVisible:
+    id: "button.composer.expand"
+- assertNotVisible:
+    id: "BackButton"
+- tapOn:
     id: "button.outliner.zoom.*E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - extendedWaitUntil:
     visible:
       id: "BackButton"
     timeout: 10000
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- tapOn:
+    id: "surface.composer.dismiss"
+- assertVisible:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "BackButton"
 - tapOn:
     id: "BackButton"
 - extendedWaitUntil:
