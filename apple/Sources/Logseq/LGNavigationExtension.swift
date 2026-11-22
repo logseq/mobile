@@ -1329,10 +1329,14 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             if controller.searchBar.searchTextField.becomeFirstResponder() { needsInitialFocus = false }
         }
 
+        func willPresentSearchController(_ searchController: UISearchController) {
+            LogseqCrashReporting.uiState(nativeSearchActive: true)
+        }
         func didPresentSearchController(_ searchController: UISearchController) {
             DispatchQueue.main.async { [weak self] in self?.focusIfNeeded() }
         }
         func willDismissSearchController(_ searchController: UISearchController) {
+            LogseqCrashReporting.uiState(nativeSearchActive: false)
             needsInitialFocus = false
             state.nativeWillDismiss()
         }

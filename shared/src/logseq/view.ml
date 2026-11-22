@@ -41,16 +41,52 @@ let logseq_theme_mode (model : Model.logseq_model) : Lui_ui.theme_mode =
   | "dark" -> `dark
   | _ -> `system
 
+let with_ui_state model_source elem =
+  Lui_elements.custom (fun context parent ->
+    match Lui_ui.profile context with
+    | { Lui_protocol.profile_os = IOS; profile_host = SwiftUIHost } ->
+      let node = Lui_ui.platform_tweak context "ui-state" in
+      let previous = ref None in
+      ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (model : Model.logseq_model) ->
+        let screen =
+          if View_base.authentication_screen_visible_ model then "authentication"
+          else if model.settings_open || model.settings_tabs_open || model.runtime_log_open then "settings"
+          else if View_base.graph_picker_screen_visible_ model then "graphs"
+          else if model.pdf_workspace <> None then "pdf"
+          else if model.search_open then
+            (if model.search_navigation_path = [] then "search" else "page")
+          else match model.destination with
+            | GraphsDestination -> "graphs"
+            | FlashcardsDestination -> "flashcards"
+            | JournalsDestination ->
+              if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
+        in
+        let editor = model.outliner_editing <> None in
+        let presentation = model.settings_open || model.settings_tabs_open || model.runtime_log_open
+          || model.sync_details_open || model.create_graph_open || model.graph_password_open
+          || model.pending_sign_out || model.pending_node_deletion <> None || model.pending_graph_deletion <> None in
+        let state = screen, editor, presentation in
+        if !previous <> Some state then (
+          previous := Some state;
+          Lui_ui.extension_property context node "screen" (StringValue screen);
+          Lui_ui.extension_property context node "editor-active" (BoolValue editor);
+          Lui_ui.extension_property context node "presentation-open" (BoolValue presentation)))));
+      let child = Lui_elements.mount context elem in
+      Lui_ui.append context node child;
+      Lui_elements.attach context parent node;
+      node
+    | _ -> Lui_elements.mount context ?parent elem)
+
 let logseq_view (context : Lui_ui.ui_context) model_source send =
   let language (model : Model.logseq_model) =
     Localization.resolve model.language model.system_language
   in
   let dark_theme (model : Model.logseq_model) = model.dark_theme in
-  Lui_elements.themed
+  with_ui_state model_source (Lui_elements.themed
     ~tokens_signal:(Signal.map (logseq_theme_tokens context) (Signal.map dark_theme model_source))
     ~mode:(reactive logseq_theme_mode model_source)
     (reactive ~equal:(fun left right -> language left = language right)
-      (fun _ -> View_screens.logseq_view context model_source send) model_source)
+      (fun _ -> View_screens.logseq_view context model_source send) model_source))
 
 let outliner_editor_schema () =
   let open Lui_protocol in
@@ -265,6 +301,11 @@ let pdf_workspace_schema () =
 
 let extension_registry () =
   let registry = Lui_extension.registry () in
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "ui-state" [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+       [Lui_extension.property "screen" StringScalar true None;
+        Lui_extension.property "editor-active" BoolScalar true None;
+        Lui_extension.property "presentation-open" BoolScalar true None]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-auth-input"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;

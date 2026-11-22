@@ -16,6 +16,7 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
         controller.rail.view.isHidden = !visible
         controller.rail.view.overrideUserInterfaceStyle = dark ? .dark : .light
         controller.attach()
+        LogseqCrashReporting.uiState(captureRailVisible: visible && controller.rail.parent != nil)
     }
 
     static func dismantleUIViewController(_ controller: Observer, coordinator: ()) { controller.detach() }
@@ -60,10 +61,12 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
             NSLayoutConstraint.activate(constraints)
             rail.didMove(toParent: owner)
             attachedNavigation = navigationController
+            LogseqCrashReporting.uiState(captureRailVisible: !rail.view.isHidden)
         }
 
         func detach() {
             guard rail.parent != nil else { return }
+            LogseqCrashReporting.uiState(captureRailVisible: false)
             rail.willMove(toParent: nil)
             NSLayoutConstraint.deactivate(constraints)
             constraints = []
