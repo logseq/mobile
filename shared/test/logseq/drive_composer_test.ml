@@ -25,6 +25,20 @@ let handle (host : Drive_host.host) model = function
              tag_choices_update = Some Drive_host.tag_choices;
            }
       :: Drive_host.resolved id)
+  | Model.PresentAttachmentEffect (id, _kind) ->
+    Some
+      [ Model.DequeueEffect id
+      ; Model.StageComposerAsset
+          {
+            Model.uuid = "asset-1";
+            title = "Photo.jpg";
+            local_path = "/tmp/Photo.jpg";
+            payload = "{}";
+          }
+      ; Model.ResolveEffect (id, true, "") ]
+  | Model.SendAssetEffect (id, asset, _, _) ->
+    Drive_host.append_capture host id asset.Model.title ();
+    Some (Model.DequeueEffect id :: snapshot host model :: Drive_host.resolved id)
   | Model.LoadPropertyValuesEffect (id, key, _) ->
     Some
       (Model.DequeueEffect id

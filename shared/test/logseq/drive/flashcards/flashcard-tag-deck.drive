@@ -1,0 +1,17 @@
+# A new card group can target a tag instead of a page.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=link.sidebar.flashcards
+wait prop:accessibility-identifier=screen.flashcards
+press prop:accessibility-identifier=button.flashcards.deck.add
+wait prop:accessibility-identifier=sheet.flashcards.deck.create
+press prop:accessibility-identifier=flashcards.deck.kind.tag
+wait prop:accessibility-identifier=flashcards.deck.target.tag-1
+press prop:accessibility-identifier=flashcards.deck.target.tag-1
+press prop:accessibility-identifier=button.flashcards.deck.create
+expect-absent prop:accessibility-identifier=sheet.flashcards.deck.create
+expect prop:accessibility-identifier=flashcards.deck.select.deck-created
+expect text:"Project"

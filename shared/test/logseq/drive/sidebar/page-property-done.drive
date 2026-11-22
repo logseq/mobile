@@ -1,0 +1,12 @@
+# Toggling a page checkbox submits the property and keeps the checked state.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+wait prop:accessibility-identifier=property.value.fav-1.done
+toggle prop:accessibility-identifier=property.value.fav-1.done true
+expect-prop prop:accessibility-identifier=property.value.fav-1.done checked true

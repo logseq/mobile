@@ -12,8 +12,17 @@ let open_graph (host : Drive_host.host) id (graph : Model.graph) =
   :: Drive_host.resolved id
 
 let reveal_remote (host : Drive_host.host) =
-  if not (List.exists (fun (g : Model.graph) -> g.id = "SyncedGraph") host.graphs)
-  then host.graphs <- host.graphs @ [ Drive_host.graph_entry "SyncedGraph" "Synced Graph" false ]
+  let add id name role =
+    if not (List.exists (fun (g : Model.graph) -> g.id = id) host.graphs) then
+      host.graphs <-
+        host.graphs @ [ { (Drive_host.graph_entry id name false) with Model.role } ]
+  in
+  add "SyncedGraph" "Synced Graph" None;
+  add "RemoteGraph" "Remote Graph" None;
+  add "SharedGraph" "Shared Graph" (Some "reader")
+
+let password_required_message =
+  "Set an E2EE password before creating your first encrypted graph."
 
 let reload_settings (host : Drive_host.host) =
   Model.ApplySettingsSnapshot
@@ -38,6 +47,11 @@ let handle (host : Drive_host.host) model = function
       :: snapshot
       :: reload_settings host
       :: Drive_host.resolved id)
+  | Model.CreateGraphEffect (id, name, encrypted, password)
+    when name = "Password Graph" && password = "" ->
+    Some
+      [ Model.DequeueEffect id
+      ; Model.ResolveEffect (id, false, password_required_message) ]
   | Model.CreateGraphEffect (id, name, encrypted, _password) ->
     let graph = Drive_host.graph_entry name name encrypted in
     host.graphs <- host.graphs @ [ graph ];

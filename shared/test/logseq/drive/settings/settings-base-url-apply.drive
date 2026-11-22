@@ -1,0 +1,17 @@
+# Apply stores the sync server URL, and a graph refresh reloads it.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+type prop:accessibility-identifier=field.base-url "http://127.0.0.1:8787"
+press prop:accessibility-identifier=button.connection.apply
+expect-absent prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.sidebar.graphs
+wait prop:accessibility-identifier=screen.graphs
+press prop:accessibility-identifier=button.graphs.refresh
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
+expect-prop prop:accessibility-identifier=field.base-url text "http://127.0.0.1:8787"

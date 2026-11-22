@@ -1,0 +1,13 @@
+# The journal heading opens that day, and navigation back returns home.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=button.journal.journal
+press prop:accessibility-identifier=button.journal.journal
+wait prop:accessibility-identifier=screen.node
+expect text:"Node journal"
+ext ext:native-navigation-stack native-navigation-stack back '{"count":1}'
+expect-absent prop:accessibility-identifier=screen.node
+expect text:"First seeded block"

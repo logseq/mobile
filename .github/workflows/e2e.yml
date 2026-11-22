@@ -123,14 +123,21 @@ jobs:
           path: _build/apple-toolchains
           key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
+      - name: Select build cache week
+        id: cache-week
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        run: date -u '+value=%G-W%V' >> "$GITHUB_OUTPUT"
+
       - name: Restore iOS Simulator Dune cache
         id: ios-dune
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: ~/.cache/dune
-          key: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-${{ github.sha }}
-          restore-keys: ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-
+          key: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
+          restore-keys: |
+            ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
+            ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-
 
       - name: Read the Sentry pin
         id: sentry
@@ -154,7 +161,7 @@ jobs:
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
 
       - name: Save Swift package downloads
-        if: steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -176,11 +183,11 @@ jobs:
           key: ${{ steps.ios-e2e-binaries.outputs.cache-primary-key }}
 
       - name: Bound the iOS Simulator Dune cache
-        if: steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
         run: opam exec -- dune cache trim --size=512MiB
 
       - name: Save iOS Simulator Dune cache
-        if: steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true' && steps.ios-dune.outputs.cache-primary-key != ''
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/dune

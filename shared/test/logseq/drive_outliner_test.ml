@@ -11,6 +11,54 @@ let selected_graph (host : Drive_host.host) model =
   Option.map (Drive_host.find_graph host) model.Model.selected_graph_id
   |> Option.join
 
+let keep_editor (model : Model.logseq_model) projection =
+  match model.outliner_editing with
+  | Some editing ->
+    Drive_host.editing_snapshot ~uuid:editing.editing_uuid ~title:editing.editing_title
+      ~caret:editing.caret_utf16_offset projection
+  | None -> projection
+
+let editing_title (model : Model.logseq_model) uuid fallback =
+  match model.outliner_editing with
+  | Some editing when editing.editing_uuid = uuid -> editing.editing_title
+  | _ -> fallback
+
+let adjust_depth (host : Drive_host.host) uuid delta =
+  Drive_host.map_row host uuid (fun row ->
+      { row with Model.depth = max 0 (row.depth + delta) })
+
+let rec swap_at index rows =
+  match rows with
+  | first :: second :: rest when index = 0 -> second :: first :: rest
+  | row :: rest -> row :: swap_at (index - 1) rest
+  | [] -> []
+
+let move_row (host : Drive_host.host) uuid offset =
+  let rec index_of index = function
+    | [] -> None
+    | (row : Model.outline_row) :: _ when row.row_uuid = uuid -> Some index
+    | _ :: rest -> index_of (index + 1) rest
+  in
+  match index_of 0 host.rows with
+  | None -> ()
+  | Some index ->
+    let target = index + offset in
+    if target >= 0 && target < List.length host.rows then begin
+      let reordered =
+        if offset > 0 then swap_at index host.rows else swap_at target host.rows
+      in
+      host.rows <-
+        List.map
+          (fun (row : Model.outline_row) ->
+            if row.row_uuid = uuid then
+              { row with row_list_number = Some (if offset > 0 then 2 else 1) }
+            else row)
+          reordered
+    end
+
+let snapshot_editor (host : Drive_host.host) model =
+  Drive_host.current_graph_projection host model ~extra:(keep_editor model)
+
 let handle (host : Drive_host.host) model = function
   | Model.AddRootBlockEffect (id, _page_uuid) ->
     Drive_host.append_capture host id "New block" ();
@@ -84,8 +132,26 @@ let handle (host : Drive_host.host) model = function
       else None
     in
     let clear_selection = action = "unselect" || action = "delete" in
+    let structural =
+      List.mem action [ "indent"; "outdent"; "moveUp"; "moveDown"; "lineBreak"; "newBlock" ]
+    in
+    let editing_uuid =
+      Option.map (fun (editing : Model.outliner_editing) -> editing.editing_uuid)
+        model.Model.outliner_editing
+    in
+    if structural then
+      (match (action, editing_uuid) with
+      | "indent", Some uuid -> adjust_depth host uuid 1
+      | "outdent", Some uuid -> adjust_depth host uuid (-1)
+      | "moveUp", Some uuid -> move_row host uuid (-1)
+      | "moveDown", Some uuid -> move_row host uuid 1
+      | "lineBreak", _ -> Drive_host.append_capture host id "Split block" ()
+      | "newBlock", _ -> Drive_host.append_capture host id "New block" ()
+      | _ -> ());
     Some
-      (if action = "hideKeyboard" || clear_selection || Option.is_some autocomplete then
+      (if action = "hideKeyboard" || clear_selection || Option.is_some autocomplete
+          || structural
+      then
          Model.DequeueEffect id
          :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
                 let projection =
@@ -102,6 +168,10 @@ let handle (host : Drive_host.host) model = function
                     ~title:editing.editing_title ~caret:editing.caret_utf16_offset
                     ~autocomplete:(Some request)
                     ~candidates:[ Drive_host.page_candidate ] projection
+                | Some editing, None when structural ->
+                  Drive_host.editing_snapshot ~uuid:editing.editing_uuid
+                    ~title:editing.editing_title ~caret:editing.caret_utf16_offset
+                    projection
                 | _ -> projection)
          :: Drive_host.resolved id
        else Drive_host.resolved id)
@@ -182,6 +252,129 @@ let handle (host : Drive_host.host) model = function
                 (open_projection host graph))
         :: Drive_host.resolved id
       | None -> Model.DequeueEffect id :: Drive_host.resolved id)
+  | Model.PasteOutlinerTextEffect (id, uuid, title, caret) ->
+    Some
+      (match selected_graph host model with
+      | Some graph ->
+        Drive_host.map_row host uuid (fun row -> { row with Model.row_title = title });
+        Model.DequeueEffect id
+        :: Model.ApplyCoreSnapshot
+             (Drive_host.editing_snapshot ~uuid ~title ~caret (open_projection host graph))
+        :: Drive_host.resolved id
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
+  | Model.BackspaceOutlinerEditorEffect (id, uuid, title, _selection) ->
+    Some
+      (match model.Model.outliner_editing with
+      | Some editing ->
+        Model.DequeueEffect id
+        :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+               Drive_host.editing_snapshot ~uuid ~title ~caret:editing.caret_utf16_offset
+                 projection)
+        :: Drive_host.resolved id
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
+  | Model.MoveOutlinerCaretEffect (id, uuid, caret) ->
+    let title = editing_title model uuid host.Drive_host.editing_title in
+    Some
+      (Model.DequeueEffect id
+      :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+             Drive_host.editing_snapshot ~uuid ~title ~caret projection)
+      :: Drive_host.resolved id)
+  | Model.DropOutlinerBlocksEffect (id, uuid, placement) ->
+    let title =
+      if placement = "before" then "Dropped before" else "Dropped after"
+    in
+    Drive_host.map_row host uuid (fun row -> { row with Model.row_title = title });
+    Some (Model.DequeueEffect id :: snapshot_editor host model :: Drive_host.resolved id)
+  | Model.SaveOutlinerEditingEffect (id, uuid) ->
+    let title = editing_title model uuid host.Drive_host.editing_title in
+    Drive_host.map_row host uuid (fun row -> { row with Model.row_title = title });
+    Some (Model.DequeueEffect id :: snapshot_editor host model :: Drive_host.resolved id)
+  | Model.CancelOutlinerEditingEffect id ->
+    Some
+      (Model.DequeueEffect id
+      :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+             projection)
+      :: Drive_host.resolved id)
+  | Model.SetOutlinerTaskPriorityEffect (id, uuid, priority) ->
+    Drive_host.map_row host uuid (fun row -> { row with Model.row_priority = priority });
+    Some
+      (Model.DequeueEffect id
+      :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+             projection)
+      :: Drive_host.resolved id)
+  | Model.ResultViewEffect (id, _uuid, payload) ->
+    let fields = Drive_host.json_fields payload in
+    if Drive_host.json_string fields "action" = Some "setExpanded" then
+      Drive_host.set_query_expanded host
+        (match List.assoc_opt "expanded" fields with Some (`Bool value) -> value | _ -> true);
+    Some
+      [ Model.DequeueEffect id
+      ; Model.ApplyCoreSnapshot
+          {
+            (App_test.empty_core_projection ()) with
+            Model.selected_graph_id = model.Model.selected_graph_id;
+            query_update =
+              Some ("query-block", Drive_host.query_json host.Drive_host.query_expanded);
+          }
+      ; Model.ResolveEffect (id, true, "") ]
+  | Model.LoadResultRowsEffect (id, key, payload) ->
+    let fields = Drive_host.json_fields payload in
+    let input = Option.value (Drive_host.json_string fields "input") ~default:"" in
+    let rows =
+      `Assoc
+        [
+          ("input", `String input);
+          ("revision", `String "1");
+          ("projectionRevision", `String "1");
+          ("rowOffset", `Int 0);
+          ("rowCount", `Int 1);
+          ( "rows"
+          , `List
+              [
+                `Assoc
+                  [
+                    ( "block"
+                    , `Assoc
+                        [
+                          ("uuid", `String "query-hit");
+                          ("title", `String "Deferred query hit");
+                          ("pageId", `String "journal");
+                        ] );
+                  ];
+              ] );
+        ]
+    in
+    Some
+      [ Model.DequeueEffect id
+      ; Model.ReceiveResultRows (key, Yojson.Basic.to_string rows, Lui_protocol.String_map.empty)
+      ; Model.ResolveEffect (id, true, "") ]
+  | Model.PdfAnnotationEffect (id, payload) ->
+    let fields = Drive_host.json_fields payload in
+    let graph = Option.value (Drive_host.json_string fields "graphId") ~default:"" in
+    let asset = Option.value (Drive_host.json_string fields "assetUuid") ~default:"" in
+    let note =
+      if Drive_host.json_string fields "action" = Some "save" then "Noted paragraph"
+      else ""
+    in
+    let highlights =
+      if note = "" then `List []
+      else `List [ `Assoc [ ("id", `String "hl-1"); ("text", `String note) ] ]
+    in
+    let update =
+      Yojson.Basic.to_string
+        (`Assoc
+           [
+             ("graphId", `String graph);
+             ("assetUuid", `String asset);
+             ("highlights", highlights);
+             ("note", `String note);
+           ])
+    in
+    Some
+      (Model.DequeueEffect id
+      :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+             { projection with Model.pdf_update = Some update })
+      :: Drive_host.resolved id)
   | Model.ReturnOutlinerEditorEffect (id, uuid, title, _caret) ->
     Some
       (match selected_graph host model with
