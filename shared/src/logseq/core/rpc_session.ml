@@ -1953,6 +1953,17 @@ let widget_status_choices db eid =
     |> Graph_read.scope_closed_value_eids db ~owner:eid
     |> List.filter_map (Graph_read.choice_metadata widget_decrypt db)
 
+let widget_status_appearance (status : Model.status) =
+  let style = Task_status_style.style ~ident:status.ident ~icon_id:status.icon_id ~title:status.title in
+  let light, dark = Task_status_style.colors style ~custom:status.icon_color in
+  `Assoc ["icon", `String (Task_status_style.icon style);
+          "light", `String light; "dark", `String dark]
+
+let widget_status_choice (status : Model.status) =
+  match Rpc.status_response_json status with
+  | `Assoc fields -> `Assoc (("appearance", widget_status_appearance status) :: fields)
+  | json -> json
+
 let widget_db session graph_id =
   match (host session).Types.model_for_graph with
   | Some _ when (state session).active_graph_id <> Some graph_id -> None
@@ -1969,12 +1980,54 @@ let active_widget_db session =
     Option.map (fun db -> config.graph_id, db) (widget_db session config.graph_id)
   | _ -> None
 
-let widget_snapshot session =
+let widget_random_interval_ms = 60 * 60 * 1000
+
+let widget_random_sample db visible =
+  let module Ds = Datascript in
+  let attr = "block/title" in
+  let first_eid seq = match Seq.uncons seq with
+    | Some ((datom : Ds.datom), _) when datom.a = attr -> Some datom.e
+    | _ -> None in
+  match first_eid (Ds.Db.seek_datoms db Ds.Aevt ~a:attr ()),
+        first_eid (Ds.Db.rseek_datoms db Ds.Aevt ~a:attr ()) with
+  | Some first, Some last ->
+    let visited = Hashtbl.create 64 in
+    let window eid =
+      Ds.Db.seek_datoms db Ds.Aevt ~a:attr ~e:eid ()
+      |> Seq.take 16
+      |> Seq.take_while (fun (datom : Ds.datom) -> datom.a = attr) in
+    (* Eight small indexed windows spread across the title index, plus a
+       bounded prefix for small or sparse graphs. No walk of the full index. *)
+    let starts = List.init 8 (fun _ -> Random.int_in_range ~min:first ~max:last) @ [first] in
+    starts |> List.to_seq |> Seq.flat_map window
+    |> Seq.filter_map (fun (datom : Ds.datom) ->
+      if Hashtbl.mem visited datom.e then None else (
+        Hashtbl.add visited datom.e ();
+        match datom.v with
+        | Ds.String title when String.length title >= 5 && visible datom.e
+            && not (Graph_read.entity_is_instance_of db datom.e "logseq.class/Asset") ->
+          Option.map (fun _ -> datom.e) (widget_title ~minimum:5 db datom.e)
+        | _ -> None))
+    |> Seq.take 24 |> List.of_seq
+  | _ -> []
+
+let widget_random_blocks db visible eids =
+  eids |> List.filter_map (fun eid ->
+    if visible eid && not (Graph_read.entity_is_instance_of db eid "logseq.class/Asset") then
+      Option.map (fun block -> `Assoc (widget_block_fields block)) (widget_title ~minimum:5 db eid)
+    else None)
+
+let widget_snapshot ?(resample = false) session =
   let module Ds = Datascript in
   match active_widget_db session with
   | Some (graph_id, db) ->
+    let now = now_ms () in
+    let still_fresh = match !(session.Types.widget_random_sample) with
+      | Some (id, sampled_at, _) ->
+        id = graph_id && now >= sampled_at && now - sampled_at < widget_random_interval_ms
+      | None -> false in
     (match !(session.Types.widget_snapshot) with
-     | Some (id, previous, response) when id = graph_id && db == previous -> response
+     | Some (id, previous, response) when id = graph_id && db == previous && still_fresh && not resample -> response
      | _ ->
        let visible = widget_block_is_visible db (Graph_read.related_candidate_is_visible db) in
        let tasks = ref [] in
@@ -1994,33 +2047,24 @@ let widget_snapshot session =
        Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task")
        |> Option.iter (fun root -> Graph_read.class_descendants db root |> List.iter (fun tag ->
          Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" tag |> Seq.iter add_task));
-       (* Keep a small pool of uniformly sampled blocks for launcher refreshes.
-          Test visibility and render a title only when its random rank can win a slot. *)
-       let pool = Array.make 24 (Int64.max_int, `Null) in
-       let worst = ref 0 in
-       Ds.Db.datoms db Ds.Aevt ~a:"block/title" () |> Seq.iter (fun (datom : Ds.datom) ->
-         match datom.v with
-         | Ds.String title when String.length title >= 5 ->
-           let rank = Random.bits64 () in
-           if rank < fst pool.(!worst) && visible datom.e then
-             Option.iter (fun block ->
-               pool.(!worst) <- rank, `Assoc (widget_block_fields block);
-               for i = 0 to Array.length pool - 1 do
-                 if fst pool.(i) > fst pool.(!worst) then worst := i
-               done) (widget_title ~minimum:5 db datom.e)
-         | _ -> ());
-       let random_blocks = Array.to_list pool |> List.filter_map (function
-         | _, `Null -> None | _, block -> Some block) in
+       let random_eids = match !(session.widget_random_sample) with
+         | Some (_, _, eids) when still_fresh && not resample -> eids
+         | _ ->
+           let eids = widget_random_sample db visible in
+           session.widget_random_sample := Some (graph_id, now, eids);
+           eids in
+       let random_blocks = widget_random_blocks db visible random_eids in
        let tasks = List.map (fun (_, _, eid, block, (status : Model.status)) ->
-         let choices = widget_status_choices db eid |> List.map Rpc.status_response_json in
+         let choices = widget_status_choices db eid |> List.map widget_status_choice in
          `Assoc (["status", `String status.title; "statusUuid", `String status.uuid;
-           "statusChoices", `List choices] @ widget_block_fields block)) !tasks in
+           "statusAppearance", widget_status_appearance status; "statusChoices", `List choices] @ widget_block_fields block)) !tasks in
        let response = Rpc.success (`Assoc ["graphId", `String graph_id; "tasks", `List tasks;
-         "randomBlocks", `List random_blocks]) in
+         "randomBlocks", `List random_blocks; "randomBlocksVersion", `Int 2]) in
        session.widget_snapshot := Some (graph_id, db, response);
        response)
   | None ->
     session.widget_snapshot := None;
+    session.widget_random_sample := None;
     Rpc.success (`Assoc ["tasks", `List []; "randomBlocks", `List [];
       "graphLocked", `Bool (widget_graph_locked session)])
 
@@ -2102,7 +2146,11 @@ let rec dispatch session action payload =
       handle
   in
   match action with
-  | "widgetSnapshot" -> widget_snapshot session
+  | "widgetSnapshot" ->
+    (match payload with
+     | None -> widget_snapshot session
+     | Some _ -> object_action (fun _ fields ->
+       widget_snapshot ~resample:(List.assoc_opt "resampleRandomBlocks" fields = Some (`Bool true)) session))
   | "setWidgetTaskStatus" -> object_action (fun _ -> set_widget_task_status session)
   | "completeAssetTranscription" -> object_action (fun _ fields ->
     match Rpc.required_string fields "parentId", Rpc.required_string fields "text" with

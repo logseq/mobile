@@ -27,7 +27,7 @@ import WidgetKit
         }
     }
 
-    func refresh(forceTaskReload: Bool = false) async {
+    func refresh(forceTaskReload: Bool = false, forceRandomReload: Bool = false) async {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: SharedCaptureStorage.appGroupIdentifier
         ) else { return }
@@ -35,7 +35,9 @@ import WidgetKit
         refreshRevision += 1
         let revision = refreshRevision
         let response = await LogseqCore.callAsync(LogseqRPCRequest(
-            method: "dispatch", params: LogseqRPCParams(action: "widgetSnapshot")
+            method: "dispatch", params: LogseqRPCParams(
+                action: "widgetSnapshot", payload: forceRandomReload ? #"{"resampleRandomBlocks":true}"# : nil
+            )
         ))
         guard revision > publishedRevision else { return }
         do {
@@ -60,7 +62,9 @@ import WidgetKit
                 WidgetCenter.shared.reloadTimelines(ofKind: "TaskListWidget")
             }
             // The random widget picks new blocks on its own timeline once data is available.
-            if graphChanged || hadRandomBlocks != hasRandomBlocks {
+            let randomVersionChanged = (previous?["randomBlocksVersion"] as? Int)
+                != (content["randomBlocksVersion"] as? Int)
+            if forceRandomReload || graphChanged || randomVersionChanged || hadRandomBlocks != hasRandomBlocks {
                 WidgetCenter.shared.reloadTimelines(ofKind: "RandomBlocksWidget")
             }
             publishedRevision = revision

@@ -62,6 +62,7 @@
 "Sqlite"
 "Storage_codec"
 "String_kit"
+"Task_status_style"
 "Metric_log" "Mobile_database"
 "Mobile_graph"
 "Mobile_session"

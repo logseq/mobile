@@ -91,8 +91,12 @@ let graph_deep_links_resolve_graphs_pages_and_blocks () =
 let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let module Ds = Datascript in
   let open Query_block_test in
+  let asset = "10000000-0000-4000-8000-000000000021" in
   let db = ref (Ds.db_with [
     put alpha "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+    put asset "block/page" (Ds.Ref_to (ref_uuid page));
+    put asset "block/title" (Ds.String "A photo attachment");
+    put asset "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Asset"));
     put beta "block/title" (Ds.String "四字测试");
     put definition "block/title" (Ds.String "五个字符啊");
     put owner "logseq.property/hide?" (Ds.Bool true);
@@ -127,6 +131,8 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
     items "statusChoices" task |> List.find (fun choice -> U.member "ident" choice = `String ident) in
   let expected = U.member "statusUuid" original in
   let choice = choose original "logseq.property/status.done" in
+  let appearance = U.member "appearance" choice in
+  check_eq (U.member "icon" appearance) (`String "app:task-done");
   let next = U.member "uuid" choice in
   let set_status graph expected status = call session "setWidgetTaskStatus" [
     "graphId", `String graph; "uuid", `String alpha; "expectedStatusUuid", expected; "statusUuid", status] in
@@ -138,6 +144,7 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let task = List.hd (items "tasks" (snapshot ())) in
   check_eq (U.member "status" task) (U.member "title" choice);
   check_eq (U.member "statusUuid" task) next;
+  check_eq (U.member "statusAppearance" task) appearance;
   ignore (change "plain-1" |> Rpc_test.response_result);
   check_eq (U.member "ok" (set_status "plain-1" expected expected)) (`Bool false);
   check_eq (List.length !staged) 1;

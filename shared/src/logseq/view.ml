@@ -18,17 +18,13 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
         ("card", View_base.grouped_row_background);
       ]
   in
-  surfaces @ [
+  let task_colors = Task_status_style.palette |> List.map (fun (name, (light, dark)) ->
+    let color = if light = dark then Fixed light else Adaptive { light; dark } in
+    "task-" ^ name, color) in
+  surfaces @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
-    (* Retain the status hues while lifting dark-mode icons off the background. *)
-    ("task-backlog", Adaptive { light = "#E8E8E8"; dark = "#92979E" });
-    ("task-todo", Adaptive { light = "#858585"; dark = "#7E7E7E" });
-    ("task-doing", Adaptive { light = "#EBBC00"; dark = "#D9B94C" });
-    ("task-in-review", Fixed "#0090FF");
-    ("task-done", Adaptive { light = "#5BB98C"; dark = "#6BC394" });
-    ("task-canceled", Adaptive { light = "#EB9091"; dark = "#EF9298" });
     ("flashcard-again-background", Fixed "#FF3B301F");
     ("flashcard-again-foreground", Adaptive { light = "#B42318"; dark = "#FFB4AB" });
     ("flashcard-hard-background", Fixed "#FF95001F");

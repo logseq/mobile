@@ -5,4 +5,5 @@
     <color name="widget_on_surface">#1B1B1F</color>
     <color name="widget_secondary">#5F5E66</color>
     <color name="widget_primary">#5069C6</color>
+    <color name="widget_surface">#FFFFFF</color>
 </resources>

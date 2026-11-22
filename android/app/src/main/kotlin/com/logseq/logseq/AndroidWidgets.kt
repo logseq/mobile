@@ -20,7 +20,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -100,22 +99,6 @@ class CaptureWidgetProvider : AppWidgetProvider() {
 
 class TaskListWidgetProvider : GraphWidgetProvider(showsTasks = true) {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == showStatusesAction) {
-            val data = intent.data ?: return
-            val widgetId = data.getQueryParameter("widget")?.toIntOrNull() ?: return
-            val manager = AppWidgetManager.getInstance(context)
-            if (widgetId !in manager.getAppWidgetIds(ComponentName(context, javaClass))) return
-            val selection = WidgetStatusSelection(
-                data.getQueryParameter("graph") ?: return,
-                data.getQueryParameter("task") ?: return,
-                data.getQueryParameter("current") ?: return,
-                data.getQueryParameter("page")?.toIntOrNull() ?: return,
-            )
-            if (selection.page < 0) WidgetStatusSelection.clear(context, widgetId)
-            else selection.write(context, widgetId)
-            onUpdate(context, manager, intArrayOf(widgetId))
-            return
-        }
         if (intent.action != changeStatusAction) {
             super.onReceive(context, intent)
             return
@@ -127,102 +110,65 @@ class TaskListWidgetProvider : GraphWidgetProvider(showsTasks = true) {
             data.getQueryParameter("current") ?: return,
             data.getQueryParameter("next") ?: return,
         )
-        val widgetId = data.getQueryParameter("widget")?.toIntOrNull()
-        val result = goAsync()
+        val pending = goAsync()
         val app = context.applicationContext
         NativeCoreSession.cleanupScope.launch {
             try {
-                if (AndroidBackgroundSync.updateWidgetTaskStatus(app, change)) {
-                    if (widgetId != null) {
-                        val selection = WidgetStatusSelection.read(app, widgetId)
-                        if (selection?.graphId == change.graphId && selection.uuid == change.uuid &&
-                            selection.statusUuid == change.expectedStatusUuid
-                        ) {
-                            WidgetStatusSelection.clear(app, widgetId)
-                        }
-                        val manager = AppWidgetManager.getInstance(app)
-                        if (widgetId in manager.getAppWidgetIds(ComponentName(app, TaskListWidgetProvider::class.java))) {
-                            onUpdate(app, manager, intArrayOf(widgetId))
-                        }
-                    }
-                } else {
+                if (!AndroidBackgroundSync.updateWidgetTaskStatus(app, change)) {
                     Toast.makeText(app, R.string.widget_status_update_failed, Toast.LENGTH_SHORT).show()
                 }
             } finally {
-                result.finish()
+                pending.finish()
             }
         }
-    }
-
-    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        for (widgetId in appWidgetIds) WidgetStatusSelection.clear(context, widgetId)
-        super.onDeleted(context, appWidgetIds)
-    }
-
-    internal companion object {
-        private const val showStatusesAction = "com.logseq.logseq.widget.SHOW_TASK_STATUSES"
-        private const val changeStatusAction = "com.logseq.logseq.widget.CHANGE_TASK_STATUS"
-
-        fun showStatuses(context: Context, widgetId: Int, selection: WidgetStatusSelection): PendingIntent =
-            widgetStatusIntent(context, showStatusesAction, widgetId,
-                selection.graphId, selection.uuid, selection.statusUuid, "page", selection.page.toString())
-
-        fun statusIntent(context: Context, widgetId: Int, change: WidgetTaskStatusChange): PendingIntent =
-            widgetStatusIntent(context, changeStatusAction, widgetId,
-                change.graphId, change.uuid, change.expectedStatusUuid, "next", change.statusUuid)
-
-        private fun widgetStatusIntent(
-            context: Context, actionName: String, widgetId: Int, graphId: String,
-            uuid: String, current: String, valueKey: String, value: String,
-        ): PendingIntent {
-            val intent = Intent(context, TaskListWidgetProvider::class.java).apply {
-                action = actionName
-                data = Uri.Builder().scheme("logseq").authority("widget-status")
-                    .appendQueryParameter("widget", widgetId.toString())
-                    .appendQueryParameter("graph", graphId)
-                    .appendQueryParameter("task", uuid)
-                    .appendQueryParameter("current", current)
-                    .appendQueryParameter(valueKey, value)
-                    .build()
-                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-            }
-            return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        }
-    }
-}
-
-internal data class WidgetStatusSelection(
-    val graphId: String,
-    val uuid: String,
-    val statusUuid: String,
-    val page: Int,
-) {
-    fun write(context: Context, widgetId: Int) {
-        val data = JSONObject().put("graphId", graphId).put("uuid", uuid)
-            .put("statusUuid", statusUuid).put("page", page)
-        preferences(context).edit().putString(widgetId.toString(), data.toString()).apply()
     }
 
     companion object {
-        private fun preferences(context: Context) =
-            context.getSharedPreferences("widget-task-status-selection", Context.MODE_PRIVATE)
+        private const val changeStatusAction = "com.logseq.logseq.widget.CHANGE_TASK_STATUS"
 
-        fun read(context: Context, widgetId: Int): WidgetStatusSelection? {
-            val raw = preferences(context).getString(widgetId.toString(), null) ?: return null
-            return runCatching {
-                val data = JSONObject(raw)
-                WidgetStatusSelection(data.getString("graphId"), data.getString("uuid"),
-                    data.getString("statusUuid"), data.getInt("page"))
-            }.getOrNull()
-        }
-
-        fun clear(context: Context, widgetId: Int) {
-            preferences(context).edit().remove(widgetId.toString()).apply()
+        internal fun selectStatus(context: Context, change: WidgetTaskStatusChange) {
+            val data = Uri.Builder().scheme("logseq").authority("widget-status")
+                .appendQueryParameter("graph", change.graphId)
+                .appendQueryParameter("task", change.uuid)
+                .appendQueryParameter("current", change.expectedStatusUuid)
+                .appendQueryParameter("next", change.statusUuid)
+                .build()
+            context.sendBroadcast(Intent(context, TaskListWidgetProvider::class.java)
+                .setAction(changeStatusAction).setData(data).addFlags(Intent.FLAG_RECEIVER_FOREGROUND))
         }
     }
 }
 
-class RandomBlocksWidgetProvider : GraphWidgetProvider(showsTasks = false)
+class RandomBlocksWidgetProvider : GraphWidgetProvider(showsTasks = false) {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != refreshAction) {
+            super.onReceive(context, intent)
+            return
+        }
+        val pending = goAsync()
+        val app = context.applicationContext
+        NativeCoreSession.cleanupScope.launch {
+            try {
+                AndroidBackgroundSync.refreshRandomWidget(app)
+            } finally {
+                val manager = AppWidgetManager.getInstance(app)
+                val ids = manager.getAppWidgetIds(ComponentName(app, RandomBlocksWidgetProvider::class.java))
+                // The cached sample can still rotate if the graph is temporarily unavailable.
+                if (ids.isNotEmpty()) onUpdate(app, manager, ids)
+                pending.finish()
+            }
+        }
+    }
+
+    companion object {
+        private const val refreshAction = "com.logseq.logseq.widget.REFRESH_RANDOM_BLOCKS"
+
+        internal fun refreshIntent(context: Context): PendingIntent =
+            PendingIntent.getBroadcast(context, 0,
+                Intent(context, RandomBlocksWidgetProvider::class.java).setAction(refreshAction),
+                PendingIntent.FLAG_IMMUTABLE)
+    }
+}
 
 abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -236,17 +182,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             characters.next(5) != BreakIterator.DONE
         }.shuffled().take(3)
         for (widgetId in appWidgetIds) {
-            val selection = if (showsTasks) WidgetStatusSelection.read(context, widgetId) else null
-            val task = selection?.takeIf { it.graphId == graphId }?.let { selected ->
-                blocks.find { it.optString("uuid") == selected.uuid && it.optString("statusUuid") == selected.statusUuid }
-            }
-            val choices = task?.optJSONArray("statusChoices")
-            val views = if (selection != null && task != null && choices != null && choices.length() > 0) {
-                statusPicker(context, widgetId, selection, task, choices)
-            } else {
-                if (selection != null) WidgetStatusSelection.clear(context, widgetId)
-                blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, blocks)
-            }
+            val views = blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, blocks)
             appWidgetManager.updateAppWidget(widgetId, views)
         }
     }
@@ -257,9 +193,13 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
         setTextViewText(R.id.widget_graph_title, context.getString(
             if (showsTasks) R.string.widget_tasks else R.string.widget_random_blocks
         ))
-        setViewVisibility(R.id.widget_graph_add, if (showsTasks) View.VISIBLE else View.GONE)
+        setViewVisibility(R.id.widget_graph_add, if (showsTasks || graphId != null) View.VISIBLE else View.GONE)
         if (showsTasks) {
             setOnClickPendingIntent(R.id.widget_graph_add, entryPointIntent(context, "logseq://task", 4))
+        } else if (graphId != null) {
+            setTextViewText(R.id.widget_graph_add, "⟳")
+            setContentDescription(R.id.widget_graph_add, context.getString(R.string.widget_refresh_random_blocks))
+            setOnClickPendingIntent(R.id.widget_graph_add, RandomBlocksWidgetProvider.refreshIntent(context))
         }
         removeAllViews(R.id.widget_graph_rows)
         val empty = graphId == null || blocks.isEmpty()
@@ -295,67 +235,17 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
                 val canChange = choices != null && (0 until choices.length()).any { index ->
                     choices.optJSONObject(index)?.optString("uuid")?.let { it != current } == true
                 }
+                setImageViewBitmap(R.id.widget_block_status, widgetStatusIcon(context, block.optJSONObject("statusAppearance")))
                 if (current.isNotEmpty() && canChange) {
-                    setTextViewText(R.id.widget_block_status, context.getString(R.string.widget_status_action, status))
                     setContentDescription(R.id.widget_block_status,
                         context.getString(R.string.widget_set_status_for, title, status))
-                    setOnClickPendingIntent(R.id.widget_block_status, TaskListWidgetProvider.showStatuses(
-                        context, widgetId, WidgetStatusSelection(graphId, block.getString("uuid"), current, 0)
+                    setOnClickPendingIntent(R.id.widget_block_status, WidgetStatusMenuActivity.open(
+                        context, widgetId, graphId, block.getString("uuid"), current
                     ))
                 } else {
-                    setTextViewText(R.id.widget_block_status, status)
+                    setContentDescription(R.id.widget_block_status, status)
                 }
             }
-        }
-    }
-
-    private fun statusPicker(
-        context: Context, widgetId: Int, selection: WidgetStatusSelection, task: JSONObject, choices: JSONArray,
-    ) = RemoteViews(context.packageName, R.layout.widget_graph).apply {
-        val columns = listOf(R.id.widget_status_first, R.id.widget_status_second, R.id.widget_status_third)
-        val lastPage = (choices.length() - 1) / 6
-        val page = selection.page.coerceIn(0, lastPage)
-        setTextViewText(R.id.widget_graph_title, task.getString("title"))
-        setViewVisibility(R.id.widget_graph_add, View.VISIBLE)
-        setTextViewText(R.id.widget_graph_add, "×")
-        setContentDescription(R.id.widget_graph_add, context.getString(android.R.string.cancel))
-        setOnClickPendingIntent(R.id.widget_graph_add,
-            TaskListWidgetProvider.showStatuses(context, widgetId, selection.copy(page = -1)))
-        setViewVisibility(R.id.widget_graph_empty, View.GONE)
-        removeAllViews(R.id.widget_graph_rows)
-        val end = minOf(choices.length(), page * 6 + 6)
-        for (start in page * 6 until end step 3) {
-            val row = RemoteViews(context.packageName, R.layout.widget_task_status_row).apply {
-                columns.forEachIndexed { offset, id ->
-                    val choice = choices.optJSONObject(start + offset).takeIf { start + offset < end }
-                    setViewVisibility(id, if (choice == null) View.INVISIBLE else View.VISIBLE)
-                    if (choice != null) {
-                        val uuid = choice.getString("uuid")
-                        val title = choice.getString("title")
-                        val selected = uuid == selection.statusUuid
-                        setTextViewText(id, if (selected) context.getString(R.string.widget_current_status, title) else title)
-                        setContentDescription(id, title)
-                        setOnClickPendingIntent(id, TaskListWidgetProvider.statusIntent(
-                            context, widgetId, WidgetTaskStatusChange(selection.graphId, selection.uuid, selection.statusUuid, uuid)
-                        ))
-                    }
-                }
-            }
-            addView(R.id.widget_graph_rows, row)
-        }
-        if (lastPage > 0) {
-            val navigation = RemoteViews(context.packageName, R.layout.widget_task_status_row).apply {
-                val previous = columns.first()
-                val next = columns.last()
-                setViewVisibility(previous, if (page > 0) View.VISIBLE else View.INVISIBLE)
-                setTextViewText(previous, context.getString(R.string.widget_status_previous))
-                setOnClickPendingIntent(previous, TaskListWidgetProvider.showStatuses(context, widgetId, selection.copy(page = page - 1)))
-                setTextViewText(columns[1], context.getString(R.string.widget_status_page, page + 1, lastPage + 1))
-                setViewVisibility(next, if (page < lastPage) View.VISIBLE else View.INVISIBLE)
-                setTextViewText(next, context.getString(R.string.widget_status_next))
-                setOnClickPendingIntent(next, TaskListWidgetProvider.showStatuses(context, widgetId, selection.copy(page = page + 1)))
-            }
-            addView(R.id.widget_graph_rows, navigation)
         }
     }
 }
@@ -367,10 +257,11 @@ internal object AndroidWidgetContent {
     fun read(context: Context): JSONObject? =
         runCatching { JSONObject(file(context).readFully().decodeToString()) }.getOrNull()
 
-    suspend fun refresh(context: Context, callCore: suspend (String) -> String) {
+    suspend fun refresh(context: Context, callCore: suspend (String) -> String, resampleRandom: Boolean = false) {
         refreshLock.withLock {
             try {
-                val response = JSONObject(callCore(widgetRequest("widgetSnapshot")))
+                val payload = if (resampleRandom) JSONObject().put("resampleRandomBlocks", true) else null
+                val response = JSONObject(callCore(widgetRequest("widgetSnapshot", payload)))
                 if (response.optBoolean("ok")) publish(context, response.getJSONObject("result"))
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -403,7 +294,10 @@ internal object AndroidWidgetContent {
             val providers = buildList {
                 if (graphChanged || tasksChanged) add(TaskListWidgetProvider())
                 // Once data is available, the launcher updates the random widget on its own schedule.
-                if (graphChanged || hadRandomBlocks != hasRandomBlocks) add(RandomBlocksWidgetProvider())
+                val randomVersionChanged = previous?.optInt("randomBlocksVersion") != content.optInt("randomBlocksVersion")
+                if (graphChanged || randomVersionChanged || hadRandomBlocks != hasRandomBlocks) {
+                    add(RandomBlocksWidgetProvider())
+                }
             }
             val manager = AppWidgetManager.getInstance(context)
             for (provider in providers) {

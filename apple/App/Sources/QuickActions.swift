@@ -155,8 +155,30 @@ struct ShowWidgetTaskStatusesIntent: AppIntent {
     }
 }
 
+struct RefreshRandomBlocksWidgetIntent: AppIntent {
+    static let title: LocalizedStringResource = "Refresh random blocks"
+    static let openAppWhenRun = false
+    static let isDiscoverable = false
+    #if compiler(>=6.2)
+    @available(iOS 26.0, *)
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
+    #endif
+    #if compiler(>=6.4)
+    @available(iOS 27.0, *)
+    static let allowedExecutionTargets: IntentExecutionTargets = .main
+    #endif
+
+    @MainActor func perform() async throws -> some IntentResult {
+        #if !WIDGET_EXTENSION
+        await LogseqLogseqRuntime.shared.refreshRandomBlocksWidget()
+        #endif
+        return .result()
+    }
+}
+
 #if !WIDGET_EXTENSION
 extension SetWidgetTaskStatusIntent: ForegroundContinuableIntent {}
+extension RefreshRandomBlocksWidgetIntent: ForegroundContinuableIntent {}
 #endif
 
 #endif
