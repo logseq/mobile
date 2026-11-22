@@ -44,7 +44,7 @@ let deep_links_share_capture_and_quick_action_semantics () =
   check_eq (Option.map (fun (b : Cache_model.block) -> b.title) (captured session "deep-link-id")) (Some "C++ 中文");
   List.iter (fun host ->
     let response = call session "handleDeepLink" (fields host []) |> Rpc_test.response_result in
-    check_eq (U.member "deepLinkQuickAction" response) (`String host)) ["capture"; "audio"; "journal"];
+    check_eq (U.member "deepLinkQuickAction" response) (`String host)) ["capture"; "audio"; "journal"; "task"];
   let ignored = call session "handleDeepLink" (fields "unknown" []) |> Rpc_test.response_result in
   check_eq (U.member "deepLinkQuickAction" ignored) `Null
 
@@ -88,7 +88,66 @@ let graph_deep_links_resolve_graphs_pages_and_blocks () =
   ignore (Rpc_test.dispatch_json session "configure" {|{"baseUrl":"http://127.0.0.1:8787","graphId":"other","token":"access"}|});
   check_eq (U.member "deepLinkNodeUuid" (result "/Other 中文 +" ["page", "Workspace"])) (`String Query_block_test.page)
 
+let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
+  let module Ds = Datascript in
+  let open Query_block_test in
+  let db = ref (Ds.db_with [
+    put alpha "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+    put beta "block/title" (Ds.String "四字测试");
+    put definition "block/title" (Ds.String "五个字符啊");
+    put owner "logseq.property/hide?" (Ds.Bool true);
+  ] (fixture "Original query")) in
+  let staged = ref [] in
+  let private_graph = {|{"graph-id":"private","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}|} in
+  let catalog = {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true},
+    {"graph-id":"other","graph-name":"Other","graph-e2ee?":false,"graph-ready-for-use?":true},|}
+    ^ private_graph ^ "]}" in
+  let session = Rpc_session.create_session { Rpc_session.default_options with
+    load_graph_catalog = Some (fun () -> Some catalog);
+    graph_db = Some (fun () -> Some !db);
+    open_graph = Some (fun _ -> Ok ());
+    model_for_graph = Some (fun _ -> Cache_model.create None);
+    sync_cursor = Some (fun () -> Some 92);
+    stage_operation = Some (fun operation ->
+      Result.map (fun tx ->
+        db := Ds.db_with tx !db;
+        staged := operation :: !staged) (Pending_projection.compile !db operation.Pending_ops.intent));
+    prepare_operation = Some Rpc_test.prepare_operation;
+  } in
+  ignore (Rpc_test.configure_plain_session session);
+  ignore (call session "openGraph" ["graphId", `String "plain-1"] |> Rpc_test.response_result);
+  let snapshot () = call session "widgetSnapshot" [] |> Rpc_test.response_result in
+  let ids key content = items key content |> List.map (U.member "uuid") |> List.sort compare in
+  check_eq (ids "tasks" (snapshot ())) [`String alpha];
+  check_eq (ids "randomBlocks" (snapshot ())) [`String definition; `String alpha];
+  let original = List.hd (items "tasks" (snapshot ())) in
+  let expected = U.member "statusUuid" original and next = U.member "nextStatusUuid" original in
+  check (next <> `Null && next <> expected);
+  let set_status graph status = call session "setWidgetTaskStatus" [
+    "graphId", `String graph; "uuid", `String alpha; "expectedStatusUuid", expected; "statusUuid", status] in
+  let change graph = set_status graph next in
+  check_eq (U.member "ok" (change "private")) (`Bool false);
+  check_eq !staged [];
+  ignore (change "plain-1" |> Rpc_test.response_result);
+  check_eq (List.length !staged) 1;
+  let task = List.hd (items "tasks" (snapshot ())) in
+  check_eq (U.member "status" task) (U.member "nextStatus" original);
+  check_eq (U.member "statusUuid" task) next;
+  ignore (change "plain-1" |> Rpc_test.response_result);
+  check_eq (U.member "ok" (set_status "plain-1" expected)) (`Bool false);
+  check_eq (List.length !staged) 1;
+  let select graph = ignore (call session "configure" [
+    "baseUrl", `String "http://127.0.0.1:8787"; "graphId", `String graph; "token", `String "access"]) in
+  select "other";
+  check_eq (ids "tasks" (snapshot ())) [];
+  check_eq (ids "randomBlocks" (snapshot ())) [];
+  select "private";
+  check_eq (ids "tasks" (snapshot ())) [];
+  check_eq (ids "randomBlocks" (snapshot ())) []
+
 let cases = [
+  case "widgets show eligible blocks and stage status only in the task graph"
+    widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph;
   case "graph deep links resolve graph page and block targets without changing the wrong graph" graph_deep_links_resolve_graphs_pages_and_blocks;
   case "late recording transcripts are core owned and idempotent" late_recording_transcripts_are_core_owned_and_idempotent;
   case "shared text is canonical and retries are idempotent" shared_text_is_canonical_and_retries_are_idempotent;

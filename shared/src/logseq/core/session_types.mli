@@ -178,6 +178,7 @@ type session =
   ; reference_collapsed : (string option * string, bool) Hashtbl.t
   ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
+  ; widget_snapshot : (string * Datascript.db * string) option ref
   ; reference_generation : (string option * int option * int) option ref
   }
 

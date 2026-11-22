@@ -19,6 +19,8 @@ for identifier in expected:
     assert host["actions"][identifier]["openAppWhenRun"], identifier
 for identifier in expected - {"CaptureToJournalIntent"}:
     assert extension["actions"][identifier]["openAppWhenRun"], identifier
+for bundle in (host, extension):
+    assert not bundle["actions"]["SetWidgetTaskStatusIntent"].get("openAppWhenRun"), +        "Widget task status must run without opening the app"
 info = plistlib.loads((widget / "Info.plist").read_bytes())
 host_info = plistlib.loads((app / "Info.plist").read_bytes())
 assert info.get("UIDeviceFamily") == [1, 2], "Widget must declare iPhone and iPad support"

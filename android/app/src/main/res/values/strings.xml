@@ -19,5 +19,16 @@
     <string name="widget_capture_subtitle">Add to today’s journal</string>
     <string name="widget_journal_description">Open today’s Logseq journal</string>
     <string name="widget_capture_description">Capture a block in today’s Logseq journal</string>
+    <string name="widget_tasks">Tasks</string>
+    <string name="widget_random_blocks">Random Blocks</string>
+    <string name="widget_tasks_description">Add tasks to today’s journal and change task status</string>
+    <string name="widget_random_blocks_description">Rediscover up to three blocks from your graph</string>
+    <string name="widget_add_task">Add task</string>
+    <string name="widget_status_action">%1$s ↻</string>
+    <string name="widget_set_status_for">Change %1$s from %2$s to %3$s</string>
+    <string name="widget_status_update_failed">Could not update task status.</string>
+    <string name="widget_graph_required">Open an unencrypted graph in Logseq.</string>
+    <string name="widget_no_tasks">No tasks yet.</string>
+    <string name="widget_no_random_blocks">No blocks with at least five characters.</string>
     <string name="record_audio">Record audio</string>
 </resources>

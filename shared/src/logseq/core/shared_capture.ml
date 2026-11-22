@@ -48,5 +48,5 @@ let deep_link fields =
       if graph = "" && page = None && block = None then Error "A graph name or identifier is required"
       else Ok (`Graph (graph, page, block))
     | Some "capture" -> (match text values with Ok value -> Ok (`Capture value) | Error _ -> Ok (`Quick_action "capture"))
-    | Some ("audio" | "journal" as action) -> Ok (`Quick_action action)
+    | Some ("audio" | "journal" | "task" as action) -> Ok (`Quick_action action)
     | _ -> Ok (`Ignore)
