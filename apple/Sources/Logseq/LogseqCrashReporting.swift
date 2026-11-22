@@ -123,14 +123,19 @@ enum LogseqCrashReporting {
         if let captureRailVisible { state.captureRailVisible = captureRailVisible }
         guard state != lastUIState else { return }
         lastUIState = state
-        let breadcrumb = Breadcrumb(level: .info, category: "ui.state")
-        breadcrumb.data = [
+        recordUIState([
             "screen": state.screen.rawValue,
             "native_search_active": state.nativeSearchActive,
             "editor_active": state.editorActive,
             "popover_open": state.popoverOpen,
             "capture_rail_visible": state.captureRailVisible,
-        ]
+        ])
+    }
+
+    nonisolated private static func recordUIState(_ data: [String: Any]) {
+        SentrySDK.configureScope { $0.setContext(value: data, key: "ui_state") }
+        let breadcrumb = Breadcrumb(level: .info, category: "ui.state")
+        breadcrumb.data = data
         SentrySDK.addBreadcrumb(breadcrumb)
     }
 

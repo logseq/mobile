@@ -11,6 +11,12 @@ import SwiftUI
                 precondition(SentrySDK.internal.options.dsn == dsn)
                 print("SENTRY_CHECK_DSN=\(SentrySDK.internal.options.dsn!)")
                 fflush(stdout)
+                LogseqCrashReporting.uiState(screen: .page, editorActive: true)
+                for _ in 0..<30 {
+                    LogseqCrashReporting.runtime(.drainBegin)
+                    LogseqCrashReporting.runtime(.drainEnd)
+                }
+                LogseqCrashReporting.uiState(screen: .page, editorActive: true)
                 await Task.detached {
                     precondition(!Thread.isMainThread)
                     // Exercise the actual installed callback without uploading test events.
@@ -48,6 +54,21 @@ import SwiftUI
                         }
                     }
                     print("PASS: background beforeBreadcrumb retains only allowlisted diagnostic fields; drops content, empty and malformed breadcrumbs")
+                    SentrySDK.configureScope { scope in
+                        let serialized = scope.serialize()
+                        let contexts = serialized["context"] as? [String: [String: Any]]
+                        let expected: [String: Any] = ["screen": "page", "native_search_active": false,
+                            "editor_active": true, "popover_open": false, "capture_rail_visible": false]
+                        precondition(NSDictionary(dictionary: contexts?["ui_state"] ?? [:]).isEqual(to: expected))
+                        let breadcrumbs = serialized["breadcrumbs"] as? [[String: Any]] ?? []
+                        precondition(breadcrumbs.count == 50)
+                        precondition(!breadcrumbs.contains { $0["category"] as? String == "ui.state" })
+                        let event = Event(level: .error)
+                        event.context = contexts
+                        precondition(callback(event) === event)
+                        precondition(NSDictionary(dictionary: event.context?["ui_state"] ?? [:]).isEqual(to: expected))
+                    }
+                    print("PASS: deduplicated UI state survives breadcrumb eviction in scope and beforeSend context")
                     SentrySDK.close()
                     let event = Event(level: .error)
                     let typed = Exception(value: "private graph/path", type: "ExampleError")
