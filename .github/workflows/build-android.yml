@@ -53,6 +53,16 @@ jobs:
         with:
           ref: ${{ github.event.inputs.git-ref }}
 
+      - name: Load OCaml actions from the release workflow revision
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          # The selected app ref may predate these workflow actions.
+          if [[ "$(git rev-parse HEAD)" != "$WORKFLOW_SHA" ]]; then
+            git fetch --quiet --no-tags --depth=1 origin "$WORKFLOW_SHA"
+            git archive "$WORKFLOW_SHA" .github/actions/ocaml-tools .github/actions/ocaml-vendor | tar -xf -
+          fi
+
       - name: Check Google Play credentials
         if: inputs.upload-play
         env:
