@@ -63,6 +63,13 @@ enum LogseqCrashReporting {
             guard let state = data["state"] as? String,
                   ["start", "started", "drain_begin", "drain_end"].contains(state) else { return nil }
             safe["state"] = state
+        case "ui.state":
+            guard let screen = data["screen"] as? String, Screen(rawValue: screen) != nil else { return nil }
+            safe["screen"] = screen
+            for key in ["native_search_active", "editor_active", "popover_open", "capture_rail_visible"] {
+                guard let value = data[key] as? Bool else { return nil }
+                safe[key] = value
+            }
         default:
             return nil
         }
@@ -79,6 +86,51 @@ enum LogseqCrashReporting {
     nonisolated static func runtime(_ state: RuntimeState) {
         let breadcrumb = Breadcrumb(level: .info, category: "runtime")
         breadcrumb.data = ["state": state.rawValue]
+        SentrySDK.addBreadcrumb(breadcrumb)
+    }
+
+    enum Screen: String {
+        case unknown, authentication, journals, page, search, settings, pdf, graphs, flashcards
+    }
+
+    enum PresentationSource: Hashable { case core, platform }
+
+    private struct UIState: Equatable {
+        var screen = Screen.unknown
+        var nativeSearchActive = false
+        var editorActive = false
+        var popoverOpen = false
+        var captureRailVisible = false
+    }
+
+    @MainActor private static var lastUIState: UIState?
+    @MainActor private static var presentations: Set<PresentationSource> = []
+
+    @MainActor static func presentation(_ source: PresentationSource, open: Bool) {
+        if open { presentations.insert(source) } else { presentations.remove(source) }
+        uiState(popoverOpen: !presentations.isEmpty)
+    }
+
+    @MainActor static func uiState(
+        screen: Screen? = nil, nativeSearchActive: Bool? = nil, editorActive: Bool? = nil,
+        popoverOpen: Bool? = nil, captureRailVisible: Bool? = nil
+    ) {
+        var state = lastUIState ?? UIState()
+        if let screen { state.screen = screen }
+        if let nativeSearchActive { state.nativeSearchActive = nativeSearchActive }
+        if let editorActive { state.editorActive = editorActive }
+        if let popoverOpen { state.popoverOpen = popoverOpen }
+        if let captureRailVisible { state.captureRailVisible = captureRailVisible }
+        guard state != lastUIState else { return }
+        lastUIState = state
+        let breadcrumb = Breadcrumb(level: .info, category: "ui.state")
+        breadcrumb.data = [
+            "screen": state.screen.rawValue,
+            "native_search_active": state.nativeSearchActive,
+            "editor_active": state.editorActive,
+            "popover_open": state.popoverOpen,
+            "capture_rail_visible": state.captureRailVisible,
+        ]
         SentrySDK.addBreadcrumb(breadcrumb)
     }
 

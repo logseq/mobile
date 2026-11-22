@@ -229,6 +229,11 @@ struct LGPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
+            .onChange(of: coordinator.journalCalendarPresented || coordinator.graphDownloadProgress != nil
+                      || coordinator.attachmentService != nil || !coordinator.pendingDeletionBlockIDs.isEmpty,
+                      initial: true) { _, open in
+                LogseqCrashReporting.presentation(.platform, open: open)
+            }
             .sheet(item: Binding(
                 get: { coordinator.graphDownloadProgress },
                 set: { _ in }

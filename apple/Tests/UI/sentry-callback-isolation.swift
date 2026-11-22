@@ -16,7 +16,7 @@ import SwiftUI
                     // Exercise the actual installed callback without uploading test events.
                     let callback = SentrySDK.internal.options.beforeSend!
                     let beforeBreadcrumb = SentrySDK.internal.options.beforeBreadcrumb!
-                    let cases: [(String, [String: Any], [String: String]?)] = [
+                    let cases: [(String, [String: Any], [String: Any]?)] = [
                         ("app.lifecycle", ["state": "active", "title": "private"], ["state": "active"]),
                         ("device.event", ["action": "LOW_MEMORY"], ["action": "LOW_MEMORY"]),
                         ("device.connectivity", ["connectivity": "wifi"], ["connectivity": "wifi"]),
@@ -24,6 +24,10 @@ import SwiftUI
                         ("ui.lifecycle", ["screen": "UIHostingController<ModifiedContent<AnyView, AnyView>>", "title": "private"], ["screen": "UIHostingController<ModifiedContent<AnyView, AnyView>>"]),
                         ("http", ["method": "GET", "url": "https://user:token@example.com/private?q=secret#title"], ["method": "GET", "host": "example.com"]),
                         ("runtime", ["state": "drain_begin"], ["state": "drain_begin"]),
+                        ("ui.state", ["screen": "page", "native_search_active": false, "editor_active": true,
+                                      "popover_open": false, "capture_rail_visible": true, "title": "private"],
+                         ["screen": "page", "native_search_active": false, "editor_active": true,
+                          "popover_open": false, "capture_rail_visible": true]),
                         ("console", ["message": "private"], nil),
                         ("ui.click", ["title": "private"], nil),
                         ("unknown", [:], nil),
@@ -37,7 +41,7 @@ import SwiftUI
                         crumb.message = "private message"
                         let result = beforeBreadcrumb(crumb)
                         if let expected {
-                            precondition(result?.data as? [String: String] == expected)
+                            precondition(NSDictionary(dictionary: result?.data ?? [:]).isEqual(to: expected))
                             precondition(result?.message == nil)
                         } else {
                             precondition(result == nil)
