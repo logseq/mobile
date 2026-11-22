@@ -102,7 +102,7 @@ jobs:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml') }}
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
 
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain

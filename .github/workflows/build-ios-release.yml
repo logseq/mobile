@@ -18,8 +18,11 @@ jobs:
     name: Vendor duniverse
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    outputs:
+      source-revision: ${{ steps.checkout.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
+        id: checkout
         with:
           ref: ${{ inputs.git-ref }}
 
@@ -60,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
         id: checkout
         with:
-          ref: ${{ github.event.inputs.git-ref }}
+          ref: ${{ needs.duniverse.outputs.source-revision }}
 
       - name: Load OCaml actions from the release workflow revision
         env:
