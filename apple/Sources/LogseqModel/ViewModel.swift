@@ -996,6 +996,19 @@ private struct CreateSyncGraphPayload: Encodable {
         return true
     }
 
+    public func setWidgetTaskStatus(
+        graphId: String,
+        uuid: String,
+        expectedStatusUuid: String,
+        statusUuid: String
+    ) async -> Bool {
+        lastError = nil
+        await dispatchEncodedAndWait("setWidgetTaskStatus", [
+            "graphId": graphId, "uuid": uuid, "expectedStatusUuid": expectedStatusUuid, "statusUuid": statusUuid
+        ])
+        return lastError == nil
+    }
+
     public func captureSharedAsset(
         id: String,
         title: String,

@@ -70,6 +70,7 @@ public enum LGRuntimeError: Error, Equatable {
 @MainActor
 public final class LGRuntime {
     public let renderer: LGRenderer
+    var didApplyCoreResponse: (() -> Void)?
     public private(set) var lastError: String? {
         didSet {
             if let lastError, lastError != oldValue {
@@ -249,6 +250,7 @@ public final class LGRuntime {
             authoritativeCoreResponseInvalidated = true
             return
         }
+        didApplyCoreResponse?()
         if result.isPendingSyncPatch == true {
             lastCoreSyncProjection = syncProjection(result)
             authoritativeCoreResponseInvalidated = true

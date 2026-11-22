@@ -1920,6 +1920,146 @@ let deep_link_response session extra =
     Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
   | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"
 
+let widget_decrypt text = Ok text
+
+let widget_block_is_visible db visible eid =
+  Graph_read.value db eid "block/page" <> None
+  && Graph_read.value db eid "block/name" = None
+  && Graph_read.value db eid "logseq.property/built-in?" <> Some (Datascript.Bool true)
+  && visible eid
+
+let widget_title ?(minimum = 1) db eid =
+  Option.bind (Graph_read.entity_summary widget_decrypt db eid) (fun (block : Model.entity_summary) ->
+    let title = String.trim block.title in
+    let rec preview offset length =
+      if offset = String.length title || length = 160 then
+        if length >= minimum then Some { block with title = String.sub title 0 offset } else None
+      else
+        let char = String.get_utf_8_uchar title offset in
+        preview (offset + Uchar.utf_decode_length char) (length + 1)
+    in
+    preview 0 0)
+
+let widget_block_fields (block : Model.entity_summary) =
+  ["uuid", `String block.uuid; "title", `String block.title]
+
+let widget_status = "logseq.property/status"
+
+let widget_status_choices db eid =
+  match Datascript.entid db "db/ident" (Datascript.Keyword widget_status) with
+  | None -> []
+  | Some property ->
+    Graph_read.closed_value_eids db property
+    |> Graph_read.scope_closed_value_eids db ~owner:eid
+    |> List.filter_map (Graph_read.choice_metadata widget_decrypt db)
+
+let widget_next_status (status : Model.status) (choices : Model.status list) =
+  let rec after_current = function
+    | (choice : Model.status) :: next :: _ when choice.uuid = status.uuid -> Some next
+    | _ :: rest -> after_current rest
+    | [] -> List.find_opt (fun (choice : Model.status) -> choice.uuid <> status.uuid) choices
+  in
+  after_current choices
+
+let widget_db session graph_id =
+  match (host session).Types.model_for_graph with
+  | Some _ when (state session).active_graph_id <> Some graph_id -> None
+  | _ -> query_db session
+
+let widget_snapshot session =
+  let module Ds = Datascript in
+  let empty = `Assoc ["tasks", `List []; "randomBlocks", `List []] in
+  let selected = Option.bind (So.selected_graph session) (fun graph ->
+    if graph.Api.e2ee then None
+    else Option.map (fun db -> graph.Api.id, db) (widget_db session graph.Api.id)) in
+  match selected with
+  | Some (graph_id, db) ->
+    (match !(session.Types.widget_snapshot) with
+     | Some (id, previous, response) when id = graph_id && db == previous -> response
+     | _ ->
+       let visible = widget_block_is_visible db (Graph_read.related_candidate_is_visible db) in
+       let tasks = ref [] in
+       let add_task (datom : Ds.datom) =
+         let eid = datom.e in
+         if visible eid && not (List.exists (fun (_, _, id, _, _) -> id = eid) !tasks) then
+           match Graph_read.status_for_eid widget_decrypt db eid, widget_title db eid with
+           | Some status, Some block ->
+             let completed = List.mem status.ident
+               [Some "logseq.property/status.done"; Some "logseq.property/status.canceled"] in
+             let updated = Option.value ~default:0
+               (Graph_read.int_value (Graph_read.value db eid "block/updated-at")) in
+             tasks := take 3 (List.sort (fun (a, t, id, _, _) (b, u, other, _, _) ->
+               compare (a, -t, id) (b, -u, other)) ((completed, updated, eid, block, status) :: !tasks))
+           | _ -> () in
+       Ds.Db.datoms db Ds.Aevt ~a:widget_status () |> Seq.iter add_task;
+       Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task")
+       |> Option.iter (fun root -> Graph_read.class_descendants db root |> List.iter (fun tag ->
+         Datascript_value.datoms_by_ref db Ds.Aevt "block/tags" tag |> Seq.iter add_task));
+       (* Keep a small pool of uniformly sampled blocks for launcher refreshes.
+          Test visibility and render a title only when its random rank can win a slot. *)
+       let pool = Array.make 24 (Int64.max_int, `Null) in
+       let worst = ref 0 in
+       Ds.Db.datoms db Ds.Aevt ~a:"block/title" () |> Seq.iter (fun (datom : Ds.datom) ->
+         match datom.v with
+         | Ds.String title when String.length title >= 5 ->
+           let rank = Random.bits64 () in
+           if rank < fst pool.(!worst) && visible datom.e then
+             Option.iter (fun block ->
+               pool.(!worst) <- rank, `Assoc (widget_block_fields block);
+               for i = 0 to Array.length pool - 1 do
+                 if fst pool.(i) > fst pool.(!worst) then worst := i
+               done) (widget_title ~minimum:5 db datom.e)
+         | _ -> ());
+       let random_blocks = Array.to_list pool |> List.filter_map (function
+         | _, `Null -> None | _, block -> Some block) in
+       let tasks = List.map (fun (_, _, eid, block, (status : Model.status)) ->
+         let next = match widget_next_status status (widget_status_choices db eid) with
+           | Some next -> ["nextStatusUuid", `String next.uuid; "nextStatus", `String next.title]
+           | None -> [] in
+         `Assoc (["status", `String status.title; "statusUuid", `String status.uuid]
+           @ next @ widget_block_fields block)) !tasks in
+       let response = Rpc.success (`Assoc ["graphId", `String graph_id; "tasks", `List tasks;
+         "randomBlocks", `List random_blocks]) in
+       session.widget_snapshot := Some (graph_id, db, response);
+       response)
+  | None ->
+    session.widget_snapshot := None;
+    Rpc.success empty
+
+let widget_task session graph_id uuid =
+  let open Datascript in
+  let ( let* ) = Option.bind in
+  let* graph = So.selected_graph session in
+  if graph.Api.id <> graph_id || graph.Api.e2ee then None else
+  let* db = widget_db session graph_id in
+  let* eid = entid db "block/uuid" (Uuid uuid) in
+  if not (widget_block_is_visible db (Graph_read.related_candidate_is_visible db) eid) then None else
+  let* status = Graph_read.status_for_eid widget_decrypt db eid in
+  Some (db, status, widget_status_choices db eid)
+
+let set_widget_task_status session fields =
+  let ( let* ) = Result.bind in
+  let update =
+    let* graph_id = Rpc.required_string fields "graphId" in
+    let* uuid = Rpc.required_string fields "uuid" in
+    let* expected_uuid = Rpc.required_string fields "expectedStatusUuid" in
+    let* status_uuid = Rpc.required_string fields "statusUuid" in
+    let* db, current, choices = match widget_task session graph_id uuid with
+      | Some task -> Ok task | None -> Error "The task is no longer available" in
+    if current.uuid = status_uuid then Ok None
+    else if current.uuid <> expected_uuid then Error "The task status has changed" else
+    let* status = match List.find_opt (fun (status : Model.status) -> status.uuid = status_uuid) choices with
+      | Some status -> Ok status | None -> Error "The task status is no longer available" in
+    Ok (Some (Ops.Set_property { uuid; attr = widget_status;
+      expected = Effects.stored_status_value db uuid; value = Some (Effects.status_reference status) })) in
+  match update with
+  | Error message -> Rpc.failure "invalid_widget_task" message
+  | Ok None -> snapshot_visible session
+  | Ok (Some intent) ->
+    (match editing_cursor session with
+     | Ok cursor -> stage_result session (fresh_squuid ()) cursor intent
+     | Error (code, message) -> Rpc.failure code message)
+
 let graph_deep_link session graph page block =
   let current = state session in
   let graph = if graph = "" then Option.fold ~none:"" ~some:(fun (c : Api.api_config) -> c.graph_id) current.config else graph in
@@ -1965,6 +2105,8 @@ let rec dispatch session action payload =
       handle
   in
   match action with
+  | "widgetSnapshot" -> widget_snapshot session
+  | "setWidgetTaskStatus" -> object_action (fun _ -> set_widget_task_status session)
   | "completeAssetTranscription" -> object_action (fun _ fields ->
     match Rpc.required_string fields "parentId", Rpc.required_string fields "text" with
     | Ok parent_id, Ok text ->

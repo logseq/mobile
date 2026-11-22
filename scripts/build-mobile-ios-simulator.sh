@@ -170,7 +170,8 @@ for extension in LogseqShareExtension LogseqWidgets; do
 done
 codesign --force --sign - --entitlements "$repo_root/apple/App/ShareExtension/ShareExtension.entitlements" \
   --timestamp=none --generate-entitlement-der "$plugins_dir/LogseqShareExtension.appex"
-codesign --force --sign - --timestamp=none --generate-entitlement-der \
+codesign --force --sign - --entitlements "$repo_root/apple/App/Entitlements.plist" \
+  --timestamp=none --generate-entitlement-der \
   "$plugins_dir/LogseqWidgets.appex"
 
 python3 "$repo_root/scripts/configure-ios-resource-bundles.py" "$app_dir"

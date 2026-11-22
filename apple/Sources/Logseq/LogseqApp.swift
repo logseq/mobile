@@ -67,11 +67,16 @@ public struct LogseqRootView : View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(themePalette.background.ignoresSafeArea())
         .alert("Error", isPresented: Binding(
-            get: { errorFeedback.message != nil },
-            set: { if !$0 { errorFeedback.dismiss() } }
+            get: { runtime.widgetTaskError != nil || errorFeedback.message != nil },
+            set: { presented in
+                if !presented {
+                    runtime.widgetTaskError = nil
+                    errorFeedback.dismiss()
+                }
+            }
         )) {
             Button("OK", role: .cancel) {}
-        } message: { Text(errorFeedback.message ?? "") }
+        } message: { Text(runtime.widgetTaskError ?? errorFeedback.message ?? "") }
     }
 
     private var appContent: some View {
@@ -144,6 +149,11 @@ public struct LogseqRootView : View {
     public let lgRuntime: LGRuntime
     public let authentication: LogseqAuthenticationStore
     public let presentationCoordinator: LGPlatformPresentationCoordinator
+    private let widgetContent = WidgetContentPublisher()
+    var widgetTaskError: String? {
+        get { widgetContent.linkError }
+        set { widgetContent.linkError = newValue }
+    }
     let syncCoordinator: GraphSyncCoordinator
     private struct LocalLaunchResult: Sendable {
         let catalogResponse: String
@@ -344,6 +354,7 @@ public struct LogseqRootView : View {
             platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
+        lgRuntime.didApplyCoreResponse = { [weak widgetContent] in widgetContent?.scheduleRefresh() }
         responseRelay.apply = { [weak lgRuntime] response in
             do {
                 try lgRuntime?.applyCoreResponse(response)
@@ -769,6 +780,21 @@ public struct LogseqRootView : View {
         drainSharedCapturesIfReady()
     }
 
+    public func setWidgetTaskStatus(
+        graphId: String,
+        uuid: String,
+        expectedStatusUuid: String,
+        statusUuid: String
+    ) async -> Bool {
+        await waitForLocalLaunchLoad()
+        let saved = await store.setWidgetTaskStatus(
+            graphId: graphId, uuid: uuid, expectedStatusUuid: expectedStatusUuid, statusUuid: statusUuid
+        )
+        await widgetContent.refresh()
+        if saved { LogseqBackgroundRefresh.syncNow() }
+        return saved
+    }
+
     private func drainSharedCapturesIfReady() {
         guard didApplyLocalLaunchResult, sharedCaptureTask == nil else { return }
         sharedCaptureTask = Task { [weak self] in
@@ -786,10 +812,17 @@ public struct LogseqRootView : View {
                     link.uuid = item.id
                     guard let data = try? JSONEncoder().encode(link) else { return false }
                     let payload = String(decoding: data, as: UTF8.self)
-                    guard await self.store.handleDeepLink(payload) else { return false }
+                    let isWidgetLink = link.query.contains { $0.name == "widget-action" }
+                    guard await self.store.handleDeepLink(payload) else {
+                        return self.acknowledgeRejectedWidgetLink(isWidgetLink)
+                    }
                     if let graphID = self.store.deepLinkGraphId {
                         let opened = await self.graphLifecycle.execute(LGEffect(id: 0, kind: "open-graph", text: graphID))
-                        guard opened.succeeded, await self.store.handleDeepLink(payload), self.store.deepLinkGraphId == nil else { return false }
+                        guard opened.succeeded else { return false }
+                        guard await self.store.handleDeepLink(payload) else {
+                            return self.acknowledgeRejectedWidgetLink(isWidgetLink)
+                        }
+                        guard self.store.deepLinkGraphId == nil else { return false }
                     }
                     if let uuid = self.store.deepLinkNodeUuid {
                         guard let encoded = try? JSONEncoder().encode(uuid) else { return false }
@@ -824,6 +857,12 @@ public struct LogseqRootView : View {
             }
             self.sharedCaptureTask = nil
         }
+    }
+
+    private func acknowledgeRejectedWidgetLink(_ isWidgetLink: Bool) -> Bool {
+        guard isWidgetLink, let error = store.lastError, error.code == "invalid_deep_link" else { return false }
+        widgetTaskError = error.message
+        return true
     }
 
     public func openStore() {

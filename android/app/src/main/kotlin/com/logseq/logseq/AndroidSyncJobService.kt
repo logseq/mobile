@@ -9,20 +9,21 @@ import kotlinx.coroutines.*
 
 class AndroidSyncJobService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var work: Job? = null
+    private val work = mutableMapOf<Int, Job>()
 
     override fun onStartJob(params: JobParameters): Boolean {
-        if (work?.isActive == true) return true
-        work = scope.launch {
+        if (work[params.jobId]?.isActive == true) return true
+        work[params.jobId] = scope.launch {
             val result = AndroidBackgroundSync.run(applicationContext)
             Log.i("BackgroundSync", "System sync completed: $result")
+            work.remove(params.jobId)
             jobFinished(params, result == BackgroundSyncResult.Retry)
         }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        work?.cancel()
+        work.remove(params.jobId)?.cancel()
         return true
     }
 

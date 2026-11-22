@@ -12,6 +12,7 @@ import com.logseq.logseq.AndroidAssetImporter
 import com.logseq.logseq.AndroidAudioPlayer
 import com.logseq.logseq.AndroidAudioRecorder
 import com.logseq.logseq.AndroidAudioTranscriber
+import com.logseq.logseq.AndroidWidgetContent
 import com.logseq.logseq.AndroidPlatformServices
 import com.logseq.logseq.CognitoAuthProvider
 import com.logseq.logseq.DEFAULT_DARK_THEME
@@ -23,6 +24,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -46,6 +49,8 @@ internal class LogseqRuntime(
     private val runtimeJob = SupervisorJob(parentScope.coroutineContext[kotlinx.coroutines.Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
     private var ownsCore = false
+    private var widgetRefreshJob: Job? = null
+    private var widgetRefreshPending = false
 
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext)
@@ -211,6 +216,7 @@ internal class LogseqRuntime(
                 }
                 rootNodeId = rootNode
                 NativeCoreSession.syncActive = ::syncInBackground
+                NativeCoreSession.updateActiveWidgetTask = ::setWidgetTaskStatus
                 scope.launch { drain.drain(scope) }
                 restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -329,6 +335,7 @@ internal class LogseqRuntime(
     // snapshot; cache them so the WebSocket loop can pull entity changes
     // without holding client-side state of its own (iOS snapshot fields).
     private fun trackSyncState(response: String) {
+        scheduleWidgetRefresh()
         graphSyncEligibility.update(response)
         if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
             pendingSyncRequested = false
@@ -343,6 +350,29 @@ internal class LogseqRuntime(
                 selectedGraphId = result.getString("selectedGraphId")
             }
         }
+    }
+
+    private fun scheduleWidgetRefresh() {
+        widgetRefreshPending = true
+        if (widgetRefreshJob?.isActive == true) return
+        widgetRefreshJob = scope.launch {
+            while (widgetRefreshPending) {
+                delay(750)
+                widgetRefreshPending = false
+                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+            }
+        }
+    }
+
+    private suspend fun setWidgetTaskStatus(change: WidgetTaskStatusChange): Boolean {
+        val response = bridge.callCore(change.request())
+        val saved = JSONObject(response).optBoolean("ok")
+        AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+        if (saved) {
+            applyCoreResponse(response)
+            requestSyncNow()
+        }
+        return saved
     }
 
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
@@ -921,7 +951,10 @@ internal class LogseqRuntime(
         graphCatalogAutoRefresh?.dispose()
         effectDrain?.dispose()
         bridge.onCoreIdle = null
-        if (ownsCore) NativeCoreSession.syncActive = null
+        if (ownsCore) {
+            NativeCoreSession.syncActive = null
+            NativeCoreSession.updateActiveWidgetTask = null
+        }
         runtimeJob.cancel()
         NativeCoreSession.cleanupScope.launch {
             runtimeJob.join()

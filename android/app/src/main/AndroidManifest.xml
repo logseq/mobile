@@ -90,6 +90,28 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/capture_widget_info" />
         </receiver>
+        <receiver
+            android:name=".TaskListWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_tasks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/task_list_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".RandomBlocksWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_random_blocks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/random_blocks_widget_info" />
+        </receiver>
         <service
             android:name=".AudioRecordingService"
             android:exported="false"

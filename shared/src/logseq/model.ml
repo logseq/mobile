@@ -2675,7 +2675,7 @@ let rec update (current : logseq_model) action =
     if reusable then updated
     else enqueue_effect updated (SelectSidebarPageEffect (updated.next_effect_id, uuid))
   | OpenQuickAction kind ->
-    if not (kind = "capture" || kind = "audio" || kind = "journal") then
+    if not (kind = "capture" || kind = "audio" || kind = "journal" || kind = "task") then
       current
     else begin
       let updated =
@@ -2692,7 +2692,16 @@ let rec update (current : logseq_model) action =
           graph_menu_open = false;
           destination = JournalsDestination;
           composer_expanded = kind <> "journal";
-          composer_autofocus = kind = "capture";
+          composer_autofocus = kind = "capture" || kind = "task";
+          selected_task_status =
+            (if kind = "task" then begin
+               let statuses = available_task_statuses current.task_statuses in
+               match List.find_opt (fun (status : task_status) ->
+                 status.ident = Some "logseq.property/status.todo") statuses with
+               | Some _ as todo -> todo
+               | None -> List.nth_opt statuses 0
+             end
+             else current.selected_task_status);
         }
       in
       let cleared =

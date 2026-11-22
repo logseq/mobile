@@ -165,6 +165,8 @@ val node_icon : Datascript.db -> string -> Yojson.Basic.t option
 
 val scope_closed_value_eids : Datascript.db -> owner:int -> int list -> int list
 val closed_value_eids : Datascript.db -> int -> int list
+val choice_metadata : (string -> (string, string) result) -> Datascript.db -> int -> Cache_model.status option
+val related_candidate_is_visible : Datascript.db -> int -> bool
 
 val property_choices : (string -> (string, string) result) -> Datascript.db -> string -> Cache_model.status list
 
