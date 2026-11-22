@@ -1,5 +1,6 @@
 package com.logseq.logseq.ui.extensions
 
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.TextAttribute
@@ -567,6 +568,28 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 }
 
+private class BatchedBackspace(private val text: CharSequence) {
+    private var remaining = text.length
+    var removeEmptyBlock = false
+        private set
+
+    fun deleteBackward(length: Int, codePoints: Boolean) {
+        // A delete that consumes the last character is different from one on an empty block.
+        if (remaining == 0) {
+            if (length == 1) removeEmptyBlock = true
+            return
+        }
+        if (codePoints) {
+            repeat(length) {
+                if (remaining == 0) return
+                remaining -= Character.charCount(Character.codePointBefore(text, remaining))
+            }
+        } else {
+            remaining = (remaining - length).coerceAtLeast(0)
+        }
+    }
+}
+
 @Composable
 private fun OutlinerTextInput(
     state: TextFieldState,
@@ -582,75 +605,111 @@ private fun OutlinerTextInput(
                 val connection = request.createInputConnection(attributes)
                 object : InputConnectionWrapper(connection, false) {
                     private var inBatch = false
-                    private var batchReceivedText = false
-                    private var batchBackspaceOnEmpty = false
+                    private var batchedBackspace: BatchedBackspace? = null
 
-                    override fun beginBatchEdit(): Boolean = super.beginBatchEdit().also {
-                        if (it) inBatch = true
+                    override fun beginBatchEdit(): Boolean = super.beginBatchEdit().also { began ->
+                        if (began && !inBatch) {
+                            inBatch = true
+                            val text = state.text
+                            if (state.selection == TextRange(text.length) && state.composition == null) {
+                                batchedBackspace = BatchedBackspace(text)
+                            }
+                        }
                     }
 
                     override fun endBatchEdit(): Boolean = super.endBatchEdit().also { nested ->
                         if (inBatch && !nested) {
-                            val shouldRemoveBlock = batchBackspaceOnEmpty && !batchReceivedText && state.text.isEmpty()
+                            val shouldRemoveBlock = batchedBackspace?.removeEmptyBlock == true && state.text.isEmpty()
                             inBatch = false
-                            batchReceivedText = false
-                            batchBackspaceOnEmpty = false
+                            batchedBackspace = null
                             if (shouldRemoveBlock) emptyBlockBackspace.value()
                         }
                     }
 
-                    private fun recordBatchedText(text: CharSequence?) {
-                        if (inBatch && !text.isNullOrEmpty()) batchReceivedText = true
+                    private inline fun otherEdit(action: () -> Boolean): Boolean {
+                        batchedBackspace = null
+                        return action()
                     }
 
-                    private fun handleBackspace(beforeLength: Int, afterLength: Int): Boolean {
-                        if (beforeLength != 1 || afterLength != 0 || state.text.isNotEmpty()) return false
-                        if (!inBatch) return emptyBlockBackspace.value()
-                        // Compose applies queued text edits at the end of the batch.
-                        // A batch that inserts and then deletes text must keep the block.
-                        batchBackspaceOnEmpty = true
+                    private fun handleBackspace(beforeLength: Int, afterLength: Int, codePoints: Boolean): Boolean {
+                        if (!inBatch) {
+                            return beforeLength == 1 && afterLength == 0 && state.text.isEmpty() &&
+                                emptyBlockBackspace.value()
+                        }
+                        // Track consecutive backward deletes against the buffer at the start of
+                        // the batch. Compose applies the actual text edits when the batch ends.
+                        if (afterLength == 0 && beforeLength >= 0) {
+                            batchedBackspace?.deleteBackward(beforeLength, codePoints)
+                        } else {
+                            batchedBackspace = null
+                        }
                         return false
                     }
 
                     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean =
-                        handleBackspace(beforeLength, afterLength) || super.deleteSurroundingText(beforeLength, afterLength)
+                        handleBackspace(beforeLength, afterLength, codePoints = false) ||
+                            super.deleteSurroundingText(beforeLength, afterLength)
 
                     override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
-                        handleBackspace(beforeLength, afterLength) || super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+                        handleBackspace(beforeLength, afterLength, codePoints = true) ||
+                            super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
 
                     // A newline from the IME is another form of the Enter key.
                     private fun handleCommittedText(text: CharSequence?): Boolean? {
-                        recordBatchedText(text)
                         if (text?.contentEquals("\n") != true) return null
                         if (state.composition != null) return finishComposingText()
                         if (acceptsNewlines.value) return null
                         return performEditorAction(EditorInfo.IME_ACTION_NEXT)
                     }
 
-                    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean =
+                    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean = otherEdit {
                         handleCommittedText(text) ?: super.commitText(text, newCursorPosition)
-
-                    @RequiresApi(33)
-                    override fun commitText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean =
-                        handleCommittedText(text) ?: super.commitText(text, newCursorPosition, textAttribute)
-
-                    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                        recordBatchedText(text)
-                        return super.setComposingText(text, newCursorPosition)
                     }
 
                     @RequiresApi(33)
-                    override fun setComposingText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean {
-                        recordBatchedText(text)
-                        return super.setComposingText(text, newCursorPosition, textAttribute)
+                    override fun commitText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean = otherEdit {
+                        handleCommittedText(text) ?: super.commitText(text, newCursorPosition, textAttribute)
+                    }
+
+                    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean = otherEdit {
+                        super.setComposingText(text, newCursorPosition)
+                    }
+
+                    @RequiresApi(33)
+                    override fun setComposingText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean = otherEdit {
+                        super.setComposingText(text, newCursorPosition, textAttribute)
                     }
 
                     @RequiresApi(34)
                     override fun replaceText(
                         start: Int, end: Int, text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?,
-                    ): Boolean {
-                        recordBatchedText(text)
-                        return super.replaceText(start, end, text, newCursorPosition, textAttribute)
+                    ): Boolean = otherEdit {
+                        super.replaceText(start, end, text, newCursorPosition, textAttribute)
+                    }
+
+                    override fun setSelection(start: Int, end: Int): Boolean = otherEdit {
+                        super.setSelection(start, end)
+                    }
+
+                    override fun setComposingRegion(start: Int, end: Int): Boolean = otherEdit {
+                        super.setComposingRegion(start, end)
+                    }
+
+                    @RequiresApi(33)
+                    override fun setComposingRegion(start: Int, end: Int, textAttribute: TextAttribute?): Boolean = otherEdit {
+                        super.setComposingRegion(start, end, textAttribute)
+                    }
+
+                    override fun performEditorAction(editorAction: Int): Boolean = otherEdit {
+                        super.performEditorAction(editorAction)
+                    }
+
+                    override fun performContextMenuAction(id: Int): Boolean = otherEdit {
+                        super.performContextMenuAction(id)
+                    }
+
+                    override fun sendKeyEvent(event: KeyEvent): Boolean = otherEdit {
+                        super.sendKeyEvent(event)
                     }
                 }
             })
