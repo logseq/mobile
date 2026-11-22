@@ -274,6 +274,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
   node in
   mount context ?parent (column ~gap:8 [
       text_field ~text_signal:(Signal.value input)
+        (* The date parser accepts these English tokens, so the hint stays untranslated. *)
         ~placeholder:"YYYY-MM-DD / tomorrow / next Friday"
         ~label:(View_base.tr (Signal.sample model_source) "Date picker")
         ~accessibility_identifier:("view.edit.date.input." ^ id)

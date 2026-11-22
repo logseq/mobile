@@ -202,38 +202,44 @@ let handle_outliner_block_content_event input_event model_source send =
 let graph_label (current : Model.logseq_model) =
   match current.selected_graph with
   | Some graph_name -> graph_name
-  | None -> "No graph selected"
+  | None -> tr current "No graph selected"
 
 let sync_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Sync failed" else
-  match current.sync_state with
-  | OfflineState -> "Offline"
-  | FailedState _ -> "Sync failed"
-  | _ ->
-    if
-      current.has_pending_semantic_operations
-      || current.has_pending_sync_request
-    then "Syncing"
-    else
-      (match current.sync_state with
-       | SyncedState -> "Up to date"
-       | _ -> "Syncing")
+  let source =
+    if current.pending_sync_error <> None then "Sync failed" else
+    match current.sync_state with
+    | OfflineState -> "Offline"
+    | FailedState _ -> "Sync failed"
+    | _ ->
+      if
+        current.has_pending_semantic_operations
+        || current.has_pending_sync_request
+      then "Syncing"
+      else
+        (match current.sync_state with
+         | SyncedState -> "Up to date"
+         | _ -> "Syncing")
+  in
+  tr current source
 
 let sync_indicator_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Sync failed" else
-  match current.sync_state with
-  | OfflineState -> "Not connected"
-  | FailedState _ -> "Sync failed"
-  | _ ->
-    if
-      current.has_pending_semantic_operations
-      || current.has_pending_sync_request
-    then "Syncing"
-    else
-      (match current.sync_state with
-       | SyncedState -> "Synced"
-       | SyncingState -> "Syncing"
-       | _ -> "Not connected")
+  let source =
+    if current.pending_sync_error <> None then "Sync failed" else
+    match current.sync_state with
+    | OfflineState -> "Not connected"
+    | FailedState _ -> "Sync failed"
+    | _ ->
+      if
+        current.has_pending_semantic_operations
+        || current.has_pending_sync_request
+      then "Syncing"
+      else
+        (match current.sync_state with
+         | SyncedState -> "Synced"
+         | SyncingState -> "Syncing"
+         | _ -> "Not connected")
+  in
+  tr current source
 
 let sync_accessibility_identifier (current : Model.logseq_model) =
   if current.pending_sync_error <> None then "sync.failed" else
@@ -252,22 +258,24 @@ let sync_indicator_foreground (current : Model.logseq_model) =
   | _ -> "warning-foreground"
 
 let sync_connection_label (current : Model.logseq_model) =
-  match current.sync_state with
-  | OfflineState | FailedState _ -> "Disconnected"
-  | _ -> "Connected"
+  tr current
+    (match current.sync_state with
+     | OfflineState | FailedState _ -> "Disconnected"
+     | _ -> "Connected")
 
 let sync_pending_label (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "Not saved" else
-  if
-    current.has_pending_semantic_operations
-    || current.has_pending_sync_request
-  then "Waiting to save"
-  else "Saved"
+  tr current
+    (if current.pending_sync_error <> None then "Not saved" else
+     if
+       current.has_pending_semantic_operations
+       || current.has_pending_sync_request
+     then "Waiting to save"
+     else "Saved")
 
 let sync_cursor_label (current : Model.logseq_model) =
   match current.applied_server_t with
   | Some cursor -> string_of_int cursor
-  | None -> "Unavailable"
+  | None -> tr current "Unavailable"
 
 let active_page_actions_visible_ (current : Model.logseq_model) =
   match Model.active_page current with
@@ -496,9 +504,11 @@ let outliner_row_title (row : Model.outline_row) = row.row_title
 let outliner_row_indent (row : Model.outline_row) = row.depth * 22
 let outliner_row_has_children (row : Model.outline_row) = row.has_children
 
-let outliner_row_zoom_label (row : Model.outline_row) =
-  "Zoom into "
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+let outliner_row_label_title (current : Model.logseq_model) (row : Model.outline_row) =
+  if row.row_title = "" then tr current "Untitled block" else row.row_title
+
+let outliner_row_zoom_label (current : Model.logseq_model) (row : Model.outline_row) =
+  tr_named current "Zoom into {1}" (outliner_row_label_title current row)
 
 let outliner_row_zoom_identifier (row : Model.outline_row) =
   "button.outliner.zoom." ^ row.row_uuid ^ "."
@@ -506,13 +516,16 @@ let outliner_row_zoom_identifier (row : Model.outline_row) =
 
 let outliner_row_action_label (current : Model.logseq_model)
     (row : Model.outline_row) =
-  (if current.outliner_selected_block_ids = [] then "Edit block "
-   else "Select block ")
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+  let template =
+    if current.outliner_selected_block_ids = [] then "Edit block {1}"
+    else "Select block {1}"
+  in
+  tr_named current template (outliner_row_label_title current row)
 
-let outliner_row_collapse_label (row : Model.outline_row) =
-  (if row.is_collapsed then "Expand " else "Collapse ")
-  ^ (if row.row_title = "" then "Untitled block" else row.row_title)
+let outliner_row_collapse_label (current : Model.logseq_model)
+    (row : Model.outline_row) =
+  let template = if row.is_collapsed then "Expand {1}" else "Collapse {1}" in
+  tr_named current template (outliner_row_label_title current row)
 
 let outliner_row_collapse_glyph (row : Model.outline_row) =
   if row.is_collapsed then "›" else "⌄"
@@ -762,7 +775,7 @@ let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
 let active_node_title (current : Model.logseq_model) =
   match active_node_projection current with
   | Some route -> route.node_title
-  | None -> "Untitled"
+  | None -> tr current "Untitled"
 
 let outliner_scroll_identity (current : Model.logseq_model) =
   let graph = Option.value ~default:"local" current.selected_graph_id in
@@ -933,19 +946,17 @@ let outliner_task_status_canceled_ row =
   outliner_task_status_style_is_ row "canceled"
 
 let outliner_editor_task_label (current : Model.logseq_model) =
-  match current.outliner_editing with
-  | Some editing ->
-    (match
-       Model.row_index current.outliner_rows editing.editing_uuid
-     with
-     | Some index ->
-       "Task: "
-       ^
-       (match (List.nth current.outliner_rows index).row_status with
-        | Some status -> status.title
-        | None -> "None")
-     | None -> "Task: None")
-  | None -> "Task: None"
+  let status =
+    match current.outliner_editing with
+    | Some editing ->
+      (match Model.row_index current.outliner_rows editing.editing_uuid with
+       | Some index -> (List.nth current.outliner_rows index).row_status
+       | None -> None)
+    | None -> None
+  in
+  match status with
+  | Some status -> tr_named current "Task: {1}" status.title
+  | None -> tr current "Task: None"
 
 let outliner_row_has_tags_ (row : Model.outline_row) = row.tags <> []
 
@@ -1255,15 +1266,17 @@ let settings_language_title (current : Model.logseq_model) =
   | Some choice -> tr current choice.title
   | None -> tr current "System"
 
-let settings_language_choice_title (choice : Model.settings_language_choice) =
-  choice.title
+let settings_language_choice_title (current : Model.logseq_model)
+    (choice : Model.settings_language_choice) =
+  tr current choice.title
 
 let settings_language_choice_identifier
     (choice : Model.settings_language_choice) =
   "button.settings.language." ^ choice.id
 
-let settings_community_link_title (link : Model.settings_community_link) =
-  link.title
+let settings_community_link_title (current : Model.logseq_model)
+    (link : Model.settings_community_link) =
+  tr current link.title
 
 let settings_community_link_identifier
     (link : Model.settings_community_link) =
@@ -1285,7 +1298,8 @@ let settings_tab_title tab =
   | _ -> "Graphs"
 
 let settings_tabs_summary (current : Model.logseq_model) =
-  String.concat " · " (List.map settings_tab_title current.sidebar_tabs)
+  String.concat " · "
+    (List.map (fun tab -> tr current (settings_tab_title tab)) current.sidebar_tabs)
 
 let runtime_log_visible_ (current : Model.logseq_model) =
   current.runtime_log_open
@@ -1294,8 +1308,9 @@ let tab_enabled_ (current : Model.logseq_model) tab =
   Model.string_vector_contains_ current.sidebar_tabs tab
 
 let tab_toggle_label (current : Model.logseq_model) tab =
-  let title = settings_tab_title tab in
-  title ^ (if tab_enabled_ current tab then ", on" else ", off")
+  let title = tr current (settings_tab_title tab) in
+  let template = if tab_enabled_ current tab then "{1}, on" else "{1}, off" in
+  tr_named current template title
 
 let tab_selection_glyph (current : Model.logseq_model) tab =
   if tab_enabled_ current tab then "✓" else "○"
@@ -1364,10 +1379,11 @@ let runtime_log_errors_label (current : Model.logseq_model) =
   if current.runtime_log_errors_only then "All" else "Errors only"
 
 let runtime_log_order_label (current : Model.logseq_model) =
-  if current.runtime_log_newest_first then "Oldest first" else "Newest first"
+  tr current
+    (if current.runtime_log_newest_first then "Oldest first" else "Newest first")
 
 let runtime_log_source_label (current : Model.logseq_model) =
-  if current.runtime_log_source = "ui" then "Core log" else "UI log"
+  tr current (if current.runtime_log_source = "ui" then "Core log" else "UI log")
 
 let sync_error_present_ (current : Model.logseq_model) =
   if current.pending_sync_error <> None then true else

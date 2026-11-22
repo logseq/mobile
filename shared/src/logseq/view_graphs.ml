@@ -26,7 +26,9 @@ let graph_row (_context : Lui_ui.ui_context) model_source graph_source
             ~test:(Signal.map View_base.graph_status_visible_ graph_source)
             (text
                ~value:
-                 (reactive View_base.graph_status_title graph_source)
+                 (reactive (Signal.map2 (fun model graph ->
+                    View_base.tr model (View_base.graph_status_title graph))
+                    model_source graph_source))
                ~style_class:"caption" ~foreground:"muted-foreground"
                ~accessibility_identifier:
                  (View_base.graph_status_identifier graph)
@@ -190,8 +192,8 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~text:(View_base.tr (Signal.sample model_source) "End-to-end encryption") [];
                 text ~style_class:"footnote" ~foreground:"muted-foreground"
                   ~value:
-                    "Encryption cannot be changed after the sync graph \
-                     is created."
+                    (View_base.tr (Signal.sample model_source)
+                       "Encryption cannot be changed after the sync graph is created.")
                   [];
 
               ] ];
@@ -260,8 +262,8 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
               ];
             text ~style_class:"footnote" ~foreground:"muted-foreground"
               ~value:
-                "Encryption cannot be changed after the sync graph is \
-                 created."
+                (View_base.tr (Signal.sample model_source)
+                   "Encryption cannot be changed after the sync graph is created.")
               [];
 
             graph_creation_progress model_source;
