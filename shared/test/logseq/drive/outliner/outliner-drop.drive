@@ -1,0 +1,10 @@
+# Dropping a block before another rewrites that block's title.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-2
+ext ext:outliner-block-row&text:'journal-block-2' outliner-block-row drop '{"uuid":"journal-block-2","placement":"before"}'
+expect-absent text:"Second seeded block"
+expect text:"Dropped before"

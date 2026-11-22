@@ -1,0 +1,18 @@
+# The dark theme survives leaving settings and refreshing the graph list.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+change prop:accessibility-identifier=picker.settings.dark-theme.option.solarized
+expect-prop prop:accessibility-identifier=picker.settings.dark-theme.option.solarized checked true
+press prop:accessibility-identifier=button.connection.cancel
+expect-absent prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.sidebar.graphs
+wait prop:accessibility-identifier=screen.graphs
+press prop:accessibility-identifier=button.graphs.refresh
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
+expect-prop prop:accessibility-identifier=picker.settings.dark-theme.option.solarized checked true

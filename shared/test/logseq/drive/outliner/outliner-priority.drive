@@ -1,0 +1,9 @@
+# Setting a priority records it on the block payload.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+ext ext:outliner-block-row&text:'journal-block-1' outliner-block-row set-priority '{"priority":"pri-1"}'
+expect text:'"priority":{"uuid":"pri-1"'

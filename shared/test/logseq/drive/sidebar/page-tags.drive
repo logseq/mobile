@@ -1,0 +1,15 @@
+# Set tags saves the picked tag onto the page after the editor closes.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=button.page.tags
+wait prop:accessibility-identifier=view.edit.sheet.page.tags.fav-1
+press prop:accessibility-identifier=view.edit.option.page.tags.fav-1.tag-1
+press prop:accessibility-identifier=view.edit.save.page.tags.fav-1
+expect-absent prop:accessibility-identifier=view.edit.sheet.page.tags.fav-1
+expect text:"Project"

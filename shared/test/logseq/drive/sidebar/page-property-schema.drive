@@ -1,0 +1,17 @@
+# Tag properties can add a schema property and then remove it.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=button.page.tag-properties
+wait prop:accessibility-identifier=sheet.tag-properties.fav-1
+press prop:accessibility-identifier=property.add.fav-1
+wait prop:accessibility-identifier=property.add.fav-1.sheet
+press prop:accessibility-identifier=property.add.option.fav-1.alias
+wait prop:accessibility-identifier=property.schema.fav-1.alias
+press prop:accessibility-identifier=property.schema.remove.fav-1.alias
+expect-absent prop:accessibility-identifier=property.schema.fav-1.alias

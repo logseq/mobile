@@ -1,0 +1,23 @@
+# Indent, outdent, move, and split keep the editor and change the payload.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+ext ext:outliner-block-row outliner-block-row edit '{"uuid":"journal-block-1"}'
+wait prop:accessibility-identifier=toolbar.outliner.editor
+press prop:accessibility-identifier=button.outliner.editor.indent
+expect text:'uuid":"journal-block-1'&text:'"depth":1'
+expect prop:accessibility-identifier=toolbar.outliner.editor
+press prop:accessibility-identifier=button.outliner.editor.outdent
+expect text:'uuid":"journal-block-1'&text:'"depth":0'
+press prop:accessibility-identifier=button.outliner.editor.moveDown
+expect text:'"listNumber":2'
+expect prop:accessibility-identifier=toolbar.outliner.editor
+press prop:accessibility-identifier=button.outliner.editor.moveUp
+expect text:'"listNumber":1'
+expect prop:accessibility-identifier=toolbar.outliner.editor
+press prop:accessibility-identifier=button.outliner.editor.lineBreak
+expect text:"Split block"
+expect prop:accessibility-identifier=toolbar.outliner.editor
