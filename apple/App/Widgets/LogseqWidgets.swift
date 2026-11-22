@@ -180,17 +180,23 @@ private struct CaptureWidget: Widget {
 }
 
 private struct GraphWidgetContent: Decodable {
+    struct StatusChoice: Decodable, Identifiable {
+        let uuid: String
+        let title: String
+        var id: String { uuid }
+    }
+
     struct Block: Decodable, Identifiable {
         let uuid: String
         let title: String
         let status: String?
         var statusUuid: String? = nil
-        var nextStatusUuid: String? = nil
-        var nextStatus: String? = nil
+        var statusChoices: [StatusChoice]? = nil
         var id: String { uuid }
     }
 
     let graphId: String?
+    var graphLocked: Bool? = nil
     let tasks: [Block]
     let randomBlocks: [Block]
 
@@ -209,6 +215,7 @@ private struct GraphWidgetEntry: TimelineEntry {
     let date: Date
     let content: GraphWidgetContent
     let randomBlocks: [GraphWidgetContent.Block]
+    var selection: WidgetTaskStatusSelection? = nil
 }
 
 private struct GraphWidgetProvider: TimelineProvider {
@@ -216,7 +223,7 @@ private struct GraphWidgetProvider: TimelineProvider {
 
     func placeholder(in context: Context) -> GraphWidgetEntry {
         let task = GraphWidgetContent.Block(uuid: "task", title: "Review project notes", status: "Todo",
-            statusUuid: "todo", nextStatusUuid: "doing", nextStatus: "Doing")
+            statusUuid: "todo", statusChoices: [.init(uuid: "todo", title: "Todo"), .init(uuid: "doing", title: "Doing")])
         let block = GraphWidgetContent.Block(uuid: "block", title: "An idea worth revisiting", status: nil)
         return GraphWidgetEntry(date: .now,
             content: GraphWidgetContent(graphId: "preview", tasks: [task], randomBlocks: []),
@@ -229,7 +236,14 @@ private struct GraphWidgetProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GraphWidgetEntry>) -> Void) {
         let entry = entry()
-        let policy: TimelineReloadPolicy = showsTasks ? .never : .after(entry.date.addingTimeInterval(3600))
+        let policy: TimelineReloadPolicy
+        if let selection = entry.selection {
+            policy = .after(selection.expiresAt)
+        } else if entry.content.graphId == nil {
+            policy = .after(entry.date.addingTimeInterval(900))
+        } else {
+            policy = showsTasks ? .never : .after(entry.date.addingTimeInterval(3600))
+        }
         completion(Timeline(entries: [entry], policy: policy))
     }
 
@@ -239,7 +253,8 @@ private struct GraphWidgetProvider: TimelineProvider {
             $0.title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 5
         }
         let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(3))
-        return GraphWidgetEntry(date: .now, content: content, randomBlocks: blocks)
+        let selection = showsTasks ? WidgetTaskStatusSelection.read() : nil
+        return GraphWidgetEntry(date: .now, content: content, randomBlocks: blocks, selection: selection)
     }
 }
 
@@ -249,8 +264,25 @@ private struct GraphWidgetView: View {
     let showsTasks: Bool
 
     var body: some View {
+        Group {
+            if let selection = entry.selection, entry.content.graphId == selection.graphId,
+               let task = entry.content.tasks.first(where: {
+                   $0.uuid == selection.uuid && $0.statusUuid == selection.statusUuid
+               }), let choices = task.statusChoices, !choices.isEmpty {
+                statusPicker(for: task, choices: choices, selection: selection)
+                    .privacySensitive()
+            } else {
+                blockList
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(URL(string: "logseq://journal"))
+    }
+
+    private var blockList: some View {
         let blocks = showsTasks ? entry.content.tasks : entry.randomBlocks
-        VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 if showsTasks {
                     Label("Tasks", systemImage: "checklist")
@@ -293,23 +325,21 @@ private struct GraphWidgetView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(URL(string: "logseq://journal"))
     }
 
     private var emptyMessage: Text {
-        if entry.content.graphId == nil { return Text("Open an unencrypted graph in Logseq.") }
+        if entry.content.graphLocked == true { return Text("Unlock the graph in Logseq.") }
+        if entry.content.graphId == nil { return Text("Open a graph in Logseq.") }
         return showsTasks ? Text("No tasks yet.") : Text("No blocks with at least five characters.")
     }
 
     @ViewBuilder private func statusControl(for block: GraphWidgetContent.Block, status: String) -> some View {
         if let graphId = entry.content.graphId, let current = block.statusUuid,
-           let next = block.nextStatusUuid, let nextTitle = block.nextStatus {
-            Button(intent: SetWidgetTaskStatusIntent(
-                graphId: graphId, uuid: block.uuid, expectedStatusUuid: current, statusUuid: next
+           let choices = block.statusChoices, choices.contains(where: { $0.uuid != current }) {
+            Button(intent: ShowWidgetTaskStatusesIntent(
+                graphId: graphId, uuid: block.uuid, statusUuid: current, page: 0
             )) {
-                Label(status, systemImage: "arrow.clockwise")
+                Label(status, systemImage: "chevron.down")
                     .font(.caption.weight(.medium))
                     .lineLimit(1)
                     .padding(.horizontal, 9)
@@ -317,12 +347,73 @@ private struct GraphWidgetView: View {
                     .background(.quaternary, in: Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Change \(block.title) from \(status) to \(nextTitle)")
+            .accessibilityLabel("Choose status for \(block.title), currently \(status)")
         } else {
             Text(status)
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
         }
+    }
+
+    private func statusPicker(
+        for task: GraphWidgetContent.Block,
+        choices: [GraphWidgetContent.StatusChoice],
+        selection: WidgetTaskStatusSelection
+    ) -> some View {
+        let lastPage = (choices.count - 1) / 6
+        let page = min(selection.page, lastPage)
+        let visible = Array(choices.dropFirst(page * 6).prefix(6))
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 4)
+                pickerButton("Cancel", icon: "xmark", selection: selection, page: -1)
+            }
+            ForEach(0..<((visible.count + 2) / 3), id: \.self) { row in
+                HStack(spacing: 5) {
+                    ForEach(visible.dropFirst(row * 3).prefix(3)) { choice in
+                        Button(intent: SetWidgetTaskStatusIntent(
+                            graphId: selection.graphId, uuid: task.uuid,
+                            expectedStatusUuid: selection.statusUuid, statusUuid: choice.uuid
+                        )) {
+                            HStack(spacing: 3) {
+                                if choice.uuid == selection.statusUuid { Image(systemName: "checkmark") }
+                                Text(choice.title).lineLimit(1)
+                            }
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity, minHeight: 28)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(choice.uuid == selection.statusUuid ? .isSelected : [])
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+            if lastPage > 0 {
+                HStack {
+                    if page > 0 {
+                        pickerButton("Previous", icon: "chevron.left", selection: selection, page: page - 1)
+                    }
+                    Spacer()
+                    if page < lastPage {
+                        pickerButton("Next", icon: "chevron.right", selection: selection, page: page + 1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func pickerButton(
+        _ label: LocalizedStringKey, icon: String, selection: WidgetTaskStatusSelection, page: Int
+    ) -> some View {
+        Button(intent: ShowWidgetTaskStatusesIntent(
+            graphId: selection.graphId, uuid: selection.uuid, statusUuid: selection.statusUuid, page: page
+        )) {
+            Image(systemName: icon).font(.caption.weight(.semibold)).frame(width: 28, height: 23)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private func blockURL(_ block: GraphWidgetContent.Block) -> URL? {

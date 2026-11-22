@@ -244,6 +244,7 @@ internal class LogseqRuntime(
     }.await()
 
     fun onLifecycleResumed(resumed: Boolean) {
+        if (resumed && ownsCore) scheduleWidgetRefresh()
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         ensureGraphEventsSync()

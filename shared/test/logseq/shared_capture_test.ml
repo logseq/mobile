@@ -98,6 +98,7 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
     put owner "logseq.property/hide?" (Ds.Bool true);
   ] (fixture "Original query")) in
   let staged = ref [] in
+  let private_unlocked = ref false in
   let private_graph = {|{"graph-id":"private","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}|} in
   let catalog = {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true},
     {"graph-id":"other","graph-name":"Other","graph-e2ee?":false,"graph-ready-for-use?":true},|}
@@ -107,6 +108,7 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
     graph_db = Some (fun () -> Some !db);
     open_graph = Some (fun _ -> Ok ());
     model_for_graph = Some (fun _ -> Cache_model.create None);
+    graph_unlocked = Some (fun graph -> graph = "private" && !private_unlocked);
     sync_cursor = Some (fun () -> Some 92);
     stage_operation = Some (fun operation ->
       Result.map (fun tx ->
@@ -121,20 +123,23 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   check_eq (ids "tasks" (snapshot ())) [`String alpha];
   check_eq (ids "randomBlocks" (snapshot ())) [`String definition; `String alpha];
   let original = List.hd (items "tasks" (snapshot ())) in
-  let expected = U.member "statusUuid" original and next = U.member "nextStatusUuid" original in
-  check (next <> `Null && next <> expected);
-  let set_status graph status = call session "setWidgetTaskStatus" [
+  let choose task ident =
+    items "statusChoices" task |> List.find (fun choice -> U.member "ident" choice = `String ident) in
+  let expected = U.member "statusUuid" original in
+  let choice = choose original "logseq.property/status.done" in
+  let next = U.member "uuid" choice in
+  let set_status graph expected status = call session "setWidgetTaskStatus" [
     "graphId", `String graph; "uuid", `String alpha; "expectedStatusUuid", expected; "statusUuid", status] in
-  let change graph = set_status graph next in
+  let change graph = set_status graph expected next in
   check_eq (U.member "ok" (change "private")) (`Bool false);
   check_eq !staged [];
   ignore (change "plain-1" |> Rpc_test.response_result);
   check_eq (List.length !staged) 1;
   let task = List.hd (items "tasks" (snapshot ())) in
-  check_eq (U.member "status" task) (U.member "nextStatus" original);
+  check_eq (U.member "status" task) (U.member "title" choice);
   check_eq (U.member "statusUuid" task) next;
   ignore (change "plain-1" |> Rpc_test.response_result);
-  check_eq (U.member "ok" (set_status "plain-1" expected)) (`Bool false);
+  check_eq (U.member "ok" (set_status "plain-1" expected expected)) (`Bool false);
   check_eq (List.length !staged) 1;
   let select graph = ignore (call session "configure" [
     "baseUrl", `String "http://127.0.0.1:8787"; "graphId", `String graph; "token", `String "access"]) in
@@ -142,8 +147,17 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   check_eq (ids "tasks" (snapshot ())) [];
   check_eq (ids "randomBlocks" (snapshot ())) [];
   select "private";
+  ignore (call session "openGraph" ["graphId", `String "private"] |> Rpc_test.response_result);
+  check_eq (U.member "graphLocked" (snapshot ())) (`Bool true);
   check_eq (ids "tasks" (snapshot ())) [];
-  check_eq (ids "randomBlocks" (snapshot ())) []
+  check_eq (ids "randomBlocks" (snapshot ())) [];
+  private_unlocked := true;
+  check_eq (ids "tasks" (snapshot ())) [`String alpha];
+  check_eq (ids "randomBlocks" (snapshot ())) [`String definition; `String alpha];
+  ignore (set_status "private" next expected |> Rpc_test.response_result);
+  check_eq (List.length !staged) 2;
+  private_unlocked := false;
+  check_eq (ids "tasks" (snapshot ())) []
 
 let cases = [
   case "widgets show eligible blocks and stage status only in the task graph"

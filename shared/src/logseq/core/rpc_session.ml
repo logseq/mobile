@@ -1953,26 +1953,25 @@ let widget_status_choices db eid =
     |> Graph_read.scope_closed_value_eids db ~owner:eid
     |> List.filter_map (Graph_read.choice_metadata widget_decrypt db)
 
-let widget_next_status (status : Model.status) (choices : Model.status list) =
-  let rec after_current = function
-    | (choice : Model.status) :: next :: _ when choice.uuid = status.uuid -> Some next
-    | _ :: rest -> after_current rest
-    | [] -> List.find_opt (fun (choice : Model.status) -> choice.uuid <> status.uuid) choices
-  in
-  after_current choices
-
 let widget_db session graph_id =
   match (host session).Types.model_for_graph with
   | Some _ when (state session).active_graph_id <> Some graph_id -> None
   | _ -> query_db session
 
+let widget_graph_locked session =
+  selected_graph_is_encrypted session && not (selected_graph_is_unlocked session)
+
+let active_widget_db session =
+  match (state session).config with
+  | Some config when config.Api.graph_id <> "" && not (widget_graph_locked session) ->
+    (* The mobile host opens an encrypted local graph only after loading its key.
+       The local projection can already be open while the catalog is loading. *)
+    Option.map (fun db -> config.graph_id, db) (widget_db session config.graph_id)
+  | _ -> None
+
 let widget_snapshot session =
   let module Ds = Datascript in
-  let empty = `Assoc ["tasks", `List []; "randomBlocks", `List []] in
-  let selected = Option.bind (So.selected_graph session) (fun graph ->
-    if graph.Api.e2ee then None
-    else Option.map (fun db -> graph.Api.id, db) (widget_db session graph.Api.id)) in
-  match selected with
+  match active_widget_db session with
   | Some (graph_id, db) ->
     (match !(session.Types.widget_snapshot) with
      | Some (id, previous, response) when id = graph_id && db == previous -> response
@@ -2013,25 +2012,23 @@ let widget_snapshot session =
        let random_blocks = Array.to_list pool |> List.filter_map (function
          | _, `Null -> None | _, block -> Some block) in
        let tasks = List.map (fun (_, _, eid, block, (status : Model.status)) ->
-         let next = match widget_next_status status (widget_status_choices db eid) with
-           | Some next -> ["nextStatusUuid", `String next.uuid; "nextStatus", `String next.title]
-           | None -> [] in
-         `Assoc (["status", `String status.title; "statusUuid", `String status.uuid]
-           @ next @ widget_block_fields block)) !tasks in
+         let choices = widget_status_choices db eid |> List.map Rpc.status_response_json in
+         `Assoc (["status", `String status.title; "statusUuid", `String status.uuid;
+           "statusChoices", `List choices] @ widget_block_fields block)) !tasks in
        let response = Rpc.success (`Assoc ["graphId", `String graph_id; "tasks", `List tasks;
          "randomBlocks", `List random_blocks]) in
        session.widget_snapshot := Some (graph_id, db, response);
        response)
   | None ->
     session.widget_snapshot := None;
-    Rpc.success empty
+    Rpc.success (`Assoc ["tasks", `List []; "randomBlocks", `List [];
+      "graphLocked", `Bool (widget_graph_locked session)])
 
 let widget_task session graph_id uuid =
   let open Datascript in
   let ( let* ) = Option.bind in
-  let* graph = So.selected_graph session in
-  if graph.Api.id <> graph_id || graph.Api.e2ee then None else
-  let* db = widget_db session graph_id in
+  let* active_graph_id, db = active_widget_db session in
+  if active_graph_id <> graph_id then None else
   let* eid = entid db "block/uuid" (Uuid uuid) in
   if not (widget_block_is_visible db (Graph_read.related_candidate_is_visible db) eid) then None else
   let* status = Graph_read.status_for_eid widget_decrypt db eid in
