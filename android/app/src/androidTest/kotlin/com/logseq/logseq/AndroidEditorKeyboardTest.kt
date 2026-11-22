@@ -252,6 +252,47 @@ class AndroidEditorKeyboardTest {
         assertSplit("Draft 你好")
     }
 
+    @Test fun softwareBackspaceOnAnEmptyBlockRequestsOneStructuralDelete() {
+        render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(backspaceEvents().isEmpty())
+            connection.endBatchEdit()
+            val backspace = backspaceEvents().single()
+            assertEquals("", backspace.values["title"])
+            assertEquals(0, backspace.values["selection-length"])
+        }
+    }
+
+    @Test fun softwareBackspaceInCodePointsDeletesTextBeforeRemovingTheEmptyBlock() {
+        val editor = render("🙂")
+        val connection = inputConnection()
+        ui.runOnIdle { assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0)) }
+        editor.assertTextEquals("")
+        ui.runOnIdle {
+            assertTrue(backspaceEvents().isEmpty())
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertEquals(1, backspaceEvents().size)
+        }
+    }
+
+    @Test fun deletingNewTextInTheSameImeBatchKeepsTheBlock() {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle {
+            connection.beginBatchEdit()
+            assertTrue(connection.commitText("x", 1))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            connection.endBatchEdit()
+            assertTrue(backspaceEvents().isEmpty())
+        }
+        editor.assertTextEquals("")
+    }
+
+    private fun backspaceEvents() = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "backspace" }
+
     private fun assertCommittedInCurrentBlock(editor: SemanticsNodeInteraction, title: String) {
         editor.assertIsFocused().assertTextEquals(title)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(title.length)))

@@ -481,7 +481,18 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             }
         }
     }
-    OutlinerNewlineInput(fieldState, multiline) {
+    OutlinerTextInput(
+        state = fieldState,
+        multiline = multiline,
+        onEmptyBlockBackspace = {
+            if (awaitingHandoff) {
+                false
+            } else {
+                emitStructuralBackspace()
+                true
+            }
+        },
+    ) {
     BasicTextField(
         state = fieldState,
         inputTransformation = inputTransformation,
@@ -557,15 +568,59 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 }
 
 @Composable
-private fun OutlinerNewlineInput(state: TextFieldState, multiline: Boolean, content: @Composable () -> Unit) {
+private fun OutlinerTextInput(
+    state: TextFieldState,
+    multiline: Boolean,
+    onEmptyBlockBackspace: () -> Boolean,
+    content: @Composable () -> Unit,
+) {
     val acceptsNewlines = rememberUpdatedState(multiline)
+    val emptyBlockBackspace = rememberUpdatedState(onEmptyBlockBackspace)
     val interceptor = remember(state) {
         PlatformTextInputInterceptor { request, next ->
             next.startInputMethod(PlatformTextInputMethodRequest { attributes ->
                 val connection = request.createInputConnection(attributes)
                 object : InputConnectionWrapper(connection, false) {
+                    private var inBatch = false
+                    private var batchReceivedText = false
+                    private var batchBackspaceOnEmpty = false
+
+                    override fun beginBatchEdit(): Boolean = super.beginBatchEdit().also {
+                        if (it) inBatch = true
+                    }
+
+                    override fun endBatchEdit(): Boolean = super.endBatchEdit().also { nested ->
+                        if (inBatch && !nested) {
+                            val shouldRemoveBlock = batchBackspaceOnEmpty && !batchReceivedText && state.text.isEmpty()
+                            inBatch = false
+                            batchReceivedText = false
+                            batchBackspaceOnEmpty = false
+                            if (shouldRemoveBlock) emptyBlockBackspace.value()
+                        }
+                    }
+
+                    private fun recordBatchedText(text: CharSequence?) {
+                        if (inBatch && !text.isNullOrEmpty()) batchReceivedText = true
+                    }
+
+                    private fun handleBackspace(beforeLength: Int, afterLength: Int): Boolean {
+                        if (beforeLength != 1 || afterLength != 0 || state.text.isNotEmpty()) return false
+                        if (!inBatch) return emptyBlockBackspace.value()
+                        // Compose applies queued text edits at the end of the batch.
+                        // A batch that inserts and then deletes text must keep the block.
+                        batchBackspaceOnEmpty = true
+                        return false
+                    }
+
+                    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean =
+                        handleBackspace(beforeLength, afterLength) || super.deleteSurroundingText(beforeLength, afterLength)
+
+                    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
+                        handleBackspace(beforeLength, afterLength) || super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+
                     // A newline from the IME is another form of the Enter key.
-                    private fun handleNewline(text: CharSequence?): Boolean? {
+                    private fun handleCommittedText(text: CharSequence?): Boolean? {
+                        recordBatchedText(text)
                         if (text?.contentEquals("\n") != true) return null
                         if (state.composition != null) return finishComposingText()
                         if (acceptsNewlines.value) return null
@@ -573,11 +628,30 @@ private fun OutlinerNewlineInput(state: TextFieldState, multiline: Boolean, cont
                     }
 
                     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean =
-                        handleNewline(text) ?: super.commitText(text, newCursorPosition)
+                        handleCommittedText(text) ?: super.commitText(text, newCursorPosition)
 
                     @RequiresApi(33)
                     override fun commitText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean =
-                        handleNewline(text) ?: super.commitText(text, newCursorPosition, textAttribute)
+                        handleCommittedText(text) ?: super.commitText(text, newCursorPosition, textAttribute)
+
+                    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                        recordBatchedText(text)
+                        return super.setComposingText(text, newCursorPosition)
+                    }
+
+                    @RequiresApi(33)
+                    override fun setComposingText(text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?): Boolean {
+                        recordBatchedText(text)
+                        return super.setComposingText(text, newCursorPosition, textAttribute)
+                    }
+
+                    @RequiresApi(34)
+                    override fun replaceText(
+                        start: Int, end: Int, text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?,
+                    ): Boolean {
+                        recordBatchedText(text)
+                        return super.replaceText(start, end, text, newCursorPosition, textAttribute)
+                    }
                 }
             })
         }
