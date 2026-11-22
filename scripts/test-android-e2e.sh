@@ -272,6 +272,13 @@ trap cleanup EXIT
 start_anr_watchdog() {
   (
     while :; do
+      # WindowManager reports the system dialog without registering a second
+      # UiAutomation service while Maestro is driving the app.
+      window_state=$(adb -s "$device" shell dumpsys -t 3 window windows 2>/dev/null || true)
+      if ! grep -Eq '^[[:space:]]*mCurrentFocus=Window\{.*Application Not Responding: ' <<< "$window_state"; then
+        sleep 10
+        continue
+      fi
       xml=$(adb -s "$device" exec-out uiautomator dump /dev/tty 2>/dev/null || true)
       if printf '%s' "$xml" | grep -q "isn't responding"; then
         anr_app=$(printf '%s' "$xml" | tr '>' '\n' \
@@ -304,9 +311,6 @@ start_anr_watchdog() {
           adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
         fi
       fi
-      # Every 3s turned out to hammer the a11y framework hard enough to
-      # starve Maestro's own UiAutomation binding on loaded emulators;
-      # 10s still catches ANR dialogs well inside assert timeouts.
       sleep 10
     done
   ) &
