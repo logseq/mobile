@@ -797,7 +797,7 @@ public struct LogseqRootView : View {
     }
 
     func refreshWidgetsOnActivation() {
-        widgetContent.scheduleRefresh(reloadUnchanged: true)
+        widgetContent.scheduleRefresh(forceTaskReload: true)
     }
 
     private func drainSharedCapturesIfReady() {

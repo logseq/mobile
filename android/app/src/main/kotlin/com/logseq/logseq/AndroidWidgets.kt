@@ -382,8 +382,9 @@ internal object AndroidWidgetContent {
 
     private fun publish(context: Context, content: JSONObject) {
         val encoded = content.toString()
+        val previous = read(context)
+        if (previous?.toString() == encoded) return
         val file = file(context)
-        if (runCatching { file.readFully().decodeToString() }.getOrNull() == encoded) return
         try {
             val output = file.startWrite()
             try {
@@ -393,8 +394,19 @@ internal object AndroidWidgetContent {
                 file.failWrite(output)
                 throw error
             }
+            val graphChanged = previous == null ||
+                previous.optString("graphId") != content.optString("graphId") ||
+                previous.optBoolean("graphLocked") != content.optBoolean("graphLocked")
+            val tasksChanged = previous?.optJSONArray("tasks")?.toString() != content.optJSONArray("tasks")?.toString()
+            val hadRandomBlocks = (previous?.optJSONArray("randomBlocks")?.length() ?: 0) > 0
+            val hasRandomBlocks = (content.optJSONArray("randomBlocks")?.length() ?: 0) > 0
+            val providers = buildList {
+                if (graphChanged || tasksChanged) add(TaskListWidgetProvider())
+                // Once data is available, the launcher updates the random widget on its own schedule.
+                if (graphChanged || hadRandomBlocks != hasRandomBlocks) add(RandomBlocksWidgetProvider())
+            }
             val manager = AppWidgetManager.getInstance(context)
-            for (provider in listOf(TaskListWidgetProvider(), RandomBlocksWidgetProvider())) {
+            for (provider in providers) {
                 val ids = manager.getAppWidgetIds(ComponentName(context, provider.javaClass))
                 if (ids.isNotEmpty()) provider.onUpdate(context, manager, ids)
             }
