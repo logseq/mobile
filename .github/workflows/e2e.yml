@@ -161,7 +161,12 @@ jobs:
           key: ${{ steps.ios-dune.outputs.cache-primary-key }}
 
       - name: Save iOS OCaml toolchain
-        if: steps.ios-toolchain.outputs.cache-hit != 'true' && steps.ios-toolchain.outputs.cache-primary-key != ''
+        # Keep a completed toolchain even if a later compilation failed.
+        if: >-
+          always() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
+          steps.ios-toolchain.outputs.cache-hit != 'true' &&
+          hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0/.logseq-toolchain-complete') != ''
         uses: actions/cache/save@v4
         with:
           path: |
