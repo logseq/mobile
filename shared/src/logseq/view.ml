@@ -49,7 +49,7 @@ let with_ui_state model_source elem =
       let previous = ref None in
       ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (model : Model.logseq_model) ->
         let screen =
-          if View_base.authentication_screen_visible_ model then "authentication"
+          if model.authentication_form.opened || View_base.authentication_screen_visible_ model then "authentication"
           else if model.settings_open || model.settings_tabs_open || model.runtime_log_open then "settings"
           else if View_base.graph_picker_screen_visible_ model then "graphs"
           else if model.pdf_workspace <> None then "pdf"
@@ -62,7 +62,7 @@ let with_ui_state model_source elem =
               if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
         in
         let editor = model.outliner_editing <> None in
-        let presentation = model.settings_open || model.settings_tabs_open || model.runtime_log_open
+        let presentation = model.authentication_form.opened || model.settings_open || model.settings_tabs_open || model.runtime_log_open
           || model.sync_details_open || model.create_graph_open || model.graph_password_open
           || model.pending_sign_out || model.pending_node_deletion <> None || model.pending_graph_deletion <> None in
         let state = screen, editor, presentation in
