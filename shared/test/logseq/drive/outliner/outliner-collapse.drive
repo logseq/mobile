@@ -1,0 +1,14 @@
+# Collapsing a parent block flips that row's payload, and collapsing
+# again expands it. The check is scoped to the parent so a sibling's
+# collapsed flag cannot satisfy it.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+expect text:'uuid":"journal-block-1'&text:'"collapsed":false'
+ext ext:outliner-block-row outliner-block-row collapse '{"uuid":"journal-block-1"}'
+wait text:'uuid":"journal-block-1'&text:'"collapsed":true'
+ext ext:outliner-block-row outliner-block-row collapse '{"uuid":"journal-block-1"}'
+wait text:'uuid":"journal-block-1'&text:'"collapsed":false'

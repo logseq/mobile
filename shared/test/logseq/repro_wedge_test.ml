@@ -11,7 +11,7 @@ let graphs =
   ]
 
 let sign_in_resolve () =
-  let session = Drive_scenario_test.mount ~profile:(ios_profile ()) () in
+  let session = Drive_host.mount ~profile:(ios_profile ()) () in
   let app = session.Drive.Session.app in
   ignore (Lui_app.send app (Model.ApplyAuthentication ("signedOut", None)));
   ignore (Lui_app.flush app);
@@ -34,7 +34,7 @@ let sign_in_resolve () =
   ignore
     (Lui_app.send app
        (Model.ApplyCoreSnapshot
-          (Drive_scenario_test.catalog_projection graphs)));
+          (Drive_host.catalog_projection graphs)));
   ignore (Lui_app.flush app);
   ignore (Lui_app.send app (Model.DequeueEffect sign_in_id));
   ignore (Lui_app.send app (Model.ResolveEffect (sign_in_id, true, "{\"signedIn\":true}")));

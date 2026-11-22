@@ -1,0 +1,20 @@
+# Open a favorite, remove it, restore it, then open a recent page and
+# return to the journal home.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.page.fav-1
+wait prop:accessibility-identifier=title.selected-page
+expect text:"Favorite Doc"
+press kind:menu-item&text:"Unfavorite"
+expect-absent prop:accessibility-identifier=link.sidebar.page.fav-1
+press kind:menu-item&text:"Favorite"
+wait prop:accessibility-identifier=link.sidebar.page.fav-1
+press prop:accessibility-identifier=link.sidebar.journals
+expect-absent prop:accessibility-identifier=title.selected-page
+press prop:accessibility-identifier=link.sidebar.page.recent-1
+wait text:"Recent Doc"
+expect prop:accessibility-identifier=title.selected-page
