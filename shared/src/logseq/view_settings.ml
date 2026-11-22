@@ -541,11 +541,8 @@ let settings_toggle_spell_check send enabled =
 let settings_toggle_auto_correction send enabled =
   ignore (send (Model.ToggleAutoCorrection enabled))
 
-let settings_toggle_task_reminders send input_event =
-  match input_event with
-  | ToggleChanged (_node, enabled) ->
-    ignore (send (Model.ToggleTaskReminders enabled))
-  | _ -> ()
+let settings_toggle_task_reminders send enabled =
+  ignore (send (Model.ToggleTaskReminders enabled))
 
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
