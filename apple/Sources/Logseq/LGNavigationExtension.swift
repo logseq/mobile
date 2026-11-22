@@ -598,7 +598,10 @@ private final class LGNativeSearchState {
             if value { self.open() }
             else {
                 self.nativePresented = false
-                if self.depth == 0 { self.close() }
+                if self.depth == 0 {
+                    self.close()
+                    self.finishDismissal()
+                }
             }
         })
     }
@@ -661,7 +664,8 @@ private struct LGNativeSearchHost: ViewModifier {
                         .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
-                    content.background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
+                    content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
+                        placement: .navigationBarDrawer(displayMode: .always), prompt: Text(search.title))
                 }
                 #else
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
@@ -1237,6 +1241,7 @@ private struct LGNavigationContent: View {
 }
 
 #if os(iOS)
+@available(iOS 26.0, *)
 @MainActor
 private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
     let search: LGNativeSearchState
@@ -1257,11 +1262,9 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             controller.delegate = self
             controller.searchResultsUpdater = self
             controller.obscuresBackgroundDuringPresentation = false
-            if #available(iOS 26.0, *) {
-                // Search lives in the bottom toolbar. Collapsing the top bar changes
-                // the safe area and adds a second transition when returning from a result.
-                controller.hidesNavigationBarDuringPresentation = false
-            }
+            // Search lives in the bottom toolbar. Collapsing the top bar changes
+            // the safe area and adds a second transition when returning from a result.
+            controller.hidesNavigationBarDuringPresentation = false
             controller.searchBar.searchTextField.accessibilityIdentifier = "field.native-search"
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -1285,28 +1288,23 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
                 if controller.searchBar.text != text { controller.searchBar.text = text }
                 if host.navigationItem.searchController !== controller {
                     host.navigationItem.searchController = controller
-                    if #available(iOS 26.0, *) {
-                        host.navigationItem.preferredSearchBarPlacement = .integratedButton
-                        host.navigationItem.searchBarPlacementAllowsToolbarIntegration = true
-                        let appearance = UIToolbarAppearance()
-                        appearance.configureWithTransparentBackground()
-                        navigation.toolbar.standardAppearance = appearance
-                        navigation.toolbar.scrollEdgeAppearance = appearance
-                    }
+                    host.navigationItem.preferredSearchBarPlacement = .integratedButton
+                    host.navigationItem.searchBarPlacementAllowsToolbarIntegration = true
+                    let appearance = UIToolbarAppearance()
+                    appearance.configureWithTransparentBackground()
+                    navigation.toolbar.standardAppearance = appearance
+                    navigation.toolbar.scrollEdgeAppearance = appearance
                 }
-                if #available(iOS 26.0, *) {
-                    let item = host.navigationItem.searchBarPlacementBarButtonItem
-                    if !(host.toolbarItems ?? []).contains(where: { $0 === item }) { host.toolbarItems = [item] }
-                    if navigation.isToolbarHidden { navigation.setToolbarHidden(false, animated: false) }
-                }
+                let item = host.navigationItem.searchBarPlacementBarButtonItem
+                if !(host.toolbarItems ?? []).contains(where: { $0 === item }) { host.toolbarItems = [item] }
+                if navigation.isToolbarHidden { navigation.setToolbarHidden(false, animated: false) }
                 if !controller.isActive {
                     needsInitialFocus = true
                     // Let editing activate the integrated search bar so UIKit can
                     // coordinate its expansion with the keyboard in one transition.
-                    if #available(iOS 26.0, *) { focusIfNeeded() }
+                    focusIfNeeded()
                     if !controller.isActive { controller.isActive = true }
                 }
-                if #unavailable(iOS 26.0) { focusIfNeeded() }
             } else if !state.nativePresented, controller.isActive {
                 controller.isActive = false
             } else if !state.isVisible, !controller.isActive {
@@ -1316,11 +1314,9 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
 
         func detach() {
             guard let host, host.navigationItem.searchController === controller else { return }
-            if #available(iOS 26.0, *) {
-                let item = host.navigationItem.searchBarPlacementBarButtonItem
-                host.toolbarItems = host.toolbarItems?.filter { $0 !== item }
-                if (host.toolbarItems ?? []).isEmpty { host.navigationController?.setToolbarHidden(true, animated: false) }
-            }
+            let item = host.navigationItem.searchBarPlacementBarButtonItem
+            host.toolbarItems = host.toolbarItems?.filter { $0 !== item }
+            if (host.toolbarItems ?? []).isEmpty { host.navigationController?.setToolbarHidden(true, animated: false) }
             host.navigationItem.searchController = nil
         }
 
