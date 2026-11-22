@@ -2528,9 +2528,12 @@ let kotlin_loading_and_errors_use_material_feedback_surfaces () =
   check_eq ~msg:"Android graph restore uses Material progress feedback"
     (node renderer spinner)
     (Some Lui_protocol.Spinner);
-  check_eq ~msg:"Android graph restore stays centered in the viewport"
-    (property_string renderer loading Lui_protocol.MainAlignment)
+  check_eq ~msg:"Android graph restore is centered by the surrounding stack"
+    (property_string renderer loading Lui_protocol.AlignmentValue)
     "center";
+  let label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) (children renderer loading) in
+  check_eq ~msg:"An empty catalog shows the graph loading label"
+    (property_string renderer label Lui_protocol.TextValue) "Loading graphs";
   send application (Model.ApplyGraphLoading false);
   send application
     (Model.ApplyCoreSnapshot
