@@ -805,6 +805,11 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private func navigationSurface<Content: View>(_ content: Content, active: Bool) -> some View {
         content
+            .overlay {
+                if active && composerDismissalEnabled {
+                    composerDismissalTarget
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if active && bottomOccupiesLayoutSpace && showsBottomChrome {
                     sizedBottomChrome
@@ -843,6 +848,22 @@ private struct LGNavigationContent: View {
             .background(routeBackground.ignoresSafeArea())
     }
 
+    private var composerDismissalTarget: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture(perform: emitDismissComposer)
+            .accessibilityLabel("Dismiss composer")
+            .accessibilityIdentifier("surface.composer.dismiss")
+    }
+
+    private func composerDismissalToolbar<Content: View>(_ content: Content) -> some View {
+        content.overlay {
+            if composerDismissalEnabled {
+                composerDismissalTarget.accessibilityHidden(true)
+            }
+        }
+    }
+
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
         let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
@@ -856,16 +877,7 @@ private struct LGNavigationContent: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .background(routeBackground)
-                .overlay {
-                    if composerDismissalEnabled {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture(perform: emitDismissComposer)
-                            .accessibilityLabel("Dismiss composer")
-                            .accessibilityIdentifier("surface.composer.dismiss")
-                    }
-                }, active: path.isEmpty)
+                .background(routeBackground), active: path.isEmpty)
                 .navigationDestination(for: Int.self) { childID in
                     navigationSurface(destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
@@ -889,7 +901,7 @@ private struct LGNavigationContent: View {
                         if !pdfWorkspaceOpen {
                             if #available(iOS 26.0, *) {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    context.content(for: leadingID)
+                                    composerDismissalToolbar(context.content(for: leadingID))
                                         .id(context.contentRevision(for: leadingID))
                                         .modifier(LGLiquidGlassSurface(shape: .circle))
                                         .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
@@ -901,7 +913,7 @@ private struct LGNavigationContent: View {
                                 .lgPrefersVerticalAxis()
                             } else {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    context.content(for: leadingID)
+                                    composerDismissalToolbar(context.content(for: leadingID))
                                 }
                             }
                         }
@@ -1081,7 +1093,7 @@ private struct LGNavigationContent: View {
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
         if let item = trailingToolbarItem(searchPage: searchPage) {
             ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
-                item.content
+                composerDismissalToolbar(item.content)
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }
@@ -1192,6 +1204,7 @@ private struct LGNavigationContent: View {
                 LGInteractionDiagnostics.event("navigation.binding", "node=\(context.nodeID) path=\(path) new=\(newPath) desired=\(desiredPath)")
                 let removedCount = max(0, path.count - newPath.count)
                 if removedCount > 0 {
+                    if composerDismissalEnabled { emitDismissComposer() }
                     nativePop = LGNativeNavigationPop(original: nativePop?.original ?? desiredPath, target: newPath)
                     #if os(iOS)
                     // Keep the outgoing route alive until UIKit finishes its pop.
