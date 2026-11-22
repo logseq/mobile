@@ -796,6 +796,11 @@ public struct LogseqRootView : View {
         return saved
     }
 
+    public func refreshRandomBlocksWidget() async {
+        await waitForLocalLaunchLoad()
+        await widgetContent.refresh(forceRandomReload: true)
+    }
+
     func refreshWidgetsOnActivation() {
         widgetContent.scheduleRefresh(forceTaskReload: true)
     }

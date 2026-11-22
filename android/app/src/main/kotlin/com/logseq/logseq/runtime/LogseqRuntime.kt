@@ -217,6 +217,9 @@ internal class LogseqRuntime(
                 rootNodeId = rootNode
                 NativeCoreSession.syncActive = ::syncInBackground
                 NativeCoreSession.updateActiveWidgetTask = ::setWidgetTaskStatus
+                NativeCoreSession.refreshActiveRandomWidget = {
+                    AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore, resampleRandom = true)
+                }
                 scope.launch { drain.drain(scope) }
                 restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -955,6 +958,7 @@ internal class LogseqRuntime(
         if (ownsCore) {
             NativeCoreSession.syncActive = null
             NativeCoreSession.updateActiveWidgetTask = null
+            NativeCoreSession.refreshActiveRandomWidget = null
         }
         runtimeJob.cancel()
         NativeCoreSession.cleanupScope.launch {

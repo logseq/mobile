@@ -180,9 +180,27 @@ private struct CaptureWidget: Widget {
 }
 
 private struct GraphWidgetContent: Decodable {
+    struct StatusAppearance: Decodable {
+        let icon: String
+        let light: String
+        let dark: String
+
+        func color(in colorScheme: ColorScheme) -> Color {
+            let hex = colorScheme == .dark ? dark : light
+            guard hex.hasPrefix("#"), let value = UInt64(hex.dropFirst(), radix: 16),
+                  hex.count == 7 || hex.count == 9 else { return .primary }
+            let rgb = hex.count == 9 ? value >> 8 : value
+            return Color(red: Double((rgb >> 16) & 255) / 255,
+                         green: Double((rgb >> 8) & 255) / 255,
+                         blue: Double(rgb & 255) / 255,
+                         opacity: hex.count == 9 ? Double(value & 255) / 255 : 1)
+        }
+    }
+
     struct StatusChoice: Decodable, Identifiable {
         let uuid: String
         let title: String
+        var appearance: StatusAppearance? = nil
         var id: String { uuid }
     }
 
@@ -191,6 +209,7 @@ private struct GraphWidgetContent: Decodable {
         let title: String
         let status: String?
         var statusUuid: String? = nil
+        var statusAppearance: StatusAppearance? = nil
         var statusChoices: [StatusChoice]? = nil
         var id: String { uuid }
     }
@@ -222,8 +241,12 @@ private struct GraphWidgetProvider: TimelineProvider {
     let showsTasks: Bool
 
     func placeholder(in context: Context) -> GraphWidgetEntry {
+        let todo = GraphWidgetContent.StatusAppearance(icon: "app:task-todo", light: "#858585", dark: "#7E7E7E")
+        let doing = GraphWidgetContent.StatusAppearance(icon: "app:task-doing", light: "#EBBC00", dark: "#D9B94C")
         let task = GraphWidgetContent.Block(uuid: "task", title: "Review project notes", status: "Todo",
-            statusUuid: "todo", statusChoices: [.init(uuid: "todo", title: "Todo"), .init(uuid: "doing", title: "Doing")])
+            statusUuid: "todo", statusAppearance: todo,
+            statusChoices: [.init(uuid: "todo", title: "Todo", appearance: todo),
+                            .init(uuid: "doing", title: "Doing", appearance: doing)])
         let block = GraphWidgetContent.Block(uuid: "block", title: "An idea worth revisiting", status: nil)
         return GraphWidgetEntry(date: .now,
             content: GraphWidgetContent(graphId: "preview", tasks: [task], randomBlocks: []),
@@ -263,21 +286,30 @@ private struct GraphWidgetView: View {
     let entry: GraphWidgetEntry
     let showsTasks: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selectedTask: (WidgetTaskStatusSelection, GraphWidgetContent.Block, Int)? {
+        guard let selection = entry.selection, entry.content.graphId == selection.graphId,
+              let index = entry.content.tasks.firstIndex(where: {
+                  $0.uuid == selection.uuid && $0.statusUuid == selection.statusUuid
+              }) else { return nil }
+        return (selection, entry.content.tasks[index], index)
+    }
+
     var body: some View {
-        Group {
-            if let selection = entry.selection, entry.content.graphId == selection.graphId,
-               let task = entry.content.tasks.first(where: {
-                   $0.uuid == selection.uuid && $0.statusUuid == selection.statusUuid
-               }), let choices = task.statusChoices, !choices.isEmpty {
-                statusPicker(for: task, choices: choices, selection: selection)
-                    .privacySensitive()
-            } else {
-                blockList
+        blockList
+            .accessibilityHidden(selectedTask != nil)
+            .allowsHitTesting(selectedTask == nil)
+            .overlay(alignment: .topLeading) {
+                if let (selection, task, index) = selectedTask,
+                   let choices = task.statusChoices, !choices.isEmpty {
+                    statusPopup(for: task, choices: choices, selection: selection, row: index)
+                        .privacySensitive()
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(URL(string: "logseq://journal"))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .containerBackground(.fill.tertiary, for: .widget)
+            .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
     }
 
     private var blockList: some View {
@@ -297,6 +329,14 @@ private struct GraphWidgetView: View {
                             .background(.quaternary, in: Capsule())
                     }
                     .accessibilityLabel("Add task")
+                } else if !showsTasks, entry.content.graphId != nil {
+                    Button(intent: RefreshRandomBlocksWidgetIntent()) {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 30, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Refresh random blocks")
                 }
             }
             .font(.subheadline.weight(.semibold))
@@ -308,16 +348,16 @@ private struct GraphWidgetView: View {
                     .padding(.top, 6)
             }
             ForEach(blocks) { block in
-                HStack(spacing: 8) {
+                HStack(spacing: 5) {
+                    if let status = block.status {
+                        statusControl(for: block, status: status)
+                    }
                     if let url = blockURL(block) {
                         Link(destination: url) {
                             Text(block.title)
                                 .lineLimit(family == .systemLarge ? 3 : 1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    }
-                    if let status = block.status {
-                        statusControl(for: block, status: status)
                     }
                 }
                 .font(.subheadline)
@@ -333,84 +373,114 @@ private struct GraphWidgetView: View {
         return showsTasks ? Text("No tasks yet.") : Text("No blocks with at least five characters.")
     }
 
+    private func statusIcon(_ appearance: GraphWidgetContent.StatusAppearance?) -> some View {
+        let asset = (appearance?.icon ?? "app:task-todo")
+            .replacingOccurrences(of: "app:", with: "").replacingOccurrences(of: "-", with: "_")
+        return Image(asset).renderingMode(.template).resizable().scaledToFit()
+            .frame(width: 20, height: 20)
+            .foregroundStyle(appearance?.color(in: colorScheme) ?? .secondary)
+            .accessibilityHidden(true)
+    }
+
     @ViewBuilder private func statusControl(for block: GraphWidgetContent.Block, status: String) -> some View {
         if let graphId = entry.content.graphId, let current = block.statusUuid,
            let choices = block.statusChoices, choices.contains(where: { $0.uuid != current }) {
             Button(intent: ShowWidgetTaskStatusesIntent(
                 graphId: graphId, uuid: block.uuid, statusUuid: current, page: 0
             )) {
-                Label(status, systemImage: "chevron.down")
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(.quaternary, in: Capsule())
+                statusIcon(block.statusAppearance)
+                    .frame(width: 32, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Choose status for \(block.title), currently \(status)")
         } else {
-            Text(status)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
+            statusIcon(block.statusAppearance).frame(width: 32, height: 28)
+                .accessibilityLabel(status)
         }
     }
 
-    private func statusPicker(
+    private func statusPopup(
         for task: GraphWidgetContent.Block,
         choices: [GraphWidgetContent.StatusChoice],
-        selection: WidgetTaskStatusSelection
+        selection: WidgetTaskStatusSelection,
+        row: Int
     ) -> some View {
-        let lastPage = (choices.count - 1) / 6
+        let pageSize = choices.count <= 6 ? 6 : 5
+        let lastPage = (choices.count - 1) / pageSize
         let page = min(selection.page, lastPage)
-        let visible = Array(choices.dropFirst(page * 6).prefix(6))
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Spacer(minLength: 4)
-                pickerButton("Cancel", icon: "xmark", selection: selection, page: -1)
-            }
-            ForEach(0..<((visible.count + 2) / 3), id: \.self) { row in
-                HStack(spacing: 5) {
-                    ForEach(visible.dropFirst(row * 3).prefix(3)) { choice in
+        let visible = Array(choices.dropFirst(page * pageSize).prefix(pageSize))
+        let popupHeight = CGFloat(visible.count + (lastPage > 0 ? 1 : 0)) * 20 + 8
+        return GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                Button(intent: pickerIntent(selection, page: -1)) {
+                    Color.primary.opacity(0.04).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss task status menu")
+
+                VStack(spacing: 0) {
+                    ForEach(visible) { choice in
                         Button(intent: SetWidgetTaskStatusIntent(
                             graphId: selection.graphId, uuid: task.uuid,
                             expectedStatusUuid: selection.statusUuid, statusUuid: choice.uuid
                         )) {
-                            HStack(spacing: 3) {
-                                if choice.uuid == selection.statusUuid { Image(systemName: "checkmark") }
+                            HStack(spacing: 8) {
+                                statusIcon(choice.appearance)
                                 Text(choice.title).lineLimit(1)
+                                Spacer(minLength: 3)
+                                if choice.uuid == selection.statusUuid {
+                                    Image(systemName: "checkmark").font(.caption2.weight(.semibold))
+                                }
                             }
-                            .font(.caption.weight(.medium))
-                            .frame(maxWidth: .infinity, minHeight: 28)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                            .padding(.horizontal, 9)
+                            .frame(height: 20)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(choice.uuid == selection.statusUuid ? .isSelected : [])
                     }
-                }
-                .foregroundStyle(.primary)
-            }
-            if lastPage > 0 {
-                HStack {
-                    if page > 0 {
-                        pickerButton("Previous", icon: "chevron.left", selection: selection, page: page - 1)
+                    if lastPage > 0 {
+                        Divider()
+                        HStack {
+                            if page > 0 {
+                                pickerButton("Previous", icon: "chevron.left", selection: selection, page: page - 1)
+                            }
+                            Spacer()
+                            if page < lastPage {
+                                pickerButton("Next", icon: "chevron.right", selection: selection, page: page + 1)
+                            }
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(height: 19)
                     }
-                    Spacer()
-                    if page < lastPage {
-                        pickerButton("Next", icon: "chevron.right", selection: selection, page: page + 1)
-                    }
                 }
+                .font(.caption)
+                .padding(.vertical, 4)
+                .frame(width: min(geometry.size.width, 168))
+                .background {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(colorScheme == .dark ? Color(white: 0.16) : .white)
+                        .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
+                }
+                .offset(y: min(CGFloat(52 + row * 33), max(0, geometry.size.height - popupHeight)))
             }
         }
+    }
+
+    private func pickerIntent(_ selection: WidgetTaskStatusSelection, page: Int) -> ShowWidgetTaskStatusesIntent {
+        ShowWidgetTaskStatusesIntent(
+            graphId: selection.graphId, uuid: selection.uuid, statusUuid: selection.statusUuid, page: page
+        )
     }
 
     private func pickerButton(
         _ label: LocalizedStringKey, icon: String, selection: WidgetTaskStatusSelection, page: Int
     ) -> some View {
-        Button(intent: ShowWidgetTaskStatusesIntent(
-            graphId: selection.graphId, uuid: selection.uuid, statusUuid: selection.statusUuid, page: page
-        )) {
-            Image(systemName: icon).font(.caption.weight(.semibold)).frame(width: 28, height: 23)
+        Button(intent: pickerIntent(selection, page: page)) {
+            Image(systemName: icon).font(.caption2.weight(.semibold))
+                .frame(width: 36, height: 19)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

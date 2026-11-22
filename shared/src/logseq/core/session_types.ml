@@ -186,6 +186,7 @@ type session =
   ; result_view_cache : Result_view.cache
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; widget_snapshot : (string * Datascript.db * string) option ref
+  ; widget_random_sample : (string * int * int list) option ref
   ; reference_generation : (string option * int option * int) option ref
   }
 
@@ -312,6 +313,7 @@ let create_session options =
     reference_generation = ref None;
     pdf_workspace = ref None;
     widget_snapshot = ref None;
+    widget_random_sample = ref None;
     state =
       ref
         {

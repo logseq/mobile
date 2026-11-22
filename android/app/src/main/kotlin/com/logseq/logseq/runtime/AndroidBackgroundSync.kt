@@ -24,6 +24,7 @@ internal object NativeCoreSession {
     val gate = Mutex()
     @Volatile var syncActive: (suspend () -> BackgroundSyncResult)? = null
     @Volatile var updateActiveWidgetTask: (suspend (WidgetTaskStatusChange) -> Boolean)? = null
+    @Volatile var refreshActiveRandomWidget: (suspend () -> Unit)? = null
     val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 }
 
@@ -78,20 +79,56 @@ internal object AndroidBackgroundSync {
         }
     }
 
+    suspend fun refreshRandomWidget(context: Context) {
+        try {
+            withTimeoutOrNull(8_000) {
+                NativeCoreSession.refreshActiveRandomWidget?.let {
+                    it()
+                    return@withTimeoutOrNull
+                }
+                val owner = Any()
+                NativeCoreSession.gate.lock(owner)
+                try {
+                    val bridge = LogseqNativeBridge()
+                    if (restoreStoredWidgetGraph(context, bridge)) {
+                        AndroidWidgetContent.refresh(context, bridge::callCore, resampleRandom = true)
+                    }
+                } finally {
+                    NativeCoreSession.gate.unlock(owner)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w("LogseqWidgets", "Could not refresh random blocks", error)
+        }
+    }
+
     private suspend fun updateStoredWidgetTask(context: Context, change: WidgetTaskStatusChange): Boolean {
+        val bridge = LogseqNativeBridge()
+        if (!restoreStoredWidgetGraph(context, bridge, change.graphId)) return false
+        val saved = JSONObject(bridge.callCore(change.request())).optBoolean("ok")
+        AndroidWidgetContent.refresh(context, bridge::callCore)
+        return saved
+    }
+
+    private suspend fun restoreStoredWidgetGraph(
+        context: Context,
+        bridge: LogseqNativeBridge,
+        expectedGraphId: String? = null,
+    ): Boolean {
         val authentication = CognitoAuthProvider(context)
         if (!authentication.hasStoredSession()) return false
         val storage = AndroidStorageState.fromPlatformMap(AndroidPlatformServices(context).loadStorageState())
-        if (storage.selectedGraphId != change.graphId || change.graphId !in storage.localGraphIds) return false
-        val bridge = LogseqNativeBridge()
+        if (storage.selectedGraphId !in storage.localGraphIds ||
+            (expectedGraphId != null && storage.selectedGraphId != expectedGraphId)
+        ) return false
+        AndroidE2EECrypto.initialize(context.applicationContext)
         val restored = CoreBootstrap(bridge::callCore).restore(CoreStartupState(
             storage.databasePath, storage.graphsDirectory, storage.baseUrl,
             storage.selectedGraphId, storage.localGraphIds, accessToken = "",
         ))
-        if (restored.graphResponse == null) return false
-        val saved = JSONObject(bridge.callCore(change.request())).optBoolean("ok")
-        AndroidWidgetContent.refresh(context, bridge::callCore)
-        return saved
+        return restored.graphResponse != null
     }
 
     private fun scheduleWidgetSync(context: Context) {

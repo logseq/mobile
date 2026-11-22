@@ -413,43 +413,9 @@ let task_status_identifier (status : Model.task_status) =
 let task_status_title (status : Model.task_status) = status.title
 
 let task_status_style (status : Model.task_status) =
-  let value =
-    String.lowercase_ascii
-      (match status.ident with
-       | Some ident -> ident
-       | None ->
-         (match status.icon_id with
-          | Some icon_id -> icon_id
-          | None -> status.title))
-  in
-  if String_kit.includes value ~sub:"backlog" then "backlog"
-  else if
-    String_kit.includes value ~sub:"in-review"
-    || String_kit.includes value ~sub:"inreview"
-  then "in-review"
-  else if
-    String_kit.includes value ~sub:"doing"
-    || String_kit.includes value ~sub:"inprogress"
-    || String_kit.includes value ~sub:"progress"
-  then "doing"
-  else if
-    String_kit.includes value ~sub:"done"
-    || String_kit.includes value ~sub:"circle-check"
-  then "done"
-  else if
-    String_kit.includes value ~sub:"cancel"
-    || String_kit.includes value ~sub:"circle-x"
-  then "canceled"
-  else "todo"
+  Task_status_style.style ~ident:status.ident ~icon_id:status.icon_id ~title:status.title
 
-let task_status_icon_name status =
-  match task_status_style status with
-  | "backlog" -> "app:task-backlog"
-  | "doing" -> "app:task-doing"
-  | "in-review" -> "app:task-review"
-  | "done" -> "app:task-done"
-  | "canceled" -> "app:task-canceled"
-  | _ -> "app:task-todo"
+let task_status_icon_name status = Task_status_style.icon (task_status_style status)
 
 let task_priority_icon_name (priority : Model.task_status) =
   let level = match priority.ident, priority.icon_id with

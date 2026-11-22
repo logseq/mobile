@@ -68,6 +68,13 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <activity
+            android:name=".WidgetStatusMenuActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity="${applicationId}.widgetStatus"
+            android:theme="@style/WidgetStatusMenuTheme" />
         <receiver
             android:name=".TodayJournalWidgetProvider"
             android:exported="false"

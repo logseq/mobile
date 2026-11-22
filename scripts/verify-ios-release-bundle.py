@@ -17,7 +17,7 @@ EXTENSIONS = {
     "LogseqShareExtension.appex": ("com.logseq.logseq.ShareViewController", "com.apple.share-services"),
 }
 WIDGET_ACTIONS = {"QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent"}
-WIDGET_STATUS_ACTIONS = {"SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent"}
+WIDGET_STATUS_ACTIONS = {"SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent"}
 APP_ACTIONS = WIDGET_ACTIONS | {"CaptureToJournalIntent"}
 WIDGET_KINDS = {
     "TodayJournalWidget", "CaptureWidget", "TaskListWidget", "RandomBlocksWidget",

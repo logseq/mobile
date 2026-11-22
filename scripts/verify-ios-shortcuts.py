@@ -20,7 +20,7 @@ for identifier in expected:
 for identifier in expected - {"CaptureToJournalIntent"}:
     assert extension["actions"][identifier]["openAppWhenRun"], identifier
 for bundle in (host, extension):
-    for identifier in ("SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent"):
+    for identifier in ("SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent"):
         assert not bundle["actions"][identifier].get("openAppWhenRun"), identifier
 info = plistlib.loads((widget / "Info.plist").read_bytes())
 host_info = plistlib.loads((app / "Info.plist").read_bytes())
