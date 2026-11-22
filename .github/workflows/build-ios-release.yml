@@ -147,16 +147,25 @@ jobs:
             ios-device-dune-v2-${{ runner.arch }}-xcode27.2-
             ios-device-dune-v1-${{ runner.arch }}-xcode27.2-
 
+      - name: Read the Sentry pin
+        id: sentry
+        run: |
+          revision=none
+          if [[ -f apple/Package.resolved ]]; then
+            revision=$(jq -r '[.pins[] | select(.identity == "sentry-cocoa") | .state.revision] | first // "none"' apple/Package.resolved)
+          fi
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
       - name: Restore iOS release Swift package downloads
         id: swift-packages
-        # Archive intermediates depend on the native link inputs and build number.
+        # Sentry's binary artifacts are the bulk of this cache. Xcode can fetch
+        # newer source pins into the restored repositories during resolution.
         uses: actions/cache/restore@v4
         with:
           path: |
             apple/.build/release-source-packages/repositories
             apple/.build/release-source-packages/artifacts
-          key: ios-release-swift-packages-v1-${{ runner.arch }}-xcode27.2-${{ steps.cache-week.outputs.value }}
-          restore-keys: ios-release-swift-packages-v1-${{ runner.arch }}-xcode27.2-
+          key: ios-release-swift-packages-v1-${{ runner.arch }}-xcode27.2-${{ steps.sentry.outputs.revision }}
 
       - name: Build OCaml iOS core (device)
         # Produces _build/ios-core/device/native-link-inputs.txt, which the
