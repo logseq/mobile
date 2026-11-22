@@ -21,3 +21,5 @@ wait prop:accessibility-identifier=flashcards.deck.target.page-1
 press prop:accessibility-identifier=flashcards.deck.target.page-1
 press prop:accessibility-identifier=button.flashcards.deck.create
 expect-absent prop:accessibility-identifier=sheet.flashcards.deck.create
+expect prop:accessibility-identifier=flashcards.deck.select.deck-created
+expect text:"Alpha Doc"

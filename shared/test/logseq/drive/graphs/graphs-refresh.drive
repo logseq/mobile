@@ -1,4 +1,5 @@
-# Refreshing the graph list keeps the open graph in place.
+# Refreshing the graph list keeps the open graph and reveals one that
+# was not in the catalog yet.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "RefreshGraph"
@@ -7,7 +8,9 @@ wait prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=screen.graphs
 expect prop:accessibility-identifier=graph.RefreshGraph
+expect-absent prop:accessibility-identifier=graph.SyncedGraph
 press prop:accessibility-identifier=button.graphs.refresh
+wait prop:accessibility-identifier=graph.SyncedGraph
 expect prop:accessibility-identifier=screen.graphs
 expect prop:accessibility-identifier=graph.RefreshGraph
 expect prop:accessibility-identifier=application.shell

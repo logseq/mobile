@@ -28,4 +28,5 @@ press prop:accessibility-identifier=button.outliner.autocomplete.0
 expect-absent prop:accessibility-identifier=toolbar.outliner.autocomplete
 expect-prop ext:outliner-editor title "[[Alpha Doc]]"
 press prop:accessibility-identifier=button.outliner.editor.hideKeyboard
-expect prop:accessibility-identifier=toolbar.outliner.editor
+expect-absent prop:accessibility-identifier=toolbar.outliner.editor
+expect prop:accessibility-identifier=outliner.block.journal-block-1

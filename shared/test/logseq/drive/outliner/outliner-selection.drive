@@ -1,5 +1,6 @@
 # Long-press selects a block and reveals the full selection toolbar.
-# Delete keeps the selection; Unselect clears it.
+# Delete clears the selection and leaves the block in place. The confirm
+# dialog is presented by the native host, outside this shared view.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
@@ -16,6 +17,5 @@ expect prop:accessibility-identifier=button.outliner.selection.delete
 expect prop:accessibility-identifier=button.outliner.selection.copyReference
 expect prop:accessibility-identifier=button.outliner.selection.copyURL
 press prop:accessibility-identifier=button.outliner.selection.delete
-expect prop:accessibility-identifier=button.outliner.selection.unselect
-press prop:accessibility-identifier=button.outliner.selection.unselect
 expect-absent prop:accessibility-identifier=toolbar.outliner.selection
+expect text:"First seeded block"

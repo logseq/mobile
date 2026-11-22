@@ -11,8 +11,17 @@ let open_graph (host : Drive_host.host) id (graph : Model.graph) =
           host.graphs)
   :: Drive_host.resolved id
 
+let reveal_remote (host : Drive_host.host) =
+  if not (List.exists (fun (g : Model.graph) -> g.id = "SyncedGraph") host.graphs)
+  then host.graphs <- host.graphs @ [ Drive_host.graph_entry "SyncedGraph" "Synced Graph" false ]
+
+let reload_settings (host : Drive_host.host) =
+  Model.ApplySettingsSnapshot
+    (Option.value host.Drive_host.saved_settings ~default:Drive_host.default_settings)
+
 let handle (host : Drive_host.host) model = function
   | Model.RefreshGraphsEffect id ->
+    reveal_remote host;
     let snapshot =
       match
         Option.map (Drive_host.find_graph host) model.Model.selected_graph_id
@@ -27,6 +36,7 @@ let handle (host : Drive_host.host) model = function
       (Model.DequeueEffect id
       :: Model.ApplyLocalGraphIds (Drive_host.graph_ids host)
       :: snapshot
+      :: reload_settings host
       :: Drive_host.resolved id)
   | Model.CreateGraphEffect (id, name, encrypted, _password) ->
     let graph = Drive_host.graph_entry name name encrypted in
@@ -69,7 +79,7 @@ let handle (host : Drive_host.host) model = function
                 ~sidebar:(Drive_host.host_sidebar host)
                 ~flashcards:host.flashcards host.graphs)
         :: Drive_host.resolved id
-      | None -> [ Model.DequeueEffect id ])
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | _ -> None
 
 let () = Drive_host.register handle

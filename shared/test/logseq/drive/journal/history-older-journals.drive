@@ -1,5 +1,5 @@
-# The older-journal sentinel asks for the next page of history and then
-# retires once that page is shown.
+# The older-journal sentinel asks for the next page of history. That page
+# is an earlier day, and the sentinel then retires.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
@@ -7,5 +7,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.load-older-sentinel
 appear prop:accessibility-identifier=outliner.load-older-sentinel
-wait text:"Older journal note"
+wait text:"Aug 27th, 2026"
+expect prop:accessibility-identifier=button.journal.journal-older
+expect text:"Older journal note"
 expect-absent prop:accessibility-identifier=outliner.load-older-sentinel

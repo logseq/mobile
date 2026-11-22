@@ -23,7 +23,13 @@ let handle (host : Drive_host.host) model = function
     (match Drive_host.json_string fields "action" with
     | Some "select" -> host.deck_selected <- Drive_host.json_string fields "uuid"
     | Some "search" -> host.deck_targets <- [ ("page-1", "Alpha Doc") ]
-    | Some "create" -> host.deck_created <- Some "deck-created"
+    | Some "create" ->
+      let title =
+        Option.value (Drive_host.json_string fields "title") ~default:"Card group"
+      in
+      host.deck_created <- Some "deck-created";
+      host.deck_selected <- Some "deck-created";
+      host.deck_items <- host.deck_items @ [ ("deck-created", title) ]
     | Some "practice" ->
       host.deck_completed <- false;
       host.flashcards <- [ Drive_host.flashcard_seed ]

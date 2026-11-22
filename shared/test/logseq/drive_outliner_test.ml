@@ -20,8 +20,14 @@ let handle (host : Drive_host.host) model = function
              projection)
       :: Drive_host.resolved id)
   | Model.DeleteBlockEffect (id, uuid, _) ->
+    host.Drive_host.removed_blocks <- uuid :: host.removed_blocks;
     host.rows <-
       List.filter (fun (row : Model.outline_row) -> row.row_uuid <> uuid) host.rows;
+    let refresh_search =
+      if model.Model.search_query = "" then []
+      else
+        [ Model.ApplySearchResults (model.search_query, Drive_host.search_hits host) ]
+    in
     Some
       (Model.DequeueEffect id
       :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
@@ -29,7 +35,8 @@ let handle (host : Drive_host.host) model = function
                projection with
                Model.projection_outliner_selected_block_ids = [];
              })
-      :: Drive_host.resolved id)
+      :: refresh_search
+      @ Drive_host.resolved id)
   | Model.LongPressOutlinerBlockEffect (id, uuid) ->
     Some
       (Model.DequeueEffect id
@@ -76,12 +83,13 @@ let handle (host : Drive_host.host) model = function
           { Model.autocomplete_kind = Model.TagAutocomplete; autocomplete_query = "" }
       else None
     in
+    let clear_selection = action = "unselect" || action = "delete" in
     Some
-      (if action = "unselect" || Option.is_some autocomplete then
+      (if action = "hideKeyboard" || clear_selection || Option.is_some autocomplete then
          Model.DequeueEffect id
          :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
                 let projection =
-                  if action = "unselect" then
+                  if clear_selection then
                     {
                       projection with
                       Model.projection_outliner_selected_block_ids = [];
@@ -113,7 +121,7 @@ let handle (host : Drive_host.host) model = function
                Drive_host.editing_snapshot ~uuid:editing.editing_uuid ~title
                  ~caret:(String.length title) projection)
         :: Drive_host.resolved id
-      | None -> [ Model.DequeueEffect id ])
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.EditorOutlinerEventEffect (id, payload) ->
     Some
       (match
@@ -121,14 +129,17 @@ let handle (host : Drive_host.host) model = function
          , model.Model.outliner_editing )
        with
       | Some "dismissAutocomplete", Some editing ->
+        host.Drive_host.completion_dismissed <- true;
         Model.DequeueEffect id
         :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
                Drive_host.editing_snapshot ~uuid:editing.editing_uuid
                  ~title:editing.editing_title ~caret:editing.caret_utf16_offset
                  projection)
         :: Drive_host.resolved id
-      | _ -> [ Model.DequeueEffect id; Model.ResolveEffect (id, true, "") ])
+      | _ -> Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.TapOutlinerBlockEffect (id, uuid) ->
+    host.Drive_host.editing_title <- "";
+    host.completion_dismissed <- false;
     Some
       (match selected_graph host model with
       | Some graph ->
@@ -137,28 +148,40 @@ let handle (host : Drive_host.host) model = function
              (Drive_host.editing_snapshot ~uuid ~title:"" ~caret:0
                 (open_projection host graph))
         :: Drive_host.resolved id
-      | None -> [ Model.DequeueEffect id ])
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.ChangeOutlinerTextEffect (id, uuid, title, caret) ->
+    let fresh =
+      let bounded = max 0 (min caret (String.length title)) in
+      let prefix = String.sub title 0 bounded in
+      title <> host.Drive_host.editing_title
+      && List.exists
+           (fun suffix -> String.ends_with ~suffix prefix)
+           [ "[["; "#"; "/" ]
+    in
+    let suggest =
+      (not host.completion_dismissed || fresh)
+      && (Drive_host.contains_substr title "[[" || fresh)
+    in
+    if fresh then host.completion_dismissed <- false;
+    host.editing_title <- title;
     Some
       (match selected_graph host model with
       | Some graph ->
-        let referencing = Drive_host.contains_substr title "[[" in
         Model.DequeueEffect id
         :: Model.ApplyCoreSnapshot
              (Drive_host.editing_snapshot ~uuid ~title ~caret
                 ~autocomplete:
-                  (if referencing then
+                  (if suggest then
                      Some
                        {
                          Model.autocomplete_kind = Model.NodeAutocomplete;
                          autocomplete_query = "Al";
                        }
                    else None)
-                ~candidates:
-                  (if referencing then [ Drive_host.page_candidate ] else [])
+                ~candidates:(if suggest then [ Drive_host.page_candidate ] else [])
                 (open_projection host graph))
         :: Drive_host.resolved id
-      | None -> [ Model.DequeueEffect id ])
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.ReturnOutlinerEditorEffect (id, uuid, title, _caret) ->
     Some
       (match selected_graph host model with
@@ -171,7 +194,7 @@ let handle (host : Drive_host.host) model = function
         Model.DequeueEffect id
         :: Model.ApplyCoreSnapshot (open_projection host graph)
         :: Drive_host.resolved id
-      | None -> [ Model.DequeueEffect id ])
+      | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | _ -> None
 
 let () = Drive_host.register handle

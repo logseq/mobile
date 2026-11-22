@@ -27,4 +27,5 @@ type prop:accessibility-identifier=field.composer "tagged note"
 press prop:accessibility-identifier=button.send
 expect-prop prop:accessibility-identifier=field.composer text ""
 wait text:"tagged note"
+expect text:'"title":"tagged note"'&text:'"uuid":"tag-1"'
 expect-absent prop:accessibility-identifier=button.composer.tag.remove.tag-1

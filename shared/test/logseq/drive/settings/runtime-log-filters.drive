@@ -13,6 +13,5 @@ press prop:accessibility-identifier=button.log-refresh
 wait text:"drive test log line"
 press prop:accessibility-identifier=button.log-errors
 wait text:"All"
-press prop:accessibility-identifier=button.log-refresh
-wait text:"drive test failure"
 expect-absent text:"drive test log line"
+expect text:"drive test failure"

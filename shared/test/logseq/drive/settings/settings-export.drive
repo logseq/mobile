@@ -1,5 +1,5 @@
 # The iOS settings form keeps export, community links, and account actions
-# on the sheet. Export does not leave settings.
+# on the sheet. Export stays on settings and records the native export.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
@@ -17,3 +17,6 @@ expect prop:accessibility-identifier=button.sign-out
 press prop:accessibility-identifier=button.export-graph-database
 expect prop:accessibility-identifier=sheet.settings
 expect prop:accessibility-identifier=button.export-graph-database
+press prop:accessibility-identifier=button.runtime-log
+wait prop:accessibility-identifier=screen.runtime-log
+wait text:"Exported graph database"

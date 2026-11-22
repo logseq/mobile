@@ -54,6 +54,25 @@ let page_candidate =
     candidate_value = "page-1";
   }
 
+let search_block =
+  App_test.journal_outline_row "block-1" "page-1" "alpha block" "Today" 20260828 0
+
+let default_settings =
+  {
+    Model.appearance = "system";
+    dark_theme = "black";
+    language = "system";
+    system_language = Some "en";
+    spell_check = true;
+    auto_correction = true;
+    sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
+    base_url = "https://api.logseq.io";
+    version = "Development";
+    revision = "Development";
+  }
+
+let calendar_journal = "journal-20260827"
+
 let contains_substr haystack needle =
   let limit = String.length haystack - String.length needle in
   let rec go index =
@@ -111,6 +130,11 @@ type host =
   ; mutable deck_completed : bool
   ; mutable deck_created : string option
   ; mutable deck_targets : (string * string) list
+  ; mutable deck_items : (string * string) list
+  ; mutable removed_blocks : string list
+  ; mutable completion_dismissed : bool
+  ; mutable editing_title : string
+  ; mutable saved_settings : Model.settings_projection option
   }
 
 let host_sidebar host =
@@ -130,12 +154,10 @@ let decks_json host =
        [
          ( "items"
          , `List
-             [
-               `Assoc
-                 [
-                   ("uuid", `String "deck-1"); ("title", `String "Project cards");
-                 ];
-             ] );
+             (List.map
+                (fun (uuid, title) ->
+                  `Assoc [ ("uuid", `String uuid); ("title", `String title) ])
+                host.deck_items) );
          ("selectedUuid", string_field host.deck_selected);
          ( "totalCards"
          , `Int (if host.deck_completed then 0 else List.length host.flashcards) );
@@ -177,6 +199,38 @@ let remember_page host uuid =
   let page = { Model.uuid; title = page_title host uuid uuid } in
   host.selected_page <- Some page;
   page
+
+let search_hits host =
+  List.filter
+    (fun (hit : Model.search_hit) -> not (List.mem hit.hit_uuid host.removed_blocks))
+    [
+      {
+        Model.hit_uuid = "page-1";
+        hit_title = "Alpha Doc";
+        breadcrumb = "";
+        breadcrumbs = [];
+        is_page = true;
+      };
+      {
+        Model.hit_uuid = "block-1";
+        hit_title = "alpha block";
+        breadcrumb = "Alpha Doc";
+        breadcrumbs = [ { Model.uuid = "page-1"; title = "Alpha Doc" } ];
+        is_page = false;
+      };
+    ]
+
+let node_rows host uuid =
+  if uuid = search_block.row_uuid && not (List.mem uuid host.removed_blocks) then
+    host.rows @ [ search_block ]
+  else host.rows
+
+let append_older_journal host id =
+  let row =
+    App_test.journal_outline_row (Printf.sprintf "older-%d" id) "journal-older"
+      "Older journal note" "Aug 27th, 2026" 20260827 0
+  in
+  host.rows <- row :: host.rows
 
 let append_capture host id title ?status ?(tags = []) () =
   let row =
@@ -265,6 +319,11 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       deck_completed = false;
       deck_created = None;
       deck_targets = [];
+      deck_items = [ ("deck-1", "Project cards") ];
+      removed_blocks = [];
+      completion_dismissed = false;
+      editing_title = "";
+      saved_settings = None;
     }
   in
   let self = ref None in

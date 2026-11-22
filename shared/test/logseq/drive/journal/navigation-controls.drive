@@ -10,8 +10,6 @@ expect prop:accessibility-identifier=button.navigation.audio
 expect prop:accessibility-identifier=button.navigation.search
 expect prop:accessibility-identifier=button.navigation.capture
 expect prop:accessibility-identifier=button.journal-calendar
-press prop:accessibility-identifier=button.journal-calendar
-expect prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=button.navigation.capture
 wait prop:accessibility-identifier=field.composer
 ext ext:native-navigation-stack native-navigation-stack dismiss-composer '{}'
@@ -21,3 +19,7 @@ wait prop:accessibility-identifier=screen.search
 ext ext:native-search-presentation native-search-presentation dismiss '{}'
 expect-prop ext:native-search-presentation presented false
 expect prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=button.journal-calendar
+wait prop:accessibility-identifier=screen.node
+expect text:"Aug 27th, 2026"
+expect text:"Calendar journal note"

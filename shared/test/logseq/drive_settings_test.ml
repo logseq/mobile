@@ -12,6 +12,20 @@ let handle (host : Drive_host.host) _model = function
       }
       :: host.runtime_log;
     Some (Model.DequeueEffect id :: Drive_host.resolved id)
+  | Model.SaveSettingsEffect (id, settings) ->
+    host.Drive_host.saved_settings <- Some settings;
+    Some (Model.DequeueEffect id :: Drive_host.resolved id)
+  | Model.ExportGraphDatabaseEffect id ->
+    host.runtime_log <-
+      {
+        Model.id = "export-" ^ string_of_int id;
+        level = "info";
+        source = "drive";
+        timestamp = "Now";
+        message = "Exported graph database";
+      }
+      :: host.runtime_log;
+    Some (Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.RefreshRuntimeLogEffect (id, _, errors_only, _) ->
     let records =
       if errors_only then
