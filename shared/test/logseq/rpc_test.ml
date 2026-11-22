@@ -1365,6 +1365,26 @@ let required_pending response = match member "pendingSyncRequest" response with
   | `Assoc _ as request -> request
   | _ -> failwith "expected an active pending request"
 
+let asset_upload_falls_back_when_prepare_method_is_unsupported () =
+  let session, staged, cleaned = retry_asset_session ~encrypted:true () in
+  let prepare = required_pending_request session in
+  check_eq (member "method" prepare) (`String "POST");
+  check_eq (member "action" (member "bodyObject" prepare)) (`String "prepare");
+  let fallback = pending_completion session prepare (`Int 405) (`String "method not allowed") `Null in
+  check_eq (member "pendingSyncError" fallback) `Null;
+  let upload = required_pending fallback in
+  check_eq (member "method" upload) (`String "PUT");
+  check_eq (member "url" upload) (member "url" prepare);
+  check_eq (member "token" upload) (member "token" prepare);
+  check_eq (member "filePath" upload) (`String "/tmp/encrypted-retry-asset");
+  check_eq (member "contentType" upload) (`String "text/plain");
+  check_eq (member "x-amz-meta-checksum" (member "headers" upload)) (`String "abc");
+  check_eq !cleaned [];
+  check_eq (List.length !staged) 1;
+  let transaction = required_pending (pending_completion session upload (`Int 200) (`String "{}") `Null) in
+  check_eq (member "url" transaction) (`String "ws://127.0.0.1:8787/sync/encrypted-1");
+  check_eq !cleaned ["/tmp/encrypted-retry-asset"]
+
 let shared_pending_retry_preserves_upload_and_bounds_attempts () =
   let session, staged, cleaned = retry_asset_session ~encrypted:true () in
   let request = proxy_asset_upload session in
@@ -6973,6 +6993,7 @@ let cases =
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
     case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;
     case "shared pending error summary preserves unicode" shared_pending_error_summary_preserves_unicode;
+    case "asset upload falls back when prepare is unsupported" asset_upload_falls_back_when_prepare_method_is_unsupported;
     case "shared pending retry preserves uploads and bounds attempts" shared_pending_retry_preserves_upload_and_bounds_attempts;
     case "shared pending retry keeps semantic transaction identity" shared_pending_retry_keeps_semantic_transaction_identity;
     case "shared pending retry rejects raw upload conflicts" shared_pending_retry_rejects_raw_upload_conflicts;

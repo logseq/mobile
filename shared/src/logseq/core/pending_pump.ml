@@ -783,9 +783,14 @@ let complete_pending_sync (session : Types.session) payload =
   let input = Json.from_string payload in
   let input =
     match (Types.state session).pending_sync, input with
-    | Some pump, `Assoc fields when List.assoc_opt "status" fields = Some (`Int 412) ->
-      (match !(pump.active) with
-       | Some { operation = Types.Confirm_asset_upload _; _ } ->
+    | Some pump, `Assoc fields when completion_error input = None ->
+      (match !(pump.active), List.assoc_opt "status" fields with
+       | Some { operation = Types.Prepare_asset_upload _; _ }, Some (`Int 405) ->
+         (* Older servers only accept PUT on the asset route. Preserve the
+            prepared file and use the same path as a negotiated proxy upload. *)
+         `Assoc (("status", `Int 200) :: ("body", `String {|{"mode":"proxy"}|}) ::
+           List.remove_assoc "body" (List.remove_assoc "status" fields))
+       | Some { operation = Types.Confirm_asset_upload _; _ }, Some (`Int 412) ->
          `Assoc (("status", `Int 200) :: List.remove_assoc "status" fields)
        | _ -> input)
     | _ -> input in
