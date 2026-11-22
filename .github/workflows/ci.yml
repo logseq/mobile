@@ -23,7 +23,7 @@ jobs:
 
       - uses: ./.github/actions/ocaml-vendor
         with:
-          populate: "true"
+          mode: populate
 
       - name: Restore build caches
         uses: actions/cache/restore@v4

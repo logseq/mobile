@@ -36,8 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/ocaml-vendor
         with:
-          populate: "true"
-          checkout-pins: "false"
+          mode: prepare
 
   ios-e2e:
     name: iOS e2e
