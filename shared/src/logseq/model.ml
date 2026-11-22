@@ -3395,15 +3395,17 @@ and apply_core_snapshot (current : logseq_model)
       | None -> current.local_graph_ids
     in
     let reconcile_path path previous =
-      let rec take_route uuid = function
+      let rec take_route matches skipped = function
         | [] -> None
-        | (route : node_projection) :: rest
-          when route.node_uuid = uuid || route.node_scroll_target = Some uuid -> Some (route, rest)
-        | _ :: rest -> take_route uuid rest in
+        | route :: rest when matches route -> Some (route, List.rev_append skipped rest)
+        | route :: rest -> take_route matches (route :: skipped) rest in
       let rec reconcile kept previous = function
         | [] -> List.rev kept, previous
         | (NodeRoute uuid as requested) :: rest ->
-          (match take_route uuid previous with
+          let matched = match take_route (fun route -> route.node_uuid = uuid) [] previous with
+            | Some _ as exact -> exact
+            | None -> take_route (fun route -> route.node_scroll_target = Some uuid) [] previous in
+          (match matched with
            | None -> reconcile (requested :: kept) previous rest (* Still pending. *)
            | Some (route, remaining) ->
              let kept = if node_route_by_uuid projection.node_routes route.node_uuid = None then kept

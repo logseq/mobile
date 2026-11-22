@@ -6204,6 +6204,23 @@ let recovered_snapshot_keeps_a_zoomed_search_result () =
     [Model.NodeRoute "page"; Model.NodeRoute "block"; Model.NodeRoute "page"];
   check_eq breadcrumb.pending_effects [Model.OpenSearchNodeEffect (1, "page")]
 
+let recovered_snapshot_prunes_search_beneath_an_app_link () =
+  let drafts = node_projection "drafts" "drafts" "Drafts" [] [] in
+  let link = node_projection "link" "link" "Linked page" [] [] in
+  let opened = { (Model.initial ()) with
+    Model.selected_graph_id = Some "graph"; search_open = true;
+    node_routes = [drafts; link];
+    app_navigation_path = [Model.NodeRoute "link"];
+    search_navigation_path = [Model.NodeRoute "drafts"] } in
+  let recovered = Model.update opened (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "graph"; node_routes = [link];
+    is_graph_snapshot_recovery = true }) in
+  check_eq recovered.search_navigation_path [];
+  let closed = Model.update recovered Model.CloseSearch in
+  check_eq closed.app_navigation_path [Model.NodeRoute "link"];
+  check_eq closed.pending_effects []
+
 let native_header_title_follows_the_optimistic_navigation_path () =
   let initial = Model.initial () in
   let route_a = node_projection "node-a" "page-a" "Project" [] [] in
@@ -11226,6 +11243,7 @@ let cases =
   [
     case "recovered snapshot prunes deleted navigation routes" recovered_snapshot_prunes_deleted_navigation_routes;
     case "recovered snapshot keeps a zoomed search result" recovered_snapshot_keeps_a_zoomed_search_result;
+    case "recovered snapshot prunes search beneath an app link" recovered_snapshot_prunes_search_beneath_an_app_link;
     case "native bridge preserves reentrant flush batches" native_bridge_preserves_reentrant_flush_batches;
     case "search-routes-mount-their-own-editor-toolbar" search_routes_mount_their_own_editor_toolbar;
     case "native-bridge-preserves-viewport-width" native_bridge_preserves_viewport_width;
