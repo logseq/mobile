@@ -14,6 +14,7 @@ import android.icu.text.BreakIterator
 import android.util.AtomicFile
 import android.util.Log
 import android.util.SizeF
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
@@ -179,6 +180,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
     private val itemLimit = 10
     private val rowHeight = 22
     private val rowPadding = 4
+    private val rowTextSize = 15f
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val content = AndroidWidgetContent.read(context)
@@ -192,11 +194,14 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             characters.next(5) != BreakIterator.DONE
         }.shuffled()
         val blocks = eligible.take(itemLimit)
+        val metrics = context.resources.displayMetrics
+        val titleHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, rowTextSize, metrics) * 1.2f / metrics.density
+        val rowSlot = maxOf(rowHeight.toFloat(), titleHeight) + 2 * rowPadding
         for (widgetId in appWidgetIds) {
             val options = appWidgetManager.getAppWidgetOptions(widgetId)
             val views = graphViews(context, options) { height ->
                 // The layout reserves 36dp for the header and 20dp for padding.
-                val rowLimit = ((height - 56) / (rowHeight + 2 * rowPadding)).toInt().coerceAtLeast(1)
+                val rowLimit = ((height - 56) / rowSlot).toInt().coerceAtLeast(1)
                 blockList(context, widgetId, graphId, graphLocked, blocks.take(rowLimit))
             }
             appWidgetManager.updateAppWidget(widgetId, views)
