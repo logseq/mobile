@@ -867,7 +867,7 @@ public struct LogseqRootView : View {
     }
 
     private func drainSharedCapturesIfReady() {
-        guard didApplyLocalLaunchResult, !isOpeningInitialWidgetBlock,
+        guard didApplyLocalLaunchResult, isLGApplicationReady, !isOpeningInitialWidgetBlock,
               sharedCaptureTask == nil else { return }
         sharedCaptureTask = Task { [weak self] in
             guard let self else { return }

@@ -10,6 +10,7 @@ let properties response = items "properties" (member "nodeProperties" response)
 let property attr response = List.find (fun p -> member "attr" p = `String attr) (properties response)
 let read session uuid = Rpc_test.dispatch_json session "nodeProperties" uuid
 let result response = check_eq ~msg:(J.to_string response) (member "ok" response) (`Bool true); member "result" response
+
 let edit session uuid p value extra =
   Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc ([
     "blockUuid", `String uuid; "attr", member "attr" p; "expected", member "raw" p;
@@ -167,6 +168,7 @@ let native_labels_layout_and_editor () =
       click (id R.score);
       let editor = "property." ^ Q.alpha ^ "." ^ R.score in
       check (find ("view.edit.sheet." ^ editor) <> -1);
+      R.load_property_values session app;
       click ("view.edit.cancel." ^ editor);
       check_eq (App.model app).pending_effects [];
       let editor = "property." ^ Q.alpha ^ "." ^ R.ready in
@@ -652,7 +654,8 @@ let node_property_values_open_select_and_navigate () =
           check ~msg:"Node selection uses search, not a block editor"
             (find ("view.edit.value." ^ id) <> -1);
           check ~msg:"opening select never navigates" (not (List.exists (function
-            | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects)) in
+            | Model.OpenAppNodeEffect _ -> true | _ -> false) (App.model app).pending_effects));
+          R.load_property_values session app in
         let initial = member "raw" (property R.summary (result (read session owner))) in
         open_select ();
         let search_project () =
