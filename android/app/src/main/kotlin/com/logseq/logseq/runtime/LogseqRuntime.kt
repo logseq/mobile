@@ -62,6 +62,13 @@ internal class LogseqRuntime(
         private const val LOGO_IMAGE_ID = 1
     }
 
+    private data class InitialState(
+        val storage: AndroidStorageState,
+        val rootNode: Long,
+        val hasStoredSession: Boolean,
+        val hasInitialWidgetBlock: Boolean,
+    )
+
     private val platformEffects = AndroidPlatformEffects(
         authentication = CognitoAndroidAuthentication(authentication),
         platform = platformServices,
@@ -117,6 +124,8 @@ internal class LogseqRuntime(
 
     var rootNodeId by mutableStateOf<Long?>(null)
         private set
+    var isRestoringInitialGraph by mutableStateOf(false)
+        private set
     var isOpeningInitialWidgetBlock by mutableStateOf(false)
         private set
     var startupError by mutableStateOf<Throwable?>(null)
@@ -167,14 +176,28 @@ internal class LogseqRuntime(
                         reportWidgetLinkError(error)
                     }
                 }
-                isOpeningInitialWidgetBlock = appEntries.hasInitialWidgetBlocks()
                 AndroidGraphImportProgress.listener = { graphId, phase, completed, total ->
                     val current = graphProgress
                     if (current?.graphId == graphId && phase in setOf("importing", "opening"))
                         graphProgress = current.copy(phase = phase, completed = completed, total = total)
                 }
-                val authenticationCode = platformEffects.initialAuthenticationCode()
-                val storage = platformEffects.loadStorageState()
+                // Prepare the retained tree while the activity draws its first frame.
+                val (storage, rootNode, hasStoredSession, hasInitialWidgetBlock) = withContext(patchDispatcher) {
+                    val (authenticationCode, savedStorage, pendingWidgetBlock) = withContext(Dispatchers.IO) {
+                        Triple(
+                            platformEffects.initialAuthenticationCode(),
+                            platformEffects.loadStorageState(),
+                            appEntries.hasInitialWidgetBlocks(),
+                        )
+                    }
+                    val root = bridge.initialize(authenticationCode = authenticationCode)
+                    for (update in savedStorage.startupHostUpdates) {
+                        applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
+                    }
+                    InitialState(savedStorage, root, authenticationCode == 3, pendingWidgetBlock)
+                }
+                isOpeningInitialWidgetBlock = hasInitialWidgetBlock
+                isRestoringInitialGraph = hasStoredSession && storage.selectedGraphId in storage.localGraphIds
                 appearance = storage.settings.appearance
                 darkTheme = storage.settings.darkTheme
                 storageBaseUrl = storage.baseUrl
@@ -224,10 +247,6 @@ internal class LogseqRuntime(
                 )
                 effectDrain = drain
 
-                val rootNode = bridge.initialize(authenticationCode = authenticationCode)
-                for (update in storage.startupHostUpdates) {
-                    applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
-                }
                 rootNodeId = rootNode
                 NativeCoreSession.syncActive = ::syncInBackground
                 NativeCoreSession.updateActiveWidgetTask = ::setWidgetTaskStatus
@@ -235,11 +254,12 @@ internal class LogseqRuntime(
                     AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore, resampleRandom = true)
                 }
                 scope.launch { drain.drain(scope) }
-                restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
+                restoreCore(hasStoredSession, storage)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 startupError = error
+                isRestoringInitialGraph = false
                 isOpeningInitialWidgetBlock = false
                 reportError(error)
             }
@@ -759,6 +779,7 @@ internal class LogseqRuntime(
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
         } finally {
+            isRestoringInitialGraph = false
             isOpeningInitialWidgetBlock = false
         }
     }

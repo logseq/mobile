@@ -104,20 +104,17 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 }
             }
             Scaffold { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .consumeWindowInsets(padding)
-                        .logseqContentHostInsets()
-                        // Expose LUI accessibility-identifier testTags as
-                        // resource-ids so Maestro `id:` selectors resolve.
-                        .semantics { testTagsAsResourceId = true },
-                ) {
-                    val rootId = runtime.rootNodeId
-                    if (runtime.isOpeningInitialWidgetBlock) {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    } else if (rootId != null) {
+                // Expose test tags as accessibility resource IDs for Maestro.
+                val host = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }
+                val rootId = runtime.rootNodeId
+                val loading = runtime.isOpeningInitialWidgetBlock || runtime.isRestoringInitialGraph ||
+                    (rootId == null && runtime.startupError == null)
+                if (loading) {
+                    Box(host, contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.testTag("spinner.graph-loading"))
+                    }
+                } else if (rootId != null) {
+                    Box(host.padding(padding).consumeWindowInsets(padding).logseqContentHostInsets()) {
                         runtime.backend.Content(rootId)
                     }
                 }

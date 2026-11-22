@@ -379,16 +379,17 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =
   if Lui_ui.host context = KotlinHost then
-    column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
-      ~background:"background"
-      ~accessibility_identifier:"journals.loading"
-      [
-        spinner ~accessibility_identifier:"spinner.graph-loading" [];
-        text
-          ~value:
-            (reactive View_base.graph_loading_message model_source)
-          ~foreground:"muted-foreground" [];
-      ]
+    View_base.with_string_prop AlignmentValue "center"
+      (column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
+         ~background:"background"
+         ~accessibility_identifier:"journals.loading"
+         [
+           spinner ~accessibility_identifier:"spinner.graph-loading" [];
+           text
+             ~value:
+               (reactive View_base.graph_loading_message model_source)
+             ~foreground:"muted-foreground" ~text_alignment:`center [];
+         ])
   else
     column ~grow:1.0 ~main:`center ~cross:`center
       ~accessibility_identifier:"journals.loading"
