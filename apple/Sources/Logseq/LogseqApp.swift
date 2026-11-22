@@ -907,9 +907,14 @@ public struct LogseqRootView : View {
     }
 
     private func acknowledgeRejectedWidgetLink(_ isWidgetLink: Bool) -> Bool {
-        guard isWidgetLink, let error = store.lastError, error.code == "invalid_deep_link" else { return false }
-        widgetTaskError = error.message
-        return true
+        guard isWidgetLink, let error = store.lastError else { return false }
+        switch error.code {
+        case "invalid_deep_link", "outliner_effect_failed", "outliner_command_failed":
+            widgetTaskError = error.message
+            return true
+        default:
+            return false
+        }
     }
 
     public func openStore() {

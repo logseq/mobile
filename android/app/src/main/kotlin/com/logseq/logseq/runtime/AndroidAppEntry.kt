@@ -126,7 +126,7 @@ internal data class AndroidAppEntry(
 }
 
 // The core refused this entry; replaying it cannot succeed.
-internal class AndroidAppEntryRejected(message: String) : IllegalStateException(message)
+internal class AndroidAppEntryRejected(message: String, val code: String? = null) : IllegalStateException(message)
 
 // Persist before delivery; a successful or rejected graph operation acknowledges an entry.
 internal class AndroidAppEntryCoordinator(

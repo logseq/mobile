@@ -105,7 +105,7 @@ internal class LogseqRuntime(
     private var effectDrain: NativeEffectDrain? = null
     private var graphCatalogAutoRefresh: GraphCatalogAutoRefresh? = null
     private val appEntries = AndroidAppEntryCoordinator(
-        scope, ::handleAppEntry, ::reportError, java.io.File(activity.filesDir, "incoming-shares"),
+        scope, ::handleAppEntry, ::reportQueuedAppEntryError, java.io.File(activity.filesDir, "incoming-shares"),
     )
     private val outlinerCommands = OutlinerPlatformCommandDispatcher(
         onBatch = ::handleOutlinerCommandBatch,
@@ -164,7 +164,7 @@ internal class LogseqRuntime(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
-                        reportInitialWidgetError(error)
+                        reportWidgetLinkError(error)
                     }
                 }
                 isOpeningInitialWidgetBlock = appEntries.hasInitialWidgetBlocks()
@@ -734,11 +734,11 @@ internal class LogseqRuntime(
             restored.graphResponse?.let { applyCoreResponse(it) }
             if (isOpeningInitialWidgetBlock) {
                 try {
-                    appEntries.deliverInitialWidgetBlocks(::reportInitialWidgetError)
+                    appEntries.deliverInitialWidgetBlocks(::reportWidgetLinkError)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    reportInitialWidgetError(error)
+                    reportWidgetLinkError(error)
                 }
             }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
@@ -774,7 +774,17 @@ internal class LogseqRuntime(
 
     // --- App entries (deep links + share intents) ---
 
-    private fun reportInitialWidgetError(error: Throwable) {
+    private fun reportQueuedAppEntryError(error: Throwable) {
+        if (error is AndroidAppEntryRejected &&
+            (error.code == "outliner_effect_failed" || error.code == "outliner_command_failed")
+        ) {
+            reportWidgetLinkError(error)
+        } else {
+            reportError(error)
+        }
+    }
+
+    private fun reportWidgetLinkError(error: Throwable) {
         reportError(error)
         LogseqDialogs.notifyError(error.message ?: "The linked block could not be opened.")
     }
@@ -823,8 +833,9 @@ internal class LogseqRuntime(
         val response = bridge.callCore(request)
         val decoded = JSONObject(response)
         if (!decoded.optBoolean("ok")) {
-            val message = decoded.optJSONObject("error")?.optString("message")?.takeIf(String::isNotBlank)
-            throw AndroidAppEntryRejected(message ?: "The native core rejected the Android app entry")
+            val error = decoded.optJSONObject("error")
+            val message = error?.optString("message")?.takeIf(String::isNotBlank)
+            throw AndroidAppEntryRejected(message ?: "The native core rejected the Android app entry", error?.optString("code"))
         }
         applyCoreResponse(response)
         val result = decoded.optJSONObject("result")
