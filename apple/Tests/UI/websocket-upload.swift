@@ -39,6 +39,7 @@ private final class UploadCore: @unchecked Sendable {
             default: break
             }
         case "beginPendingSync":
+            precondition(params["projection"] as? String == "patch")
             if !completed {
                 attempts += 1
                 pending = ["id": 1, "method": "WS", "url": url,
@@ -48,10 +49,16 @@ private final class UploadCore: @unchecked Sendable {
         case "completePendingSync": completion = payload; completed = true
         default: break
         }
-        return String(decoding: try! JSONSerialization.data(withJSONObject: [
-            "apiVersion": 1, "ok": true, "result": ["revision": attempts, "blocks": [],
+        var result: [String: Any] = ["revision": attempts, "blocks": [],
             "pendingSyncRequest": pending,
-            "syncTransport": ["generation": 1, "graphId": "graph", "commands": commands]]]), as: UTF8.self)
+            "syncTransport": ["generation": 1, "graphId": "graph", "commands": commands]]
+        if action == "beginPendingSync" {
+            result["isPendingSyncPatch"] = true
+        } else {
+            result["selectedGraphId"] = "graph"
+        }
+        return String(decoding: try! JSONSerialization.data(withJSONObject: [
+            "apiVersion": 1, "ok": true, "result": result]), as: UTF8.self)
     }
 }
 
@@ -65,6 +72,7 @@ private final class UploadCore: @unchecked Sendable {
         let deadline = Date().addingTimeInterval(8)
         while core.result().1 == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         let (httpCalls, completion) = core.result()
+        precondition(store.snapshot.selectedGraphId == "graph", "A sync patch must retain the current graph")
         if mode != "background" { task.cancel() }
         _ = await task.value
         precondition(httpCalls == 0, "Graph transactions must use the active socket, never the HTTP transport")

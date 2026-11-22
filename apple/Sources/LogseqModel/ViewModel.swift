@@ -532,7 +532,8 @@ private struct CreateSyncGraphPayload: Encodable {
     public func applyLaunchResponse(
         _ responseJSON: String,
         actionName: String,
-        databasePath: String
+        databasePath: String,
+        loadSidebar: Bool = true
     ) {
         openedDatabasePath = databasePath
         apply(responseJSON: responseJSON, actionName: actionName)
@@ -544,10 +545,20 @@ private struct CreateSyncGraphPayload: Encodable {
             // The first snapshot after openGraph ships an empty sidebar so
             // it stays off the launch critical path; fetch it right after
             // the journal renders.
-            Task { [weak self] in
-                await self?.dispatchRawAndWait("loadSidebar")
+            if loadSidebar {
+                Task { [weak self] in
+                    await self?.loadLaunchSidebar(graphID: graphID)
+                }
             }
         }
+    }
+
+    public func loadLaunchSidebar(graphID: String) async {
+        guard snapshot.selectedGraphId == graphID else { return }
+        await performAsyncAndWait(
+            LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: "loadSidebar")),
+            shouldApply: { self.snapshot.selectedGraphId == graphID }
+        )
     }
 
     public func resetToCatalog(applyResponse: Bool = true) async {
@@ -1083,7 +1094,7 @@ private struct CreateSyncGraphPayload: Encodable {
             await performAsyncAndWait(
                 LogseqRPCRequest(
                     method: "dispatch",
-                    params: LogseqRPCParams(action: "beginPendingSync")
+                    params: LogseqRPCParams(action: "beginPendingSync", projection: "patch")
                 )
             )
             var pending = snapshot.pendingSyncRequest
@@ -1168,7 +1179,7 @@ private struct CreateSyncGraphPayload: Encodable {
         do {
             let params = request.params
             let projectedRequest = LogseqRPCRequest(method: request.method, params: LogseqRPCParams(
-                action: params.action, payload: params.payload, path: params.path, projection: "snapshot"
+                action: params.action, payload: params.payload, path: params.path, projection: params.projection ?? "snapshot"
             ))
             let requestData = try JSONEncoder().encode(projectedRequest)
             guard let requestJSON = String(data: requestData, encoding: .utf8) else {
@@ -1249,7 +1260,11 @@ private struct CreateSyncGraphPayload: Encodable {
                 logger.info(
                     "Core action applied: \(actionName), revision: \(result.revision), blocks: \(result.blocks.count), graph: \(result.graphName ?? "none")"
                 )
-                snapshot = result
+                if result.isPendingSyncPatch {
+                    snapshot.applyPendingSyncPatch(result)
+                } else {
+                    snapshot = result
+                }
                 lastError = nil
                 if actionName == "openGraph" {
                     debugDatabaseRoute = "graph:\(result.selectedGraphId ?? "unknown")"
@@ -1304,7 +1319,7 @@ private struct CreateSyncGraphPayload: Encodable {
             return .interaction
         case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",
              "importSnapshot", "startWebSocket", "applySyncEvent", "stopWebSocket", "beginPendingSync",
-             "completePendingSync", "cancelPendingSync":
+             "completePendingSync", "cancelPendingSync", "loadSidebar":
             return .maintenance
         default:
             return .normal

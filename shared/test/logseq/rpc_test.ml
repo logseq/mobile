@@ -6864,6 +6864,10 @@ let snapshot_projection_replaces_native_patch_reduction () =
   check_full pending;
   check_eq (List.map (member "uuid") (json_items "blocks" pending)) [`String "second"];
   check (member "pendingSyncRequest" pending <> `Null);
+  let patch = response_result (dispatch_json session "beginPendingSync" "") in
+  check_eq (member "isPendingSyncPatch" patch) (`Bool true);
+  check_eq (json_items "blocks" patch) [];
+  check_eq (member "pendingSyncRequest" patch) (member "pendingSyncRequest" pending);
   let failure = snapshot_dispatch session "unknown" "" in
   check_eq (response_error_code failure) "unknown_action"
 

@@ -285,7 +285,7 @@ let route_breadcrumbs context (route : Types.node_route) =
 let node_properties_for session uuid =
   match query_db session with
   | None -> `Null
-  | Some db -> (match Node_property.render db ~owner:uuid ~encode_block:(result_block_encoder db) with
+  | Some db -> (match Node_property.render ~defer_values:true db ~owner:uuid ~encode_block:(result_block_encoder db) with
       | Ok value -> value | Error _ -> `Null)
 
 let reference_blocks_json session current serialize blocks =
@@ -2826,13 +2826,16 @@ let rec dispatch session action payload =
       (fun _config operation -> enqueue_semantic session operation)
       fresh_squuid (fun () -> snapshot_visible session)
   | "beginPendingSync" ->
+    let revision = s.model.revision in
     (match s.config with
      | Some config ->
        (match resolve_graph config with
         | Ok config -> begin_pending_sync session config
         | Error _ -> ())
      | None -> ());
-    pending_sync_patch session
+    (* Request preparation can mark blocks failed. Publish those changes if it did. *)
+    if (state session).model.revision = revision then pending_sync_patch session
+    else snapshot_visible session
   | "completePendingSync" ->
     (match payload with
      | Some payload ->
