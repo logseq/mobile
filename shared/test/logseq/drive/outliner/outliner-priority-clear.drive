@@ -8,4 +8,4 @@ wait prop:accessibility-identifier=outliner.block.journal-block-1
 ext ext:outliner-block-row&text:'journal-block-1' outliner-block-row set-priority '{"priority":"pri-1"}'
 expect text:'"priority":{"uuid":"pri-1"'
 ext ext:outliner-block-row&text:'journal-block-1' outliner-block-row set-priority '{"priority":""}'
-expect text:'"priority":null'
+expect text:'"uuid":"journal-block-1"'&text:'"priority":null'

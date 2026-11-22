@@ -472,6 +472,7 @@ let search_results_present_ (current : Model.logseq_model) =
 
 let search_result_status (current : Model.logseq_model) =
   if current.search_loading then "Searching…"
+  else if current.effect_error <> None && current.search_result_count = 0 then ""
   else if not (Model.search_query_ready current.search_query) then ""
   else begin
     let total = current.search_result_count in

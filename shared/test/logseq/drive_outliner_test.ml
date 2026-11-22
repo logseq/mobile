@@ -152,7 +152,8 @@ let handle (host : Drive_host.host) model = function
       | "moveUp" -> List.iter (fun uuid -> move_row host uuid (-1)) structure_targets
       | "moveDown" -> List.iter (fun uuid -> move_row host uuid 1) structure_targets
       | "lineBreak" -> Drive_host.append_capture host id "Split block" ()
-      | "newBlock" -> Drive_host.append_capture host id "New block" ()
+      | "newBlock" ->
+        Drive_host.append_capture host id "New block" ~uuid:"new-block" ()
       | _ -> ());
     Some
       (if action = "hideKeyboard" || clear_selection || Option.is_some autocomplete
@@ -168,13 +169,16 @@ let handle (host : Drive_host.host) model = function
                     }
                   else projection
                 in
-                match (model.Model.outliner_editing, autocomplete) with
-                | Some editing, Some request ->
+                match (action, model.Model.outliner_editing, autocomplete) with
+                | "newBlock", _, _ ->
+                  Drive_host.editing_snapshot ~uuid:"new-block" ~title:"New block"
+                    ~caret:(String.length "New block") projection
+                | _, Some editing, Some request ->
                   Drive_host.editing_snapshot ~uuid:editing.editing_uuid
                     ~title:editing.editing_title ~caret:editing.caret_utf16_offset
                     ~autocomplete:(Some request)
                     ~candidates:[ Drive_host.page_candidate ] projection
-                | Some editing, None when structural ->
+                | _, Some editing, None when structural ->
                   Drive_host.editing_snapshot ~uuid:editing.editing_uuid
                     ~title:editing.editing_title ~caret:editing.caret_utf16_offset
                     projection
@@ -321,8 +325,15 @@ let handle (host : Drive_host.host) model = function
       (match Drive_host.json_string config "type" with
       | Some typ -> host.Drive_host.query_type <- typ
       | None -> ());
-      if List.mem_assoc "filters" config then host.query_filtered <- true;
-      if List.mem_assoc "sorting" config then host.query_sorted <- true;
+      (match List.assoc_opt "filters" config with
+      | Some (`Assoc filter_fields as filters) ->
+        (match List.assoc_opt "clauses" filter_fields with
+        | Some (`List (_ :: _)) -> host.query_filters <- Some filters
+        | _ -> ())
+      | _ -> ());
+      (match List.assoc_opt "sorting" config with
+      | Some (`List (_ :: _) as sorting) -> host.query_sorting <- Some sorting
+      | _ -> ());
       Drive_host.set_query_expanded host host.query_expanded
     | _ -> ());
     Some
@@ -343,8 +354,8 @@ let handle (host : Drive_host.host) model = function
     let input = Option.value (Drive_host.json_string fields "input") ~default:"" in
     let empty = host.scenario = "query-empty.drive" in
     let title =
-      if host.query_filtered then "Filtered hit"
-      else if host.query_sorted then "Sorted hit"
+      if host.query_filters <> None then "Filtered hit"
+      else if host.query_sorting <> None then "Sorted hit"
       else "Deferred query hit"
     in
     let rows =

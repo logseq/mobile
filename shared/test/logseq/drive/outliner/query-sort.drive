@@ -10,6 +10,7 @@ wait prop:accessibility-identifier=query.rows.query-block
 press prop:accessibility-identifier=view.sort.view-1
 wait prop:accessibility-identifier=view.settings.sheet.view-1
 press prop:accessibility-identifier=view.sort.add.view-1
+expect text:"Sort 1"
 press prop:accessibility-identifier=view.settings.save.view-1
 expect-absent prop:accessibility-identifier=view.settings.sheet.view-1
 expect text:"Sorted hit"

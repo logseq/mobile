@@ -7,4 +7,4 @@ wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.block.journal-block-1
 expect text:'"title":"Project"'
 ext ext:outliner-block-row&text:'journal-block-1' outliner-block-row remove-tag '{"uuid":"tag-1"}'
-expect text:'"tags":[]'
+expect text:'"uuid":"journal-block-1"'&text:'"tags":[]'

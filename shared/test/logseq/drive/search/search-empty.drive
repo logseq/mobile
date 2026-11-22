@@ -10,5 +10,6 @@ wait prop:accessibility-identifier=screen.search
 ext ext:native-search-presentation native-search-presentation query-changed '{"query":"missing"}'
 wait text:"No results"
 expect text:"Try a different keyword."
+expect-prop ext:native-search-presentation status-title "0 results"
 expect-absent prop:accessibility-identifier=search.result.page-1
 expect-absent prop:accessibility-identifier=search.result.block-1
