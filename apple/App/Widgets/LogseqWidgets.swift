@@ -282,11 +282,13 @@ private struct GraphWidgetProvider: TimelineProvider {
 }
 
 private struct GraphWidgetView: View {
-    @Environment(\.widgetFamily) private var family
     let entry: GraphWidgetEntry
     let showsTasks: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    private let rowSpacing: CGFloat = 5
+    private let taskRowHeight: CGFloat = 28
+    private let headerHeight: CGFloat = 26
 
     private var selectedTask: (WidgetTaskStatusSelection, GraphWidgetContent.Block, Int)? {
         guard let selection = entry.selection, entry.content.graphId == selection.graphId,
@@ -297,24 +299,27 @@ private struct GraphWidgetView: View {
     }
 
     var body: some View {
-        blockList
-            .accessibilityHidden(selectedTask != nil)
-            .allowsHitTesting(selectedTask == nil)
-            .overlay(alignment: .topLeading) {
-                if let (selection, task, index) = selectedTask,
-                   let choices = task.statusChoices, !choices.isEmpty {
-                    statusPopup(for: task, choices: choices, selection: selection, row: index)
-                        .privacySensitive()
+        GeometryReader { geometry in
+            let visibleTaskRows = max(1, Int((geometry.size.height - headerHeight) / (taskRowHeight + rowSpacing)))
+            blockList(taskLimit: visibleTaskRows)
+                .accessibilityHidden(selectedTask != nil)
+                .allowsHitTesting(selectedTask == nil)
+                .overlay(alignment: .topLeading) {
+                    if let (selection, task, index) = selectedTask,
+                       let choices = task.statusChoices, !choices.isEmpty {
+                        statusPopup(for: task, choices: choices, selection: selection, row: index)
+                            .privacySensitive()
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .containerBackground(.fill.tertiary, for: .widget)
-            .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
     }
 
-    private var blockList: some View {
-        let blocks = showsTasks ? entry.content.tasks : entry.randomBlocks
-        return VStack(alignment: .leading, spacing: 5) {
+    private func blockList(taskLimit: Int) -> some View {
+        let blocks = showsTasks ? Array(entry.content.tasks.prefix(taskLimit)) : entry.randomBlocks
+        return VStack(alignment: .leading, spacing: rowSpacing) {
             HStack {
                 if showsTasks {
                     Label("Tasks", systemImage: "checklist")
@@ -340,6 +345,8 @@ private struct GraphWidgetView: View {
                 }
             }
             .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+            .frame(height: headerHeight)
             .foregroundStyle(.secondary)
             if blocks.isEmpty {
                 emptyMessage
@@ -355,7 +362,7 @@ private struct GraphWidgetView: View {
                     if let url = blockURL(block) {
                         Link(destination: url) {
                             Text(block.title)
-                                .lineLimit(family == .systemLarge ? 3 : 1)
+                                .lineLimit(1).truncationMode(.tail)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -389,13 +396,13 @@ private struct GraphWidgetView: View {
                 graphId: graphId, uuid: block.uuid, statusUuid: current, page: 0
             )) {
                 statusIcon(block.statusAppearance)
-                    .frame(width: 32, height: 28)
+                    .frame(width: 32, height: taskRowHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Choose status for \(block.title), currently \(status)")
         } else {
-            statusIcon(block.statusAppearance).frame(width: 32, height: 28)
+            statusIcon(block.statusAppearance).frame(width: 32, height: taskRowHeight)
                 .accessibilityLabel(status)
         }
     }
@@ -463,7 +470,7 @@ private struct GraphWidgetView: View {
                         .fill(colorScheme == .dark ? Color(white: 0.16) : .white)
                         .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
                 }
-                .offset(y: min(CGFloat(52 + row * 33), max(0, geometry.size.height - popupHeight)))
+                .offset(y: min(headerHeight + (taskRowHeight + rowSpacing) * CGFloat(row + 1), max(0, geometry.size.height - popupHeight)))
             }
         }
     }
