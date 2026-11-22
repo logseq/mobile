@@ -68,6 +68,10 @@ typealias AppType = UIApplication
         AppDelegate.shared.onLowMemory()
     }
 
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        LogseqLogseqRuntime.shared.resumePendingWidgetRefresh()
+    }
+
     // Support notification token retrieval from the app runtime.
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
