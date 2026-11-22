@@ -83,8 +83,10 @@ private class EditorFieldValue(private val state: TextFieldState) {
     fun read(): TextFieldValue {
         val offset = prefix.length
         fun TextRange.afterPrefix() = TextRange((start - offset).coerceAtLeast(0), (end - offset).coerceAtLeast(0))
+        // An IME can reopen the previous word's composing span during a block split.
+        val composition = state.composition?.takeIf { it.max > offset }?.afterPrefix()
         return TextFieldValue(
-            state.text.drop(offset).toString(), state.selection.afterPrefix(), state.composition?.afterPrefix(),
+            state.text.drop(offset).toString(), state.selection.afterPrefix(), composition,
         )
     }
 
@@ -544,7 +546,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             autoCorrectEnabled = if (code) false else null,
             imeAction = if (multiline) ImeAction.Default else ImeAction.Next,
         ),
-        onKeyboardAction = { if (!commitComposition()) returnAtSelection() },
+        onKeyboardAction = {
+            // In an ordinary block, Next submits even if the IME is still composing.
+            if (!multiline || !commitComposition()) returnAtSelection()
+        },
     )
     }
     }
