@@ -274,7 +274,7 @@ start_anr_watchdog() {
     while :; do
       # WindowManager reports the system dialog without registering a second
       # UiAutomation service while Maestro is driving the app.
-      window_state=$(adb -s "$device" shell dumpsys -t 3 window windows 2>/dev/null || true)
+      window_state=$(adb -s "$device" shell dumpsys -t 3 window displays 2>/dev/null || true)
       if ! grep -Eq '^[[:space:]]*mCurrentFocus=Window\{.*Application Not Responding: ' <<< "$window_state"; then
         sleep 10
         continue
