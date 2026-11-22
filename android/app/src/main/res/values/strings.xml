@@ -22,7 +22,7 @@
     <string name="widget_tasks">Tasks</string>
     <string name="widget_random_blocks">Random Blocks</string>
     <string name="widget_tasks_description">Add tasks to today’s journal and change task status</string>
-    <string name="widget_random_blocks_description">Rediscover up to three blocks from your graph</string>
+    <string name="widget_random_blocks_description">Rediscover up to four blocks from your graph</string>
     <string name="widget_refresh_random_blocks">Refresh random blocks</string>
     <string name="widget_add_task">Add task</string>
     <string name="widget_set_status_for">Choose status for %1$s, currently %2$s</string>
