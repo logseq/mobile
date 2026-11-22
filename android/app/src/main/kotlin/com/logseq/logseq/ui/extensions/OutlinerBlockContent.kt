@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -165,6 +166,7 @@ internal fun OutlinerBlockContent(
     val isAsset = context.flag("is-asset")
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
     val currentContext by rememberUpdatedState(context)
+    val selectBlock: () -> Unit = { currentContext.emit("drag-start", "uuid" to uuid) }
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
@@ -234,9 +236,7 @@ internal fun OutlinerBlockContent(
                     onTap = {
                         currentContext.emit("edit", "uuid" to uuid)
                     },
-                    onLongPress = {
-                        currentContext.emit("drag-start", "uuid" to uuid)
-                    },
+                    onLongPress = { selectBlock() },
                 )
             })
             .dragAndDropTarget(
@@ -258,6 +258,7 @@ internal fun OutlinerBlockContent(
                     onPreview = onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
+                    onLongPress = selectBlock,
                 )
             } else {
                 CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
@@ -760,12 +761,13 @@ private fun AndroidLinkedImage(url: String, alt: String) {
 private fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
+    onLongPress: () -> Unit,
 ) {
     when {
         assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
             PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         isImageAsset(assetType, localPath) ->
-            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview)
+            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onLongPress)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->
             AndroidAudioPlaybackRow(title = title, path = localPath)
         else -> AssetFallback(title)
@@ -949,6 +951,7 @@ internal fun GraphImagePreview(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?,
     onPreview: ((String) -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
 ) {
     var retry by remember(uuid, localPath) { mutableIntStateOf(0) }
     var loadedPath by remember(uuid, localPath) { mutableStateOf("") }
@@ -977,7 +980,12 @@ internal fun GraphImagePreview(
     if (image != null) {
         Image(bitmap = image, contentDescription = title,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .then(if (onPreview != null) Modifier.clickable { onPreview(loadedPath) } else Modifier)
+                .then(if (onPreview != null) Modifier.combinedClickable(
+                    onClick = { onPreview(loadedPath) },
+                    onLongClick = onLongPress,
+                    // Block selection already sends haptic feedback through the shared core.
+                    hapticFeedbackEnabled = false,
+                ) else Modifier)
                 .testTag("asset.preview.image"), contentScale = ContentScale.FillWidth)
     } else if (failed) {
         Row(verticalAlignment = Alignment.CenterVertically) {

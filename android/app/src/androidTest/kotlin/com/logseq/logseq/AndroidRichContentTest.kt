@@ -1,5 +1,6 @@
 package com.logseq.logseq
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +15,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -22,10 +25,12 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.logseq.ui.LogseqTheme
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -43,8 +48,9 @@ class AndroidRichContentTest {
     private val events = mutableListOf<LuiEvent>()
 
     private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null,
-        linkColor: Color? = null, dark: Boolean = false): LuiBackend {
-        val registry = logseqExtensionRegistry { it }
+        linkColor: Color? = null, dark: Boolean = false, imagePath: String? = null,
+        onOpenImage: ((String, String) -> Unit)? = null): LuiBackend {
+        val registry = logseqExtensionRegistry(onOpenImage = onOpenImage)
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray()
             .put(JSONObject().put("op", "create-node").put("id", 1).put("kind", if (secondMarkup == null) "root" else "column"))
@@ -54,8 +60,9 @@ class AndroidRichContentTest {
             .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 2).put("index", 0))
         mapOf(
             "block-id" to "rich-block", "title" to "Readable fallback", "markup-json" to markup,
-            "is-completed" to completed, "is-asset" to false, "asset-type" to "",
-            "local-path" to "", "youtube-target-url" to "",
+            "is-completed" to completed, "is-asset" to (imagePath != null),
+            "asset-type" to (if (imagePath != null) "png" else ""),
+            "local-path" to imagePath.orEmpty(), "youtube-target-url" to "",
         ).forEach { (key, value) -> ops.put(property(key, value)) }
         if (secondMarkup != null) {
             ops.put(JSONObject().put("op", "create-extension").put("id", 3)
@@ -124,6 +131,37 @@ class AndroidRichContentTest {
     }
 
     @Test fun malformedBodyLongPressStillSelects() = assertLongPressSelects("not-json", "Readable fallback")
+
+    @Test fun imageAssetLongPressSelectsAndShortTapOpensPreview() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File.createTempFile("outliner-image", ".png", context.cacheDir)
+        try {
+            val bitmap = Bitmap.createBitmap(32, 18, Bitmap.Config.ARGB_8888)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+
+            val previews = mutableListOf<Pair<String, String>>()
+            render("[]", imagePath = file.path, onOpenImage = { uuid, path -> previews.add(uuid to path) })
+            ui.waitUntil(5_000) { ui.onAllNodesWithTag("asset.preview.image").fetchSemanticsNodes().isNotEmpty() }
+            val image = ui.onNodeWithTag("asset.preview.image").assertIsDisplayed()
+
+            image.performTouchInput { longClick() }
+            ui.runOnIdle {
+                assertEquals(listOf("drag-start" to "rich-block"),
+                    events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
+                assertTrue(previews.isEmpty())
+                events.clear()
+            }
+
+            image.performTouchInput { click() }
+            ui.runOnIdle {
+                assertEquals(listOf("rich-block" to file.path), previews)
+                assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty())
+            }
+        } finally {
+            file.delete()
+        }
+    }
 
     @Test fun shortBodyTapStillEditsExactlyOnce() {
         render("""[{"type":"text","text":"Tap to edit"}]""")
