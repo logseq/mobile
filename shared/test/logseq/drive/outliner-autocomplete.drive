@@ -1,0 +1,20 @@
+# Typing a page reference opens suggestions. Dismiss hides them, and
+# choosing a later suggestion inserts the page into the editor.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+ext ext:outliner-block-row outliner-block-row edit '{"uuid":"journal-block-1"}'
+wait ext:outliner-editor
+ext ext:outliner-editor outliner-editor text-change '{"title":"[[Al","caret-utf16-offset":4}'
+wait prop:accessibility-identifier=toolbar.outliner.autocomplete
+expect text:"Alpha Doc"
+press prop:accessibility-identifier=button.outliner.autocomplete.dismiss
+expect-absent prop:accessibility-identifier=toolbar.outliner.autocomplete
+expect prop:accessibility-identifier=toolbar.outliner.editor
+ext ext:outliner-editor outliner-editor text-change '{"title":"[[Al","caret-utf16-offset":4}'
+wait prop:accessibility-identifier=button.outliner.autocomplete.0
+press prop:accessibility-identifier=button.outliner.autocomplete.0
+expect-prop ext:outliner-editor title "[[Alpha Doc]]"

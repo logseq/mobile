@@ -1,0 +1,14 @@
+# Rating the only due card finishes the review.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=link.sidebar.flashcards
+wait prop:accessibility-identifier=button.flashcard.show-cloze
+press prop:accessibility-identifier=button.flashcard.show-cloze
+press prop:accessibility-identifier=button.flashcard.show-answer
+press prop:accessibility-identifier=button.flashcard.rating.good
+wait prop:accessibility-identifier=flashcards.complete
+expect text:"Review complete"
+expect-absent prop:accessibility-identifier=button.flashcard.show-cloze

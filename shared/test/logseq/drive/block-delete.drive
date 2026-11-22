@@ -1,0 +1,24 @@
+# Opening a block result and confirming deletion leaves the search screen.
+# Cancel leaves the block open.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Alpha"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
+wait prop:accessibility-identifier=screen.search
+ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'
+wait prop:accessibility-identifier=search.result.block-1
+press prop:accessibility-identifier=search.result.block-1
+wait prop:accessibility-identifier=screen.node
+press prop:accessibility-identifier=button.block.delete
+wait prop:accessibility-identifier=dialog.page-delete
+expect text:"Delete block?"
+press prop:accessibility-identifier=button.page-delete.cancel
+expect prop:accessibility-identifier=screen.node
+press prop:accessibility-identifier=button.block.delete
+wait prop:accessibility-identifier=dialog.page-delete
+press prop:accessibility-identifier=button.page-delete.confirm
+expect-absent prop:accessibility-identifier=screen.node
+expect prop:accessibility-identifier=screen.search

@@ -1,0 +1,18 @@
+# The runtime log can hide info lines and show only the seeded error.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=button.runtime-log
+wait prop:accessibility-identifier=screen.runtime-log
+expect text:"Errors only"
+press prop:accessibility-identifier=button.log-refresh
+wait text:"drive test log line"
+press prop:accessibility-identifier=button.log-errors
+wait text:"All"
+press prop:accessibility-identifier=button.log-refresh
+wait text:"drive test failure"
+expect-absent text:"drive test log line"

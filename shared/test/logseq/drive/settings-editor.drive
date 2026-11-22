@@ -1,0 +1,16 @@
+# Editor switches persist through the settings sheet.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press prop:accessibility-identifier=button.sidebar.settings
+wait prop:accessibility-identifier=sheet.settings
+expect-prop prop:accessibility-identifier=switch.settings.spell-check checked true
+expect-prop prop:accessibility-identifier=switch.settings.auto-correction checked true
+toggle prop:accessibility-identifier=switch.settings.spell-check false
+expect-prop prop:accessibility-identifier=switch.settings.spell-check checked false
+toggle prop:accessibility-identifier=switch.settings.auto-correction false
+expect-prop prop:accessibility-identifier=switch.settings.auto-correction checked false
+toggle prop:accessibility-identifier=switch.settings.spell-check true
+expect-prop prop:accessibility-identifier=switch.settings.spell-check checked true

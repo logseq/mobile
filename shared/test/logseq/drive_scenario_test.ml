@@ -39,11 +39,46 @@ let runtime_log_seed =
       timestamp = "2026-10-09T00:00:00Z";
       message = "drive test log line";
     };
+    {
+      Model.id = "log-error";
+      level = "ERROR";
+      source = "drive";
+      timestamp = "2026-10-09T00:00:01Z";
+      message = "drive test failure";
+    };
   ]
+
+let tag_choices =
+  [ { Model.uuid = "tag-1"; title = "Project" } ]
+
+let page_candidate =
+  {
+    Model.candidate_index = 0;
+    candidate_group = Some "Pages";
+    candidate_label = "Alpha Doc";
+    candidate_markup_json = "[]";
+    candidate_value = "page-1";
+  }
+
+let contains_substr haystack needle =
+  let limit = String.length haystack - String.length needle in
+  let rec go index =
+    index <= limit
+    && (String.sub haystack index (String.length needle) = needle || go (index + 1))
+  in
+  needle = "" || (limit >= 0 && go 0)
+
+let json_fields payload =
+  try match Yojson.Basic.from_string payload with `Assoc fields -> fields | _ -> []
+  with _ -> []
+
+let json_string fields key =
+  match List.assoc_opt key fields with Some (`String value) -> Some value | _ -> None
 
 let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?(rows = journal_rows)
     ?sidebar ?(flashcards = []) ?(sync_connected = false) ?(node_routes = [])
-    ?(selected_block_ids = []) ?(task_statuses = []) graphs =
+    ?(selected_block_ids = []) ?(task_statuses = []) ?(has_older_journals = false)
+    ?(decks_json = "") ?(applied_server_t = Some 1) graphs =
   {
     (App_test.empty_core_projection ()) with
     Model.graph_name = Some graph_name;
@@ -54,10 +89,13 @@ let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?(rows = journal
     journal_outliner_rows = rows;
     outliner_rows = rows;
     flashcards;
+    flashcard_decks_json = decks_json;
     sync_connected;
+    applied_server_t;
     node_routes;
     projection_outliner_selected_block_ids = selected_block_ids;
     task_statuses;
+    has_older_journals;
     sidebar =
       (match sidebar with
        | Some projection -> projection
@@ -70,9 +108,15 @@ type host =
   ; mutable flashcards : Model.flashcard list
   ; mutable favorites : Model.sidebar_page list
   ; mutable recents : Model.sidebar_page list
+  ; mutable selected_page : Model.sidebar_page option
   ; mutable runtime_log : Model.runtime_log_record list
   ; mutable task_statuses : Model.task_status list
   ; mutable fail_sign_in : bool
+  ; mutable has_older : bool
+  ; mutable deck_selected : string option
+  ; mutable deck_completed : bool
+  ; mutable deck_created : string option
+  ; mutable deck_targets : (string * string) list
   }
 
 let host_sidebar host =
@@ -80,6 +124,89 @@ let host_sidebar host =
     (App_test.empty_sidebar_projection ()) with
     Model.favorites = host.favorites;
     recent_pages = host.recents;
+    selected_page = host.selected_page;
+  }
+
+let decks_json host =
+  let string_field value =
+    match value with None -> `Null | Some value -> `String value
+  in
+  Yojson.Basic.to_string
+    (`Assoc
+       [
+         ( "items"
+         , `List
+             [
+               `Assoc
+                 [
+                   ("uuid", `String "deck-1"); ("title", `String "Project cards");
+                 ];
+             ] );
+         ("selectedUuid", string_field host.deck_selected);
+         ( "totalCards"
+         , `Int (if host.deck_completed then 0 else List.length host.flashcards) );
+         ("completed", `Bool host.deck_completed);
+         ("createdUuid", string_field host.deck_created);
+         ( "targetSearch"
+         , `Assoc
+             [
+               ("kind", `String "page");
+               ("query", `String "");
+               ( "items"
+               , `List
+                   (List.map
+                      (fun (uuid, title) ->
+                        `Assoc
+                          [ ("uuid", `String uuid); ("title", `String title) ])
+                      host.deck_targets) );
+             ] );
+       ])
+
+let project host ~graph_id ~graph_name ~encrypted ~unlocked ?rows ?sidebar
+    ?flashcards ?sync_connected ?node_routes ?selected_block_ids ?task_statuses
+    graphs =
+  graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?rows ?sidebar
+    ?flashcards ?sync_connected ?node_routes ?selected_block_ids ?task_statuses
+    ~has_older_journals:host.has_older ~decks_json:(decks_json host) graphs
+
+let page_title host uuid fallback =
+  match
+    List.find_opt
+      (fun (page : Model.sidebar_page) -> page.uuid = uuid)
+      (host.favorites @ host.recents
+      @ Option.to_list host.selected_page)
+  with
+  | Some page -> page.title
+  | None -> fallback
+
+let remember_page host uuid =
+  let page = { Model.uuid; title = page_title host uuid uuid } in
+  host.selected_page <- Some page;
+  page
+
+let append_capture host id title ?status ?(tags = []) () =
+  let row =
+    App_test.journal_outline_row (Printf.sprintf "capture-%d" id) "journal"
+      title "Today" 20260828 (List.length host.rows)
+  in
+  let row =
+    match status with None -> row | Some status -> { row with row_status = Some status }
+  in
+  host.rows <- host.rows @ [ { row with tags } ]
+
+let editing_snapshot ~uuid ~title ~caret ?(autocomplete = None) ?(candidates = [])
+    projection =
+  {
+    projection with
+    Model.projection_outliner_editing =
+      Some
+        {
+          Model.editing_uuid = uuid;
+          editing_title = title;
+          caret_utf16_offset = caret;
+        };
+    projection_outliner_autocomplete = autocomplete;
+    projection_outliner_autocomplete_candidates = candidates;
   }
 
 let current_graph_projection host model ~extra =
@@ -92,11 +219,10 @@ let current_graph_projection host model ~extra =
   | Some g ->
     Model.ApplyCoreSnapshot
       (extra
-         (graph_projection ~graph_id:g.id ~graph_name:g.name
-            ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
-            ~rows:host.rows ~sidebar:(host_sidebar host)
-            ~flashcards:host.flashcards ~task_statuses:host.task_statuses
-            ~sync_connected:true host.graphs))
+         (project host ~graph_id:g.id ~graph_name:g.name ~encrypted:g.is_encrypted
+            ~unlocked:(not g.is_encrypted) ~rows:host.rows
+            ~sidebar:(host_sidebar host) ~flashcards:host.flashcards
+            ~task_statuses:host.task_statuses ~sync_connected:true host.graphs))
   | None -> Model.ApplyCoreSnapshot (catalog_projection host.graphs)
 
 let host_responses host model =
@@ -108,10 +234,23 @@ let host_responses host model =
       let resolved = [ Model.ResolveEffect (Model.effect_id eff, true, "") ] in
       match eff with
       | Model.RefreshGraphsEffect id ->
+        let snapshot =
+          match
+            Option.map
+              (fun graph_id ->
+                List.find_opt
+                  (fun (g : Model.graph) -> g.id = graph_id)
+                  host.graphs)
+              model.Model.selected_graph_id
+            |> Option.join
+          with
+          | Some _ -> current_graph_projection host model ~extra:(fun projection -> projection)
+          | None -> Model.ApplyCoreSnapshot (catalog_projection host.graphs)
+        in
         Model.DequeueEffect id
         :: Model.ApplyLocalGraphIds
              (List.map (fun (g : Model.graph) -> g.id) host.graphs)
-        :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
+        :: snapshot
         :: resolved
       | Model.CreateGraphEffect (id, name, encrypted, _password) ->
         let graph = graph_entry name name encrypted in
@@ -120,7 +259,7 @@ let host_responses host model =
         :: Model.ApplyLocalGraphIds
              (List.map (fun (g : Model.graph) -> g.id) host.graphs)
         :: Model.ApplyCoreSnapshot
-             (graph_projection ~graph_id:name ~graph_name:name ~encrypted
+             (project host ~graph_id:name ~graph_name:name ~encrypted
                 ~unlocked:(not encrypted) ~rows:host.rows
                 ~sidebar:(host_sidebar host) ~flashcards:host.flashcards
                 ~task_statuses:host.task_statuses host.graphs)
@@ -189,30 +328,35 @@ let host_responses host model =
                { projection with Model.node_routes = [ route ] })
         :: resolved
       | Model.SendCaptureEffect (id, title) ->
-        let row =
-          App_test.journal_outline_row
-            (Printf.sprintf "capture-%d" id)
-            "journal" title "Today" 20260828 (List.length host.rows)
-        in
-        host.rows <- host.rows @ [ row ];
+        append_capture host id title ();
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.SendTaskEffect (id, title, status) ->
+        append_capture host id title ~status ();
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.SendTaggedCaptureEffect (id, submission) ->
+        append_capture host id submission.Model.capture_text
+          ?status:submission.capture_status ~tags:submission.capture_tags ();
         Model.DequeueEffect id
         :: current_graph_projection host model ~extra:(fun projection ->
                projection)
         :: resolved
       | Model.AddRootBlockEffect (id, _page_uuid) ->
-        let row =
-          App_test.journal_outline_row
-            (Printf.sprintf "capture-%d" id)
-            "journal" "New block" "Today" 20260828 (List.length host.rows)
-        in
-        host.rows <- host.rows @ [ row ];
+        append_capture host id "New block" ();
         Model.DequeueEffect id
         :: current_graph_projection host model ~extra:(fun projection ->
                projection)
         :: resolved
       | Model.SetPageFavoriteEffect (id, uuid, favored) ->
         host.favorites <-
-          (if favored then host.favorites @ [ { Model.uuid; title = uuid } ]
+          (if favored then
+             host.favorites
+             @ [ { Model.uuid; title = page_title host uuid uuid } ]
            else
              List.filter
                (fun (page : Model.sidebar_page) -> page.uuid <> uuid)
@@ -222,6 +366,7 @@ let host_responses host model =
                projection)
         :: resolved
       | Model.SelectSidebarPageEffect (id, uuid) ->
+        let page = remember_page host uuid in
         Model.DequeueEffect id
         :: current_graph_projection host model ~extra:(fun projection ->
                {
@@ -229,10 +374,98 @@ let host_responses host model =
                  Model.sidebar =
                    {
                      (host_sidebar host) with
-                     selected_page = Some { Model.uuid; title = uuid };
+                     selected_page = Some page;
                      linked_reference_rows = host.rows;
                    };
                })
+        :: resolved
+      | Model.ClearSelectedPageEffect id ->
+        host.selected_page <- None;
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.DeletePageEffect (id, uuid) ->
+        let drop pages =
+          List.filter (fun (page : Model.sidebar_page) -> page.uuid <> uuid) pages
+        in
+        host.favorites <- drop host.favorites;
+        host.recents <- drop host.recents;
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.DeleteBlockEffect (id, uuid, _) ->
+        host.rows <-
+          List.filter (fun (row : Model.outline_row) -> row.row_uuid <> uuid) host.rows;
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               {
+                 projection with
+                 Model.projection_outliner_selected_block_ids = [];
+               })
+        :: resolved
+      | Model.LoadOlderJournalsEffect id ->
+        append_capture host id "Older journal note" ();
+        host.has_older <- false;
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.ReviewFlashcardEffect (id, uuid, _rating) ->
+        host.flashcards <-
+          List.filter
+            (fun (card : Model.flashcard) -> card.flashcard_uuid <> uuid)
+            host.flashcards;
+        host.deck_completed <- host.flashcards = [];
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.FlashcardDeckEffect (id, payload) ->
+        let fields = json_fields payload in
+        (match json_string fields "action" with
+         | Some "select" -> host.deck_selected <- json_string fields "uuid"
+         | Some "search" ->
+           host.deck_targets <- [ ("page-1", "Alpha Doc") ]
+         | Some "create" -> host.deck_created <- Some "deck-created"
+         | Some "practice" ->
+           host.deck_completed <- false;
+           host.flashcards <- [ flashcard_seed ]
+         | _ -> ());
+        Model.DequeueEffect id
+        :: current_graph_projection host model ~extra:(fun projection ->
+               projection)
+        :: resolved
+      | Model.LoadComposerTagsEffect (id, _) ->
+        Model.DequeueEffect id
+        :: Model.ApplyCoreSnapshot
+             {
+               (catalog_projection host.graphs) with
+               Model.selected_graph_id = model.Model.selected_graph_id;
+               tag_choices_update = Some tag_choices;
+             }
+        :: resolved
+      | Model.LoadPropertyValuesEffect (id, key, _) ->
+        Model.DequeueEffect id
+        :: Model.ReceivePropertyValues
+             ( key
+             , Yojson.Basic.to_string
+                 (`Assoc
+                    [
+                      ("attr", `String "block/tags");
+                      ("valuesDeferred", `Bool false);
+                      ( "filterValues"
+                      , `List
+                          (List.map
+                             (fun (tag : Model.sidebar_page) ->
+                               `Assoc
+                                 [
+                                   ("title", `String tag.title);
+                                   ("match", `List [ `String tag.uuid ]);
+                                 ])
+                             tag_choices) );
+                    ]) )
         :: resolved
       | Model.LongPressOutlinerBlockEffect (id, uuid) ->
         Model.DequeueEffect id
@@ -267,24 +500,89 @@ let host_responses host model =
                projection)
         :: resolved
       | Model.OutlinerToolbarEffect (id, action) ->
-        if action = "unselect" then
+        let autocomplete =
+          if action = "pageReference" then
+            Some
+              {
+                Model.autocomplete_kind = Model.NodeAutocomplete;
+                autocomplete_query = "";
+              }
+          else if action = "tag" then
+            Some
+              {
+                Model.autocomplete_kind = Model.TagAutocomplete;
+                autocomplete_query = "";
+              }
+          else None
+        in
+        if action = "unselect" || Option.is_some autocomplete then
           Model.DequeueEffect id
           :: current_graph_projection host model ~extra:(fun projection ->
-                 {
-                   projection with
-                   Model.projection_outliner_selected_block_ids = [];
-                 })
+                 let projection =
+                   if action = "unselect" then
+                     {
+                       projection with
+                       Model.projection_outliner_selected_block_ids = [];
+                     }
+                   else projection
+                 in
+                 match (model.Model.outliner_editing, autocomplete) with
+                 | Some editing, Some request ->
+                   editing_snapshot ~uuid:editing.editing_uuid
+                     ~title:editing.editing_title
+                     ~caret:editing.caret_utf16_offset
+                     ~autocomplete:(Some request) ~candidates:[ page_candidate ]
+                     projection
+                 | _ -> projection)
           :: resolved
         else resolved
+      | Model.ChooseOutlinerAutocompleteEffect (id, _) -> (
+        match model.Model.outliner_editing with
+        | Some editing ->
+          let title = "[[Alpha Doc]]" in
+          host.rows <-
+            List.map
+              (fun (row : Model.outline_row) ->
+                if row.row_uuid = editing.editing_uuid then
+                  { row with row_title = title }
+                else row)
+              host.rows;
+          Model.DequeueEffect id
+          :: current_graph_projection host model ~extra:(fun projection ->
+                 editing_snapshot ~uuid:editing.editing_uuid ~title
+                   ~caret:(String.length title) projection)
+          :: resolved
+        | None -> Model.DequeueEffect id :: resolved)
+      | Model.EditorOutlinerEventEffect (id, payload) -> (
+        match (json_string (json_fields payload) "type", model.Model.outliner_editing) with
+        | Some "dismissAutocomplete", Some editing ->
+          Model.DequeueEffect id
+          :: current_graph_projection host model ~extra:(fun projection ->
+                 editing_snapshot ~uuid:editing.editing_uuid
+                   ~title:editing.editing_title
+                   ~caret:editing.caret_utf16_offset projection)
+          :: resolved
+        | _ ->
+          [
+            Model.DequeueEffect id;
+            Model.ResolveEffect (id, true, "");
+          ])
       | Model.ReportErrorEffect (id, message) ->
         host.runtime_log <- { Model.id = "error-" ^ string_of_int id; level = "ERROR";
           source = "ui"; timestamp = "Now"; message } :: host.runtime_log;
         Model.DequeueEffect id :: resolved
-      | Model.RefreshRuntimeLogEffect (id, _, _, _) ->
+      | Model.RefreshRuntimeLogEffect (id, _, errors_only, _) ->
+        let records =
+          if errors_only then
+            List.filter
+              (fun (record : Model.runtime_log_record) ->
+                String.lowercase_ascii record.level = "error")
+              host.runtime_log
+          else host.runtime_log
+        in
         Model.DequeueEffect id
-        :: Model.ApplyRuntimeLog (host.runtime_log, None)
+        :: Model.ApplyRuntimeLog (records, None)
         :: resolved
-      | Model.DeletePageEffect _ -> resolved
       | Model.TapOutlinerBlockEffect (id, uuid) -> (
         match
           Option.map find_graph model.Model.selected_graph_id |> Option.join
@@ -292,20 +590,11 @@ let host_responses host model =
         | Some g ->
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
-               {
-                 (graph_projection ~graph_id:g.id ~graph_name:g.name
-                    ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
-                    ~rows:host.rows ~sidebar:(host_sidebar host)
-                    ~flashcards:host.flashcards host.graphs)
-                 with
-                 projection_outliner_editing =
-                   Some
-                     {
-                       Model.editing_uuid = uuid;
-                       editing_title = "";
-                       caret_utf16_offset = 0;
-                     };
-               }
+               (editing_snapshot ~uuid ~title:"" ~caret:0
+                  (project host ~graph_id:g.id ~graph_name:g.name
+                     ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
+                     ~rows:host.rows ~sidebar:(host_sidebar host)
+                     ~flashcards:host.flashcards host.graphs))
           :: resolved
         | None -> Model.DequeueEffect id :: resolved)
       | Model.OpenGraphEffect (id, graph_id) -> (
@@ -313,7 +602,7 @@ let host_responses host model =
         | Some g ->
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
-               (graph_projection ~graph_id:g.id ~graph_name:g.name
+               (project host ~graph_id:g.id ~graph_name:g.name
                   ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
                   ~rows:host.rows ~sidebar:(host_sidebar host)
                   ~flashcards:host.flashcards
@@ -332,7 +621,7 @@ let host_responses host model =
         | Some g ->
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
-               (graph_projection ~graph_id:g.id ~graph_name:g.name
+               (project host ~graph_id:g.id ~graph_name:g.name
                   ~encrypted:g.is_encrypted ~unlocked:true ~rows:host.rows
                   ~sidebar:(host_sidebar host) ~flashcards:host.flashcards
                   host.graphs)
@@ -343,22 +632,23 @@ let host_responses host model =
           Option.map find_graph model.Model.selected_graph_id |> Option.join
         with
         | Some g ->
+          let referencing = contains_substr title "[[" in
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
-               {
-                 (graph_projection ~graph_id:g.id ~graph_name:g.name
-                    ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
-                    ~rows:host.rows ~sidebar:(host_sidebar host)
-                    ~flashcards:host.flashcards host.graphs)
-                 with
-                 projection_outliner_editing =
-                   Some
-                     {
-                       Model.editing_uuid = uuid;
-                       editing_title = title;
-                       caret_utf16_offset = caret;
-                     };
-               }
+               (editing_snapshot ~uuid ~title ~caret
+                  ~autocomplete:
+                    (if referencing then
+                       Some
+                         {
+                           Model.autocomplete_kind = Model.NodeAutocomplete;
+                           autocomplete_query = "Al";
+                         }
+                     else None)
+                  ~candidates:(if referencing then [ page_candidate ] else [])
+                  (project host ~graph_id:g.id ~graph_name:g.name
+                     ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
+                     ~rows:host.rows ~sidebar:(host_sidebar host)
+                     ~flashcards:host.flashcards host.graphs))
           :: resolved
         | None -> Model.DequeueEffect id :: resolved)
       | Model.ReturnOutlinerEditorEffect (id, uuid, title, _caret) -> (
@@ -374,7 +664,7 @@ let host_responses host model =
               host.rows;
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
-               (graph_projection ~graph_id:g.id ~graph_name:g.name
+               (project host ~graph_id:g.id ~graph_name:g.name
                   ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
                   ~rows:host.rows ~sidebar:(host_sidebar host)
                   ~flashcards:host.flashcards host.graphs)
@@ -388,7 +678,7 @@ let host_responses host model =
     model.Model.pending_effects
 
 let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
-    ?(rows = journal_rows) () =
+    ?(rows = journal_rows) ?(has_older = false) () =
   let host =
     {
       graphs = [];
@@ -396,6 +686,7 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       flashcards = [ flashcard_seed ];
       favorites = [ { Model.uuid = "fav-1"; title = "Favorite Doc" } ];
       recents = [ { Model.uuid = "recent-1"; title = "Recent Doc" } ];
+      selected_page = None;
       runtime_log = runtime_log_seed;
       task_statuses =
         [
@@ -403,6 +694,11 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
             (Some "tabler-icon") (Some "Todo") (Some "blue");
         ];
       fail_sign_in;
+      has_older;
+      deck_selected = None;
+      deck_completed = false;
+      deck_created = None;
+      deck_targets = [];
     }
   in
   let self = ref None in
@@ -434,19 +730,20 @@ let scenario_names () =
   |> List.filter (fun name -> Filename.check_suffix name ".drive")
   |> List.sort String.compare
 
+let has_prefix prefix name =
+  let length = String.length prefix in
+  String.length name >= length && String.sub name 0 length = prefix
+
 let run_scenario name () =
   let authentication =
-    if String.length name >= 5 && String.sub name 0 5 = "auth-" then
-      "signedOut"
-    else "signedIn"
+    if has_prefix "auth-" name then "signedOut" else "signedIn"
   in
   let fail_sign_in = name = "auth-signin-error.drive" in
-  let rows =
-    if String.length name >= 6 && String.sub name 0 6 = "empty-" then []
-    else journal_rows
-  in
+  let rows = if has_prefix "empty-" name then [] else journal_rows in
+  let has_older = has_prefix "history-" name in
   let session =
-    mount ~profile:(ios_profile ()) ~authentication ~fail_sign_in ~rows ()
+    mount ~profile:(ios_profile ()) ~authentication ~fail_sign_in ~rows
+      ~has_older ()
   in
   let failures =
     Drive.Scenario.run
