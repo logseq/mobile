@@ -1253,6 +1253,31 @@ let shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe () =
   ignore (sync_event session (sync_generation recover) "snapshot-applied" []);
   check_eq (sync_command_kinds (begin_sync_transport session)) ["connect"]
 
+let shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds () =
+  let session, _, _, _ = sync_driver_session () in
+  let connect () =
+    let response = begin_sync_transport session in
+    check_eq (sync_command_kinds response) ["connect"];
+    let generation = sync_generation response in
+    ignore (sync_event session generation "opened" []);
+    generation in
+  let reset generation =
+    sync_event session generation "frame" ["body", `String {|{"type":"reset"}|}] in
+  let generation = connect () in
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"];
+  ignore (sync_event session generation "snapshot-applied" []);
+  List.iter (fun delay ->
+    let repeated = reset (connect ()) in
+    check_eq (sync_command_kinds repeated) ["close"; "retry"];
+    check_eq (member "delayMs" (List.nth (sync_commands repeated) 1)) (`Int delay);
+    let recovery = begin_sync_transport session in
+    check_eq (sync_command_kinds recovery) ["snapshot"];
+    ignore (sync_event session (sync_generation recovery) "snapshot-applied" []))
+    [1000; 2000; 4000; 8000; 16000; 30000; 30000];
+  let generation = connect () in
+  ignore (sync_event session generation "frame" ["body", `String {|{"type":"pull/ok","t":10}|}]);
+  check_eq (sync_command_kinds (reset generation)) ["close"; "snapshot"]
+
 let shared_sync_driver_reports_malformed_frames_and_cancels_without_retry () =
   let session, _, _, _ = sync_driver_session () in
   let generation = sync_generation (begin_sync_transport session) in
@@ -6921,6 +6946,7 @@ let cases =
  case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
     case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
+    case "shared sync driver backs off repeated snapshot recovery" shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds;
     case "shared sync driver reports malformed frames and cancels without retry" shared_sync_driver_reports_malformed_frames_and_cancels_without_retry;
  case "mobile 10k page projection bounds content and hydrates distant rows" mobile_page_projection_sends_only_32_contents_and_hydrates_distant_rows;
  case "journal refresh keeps the edited page beyond the launch window" journal_refresh_keeps_the_edited_page_beyond_the_launch_window;
