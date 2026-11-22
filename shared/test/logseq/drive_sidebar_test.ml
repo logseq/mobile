@@ -46,6 +46,22 @@ let handle (host : Drive_host.host) model = function
     | Some "remove", Some attr, _ ->
       host.schema_attrs <- List.filter (( <> ) attr) host.schema_attrs
     | Some "setTags", _, _ -> host.page_tags <- true
+    | Some "setCodeLanguage", _, Some language ->
+      (match Drive_host.json_string fields "blockUuid" with
+      | Some uuid ->
+        Drive_host.map_row host uuid (fun row ->
+            {
+              row with
+              Model.markup_json =
+                Yojson.Basic.to_string
+                  (`List [ `Assoc [ ("style", `String language) ] ]);
+            })
+      | None -> ())
+    | Some "removeTag", _, _ ->
+      (match Drive_host.json_string fields "blockUuid" with
+      | Some uuid ->
+        Drive_host.map_row host uuid (fun row -> { row with Model.tags = [] })
+      | None -> ())
     | _, Some "done", Some "true" -> host.property_done <- true
     | _, Some "done", Some "false" -> host.property_done <- false
     | _, Some "block/title", Some title when title <> "" ->

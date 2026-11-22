@@ -3,10 +3,15 @@
 
 let handle (host : Drive_host.host) model = function
   | Model.SyncNowEffect id | Model.SyncPendingEffect id ->
+    let pending_sync_error =
+      if host.Drive_host.scenario = "sync-fail.drive" then
+        Some "Could not reach the server"
+      else None
+    in
     Some
       (Model.DequeueEffect id
       :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
-             { projection with Model.sync_connected = true })
+             { projection with Model.sync_connected = true; pending_sync_error })
       :: Drive_host.resolved id)
   | Model.PresentJournalCalendarEffect id ->
     Some

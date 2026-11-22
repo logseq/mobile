@@ -1,0 +1,11 @@
+# A deferred query with no rows shows the empty state.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=query.toggle.query-block
+press prop:accessibility-identifier=query.toggle.query-block
+wait prop:accessibility-identifier=query.empty.query-block
+expect text:"No results"
+expect-absent text:"Deferred query hit"

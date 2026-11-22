@@ -1,0 +1,15 @@
+# Saving a sort reloads the query with the sorted hit.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=query.toggle.query-block
+press prop:accessibility-identifier=query.toggle.query-block
+wait prop:accessibility-identifier=query.rows.query-block
+press prop:accessibility-identifier=view.sort.view-1
+wait prop:accessibility-identifier=view.settings.sheet.view-1
+press prop:accessibility-identifier=view.sort.add.view-1
+press prop:accessibility-identifier=view.settings.save.view-1
+expect-absent prop:accessibility-identifier=view.settings.sheet.view-1
+expect text:"Sorted hit"

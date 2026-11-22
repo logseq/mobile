@@ -1,0 +1,12 @@
+# An invalid sync server URL stays in the field and keeps settings open.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+type prop:accessibility-identifier=field.base-url "not-a-url"
+press prop:accessibility-identifier=button.connection.apply
+expect prop:accessibility-identifier=sheet.settings
+expect-prop prop:accessibility-identifier=field.base-url text "not-a-url"

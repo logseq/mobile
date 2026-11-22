@@ -139,14 +139,20 @@ let handle (host : Drive_host.host) model = function
       Option.map (fun (editing : Model.outliner_editing) -> editing.editing_uuid)
         model.Model.outliner_editing
     in
+    let structure_targets =
+      match editing_uuid with
+      | Some uuid -> [ uuid ]
+      | None -> model.Model.outliner_selected_block_ids
+    in
     if structural then
-      (match (action, editing_uuid) with
-      | "indent", Some uuid -> adjust_depth host uuid 1
-      | "outdent", Some uuid -> adjust_depth host uuid (-1)
-      | "moveUp", Some uuid -> move_row host uuid (-1)
-      | "moveDown", Some uuid -> move_row host uuid 1
-      | "lineBreak", _ -> Drive_host.append_capture host id "Split block" ()
-      | "newBlock", _ -> Drive_host.append_capture host id "New block" ()
+      (match action with
+      | "indent" -> List.iter (fun uuid -> adjust_depth host uuid 1) structure_targets
+      | "outdent" ->
+        List.iter (fun uuid -> adjust_depth host uuid (-1)) structure_targets
+      | "moveUp" -> List.iter (fun uuid -> move_row host uuid (-1)) structure_targets
+      | "moveDown" -> List.iter (fun uuid -> move_row host uuid 1) structure_targets
+      | "lineBreak" -> Drive_host.append_capture host id "Split block" ()
+      | "newBlock" -> Drive_host.append_capture host id "New block" ()
       | _ -> ());
     Some
       (if action = "hideKeyboard" || clear_selection || Option.is_some autocomplete
@@ -304,22 +310,43 @@ let handle (host : Drive_host.host) model = function
       :: Drive_host.resolved id)
   | Model.ResultViewEffect (id, _uuid, payload) ->
     let fields = Drive_host.json_fields payload in
-    if Drive_host.json_string fields "action" = Some "setExpanded" then
+    (match Drive_host.json_string fields "action" with
+    | Some "setExpanded" ->
       Drive_host.set_query_expanded host
-        (match List.assoc_opt "expanded" fields with Some (`Bool value) -> value | _ -> true);
+        (match List.assoc_opt "expanded" fields with
+        | Some (`Bool value) -> value
+        | _ -> true)
+    | Some "save" ->
+      let config = Drive_host.json_assoc fields "config" in
+      (match Drive_host.json_string config "type" with
+      | Some typ -> host.Drive_host.query_type <- typ
+      | None -> ());
+      if List.mem_assoc "filters" config then host.query_filtered <- true;
+      if List.mem_assoc "sorting" config then host.query_sorted <- true;
+      Drive_host.set_query_expanded host host.query_expanded
+    | _ -> ());
     Some
       [ Model.DequeueEffect id
       ; Model.ApplyCoreSnapshot
           {
             (App_test.empty_core_projection ()) with
             Model.selected_graph_id = model.Model.selected_graph_id;
-            query_update =
-              Some ("query-block", Drive_host.query_json host.Drive_host.query_expanded);
+            query_update = Some ("query-block", Drive_host.live_query_json host);
           }
       ; Model.ResolveEffect (id, true, "") ]
+  | Model.LoadResultRowsEffect (id, key, payload) when host.scenario = "query-retry.drive" ->
+    Some
+      [ Model.DequeueEffect id
+      ; Model.ResolveEffect (id, false, "Could not load results") ]
   | Model.LoadResultRowsEffect (id, key, payload) ->
     let fields = Drive_host.json_fields payload in
     let input = Option.value (Drive_host.json_string fields "input") ~default:"" in
+    let empty = host.scenario = "query-empty.drive" in
+    let title =
+      if host.query_filtered then "Filtered hit"
+      else if host.query_sorted then "Sorted hit"
+      else "Deferred query hit"
+    in
     let rows =
       `Assoc
         [
@@ -327,21 +354,23 @@ let handle (host : Drive_host.host) model = function
           ("revision", `String "1");
           ("projectionRevision", `String "1");
           ("rowOffset", `Int 0);
-          ("rowCount", `Int 1);
+          ("rowCount", `Int (if empty then 0 else 1));
           ( "rows"
-          , `List
-              [
-                `Assoc
-                  [
-                    ( "block"
-                    , `Assoc
-                        [
-                          ("uuid", `String "query-hit");
-                          ("title", `String "Deferred query hit");
-                          ("pageId", `String "journal");
-                        ] );
-                  ];
-              ] );
+          , if empty then `List []
+            else
+              `List
+                [
+                  `Assoc
+                    [
+                      ( "block"
+                      , `Assoc
+                          [
+                            ("uuid", `String "query-hit");
+                            ("title", `String title);
+                            ("pageId", `String "journal");
+                          ] );
+                    ];
+                ] );
         ]
     in
     Some

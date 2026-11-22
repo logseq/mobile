@@ -2,9 +2,10 @@
 
 let handle (host : Drive_host.host) model = function
   | Model.SearchNodesEffect (id, query) ->
+    let hits = if query = "missing" then [] else Drive_host.search_hits host in
     Some
       (Model.DequeueEffect id
-      :: Model.ApplySearchResults (query, Drive_host.search_hits host)
+      :: Model.ApplySearchResults (query, hits)
       :: Drive_host.resolved id)
   | Model.OpenSearchResultEffect (id, uuid)
   | Model.OpenSearchNodeEffect (id, uuid)
