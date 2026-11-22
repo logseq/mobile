@@ -180,7 +180,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             val text = block.optString("title").trim()
             val characters = BreakIterator.getCharacterInstance().apply { setText(text) }
             characters.next(5) != BreakIterator.DONE
-        }.shuffled().take(3)
+        }.shuffled().take(4)
         for (widgetId in appWidgetIds) {
             val views = blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, blocks)
             appWidgetManager.updateAppWidget(widgetId, views)

@@ -275,7 +275,7 @@ private struct GraphWidgetProvider: TimelineProvider {
         let eligibleBlocks = content.randomBlocks.filter {
             $0.title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 5
         }
-        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(3))
+        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(4))
         let selection = showsTasks ? WidgetTaskStatusSelection.read() : nil
         return GraphWidgetEntry(date: .now, content: content, randomBlocks: blocks, selection: selection)
     }
@@ -517,7 +517,7 @@ private struct RandomBlocksWidget: Widget {
             GraphWidgetView(entry: entry, showsTasks: false)
         }
         .configurationDisplayName("Random Blocks")
-        .description("Rediscover up to three blocks from your graph.")
+        .description("Rediscover up to four blocks from your graph.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
