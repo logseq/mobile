@@ -124,11 +124,13 @@ val outliner_row_action_identifier : Model.outline_row -> string
 val outliner_row_title : Model.outline_row -> string
 val outliner_row_indent : Model.outline_row -> int
 val outliner_row_has_children : Model.outline_row -> bool
-val outliner_row_zoom_label : Model.outline_row -> string
+val outliner_row_zoom_label :
+  Model.logseq_model -> Model.outline_row -> string
 val outliner_row_zoom_identifier : Model.outline_row -> string
 val outliner_row_action_label :
   Model.logseq_model -> Model.outline_row -> string
-val outliner_row_collapse_label : Model.outline_row -> string
+val outliner_row_collapse_label :
+  Model.logseq_model -> Model.outline_row -> string
 val outliner_row_collapse_glyph : Model.outline_row -> string
 val outliner_collapse_icon_name : bool -> string
 val outliner_collapse_identifier : Model.outline_row -> string
@@ -320,10 +322,12 @@ val settings_apply_disabled_ : Model.logseq_model -> bool
 val settings_version : Model.logseq_model -> string
 val settings_revision : Model.logseq_model -> string
 val settings_language_title : Model.logseq_model -> string
-val settings_language_choice_title : Model.settings_language_choice -> string
+val settings_language_choice_title :
+  Model.logseq_model -> Model.settings_language_choice -> string
 val settings_language_choice_identifier :
   Model.settings_language_choice -> string
-val settings_community_link_title : Model.settings_community_link -> string
+val settings_community_link_title :
+  Model.logseq_model -> Model.settings_community_link -> string
 val settings_community_link_identifier :
   Model.settings_community_link -> string
 val settings_community_link_needs_separator_ :

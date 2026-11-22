@@ -70,19 +70,20 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
             model_source send));
    node
 
-let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
-    t =
+let outliner_collapse_button (context : Lui_ui.ui_context) model_source row_source
+    send : t =
   let current_row = Signal.sample row_source in
+  let current = Signal.sample model_source in
   if Lui_ui.host context = KotlinHost then
     View_base.with_label_signal
-      (Signal.map View_base.outliner_row_collapse_label row_source)
+      (Signal.map2 View_base.outliner_row_collapse_label model_source row_source)
       (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
               View_base.outliner_collapse_icon_name
                 current_row.is_collapsed)
             row_source)
-         (icon_button ~icon:(`app "disclosure-right") ~label:(View_base.outliner_row_collapse_label current_row) ~variant:`ghost ~width:24 ~height:24
+         (icon_button ~icon:(`app "disclosure-right") ~label:(View_base.outliner_row_collapse_label current current_row) ~variant:`ghost ~width:24 ~height:24
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -93,14 +94,14 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
             []))
   else
     View_base.with_label_signal
-      (Signal.map View_base.outliner_row_collapse_label row_source)
+      (Signal.map2 View_base.outliner_row_collapse_label model_source row_source)
       (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
               if current_row.is_collapsed then "app:disclosure-right"
               else "app:disclosure-down")
             row_source)
-         (icon_button ~icon:(`app "disclosure-right") ~label:(View_base.outliner_row_collapse_label current_row) ~size:`icon ~style_class:"body-line"
+         (icon_button ~icon:(`app "disclosure-right") ~label:(View_base.outliner_row_collapse_label current current_row) ~size:`icon ~style_class:"body-line"
             ~foreground:"secondary" ~variant:`ghost ~width:44 ~height:44
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
@@ -217,7 +218,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
               []);
           ];
         View_base.with_label_signal
-          (Signal.map View_base.outliner_row_zoom_label row_source)
+          (Signal.map2 View_base.outliner_row_zoom_label model_source row_source)
           (button ~text:"" ~variant:`ghost ~width:24 ~height:24
              ~accessibility_identifier_signal:
                (Signal.map View_base.outliner_row_zoom_identifier
@@ -227,8 +228,8 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       ]
   else
     View_base.with_label_signal
-      (Signal.map View_base.outliner_row_zoom_label row_source)
-      (icon_button ~icon:(`app "outliner-bullet") ~label:(View_base.outliner_row_zoom_label current_row) ~size:`icon
+      (Signal.map2 View_base.outliner_row_zoom_label model_source row_source)
+      (icon_button ~icon:(`app "outliner-bullet") ~label:(View_base.outliner_row_zoom_label (Signal.sample model_source) current_row) ~size:`icon
          ~style_class:"body-line" ~variant:`ghost ~foreground:"border"
          ~width:24 ~height:24
          ~accessibility_identifier_signal:
@@ -509,7 +510,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
         ];
       if_ ~test:has_children_source
         (column ~cross:`start
-           [ outliner_collapse_button context row_source send ]);
+           [ outliner_collapse_button context model_source row_source send ]);
     ]
 
 let outliner_row_content context model_source retained_row_source
@@ -923,14 +924,16 @@ let outliner_entry context model_source retained_row_source row_source
 
 let toolbar_button model_source icon label identifier action send : t =
   icon_button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
-    ~label ~accessibility_identifier:identifier
+    ~label:(View_base.tr (Signal.sample model_source) label)
+    ~accessibility_identifier:identifier
     ~on_press:(fun _ ->
       ignore (send (Model.PerformOutlinerToolbarAction action)))
     []
 
 let selection_toolbar_button model_source icon label identifier action send =
   Lui_elements.toolbar_icon_button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
-    ~label ~accessibility_identifier:identifier
+    ~label:(View_base.tr (Signal.sample model_source) label)
+    ~accessibility_identifier:identifier
     ~on_press:(fun () -> ignore (send (Model.PerformOutlinerToolbarAction action))) []
 
 type selection_tag_snapshot = {
@@ -1052,6 +1055,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
             else if current.viewport_width >= 390 then 50 else 46 in
       reactive ~equal:(fun before after -> button_width before = button_width after) (fun current ->
       let apple_button ?on_press icon label identifier action : toolbar_el =
+          let label = View_base.tr current label in
           Lui_elements.toolbar_button ~width:(button_width current) ~icon ~variant:`ghost ~height:46
           ~icon_placement:`top ~label
           ~accessibility_identifier:identifier
@@ -1284,7 +1288,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           [
             View_base.with_label_signal
               (Signal.map View_base.outliner_editor_task_label model_source)
-              (icon_button ~label:"Task status" ~icon:(reactive task_icon model_source)
+              (icon_button ~label:(View_base.tr (Signal.sample model_source) "Task status") ~icon:(reactive task_icon model_source)
                  ~foreground:(reactive task_foreground model_source)
                  ~variant:`ghost
                  ~size:`icon ~width:48 ~height:48
@@ -1324,6 +1328,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     reactive ~equal:(fun before after -> View_base.outliner_editor_task_label before =
       View_base.outliner_editor_task_label after) (fun current ->
     let apple_icon_button icon label identifier action : toolbar_el =
+      let label = View_base.tr current label in
       Lui_elements.toolbar_icon_button ~icon ~variant:`ghost ~width:38 ~height:42 ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->

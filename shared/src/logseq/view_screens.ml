@@ -479,7 +479,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
           (Signal.map View_base.connection_control_visible_ model_source)
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
-           (icon_button ~label:"Sync status"
+           (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
               ~icon:(`app "status-dot")
               ~variant:`ghost ~size:`icon
               ~foreground_signal:
@@ -538,7 +538,9 @@ let active_overflow_menu model_source send : t =
          (if kotlin_host then
             dropdown_menu_item
               ~text_signal:
-                (Signal.map View_base.active_page_favorite_label model_source)
+                (Signal.map (fun current ->
+                   View_base.tr current (View_base.active_page_favorite_label current))
+                   model_source)
               ~icon_signal:
                 (Signal.map
                    (fun current ->
@@ -553,7 +555,9 @@ let active_overflow_menu model_source send : t =
           else
             dropdown_menu_item
               ~text_signal:
-                (Signal.map View_base.active_page_favorite_label model_source)
+                (Signal.map (fun current ->
+                   View_base.tr current (View_base.active_page_favorite_label current))
+                   model_source)
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []);
        if_dropdown_menu_item ~test:(own (Signal.map (fun source -> Option.is_some source) rename_source))

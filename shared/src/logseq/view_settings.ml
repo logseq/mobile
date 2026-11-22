@@ -26,13 +26,15 @@ let settings_language_choice_radio model_source
       (View_base.settings_language_choice_identifier choice)
     ~on_change:(fun _ ->
       ignore (send (Model.ChooseSettingsLanguage choice.id)))
-    ~text:(View_base.settings_language_choice_title choice) []
+    ~text:(View_base.settings_language_choice_title
+             (Signal.sample model_source) choice) []
 
-let settings_language_choice_menu_item choice_source send : t =
+let settings_language_choice_menu_item model_source choice_source send : t =
   let choice = Signal.sample choice_source in
   menu_item
     ~text_signal:
-      (Signal.map View_base.settings_language_choice_title choice_source)
+      (Signal.map2 View_base.settings_language_choice_title model_source
+         choice_source)
     ~accessibility_identifier:
       (View_base.settings_language_choice_identifier choice)
     ~on_press:(fun _ ->
@@ -71,9 +73,9 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
                    let choice = Signal.sample choice_source in
                    dropdown_menu_item
                      ~text_signal:
-                       (Signal.map
+                       (Signal.map2
                           View_base.settings_language_choice_title
-                          choice_source)
+                          model_source choice_source)
                      ~selected_signal:
                        (Signal.map
                           (fun (model : Model.logseq_model) ->
@@ -166,8 +168,8 @@ let settings_community_link_row (context : Lui_ui.ui_context) model_source
       [
         list_item
           ~text_signal:
-            (Signal.map View_base.settings_community_link_title
-               link_source)
+            (Signal.map2 View_base.settings_community_link_title
+               model_source link_source)
           ~icon:(`app "open-external") ~padding:0
           ~accessibility_identifier:
             (View_base.settings_community_link_identifier link)
@@ -190,8 +192,8 @@ let settings_community_link_row (context : Lui_ui.ui_context) model_source
       [
         list_item
           ~text_signal:
-            (Signal.map View_base.settings_community_link_title
-               link_source)
+            (Signal.map2 View_base.settings_community_link_title
+               model_source link_source)
           ~padding:0
           ~accessibility_identifier:
             (View_base.settings_community_link_identifier link)
@@ -245,6 +247,7 @@ let runtime_log_row record_source : t =
 
 let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
     send : t =
+  let title = View_base.tr (Signal.sample model_source) title in
   let label_source =
     Signal.map (fun (current : Model.logseq_model) ->
         View_base.tab_toggle_label current tab)
@@ -379,8 +382,8 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
                  "Flashcards" send);
             text ~style_class:"footnote" ~foreground:"muted-foreground"
               ~value:
-                "Journals and Graphs are always available. Use the \
-                 arrows to reorder tabs."
+                (View_base.tr (Signal.sample model_source)
+                   "Journals and Graphs are always available. Use the arrows to reorder tabs.")
               [];
             if_
               ~test:
@@ -417,8 +420,8 @@ let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
              "Flashcards" send);
         text ~style_class:"footnote" ~foreground:"muted-foreground"
           ~value:
-            "Journals and Graphs are always available. Use the arrows \
-             to reorder tabs."
+            (View_base.tr (Signal.sample model_source)
+               "Journals and Graphs are always available. Use the arrows to reorder tabs.")
           [];
         if_
           ~test:
@@ -874,7 +877,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
   let version_row label value_signal identifier : t =
     row ~cross:`center ~accessibility_identifier:identifier
       [
-        text ~value:label [];
+        text ~value:(View_base.tr (Signal.sample model_source) label) [];
         spacer [];
         text ~value:(reactive value_signal) ~foreground:"secondary" [];
       ]
@@ -960,8 +963,8 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ~mount:(fun link_source ->
           list_item
             ~text_signal:
-              (Signal.map View_base.settings_community_link_title
-                 link_source)
+              (Signal.map2 View_base.settings_community_link_title
+                 model_source link_source)
             ~accessibility_identifier:
               (View_base.settings_community_link_identifier
                  (Signal.sample link_source))
@@ -1209,7 +1212,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
       [
         row ~grow:1.0 ~cross:`center ~main:`space_between
           [
-            text ~value:label [];
+            text ~value:(View_base.tr (Signal.sample model_source) label) [];
             text ~value:(reactive value_signal) ~foreground:"secondary"
               ~text_alignment:`end_ [];
           ];

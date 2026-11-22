@@ -148,7 +148,40 @@ let capture_actions_are_localized_in_every_supported_language () =
          "button.navigation.search", "Search"; "button.navigation.capture", "Capture"]
     end) (Model.settings_language_choices ())
 
-let cases = [case "capture actions localize every supported language" capture_actions_are_localized_in_every_supported_language;
+let simplified_chinese_uses_one_catalog () =
+  let translate language source =
+    Localization.translate ~language ~system_language:"en" source in
+  let zh = translate "zh-CN" in
+  List.iter (fun (source, expected) ->
+    check_eq ~msg:source (zh source) expected;
+    check_eq ~msg:("zh-cn resolves to the same catalog: " ^ source)
+      (translate "zh-cn" source) expected)
+    ["No favorites yet", "还没有收藏"; "Add", "添加"; "End-to-end encryption", "端到端加密";
+     "Encryption cannot be changed after the sync graph is created.", "同步图谱创建后无法更改加密设置。";
+     "Sync server", "同步服务器"; "New card group", "新建卡片组"; "Card group name", "卡片组名称";
+     "Search pages or tags", "搜索页面或标签"; "Find a page or tag", "查找页面或标签";
+     "Filter by", "筛选"; "Card group", "卡片组";
+     "Tag any block with #Card to review it here.", "给块加上 #Card 标签后即可在这里复习。";
+     "All cards", "全部卡片"; "Page reference", "页面引用"; "Tag", "标签"; "System", "跟随系统";
+     "Journals", "日记"; "Flashcards", "闪卡"; "Graphs", "图谱"; "Version", "版本";
+     "Unavailable group", "不可用的卡片组"; "Report bug", "报告问题"; "GitHub", "GitHub";
+     "English", "English"; "Unknown note title", "Unknown note title"];
+  let current = { (Model.initial ()) with language = "zh-CN"; system_language = "en";
+    sync_state = Model.SyncedState; pending_sync_error = None;
+    has_pending_semantic_operations = false; has_pending_sync_request = false } in
+  check_eq ~msg:"settings tabs use the catalog" (View_base.settings_tabs_summary current)
+    "日记 · 闪卡 · 图谱";
+  let choice id = List.find (fun (choice : Model.settings_language_choice) -> choice.id = id)
+    (Model.settings_language_choices ()) in
+  check_eq ~msg:"the system language choice is translated"
+    (View_base.settings_language_choice_title current (choice "system")) "跟随系统";
+  check_eq ~msg:"language endonyms stay in their own script"
+    (View_base.settings_language_choice_title current (choice "en")) "English";
+  check_eq ~msg:"sync status uses the catalog" (View_base.sync_label current) "已是最新";
+  check_eq ~msg:"English keeps the source keys" (translate "en" "No favorites yet") "No favorites yet"
+
+let cases = [case "simplified Chinese uses one catalog" simplified_chinese_uses_one_catalog;
+  case "capture actions localize every supported language" capture_actions_are_localized_in_every_supported_language;
   case "confirmation cancel actions are semantic and localized" confirmation_cancel_actions_are_semantic_and_localized;
   case "native search controls receive translated labels" native_search_controls_receive_translated_labels;
   case "localization" language_settings_translate_controls_without_translating_notes;

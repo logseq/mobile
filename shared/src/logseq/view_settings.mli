@@ -3,6 +3,7 @@ val settings_language_choice_radio :
   Model.settings_language_choice Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.radio_el
 val settings_language_choice_menu_item :
+  Model.logseq_model Signal.signal ->
   Model.settings_language_choice Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val settings_language_control :

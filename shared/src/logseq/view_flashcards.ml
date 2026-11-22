@@ -162,12 +162,13 @@ let flashcard_group_controls model_source send : t = custom (fun context parent 
     let controls = row ~cross:`center ~padding_horizontal:20 ~height:48 [
       View_base.with_string_prop TextAlignment "start"
         (menu ~text_signal:(own (Signal.map (fun json ->
+          let current = Signal.sample model_source in
           let selected = json_field "selectedUuid" json in
-          if selected = `Null then "All cards" else
+          if selected = `Null then View_base.tr current "All cards" else
           match List.find_opt (fun item -> json_field "uuid" item = selected)
             (json_items (json_field "items" json)) with
           | Some item -> json_text (json_field "title" item)
-          | None -> "Unavailable group") metadata))
+          | None -> View_base.tr current "Unavailable group") metadata))
           ~label:(View_base.tr (Signal.sample model_source) "Card group") ~accessibility_identifier:"menu.flashcards.deck" [
           dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "All cards") ~selected_signal:(own (Signal.map ((=) `Null) selected))
             ~accessibility_identifier:"flashcards.deck.select.all"
@@ -248,7 +249,7 @@ let flashcard_group_controls model_source send : t = custom (fun context parent 
               list_section_item [tabs ~label:(View_base.tr (Signal.sample model_source) "Filter by") ~grow:1.0 ~accessibility_identifier:"picker.flashcards.deck.kind"
                 (List.map (fun (value, label) ->
                   View_base.with_selected_signal (own (Signal.map ((=) value) (Signal.value kind)))
-                    (button ~text:label ~grow:1.0 ~disabled_signal:(Signal.value submitting)
+                    (button ~text:(View_base.tr (Signal.sample model_source) label) ~grow:1.0 ~disabled_signal:(Signal.value submitting)
                       ~accessibility_identifier:("flashcards.deck.kind." ^ value)
                       ~on_press:(fun _ ->
                         Signal.set kind value; Signal.set query ""; Signal.set target None;

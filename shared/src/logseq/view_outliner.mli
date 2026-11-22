@@ -15,6 +15,7 @@ val outliner_rich_block_view :
   string Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_collapse_button :
   Lui_ui.ui_context ->
+  Model.logseq_model Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_indent_view : int Signal.signal -> Lui_elements.t
