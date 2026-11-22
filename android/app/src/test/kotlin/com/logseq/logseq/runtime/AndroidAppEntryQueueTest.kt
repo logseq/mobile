@@ -32,6 +32,42 @@ class AndroidAppEntryQueueTest {
         } finally { first.cancel(); second.cancel(); directory.deleteRecursively() }
     }
 
+    @Test fun coldWidgetIsRestoredAndOpensBeforeNormalQueueDelivery() = runBlocking {
+        val directory = kotlin.io.path.createTempDirectory("entry-startup-widget").toFile()
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val second = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val captureId = "c07fceba-58c0-4bc0-bf39-2479d7491a31"
+        try {
+            val original = AndroidAppEntryCoordinator(first, { fail("Delivered during graph restore") }, {}, directory)
+            original.publish(mapOf("kind" to "shared-text", "text" to "Earlier share"))
+            original.publish(mapOf(
+                "kind" to "deep-link", "scheme" to "logseq", "host" to "graph",
+                "query" to listOf(mapOf("name" to "widget-action", "value" to "open-block")),
+                "captureUuid" to captureId,
+            ), initialWidgetBlock = true)
+            first.cancel()
+
+            val openedWidget = CompletableDeferred<AndroidAppEntry>()
+            val deliveredShare = CompletableDeferred<AndroidAppEntry>()
+            val restarted = AndroidAppEntryCoordinator(second, {
+                if (it.initialWidgetBlock) assertTrue("Widget delivered more than once", openedWidget.complete(it))
+                else deliveredShare.complete(it)
+            }, {}, directory)
+            assertTrue(restarted.hasInitialWidgetBlocks())
+            restarted.deliverInitialWidgetBlocks { fail(it.message) }
+            assertEquals(captureId, withTimeout(3_000) { openedWidget.await() }.captureUuid)
+            assertFalse(restarted.hasInitialWidgetBlocks())
+            assertFalse(deliveredShare.isCompleted)
+
+            restarted.markReady()
+            assertEquals("Earlier share", withTimeout(3_000) { deliveredShare.await() }.text)
+        } finally {
+            first.cancel()
+            second.cancel()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun cancellationRetainsStableCaptureIdentifierAndAttachmentBytesOutsideCache() = runBlocking {
         val root = kotlin.io.path.createTempDirectory("entry-asset").toFile()
         val cache = File(root, "cache").apply { mkdirs() }

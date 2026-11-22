@@ -1314,6 +1314,14 @@ let select_page session payload =
        Rpc.failure "unknown_page" "The selected page is not available")
   | _ -> Rpc.failure "invalid_params" "selectPage requires a page id"
 
+let after_finishing_outliner_edit session navigate =
+  match Outliner.editing_uuid (state session).outliner_state with
+  | None -> navigate ()
+  | Some _ ->
+    let response = dispatch_outliner_event session {|{"type":"cancelEditing"}|} in
+    if Json.Util.member "ok" (Json.from_string response) = `Bool true then navigate ()
+    else response
+
 let open_node_with_route ~replace session fields =
   match Rpc.required_string fields "uuid" with
   | Error message -> Rpc.failure "invalid_params" message
@@ -1363,11 +1371,15 @@ let open_node_with_route ~replace session fields =
            state = Outliner.empty;
          }
        in
-       if replace then clear_node_navigation session;
-       push_node_route session route;
-       snapshot_visible session
+       let open_route () =
+         if replace then clear_node_navigation session;
+         push_node_route session route;
+         snapshot_visible session in
+       if replace then after_finishing_outliner_edit session open_route
+       else open_route ()
      | None ->
-       Rpc.failure "unknown_node" "The referenced node is not available")
+       if replace then Rpc.failure "invalid_deep_link" "The linked block is not available"
+       else Rpc.failure "unknown_node" "The referenced node is not available")
 
 let open_node session fields = open_node_with_route ~replace:false session fields
 
@@ -2130,7 +2142,9 @@ let graph_deep_link ?(from_widget = false) session graph page block =
   match target with
   | Error message -> Rpc.failure "invalid_deep_link" message
   | Ok target when Option.map (fun (config : Api.api_config) -> config.graph_id) current.config <> Some target ->
-    deep_link_response session ["deepLinkGraphId", `String target]
+    let switch_graph () = deep_link_response session ["deepLinkGraphId", `String target] in
+    if from_widget then after_finishing_outliner_edit session switch_graph
+    else switch_graph ()
   | Ok _ ->
     (match block, page with
      | None, None -> deep_link_response session ["deepLinkQuickAction", `String "journal"]
@@ -2150,7 +2164,7 @@ let graph_deep_link ?(from_widget = false) session graph page block =
          let json = Json.from_string response in
          if Yojson.Basic.Util.member "ok" json = `Bool true then
            append_deep_link_result response ["widgetBlockUuid", `String uuid]
-         else Rpc.failure "invalid_deep_link" "The linked block is not available"
+         else response
        | Some uuid -> deep_link_response session ["deepLinkNodeUuid", `String uuid]
        | None -> Rpc.failure "invalid_deep_link" "The linked page or block is not available")
 

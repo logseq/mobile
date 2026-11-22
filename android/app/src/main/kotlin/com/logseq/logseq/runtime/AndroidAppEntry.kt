@@ -84,6 +84,7 @@ internal data class AndroidAppEntry(
     val deepLink: Map<String, Any?>? = null,
     val captureUuid: String = java.util.UUID.randomUUID().toString(),
     val asset: AndroidImportedAsset? = null,
+    val initialWidgetBlock: Boolean = false,
 ) {
     fun coreRequest(): String {
         val payload = if (kind == AndroidAppEntryKind.DeepLink) JSONObject(requireNotNull(deepLink))
@@ -148,8 +149,8 @@ internal class AndroidAppEntryCoordinator(
         }
     }
 
-    suspend fun publish(value: Map<String, Any?>) {
-        val entry = AndroidAppEntry.fromMap(value)
+    suspend fun publish(value: Map<String, Any?>, initialWidgetBlock: Boolean = false) {
+        val entry = AndroidAppEntry.fromMap(value).copy(initialWidgetBlock = initialWidgetBlock)
         mutex.withLock {
             load()
             if (pending.none { it.captureUuid == entry.captureUuid }) {
@@ -160,14 +161,32 @@ internal class AndroidAppEntryCoordinator(
         if (ready) scheduleDrain()
     }
 
+    private suspend fun initialWidgetBlocks(): List<AndroidAppEntry> = mutex.withLock {
+        load()
+        pending.filter(AndroidAppEntry::initialWidgetBlock)
+    }
+
+    suspend fun hasInitialWidgetBlocks(): Boolean = initialWidgetBlocks().isNotEmpty()
+
+    suspend fun deliverInitialWidgetBlocks(onRejected: (AndroidAppEntryRejected) -> Unit) {
+        for (entry in initialWidgetBlocks()) deliver(entry, onRejected)
+    }
+
     fun markReady() {
         ready = true
         scheduleDrain()
     }
 
-    private suspend fun acknowledge(entry: AndroidAppEntry) = mutex.withLock {
-        withContext(Dispatchers.IO) { store.acknowledge(entry) }
-        pending.removeFirst()
+    private suspend fun deliver(entry: AndroidAppEntry, onRejected: (AndroidAppEntryRejected) -> Unit) {
+        try {
+            handle(entry)
+        } catch (rejected: AndroidAppEntryRejected) {
+            onRejected(rejected)
+        }
+        mutex.withLock {
+            withContext(Dispatchers.IO) { store.acknowledge(entry) }
+            pending.remove(entry)
+        }
     }
 
     private fun scheduleDrain() {
@@ -176,13 +195,9 @@ internal class AndroidAppEntryCoordinator(
             while (ready) {
                 val entry = mutex.withLock { load(); pending.peekFirst() } ?: break
                 try {
-                    handle(entry)
-                    acknowledge(entry)
+                    deliver(entry, onError)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (rejected: AndroidAppEntryRejected) {
-                    onError(rejected)
-                    acknowledge(entry)
                 } catch (error: Exception) {
                     onError(error)
                     break
@@ -210,6 +225,7 @@ private class AndroidAppEntryStore(private val directory: File) {
         val json = JSONObject().put("kind", saved.kind.name).put("captureUuid", saved.captureUuid)
             .put("text", saved.text).put("title", saved.title)
             .put("deepLink", saved.deepLink?.let { JSONObject(it) })
+            .put("initialWidgetBlock", saved.initialWidgetBlock)
             .put("order", maxOf(System.currentTimeMillis(), lastOrder + 1).also { lastOrder = it })
         saved.asset?.let { asset -> json.put("asset", JSONObject().put("uuid", asset.uuid)
             .put("title", asset.title).put("assetType", asset.assetType).put("size", asset.size)
@@ -247,6 +263,7 @@ private class AndroidAppEntryStore(private val directory: File) {
             kind = AndroidAppEntryKind.valueOf(json.getString("kind")),
             text = json.opt("text") as? String, title = json.opt("title") as? String,
             deepLink = json.optJSONObject("deepLink")?.let(::map),
+            initialWidgetBlock = json.optBoolean("initialWidgetBlock"),
             captureUuid = java.util.UUID.fromString(json.getString("captureUuid")).toString(),
             asset = json.optJSONObject("asset")?.let { AndroidImportedAsset.fromMap(map(it)) },
         )
