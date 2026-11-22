@@ -230,6 +230,8 @@ private struct GraphWidgetContent: Decodable {
     }
 }
 
+private let graphWidgetItemLimit = 10
+
 private struct GraphWidgetEntry: TimelineEntry {
     let date: Date
     let content: GraphWidgetContent
@@ -275,7 +277,7 @@ private struct GraphWidgetProvider: TimelineProvider {
         let eligibleBlocks = content.randomBlocks.filter {
             $0.title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 5
         }
-        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(4))
+        let blocks = showsTasks ? [] : Array(eligibleBlocks.shuffled().prefix(graphWidgetItemLimit))
         let selection = showsTasks ? WidgetTaskStatusSelection.read() : nil
         return GraphWidgetEntry(date: .now, content: content, randomBlocks: blocks, selection: selection)
     }
@@ -286,40 +288,47 @@ private struct GraphWidgetView: View {
     let showsTasks: Bool
 
     @Environment(\.colorScheme) private var colorScheme
-    private let rowSpacing: CGFloat = 5
-    private let taskRowHeight: CGFloat = 28
     private let headerHeight: CGFloat = 26
+
+    private var blocks: [GraphWidgetContent.Block] {
+        showsTasks ? Array(entry.content.tasks.prefix(graphWidgetItemLimit)) : entry.randomBlocks
+    }
 
     private var selectedTask: (WidgetTaskStatusSelection, GraphWidgetContent.Block, Int)? {
         guard let selection = entry.selection, entry.content.graphId == selection.graphId,
-              let index = entry.content.tasks.firstIndex(where: {
-                  $0.uuid == selection.uuid && $0.statusUuid == selection.statusUuid
+              let match = blocks.enumerated().first(where: {
+                  $0.element.uuid == selection.uuid && $0.element.statusUuid == selection.statusUuid
               }) else { return nil }
-        return (selection, entry.content.tasks[index], index)
+        return (selection, match.element, match.offset)
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let visibleTaskRows = max(1, Int((geometry.size.height - headerHeight) / (taskRowHeight + rowSpacing)))
-            blockList(taskLimit: visibleTaskRows)
+            let availableHeight = geometry.size.height - headerHeight
+            let columns = availableHeight >= CGFloat(blocks.count) * 27 ? 1 : 2
+            let rowsPerColumn = max(1, (blocks.count + columns - 1) / columns)
+            let rowSpacing: CGFloat = columns == 1 ? 5 : 2
+            let rowHeight = max(0, min(28, availableHeight / CGFloat(rowsPerColumn) - rowSpacing))
+            blockList(rowsPerColumn: rowsPerColumn, rowHeight: rowHeight, rowSpacing: rowSpacing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .accessibilityHidden(selectedTask != nil)
                 .allowsHitTesting(selectedTask == nil)
                 .overlay(alignment: .topLeading) {
                     if let (selection, task, index) = selectedTask,
                        let choices = task.statusChoices, !choices.isEmpty {
-                        statusPopup(for: task, choices: choices, selection: selection, row: index)
+                        let row = index % rowsPerColumn
+                        let rowBottom = headerHeight + CGFloat(row + 1) * (rowHeight + rowSpacing)
+                        statusPopup(for: task, choices: choices, selection: selection, rowBottom: rowBottom)
                             .privacySensitive()
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .containerBackground(.fill.tertiary, for: .widget)
         .widgetURL(selectedTask == nil ? URL(string: "logseq://journal") : nil)
     }
 
-    private func blockList(taskLimit: Int) -> some View {
-        let blocks = showsTasks ? Array(entry.content.tasks.prefix(taskLimit)) : entry.randomBlocks
-        return VStack(alignment: .leading, spacing: rowSpacing) {
+    private func blockList(rowsPerColumn: Int, rowHeight: CGFloat, rowSpacing: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: rowSpacing) {
             HStack {
                 if showsTasks {
                     Label("Tasks", systemImage: "checklist")
@@ -353,11 +362,23 @@ private struct GraphWidgetView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    blockColumn(blocks.prefix(rowsPerColumn), rowHeight: rowHeight, spacing: rowSpacing)
+                    if blocks.count > rowsPerColumn {
+                        blockColumn(blocks.dropFirst(rowsPerColumn), rowHeight: rowHeight, spacing: rowSpacing)
+                    }
+                }
             }
+        }
+    }
+
+    private func blockColumn(_ blocks: ArraySlice<GraphWidgetContent.Block>, rowHeight: CGFloat, spacing: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
             ForEach(blocks) { block in
                 HStack(spacing: 5) {
                     if let status = block.status {
-                        statusControl(for: block, status: status)
+                        statusControl(for: block, status: status, rowHeight: rowHeight)
                     }
                     if let url = blockURL(block) {
                         Link(destination: url) {
@@ -367,11 +388,12 @@ private struct GraphWidgetView: View {
                         }
                     }
                 }
-                .font(.subheadline)
+                .font(rowHeight < 22 ? .caption : .subheadline)
+                .frame(height: rowHeight)
                 .privacySensitive()
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var emptyMessage: Text {
@@ -380,30 +402,29 @@ private struct GraphWidgetView: View {
         return showsTasks ? Text("No tasks yet.") : Text("No blocks with at least five characters.")
     }
 
-    private func statusIcon(_ appearance: GraphWidgetContent.StatusAppearance?) -> some View {
+    private func statusIcon(_ appearance: GraphWidgetContent.StatusAppearance?, size: CGFloat = 20) -> some View {
         let asset = (appearance?.icon ?? "app:task-todo")
             .replacingOccurrences(of: "app:", with: "").replacingOccurrences(of: "-", with: "_")
         return Image(asset).renderingMode(.template).resizable().scaledToFit()
-            .frame(width: 20, height: 20)
+            .frame(width: size, height: size)
             .foregroundStyle(appearance?.color(in: colorScheme) ?? .secondary)
             .accessibilityHidden(true)
     }
 
-    @ViewBuilder private func statusControl(for block: GraphWidgetContent.Block, status: String) -> some View {
+    @ViewBuilder private func statusControl(for block: GraphWidgetContent.Block, status: String, rowHeight: CGFloat) -> some View {
+        let icon = statusIcon(block.statusAppearance, size: min(rowHeight, 20))
+            .frame(width: min(rowHeight + 4, 32), height: rowHeight)
         if let graphId = entry.content.graphId, let current = block.statusUuid,
            let choices = block.statusChoices, choices.contains(where: { $0.uuid != current }) {
             Button(intent: ShowWidgetTaskStatusesIntent(
                 graphId: graphId, uuid: block.uuid, statusUuid: current, page: 0
             )) {
-                statusIcon(block.statusAppearance)
-                    .frame(width: 32, height: taskRowHeight)
-                    .contentShape(Rectangle())
+                icon.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Choose status for \(block.title), currently \(status)")
         } else {
-            statusIcon(block.statusAppearance).frame(width: 32, height: taskRowHeight)
-                .accessibilityLabel(status)
+            icon.accessibilityLabel(status)
         }
     }
 
@@ -411,7 +432,7 @@ private struct GraphWidgetView: View {
         for task: GraphWidgetContent.Block,
         choices: [GraphWidgetContent.StatusChoice],
         selection: WidgetTaskStatusSelection,
-        row: Int
+        rowBottom: CGFloat
     ) -> some View {
         let pageSize = choices.count <= 6 ? 6 : 5
         let lastPage = (choices.count - 1) / pageSize
@@ -470,7 +491,7 @@ private struct GraphWidgetView: View {
                         .fill(colorScheme == .dark ? Color(white: 0.16) : .white)
                         .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
                 }
-                .offset(y: min(headerHeight + (taskRowHeight + rowSpacing) * CGFloat(row + 1), max(0, geometry.size.height - popupHeight)))
+                .offset(y: min(rowBottom, max(0, geometry.size.height - popupHeight)))
             }
         }
     }
@@ -524,7 +545,7 @@ private struct RandomBlocksWidget: Widget {
             GraphWidgetView(entry: entry, showsTasks: false)
         }
         .configurationDisplayName("Random Blocks")
-        .description("Rediscover up to four blocks from your graph.")
+        .description("Rediscover up to 10 blocks from your graph.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

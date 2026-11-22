@@ -176,28 +176,28 @@ class RandomBlocksWidgetProvider : GraphWidgetProvider(showsTasks = false) {
 }
 
 abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetProvider() {
+    private val itemLimit = 10
+    private val rowHeight = 20
+    private val rowPadding = if (showsTasks) 7 else 3
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val content = AndroidWidgetContent.read(context)
         val graphId = content?.optString("graphId")?.takeIf(String::isNotEmpty)
+        val graphLocked = content?.optBoolean("graphLocked") == true
         val rows = content?.optJSONArray(if (showsTasks) "tasks" else "randomBlocks")
         val entries = (0 until (rows?.length() ?: 0)).mapNotNull { rows?.optJSONObject(it) }
-        val blocks = if (showsTasks) entries else entries.filter { block ->
+        val eligible = if (showsTasks) entries else entries.filter { block ->
             val text = block.optString("title").trim()
             val characters = BreakIterator.getCharacterInstance().apply { setText(text) }
             characters.next(5) != BreakIterator.DONE
-        }.shuffled().take(4)
+        }.shuffled()
+        val blocks = eligible.take(itemLimit)
         for (widgetId in appWidgetIds) {
-            val graphLocked = content?.optBoolean("graphLocked") == true
-            fun render(rows: List<JSONObject>) = blockList(context, widgetId, graphId, graphLocked, rows)
-            val views = if (showsTasks) {
-                val options = appWidgetManager.getAppWidgetOptions(widgetId)
-                taskViews(context, options) { height ->
-                    // The layout uses 36dp for the header, 20dp for padding and 34dp per row.
-                    val rowLimit = ((height - 56) / 34).toInt().coerceAtLeast(1)
-                    render(blocks.take(rowLimit))
-                }
-            } else {
-                render(blocks)
+            val options = appWidgetManager.getAppWidgetOptions(widgetId)
+            val views = graphViews(context, options) { height ->
+                // The layout reserves 36dp for the header and 20dp for padding.
+                val columns = if (blocks.size * (rowHeight + 2 * rowPadding) <= height - 56) 1 else 2
+                blockList(context, widgetId, graphId, graphLocked, blocks, columns)
             }
             appWidgetManager.updateAppWidget(widgetId, views)
         }
@@ -207,10 +207,10 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
         context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle,
     ) {
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-        if (showsTasks) onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+        onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
     }
 
-    private fun taskViews(context: Context, options: Bundle, render: (Float) -> RemoteViews): RemoteViews {
+    private fun graphViews(context: Context, options: Bundle, render: (Float) -> RemoteViews): RemoteViews {
         if (Build.VERSION.SDK_INT >= 31) {
             val sizes = BundleCompat.getParcelableArrayList(options, AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
             if (!sizes.isNullOrEmpty()) {
@@ -223,7 +223,7 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
     }
 
     private fun blockList(
-        context: Context, widgetId: Int, graphId: String?, graphLocked: Boolean, blocks: List<JSONObject>,
+        context: Context, widgetId: Int, graphId: String?, graphLocked: Boolean, blocks: List<JSONObject>, columns: Int,
     ) = RemoteViews(context.packageName, R.layout.widget_graph).apply {
         setTextViewText(R.id.widget_graph_title, context.getString(
             if (showsTasks) R.string.widget_tasks else R.string.widget_random_blocks
@@ -237,6 +237,8 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             setOnClickPendingIntent(R.id.widget_graph_add, RandomBlocksWidgetProvider.refreshIntent(context))
         }
         removeAllViews(R.id.widget_graph_rows)
+        removeAllViews(R.id.widget_graph_rows_secondary)
+        setViewVisibility(R.id.widget_graph_rows_secondary, if (columns == 2) View.VISIBLE else View.GONE)
         val empty = graphId == null || blocks.isEmpty()
         setViewVisibility(R.id.widget_graph_empty, if (empty) View.VISIBLE else View.GONE)
         if (empty) {
@@ -249,18 +251,22 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
             setTextViewText(R.id.widget_graph_empty, context.getString(message))
             setOnClickPendingIntent(R.id.widget_graph_empty, entryPointIntent(context, "logseq://journal", 1))
         }
-        if (graphId != null) blocks.forEach { block ->
-            addView(R.id.widget_graph_rows, blockRow(context, widgetId, graphId, block))
+        val rowsPerColumn = (blocks.size + columns - 1) / columns
+        val padding = if (columns == 1) (rowPadding * context.resources.displayMetrics.density).toInt() else 0
+        if (graphId != null) blocks.forEachIndexed { index, block ->
+            val column = if (index < rowsPerColumn) R.id.widget_graph_rows else R.id.widget_graph_rows_secondary
+            addView(column, blockRow(context, widgetId, graphId, block, padding))
         }
     }
 
-    private fun blockRow(context: Context, widgetId: Int, graphId: String, block: JSONObject): RemoteViews {
+    private fun blockRow(context: Context, widgetId: Int, graphId: String, block: JSONObject, padding: Int): RemoteViews {
         val title = block.getString("title")
         val link = Uri.Builder().scheme("logseq").authority("graph")
             .appendQueryParameter("graph-id", graphId)
             .appendQueryParameter("block-id", block.getString("uuid"))
             .appendQueryParameter("widget-action", "open-block")
         return RemoteViews(context.packageName, R.layout.widget_graph_row).apply {
+            setViewPadding(R.id.widget_graph_row, 0, padding, 0, padding)
             setTextViewText(R.id.widget_block_title, title)
             setOnClickPendingIntent(R.id.widget_block_title, entryPointIntent(context, link.build().toString(), 5))
             setViewVisibility(R.id.widget_block_status, if (showsTasks) View.VISIBLE else View.GONE)

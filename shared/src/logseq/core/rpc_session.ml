@@ -1968,7 +1968,7 @@ let widget_block_fields (block : Model.entity_summary) =
   ["uuid", `String block.uuid; "title", `String block.title]
 
 let widget_status = "logseq.property/status"
-let widget_task_limit = 16
+let widget_task_limit = 10
 
 let widget_status_choices db eid =
   match Datascript.entid db "db/ident" (Datascript.Keyword widget_status) with

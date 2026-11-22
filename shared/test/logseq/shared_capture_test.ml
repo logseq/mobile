@@ -252,7 +252,7 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   private_unlocked := false;
   check_eq (ids "tasks" (snapshot ())) []
 
-let widgets_project_more_tasks_for_taller_widgets () =
+let widgets_project_the_ten_highest_priority_tasks () =
   let module Ds = Datascript in
   let open Query_block_test in
   let tasks = List.init 20 (fun index ->
@@ -269,13 +269,12 @@ let widgets_project_more_tasks_for_taller_widgets () =
   ignore (Rpc_test.configure_plain_session session);
   let snapshot = call session "widgetSnapshot" [] |> Rpc_test.response_result in
   let titles = items "tasks" snapshot |> List.map (U.member "title") in
-  check_eq (List.length titles) 16;
-  check_eq (List.hd titles) (`String "Task 19")
+  check_eq titles (List.init 10 (fun index -> `String (Printf.sprintf "Task %02d" (19 - index))))
 
 let cases = [
   case "widget links publish a ready block route and its composer" widget_block_links_open_in_the_initial_projection;
   case "widget links commit the outgoing detail draft" widget_block_links_commit_the_outgoing_detail_draft;
-  case "widgets project enough tasks for larger sizes" widgets_project_more_tasks_for_taller_widgets;
+  case "widgets project the ten highest priority tasks" widgets_project_the_ten_highest_priority_tasks;
   case "widgets show eligible blocks and stage status only in the task graph"
     widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph;
   case "graph deep links resolve graph page and block targets without changing the wrong graph" graph_deep_links_resolve_graphs_pages_and_blocks;
