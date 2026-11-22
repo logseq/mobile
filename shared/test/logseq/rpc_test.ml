@@ -6926,11 +6926,48 @@ let forced_snapshot_import_rejects_a_changed_graph () =
   check_eq ~msg:"a late download cannot switch the graph back" !imported 0;
   check_eq (response_error_code response) "graph_changed"
 
+let forced_snapshot_import_restores_existing_destinations () =
+  let refreshed = ref false in
+  let summary uuid title : Model.entity_summary =
+    { uuid; title = title ^ (if !refreshed then " updated" else "") } in
+  let sidebar () = summary "sidebar" "Sidebar" in
+  let linked () = summary "linked" "Linked" in
+  let session = configure_plain_session (Session.create_session {
+    Session.default_options with
+    open_graph = Some (fun _ -> Ok ());
+    import_snapshot = Some (fun _ -> refreshed := true; Ok ());
+    model_for_graph = Some (fun _ -> Model.create None);
+    graph_sidebar_pages = Some (fun () -> Some {
+      Graph_read.favorites = [sidebar ()]; recent_pages = [] });
+    graph_node_destination = Some (function
+      | "sidebar" -> Some (sidebar (), false)
+      | "linked" -> Some (linked (), false)
+      | "anchor" -> Some (linked (), true)
+      | "removed" when not !refreshed -> Some (summary "removed" "Removed", false)
+      | _ -> None);
+  }) in
+  ignore (response_result (dispatch_json session "openGraph" {|{"graphId":"plain-1"}|}));
+  ignore (response_result (dispatch_json session "selectPage" "sidebar"));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"anchor","reveal":true}|}));
+  ignore (response_result (dispatch_json session "openNode" {|{"uuid":"removed"}|}));
+  let updated = response_result (dispatch_json session "importSnapshot"
+    {|{"graphId":"plain-1","forceSnapshot":true}|}) in
+  check_eq (member "title" (member "selectedPage" updated)) (`String "Sidebar updated");
+  let routes = json_items "nodeRoutes" updated in
+  check_eq (List.map (member "uuid") routes) [`String "linked"];
+  let route = List.hd routes in
+  check_eq (member "title" (member "page" route)) (`String "Linked updated");
+  check_eq (member "scrollTarget" route) (`String "anchor");
+  let back = response_result (dispatch_json session "closeNode" "") in
+  check_eq (json_items "nodeRoutes" back) [];
+  check_eq (member "uuid" (member "selectedPage" back)) (`String "sidebar")
+
 let cases =
   [
     case "search results are loaded in bounded pages" search_results_are_loaded_in_bounded_pages;
     case "idle sync recovery resets after a healthy pull" shared_sync_driver_idle_recovery_resets_after_a_healthy_pull;
     case "forced snapshot import rejects a changed graph" forced_snapshot_import_rejects_a_changed_graph;
+    case "forced snapshot import restores existing destinations" forced_snapshot_import_restores_existing_destinations;
     case "snapshot projection replaces native patch reduction" snapshot_projection_replaces_native_patch_reduction;
     case "snapshot projection keeps interactive patches compact" snapshot_projection_keeps_interactive_patches_compact;
     case "forced snapshot import is atomic with editing" forced_snapshot_import_is_atomic_with_editing;

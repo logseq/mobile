@@ -169,11 +169,12 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
         observedValue = incoming
     }
 
-    // Reconcile a structural handoff in this composition, so the IME sees the
-    // new text, caret and identity together. A composing word after Return
-    // belongs to the next block and must not keep the source row on screen.
+    // Show an acknowledged block immediately. An active IME must keep its
+    // original buffer until it finishes replacing the composing range.
     val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
-    if (awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)) {
+    val canReconcileHandoff = awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)
+    val composingAcrossHandoff = canReconcileHandoff && value.composition != null
+    if (canReconcileHandoff && !composingAcrossHandoff) {
         val buffered = value
         capturePendingInput(buffered)
         handoffRevision = null
@@ -246,6 +247,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             applyingModel = false
         }
     }
+    val visibleBlockId = if (composingAcrossHandoff) blockId else rememberedBlockId
 
     LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
     // Debounced text-change emission, cancelled by the next edit.
@@ -442,9 +444,11 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
 
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-        .padding(12.dp).testTag("outliner.code-editor.$rememberedBlockId") else Modifier) {
-    val highlighted = if (code) rememberHighlightedCode(retainedReturn?.title ?: value.text, codeLanguage) else null
+        .padding(12.dp).testTag("outliner.code-editor.$visibleBlockId") else Modifier) {
+    val displayTitle = if (composingAcrossHandoff) value.text else retainedReturn?.title ?: value.text
+    val highlighted = if (code) rememberHighlightedCode(displayTitle, codeLanguage) else null
     val highlightedState = rememberUpdatedState(highlighted)
+    val hideHandoffPrefix = rememberUpdatedState(composingAcrossHandoff)
     val inputTransformation = remember {
         InputTransformation {
             val boundary = nativeValue.prefix.length
@@ -458,10 +462,15 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
     val outputTransformation = remember {
         OutputTransformation {
-            // Buffer edits to the next block while displaying the source row.
-            retainedReturn?.let { source ->
-                if (asCharSequence().toString() != source.title) {
-                    replace(source.caret, length, source.title.drop(source.caret))
+            if (hideHandoffPrefix.value) {
+                // Keep the source prefix in the IME buffer, outside its composing range.
+                replace(0, nativeValue.prefix.length, "")
+            } else {
+                // Buffer edits to the next block while displaying the source row.
+                retainedReturn?.let { source ->
+                    if (asCharSequence().toString() != source.title) {
+                        replace(source.caret, length, source.title.drop(source.caret))
+                    }
                 }
             }
             val styled = highlightedState.value
@@ -487,7 +496,7 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             }
             .filterTextContextMenuComponents { it.key != TextContextMenuKeys.PasteKey }
             .focusRequester(focusRequester)
-            .testTag("field.outliner.block.$rememberedBlockId")
+            .testTag("field.outliner.block.$visibleBlockId")
             .semantics { testTagsAsResourceId = true }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown &&

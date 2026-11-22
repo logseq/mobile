@@ -882,7 +882,46 @@ let dispatch_outliner_event session payload =
                     previous projected))
     end
 
-let switch_graph_model session payload =
+let set_sidebar_page session (page : Model.entity_summary) ~zoom =
+  session.Types.state := { (state session) with selected_sidebar_page = Some page };
+  session.state := { (state session) with related_blocks =
+    (if selected_page_is_tag session then [] else So.references_for_node session page.uuid) };
+  reset_outliner session;
+  if zoom then begin
+    let outliner_state, _ = Outliner.update (base_outliner_context_live session)
+      (state session).outliner_state (Outliner.Zoom_in page.uuid) in
+    session.state := { (state session) with outliner_state }
+  end
+
+let describe_node_route session ~uuid ~page ~scroll_target ~zoom_to_block =
+  let h = host session in
+  let is_tag = Option.exists (fun check -> check uuid) h.Types.graph_node_is_tag in
+  let is_property = Option.exists (fun check -> check uuid) h.Types.graph_node_is_property in
+  let related_blocks =
+    if not is_tag then So.references_for_node session uuid
+    else if So.uses_paged_tag_objects session then []
+    else Option.value ~default:[] (Option.bind h.graph_tag_objects (fun load -> load uuid)) in
+  { Types.uuid; is_tag; is_property; page; scroll_target; zoom_to_block;
+    related_blocks; state = Outliner.empty }
+
+let restore_snapshot_navigation session (previous : Types.session_state) =
+  match (host session).Types.graph_node_destination with
+  | None -> ()
+  | Some resolve ->
+    Option.iter (fun (selected : Model.entity_summary) ->
+      Option.iter (fun (page, zoom) ->
+        set_sidebar_page session (if zoom then selected else page) ~zoom)
+        (resolve selected.uuid)) previous.selected_sidebar_page;
+    List.iter (fun (route : Types.node_route) ->
+      Option.iter (fun ((page : Model.entity_summary), zoom_to_block) ->
+        let scroll_target = Option.bind route.scroll_target (fun uuid ->
+          match resolve uuid with
+          | Some (target, true) when target.uuid = page.uuid -> Some uuid
+          | _ -> None) in
+        push_node_route session (describe_node_route session ~uuid:route.uuid ~page
+          ~scroll_target ~zoom_to_block)) (resolve route.uuid)) previous.node_routes
+
+let switch_graph_model ?(preserve_navigation = false) session payload =
   match (host session).Types.model_for_graph with
   | Some load ->
     (try
@@ -895,9 +934,10 @@ let switch_graph_model session payload =
             if uuid = "" then
               Error "graph storage payload requires graphId"
             else begin
+              let previous = state session in
               session.Types.state :=
                 {
-                  !(session.state) with
+                  previous with
                   model = load uuid;
                   active_graph_id = Some uuid;
                   accepted_server_t = None;
@@ -908,8 +948,10 @@ let switch_graph_model session payload =
                 };
               clear_node_navigation session;
               session.state :=
-                { !(session.state) with selected_sidebar_page = None };
+                { !(session.state) with selected_sidebar_page = None; related_blocks = [] };
               reset_outliner session;
+              if preserve_navigation && previous.active_graph_id = Some uuid then
+                restore_snapshot_navigation session previous;
               Ok ()
             end
           | _ -> Error "graph storage payload requires graphId")
@@ -1291,24 +1333,8 @@ let select_page session payload =
      with
      | Some page ->
        clear_node_navigation session;
-       session.Types.state :=
-         { !(session.state) with selected_sidebar_page = Some page };
-       session.state :=
-         {
-           !(session.state) with
-           related_blocks =
-             (if selected_page_is_tag session then []
-              else
-                So.references_for_node session page.Model.uuid);
-         };
-       reset_outliner session;
        let _, zoom = So.sidebar_node_destination session page in
-       if zoom then begin
-         let outliner_state, _ = Outliner.update
-           (So.base_outliner_context_live session) (state session).outliner_state
-           (Outliner.Zoom_in page.uuid) in
-         session.state := { !(session.state) with outliner_state }
-       end;
+       set_sidebar_page session page ~zoom;
        snapshot_visible session
      | None ->
        Rpc.failure "unknown_page" "The selected page is not available")
@@ -1341,36 +1367,8 @@ let open_node_with_route ~replace session fields =
        let reveal = zoom && List.assoc_opt "reveal" fields = Some (`Bool true) in
        let scroll_target = if reveal then Some uuid else None in
        let uuid = if reveal then page.uuid else uuid in
-       let tag =
-         match (host session).graph_node_is_tag with
-         | Some check -> check uuid
-         | None -> false
-       in
-       let property =
-         match (host session).graph_node_is_property with
-         | Some check -> check uuid
-         | None -> false
-       in
-       let related =
-         if tag && So.uses_paged_tag_objects session then []
-         else if tag then
-           match (host session).graph_tag_objects with
-           | Some load -> Option.value ~default:[] (load uuid)
-           | None -> []
-         else So.references_for_node session uuid
-       in
-       let route =
-         {
-           Types.uuid;
-           is_tag = tag;
-           is_property = property;
-           page;
-           scroll_target;
-           zoom_to_block = zoom && not reveal;
-           related_blocks = related;
-           state = Outliner.empty;
-         }
-       in
+       let route = describe_node_route session ~uuid ~page ~scroll_target
+         ~zoom_to_block:(zoom && not reveal) in
        let open_route () =
          if replace then clear_node_navigation session;
          push_node_route session route;
@@ -2701,7 +2699,7 @@ let rec dispatch session action payload =
     else if forced && sync_transport_editing session then
       Rpc.failure "snapshot_deferred" "Snapshot import waits for editing to finish"
     else Rpc.import_snapshot payload h.Types.import_snapshot
-      (fun payload -> switch_graph_model session payload)
+      (fun payload -> switch_graph_model ~preserve_navigation:forced session payload)
       (fun () -> sidebar_snapshot session)
   | "closeGraph" -> object_action (fun _ fields ->
     match Rpc.required_string fields "graphId", h.Types.close_graph with

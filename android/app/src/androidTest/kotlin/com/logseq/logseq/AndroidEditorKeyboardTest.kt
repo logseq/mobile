@@ -178,12 +178,11 @@ class AndroidEditorKeyboardTest {
         }
         assertSplit("Hello")
         val typingConnection = inputConnection()
-        ui.runOnIdle { assertTrue(typingConnection.setComposingText("N", 1)) }
+        ui.runOnIdle { assertTrue(typingConnection.setComposingText("ni", 1)) }
         acknowledge("next-block", "", 0)
-        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("N")
-        val nextConnection = inputConnection()
-        ui.runOnIdle { assertTrue(nextConnection.commitText("ext", 1)) }
-        next.assertTextEquals("Next")
+        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
+        ui.runOnIdle { assertTrue(typingConnection.commitText("你", 1)) }
+        next.assertIsFocused().assertTextEquals("你")
     }
 
     @Test fun softwareKeyboardNextCommitsCompositionBeforeSplitting() {
