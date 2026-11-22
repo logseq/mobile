@@ -1,5 +1,5 @@
 # Builds signed Android APK/AAB artifacts and publishes the bundle to Google
-# Play internal testing. Disable upload-play for the first manual Play upload.
+# Play closed testing (alpha) by default. Disable upload-play for the first manual Play upload.
 
 name: Build-Android
 
@@ -11,9 +11,16 @@ on:
         required: true
         default: "main"
       upload-play:
-        description: "Publish to Google Play internal testing (disable for first manual upload)"
+        description: "Publish to Google Play (disable for first manual upload)"
         type: boolean
         default: true
+      play-track:
+        description: "Google Play testing track (alpha is closed testing)"
+        type: choice
+        options:
+          - alpha
+          - internal
+        default: alpha
       release-status:
         description: "Use draft until the app's first release has been published in Play Console"
         type: choice
@@ -26,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-play-internal
+  group: android-play-release
   cancel-in-progress: false
 
 env:
@@ -265,7 +272,7 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/android-keystore.jks"
 
-  publish-internal:
+  publish-play:
     if: inputs.upload-play
     needs: build-apk
     runs-on: ubuntu-latest
@@ -276,13 +283,13 @@ jobs:
           name: logseq-android-builds
           path: builds
 
-      - name: Publish to Google Play internal testing
+      - name: Publish to Google Play testing track
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.logseq.logseq
           releaseFiles: builds/*.aab
-          track: internal
+          track: ${{ inputs.play-track }}
           status: ${{ inputs.release-status }}
           mappingFile: builds/mapping.txt
           whatsNewDirectory: builds/whatsnew
