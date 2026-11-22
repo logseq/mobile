@@ -119,7 +119,6 @@ internal class LogseqRuntime(
         private set
     var isOpeningInitialWidgetBlock by mutableStateOf(false)
         private set
-    private var initialWidgetEntry: AndroidAppEntry? = null
     var startupError by mutableStateOf<Throwable?>(null)
         private set
     var graphProgress by mutableStateOf<AndroidGraphProgress?>(null)
@@ -152,13 +151,23 @@ internal class LogseqRuntime(
         logRuntime("info", "ui", "Kotlin host initialized")
     }
 
-    fun start(initialWidgetLink: Map<String, Any?>? = null) {
-        initialWidgetEntry = initialWidgetLink?.let(AndroidAppEntry::fromMap)
-        isOpeningInitialWidgetBlock = initialWidgetEntry != null
+    fun start(initialWidgetLink: Map<String, Any?>?, onInitialWidgetRetained: () -> Unit) {
+        isOpeningInitialWidgetBlock = initialWidgetLink != null
         scope.launch {
             try {
                 NativeCoreSession.gate.lock(this@LogseqRuntime)
                 ownsCore = true
+                if (initialWidgetLink != null) {
+                    try {
+                        appEntries.publish(initialWidgetLink, initialWidgetBlock = true)
+                        onInitialWidgetRetained()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        reportInitialWidgetError(error)
+                    }
+                }
+                isOpeningInitialWidgetBlock = appEntries.hasInitialWidgetBlocks()
                 AndroidGraphImportProgress.listener = { graphId, phase, completed, total ->
                     val current = graphProgress
                     if (current?.graphId == graphId && phase in setOf("importing", "opening"))
@@ -723,14 +732,13 @@ internal class LogseqRuntime(
             )
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
-            initialWidgetEntry?.let { entry ->
+            if (isOpeningInitialWidgetBlock) {
                 try {
-                    handleAppEntry(entry)
+                    appEntries.deliverInitialWidgetBlocks(::reportInitialWidgetError)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    reportError(error)
-                    LogseqDialogs.notifyError(error.message ?: "The linked block could not be opened.")
+                    reportInitialWidgetError(error)
                 }
             }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
@@ -751,7 +759,6 @@ internal class LogseqRuntime(
             reportError(error)
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
         } finally {
-            initialWidgetEntry = null
             isOpeningInitialWidgetBlock = false
         }
     }
@@ -766,6 +773,11 @@ internal class LogseqRuntime(
     }
 
     // --- App entries (deep links + share intents) ---
+
+    private fun reportInitialWidgetError(error: Throwable) {
+        reportError(error)
+        LogseqDialogs.notifyError(error.message ?: "The linked block could not be opened.")
+    }
 
     private suspend fun handleAppEntry(entry: AndroidAppEntry) {
         logRuntime("info", "ui", "Handling Android app entry ${entry.kind}")

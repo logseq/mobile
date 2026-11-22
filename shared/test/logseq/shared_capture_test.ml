@@ -88,6 +88,11 @@ let graph_deep_links_resolve_graphs_pages_and_blocks () =
   ignore (Rpc_test.dispatch_json session "configure" {|{"baseUrl":"http://127.0.0.1:8787","graphId":"other","token":"access"}|});
   check_eq (U.member "deepLinkNodeUuid" (result "/Other 中文 +" ["page", "Workspace"])) (`String Query_block_test.page)
 
+let widget_block_link session uuid =
+  let query = ["graph-id", "plain-1"; "block-id", uuid; "widget-action", "open-block"] in
+  call session "handleDeepLink" ["scheme", `String "logseq"; "host", `String "graph";
+    "query", `List (List.map (fun (name, value) -> `Assoc ["name", `String name; "value", `String value]) query)]
+
 let widget_block_links_open_in_the_initial_projection () =
   let open Query_block_test in
   let db = fixture "A test block" in
@@ -97,10 +102,7 @@ let widget_block_links_open_in_the_initial_projection () =
     graph_page_blocks = Some (fun uuid -> Some (Graph_read.blocks_for_page (fun s -> Ok s) db uuid));
     graph_node_destination = Some (Graph_read.node_destination (fun s -> Ok s) db) } in
   ignore (Rpc_test.configure_plain_session session);
-  let open_widget uuid =
-    let query = ["graph-id", "plain-1"; "block-id", uuid; "widget-action", "open-block"] in
-    call session "handleDeepLink" ["scheme", `String "logseq"; "host", `String "graph";
-      "query", `List (List.map (fun (name, value) -> `Assoc ["name", `String name; "value", `String value]) query)] in
+  let open_widget = widget_block_link session in
   let launch uuid =
     let response = open_widget uuid in
     let result = Rpc_test.response_result response in
@@ -119,6 +121,54 @@ let widget_block_links_open_in_the_initial_projection () =
   let switched = Model.update repeated (launch beta) in
   check_eq (Model.app_node_routes switched |> List.map (fun route -> route.Model.node_uuid)) [beta];
   check_eq (U.member "ok" (open_widget "missing")) (`Bool false)
+
+let widget_block_links_commit_the_outgoing_detail_draft () =
+  let open Query_block_test in
+  let db = ref (fixture "A test block") in
+  let fail_save = ref true in
+  let saves = ref 0 in
+  let draft = "See [[Roadmap" in
+  let session = Rpc_test.configure_plain_session
+    (Rpc_session.create_session { Rpc_session.default_options with
+      load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
+      sync_cursor = Some (fun () -> Some 92);
+      graph_db = Some (fun () -> Some !db);
+      graph_page_blocks = Some (fun uuid -> Some (Graph_read.blocks_for_page (fun s -> Ok s) !db uuid));
+      graph_node_destination = Some (fun uuid -> Graph_read.node_destination (fun s -> Ok s) !db uuid);
+      prepare_operation = Some Rpc_test.prepare_operation;
+      stage_operation = Some (fun operation ->
+        incr saves;
+        match operation.Pending_ops.intent with
+        | Pending_ops.Save_title saved ->
+          check_eq saved.uuid alpha;
+          check_eq saved.title draft;
+          if !fail_save then Error "Local save failed"
+          else begin
+            db := Datascript.db_with [put alpha "block/title" (Datascript.String saved.title)] !db;
+            Ok ()
+          end
+        | _ -> fail "Expected a title save") }) in
+  let current_routes () =
+    List.map (fun (route : Session_types.node_route) -> route.uuid)
+      (Rpc_session.state session).node_routes in
+  ignore (Rpc_test.response_result (widget_block_link session alpha));
+  ignore (Rpc_test.outliner_block_event session "tapBlock" alpha);
+  ignore (call session "outlinerEvent" ["type", `String "textChanged"; "title", `String draft;
+    "caretUTF16Offset", `Int (String.length draft)] |> Rpc_test.response_result);
+  check (Outliner_state.autocomplete (Rpc_session.state session).outliner_state <> None);
+  let failed = widget_block_link session beta in
+  check_eq (Rpc_test.response_error_code failed) "outliner_effect_failed";
+  check_eq (U.member "message" (U.member "error" failed)) (`String "Local save failed");
+  check_eq (current_routes ()) [alpha];
+  check_eq (Outliner_state.editing_title (Rpc_session.state session).outliner_state) (Some draft);
+  fail_save := false;
+  let switched = widget_block_link session beta |> Rpc_test.response_result in
+  check_eq (U.member "widgetBlockUuid" switched) (`String beta);
+  check_eq (current_routes ()) [beta];
+  check_eq !saves 2;
+  let saved = Datascript.entid !db "block/uuid" (Datascript.Uuid alpha)
+    |> Option.get in
+  check_eq (Graph_read.value !db saved "block/title") (Some (Datascript.String draft))
 
 let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   let module Ds = Datascript in
@@ -224,6 +274,7 @@ let widgets_project_more_tasks_for_taller_widgets () =
 
 let cases = [
   case "widget links publish a ready block route and its composer" widget_block_links_open_in_the_initial_projection;
+  case "widget links commit the outgoing detail draft" widget_block_links_commit_the_outgoing_detail_draft;
   case "widgets project enough tasks for larger sizes" widgets_project_more_tasks_for_taller_widgets;
   case "widgets show eligible blocks and stage status only in the task graph"
     widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph;
