@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
@@ -114,7 +115,9 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                         .semantics { testTagsAsResourceId = true },
                 ) {
                     val rootId = runtime.rootNodeId
-                    if (rootId != null) {
+                    if (runtime.isOpeningInitialWidgetBlock) {
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    } else if (rootId != null) {
                         runtime.backend.Content(rootId)
                     }
                 }

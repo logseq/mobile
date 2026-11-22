@@ -297,6 +297,11 @@ public final class LGRuntime {
         enqueueNative(.hostUpdate(kind, payload))
     }
 
+    func waitForQueuedPatches() async {
+        await nativeTail?.value
+        await patchTail?.value
+    }
+
     private func receive(_ event: LGRendererEvent) {
         LGInteractionDiagnostics.event("ui.event", "kind=\(event.kind) node=\(event.nodeID) extension=\(event.extensionName ?? "") first=\(event.first ?? -1) last=\(event.last ?? -1)")
         let operation: LGNativeOperation

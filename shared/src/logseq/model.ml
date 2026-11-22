@@ -258,6 +258,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pdf_update : string option
   ; is_pdf_patch : bool
+  ; widget_block_uuid : string option
   ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
@@ -2140,6 +2141,25 @@ let rec update (current : logseq_model) action =
       { current with search_result_pages = [results]; search_result_count = List.length results; search_loading = false; search_loading_more = false; search_has_more = false }
     else current
   | ApplyCoreSnapshot projection ->
+    let current = match projection.widget_block_uuid with
+      | Some uuid when current.app_navigation_path <> [NodeRoute uuid]
+          || current.search_open || current.destination <> JournalsDestination ->
+        { (cancel_outliner_autosave current) with
+          destination = JournalsDestination;
+          app_navigation_path = [NodeRoute uuid];
+          app_navigation_previews = [];
+          search_open = false;
+          search_navigation_path = [];
+          settings_open = false;
+          sidebar_open = false;
+          graph_menu_open = false;
+          pdf_workspace = None;
+          asset_preview = None;
+          outliner_editing = None;
+          outliner_edit_scope = None;
+          composer_expanded = false;
+          composer_autofocus = false }
+      | _ -> current in
     let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
     (* The block editor takes ownership of keyboard focus. Retaining an expanded
        composer here would remount its autofocus field when editing ends. *)

@@ -255,6 +255,7 @@ type core_projection =
   ; reference_update : (string * outline_row list) option
   ; pdf_update : string option
   ; is_pdf_patch : bool
+  ; widget_block_uuid : string option
   ; query_update : (string * string) option
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list

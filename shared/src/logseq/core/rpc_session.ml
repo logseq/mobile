@@ -1314,9 +1314,12 @@ let select_page session payload =
        Rpc.failure "unknown_page" "The selected page is not available")
   | _ -> Rpc.failure "invalid_params" "selectPage requires a page id"
 
-let open_node session fields =
+let open_node_with_route ~replace session fields =
   match Rpc.required_string fields "uuid" with
   | Error message -> Rpc.failure "invalid_params" message
+  | Ok uuid when replace && (match (state session).node_routes with
+      | [route] -> route.uuid = uuid
+      | _ -> false) -> snapshot_visible session
   | Ok uuid ->
     (match
        (match (host session).Types.graph_node_destination with
@@ -1360,10 +1363,13 @@ let open_node session fields =
            state = Outliner.empty;
          }
        in
+       if replace then clear_node_navigation session;
        push_node_route session route;
        snapshot_visible session
      | None ->
        Rpc.failure "unknown_node" "The referenced node is not available")
+
+let open_node session fields = open_node_with_route ~replace:false session fields
 
 let send_message session payload =
   match Rpc.send_payload payload with
@@ -1913,12 +1919,17 @@ let child_context session parent_id =
      | None -> current)
   | None -> current
 
-let deep_link_response session extra =
-  match Json.from_string (snapshot_visible session) with
+let append_deep_link_result response extra =
+  match Json.from_string response with
   | `Assoc envelope ->
-    let fields = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
-    Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
+    (match List.assoc_opt "result" envelope with
+     | Some (`Assoc fields) ->
+       Json.to_string (`Assoc (("result", `Assoc (extra @ fields)) :: List.remove_assoc "result" envelope))
+     | _ -> response)
   | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"
+
+let deep_link_response session extra =
+  append_deep_link_result (snapshot_visible session) extra
 
 let widget_decrypt text = Ok text
 
@@ -2101,7 +2112,7 @@ let set_widget_task_status session fields =
      | Ok cursor -> stage_result session (fresh_squuid ()) cursor intent
      | Error (code, message) -> Rpc.failure code message)
 
-let graph_deep_link session graph page block =
+let graph_deep_link ?(from_widget = false) session graph page block =
   let current = state session in
   let graph = if graph = "" then Option.fold ~none:"" ~some:(fun (c : Api.api_config) -> c.graph_id) current.config else graph in
   let matches (candidate : Api.api_graph) = candidate.id = graph || candidate.name = graph in
@@ -2134,6 +2145,12 @@ let graph_deep_link session graph page block =
                | None -> Datascript.entid db "block/uuid" (Datascript.Uuid target)) in
          Option.bind id (Graph_read.uuid_for_eid db)) in
        match uuid with
+       | Some uuid when from_widget ->
+         let response = open_node_with_route ~replace:true session ["uuid", `String uuid] in
+         let json = Json.from_string response in
+         if Yojson.Basic.Util.member "ok" json = `Bool true then
+           append_deep_link_result response ["widgetBlockUuid", `String uuid]
+         else Rpc.failure "invalid_deep_link" "The linked block is not available"
        | Some uuid -> deep_link_response session ["deepLinkNodeUuid", `String uuid]
        | None -> Rpc.failure "invalid_deep_link" "The linked page or block is not available")
 
@@ -2176,6 +2193,7 @@ let rec dispatch session action payload =
     | Ok (`Capture text) -> dispatch session "captureShared" (Some (Json.to_string
         (`Assoc (("text", `String text) :: List.filter (fun (key, _) -> key <> "text" && key <> "title" && key <> "url") fields))))
     | Ok (`Graph (graph, page, block)) -> graph_deep_link session graph page block
+    | Ok (`Widget_block (graph, uuid)) -> graph_deep_link ~from_widget:true session graph None (Some uuid)
     | Ok action ->
       let quick_action = match action with `Quick_action value -> `String value | _ -> `Null in
       let response = Json.from_string (snapshot_visible session) in
