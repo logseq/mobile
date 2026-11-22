@@ -9,8 +9,8 @@
     <ImageView
         android:id="@+id/widget_block_status"
         android:layout_width="24dp"
-        android:layout_height="20dp"
-        android:layout_marginEnd="4dp"
+        android:layout_height="22dp"
+        android:layout_marginEnd="6dp"
         android:padding="1dp"
         android:scaleType="fitCenter" />
 
@@ -18,13 +18,13 @@
         android:id="@+id/widget_block_title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:minHeight="20dp"
+        android:minHeight="22dp"
         android:layout_weight="1"
         android:ellipsize="end"
         android:gravity="center_vertical"
         android:includeFontPadding="false"
         android:maxLines="1"
         android:textColor="@color/widget_on_surface"
-        android:textSize="14sp" />
+        android:textSize="15sp" />
 
 </LinearLayout>
