@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.icu.text.BreakIterator
 import android.util.AtomicFile
 import android.util.Log
@@ -176,15 +177,29 @@ abstract class GraphWidgetProvider(private val showsTasks: Boolean) : AppWidgetP
         val graphId = content?.optString("graphId")?.takeIf(String::isNotEmpty)
         val rows = content?.optJSONArray(if (showsTasks) "tasks" else "randomBlocks")
         val entries = (0 until (rows?.length() ?: 0)).mapNotNull { rows?.optJSONObject(it) }
-        val blocks = if (showsTasks) entries.take(3) else entries.filter { block ->
+        val blocks = if (showsTasks) entries else entries.filter { block ->
             val text = block.optString("title").trim()
             val characters = BreakIterator.getCharacterInstance().apply { setText(text) }
             characters.next(5) != BreakIterator.DONE
         }.shuffled().take(4)
         for (widgetId in appWidgetIds) {
-            val views = blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, blocks)
+            val visibleRows = if (showsTasks) blocks.take(taskRowLimit(appWidgetManager, widgetId)) else blocks
+            val views = blockList(context, widgetId, graphId, content?.optBoolean("graphLocked") == true, visibleRows)
             appWidgetManager.updateAppWidget(widgetId, views)
         }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle,
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        if (showsTasks) onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+    }
+
+    private fun taskRowLimit(manager: AppWidgetManager, widgetId: Int): Int {
+        val height = manager.getAppWidgetOptions(widgetId).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 158)
+        // The widget layout reserves 36dp for its header and 20dp for vertical padding.
+        return ((height - 56) / 34).coerceAtLeast(1)
     }
 
     private fun blockList(

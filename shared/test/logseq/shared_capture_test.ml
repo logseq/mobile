@@ -170,7 +170,28 @@ let widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph () =
   private_unlocked := false;
   check_eq (ids "tasks" (snapshot ())) []
 
+let widgets_project_more_tasks_for_taller_widgets () =
+  let module Ds = Datascript in
+  let open Query_block_test in
+  let tasks = List.init 20 (fun index ->
+    let title = Printf.sprintf "Task %02d" index in
+    let uuid = Printf.sprintf "10000000-0000-4000-8000-%012d" (100 + index) in
+    [Ds.Add (Ds.Entity_id (900100 + index), "block/uuid", Ds.Uuid uuid);
+     put uuid "block/page" (Ds.Ref_to (ref_uuid page));
+     put uuid "block/title" (Ds.String title);
+     put uuid "block/updated-at" (Ds.Int64 (Int64.of_int index));
+     put uuid "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"))]) in
+  let db = Ds.db_with (List.concat tasks) (fixture "A small text block") in
+  let session = Rpc_session.create_session { Rpc_session.default_options with
+    graph_db = Some (fun () -> Some db) } in
+  ignore (Rpc_test.configure_plain_session session);
+  let snapshot = call session "widgetSnapshot" [] |> Rpc_test.response_result in
+  let titles = items "tasks" snapshot |> List.map (U.member "title") in
+  check_eq (List.length titles) 16;
+  check_eq (List.hd titles) (`String "Task 19")
+
 let cases = [
+  case "widgets project enough tasks for larger sizes" widgets_project_more_tasks_for_taller_widgets;
   case "widgets show eligible blocks and stage status only in the task graph"
     widgets_project_visible_blocks_and_update_a_task_in_the_correct_graph;
   case "graph deep links resolve graph page and block targets without changing the wrong graph" graph_deep_links_resolve_graphs_pages_and_blocks;

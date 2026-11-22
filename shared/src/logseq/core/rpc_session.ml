@@ -1944,6 +1944,7 @@ let widget_block_fields (block : Model.entity_summary) =
   ["uuid", `String block.uuid; "title", `String block.title]
 
 let widget_status = "logseq.property/status"
+let widget_task_limit = 16
 
 let widget_status_choices db eid =
   match Datascript.entid db "db/ident" (Datascript.Keyword widget_status) with
@@ -2039,7 +2040,7 @@ let widget_snapshot ?(resample = false) session =
                [Some "logseq.property/status.done"; Some "logseq.property/status.canceled"] in
              let updated = Option.value ~default:0
                (Graph_read.int_value (Graph_read.value db eid "block/updated-at")) in
-             tasks := take 3 (List.sort (fun (a, t, id, _, _) (b, u, other, _, _) ->
+             tasks := take widget_task_limit (List.sort (fun (a, t, id, _, _) (b, u, other, _, _) ->
                compare (a, -t, id) (b, -u, other)) ((completed, updated, eid, block, status) :: !tasks))
            | _ -> () in
        Ds.Db.datoms db Ds.Aevt ~a:widget_status () |> Seq.iter add_task;
