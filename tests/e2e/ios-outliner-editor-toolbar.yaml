@@ -9,7 +9,7 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Task: None"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-leading"
+- takeScreenshot: "tests/e2e/screenshots/ios-editor-leading"
 - tapOn:
     id: "button.outliner.editor.task"
 - extendedWaitUntil:
@@ -43,7 +43,7 @@ appId: com.logseq.logseq
     duration: 800
 - assertVisible:
     id: "toolbar.outliner.editor"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-trailing"
+- takeScreenshot: "tests/e2e/screenshots/ios-editor-trailing"
 - tapOn:
     id: "button.outliner.editor.pageReference"
 - assertVisible:

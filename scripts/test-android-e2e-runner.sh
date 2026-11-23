@@ -103,9 +103,9 @@ grep -Fq 'button.outliner.selection.indent' "$repo_root/tests/e2e/android-outlin
   || die "Android outliner E2E does not cover selection indent"
 grep -Fq 'button.outliner.selection.outdent' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not cover selection outdent"
-grep -Fq 'toolbars/editor-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
+grep -Fq 'takeScreenshot: tests/e2e/screenshots/android-editor-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not retain editor toolbar visual evidence"
-grep -Fq 'toolbars/selection-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
+grep -Fq 'takeScreenshot: tests/e2e/screenshots/android-selection-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not retain selection toolbar visual evidence"
 grep -Fq 'id: "button.outliner-delete.confirm"' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not confirm block deletion"

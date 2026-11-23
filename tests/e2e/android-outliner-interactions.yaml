@@ -27,7 +27,7 @@ appId: com.logseq.logseq
     id: "button.outliner.editor.attachment"
 - assertVisible: "Hide keyboard"
 - assertVisible: "Task: None"
-- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/editor-leading
+- takeScreenshot: tests/e2e/screenshots/android-editor-leading
 - tapOn:
     id: "button.outliner.editor.task"
 - extendedWaitUntil:
@@ -56,7 +56,7 @@ appId: com.logseq.logseq
     id: "button.outliner.editor.pageReference"
 - assertVisible:
     id: "button.outliner.editor.hideKeyboard"
-- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/editor-trailing
+- takeScreenshot: tests/e2e/screenshots/android-editor-trailing
 - swipe:
     start: 20%, 60%
     end: 80%, 60%
@@ -108,7 +108,7 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.delete"
 - assertVisible:
     id: "button.outliner.selection.copyReference"
-- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-leading
+- takeScreenshot: tests/e2e/screenshots/android-selection-leading
 - swipe:
     start: 70%, 92%
     end: 15%, 92%
@@ -117,7 +117,7 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.copyURL"
 - assertVisible:
     id: "button.outliner.selection.unselect"
-- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-trailing
+- takeScreenshot: tests/e2e/screenshots/android-selection-trailing
 - swipe:
     start: 15%, 92%
     end: 70%, 92%

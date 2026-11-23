@@ -20,7 +20,7 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.copyReference"
 - assertVisible:
     id: "button.outliner.selection.copyURL"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/selection"
+- takeScreenshot: "tests/e2e/screenshots/ios-selection-toolbar"
 - tapOn: "Select block E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.outliner.selection.indent"

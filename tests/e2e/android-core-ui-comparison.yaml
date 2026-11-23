@@ -11,7 +11,7 @@ appId: com.logseq.logseq
     visible:
       id: "sidebar.navigation"
     timeout: 30000
-- takeScreenshot: "docs/agent-guide/ui-comparison/android/sidebar"
+- takeScreenshot: "tests/e2e/screenshots/android-sidebar"
 - tapOn:
     id: "link.sidebar.journals"
 - extendedWaitUntil:
@@ -23,7 +23,7 @@ appId: com.logseq.logseq
       id: "journals.loading"
     timeout: 30000
 - assertVisible: "Journals"
-- takeScreenshot: "docs/agent-guide/ui-comparison/android/journals"
+- takeScreenshot: "tests/e2e/screenshots/android-journals"
 - scrollUntilVisible:
     element:
       id: "button.journal.e2e10000-0000-4000-8000-000000000001"
@@ -35,4 +35,4 @@ appId: com.logseq.logseq
     id: "button.journal.e2e10000-0000-4000-8000-000000000001"
 - assertVisible:
     id: "button.navigation.back"
-- takeScreenshot: "docs/agent-guide/ui-comparison/android/node"
+- takeScreenshot: "tests/e2e/screenshots/android-node"

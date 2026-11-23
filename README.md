@@ -113,11 +113,6 @@ run when publishing newer code rather than rerunning an older release.
 Before upload, CI checks that every native library in the AAB has 16 KB ELF
 alignment for Google Play and devices using 16 KB pages.
 
-Release notes live in `release-notes/<version>/ios.txt` and `android.txt`.
-The TestFlight lane uploads the iOS notes as What to Test. Android CI includes
-the Android notes in its artifacts and uploads them to the selected Google Play
-testing track. Keep those notes within Google's 500-character limit.
-
 Release builds report crashes to Sentry's `logseq-android` and `logseq-ios`
 projects. Both release workflows read the `SENTRY_AUTH_TOKEN` Actions secret
 to upload symbols for the exact binaries being distributed. For a local
