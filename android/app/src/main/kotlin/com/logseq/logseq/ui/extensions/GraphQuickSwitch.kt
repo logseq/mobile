@@ -1,5 +1,6 @@
 package com.logseq.logseq.ui.extensions
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lui.LuiExtensionContext
@@ -34,12 +37,13 @@ internal fun LuiExtensionRegistry.registerGraphQuickSwitch() {
     register(
         "graph-quick-switch",
         "lui-extension-v1|18:graph-quick-switch|profiles:android/kotlin,ios/swiftui|standard-children:1|children:" +
-            "|properties:11:target-name:string:required:none,9:target-id:string:required:none" +
+            "|properties:11:target-name:string:required:none,12:action-label:string:required:none,9:target-id:string:required:none" +
             "|events:6:switch[5:value:string:required]",
         acceptsStandardChildren = true,
         properties = listOf(
             LuiExtensionProperty("target-id", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("target-name", LuiExtensionValueKind.STRING, required = true),
+            LuiExtensionProperty("action-label", LuiExtensionValueKind.STRING, required = true),
         ),
         events = listOf(LuiExtensionEventSchema(
             "switch", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true)),
@@ -51,6 +55,9 @@ internal fun LuiExtensionRegistry.registerGraphQuickSwitch() {
 private fun GraphQuickSwitch(context: LuiExtensionContext) {
     val target = context.string("target-id").orEmpty()
     val name = context.string("target-name").orEmpty()
+    val actionLabel = context.string("action-label").orEmpty()
+    fun switchGraph() { context.emit("switch", "value" to target) }
+
     var distance by remember(target) { mutableFloatStateOf(0f) }
     val swipe = if (target.isEmpty()) Modifier else Modifier.pointerInput(target) {
         val minimumFlickDistance = 30.dp.toPx()
@@ -73,7 +80,7 @@ private fun GraphQuickSwitch(context: LuiExtensionContext) {
                         if (dragging && (-delta.x > size.width * 0.3f ||
                                 (-delta.x > minimumFlickDistance &&
                                     -velocity.calculateVelocity().x > minimumFlickVelocity))) {
-                            context.emit("switch", "value" to target)
+                            switchGraph()
                         }
                         break
                     }
@@ -93,28 +100,32 @@ private fun GraphQuickSwitch(context: LuiExtensionContext) {
             }
         }
     }
+    val accessibility = if (target.isEmpty() || actionLabel.isEmpty()) Modifier else Modifier.semantics {
+        customActions = listOf(CustomAccessibilityAction(actionLabel) {
+            switchGraph()
+            true
+        })
+    }
     val previewTravel = with(LocalDensity.current) { 48.dp.toPx() }
-    Box(Modifier.fillMaxSize().then(swipe)) {
+    Box(Modifier.fillMaxSize().then(swipe).then(accessibility)) {
         context.Children()
         if (target.isNotEmpty()) {
-            Surface(
+            Text(
+                name,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 24.dp, end = 24.dp)
                     .graphicsLayer {
                         alpha = (distance / (previewTravel / 2)).coerceIn(0f, 1f)
                         translationX = (previewTravel - distance).coerceAtLeast(0f)
                     }
+                    // A visual background keeps the preview out of pointer hit testing.
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
                     .clearAndSetSemantics {},
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Text(
-                    name,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

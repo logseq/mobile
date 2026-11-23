@@ -5597,6 +5597,8 @@ let dictionaries = [
     ("Graph Quick Switch", "快速切换图谱");
     ("Add your current graph and at least one more. Swipe left in Journals to cycle through them in slot order.",
      "添加当前图谱和至少一个其他图谱。在日记页向左滑动，即可按槽位顺序循环切换。");
+    ("Switch to {1}", "切换到 {1}");
+    ("Quick Switch uses downloaded graphs while signed out.", "退出登录后，快速切换仅适用于已下载的图谱。");
     ("Slot {1}", "槽位 {1}");
     ("Graph unavailable", "图谱不可用");
     ("Assigned to this slot", "已分配到此槽位");
