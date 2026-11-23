@@ -744,6 +744,7 @@ private struct LGNavigationContent: View {
     @Environment(\.lgPDFMainHidden) private var pdfMainHidden
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private var searchVisible: Bool { search?.isVisible == true }
@@ -795,6 +796,16 @@ private struct LGNavigationContent: View {
               let index = bottomChromeIndex, let chrome = childID(at: index) else { return false }
         let _ = context.measureStamp(of: chrome)
         return !context.childIDs(of: chrome).isEmpty
+        #else
+        false
+        #endif
+    }
+
+    // Collapsed and expanded composers share one placement so the swap keeps
+    // view identity and can animate instead of jumping between branches.
+    private var usesFloatingComposerChrome: Bool {
+        #if os(iOS)
+        hasCollapsedComposer || composerDismissalEnabled
         #else
         false
         #endif
@@ -856,19 +867,24 @@ private struct LGNavigationContent: View {
             }
             .overlay(alignment: .bottom) {
                 if active && !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
-                    if hasCollapsedComposer {
+                    if usesFloatingComposerChrome {
                         VStack {
                             Spacer(minLength: 0)
                             floatingBottomChrome
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea(.all, edges: .bottom)
+                        // The expanded composer keeps the collapsed baseline until the
+                        // keyboard arrives, so expansion grows in place instead of jumping.
+                        .ignoresSafeArea(hasCollapsedComposer ? .all : .container, edges: .bottom)
                         // Keep the layout mounted without drawing the capture controls
                         // beneath the native search bar and its Cancel button.
                         .opacity(searchVisible ? 0 : 1)
                         .animation(nil, value: searchVisible)
                         .allowsHitTesting(!searchVisible)
                         .accessibilityHidden(searchVisible)
+                        // The core swaps the collapsed and expanded composer in one
+                        // commit; animate that swap so it blends into the keyboard.
+                        .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: composerDismissalEnabled)
                     } else {
                         sizedBottomChrome
                     }
@@ -890,7 +906,7 @@ private struct LGNavigationContent: View {
     private var composerDismissalTarget: some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture(perform: emitDismissComposer)
+            .onTapGesture(perform: dismissComposerFromTap)
             .accessibilityLabel("Dismiss composer")
             .accessibilityIdentifier("surface.composer.dismiss")
     }
@@ -1206,7 +1222,21 @@ private struct LGNavigationContent: View {
             return search.context.content(for: search.context.childIDs[2])
         }
         guard let bottomChromeIndex else { return AnyView(EmptyView()) }
+        if usesFloatingComposerChrome, let chrome = childID(at: bottomChromeIndex) {
+            return AnyView(composerChrome(chrome))
+        }
         return childContent(at: bottomChromeIndex)
+    }
+
+    // The core replaces the chrome's only child when the composer expands or
+    // collapses; render that child here so the swap gets a cross-fade.
+    private func composerChrome(_ chrome: Int) -> some View {
+        let _ = context.measureStamp(of: chrome)
+        return ZStack(alignment: .bottom) {
+            ForEach(context.childIDs(of: chrome), id: \.self) { branch in
+                context.nodeView(of: branch).transition(.opacity)
+            }
+        }
     }
 
     @ViewBuilder
@@ -1301,6 +1331,16 @@ private struct LGNavigationContent: View {
         }
     }
 
+    private func dismissComposerFromTap() {
+        #if os(iOS)
+        // Let the expanded composer ride the keyboard down before the core
+        // swaps it for the collapsed bar.
+        LGKeyboardDismissal.perform(emitDismissComposer)
+        #else
+        emitDismissComposer()
+        #endif
+    }
+
     private func emitDismissComposer() {
         do {
             try context.emit(name: "dismiss-composer", values: [:])
@@ -1311,6 +1351,42 @@ private struct LGNavigationContent: View {
 }
 
 #if os(iOS)
+/// Resigns the keyboard and runs the completion once it has slid away.
+@MainActor
+private enum LGKeyboardDismissal {
+    private static var completion: (() -> Void)?
+    private static var observers: [NSObjectProtocol] = []
+
+    static func perform(_ action: @escaping () -> Void) {
+        guard completion == nil else { return }
+        completion = action
+        let center = NotificationCenter.default
+        var hiding = false
+        observers = [
+            center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { hiding = true }
+            },
+            center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { finish() }
+            },
+        ]
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        // Without a software keyboard nothing will animate, so dismiss at once.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if !hiding { finish() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { finish() }
+    }
+
+    private static func finish() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        let action = completion
+        completion = nil
+        action?()
+    }
+}
+
 @available(iOS 26.0, *)
 @MainActor
 private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
