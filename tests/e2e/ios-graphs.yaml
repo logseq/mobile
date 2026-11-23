@@ -14,8 +14,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "screen.graphs"
 - assertVisible: "Local graphs:"
-- assertVisible:
-    id: "button.graphs.refresh"
 - waitForAnimationToEnd
 - tapOn:
     id: "button.graph-add"

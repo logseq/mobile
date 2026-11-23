@@ -18,8 +18,6 @@ appId: com.logseq.logseq
       id: "screen.graphs"
     timeout: 5000
 - assertVisible: "Graphs"
-- assertVisible:
-    id: "button.graphs.refresh"
 - tapOn:
     id: "button.graphs.refresh"
 - waitForAnimationToEnd

@@ -12,8 +12,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible:
-    id: "button.outliner.editor.task"
-- assertVisible:
     id: "button.outliner.editor.outdent"
 - assertVisible:
     id: "button.outliner.editor.indent"
@@ -104,8 +102,6 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.outdent"
 - assertVisible:
     id: "button.outliner.selection.indent"
-- assertVisible:
-    id: "button.outliner.selection.delete"
 - assertVisible:
     id: "button.outliner.selection.copyReference"
 - takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-leading

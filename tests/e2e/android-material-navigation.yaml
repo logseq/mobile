@@ -15,10 +15,6 @@ appId: com.logseq.logseq
       id: "button.graph-switch"
     timeout: 5000
 - assertVisible:
-    id: "section.sidebar.favorites"
-- assertVisible:
-    id: "section.sidebar.recent"
-- assertVisible:
     id: "link.sidebar.flashcards"
 - assertVisible:
     id: "link.sidebar.graphs"

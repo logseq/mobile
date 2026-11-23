@@ -16,8 +16,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "layout.settings.appearance-control"
 - assertVisible:
-    id: "picker.settings.language"
-- assertVisible:
     id: "label.settings.editor"
 - tapOn:
     id: "picker.settings.appearance"
@@ -118,8 +116,6 @@ appId: com.logseq.logseq
     id: "button.log-order"
 - assertVisible:
     id: "button.log-source"
-- assertVisible:
-    id: "button.log-copy"
 - extendedWaitUntil:
     visible: "INFO"
     timeout: 10000

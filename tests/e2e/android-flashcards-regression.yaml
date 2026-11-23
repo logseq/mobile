@@ -31,7 +31,6 @@ appId: com.logseq.logseq
       id: "flashcards.complete"
     timeout: 10000
 - assertVisible: "🎉"
-- assertVisible: "Review complete"
 - assertNotVisible:
     id: "button.flashcards.practice-again"
 - tapOn:

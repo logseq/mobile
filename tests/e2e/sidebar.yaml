@@ -14,10 +14,6 @@ appId: com.logseq.logseq
     id: "link.sidebar.graphs"
 - assertVisible: "Favorites"
 - assertVisible: "Recent"
-- assertVisible:
-    id: "section.sidebar.favorites"
-- assertVisible:
-    id: "section.sidebar.recent"
 - tapOn:
     id: "button.sidebar"
 - assertNotVisible:

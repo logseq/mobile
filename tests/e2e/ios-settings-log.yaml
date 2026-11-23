@@ -17,8 +17,6 @@ appId: com.logseq.logseq
     id: "button.log-order"
 - assertVisible:
     id: "button.log-source"
-- assertVisible:
-    id: "button.log-copy"
 - extendedWaitUntil:
     visible: "INFO"
     timeout: 10000

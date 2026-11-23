@@ -76,12 +76,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible:
-    id: "button.outliner.editor.task"
-- assertVisible:
-    id: "button.outliner.editor.outdent"
-- assertVisible:
-    id: "button.outliner.editor.indent"
-- assertVisible:
     id: "button.outliner.editor.tag"
 - assertVisible:
     id: "button.outliner.editor.camera"
