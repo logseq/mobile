@@ -2802,7 +2802,19 @@ let sync_details_render_projected_cursor_and_trigger_the_existing_pump () =
     (List.map (fun eff ->
        Yojson.Basic.Util.member "kind" (Yojson.Basic.from_string (Native_bridge.encode_effect eff)))
        (App.model application).pending_effects)
-    [ `String "sync-pending"; `String "sync-now" ]
+    [ `String "sync-pending"; `String "sync-now" ];
+  let settled = { projection with has_pending_semantic_operations = false } in
+  send application (Model.ApplyCoreSnapshot settled);
+  flush application;
+  check_eq ~msg:"the status indicator turns green when sync settles"
+    (View_base.sync_indicator_foreground (App.model application))
+    "success-foreground";
+  check_eq ~msg:"Sync now disappears from the open sheet when the indicator is green"
+    (descendant_with_identifier renderer application_root "button.sync-now") (-1);
+  send application (Model.ApplyCoreSnapshot { settled with pending_sync_error = Some "Sync failed" });
+  flush application;
+  check ~msg:"a pending sync error restores Sync now in the open sheet"
+    (descendant_with_identifier renderer application_root "button.sync-now" <> -1)
 
 let automatic_pending_sync_never_requests_a_socket_restart () =
   let projection = { (empty_core_projection ()) with

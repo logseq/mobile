@@ -1207,6 +1207,12 @@ let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =
       ]
 
 let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
+  let sync_now ?variant () =
+    if_ ~test:(Signal.map (fun current -> not (View_base.sync_indicator_synced current)) model_source)
+      (button ?variant ~accessibility_identifier:"button.sync-now"
+         ~on_press:(press send Model.SyncNow)
+         ~text:(View_base.tr (Signal.sample model_source) "Sync now") [])
+  in
   let sync_row identifier label value_signal : t =
     list_item ~accessibility_identifier:identifier
       [
@@ -1274,10 +1280,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                   ~accessibility_identifier:"button.sync.done"
                   ~on_press:(press send Model.CloseSyncDetails)
                   ~text:(View_base.tr (Signal.sample model_source) "Done") [];
-                button ~variant:`primary
-                  ~accessibility_identifier:"button.sync-now"
-                  ~on_press:(press send Model.SyncNow)
-                  ~text:(View_base.tr (Signal.sample model_source) "Sync now") [];
+                sync_now ~variant:`primary ();
               ];
           ];
       ]
@@ -1322,9 +1325,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
             ];
 
 
-          button ~accessibility_identifier:"button.sync-now"
-            ~on_press:(press send Model.SyncNow)
-            ~text:(View_base.tr (Signal.sample model_source) "Sync now") [];
+          sync_now ();
         ];
       toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Sync status actions")
         ~style_class:"navigation-actions"

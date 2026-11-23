@@ -248,14 +248,17 @@ let sync_accessibility_identifier (current : Model.logseq_model) =
   | OfflineState -> "sync.disconnected"
   | _ -> "sync.connected"
 
+let sync_indicator_synced (current : Model.logseq_model) =
+  current.authentication_state = "signedIn"
+  && current.sync_state = SyncedState
+  && not current.has_pending_semantic_operations
+  && not current.has_pending_sync_request
+  && current.pending_sync_error = None
+
 let sync_indicator_foreground (current : Model.logseq_model) =
-  if current.authentication_state <> "signedIn" then "muted-foreground" else
-  match current.sync_state with
-  | SyncedState
-    when not current.has_pending_semantic_operations
-         && not current.has_pending_sync_request
-         && current.pending_sync_error = None -> "success-foreground"
-  | _ -> "warning-foreground"
+  if current.authentication_state <> "signedIn" then "muted-foreground"
+  else if sync_indicator_synced current then "success-foreground"
+  else "warning-foreground"
 
 let sync_connection_label (current : Model.logseq_model) =
   tr current
