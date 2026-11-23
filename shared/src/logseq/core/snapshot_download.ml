@@ -23,7 +23,7 @@ let resolve fields =
       | `Assoc fields -> Ok fields | _ -> Error "Snapshot metadata must be an object" in
     let* () = match field metadata "t" with
       | Some (`Int t) when t >= 0 -> Ok ()
-      | _ -> Error "Snapshot cursor metadata is invalid" in
+      | _ -> Error "Snapshot cursor metadata is invalid: expected a non-negative integer 't'. The sync server may be outdated or incompatible." in
     let* () = if field metadata "ok" = Some (`Bool true) then Ok ()
       else Error "Snapshot metadata did not report success" in
     let* url = string metadata "url" in
@@ -32,7 +32,7 @@ let resolve fields =
       | Some (`String value) ->
         let value = String.lowercase_ascii (String.trim value) in
         if value = "identity" || value = "gzip" then Ok value
-        else Error ("Unsupported snapshot content encoding: " ^ value)
+        else Error "Unsupported snapshot content encoding"
       | _ -> Error "Snapshot content encoding must be a string" in
     let schema = List.find_map (function Some (`String value) when String.trim value <> "" ->
       Some (`String (String.trim value)) | _ -> None)
@@ -41,4 +41,4 @@ let resolve fields =
       :: List.remove_assoc "schema-version" metadata in
     Ok (`Assoc ["metadataBody", `String (J.to_string (`Assoc metadata));
       "downloadURL", `String url; "contentEncoding", `String encoding])
-  with Yojson.Json_error message -> Error message
+  with Yojson.Json_error _ -> Error "Snapshot metadata is not valid JSON"
