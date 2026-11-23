@@ -81,11 +81,6 @@ jobs:
           xcrun simctl boot "$udid"
           echo "LOGSEQ_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
 
-      - name: Install Maestro
-        run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-
       - name: Restore iOS E2E binaries
         # Runner-only edits do not change the app or seed executable.
         id: ios-e2e-binaries
@@ -94,7 +89,7 @@ jobs:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
+          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
 
       - name: System dependencies
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
@@ -235,6 +230,8 @@ jobs:
             _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
           key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
+      - uses: ./.github/actions/maestro
+
       - name: Wait for db-sync and the simulator
         run: |
           for attempt in $(seq 1 180); do
@@ -319,10 +316,7 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      - name: Install Maestro
-        run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/maestro
 
       - name: Verify Android native ABI configuration
         run: python3 scripts/test-android-native-packaging.py
