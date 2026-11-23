@@ -4,13 +4,16 @@ import android.os.Build
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.view.inspector.WindowInspector
+import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
@@ -18,14 +21,23 @@ import dev.lui.LuiEvent
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 class AndroidEditorKeyboardTest {
-    @get:Rule val ui = createComposeRule()
+    @get:Rule val ui = createAndroidComposeRule<ComponentActivity>()
     private val events = mutableListOf<LuiEvent>()
     private lateinit var backend: LuiBackend
     private var generation = 1
+
+    @Before fun isolateSystemInputMethod() {
+        ui.activityRule.scenario.onActivity { activity ->
+            // These tests drive the editor's input connection directly. A system IME can send
+            // asynchronous composition updates to the same field between test commands.
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+    }
 
     private fun render(title: String, inputPolicy: String = "{}"): SemanticsNodeInteraction {
         val registry = logseqExtensionRegistry { it }
@@ -98,9 +110,9 @@ class AndroidEditorKeyboardTest {
     @Test fun rapidEnterAndUnicodeTypingKeepTheirOrderAcrossTwoHandoffs() {
         val editor = render("Tail")
         editor.performTextInputSelection(TextRange(0))
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         editor.performTextInput("first")
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         editor.performTextInput("后📝")
         acknowledge("next-one", "Tail", 0)
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" } >= 2 }
@@ -114,8 +126,8 @@ class AndroidEditorKeyboardTest {
     }
 
     @Test fun repeatedEnterDuringHandoffIsNeverDebouncedIntoATextChange() {
-        val editor = render("Draft")
-        repeat(3) { editor.performKeyInput { pressKey(Key.Enter) } }
+        render("Draft")
+        repeat(3) { pressHardwareEnterWithoutComposition() }
         acknowledge("second", "", 0)
         acknowledge("third", "", 0)
         ui.runOnIdle { assertEquals(3, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
@@ -169,23 +181,61 @@ class AndroidEditorKeyboardTest {
     }
 
     @Test fun softwareKeyboardNextHandsOffWhileTheNextWordIsComposing() {
-        val editor = render("")
-        val connection = inputConnection()
-        ui.runOnIdle { assertTrue(connection.commitText("Hello", 1)) }
-        editor.assertTextEquals("Hello")
+        assertNextBlockKeepsComposition(reopenInBatch = false)
+    }
+
+    @Test fun softwareKeyboardNextKeepsCompositionWhenImeFinishesAndReopensItInABatch() {
+        assertNextBlockKeepsComposition(reopenInBatch = true)
+    }
+
+    @Test fun softwareKeyboardNextFinishesCompositionAtTheEndOfAnImeBatch() {
+        val (next, connection) = beginNextBlockComposition()
         ui.runOnIdle {
-            assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT))
+            assertTrue(connection.beginBatchEdit())
+            assertTrue(connection.finishComposingText())
+            connection.endBatchEdit()
         }
-        assertSplit("Hello")
-        val typingConnection = inputConnection()
-        ui.runOnIdle { assertTrue(typingConnection.setComposingText("ni", 1)) }
-        acknowledge("next-block", "", 0)
-        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
+        next.assertTextEquals("ni")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, null))
+    }
+
+    private fun assertNextBlockKeepsComposition(reopenInBatch: Boolean) {
+        val (next, typingConnection) = beginNextBlockComposition()
+        ui.runOnIdle {
+            if (reopenInBatch) {
+                assertTrue(typingConnection.beginBatchEdit())
+                assertTrue(typingConnection.beginBatchEdit())
+                assertTrue(typingConnection.finishComposingText())
+                assertTrue(typingConnection.endBatchEdit())
+            }
+            assertTrue(if (Build.VERSION.SDK_INT >= 33) typingConnection.setComposingRegion(0, "ni".length, null)
+                else typingConnection.setComposingRegion(0, "ni".length))
+            assertTrue(typingConnection.setComposingText("nih", 1))
+            if (reopenInBatch) typingConnection.endBatchEdit()
+        }
+        next.assertTextEquals("nih")
         ui.runOnIdle { assertTrue(typingConnection.commitText("你", 1)) }
         next.assertIsFocused().assertTextEquals("你")
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
             it.name == "text-change" && it.values["title"] == "你"
         } }
+    }
+
+    private fun beginNextBlockComposition(): Pair<SemanticsNodeInteraction, InputConnection> {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle { assertTrue(connection.commitText("Hello", 1)) }
+        editor.assertTextEquals("Hello")
+        ui.runOnIdle { assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_NEXT)) }
+        assertSplit("Hello")
+        val typingConnection = inputConnection()
+        ui.runOnIdle {
+            assertTrue(typingConnection.setComposingRegion(0, "Hello".length))
+            assertTrue(typingConnection.setComposingText("ni", 1))
+        }
+        acknowledge("next-block", "", 0)
+        val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
+        return next to typingConnection
     }
 
     @Test fun softwareKeyboardCanConfirmACandidateInTheCurrentBlock() {
@@ -371,7 +421,7 @@ class AndroidEditorKeyboardTest {
         val editor = render("Draft")
         editor.performTextInput(" multiple\nlines")
         editor.assertTextEquals("Draft multiple\nlines")
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" } }
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
@@ -453,6 +503,16 @@ class AndroidEditorKeyboardTest {
     }
 
     private fun editorInfo() = EditorInfo().also { inputConnection(it) }
+
+    private fun pressHardwareEnterWithoutComposition() {
+        ui.runOnIdle {
+            val view = requireNotNull(findEditorView())
+            val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+            assertTrue(connection.finishComposingText())
+            assertTrue(view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, AndroidKeyEvent.KEYCODE_ENTER)))
+            view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, AndroidKeyEvent.KEYCODE_ENTER))
+        }
+    }
 
     private fun findEditorView(): View? {
         fun find(view: View): View? {

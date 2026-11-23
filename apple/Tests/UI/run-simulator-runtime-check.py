@@ -98,9 +98,14 @@ import SwiftUI
             runtime_exports += ["-Xlinker", "-u", "-Xlinker", symbol]
         if CONFIGURATION == "release":
             runtime_exports += ["-Xlinker", "-dead_strip"]
+        # Checks that import Logseq need the Clang modules supplied by SwiftPM.
+        sentry_headers = ROOT / "apple/.build/checkouts/sentry-cocoa/Sources/Sentry"
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
-             "-I", str(BUILD / "LogseqCoreABI.build"), str(source), *objects, *testing_args, str(runtime),
+             "-I", str(BUILD / "LogseqCoreABI.build"),
+             "-Xcc", f"-fmodule-map-file={BUILD / 'SentryHeaders.build/module.modulemap'}",
+             "-I", str(sentry_headers / "Public"), "-I", str(sentry_headers / "include"),
+             str(source), *objects, *testing_args, str(runtime),
              str(core / "logseq_https_darwin.o"), str(core / "logseq_crypto_darwin.o"),
              str(toolchain / "arm64-apple-ios17.0-simulator-5.5.0/lib/ocaml/libthreadsnat.a"),
              "-L" + str(toolchain / "libffi-arm64-apple-ios17.0-simulator/lib"),

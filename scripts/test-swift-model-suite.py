@@ -13,7 +13,9 @@ def main():
     configuration = os.environ.get("LOGSEQ_SWIFT_CONFIGURATION", "debug")
     if configuration not in ("debug", "release"):
         raise SystemExit("LOGSEQ_SWIFT_CONFIGURATION must be debug or release")
-    build = ["swift", "build", "--configuration", configuration, "--package-path", str(ROOT / "apple"), "--disable-sandbox", "-Xswiftc", "-enable-testing"]
+    # This runner reads the native SwiftPM output-file map to link the test objects.
+    build = ["swift", "build", "--build-system", "native", "--configuration", configuration,
+             "--package-path", str(ROOT / "apple"), "--disable-sandbox", "-Xswiftc", "-enable-testing"]
     subprocess.run(build + ["--target", "LogseqModelTests"], check=True)
     subprocess.run(build + ["--product", "LogseqModel"], check=True)
     output = pathlib.Path(subprocess.check_output(build + ["--show-bin-path"], text=True).strip())
