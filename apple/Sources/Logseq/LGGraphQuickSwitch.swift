@@ -223,6 +223,72 @@ private extension EnvironmentValues {
     @Entry var lgGraphSwitchMotion: GraphSwitchMotion?
 }
 
+@MainActor @Observable
+private final class JournalScrollTitle {
+    private(set) var displayed: String?
+    @ObservationIgnored private var candidate: String?
+    @ObservationIgnored private var scrollingCandidate: String?
+    @ObservationIgnored private var isScrolling = false
+    @ObservationIgnored private var updateTask: Task<Void, Never>?
+
+    func receive(_ title: String?) {
+        candidate = title
+        if isScrolling {
+            // The inline heading can temporarily leave the toolbar title empty.
+            if let title { scrollingCandidate = title }
+        } else {
+            cancelUpdate()
+        }
+        scheduleUpdate()
+    }
+
+    func setScrolling(_ scrolling: Bool) {
+        guard isScrolling != scrolling else { return }
+        isScrolling = scrolling
+        scrollingCandidate = scrolling ? candidate ?? displayed : nil
+        cancelUpdate()
+        scheduleUpdate()
+    }
+
+    private func cancelUpdate() {
+        updateTask?.cancel()
+        updateTask = nil
+    }
+
+    private var nextTitle: String? { isScrolling ? scrollingCandidate : candidate }
+
+    private func scheduleUpdate() {
+        guard updateTask == nil, nextTitle != displayed else { return }
+        // Coalesce fast section changes while moving and settle the final heading at rest.
+        let delay: Duration = .milliseconds(isScrolling ? 150 : 120)
+        updateTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self else { return }
+            updateTask = nil
+            displayed = nextTitle
+        }
+    }
+}
+
+private struct JournalScrollTitleModifier: ViewModifier {
+    @State private var title = JournalScrollTitle()
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let displayed = title.displayed
+        let tracked = content
+            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title.receive($0) }
+            .transformPreference(LUIScrollTitlePreferenceKey.self) { $0 = displayed }
+        if #available(iOS 18.0, *) {
+            tracked.onScrollPhaseChange { _, phase in
+                title.setScrolling(phase != .idle)
+            }
+        } else {
+            tracked
+        }
+    }
+}
+
 private struct JournalGraphPanes: View {
     private struct Presentation: Decodable {
         let active: String
@@ -262,6 +328,7 @@ private struct JournalGraphPanes: View {
                         let visible = presentation.visible && (focused || source || incoming)
                         let interactive = visible && focused && !presentation.loading
                         PaneContent(context: context, nodeID: childID).equatable()
+                            .modifier(JournalScrollTitleModifier())
                             .frame(width: width, height: geometry.size.height)
                             .background(background)
                             .offset(x: source ? -(gesture?.travel ?? 0)
