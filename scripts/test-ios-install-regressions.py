@@ -29,13 +29,16 @@ class DeviceInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             app = pathlib.Path(directory)
             widget = app / "PlugIns/LogseqWidgets.appex"
-            actions = {name: {"openAppWhenRun": True} for name in
-                       ("QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "CaptureToJournalIntent")}
+            shortcut_names = ("QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "CaptureToJournalIntent")
+            actions = {name: {"openAppWhenRun": True} for name in shortcut_names}
+            actions.update({name: {"openAppWhenRun": False} for name in (
+                "SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent",
+            )})
             for bundle in (app, widget):
                 (bundle / "Metadata.appintents").mkdir(parents=True)
                 (bundle / "Metadata.appintents/extract.actionsdata").write_text(json.dumps({
                     "actions": actions,
-                    "autoShortcuts": [{"actionIdentifier": name} for name in actions],
+                    "autoShortcuts": [{"actionIdentifier": name} for name in shortcut_names],
                 }))
             host = {"CFBundleIdentifier": "com.logseq.logseq", "CFBundleSupportedPlatforms": ["iPhoneOS"],
                     "UIApplicationShortcutItems": [

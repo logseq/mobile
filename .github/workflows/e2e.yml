@@ -59,24 +59,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: System dependencies
-        run: brew install sdl2 sdl2_ttf
-
-      - name: Install Maestro
-        run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-
-      - uses: ./.github/actions/ocaml-tools
-        with:
-          image: macos-15
-
-      - uses: ./.github/actions/ocaml-vendor
-
       - name: Select Xcode 26
         # lui declares swift-tools-version 6.2; the image default (16.4) ships
         # Swift 6.1, so select the Xcode 26 toolchain (Swift 6.2).
         run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+
+      - name: Start db-sync server (background)
+        id: ios-db-sync
+        # Build it while the simulator boots and the app builds.
+        uses: ./.github/actions/db-sync-server
+        with:
+          background: "true"
 
       - name: Boot an iOS simulator
         # simctl boot returns as soon as the boot is initiated; the device
@@ -88,11 +81,10 @@ jobs:
           xcrun simctl boot "$udid"
           echo "LOGSEQ_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
 
-      - name: Start db-sync server (background)
-        # Builds while the iOS app build runs; "Wait for db-sync" polls it.
-        uses: ./.github/actions/db-sync-server
-        with:
-          background: "true"
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Restore iOS E2E binaries
         # Runner-only edits do not change the app or seed executable.
@@ -103,6 +95,18 @@ jobs:
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
           key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/workflows/e2e.yml', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
+
+      - name: System dependencies
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        run: brew install sdl2 sdl2_ttf
+
+      - uses: ./.github/actions/ocaml-tools
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        with:
+          image: macos-15
+
+      - uses: ./.github/actions/ocaml-vendor
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
 
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain
@@ -156,9 +160,30 @@ jobs:
             ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
           key: ios-simulator-swift-downloads-v1-${{ runner.arch }}-xcode26.3-${{ steps.sentry.outputs.revision }}
 
+      - name: Restore simulator extensions
+        id: ios-extensions
+        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/ios-core/simulator/extensions/Debug/LogseqShareExtension.appex
+            _build/ios-core/simulator/extensions/Debug/LogseqWidgets.appex
+          key: ios-simulator-extensions-v1-${{ runner.arch }}-xcode26.3-debug-ios17-${{ hashFiles('apple/App/Logseq.xcodeproj/project.pbxproj', 'apple/App/Logseq.xcconfig', 'apple/App/Assets.xcassets/**', 'apple/App/ShareExtension/**', 'apple/App/Widgets/**', 'apple/App/Sources/QuickActions.swift', 'apple/Sources/Logseq/RecordingActivity.swift', 'version.xcconfig', 'scripts/build-mobile-ios-simulator.sh') }}
+
       - name: Build iOS app for the simulator
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
+        env:
+          LOGSEQ_IOS_REUSE_EXTENSIONS: ${{ steps.ios-extensions.outputs.cache-hit == 'true' && '1' || '0' }}
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save simulator extensions
+        if: github.ref == 'refs/heads/main' && steps.ios-extensions.outputs.cache-primary-key != '' && steps.ios-extensions.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _build/ios-core/simulator/extensions/Debug/LogseqShareExtension.appex
+            _build/ios-core/simulator/extensions/Debug/LogseqWidgets.appex
+          key: ${{ steps.ios-extensions.outputs.cache-primary-key }}
 
       - name: Save Swift package downloads
         if: github.ref == 'refs/heads/main' && steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
@@ -215,6 +240,8 @@ jobs:
           for attempt in $(seq 1 180); do
             if curl -s -o /dev/null "http://127.0.0.1:8787/"; then
               echo "db-sync is listening on :8787"
+              grep -E '^(Using cached db-sync runtime|Building db-sync runtime|db-sync runtime prepared in )' \
+                logseq-server/deps/db-sync/build.log || true
               break
             fi
             if [[ $attempt == 180 ]]; then
@@ -227,12 +254,19 @@ jobs:
           done
           xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR_UDID" -b
 
+      - name: Save iOS db-sync runtime
+        if: steps.ios-db-sync.outputs.cache-key != '' && steps.ios-db-sync.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/db-sync-runtime
+          key: ${{ steps.ios-db-sync.outputs.cache-key }}
+
       - name: Run iOS e2e module
         timeout-minutes: ${{ env.IOS_MODULE == 'smoke' && 20 || 60 }}
         env:
           LOGSEQ_E2E_SEED_BIN: ${{ github.workspace }}/_build/default/shared/native/logseq_e2e_seed.exe
           LOGSEQ_IOS_SKIP_BUILD: "1"
-        run: opam exec -- ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
+        run: ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
       - name: Upload Maestro debug artifacts
         if: failure()
@@ -310,6 +344,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Start db-sync server (background)
+        id: android-db-sync
         # Builds while the emulator boots and the APK compiles; the next
         # step polls the port before the flows run.
         uses: ./.github/actions/db-sync-server
@@ -350,6 +385,13 @@ jobs:
           path: ~/.maestro/tests
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Save Android db-sync runtime
+        if: steps.android-db-sync.outputs.cache-key != '' && steps.android-db-sync.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/db-sync-runtime
+          key: ${{ steps.android-db-sync.outputs.cache-key }}
 
       - name: Save Android OCaml toolchain
         if: always() && steps.android-toolchain.outputs.cache-hit != 'true'

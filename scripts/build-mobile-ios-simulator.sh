@@ -31,6 +31,7 @@ triple="arm64-apple-ios${deployment_target}-simulator"
 target_prefix=${LOGSEQ_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
 swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build}
 swift_build_dir="$swift_scratch_dir/arm64-apple-ios-simulator/$configuration"
+app_intents_values_path="$swift_build_dir/LogseqShell.build/LogseqShell.swiftconstvalues"
 core_build_dir="$repo_root/_build/ios-core/simulator"
 https_object="$core_build_dir/logseq_https_darwin.o"
 crypto_object="$core_build_dir/logseq_crypto_darwin.o"
@@ -119,23 +120,30 @@ build_phase_started=$SECONDS
 prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 LOGSEQ_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
+LOGSEQ_APP_INTENTS_VALUES_PATH="$app_intents_values_path" \
 swift build "${swift_build_args[@]}"
 echo "[ios-build] Swift app: $((SECONDS - build_phase_started))s" >&2
 
 build_phase_started=$SECONDS
-xcodebuild \
-  -project "$repo_root/apple/App/Logseq.xcodeproj" \
-  -target LogseqShareExtension \
-  -target LogseqWidgets \
-  -configuration "$configuration_name" \
-  -sdk iphonesimulator \
-  -arch arm64 \
-  ONLY_ACTIVE_ARCH=YES \
-  CONFIGURATION_BUILD_DIR="$extension_build_dir" \
-  CODE_SIGNING_ALLOWED=NO \
-  -quiet \
-  build
-echo "[ios-build] Xcode extensions: $((SECONDS - build_phase_started))s" >&2
+if [[ ${LOGSEQ_IOS_REUSE_EXTENSIONS:-0} == 1 \
+      && -s $extension_build_dir/LogseqShareExtension.appex/LogseqShareExtension \
+      && -s $extension_build_dir/LogseqWidgets.appex/LogseqWidgets ]]; then
+  echo "[ios-build] Reusing cached Xcode extensions" >&2
+else
+  xcodebuild \
+    -project "$repo_root/apple/App/Logseq.xcodeproj" \
+    -target LogseqShareExtension \
+    -target LogseqWidgets \
+    -configuration "$configuration_name" \
+    -sdk iphonesimulator \
+    -arch arm64 \
+    ONLY_ACTIVE_ARCH=YES \
+    CONFIGURATION_BUILD_DIR="$extension_build_dir" \
+    CODE_SIGNING_ALLOWED=NO \
+    -quiet \
+    build
+  echo "[ios-build] Xcode extensions: $((SECONDS - build_phase_started))s" >&2
+fi
 build_phase_started=$SECONDS
 
 if [[ -d $app_dir ]]; then
@@ -181,7 +189,8 @@ if [[ -d $logseq_resource_bundle ]]; then
   "$repo_root/scripts/compile-ios-app-assets.sh" "$logseq_resource_bundle" iphonesimulator "$deployment_target" resources
 fi
 
-"$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
+LOGSEQ_APP_INTENTS_VALUES_PATH="$app_intents_values_path" \
+  "$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
   "$deployment_target" "$app_dir" "$swift_build_dir" "$swift_scratch_dir" \
   "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 

@@ -14,23 +14,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     source = (ROOT / "scripts/build-mobile-ios-simulator.sh").read_text()
-    block = re.search(r"^swift_(?:extra|build)_args=\(.*?(?=^xcodebuild)", source, re.MULTILINE | re.DOTALL)
+    block = re.search(r'^swift_build_args=\(.*?^swift build "\$\{swift_build_args\[@\]\}"$', source,
+                      re.MULTILINE | re.DOTALL)
     if not block:
         raise SystemExit("Simulator Swift build invocation was not found")
     values = {"configuration": "release", "repo_root": "/tmp/project with spaces",
               "triple": "arm64-apple-ios17.0-simulator", "sdk_path": "/tmp/iOS SDK",
-              "native_link_inputs": "runtime.o:crypto.o", "simulator_entitlements": "/tmp/entitlements.plist"}
+              "native_link_inputs": "runtime.o:crypto.o", "simulator_entitlements": "/tmp/entitlements.plist",
+              "swift_scratch_dir": "/tmp/Swift build", "app_intents_values_path": "/tmp/Swift build/intent-values"}
     preamble = "set -euo pipefail\n" + "\n".join(name + "=" + shlex.quote(value) for name, value in values.items())
     preamble += "\nprune_stale_swift_resource_bundles() { :; }\n"
     expected = ["build", "--build-system", "native", "--disable-sandbox",
                 "--configuration", "release", "--disable-keychain", "--package-path",
-                values["repo_root"] + "/apple", "--product", "LogseqShell", "--triple", values["triple"],
+                values["repo_root"] + "/apple", "--scratch-path", values["swift_scratch_dir"],
+                "--product", "LogseqShell", "--triple", values["triple"],
                 "--sdk", values["sdk_path"]]
     shells = list(dict.fromkeys(["/bin/bash", shutil.which("bash")]))
     failures = 0
     with tempfile.TemporaryDirectory(prefix="logseq-swift-arguments-") as directory:
         swift = Path(directory) / "swift"
-        swift.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
+        swift.write_text("#!/usr/bin/env python3\nimport json,os,sys\n"
+                         "print(json.dumps([sys.argv[1:], os.environ['LOGSEQ_APP_INTENTS_VALUES_PATH']]))\n")
         swift.chmod(0o755)
         for shell in shells:
             for testing in ["0", "1"]:
@@ -39,7 +43,7 @@ def main():
                 result = subprocess.run([shell, "-c", preamble + block.group()], env=environment,
                                         capture_output=True, text=True, timeout=10)
                 wanted = expected + (["-Xswiftc", "-enable-testing"] if testing == "1" else [])
-                good = result.returncode == 0 and json.loads(result.stdout) == wanted
+                good = result.returncode == 0 and json.loads(result.stdout) == [wanted, values["app_intents_values_path"]]
                 print(f"{'PASS' if good else 'FAIL'}: {shell}, testing={testing}")
                 if not good:
                     failures += 1
