@@ -577,8 +577,15 @@ let resident_switch_reuses_runtime_and_checks_disk_identity () =
     Mobile.retain_graphs host ["graph"; "second"];
     expect_ok (Mobile.prepare_graph host (open_payload first false));
     check_eq ~msg:"preparation does not change the focused graph" !(host.current) None;
+    check_eq ~msg:"preparation does not queue a journal creation"
+      (Pending_ops.list (path first)) [];
     activate "graph" first;
     let original = current () in
+    check ~msg:"first activation queues today's journal creation"
+      (List.exists (fun (operation : Pending_ops.pending_operation) ->
+        match operation.intent with
+        | Pending_ops.Create_journal _ -> true
+        | _ -> false) (Pending_ops.list (path first)));
     Mobile.load_older_journals host;
     activate "second" second;
     activate "graph" first;
