@@ -1,6 +1,6 @@
 # Logseq
 
-Logseq uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
+Logseq uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed by an OCaml DataScript core. Build and test setup is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Testing
 
@@ -58,4 +58,4 @@ A representative core action is the Swift FFI RPC `dispatch` / `send`, which opt
 
 ### iOS / Android
 
-On a Mac, follow `README.md`: open `apple/Project.xcworkspace`, run the `Logseq App` scheme. Native core builds (`scripts/build-mobile-ios-*.sh`, `scripts/build-android-native.sh`) bootstrap their own cross toolchains under `_build/` via the `scripts/bootstrap-*.sh` helpers. Do not start Android emulators or Maestro from Cloud Agent unless that stack is explicitly in scope.
+On a Mac, follow the [iOS setup guide](CONTRIBUTING.md#ios) to build and run the app. Native core builds (`scripts/build-mobile-ios-*.sh`, `scripts/build-android-native.sh`) bootstrap their own cross toolchains under `_build/` via the `scripts/bootstrap-*.sh` helpers. Do not start Android emulators or Maestro from Cloud Agent unless that stack is explicitly in scope.

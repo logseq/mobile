@@ -24,7 +24,7 @@ opam install --switch=5.5.0 dune.3.24.2 opam-monorepo.0.3.6
 opam exec --switch=5.5.0 -- opam-monorepo pull
 ```
 
-Fetch the additional Git pins from [`logseq.opam`](logseq.opam) after pulling the lockfile sources. This is the same checkout sequence used by the [CI vendoring action](.github/actions/ocaml-vendor/action.yml). Git must be able to authenticate for any private dependencies.
+Fetch the additional Git pins from [`logseq.opam`](logseq.opam) after pulling the lockfile sources. The [CI vendoring action](.github/actions/ocaml-vendor/action.yml) uses the same pins. You can rerun this step after an interrupted fetch. Git must be able to authenticate for any private dependencies.
 
 ```sh
 grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u |
@@ -32,7 +32,10 @@ grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u |
     repository=${pin%%#*}
     revision=${pin##*#}
     checkout="duniverse/$(basename "$repository" .git)"
-    [ -d "$checkout" ] && continue
+    if [ -d "$checkout" ] && { [ ! -e "$checkout/.git" ] ||
+      git -C "$checkout" rev-parse --verify --quiet HEAD >/dev/null; }; then
+      continue
+    fi
     git init --quiet "$checkout" &&
       git -C "$checkout" fetch --quiet --depth=1 "https://github.com/$repository" "$revision" &&
       git -C "$checkout" checkout --quiet --detach FETCH_HEAD || exit 1
@@ -90,7 +93,7 @@ Use the Swift scripts directly. The XCTest bridge used by `swift test` hangs in 
 
 - **iOS recording Live Activity.** Boot a simulator, build with `LOGSEQ_IOS_ENABLE_TESTING=1 ./scripts/build-mobile-ios-simulator.sh`, and run `python3 scripts/test-ios-recording-live-activity.py`. It checks archived Lock Screen and Dynamic Island layouts.
 - **iPhone Duo toolbar.** Use Xcode 27.1 or later and the same testing build. Run `LOGSEQ_RUNTIME_CHECK_TIMEOUT=65 python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/duo-toolbar-layout.swift DuoToolbarLayoutCheck` and change poses in Device Hub during the check. With multiple booted simulators, set `LOGSEQ_IOS_SIMULATOR=<UDID>`. Set `SIMCTL_CHILD_LOGSEQ_DUO_REQUIRE_POSE_CHANGE=1` to require both toolbar axes, `SIMCTL_CHILD_LOGSEQ_DUO_CHECK_INTERACTIONS=1` to check focus and draft retention, or `SIMCTL_CHILD_LOGSEQ_DUO_REGULAR_WIDTH=1` to exercise the expanded split view. Set `LOGSEQ_RUNTIME_CHECK_ARTIFACTS` to retain screenshots. The [UI runtime checks](apple/Tests/UI) also cover search dismissal, page navigation, appearance, and PDF downloads and annotations.
-- **iOS composer menus.** After a Release simulator build, run `LOGSEQ_IOS_CONFIGURATION=release python3 scripts/test-ios-native-menus.py`. Add `--hit-testing` to cover focus and single-tap file selection. This Maestro check runs without an account or server.
+- **iOS composer menus.** [Install the Maestro CLI](https://docs.maestro.dev/maestro-cli/how-to-install-maestro-cli) and confirm that `maestro --version` works in your terminal. After a Release simulator build, run `LOGSEQ_IOS_CONFIGURATION=release python3 scripts/test-ios-native-menus.py`. Add `--hit-testing` to cover focus and single-tap file selection. This Maestro check runs without an account or server.
 - **iOS sync recovery.** Run `python3 scripts/test-ios-sync-recovery.py` for the WebSocket recovery checks, or add `--simulator` to use the iOS Foundation runtime.
 - **Android instrumented Release tests.** From `android/`, run `./gradlew :app:assembleRelease :app:assembleReleaseAndroidTest -PlogseqTestBuildType=release`. Sign both APKs with the same certificate before installing. The Release test build applies the app's R8 mapping.
 - **Capture translations.** After editing [`CaptureLocalizations.json`](apple/Sources/Logseq/Resources/CaptureLocalizations.json), run `python3 scripts/generate-capture-localizations.py`. Use `--check` to verify coverage and generated output.
