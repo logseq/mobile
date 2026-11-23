@@ -39,9 +39,5 @@ if ! grep -Eq '^OK \([1-9][0-9]* tests?\)' "$report" ||
   exit 1
 fi
 for test in "${tests[@]}"; do
-  class=${test%%#*}
-  grep -Fq "INSTRUMENTATION_STATUS: class=$class" "$report"
-  if [[ $test == *'#'* ]]; then
-    grep -Fq "INSTRUMENTATION_STATUS: test=${test#*#}" "$report"
-  fi
+  grep -Fxq "INSTRUMENTATION_STATUS: class=$test" "$report"
 done

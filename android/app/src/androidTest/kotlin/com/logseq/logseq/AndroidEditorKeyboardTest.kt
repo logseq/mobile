@@ -98,9 +98,9 @@ class AndroidEditorKeyboardTest {
     @Test fun rapidEnterAndUnicodeTypingKeepTheirOrderAcrossTwoHandoffs() {
         val editor = render("Tail")
         editor.performTextInputSelection(TextRange(0))
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         editor.performTextInput("first")
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         editor.performTextInput("后📝")
         acknowledge("next-one", "Tail", 0)
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" } >= 2 }
@@ -114,8 +114,8 @@ class AndroidEditorKeyboardTest {
     }
 
     @Test fun repeatedEnterDuringHandoffIsNeverDebouncedIntoATextChange() {
-        val editor = render("Draft")
-        repeat(3) { editor.performKeyInput { pressKey(Key.Enter) } }
+        render("Draft")
+        repeat(3) { pressHardwareEnterWithoutComposition() }
         acknowledge("second", "", 0)
         acknowledge("third", "", 0)
         ui.runOnIdle { assertEquals(3, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
@@ -178,9 +178,18 @@ class AndroidEditorKeyboardTest {
         }
         assertSplit("Hello")
         val typingConnection = inputConnection()
-        ui.runOnIdle { assertTrue(typingConnection.setComposingText("ni", 1)) }
+        ui.runOnIdle {
+            assertTrue(typingConnection.setComposingRegion(0, "Hello".length))
+            assertTrue(typingConnection.setComposingText("ni", 1))
+        }
         acknowledge("next-block", "", 0)
         val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
+        ui.runOnIdle {
+            assertTrue(if (Build.VERSION.SDK_INT >= 33) typingConnection.setComposingRegion(0, "ni".length, null)
+                else typingConnection.setComposingRegion(0, "ni".length))
+            assertTrue(typingConnection.setComposingText("nih", 1))
+        }
+        next.assertTextEquals("nih")
         ui.runOnIdle { assertTrue(typingConnection.commitText("你", 1)) }
         next.assertIsFocused().assertTextEquals("你")
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
@@ -371,7 +380,7 @@ class AndroidEditorKeyboardTest {
         val editor = render("Draft")
         editor.performTextInput(" multiple\nlines")
         editor.assertTextEquals("Draft multiple\nlines")
-        editor.performKeyInput { pressKey(Key.Enter) }
+        pressHardwareEnterWithoutComposition()
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "return" } }
         ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
@@ -453,6 +462,17 @@ class AndroidEditorKeyboardTest {
     }
 
     private fun editorInfo() = EditorInfo().also { inputConnection(it) }
+
+    private fun pressHardwareEnterWithoutComposition() {
+        ui.runOnIdle {
+            val view = requireNotNull(findEditorView())
+            val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+            // Finish any composing region opened by the emulator's keyboard before sending the key.
+            assertTrue(connection.finishComposingText())
+            assertTrue(view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, AndroidKeyEvent.KEYCODE_ENTER)))
+            view.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, AndroidKeyEvent.KEYCODE_ENTER))
+        }
+    }
 
     private fun findEditorView(): View? {
         fun find(view: View): View? {
