@@ -744,7 +744,6 @@ private struct LGNavigationContent: View {
     @Environment(\.lgPDFMainHidden) private var pdfMainHidden
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.locale) private var locale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private var searchVisible: Bool { search?.isVisible == true }
@@ -802,7 +801,7 @@ private struct LGNavigationContent: View {
     }
 
     // Collapsed and expanded composers share one placement so the swap keeps
-    // view identity and can animate instead of jumping between branches.
+    // layout and expansion follows the keyboard instead of jumping between branches.
     private var usesFloatingComposerChrome: Bool {
         #if os(iOS)
         hasCollapsedComposer || composerDismissalEnabled
@@ -882,9 +881,6 @@ private struct LGNavigationContent: View {
                         .animation(nil, value: searchVisible)
                         .allowsHitTesting(!searchVisible)
                         .accessibilityHidden(searchVisible)
-                        // The core swaps the collapsed and expanded composer in one
-                        // commit; animate that swap so it blends into the keyboard.
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: composerDismissalEnabled)
                     } else {
                         sizedBottomChrome
                     }
@@ -1222,21 +1218,7 @@ private struct LGNavigationContent: View {
             return search.context.content(for: search.context.childIDs[2])
         }
         guard let bottomChromeIndex else { return AnyView(EmptyView()) }
-        if usesFloatingComposerChrome, let chrome = childID(at: bottomChromeIndex) {
-            return AnyView(composerChrome(chrome))
-        }
         return childContent(at: bottomChromeIndex)
-    }
-
-    // The core replaces the chrome's only child when the composer expands or
-    // collapses; render that child here so the swap gets a cross-fade.
-    private func composerChrome(_ chrome: Int) -> some View {
-        let _ = context.measureStamp(of: chrome)
-        return ZStack(alignment: .bottom) {
-            ForEach(context.childIDs(of: chrome), id: \.self) { branch in
-                context.nodeView(of: branch).transition(.opacity)
-            }
-        }
     }
 
     @ViewBuilder
@@ -1333,12 +1315,11 @@ private struct LGNavigationContent: View {
 
     private func dismissComposerFromTap() {
         #if os(iOS)
-        // Let the expanded composer ride the keyboard down before the core
-        // swaps it for the collapsed bar.
-        LGKeyboardDismissal.perform(emitDismissComposer)
-        #else
-        emitDismissComposer()
+        // Resign before the core drops the field so the keyboard slides away
+        // instead of vanishing with it.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         #endif
+        emitDismissComposer()
     }
 
     private func emitDismissComposer() {
@@ -1351,46 +1332,6 @@ private struct LGNavigationContent: View {
 }
 
 #if os(iOS)
-/// Resigns the keyboard and runs the completion once it has slid away.
-@MainActor
-private enum LGKeyboardDismissal {
-    private static var completion: (() -> Void)?
-    private static var observers: [NSObjectProtocol] = []
-    private static var generation = 0
-
-    static func perform(_ action: @escaping () -> Void) {
-        guard completion == nil else { return }
-        completion = action
-        generation += 1
-        let request = generation
-        let center = NotificationCenter.default
-        var hiding = false
-        observers = [
-            center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { hiding = true }
-            },
-            center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { finish(request) }
-            },
-        ]
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        // Without a software keyboard nothing will animate, so dismiss at once.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if !hiding { finish(request) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { finish(request) }
-    }
-
-    private static func finish(_ request: Int) {
-        guard request == generation, completion != nil else { return }
-        observers.forEach(NotificationCenter.default.removeObserver)
-        observers = []
-        let action = completion
-        completion = nil
-        action?()
-    }
-}
-
 @available(iOS 26.0, *)
 @MainActor
 private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
