@@ -596,6 +596,12 @@ private class BatchedBackspace(private val text: CharSequence) {
     }
 }
 
+private enum class BatchComposition {
+    Unchanged,
+    FinishPending,
+    Edited,
+}
+
 @Composable
 private fun OutlinerTextInput(
     state: TextFieldState,
@@ -614,12 +620,15 @@ private fun OutlinerTextInput(
             next.startInputMethod(PlatformTextInputMethodRequest { attributes ->
                 val connection = request.createInputConnection(attributes)
                 object : InputConnectionWrapper(connection, false) {
-                    private var inBatch = false
+                    private var batchDepth = 0
+                    private val inBatch get() = batchDepth > 0
+                    private var batchComposition = BatchComposition.Unchanged
                     private var batchedBackspace: BatchedBackspace? = null
 
                     override fun beginBatchEdit(): Boolean = super.beginBatchEdit().also { began ->
-                        if (began && !inBatch) {
-                            inBatch = true
+                        if (!began) return@also
+                        batchDepth++
+                        if (batchDepth == 1) {
                             val text = state.text
                             if (state.selection == TextRange(text.length) && state.composition == null) {
                                 batchedBackspace = BatchedBackspace(text)
@@ -627,17 +636,28 @@ private fun OutlinerTextInput(
                         }
                     }
 
-                    override fun endBatchEdit(): Boolean = super.endBatchEdit().also { nested ->
-                        if (inBatch && !nested) {
+                    override fun endBatchEdit(): Boolean {
+                        if (!inBatch) return super.endBatchEdit()
+                        if (batchDepth == 1) beforeCompositionEdit()
+                        val nested = super.endBatchEdit()
+                        batchDepth--
+                        if (!inBatch) {
                             val shouldRemoveBlock = batchedBackspace?.removeEmptyBlock == true && state.text.isEmpty()
-                            inBatch = false
+                            batchComposition = BatchComposition.Unchanged
                             batchedBackspace = null
                             if (shouldRemoveBlock) emptyBlockBackspace.value()
                         }
+                        return nested
+                    }
+
+                    private fun beforeCompositionEdit() {
+                        if (batchComposition == BatchComposition.FinishPending) super.finishComposingText()
+                        if (inBatch) batchComposition = BatchComposition.Edited
                     }
 
                     private inline fun otherEdit(action: () -> Boolean): Boolean {
                         batchedBackspace = null
+                        beforeCompositionEdit()
                         return action()
                     }
 
@@ -646,6 +666,7 @@ private fun OutlinerTextInput(
                             return beforeLength == 1 && afterLength == 0 && state.text.isEmpty() &&
                                 emptyBlockBackspace.value()
                         }
+                        beforeCompositionEdit()
                         // Track consecutive backward deletes against the buffer at the start of
                         // the batch. Compose applies the actual text edits when the batch ends.
                         if (afterLength == 0 && beforeLength >= 0) {
@@ -690,6 +711,18 @@ private fun OutlinerTextInput(
                         super.setComposingText(text, newCursorPosition, textAttribute)
                     }
 
+                    override fun finishComposingText(): Boolean {
+                        if (inBatch && batchComposition != BatchComposition.Edited &&
+                            hidesHandoffPrefix.value() && state.composition != null
+                        ) {
+                            // An IME can finish and reopen the same candidate in one transaction.
+                            batchComposition = BatchComposition.FinishPending
+                            return true
+                        }
+                        beforeCompositionEdit()
+                        return super.finishComposingText()
+                    }
+
                     @RequiresApi(34)
                     override fun replaceText(
                         start: Int, end: Int, text: CharSequence, newCursorPosition: Int, textAttribute: TextAttribute?,
@@ -703,21 +736,25 @@ private fun OutlinerTextInput(
                         return super.setSelection(start, end)
                     }
 
-                    private inline fun updateComposingRegion(
+                    private fun updateComposingRegion(
                         start: Int, end: Int, update: (Int, Int) -> Boolean,
-                    ): Boolean = otherEdit {
+                    ): Boolean {
                         val offset = handoffPrefixLength.value()
                         val hidden = hidesHandoffPrefix.value()
                         val composition = state.composition
                         // Remapping visible offset zero could expand the existing region over the hidden prefix.
-                        if (hidden && composition != null &&
+                        // The current range is usable until an earlier edit can change composition.
+                        if (batchComposition != BatchComposition.Edited && hidden && composition != null &&
                             composition.min - offset == minOf(start, end) &&
                             composition.max - offset == maxOf(start, end)
                         ) {
-                            return@otherEdit true
+                            batchedBackspace = null
+                            // Reopening the same range cancels a deferred finish in this batch.
+                            batchComposition = BatchComposition.Unchanged
+                            return true
                         }
                         val boundary = if (hidden) 0 else offset
-                        update(maxOf(start, boundary), maxOf(end, boundary))
+                        return otherEdit { update(maxOf(start, boundary), maxOf(end, boundary)) }
                     }
 
                     override fun setComposingRegion(start: Int, end: Int): Boolean =
