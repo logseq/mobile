@@ -168,7 +168,7 @@ jobs:
           path: |
             _build/ios-core/simulator/extensions/Debug/LogseqShareExtension.appex
             _build/ios-core/simulator/extensions/Debug/LogseqWidgets.appex
-          key: ios-simulator-extensions-v1-${{ runner.arch }}-xcode26.3-debug-ios17-${{ hashFiles('apple/App/Logseq.xcodeproj/project.pbxproj', 'apple/App/Logseq.xcconfig', 'apple/App/Assets.xcassets/**', 'apple/App/ShareExtension/**', 'apple/App/Widgets/**', 'apple/App/Sources/QuickActions.swift', 'apple/Sources/Logseq/RecordingActivity.swift', 'version.xcconfig', 'scripts/build-mobile-ios-simulator.sh') }}
+          key: ios-simulator-extensions-v1-${{ runner.arch }}-xcode26.3-debug-ios17-${{ hashFiles('apple/App/Logseq.xcodeproj/project.pbxproj', 'apple/App/Logseq.xcconfig', 'apple/App/Assets.xcassets/**', 'apple/App/ShareExtension/**', 'apple/App/Widgets/**', 'apple/App/Sources/QuickActions.swift', 'apple/Sources/Logseq/RecordingActivity.swift', 'apple/Sources/Logseq/LGImageCompression.swift', 'version.xcconfig', 'scripts/build-mobile-ios-simulator.sh') }}
 
       - name: Build iOS app for the simulator
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
