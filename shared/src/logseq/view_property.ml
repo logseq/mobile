@@ -282,7 +282,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
           let fields children = if compact then row ~gap:6 ~cross:`center children
             else adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) children in
           mount context ?parent
-            (column ~gap:2 ~cross:(if compact then `start else `stretch) [
+            (overlay [
+              column ~cross:(if compact then `start else `stretch) [
               (match task_icon with
               | Some icon_name ->
                 let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
@@ -319,7 +320,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
                   else row ~gap:0 ~cross:`center ~accessibility_identifier:("property.inline." ^ owner ^ "." ^ attr) [
                     if field "kind" first = `String "checkbox" then checkbox_value else node_value])
                   (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
-              ]);
+              ])];
+              (* The modal host presents the sheet without sizing the inline property. *)
               if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
                 (reactive (function None -> box [] | Some property ->
                   let open_nodes = List.map (fun reference ->

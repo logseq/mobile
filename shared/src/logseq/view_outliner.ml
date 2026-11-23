@@ -1069,13 +1069,12 @@ type selection_tag_snapshot = {
 
 let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
   let task_selection = Signal.map Model.outliner_task_selection_ model_source in
-  let date_buttons ~width ~height ?size () =
+  let date_buttons button =
     List.map (fun (field, label, icon) ->
+      let id = "button.outliner.selection." ^ field in
+      let on_press () = ignore (send (Model.OpenSelectedTaskDate field)) in
       if_toolbar ~test:task_selection
-        (Lui_elements.toolbar_icon_button ~icon:(`app icon) ~variant:`ghost ?size ~width ~height
-          ~label:(View_base.tr (Signal.sample model_source) label)
-          ~accessibility_identifier:("button.outliner.selection." ^ field)
-          ~on_press:(fun () -> ignore (send (Model.OpenSelectedTaskDate field))) [])) task_date_fields in
+        (button (`app icon) label id on_press)) task_date_fields in
   let location (current : Model.logseq_model) =
     current.destination,
     Option.map (fun (page : Model.sidebar_page) -> page.uuid) current.selected_page,
@@ -1151,6 +1150,10 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
       | _ -> box [] in
   let selection_toolbar =
     if Lui_ui.host context = KotlinHost then
+      let dates = date_buttons (fun icon label id on_press ->
+        Lui_elements.toolbar_icon_button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
+          ~label:(View_base.tr (Signal.sample model_source) label)
+          ~accessibility_identifier:id ~on_press []) in
       box
         ~accessibility_identifier:"surface.outliner.selection-toolbar"
         [
@@ -1163,7 +1166,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
               Lui_elements.toolbar_icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost ~size:`icon ~width:48 ~height:48
                 ~label:tag_label ~accessibility_identifier:"button.outliner.selection.tag"
                 ~on_press:(fun _ -> open_picker ()) [];
-            ] @ date_buttons ~width:48 ~height:48 ~size:`icon () @ [
+            ] @ dates @ [
               selection_toolbar_button model_source (`app "toolbar-outdent") "Outdent"
                 "button.outliner.selection.outdent" "outdent" send;
               selection_toolbar_button model_source (`app "toolbar-indent") "Indent"
@@ -1184,9 +1187,10 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
             if current.viewport_width >= Model.wide_content_breakpoint then 58
             else if current.viewport_width >= 390 then 50 else 46 in
       reactive ~equal:(fun before after -> button_width before = button_width after) (fun current ->
-      let apple_button ?on_press icon label identifier action : toolbar_el =
+      let apple_button ?on_press ?min_width icon label identifier action : toolbar_el =
           let label = View_base.tr current label in
-          Lui_elements.toolbar_button ~width:(button_width current) ~icon ~variant:`ghost ~height:46
+          let width = if min_width = None then Some (button_width current) else None in
+          Lui_elements.toolbar_button ?width ?min_width ~icon ~variant:`ghost ~height:46
           ~icon_placement:`top ~label
           ~accessibility_identifier:identifier
           ~on_press:(Option.value on_press ~default:(fun () ->
@@ -1205,7 +1209,8 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
           apple_button (`app "toolbar-copy") "Copy"
             "button.outliner.selection.copy" "copy";
           apple_tag_button;
-        ] @ date_buttons ~width:(button_width current) ~height:46 () @ [
+        ] @ date_buttons (fun icon label id on_press ->
+          apple_button ~on_press ~min_width:(button_width current) icon label id "") @ [
           apple_button (`app "toolbar-outdent") "Outdent"
             "button.outliner.selection.outdent" "outdent";
           apple_button (`app "toolbar-indent") "Indent"

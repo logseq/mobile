@@ -634,7 +634,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
     ~disabled_signal:(waiting model_source view.id) ~on_press:confirm_input [] in
   let toolbar_controls = if plain || temporal || many then [toolbar_cancel; toolbar_confirm] else [toolbar_cancel] in
   mount context ?parent (View_base.sheet ~model_source ~title:(property_title (Signal.sample model_source) col)
-    ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
+    ~style_class:"navigation-list navigation-inline-title" ~detents:(if temporal then "large" else "medium,large")
     ~accessibility_identifier:("view.edit.sheet." ^ view.id) ~on_dismiss:(fun _ -> close ()) [
     list ~grow:1.0 ~style:`inset_grouped ~track_visible_range:true
       ~accessibility_identifier:("view.edit.list." ^ view.id)

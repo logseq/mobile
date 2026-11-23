@@ -18,6 +18,16 @@ struct OutlinerInlineEditor: View {
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
 
+    #if os(iOS)
+    static func prepareForKeyboardDismissal() -> (() -> Void)? {
+        guard let editor = OutlinerEditorViewport.editors.allObjects.first(where: {
+            $0.isFirstResponder && $0.window?.isKeyWindow == true
+        }) else { return nil }
+        editor.prepareForKeyboardDismissal()
+        return { [weak editor] in editor?.cancelKeyboardDismissal() }
+    }
+    #endif
+
     #if os(iOS) && DEBUG
     @ObservedObject private var keyboardHideMonitor = OutlinerKeyboardHideMonitor.shared
     #endif
@@ -153,12 +163,15 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
 
+    @Environment(\.outlinerScrollRetention) private var scrollRetention
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
     func makeUIView(context: Context) -> UITextView {
         let textView = FocusRetainingTextView()
+        textView.scrollRetention = scrollRetention
         textView.delegate = context.coordinator
         let coordinator = context.coordinator
         textView.onPasteContent = { [weak coordinator, weak textView] payload in
@@ -219,6 +232,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        (textView as? FocusRetainingTextView)?.scrollRetention = scrollRetention
         applyTextLayout(to: textView)
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
@@ -568,6 +582,142 @@ struct OutlinerEditorToolbarGuide: UIViewRepresentable {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var outlinerScrollRetention: OutlinerScrollRetention? = nil
+}
+
+@MainActor @Observable
+final class OutlinerScrollRetention {
+    private(set) var bottomMargin: CGFloat = 0
+    @ObservationIgnored private var scrollObservation: NSKeyValueObservation?
+    @ObservationIgnored private var restoration: OutlinerRowAnchor?
+
+    func preserve(_ scroll: UIScrollView, bottomSafeArea: CGFloat, keyboardDismissed: @escaping () -> Bool) {
+        let keyboardSpace = scroll.adjustedContentInset.bottom - bottomSafeArea - bottomMargin
+        let amountPastEnd = ceil(scroll.contentOffset.y - end(of: scroll, bottomInset: bottomSafeArea))
+        guard keyboardSpace > 0 else { return }
+        cancelRestoration()
+        restoration = OutlinerRowAnchor(scroll: scroll, nearBottom: amountPastEnd > -scroll.bounds.height,
+                                        keyboardDismissed: keyboardDismissed)
+        let margin = min(keyboardSpace, amountPastEnd)
+        guard margin > bottomMargin else { return }
+        bottomMargin = margin
+
+        // Keep the extra range until the user scrolls back into the regular range.
+        scrollObservation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
+            DispatchQueue.main.async { [weak self, weak scroll] in
+                guard let self, let scroll, scroll.isTracking || scroll.isDecelerating,
+                      scroll.contentOffset.y <= self.end(of: scroll, bottomInset: bottomSafeArea) else { return }
+                self.release()
+            }
+        }
+    }
+
+    func cancelRestoration() {
+        restoration?.stop()
+        restoration = nil
+    }
+
+    func releaseIfKeyboardReplacedMargin(in scroll: UIScrollView, bottomSafeArea: CGFloat) {
+        let inset = scroll.adjustedContentInset.bottom - bottomMargin
+        guard bottomMargin > 0, inset > bottomSafeArea,
+              scroll.contentOffset.y <= end(of: scroll, bottomInset: inset) else { return }
+        release()
+    }
+
+    private func end(of scroll: UIScrollView, bottomInset: CGFloat) -> CGFloat {
+        max(-scroll.adjustedContentInset.top, scroll.contentSize.height - scroll.bounds.height + bottomInset)
+    }
+
+    private func release() {
+        scrollObservation = nil
+        bottomMargin = 0
+    }
+}
+
+@MainActor
+private final class OutlinerRowAnchor: NSObject {
+    private weak var scroll: UIScrollView?
+    private let anchors: [(String, CGFloat)]
+    private let distanceFromContentEnd: CGFloat?
+    private let keyboardDismissed: () -> Bool
+    private let initialBottomInset: CGFloat
+    private let expires = CACurrentMediaTime() + 0.6
+    private var displayLink: CADisplayLink?
+    private var scrollObservations: [NSKeyValueObservation] = []
+    private var isRestoring = false
+
+    init(scroll: UIScrollView, nearBottom: Bool, keyboardDismissed: @escaping () -> Bool) {
+        self.scroll = scroll
+        self.keyboardDismissed = keyboardDismissed
+        initialBottomInset = scroll.adjustedContentInset.bottom
+        let top = scroll.adjustedContentInset.top
+        let bottom = scroll.bounds.height - scroll.adjustedContentInset.bottom
+        anchors = Self.rows(in: scroll)
+            .filter { top - 24 <= $0.value && $0.value < bottom }
+            .sorted { $0.value < $1.value }.prefix(5).map { ($0.key, $0.value) }
+        distanceFromContentEnd = nearBottom ? scroll.contentSize.height - scroll.contentOffset.y : nil
+        super.init()
+        let link = CADisplayLink(target: self, selector: #selector(restore))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+        scrollObservations = [
+            scroll.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.restore() }
+            },
+            scroll.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.restore() }
+            },
+            scroll.observe(\.adjustedContentInset, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.restore() }
+            },
+        ]
+    }
+
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+        scrollObservations.removeAll()
+    }
+
+    @objc private func restore() {
+        guard let scroll, scroll.window != nil, !scroll.isTracking, !scroll.isDecelerating,
+              CACurrentMediaTime() < expires else { stop(); return }
+        guard !isRestoring, keyboardDismissed() || scroll.adjustedContentInset.bottom < initialBottomInset - 1
+        else { return }
+
+        let positions = Self.rows(in: scroll)
+        let offset = scroll.contentOffset.y
+        // Virtual row estimates can change as the viewport grows. Match a row
+        // that was visible before the keyboard closed, even if its offset changed.
+        guard let target = (anchors.lazy.compactMap { id, oldY in
+            positions[id].map { offset + $0 - oldY }
+        }.first ?? distanceFromContentEnd.map({ scroll.contentSize.height - $0 })) else { return }
+        let lower = -scroll.adjustedContentInset.top
+        let upper = max(lower, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let clamped = min(max(target, lower), upper)
+        if abs(clamped - offset) > 0.5 {
+            isRestoring = true
+            defer { isRestoring = false }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: clamped), animated: false)
+        }
+    }
+
+    private static func rows(in scroll: UIScrollView) -> [String: CGFloat] {
+        var positions: [String: CGFloat] = [:]
+        func visit(_ view: UIView) {
+            guard !view.isHidden else { return }
+            if let id = view.accessibilityIdentifier, id.hasPrefix("outliner.block-action.") {
+                positions[id] = view.convert(view.bounds, to: scroll).minY - scroll.contentOffset.y
+                return
+            }
+            for child in view.subviews { visit(child) }
+        }
+        visit(scroll)
+        return positions
+    }
+}
+
 @MainActor
 private enum OutlinerEditorViewport {
     static let toolbars = NSHashTable<OutlinerEditorToolbarGuide.Probe>.weakObjects()
@@ -592,12 +742,39 @@ private enum OutlinerEditorViewport {
 private final class FocusRetainingTextView: OutlinerLayoutTextView {
     var onPasteContent: ((String) -> Bool)?
     var onPasteImages: (([LGImageClipboard.Image]) -> Bool)?
+    weak var scrollRetention: OutlinerScrollRetention?
     private var focusPending = false
     private var caretRevealScheduled = false
+    private var isDismissingKeyboard = false
     private var previousCaretLayout: CGRect?
     private var previousEditorSize: CGSize?
     private(set) var isInsertingLineBreak = false
     private(set) var isPasting = false
+
+    func prepareForKeyboardDismissal() {
+        isDismissingKeyboard = true
+        guard let window else { return }
+        if let scroll = outlinerScrollView {
+            scrollRetention?.preserve(scroll, bottomSafeArea: window.safeAreaInsets.bottom) { [weak self] in
+                self?.isFirstResponder != true
+            }
+        }
+    }
+
+    func cancelKeyboardDismissal() {
+        isDismissingKeyboard = false
+        scrollRetention?.cancelRestoration()
+        keyboardDidChangeFrame()
+    }
+
+    private var outlinerScrollView: UIScrollView? {
+        var ancestor = superview
+        while let view = ancestor {
+            if let scroll = view as? UIScrollView, scroll.isScrollEnabled { return scroll }
+            ancestor = view.superview
+        }
+        return nil
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -611,12 +788,13 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     }
 
     func revealCaretAfterLayout() {
-        guard isFirstResponder, !caretRevealScheduled else { return }
+        guard isFirstResponder, !isDismissingKeyboard, !caretRevealScheduled else { return }
         caretRevealScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.caretRevealScheduled = false
-            guard self.isFirstResponder, let selection = self.selectedTextRange else { return }
+            guard self.isFirstResponder, !self.isDismissingKeyboard,
+                  let selection = self.selectedTextRange else { return }
             self.window?.layoutIfNeeded()
             let caret = self.caretRect(for: selection.end).insetBy(dx: -8, dy: -8)
             guard !caret.isNull, !caret.isInfinite, caret.height > 0 else { return }
@@ -708,13 +886,19 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         LGInteractionDiagnostics.event("editor.becomeFirstResponder", "view=\(ObjectIdentifier(self)) result=\(result) attached=\(window != nil)")
-        if result { revealCaretAfterLayout() }
+        if result {
+            isDismissingKeyboard = false
+            revealCaretAfterLayout()
+        }
         return result
     }
 
     @objc private func keyboardDidChangeFrame() {
         // Keyboard avoidance can move the scroll viewport without changing the
         // editor's local caret or size. Reveal after the final native layout.
+        if isFirstResponder, !isDismissingKeyboard, let scroll = outlinerScrollView, let window {
+            scrollRetention?.releaseIfKeyboardReplacedMargin(in: scroll, bottomSafeArea: window.safeAreaInsets.bottom)
+        }
         revealCaretAfterLayout()
     }
 

@@ -131,9 +131,10 @@ import Vision
             try backend.performPress(node: find("property.value.page.user.property/\(attr)")!)
             try await Task.sleep(for: .milliseconds(400))
             try await wait("A temporal property must open a native picker") {
-                window.findDatePicker() != nil
+                window.findDatePicker(mode: .date) != nil
             }
-            guard let picker = window.findDatePicker(), picker.datePickerMode == (time ? .dateAndTime : .date) else {
+            let timePicker = window.findDatePicker(mode: .time)
+            guard let picker = window.findDatePicker(mode: .date), (timePicker != nil) == time else {
                 throw NSError(domain: "NodeProperties", code: 12, userInfo: [NSLocalizedDescriptionKey: "Incorrect native date picker mode"])
             }
             try await wait("The NLP date input must mount") { window.findNLPDateInput() != nil }
@@ -145,11 +146,11 @@ import Vision
             input.text = expression
             input.sendActions(for: .editingChanged)
             let calendar = Calendar(identifier: .gregorian)
-            let components: Set<Calendar.Component> = time ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
             try await wait("NLP input must update the native date and time selection") {
-                let selected = calendar.dateComponents(components, from: picker.date)
+                let selected = calendar.dateComponents([.year, .month, .day], from: picker.date)
+                let clock = timePicker.map { calendar.dateComponents([.hour, .minute], from: $0.date) }
                 return selected.year == 2000 && selected.month == 1 && selected.day == 1
-                    && (!time || selected.hour == 15 && selected.minute == 20)
+                    && (!time || clock?.hour == 15 && clock?.minute == 20)
             }
             guard input.text == expression else {
                 throw NSError(domain: "NodeProperties", code: 18, userInfo: [NSLocalizedDescriptionKey: "Preview must preserve the typed expression"])
@@ -166,6 +167,8 @@ import Vision
             let chosen = Date(timeIntervalSince1970: 1792719000)
             picker.setDate(chosen, animated: false)
             picker.sendActions(for: .valueChanged)
+            timePicker?.setDate(chosen, animated: false)
+            timePicker?.sendActions(for: .valueChanged)
             try await Task.sleep(for: .milliseconds(150))
             let before = effects.edits.count
             try backend.performPress(node: find("view.edit.save.property.page.user.property/\(attr)")!)
@@ -177,6 +180,9 @@ import Vision
             let expected = time ? "1792719000000" : format.string(from: chosen)
             guard payload["value"] as? String == expected else {
                 throw NSError(domain: "NodeProperties", code: 15, userInfo: [NSLocalizedDescriptionKey: "Native date picker must submit its selected value: \(payload)"])
+            }
+            try await wait("A failed date edit stays in its sheet") {
+                find("view.edit.error.property.page.user.property/\(attr)") != nil
             }
             try backend.performPress(node: find("view.edit.cancel.property.page.user.property/\(attr)")!)
             try await Task.sleep(for: .milliseconds(350))
@@ -192,10 +198,9 @@ import Vision
         }
         try backend.performPress(node: find("view.edit.cancel.property.page.user.property/Skills")!)
         try await Task.sleep(for: .milliseconds(350))
+        let beforeToggle = effects.edits.count
         try backend.performToggle(node: find("property.value.page.user.property/Ready")!, checked: false)
-        let editor = "property.page.user.property/Ready"
-        try await wait("Typed edits cross the native bridge") { !effects.edits.isEmpty }
-        try await wait("Property errors stay in the sheet") { find("view.action.error.\(editor)") != nil }
+        try await wait("Inline checkbox edits cross the native bridge") { effects.edits.count > beforeToggle }
         guard find("property.label.page.user.property/Summary") != nil else {
             throw NSError(domain: "NodeProperties", code: 4, userInfo: [NSLocalizedDescriptionKey: "A failed edit must retain the property surface"])
         }
@@ -209,8 +214,8 @@ private extension UIView {
         return subviews.lazy.compactMap { $0.findNLPDateInput() }.first
     }
 
-    func findDatePicker() -> UIDatePicker? {
-        if let picker = self as? UIDatePicker { return picker }
-        return subviews.lazy.compactMap { $0.findDatePicker() }.first
+    func findDatePicker(mode: UIDatePicker.Mode) -> UIDatePicker? {
+        if let picker = self as? UIDatePicker, picker.datePickerMode == mode { return picker }
+        return subviews.lazy.compactMap { $0.findDatePicker(mode: mode) }.first
     }
 }

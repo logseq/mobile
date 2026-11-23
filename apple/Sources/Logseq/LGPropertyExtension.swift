@@ -111,12 +111,15 @@ private let journalDisclosureAnimation = Animation.timingCurve(0.23, 1, 0.32, 1,
 private struct LGJournalTaskTransition: View {
     let context: LUIAppleExtensionViewContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scrollRetention = OutlinerScrollRetention()
 
     var body: some View {
         let _ = context.revision
         ForEach(context.childIDs, id: \.self) { id in
             context.content(for: id)
         }
+        .environment(\.outlinerScrollRetention, scrollRetention)
+        .contentMargins(.bottom, scrollRetention.bottomMargin, for: .scrollContent)
         .animation(
             reduceMotion ? nil : journalDisclosureAnimation,
             value: context.property("collapsed")
