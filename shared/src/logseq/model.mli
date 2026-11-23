@@ -458,7 +458,6 @@ type logseq_model =
   ; empty_journals : (sidebar_page * int) list
   ; journal_tasks : Yojson.Basic.t
   ; journal_task_disclosures : (int * string list) Lui_protocol.String_map.t
-  ; journal_tasks_reveal : bool
   ; task_date_editor : task_date_editor option
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
@@ -502,7 +501,7 @@ type logseq_action =
   | PdfWorkspaceEvent of string
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
-  | RefreshJournalTasks
+  | RetryJournalTasks
   | ToggleJournalTaskSection of string
   | OpenSelectedTaskDate of string
   | OpenBlockTaskDate of string * string
@@ -743,7 +742,7 @@ val valid_sidebar_tab_ : string -> bool
 val graph_slot_count : int
 val graph_slot_candidates : logseq_model -> graph list
 val journal_tasks_collapsed : logseq_model -> string list
-val journal_task_refresh_available_ : logseq_model -> bool
+val journal_task_retry_available_ : logseq_model -> bool
 val outliner_task_selection_ : logseq_model -> bool
 val next_quick_graph : logseq_model -> graph option
 val normalize_sidebar_tabs : string list -> string list

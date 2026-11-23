@@ -1747,34 +1747,13 @@ let journal_task_entry context model_source send = function
         View_base.tr current (reason current)) model_source) [];
       button ~variant:`ghost ~min_height:44 ~text:(View_base.tr (Signal.sample model_source) "Retry")
         ~disabled_signal:waiting ~accessibility_identifier:"journal-tasks.retry"
-        ~on_press:(fun _ -> ignore (send Model.RefreshJournalTasks)) [];
+        ~on_press:(fun _ -> ignore (send Model.RetryJournalTasks)) [];
     ]
   | _ -> box []
 
-let journal_refresh_extension model_source send children : t =
-  custom @@ fun context parent ->
-    let node = Lui_ui.extension context "journal-refresh" in
-    attach context parent node;
-    Lui_ui.extension_property_signal context node "enabled" (Signal.map (fun (model : Model.logseq_model) ->
-      BoolValue (Model.journal_task_refresh_available_ model)) model_source);
-    Lui_ui.extension_property_signal context node "refreshing"
-      (Signal.map (fun model -> BoolValue (task_effect_active "journal-tasks.refresh" model)) model_source);
-    List.iter (fun child -> ignore (mount context ~parent:node child)) children;
-    Lui_ui.on_event context node (function
-      | ExtensionEvent (_, _, "refresh", _) -> ignore (send Model.RefreshJournalTasks)
-      | _ -> ());
-    node
-
-let journal_refresh_probe model_source send =
-  custom @@ fun context parent ->
-    if Lui_ui.host context = SwiftUIHost then
-      mount context ?parent (journal_refresh_extension model_source send [])
-    else mount context ?parent (box ~height:0 [])
-
-let with_journal_refresh model_source send content =
+let with_journal_task_transition model_source content =
   custom @@ fun context parent ->
     match Lui_ui.platform context, Lui_ui.host context with
-    | _, KotlinHost -> mount context ?parent (journal_refresh_extension model_source send [content])
     | IOS, SwiftUIHost ->
       let node = Lui_ui.extension context "journal-task-transition" in
       attach context parent node;
@@ -1785,7 +1764,7 @@ let with_journal_refresh model_source send content =
       node
     | _ -> mount context ?parent content
 
-let outliner_entries context model_source ~source send : t =
+let outliner_entries ?prefetch_history context model_source ~source send : t =
  custom @@ fun mount_context parent ->
   let entries = Signal.own_signal mount_context.Lui_ui.ui_scope
     (Signal.map2 View_rows.page_entries source model_source) in
@@ -1804,13 +1783,21 @@ let outliner_entries context model_source ~source send : t =
       end in
   let on_window = ensure_content () in
   let on_prefetch = ensure_content () in
+  let on_visible_range = match prefetch_history with
+    | None -> fun _ _ -> ()
+    | Some request ->
+      let count = Signal.own_signal mount_context.ui_scope (Signal.map List.length entries) in
+      let prefetched_through = ref (-1) in
+      fun _ last ->
+        (* Leave room for a flick to decelerate while older journals load. *)
+        if last > !prefetched_through && Signal.sample count - last <= 12
+           && request () then prefetched_through := last in
   let scroll_target = Signal.own_signal mount_context.ui_scope
     (Signal.map (fun (current : Model.logseq_model) ->
-      if current.journal_tasks_reveal && Model.journal_task_refresh_available_ current then Some "journal-tasks.planned"
-      else match View_base.active_node_projection current with
+      match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
   mount mount_context ?parent
-    (View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window
+    (View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window ~on_visible_range
       ~on_prefetch ~is_pinned:View_rows.page_entry_editor_ ~source:entries
       ~key:View_rows.page_entry_identifier ~cmp:compare
       ~mount:(fun entry_source ->
@@ -1841,13 +1828,13 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       with_result_page context model_source send
-      (with_journal_refresh model_source send
+      (with_journal_task_transition model_source
       (View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
       (virtual_list ~grow:1.0 ~gap:0 ~style_class:"scroll-section-titles" ~accessibility_identifier:"list.outliner"
         ~data_attrs_signal:(Signal.map (fun current ->
           ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
         [
-          box ~height:16 [journal_refresh_probe model_source send];
+          box ~height:16 [];
           if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)
             (node_breadcrumbs model_source send);
           if_ ~test:(reactive View_base.node_title_visible_ model_source)

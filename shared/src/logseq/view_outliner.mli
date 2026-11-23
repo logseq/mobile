@@ -1,5 +1,4 @@
-val journal_refresh_probe : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
-val with_journal_refresh : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t -> Lui_elements.t
+val with_journal_task_transition : Model.logseq_model Signal.signal -> Lui_elements.t -> Lui_elements.t
 val task_dates_dialog : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 
 val outliner_editor_view :
@@ -78,6 +77,7 @@ val outliner_entry :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_entries :
+  ?prefetch_history:(unit -> bool) ->
   Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
   source:View_rows.retained_row list Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
