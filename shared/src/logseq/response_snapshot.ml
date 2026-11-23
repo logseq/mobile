@@ -446,6 +446,7 @@ let sidebar_projection fields =
       (match List.assoc_opt "selectedPage" fields with
        | Some page -> sidebar_page page
        | None -> None);
+    selected_page_journal_day = int_member "selectedPageJournalDay" fields;
     selected_page_is_tag = bool_member "selectedPageIsTag" fields;
     selected_page_is_property =
       bool_member "selectedPageIsProperty" fields;

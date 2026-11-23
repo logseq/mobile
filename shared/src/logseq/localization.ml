@@ -6541,7 +6541,7 @@ let journal_dates = [
   "ko", ("{month} {day}일", "{year}년 {month} {day}일",
     [|"1월"; "2월"; "3월"; "4월"; "5월"; "6월"; "7월"; "8월"; "9월"; "10월"; "11월"; "12월"|],
     [|"월요일"; "화요일"; "수요일"; "목요일"; "금요일"; "토요일"; "일요일"|]);
-  "nb-NO", ("{day}. {month}", "{day}. {month} {year}",
+  "nb-no", ("{day}. {month}", "{day}. {month} {year}",
     [|"jan."; "feb."; "mars"; "apr."; "mai"; "juni"; "juli"; "aug."; "sep."; "okt."; "nov."; "des."|],
     [|"man."; "tir."; "ons."; "tor."; "fre."; "lør."; "søn."|]);
   "nl", ("{day} {month}", "{day} {month} {year}",
@@ -6550,10 +6550,10 @@ let journal_dates = [
   "pl", ("{day} {month}", "{day} {month} {year}",
     [|"sty"; "lut"; "mar"; "kwi"; "maj"; "cze"; "lip"; "sie"; "wrz"; "paź"; "lis"; "gru"|],
     [|"pon."; "wt."; "śr."; "czw."; "pt."; "sob."; "niedz."|]);
-  "pt-BR", ("{day} de {month}", "{day} de {month} de {year}",
+  "pt-br", ("{day} de {month}", "{day} de {month} de {year}",
     [|"jan."; "fev."; "mar."; "abr."; "mai."; "jun."; "jul."; "ago."; "set."; "out."; "nov."; "dez."|],
     [|"seg."; "ter."; "qua."; "qui."; "sex."; "sáb."; "dom."|]);
-  "pt-PT", ("{day}/{month}", "{day}/{month}/{year}",
+  "pt-pt", ("{day}/{month}", "{day}/{month}/{year}",
     [|"01"; "02"; "03"; "04"; "05"; "06"; "07"; "08"; "09"; "10"; "11"; "12"|],
     [|"segunda"; "terça"; "quarta"; "quinta"; "sexta"; "sábado"; "domingo"|]);
   "ru", ("{day} {month}", "{day} {month} {year} г.",
@@ -6571,16 +6571,27 @@ let journal_dates = [
   "vi", ("{day} {month}", "{day} {month}, {year}",
     [|"thg 1"; "thg 2"; "thg 3"; "thg 4"; "thg 5"; "thg 6"; "thg 7"; "thg 8"; "thg 9"; "thg 10"; "thg 11"; "thg 12"|],
     [|"Thứ 2"; "Thứ 3"; "Thứ 4"; "Thứ 5"; "Thứ 6"; "Thứ 7"; "CN"|]);
-  "zh-CN", ("{month}月{day}日", "{year}年{month}月{day}日",
+  "zh-cn", ("{month}月{day}日", "{year}年{month}月{day}日",
     [|"1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"; "10"; "11"; "12"|],
     [|"星期一"; "星期二"; "星期三"; "星期四"; "星期五"; "星期六"; "星期日"|]);
-  "zh-Hant", ("{month}月{day}日", "{year}年{month}月{day}日",
+  "zh-hant", ("{month}月{day}日", "{year}年{month}月{day}日",
     [|"1"; "2"; "3"; "4"; "5"; "6"; "7"; "8"; "9"; "10"; "11"; "12"|],
     [|"星期一"; "星期二"; "星期三"; "星期四"; "星期五"; "星期六"; "星期日"|]);
 ]
 
+let journal_number locale number =
+  let text = string_of_int number in
+  match locale with
+  | "ar" | "fa" ->
+    let zero = if locale = "ar" then 0x0660 else 0x06f0 in
+    let localized = Buffer.create (2 * String.length text) in
+    String.iter (fun digit -> Buffer.add_utf_8_uchar localized
+      (Uchar.of_int (zero + Char.code digit - Char.code '0'))) text;
+    Buffer.contents localized
+  | _ -> text
+
 let journal_date ~language ~system_language ~current_year day =
-  let locale = resolve language system_language in
+  let locale = String.lowercase_ascii (resolve language system_language) in
   let pattern, year_pattern, months, weekdays = match List.assoc_opt locale journal_dates with
     | Some data -> data
     | None -> List.assoc "en" journal_dates in
@@ -6589,6 +6600,6 @@ let journal_date ~language ~system_language ~current_year day =
   let weekday = weekdays.(Journal.weekday_index (year, month, day)) in
   let date = List.fold_left (fun result (match_, replacement) ->
     String_kit.replace result ~match_ ~replacement) pattern
-    ["{year}", string_of_int year; "{month}", months.(month - 1);
-     "{day}", string_of_int day] in
+    ["{year}", journal_number locale year; "{month}", months.(month - 1);
+     "{day}", journal_number locale day] in
   date, weekday
