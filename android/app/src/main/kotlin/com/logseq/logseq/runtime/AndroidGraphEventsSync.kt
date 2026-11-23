@@ -191,9 +191,9 @@ internal class AndroidGraphEventsSync(
         }
     }
 
-    suspend fun completeSnapshot(succeeded: Boolean): Long {
+    suspend fun completeSnapshot(succeeded: Boolean, failureMessage: String?): Long {
         val transport = event(if (succeeded) "snapshot-applied" else "snapshot-failed",
-            message = if (succeeded) null else "Snapshot refresh failed")
+            message = if (succeeded) null else failureMessage?.takeIf(String::isNotBlank) ?: "Snapshot refresh failed")
         return (retryOutcome(transport) as? SessionOutcome.Retry)?.delayMilliseconds ?: 0
     }
 

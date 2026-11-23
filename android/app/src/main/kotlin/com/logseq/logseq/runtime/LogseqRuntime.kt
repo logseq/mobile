@@ -485,12 +485,20 @@ internal class LogseqRuntime(
                 when (outcome) {
                     is AndroidGraphEventsSync.SessionOutcome.SnapshotRequired -> {
                         logRuntime("info", "core", "snapshot required for $graphId")
-                        val recovery = runCatching { graphLifecycle?.openGraphForResync(graphId) }.getOrNull()
+                        val recovery = runCatching { graphLifecycle?.openGraphForResync(graphId) }.getOrElse {
+                            if (it is kotlinx.coroutines.CancellationException) throw it
+                            null
+                        }
                         if (recovery is NativeEffectResolution.CoreResponse) {
                             applyCoreResponse(recovery.response)
                         }
                         if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) break
-                        val wait = sync.completeSnapshot(recovery?.succeeded == true)
+                        val failureMessage = when (recovery) {
+                            is NativeEffectResolution.Failure -> recovery.message
+                            is NativeEffectResolution.Discard -> recovery.message.substringAfter('\n')
+                            else -> null
+                        }
+                        val wait = sync.completeSnapshot(recovery?.succeeded == true, failureMessage)
                         if (wait > 0) kotlinx.coroutines.delay(wait)
                     }
                     is AndroidGraphEventsSync.SessionOutcome.Retry -> {

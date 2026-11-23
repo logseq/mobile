@@ -5,6 +5,7 @@ import com.logseq.logseq.isNetworkUnavailable
 
 import org.json.JSONObject
 import com.logseq.logseq.AndroidGraphLocalStorage
+import com.logseq.logseq.AndroidGraphSnapshotException
 import java.io.File
 
 internal interface AndroidGraphStorage {
@@ -77,8 +78,11 @@ internal class AndroidGraphLifecycle(
 
     // Execute the core's snapshot recovery command without resetting editor state.
     // The core validates editing and graph ownership immediately before import.
-    suspend fun openGraphForResync(graphId: String): NativeEffectResolution =
+    suspend fun openGraphForResync(graphId: String): NativeEffectResolution = try {
         openGraphWithProgress(graphId, forceSnapshot = true, reportProgress = {})
+    } catch (error: AndroidGraphSnapshotException) {
+        NativeEffectResolution.Failure(error.message.orEmpty())
+    }
 
     // The first snapshots after open ship an empty sidebar so the scan
     // stays off the launch path; this fills favorites/recent afterwards.

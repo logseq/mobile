@@ -1,5 +1,6 @@
 package com.logseq.logseq.runtime
 
+import com.logseq.logseq.AndroidGraphSnapshotException
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -7,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidGraphLifecycleTest {
-    private class Storage : AndroidGraphStorage {
+    private class Storage(private val snapshotFailure: AndroidGraphSnapshotException? = null) : AndroidGraphStorage {
         var downloads = 0
         val cleaned = mutableListOf<String>()
         override fun loadStorageState() = AndroidStorageState(
@@ -18,6 +19,7 @@ class AndroidGraphLifecycleTest {
             callCore: suspend (String) -> String,
         onProgress: (String, Long, Long?) -> Unit,
         ): AndroidDownloadedSnapshot {
+            snapshotFailure?.let { throw it }
             downloads++
             onProgress("decoding", 0, null)
             assertEquals("access", accessToken)
@@ -48,6 +50,21 @@ class AndroidGraphLifecycleTest {
         assertTrue(payload.getBoolean("forceSnapshot"))
         assertEquals(3, payload.getInt("generation"))
         assertEquals(listOf("/tmp/download"), storage.cleaned)
+    }
+
+    @Test
+    fun `resync preserves the snapshot metadata rejection reason`() = runBlocking {
+        val reason = "Snapshot cursor metadata is invalid"
+        val lifecycle = AndroidGraphLifecycle(
+            callCore = {
+                """{"ok":true,"result":{"selectedGraphId":"plain-1","graphs":[],"graphBootstrap":{"kind":"download","isEncrypted":false,"generation":3}}}"""
+            },
+            effects = Storage(AndroidGraphSnapshotException(reason)),
+        )
+
+        val result = lifecycle.openGraphForResync("plain-1")
+        assertEquals(false, result.succeeded)
+        assertEquals(reason, result.message)
     }
 
     @Test
