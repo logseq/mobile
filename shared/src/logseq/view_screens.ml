@@ -369,10 +369,17 @@ let ios_journal_graph_panes model_source send : t =
             && List.exists (fun (graph : Model.graph) -> graph.id = id) eligible)) previous in
       let next =
         if not current.graph_loading && View_base.graph_selected_ current then
-          let model = !generation, View_base.journal_navigation_model current in
-          if List.mem_assoc active retained then
-            List.map (fun (id, previous) -> id, if id = active then model else previous) retained
-          else retained @ [active, model]
+          let model = View_base.journal_navigation_model current in
+          match List.assoc_opt active retained with
+          | None -> retained @ [active, (!generation, model)]
+          | Some (_, previous) ->
+            (* A refocus sends row shells outside the first content window. Keep
+               the mounted pane's bodies while those rows are hydrated again. *)
+            let rows =
+              if previous.journal_outliner_rows == model.journal_outliner_rows then previous.outliner_rows
+              else Model.retain_shell_contents previous.outliner_rows model.outliner_rows in
+            List.map (fun (id, saved) -> id,
+              if id = active then !generation, {model with outliner_rows = rows} else saved) retained
         else retained in
       Signal.set panes next
     in

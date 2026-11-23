@@ -1504,8 +1504,9 @@ let outliner_entries context model_source ~source send : t =
     fun entries ->
       let ids = List.filter_map View_rows.unloaded_entry_id entries in
       if ids <> !requested then begin
+        let previous = !requested in
         requested := ids;
-        if ids <> [] then ignore (send (Model.EnsureOutlinerRows ids))
+        if ids <> [] && not (send (Model.EnsureOutlinerRows ids)) then requested := previous
       end in
   let on_window = ensure_content () in
   let on_prefetch = ensure_content () in

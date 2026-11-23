@@ -7669,6 +7669,48 @@ let graph_switch_rearms_journal_pagination () =
       (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1]
   ) [ios_backend; kotlin_backend]
 
+let resident_journal_keeps_visible_bodies_during_refocus () =
+  let application = App.create (ios_backend ()) in
+  let renderer = Lui_app.runtime application in
+  let apply action = send application action; flush application in
+  let graphs = [graph "work" "Work" false true; graph "notes" "Notes" false true] in
+  let project id rows =
+    apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+      graph_name = Some id; selected_graph_id = Some id; graphs; outliner_rows = rows }) in
+  let rows = List.init 96 (fun index ->
+    journal_outline_row ("resident-" ^ string_of_int index) "work-page"
+      ("Journal block " ^ string_of_int index) "Today" 20261123 0) in
+  let shells = List.mapi (fun index (row : Model.outline_row) ->
+    if index < 32 then row else {row with row_title = ""; row_loaded = false}) rows in
+  start application;
+  project "work" rows;
+  apply (Model.ApplyLocalGraphIds ["work"; "notes"]);
+  apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["work"; "notes"; ""] });
+  let panes = extension_node application "journal-graph-panes" in
+  let work = List.hd (children renderer panes) in
+  let window = descendant_with_identifier renderer work "outliner.window" in
+  dispatch application (Lui_protocol.VisibleRange (window, 64, 79));
+  flush application;
+  let row () = descendant_with_identifier renderer work "outliner.block.resident-70" in
+  let original = row () in
+  check ~msg:"the scrolled journal body is mounted before switching" (original <> -1);
+  let switch id rows =
+    apply (Model.ApplyGraphLoading true);
+    project id rows;
+    apply (Model.ApplyGraphLoading false) in
+  switch "notes" [journal_outline_row "note" "notes-page" "Other graph" "Today" 20261123 0];
+  switch "work" shells;
+  check_eq ~msg:"refocusing with shells preserves the mounted native body" (row ()) original;
+  let title () = Yojson.Basic.Util.member "title" (native_row_payload application (row ())) in
+  check_eq (title ()) (`String "Journal block 70");
+  check ~msg:"cached bodies still request authoritative hydration"
+    (List.exists (function Model.HydrateOutlinerRowsEffect (_, ids) -> List.mem "resident-70" ids | _ -> false)
+       (App.model application).pending_effects);
+  let updated = { (List.nth rows 70) with row_title = "Updated journal block" } in
+  apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with selected_graph_id = Some "work";
+    is_outliner_content_patch = true; hydrated_rows = [updated] });
+  check_eq (title ()) (`String "Updated journal block")
+
 let older_journals_only_appear_at_the_journal_root () =
   let available =
     {
@@ -11566,6 +11608,7 @@ let cases =
     case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
     case "graph-quick-switch-cycles-and-configures-slots" graph_quick_switch_cycles_and_configures_slots;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
+    case "resident-journal-keeps-visible-bodies-during-refocus" resident_journal_keeps_visible_bodies_during_refocus;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
