@@ -58,17 +58,200 @@ enum LGPropertyExtension {
                 })
         })
         try registry.register(LUIAppleExtension(
+            identifier: "journal-refresh",
+            fingerprint: "lui-extension-v1|15:journal-refresh|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:refreshing:bool:required:none,7:enabled:bool:required:none|events:7:refresh[]",
+            acceptsStandardChildren: true,
+            properties: [
+                .init(name: "enabled", kind: .bool, isRequired: true),
+                .init(name: "refreshing", kind: .bool, isRequired: true),
+            ],
+            events: [.init(name: "refresh", fields: [])]
+        ) { context in
+            #if os(iOS)
+            return AnyView(LGJournalRefresh(
+                enabled: context.property("enabled") == .bool(true),
+                refreshing: context.property("refreshing") == .bool(true),
+                refresh: { try? context.emit(name: "refresh", values: [:]) }
+            ).frame(width: 1, height: 1).accessibilityHidden(true))
+            #else
+            return AnyView(EmptyView())
+            #endif
+        })
+        #if os(iOS)
+        try registry.register(LUIAppleExtension(
+            identifier: "journal-task-transition",
+            fingerprint: "lui-extension-v1|23:journal-task-transition|profiles:ios/swiftui|standard-children:1|children:|properties:9:collapsed:string:required:none|events:",
+            acceptsStandardChildren: true,
+            properties: [.init(name: "collapsed", kind: .string, isRequired: true)]
+        ) { AnyView(LGJournalTaskTransition(context: $0)) })
+        try registry.register(LUIAppleExtension(
+            identifier: "journal-task-chevron",
+            fingerprint: "lui-extension-v1|20:journal-task-chevron|profiles:ios/swiftui|standard-children:1|children:|properties:9:collapsed:bool:required:none|events:",
+            acceptsStandardChildren: true,
+            properties: [.init(name: "collapsed", kind: .bool, isRequired: true)]
+        ) { AnyView(LGJournalTaskChevron(context: $0)) })
+        #endif
+        try registry.register(LUIAppleExtension(
             identifier: "native-property-date",
-            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
+            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,10:time-label:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
             properties: [
                 .init(name: "identifier", kind: .string, isRequired: true),
                 .init(name: "kind", kind: .string, isRequired: true),
+                .init(name: "time-label", kind: .string, isRequired: true),
                 .init(name: "value", kind: .string, isRequired: true),
             ],
             events: [.init(name: "change", fields: [.init(name: "value", kind: .string, isRequired: true)])]
         ) { AnyView(LGPropertyDatePicker(context: $0)) })
     }
 }
+
+#if os(iOS)
+private let journalDisclosureAnimation = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
+
+private struct LGJournalTaskTransition: View {
+    let context: LUIAppleExtensionViewContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let _ = context.revision
+        ForEach(context.childIDs, id: \.self) { id in
+            context.content(for: id)
+        }
+        .animation(
+            reduceMotion ? nil : journalDisclosureAnimation,
+            value: context.property("collapsed")
+        )
+    }
+}
+
+private struct LGJournalTaskChevron: View {
+    let context: LUIAppleExtensionViewContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var layoutDirection
+
+    var body: some View {
+        let _ = context.revision
+        let collapsed = context.property("collapsed") == .bool(true)
+        let leftToRight = layoutDirection == .leftToRight
+        ForEach(context.childIDs, id: \.self) { id in
+            context.content(for: id)
+                .rotationEffect(.degrees(collapsed ? (leftToRight ? 0 : 180) : 90))
+        }
+        .animation(reduceMotion ? nil : journalDisclosureAnimation, value: collapsed)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct LGJournalRefresh: UIViewRepresentable {
+    let enabled: Bool
+    let refreshing: Bool
+    let refresh: @MainActor () -> Void
+
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: Probe, context: Context) {
+        view.refresh = refresh
+        view.enabled = enabled
+        view.refreshing = refreshing
+        view.updateControl()
+    }
+
+    static func dismantleUIView(_ view: Probe, coordinator: Void) {
+        view.detach()
+    }
+
+    final class Probe: UIView {
+        var refresh: (@MainActor () -> Void)?
+        var enabled = false
+        var refreshing = false
+        private weak var scrollView: UIScrollView?
+        private var previousBounce = false
+        private var controlObservation: NSKeyValueObservation?
+        private lazy var control: UIRefreshControl = {
+            let control = UIRefreshControl()
+            control.accessibilityIdentifier = "journal-tasks.refresh-control"
+            control.addTarget(self, action: #selector(didRefresh), for: .valueChanged)
+            return control
+        }()
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            updateControl()
+        }
+
+        override func didMoveToSuperview() {
+            super.didMoveToSuperview()
+            updateControl()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if scrollView?.refreshControl !== control { updateControl() }
+        }
+
+        func updateControl() {
+            guard enabled, window != nil else {
+                detach()
+                return
+            }
+            var ancestor = superview
+            while let view = ancestor, !(view is UIScrollView) {
+                ancestor = view.superview
+            }
+            guard let scroll = ancestor as? UIScrollView else { return }
+            if scroll !== scrollView {
+                detach()
+                guard scroll.refreshControl == nil else { return }
+                scrollView = scroll
+                previousBounce = scroll.alwaysBounceVertical
+                controlObservation = scroll.observe(\.refreshControl, options: [.new]) { [weak self] _, _ in
+                    // SwiftUI can replace the control when it updates the host scroll view.
+                    Task { @MainActor [weak self] in
+                        guard let self, scrollView?.refreshControl !== control else { return }
+                        updateControl()
+                    }
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, scrollView?.refreshControl !== control else { return }
+                    updateControl()
+                }
+            }
+            if scroll.refreshControl == nil {
+                scroll.alwaysBounceVertical = true
+                scroll.refreshControl = control
+            }
+            if !refreshing {
+                control.endRefreshing()
+            }
+        }
+
+        func detach() {
+            controlObservation = nil
+            guard let scroll = scrollView else { return }
+            if scroll.refreshControl === control {
+                control.endRefreshing()
+                scroll.refreshControl = nil
+            }
+            if scroll.refreshControl == nil { scroll.alwaysBounceVertical = previousBounce }
+            scrollView = nil
+        }
+
+        @objc private func didRefresh() {
+            refresh?()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                if let self, !refreshing {
+                    control.endRefreshing()
+                }
+            }
+        }
+    }
+}
+#endif
 
 private struct LGPropertyRowLayout: Layout {
     let stacked: Bool
@@ -125,10 +308,17 @@ private struct LGPropertyDatePicker: View {
         })
     }
     var body: some View {
-        DatePicker("Value", selection: selection, displayedComponents: includesTime ? [.date, .hourAndMinute] : [.date])
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .accessibilityIdentifier(string("identifier"))
+        VStack(spacing: 16) {
+            DatePicker("Value", selection: selection, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .accessibilityIdentifier(string("identifier"))
+            if includesTime {
+                DatePicker(string("time-label"), selection: selection, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.compact)
+                    .accessibilityIdentifier(string("identifier") + ".time")
+            }
+        }
     }
 }
 

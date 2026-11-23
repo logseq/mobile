@@ -132,6 +132,7 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
       | Some (uuid, index) when !applied_target <> Some uuid ->
         applied_target := Some uuid;
         Signal.set range (max 0 (index - min 8 (window_size / 2)), window_size)
+      | None -> applied_target := None
       | _ -> ())));
     let window = own (Signal.map2 (fun items (start, length) ->
       let count = Array.length items in
@@ -262,6 +263,10 @@ let reference_entry_row = function
 type placeholder = { parent_uuid : string; journal_heading : (string * int * bool) option }
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
   | Placeholder_entry of placeholder
+  | Journal_task_gap
+  | Journal_task_heading of string
+  | Journal_task_row of Yojson.Basic.t * bool
+  | Journal_task_error
 
 let needs_placeholder rows = match List.rev rows with
   | [] -> true
@@ -270,6 +275,45 @@ let needs_placeholder rows = match List.rev rows with
     not ((last.value.row_loaded || last.value.row_cached) && String_kit.is_blank title && not last.value.has_children)
 
 let outline_entries rows = List.map (fun row -> Outline_entry row) rows
+
+let task_field name = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
+  | _ -> `Null
+
+let journal_task_uuid task =
+  match task_field "uuid" task with `String uuid -> uuid | _ -> ""
+
+let journal_task_scope uuid = "journal-task." ^ uuid
+
+let journal_task_editing (current : Model.logseq_model) task =
+  let uuid = journal_task_uuid task in
+  current.outliner_edit_scope = Some (journal_task_scope uuid)
+  && Option.exists (fun (editing : Model.outliner_editing) -> editing.editing_uuid = uuid)
+    current.outliner_editing
+
+let journal_task_editing_row (current : Model.logseq_model) =
+  match current.outliner_edit_scope with
+  | Some scope when String.starts_with ~prefix:"journal-task." scope ->
+    ["overdue"; "doing"; "planned"] |> List.find_map (fun section ->
+      match task_field section current.journal_tasks with
+      | `List tasks ->
+        Option.bind (List.find_opt (journal_task_editing current) tasks)
+          (fun task -> Response_snapshot.related_row (task_field "block" task))
+      | _ -> None)
+  | _ -> None
+
+let task_rows current =
+  let collapsed = Model.journal_tasks_collapsed current in
+  let section name = match task_field name current.Model.journal_tasks with
+    | `List (_ :: _ as rows) ->
+      Journal_task_heading name ::
+      (if List.mem name collapsed then [] else
+        List.map (fun task -> Journal_task_row (task, journal_task_editing current task)) rows)
+    | _ -> [] in
+  let entries =
+    (if task_field "error" current.journal_tasks = `Bool true then [Journal_task_error] else [])
+    @ section "overdue" @ section "doing" @ section "planned" in
+  match entries with [] -> [] | _ -> Journal_task_gap :: entries
 
 let journal_entries rows (current : Model.logseq_model) =
   let groups = Hashtbl.create 16 and sequence = ref [] in
@@ -292,11 +336,13 @@ let journal_entries rows (current : Model.logseq_model) =
     else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
   let entries = List.mapi (fun index (page, title, day, rows) ->
     let outline = outline_entries rows in
-    match title, day with
+    let outline = match title, day with
     | Some title, Some day when needs_placeholder rows || rows = [] ->
       outline @ [Placeholder_entry {parent_uuid = page;
         journal_heading = if rows = [] then Some (title, day, index > 0) else None}]
-    | _ -> outline) sections in
+    | _ -> outline in
+    if Option.fold ~none:false ~some:(fun day -> task_field "day" current.journal_tasks = `Int day) day
+    then outline @ task_rows current else outline) sections in
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
 let page_entries rows current =
@@ -312,8 +358,10 @@ let page_entries rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      if allowed && needs_placeholder rows then
+      let outline = if allowed && needs_placeholder rows then
         outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
+        else outline in
+      if task_field "page" current.journal_tasks = `String parent then outline @ task_rows current
       else outline in
   let references =
     List.map (fun row -> Reference_entry row) (reference_entries current) in
@@ -322,6 +370,8 @@ let page_entries rows current =
     let page = function
       | Outline_entry row -> Some row.value.page_id
       | Placeholder_entry value -> Some value.parent_uuid
+      | Journal_task_gap | Journal_task_heading _ | Journal_task_row _ | Journal_task_error ->
+        (match task_field "page" current.journal_tasks with `String page -> Some page | _ -> None)
       | Reference_entry _ -> None in
     match outline with
     | [] -> references
@@ -337,6 +387,10 @@ let page_entry_identifier = function
   | Outline_entry row -> "outline." ^ retained_row_identifier row
   | Reference_entry row -> "reference." ^ reference_entry_identifier row
   | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
+  | Journal_task_gap -> "journal-tasks.gap"
+  | Journal_task_heading section -> "journal-tasks." ^ section
+  | Journal_task_row (task, _) -> journal_task_scope (journal_task_uuid task)
+  | Journal_task_error -> "journal-tasks.error"
 
 let page_entry_outline = function
   | Outline_entry row -> row
@@ -378,4 +432,5 @@ let page_entry_ready = function
 
 let page_entry_editor_ = function
   | Outline_entry row -> row.is_editing
+  | Journal_task_row (_, editing) -> editing
   | _ -> false

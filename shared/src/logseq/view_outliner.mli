@@ -1,3 +1,7 @@
+val journal_refresh_probe : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
+val with_journal_refresh : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t -> Lui_elements.t
+val task_dates_dialog : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
+
 val outliner_editor_view :
   Model.logseq_model Signal.signal ->
   string Signal.signal ->

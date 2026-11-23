@@ -182,6 +182,7 @@ type session =
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; widget_snapshot : (string * Datascript.db * string) option ref
   ; widget_random_sample : (string * int * int list) option ref
+  ; journal_tasks : Journal_task_dates.cache
   ; reference_generation : (string option * int option * int) option ref
   }
 

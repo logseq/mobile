@@ -343,6 +343,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     node_outliner_autocomplete = None;
     node_outliner_autocomplete_candidates = [];
     node_outliner_selected_block_ids = [];
+    node_outliner_selected_tasks_only = false;
   }
 
 let empty_core_projection () =
@@ -375,11 +376,13 @@ let empty_core_projection () =
     search_results = [];
     node_routes = [];
     empty_journals = [];
+    journal_tasks = `Null;
     journal_outliner_rows = [];
     projection_outliner_editing = None;
     projection_outliner_autocomplete = None;
     projection_outliner_autocomplete_candidates = [];
     projection_outliner_selected_block_ids = [];
+    projection_outliner_selected_tasks_only = false;
     outliner_rows = [];
     has_older_journals = false;
     is_outliner_patch = false;
@@ -7736,6 +7739,184 @@ let resident_journal_keeps_visible_bodies_during_refocus () =
     is_outliner_content_patch = true; hydrated_rows = [updated] });
   check_eq (title ()) (`String "Updated journal block")
 
+let journal_agenda_is_retained_across_navigation () =
+  List.iter (fun (ios, backend) ->
+    let app = App.create (backend ()) in
+    let renderer = Lui_app.runtime app in
+    let apply action = send app action; flush app in
+    let graph_ids = ["work"; "notes"] in
+    let graphs = List.map (fun id -> graph id id false true) graph_ids in
+    let day = 20261123 in
+    let task ?(status = `Null) id date =
+      let millis = Int64.to_int (Dev_query.Date_time_util.journal_day_to_local_ms date) in
+      `Assoc ["uuid", `String id; "block", `Assoc [
+          "uuid", `String id; "pageId", `String "source"; "title", `String id; "status", status];
+        "scheduled", `Int millis; "deadline", `Int millis] in
+    let doing = `Assoc ["uuid", `String "status-doing"; "ident", `String "logseq.property/status.doing";
+      "title", `String "Doing"] in
+    let agenda id = `Assoc ["graphId", `String id; "day", `Int day; "page", `String "today";
+       "enabled", `Bool true; "overdue", `List [task (id ^ "-overdue") 20261122];
+       "doing", `List [task ~status:doing (id ^ "-doing") day];
+       "planned", `List [task (id ^ "-planned") day]] in
+    let journal id =
+      let row = journal_outline_row (id ^ "-journal") "today" "Journal" "Today" day 0 in
+      { (empty_core_projection ()) with graph_name = Some id; selected_graph_id = Some id;
+        graphs; outliner_rows = [row]; journal_outliner_rows = [row]; journal_tasks = agenda id } in
+    let snapshot data = apply (Model.ApplyCoreSnapshot data) in
+    let find parent id = descendant_with_identifier renderer parent id in
+    let work = journal "work" in
+    start app;
+    snapshot work;
+    apply (Model.ApplyLocalGraphIds graph_ids);
+    apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["work"; "notes"; ""] });
+    let pane = find (Lui_app.root_node app) "pane.journals" in
+    let heading () = find pane "journal-tasks.planned" in
+    let doing_heading () = find pane "journal-tasks.doing" in
+    let doing_row () = find pane "journal-task.work-doing" in
+    let overdue () = find pane "journal-task.work-overdue" in
+    let planned () = find pane "journal-task.work-planned" in
+    let original_heading = heading () and original_overdue = overdue () in
+    check ~msg:"all three sections initially mount"
+      (original_heading <> -1 && original_overdue <> -1 && planned () <> -1 && doing_row () <> -1);
+    check_eq ~msg:"the Doing heading uses its own label"
+      (property_string renderer (doing_heading ()) Lui_protocol.TextValue) "Doing";
+    dispatch app (Lui_protocol.Press (doing_heading ()));
+    flush app;
+    check_eq ~msg:"the Doing section collapses independently" (doing_row ()) (-1);
+    dispatch app (Lui_protocol.Press (doing_heading ()));
+    flush app;
+    check ~msg:"the Doing heading expands the same block" (doing_row () <> -1);
+    let rec contents parent =
+      List.concat_map (fun child -> match node renderer child with
+        | Some (Lui_protocol.Icon | Lui_protocol.Text) -> [child]
+        | _ -> contents child) (children renderer parent) in
+    let color id = property_string renderer id Lui_protocol.ForegroundValue in
+    let check_chevron direction =
+      match contents (heading ()) with
+      | [label; chevron] ->
+        check_eq (node renderer label) (Some Lui_protocol.Text);
+        check_eq (color label) "muted-foreground";
+        check_eq (property_string renderer chevron Lui_protocol.IconName)
+          ("app:chevron-" ^ if ios then "right" else direction);
+        check_eq (property_int renderer chevron Lui_protocol.WidthValue, property_int renderer chevron Lui_protocol.HeightValue)
+          (14, 14)
+      | _ -> fail "Expected task section label followed by a chevron" in
+    let check_date id expected =
+      let control = find pane ("journal-task." ^ id) in
+      check_eq (color control) expected;
+      check_eq (List.map color (contents control)) [expected; expected] in
+    check_chevron "down";
+    check_date "deadline.work-overdue" "deadline-overdue";
+    check_date "scheduled.work-overdue" "muted-foreground";
+    check_date "deadline.work-planned" "muted-foreground";
+    dispatch app (Lui_protocol.Press original_heading);
+    flush app;
+    check_chevron "right";
+    if ios then
+      check_eq ~msg:"the native transition observes the collapsed section"
+        (extension_property app (extension_node app "journal-task-transition") "collapsed")
+        (Some (Lui_protocol.StringValue "planned"));
+    check_eq (planned ()) (-1);
+    let page = {Model.uuid = "other-page"; title = "Project"} in
+    snapshot {work with
+      sidebar = {(empty_sidebar_projection ()) with selected_page = Some page};
+      outliner_rows = [outline_row "project-block" "Project"];
+      journal_tasks = `Null};
+    check_eq ~msg:"the hidden journal keeps the same task heading" (heading ()) original_heading;
+    check_eq ~msg:"the hidden journal keeps the same task row" (overdue ()) original_overdue;
+    check ~msg:"refresh belongs to today and the journal feed"
+      (not (Model.journal_task_refresh_available_ (App.model app)));
+    snapshot work;
+    check_eq ~msg:"returning to the journal keeps the task row mounted" (overdue ()) original_overdue;
+    check_eq ~msg:"returning does not expand a collapsed section" (planned ()) (-1);
+    apply (Model.ApplyGraphLoading true);
+    let notes = journal "notes" in
+    snapshot {notes with journal_tasks = agenda "work"};
+    check_eq ~msg:"a provisional graph snapshot cannot show another graph's tasks"
+      (App.model app).journal_tasks `Null;
+    snapshot notes;
+    apply (Model.ApplyGraphLoading false);
+    check_eq (Model.journal_tasks_collapsed (App.model app)) [];
+    if ios then begin
+      check_eq ~msg:"the resident graph keeps the same task row while inactive" (overdue ()) original_overdue;
+      check_eq (planned ()) (-1)
+    end;
+    snapshot work;
+    check_eq ~msg:"the graph remembers its own disclosure state"
+      (Model.journal_tasks_collapsed (App.model app)) ["planned"];
+    if ios then
+      check_eq ~msg:"focusing the resident graph keeps the same task row" (overdue ()) original_overdue
+  ) [true, ios_backend; false, kotlin_backend]
+
+let journal_task_results_edit_and_select_the_source_block () =
+  List.iter (fun (ios, backend) ->
+    let app = App.create (backend ()) in
+    let uuid = "agenda-task" in
+    let agenda title = `Assoc ["page", `String "today"; "day", `Int 20261123;
+      "enabled", `Bool true; "doing", `List [`Assoc ["uuid", `String uuid; "block", `Assoc [
+        "uuid", `String uuid; "title", `String title; "pageId", `String "source"; "isTask", `Bool true]]]] in
+    let today = journal_outline_row "today-note" "today" "Note" "Today" 20261123 0 in
+    let normal = journal_outline_row uuid "source" "Task" "Yesterday" 20261122 0 in
+    let projection = { (empty_core_projection ()) with selected_graph_id = Some "test-graph";
+      graph_name = Some "Test"; outliner_rows = [today; normal]; journal_outliner_rows = [today; normal];
+      journal_tasks = agenda "Task" } in
+    let apply data = send app (Model.ApplyCoreSnapshot data); flush app in
+    let runtime = Lui_app.runtime app and root = Lui_app.root_node app in
+    let find id = descendant_with_identifier runtime root id in
+    let row () = find ("journal-task." ^ uuid) in
+    let trigger name =
+      let identifier = if ios then "outliner-block-row" else "outliner-block-content" in
+      let node = descendant_with_extension runtime app (row ()) identifier in
+      check ~msg:"agenda uses the native block event target" (node <> -1);
+      dispatch app (Lui_protocol.ExtensionEvent (node, identifier, name,
+        Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue uuid)));
+      flush app in
+    let editing_node parent = descendant_with_extension runtime app parent "outliner-editor" in
+    start app;
+    apply projection;
+    trigger "edit";
+    check ~msg:"tapping an agenda task sends an edit request for the original UUID"
+      (List.exists (function Model.TapOutlinerBlockEffect (_, id) -> id = uuid | _ -> false)
+        (App.model app).pending_effects);
+    check_eq ~msg:"tapping the task title keeps the journal open" (App.model app).app_navigation_path [];
+    let editing = Some {Model.editing_uuid = uuid; editing_title = "Draft"; caret_utf16_offset = 3} in
+    let active = {projection with projection_outliner_editing = editing} in
+    apply active;
+    let editor = editing_node (row ()) in
+    check ~msg:"editing opens in the clicked result" (editor <> -1);
+    check_eq ~msg:"the duplicate source row stays in read mode"
+      (editing_node (find ("outliner.entry." ^ uuid))) (-1);
+    check ~msg:"the scoped Task editor retains the date toolbar"
+      (find "button.outliner.editor.scheduled" <> -1 && find "button.outliner.editor.deadline" <> -1);
+    apply {active with journal_tasks = agenda "Updated task"};
+    check_eq ~msg:"updates to the agenda data keep the inline editor mounted" (editing_node (row ())) editor;
+    apply projection;
+    check_eq ~msg:"leaving a result editor releases its edit scope" (App.model app).outliner_edit_scope None;
+    trigger (if ios then "long-press" else "drag-start");
+    check ~msg:"long-press starts normal block selection"
+      (List.exists (function Model.LongPressOutlinerBlockEffect (_, id) -> id = uuid | _ -> false)
+        (App.model app).pending_effects);
+    let selected = {projection with projection_outliner_selected_block_ids = [uuid]} in
+    let scheduled () = find "button.outliner.selection.scheduled" in
+    let deadline () = find "button.outliner.selection.deadline" in
+    apply selected;
+    check ~msg:"ordinary or mixed selections hide date actions" (scheduled () = -1 && deadline () = -1);
+    let targets = [uuid; "second-task"] in
+    apply {selected with projection_outliner_selected_block_ids = targets;
+      projection_outliner_selected_tasks_only = true};
+    List.iter (fun (field, image, button) ->
+      check_eq (property_string runtime button Lui_protocol.InlineIconName) ("app:" ^ image);
+      dispatch app (Lui_protocol.Press button);
+      flush app;
+      check ~msg:"the matching date editor captures all selected Tasks"
+        (Option.exists (fun (editor : Model.task_date_editor) ->
+          editor.task_date_targets = targets && editor.task_date_field = field)
+          (App.model app).task_date_editor);
+      send app Model.CloseTaskDates;
+      flush app)
+      ["scheduled", "calendar", scheduled (); "deadline", "deadline", deadline ()]
+  ) [true, ios_backend; false, kotlin_backend]
+
 let older_journals_only_appear_at_the_journal_root () =
   let available =
     {
@@ -10348,7 +10529,8 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
 
 let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let application = App.create (kotlin_backend ()) in
-  let row = outline_row "block-a" "Draft" in
+  let row = { (outline_row "block-a" "Draft") with
+    Model.row_metadata_json = {|{"isTask":true}|} } in
   let editing =
     {
       Model.editing_uuid = "block-a";
@@ -10372,7 +10554,7 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
       else List.concat_map actions (children renderer id) in
     actions toolbar in
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 12;
+    (List.length buttons) 14;
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -10385,18 +10567,18 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
     buttons;
-  let line_break = List.nth buttons 5 in
+  let line_break = List.nth buttons 7 in
   check_eq ~msg:"line break follows the structural editor actions"
     (property_string renderer line_break Lui_protocol.AccessibilityIdentifier)
     "button.outliner.editor.lineBreak";
-  let page_reference = List.nth buttons 10 in
+  let page_reference = List.nth buttons 12 in
   check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "app:toolbar-page-reference";
   check_eq ~msg:"page reference renders as an icon button"
     (property_string renderer page_reference Lui_protocol.TextValue)
     "<missing>";
-  dispatch application (Lui_protocol.Press (List.nth buttons 11));
+  dispatch application (Lui_protocol.Press (List.nth buttons 13));
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"
     (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true
@@ -10404,7 +10586,8 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
 
 let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   let application = App.create (ios_backend ()) in
-  let row = outline_row "block-a" "Project [[Pro" in
+  let row = { (outline_row "block-a" "Project [[Pro") with
+    Model.row_metadata_json = {|{"isTask":true}|} } in
   let editing =
     {
       Model.editing_uuid = "block-a";
@@ -10534,21 +10717,23 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
          38)
     [
       (0, "app:toolbar-task");
-      (1, "app:toolbar-outdent");
-      (2, "app:toolbar-indent");
-      (3, "app:toolbar-move-up");
-      (4, "app:toolbar-move-down");
-      (5, "app:toolbar-line-break");
-      (6, "app:toolbar-tag");
-      (7, "app:toolbar-camera");
-      (8, "app:toolbar-audio");
+      (1, "app:calendar");
+      (2, "app:deadline");
+      (3, "app:toolbar-outdent");
+      (4, "app:toolbar-indent");
+      (5, "app:toolbar-move-up");
+      (6, "app:toolbar-move-down");
+      (7, "app:toolbar-line-break");
+      (8, "app:toolbar-tag");
+      (9, "app:toolbar-camera");
+      (10, "app:toolbar-audio");
     ];
   check_eq ~msg:"the iOS editor toolbar omits the file picker"
     (descendant_with_identifier renderer editor_toolbar
        "button.outliner.editor.attachment")
     (-1);
-  let page_reference_button = List.nth editor_buttons 9 in
-  let hide_keyboard_button = List.nth editor_buttons 10 in
+  let page_reference_button = List.nth editor_buttons 11 in
+  let hide_keyboard_button = List.nth editor_buttons 12 in
   check_eq ~msg:"page reference retains main's compact symbolic label"
     (property_string renderer page_reference_button Lui_protocol.TextValue)
     "[[]]";
@@ -11634,6 +11819,8 @@ let cases =
     case "graph-quick-switch-cycles-and-configures-slots" graph_quick_switch_cycles_and_configures_slots;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "resident-journal-keeps-visible-bodies-during-refocus" resident_journal_keeps_visible_bodies_during_refocus;
+    case "journal-agenda-is-retained-across-navigation" journal_agenda_is_retained_across_navigation;
+    case "journal-task-results-edit-and-select-the-source-block" journal_task_results_edit_and_select_the_source_block;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;

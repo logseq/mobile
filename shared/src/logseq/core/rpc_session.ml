@@ -92,6 +92,32 @@ let query_db session =
   | Some load -> load ()
   | None -> Some (state session).model.db
 
+let active_graph_db session graph_id =
+  match (host session).Types.model_for_graph with
+  | Some _ when (state session).active_graph_id <> Some graph_id -> None
+  | _ -> query_db session
+
+let outliner_is_task session =
+  let db = lazy (query_db session) in
+  fun uuid -> match Lazy.force db with
+    | Some db ->
+      Option.exists (fun eid -> Graph_read.entity_is_instance_of db eid "logseq.class/Task")
+        (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+    | None -> false
+
+let journal_task_route session =
+  match active_node_route session with
+  | Some route -> Some route.Types.uuid
+  | None -> Option.map (fun (page : Model.entity_summary) -> page.uuid) (state session).selected_sidebar_page
+
+let journal_tasks_json ?(force = false) session =
+  match (state session).config with
+  | Some {graph_id; _} when graph_id <> "" ->
+    (match active_graph_db session graph_id with
+     | Some db -> Journal_task_dates.project session.Types.journal_tasks ~graph:graph_id ~now:(now_ms ()) ~force db
+     | None -> `Null)
+  | _ -> `Null
+
 let current_summary session (summary : Model.entity_summary) =
   Option.value ~default:summary (Option.bind (query_db session) (fun db ->
     Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid))
@@ -184,7 +210,7 @@ let with_queries session result =
       | `List values -> `List (List.map decorate values)
       | `Assoc fields ->
         let fields = List.map (fun (key, value) ->
-          key, if key = "query" then value else decorate value) fields in
+          key, if key = "query" || key = "journalTasks" then value else decorate value) fields in
         (match List.assoc_opt "uuid" fields, List.assoc_opt "pageId" fields,
            List.assoc_opt "isShell" fields with
          | Some (`String uuid), Some _, shell when shell <> Some (`Bool true) ->
@@ -304,6 +330,7 @@ let reference_blocks_json session current serialize blocks =
 
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
+  let is_task = outliner_is_task session in
   Rpc.json_list
     (List.map
        (fun (route : Types.node_route) ->
@@ -339,7 +366,7 @@ let node_routes_json session serialize serialize_plain =
                else reference_blocks_json session current serialize_plain related )
            ; ( "linkedReferenceBlocks"
              , reference_blocks_json session current serialize_plain linked )
-           ; ("outlinerState", Rpc.outliner_state_json current)
+           ; ("outlinerState", Rpc.outliner_state_json ~is_task current)
            ; ( "outlinerRows"
              , Rpc.outliner_rows_json serialize context current )
            ; ( "outlinerAutocompleteCandidates"
@@ -485,7 +512,7 @@ let snapshot ?(graph_snapshot_recovery = false) session context_blocks blocks =
                    | None -> Model.all_statuses s.model)) )
          ; ("pendingSyncError", match Pump.pending_sync_error session with Some message -> `String message | None -> `Null)
          ; ("pendingSyncRequest", pending_request_json session)
-         ; ("outlinerState", Rpc.outliner_state_json current)
+         ; ("outlinerState", Rpc.outliner_state_json ~is_task:(outliner_is_task session) current)
          ; ( "outlinerAutocompleteCandidates"
            , Rpc.outliner_candidates_json context current )
          ; ("outlinerRows", Rpc.outliner_rows_json base_serialize context current)
@@ -496,6 +523,7 @@ let snapshot ?(graph_snapshot_recovery = false) session context_blocks blocks =
          ; ( "hasPendingSemanticOperations"
            , `Bool (has_pending_operations session) )
          ; ("emptyJournals", empty_journals_json session)
+         ; ("journalTasks", journal_tasks_json session)
          ; ( "hasOlderJournals"
            , `Bool
                (match h.Types.has_older_journals with
@@ -529,12 +557,13 @@ let outliner_patch_result session context blocks deleted splices =
         List.rev_append (List.rev blocks) refreshed in
   let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
     ?sync_error:(Pump.pending_sync_error session)
+    ~is_task:(outliner_is_task session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)
     blocks deleted splices in
   match Json.from_string encoded with
   | `Assoc fields -> (match List.assoc_opt "result" fields with
-      | Some (`Assoc result) -> success session (`Assoc (("emptyJournals", empty_journals_json session) :: result))
+      | Some (`Assoc result) -> success session (`Assoc (("emptyJournals", empty_journals_json session) :: ("journalTasks", journal_tasks_json session) :: result))
       | Some result -> success session result | None -> encoded)
   | _ -> encoded
 
@@ -1091,6 +1120,9 @@ let configure session _input fields =
     let authentication_changed = match (state session).config with
       | Some previous -> previous.Api.token <> config.token
       | None -> false in
+    if authentication_changed || Option.exists (fun (previous : Api.api_config) ->
+      previous.base_url <> config.base_url) (state session).config then
+      Journal_task_dates.clear_cache session.journal_tasks;
     if changed || authentication_changed then cancel_pending_sync session;
     if changed then
       session.state := { !(session.state) with semantic_queue = [] };
@@ -1989,11 +2021,6 @@ let widget_status_choice (status : Model.status) =
   | `Assoc fields -> `Assoc (("appearance", widget_status_appearance status) :: fields)
   | json -> json
 
-let widget_db session graph_id =
-  match (host session).Types.model_for_graph with
-  | Some _ when (state session).active_graph_id <> Some graph_id -> None
-  | _ -> query_db session
-
 let widget_graph_locked session =
   selected_graph_is_encrypted session && not (selected_graph_is_unlocked session)
 
@@ -2002,7 +2029,7 @@ let active_widget_db session =
   | Some config when config.Api.graph_id <> "" && not (widget_graph_locked session) ->
     (* The mobile host opens an encrypted local graph only after loading its key.
        The local projection can already be open while the catalog is loading. *)
-    Option.map (fun db -> config.graph_id, db) (widget_db session config.graph_id)
+    Option.map (fun db -> config.graph_id, db) (active_graph_db session config.graph_id)
   | _ -> None
 
 let widget_random_interval_ms = 60 * 60 * 1000
@@ -2479,7 +2506,10 @@ let rec dispatch session action payload =
          if graph <> `Null && graph <> Option.fold ~none:`Null ~some:(fun c -> `String c.Api.graph_id) (state session).config
          then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
          else
-           let column = if member "mode" input = `String "filter" then
+           let column = if member "mode" input = `String "taskDates" then
+             Journal_task_dates.values db (Journal_task_dates.targets db
+               (Json.Util.to_list (member "targets" input)))
+           else if member "mode" input = `String "filter" then
              Result_view.filter_values db ~owner ~feature:(required "featureType" input) ~attr
            else if attr = "block/title" || attr = "block/tags" || String.starts_with ~prefix:"user.property/" attr
              || String.starts_with ~prefix:"logseq.property/" attr then
@@ -2549,6 +2579,33 @@ let rec dispatch session action payload =
            | Some (`String graph), Some config -> graph = config.Api.graph_id
            | _ -> false in
          if not same_graph then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
+         else if Json.Util.member "action" input = `String "refreshJournalTasks" then (
+           let route = Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) (journal_task_route session) in
+           let day = `Int (Model.journal_day_for_ms (now_ms ())) in
+           let agenda = journal_tasks_json session in
+           let on_today = route = `Null || (match agenda with
+             | `Assoc fields -> List.assoc_opt "page" fields = Some route
+             | _ -> false) in
+           if on_today && Json.Util.member "route" input = route && Json.Util.member "day" input = day then
+             ignore (journal_tasks_json ~force:true session);
+           snapshot_visible session)
+         else if Json.Util.member "action" input = `String "saveTaskDates" then (
+           match editing_cursor session with
+           | Error (code, message) -> Rpc.failure code message
+           | Ok cursor ->
+             let intent = Journal_task_dates.mutation db input in
+             let flush = match Json.Util.member "editingUuid" input, (state session).outliner_state.editing with
+               | `Null, _ -> Ok ()
+               | `String uuid, Some editing when editing.uuid = uuid ->
+                 let response = dispatch_outliner_event session {|{"type":"saveEditing"}|} in
+                 (match Json.Util.member "ok" (Json.from_string response) with
+                  | `Bool true -> Ok ()
+                  | _ -> Error response)
+               | _ -> Error (Rpc.failure "stale_editor" "The active block changed. Reopen Task dates") in
+             (match flush, intent with
+              | Error response, _ -> response
+              | Ok (), None -> snapshot_visible session
+              | Ok (), Some intent -> stage_result session (fresh_squuid ()) cursor intent))
          else match editing_cursor session with
          | Error (code, message) -> Rpc.failure code message
          | Ok cursor when Yojson.Basic.Util.member "action" input = `String "editText" ->
@@ -2561,7 +2618,9 @@ let rec dispatch session action payload =
          | Ok cursor -> (match Node_property.mutation db ~now:(now_ms ()) ~fresh_uuid:fresh_squuid input with
              | Ok intent -> stage_result session (fresh_squuid ()) cursor intent
              | Error message -> Rpc.failure "invalid_property" message)
-        with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
+        with
+        | Invalid_argument message -> Rpc.failure "invalid_property" message
+        | error -> Rpc.failure "invalid_property" (Printexc.to_string error))
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "resultViews" ->
     (match payload, query_db session with
@@ -2732,6 +2791,7 @@ let rec dispatch session action payload =
       (match close graph_id with
        | Error message -> Rpc.failure "graph_close_failed" message
        | Ok () ->
+         Journal_task_dates.remove_cached_graph session.journal_tasks graph_id;
          if s.active_graph_id = Some graph_id
             || Option.exists (fun (config : Api.api_config) -> config.graph_id = graph_id) s.config
          then begin

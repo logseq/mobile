@@ -55,6 +55,17 @@ let property ?owner db attr =
      match Option.map (fun id -> display (get db id "block/title")) id with Some title when title <> "" -> title | _ -> attr);
    many = Option.fold ~none:false ~some:(fun schema -> schema.Ds.cardinality = Ds.Many) schema;
    ref_ = Option.fold ~none:false ~some:(fun schema -> schema.Ds.value_type = Some Ds.RefType) schema}
+
+let can_clear_single_choice db owner p = function
+  | [value] when not p.many && not (empty db value)
+      && p.attr <> "logseq.property.view/type"
+      && (p.attr <> "logseq.property.class/extends" || not (Node_title.is_class db owner)) ->
+    not (Option.exists (fun definition ->
+      List.exists (fun attr -> get db definition attr = value)
+        ["logseq.property/default-value"; "logseq.property/scalar-default-value"])
+      (attr_eid db p.attr))
+  | _ -> false
+
 let node_target_id db p value =
   Option.map (fun id ->
     if p.typ <> "node" || ref_id db (get db id "logseq.property/created-from-property") <> attr_eid db p.attr then id else
@@ -274,17 +285,19 @@ let row_json ~compact_block ~include_asset db encode properties = function
         @ asset_fields)
       else encode block in
     `Assoc ["block", encoded; "properties", `List (List.map (fun p ->
+      let assigned = attr_values db id p.attr in
       let editor = if p.closed then
         let choices = G.scope_closed_value_eids db ~owner:id p.choices in
         if choices = p.choices then [] else
           ["choices", choices_json db choices; "closed", `Bool true; "canCreate", `Bool false]
         else [] in
       `Assoc (editor @ ["attr", `String p.attr; "kind", `String p.typ; "editable", `Bool (editable p && (p.attr <> "block/title" || Node_title.can_edit db id));
-        "text", `String (String.concat ", " (List.map (property_display db p) (attr_values db id p.attr)));
-        "editorValue", `String (match attr_values db id p.attr with
+        "canClearChoice", `Bool (can_clear_single_choice db id p assigned);
+        "text", `String (String.concat ", " (List.map (property_display db p) assigned));
+        "editorValue", `String (match assigned with
           | value :: _ when p.attr = "block/title" -> title_editor_value db (display value)
           | value :: _ -> temporal_value db p value | [] -> "");
-        "references", `List (property_references db p (attr_values db id p.attr));
+        "references", `List (property_references db p assigned);
         "raw", semantic_json db (raw db id p.attr)])) properties)]
 type row_window = {view_uuid : string option; offset : int; limit : int}
 type prepared_view = {
@@ -645,6 +658,7 @@ let property_json ?(include_candidates = true) ?(defer_values = false) db ~owner
       | value :: _ when attr = "block/title" -> title_editor_value db (display value)
       | value :: _ -> temporal_value db p value | [] -> "")) ::
     ("text", `String text) :: ("raw", semantic_json db (raw db id attr)) ::
+    ("canClearChoice", `Bool (can_clear_single_choice db id p assigned)) ::
     ("textLayout", `Bool text_layout) :: ("blocks", `List blocks) ::
     ("references", `List references) ::
     ("markup", Markup.to_yojson (Markup.parse [] [] text)) ::

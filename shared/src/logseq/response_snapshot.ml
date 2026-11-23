@@ -249,7 +249,7 @@ let rec outline_row_from_block youtube_target_url opens_as_page depth
     Some
       { Model.row_uuid; row_title;
         row_metadata_json = Yojson.Basic.to_string (`Assoc (List.filter (fun (key, _) ->
-          List.mem key ["discussionKind"; "reactions"; "commentAuthor"; "pdfAnnotation"]) fields));
+          List.mem key ["discussionKind"; "reactions"; "commentAuthor"; "pdfAnnotation"; "isTask"]) fields));
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         row_list_number = int_member "listNumber" fields;
         row_is_embed = bool_member "isEmbed" fields;
@@ -373,6 +373,9 @@ let selection_member fields =
   string_list_member "selectedBlockIds"
     (object_member "outlinerState" fields)
 
+let selected_tasks_only fields =
+  bool_member "selectedTasksOnly" (object_member "outlinerState" fields)
+
 let outliner_row_splice input =
   let fields = object_fields input in
   match int_member "deleteCount" fields with
@@ -429,7 +432,8 @@ let node_route input =
         node_outliner_autocomplete = autocomplete_member fields;
         node_outliner_autocomplete_candidates =
           autocomplete_candidates_member fields;
-        node_outliner_selected_block_ids = selection_member fields }
+        node_outliner_selected_block_ids = selection_member fields;
+        node_outliner_selected_tasks_only = selected_tasks_only fields }
   | None -> None
 
 let sidebar_projection fields =
@@ -491,6 +495,7 @@ let core_projection fields =
         | Some uuid, Some title, Some day -> Some ({Model.uuid; title}, day)
         | _ -> None)
       | _ -> None) (list_member "emptyJournals" fields);
+    journal_tasks = Option.value ~default:`Null (List.assoc_opt "journalTasks" fields);
     journal_outliner_rows = base_rows;
     outliner_rows =
       or_route
@@ -518,6 +523,9 @@ let core_projection fields =
         (fun (route : Model.node_projection) ->
           route.node_outliner_selected_block_ids)
         (selection_member fields);
+    projection_outliner_selected_tasks_only =
+      or_route (fun (route : Model.node_projection) -> route.node_outliner_selected_tasks_only)
+        (selected_tasks_only fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
     pdf_update = (match List.assoc_opt "pdfWorkspace" fields with

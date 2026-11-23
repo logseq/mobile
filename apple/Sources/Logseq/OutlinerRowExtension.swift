@@ -61,6 +61,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let completed: Bool
     let selected: Bool
     let editing: Bool?
+    let allowsDrag: Bool?
     let hasCustomContent: Bool?
     let opensAsPage: Bool
     let nodeIcon: NodeIconPayload?
@@ -159,16 +160,21 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @ViewBuilder var body: some View {
         #if os(iOS)
         if !(row.editing ?? !context.childIDs.isEmpty) {
-            content
-                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
+            let selectable = content
                 .contentShape(Rectangle())
                 .highPriorityGesture(LongPressGesture().onEnded { _ in emit("long-press") })
+            if row.allowsDrag != false {
+                selectable
+                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
                 .onDrag { emit("drag-start"); return NSItemProvider(object: row.uuid as NSString) }
                 .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry, depth: row.depth) {
                     emit("drop", extra: ["placement": .string($0.eventValue)])
                     return true
                 })
+            } else {
+                selectable
+            }
         } else { content }
         #else
         content

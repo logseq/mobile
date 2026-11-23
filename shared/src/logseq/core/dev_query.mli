@@ -17,6 +17,8 @@ module Unicode : sig
   val lowercase : string -> string
 end
 module Date_time_util : sig
+  val journal_day_plus : int -> int -> int option
+  val journal_day_to_local_ms : int -> int64
   val valid_journal_title : ?formatters:string list -> string -> bool
   val journal_title_to_int : ?formatters:string list -> string -> int option
   type period = Days | Weeks | Months | Years | Hours | Minutes

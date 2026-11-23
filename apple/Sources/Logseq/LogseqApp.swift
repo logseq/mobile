@@ -552,7 +552,7 @@ public struct LogseqRootView : View {
         guard isLGApplicationReady, let graphID = store.snapshot.selectedGraphId,
               store.snapshot.isGraphUnlocked != false else { return }
         let day = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
-        let key = graphID + ":" + String(day)
+        let key = graphID + ":" + TimeZone.current.identifier + ":" + String(day)
         guard refreshedJournalDay != key else { return }
         let response = await LogseqCore.callAsync(LogseqRPCRequest(method: "snapshot", params: LogseqRPCParams(action: nil)))
         do {

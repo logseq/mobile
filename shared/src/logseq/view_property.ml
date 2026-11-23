@@ -39,6 +39,45 @@ let display_value property =
     Printf.sprintf "%s, %02d:%02d" date value.tm_hour value.tm_min
   | _ -> raw
 
+let task_date_label current value =
+  let tm = Unix.localtime (float_of_int value /. 1000.) in
+  let today = Cache_model.journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.)) in
+  let day = Cache_model.journal_day_for_ms value in
+  let date =
+    if day = today then View_base.tr current "Today"
+    else if Some day = Dev_query.Date_time_util.journal_day_plus today 1 then View_base.tr current "Tomorrow"
+    else if Some day = Dev_query.Date_time_util.journal_day_plus today (-1) then View_base.tr current "Yesterday"
+    else Printf.sprintf "%s %d%s"
+      (View_base.tr current Journal.month_short.(tm.Unix.tm_mon)) tm.tm_mday
+      (if day / 10000 = today / 10000 then "" else Printf.sprintf ", %d" (tm.tm_year + 1900)) in
+  if tm.tm_hour = 0 && tm.tm_min = 0 then date
+  else Printf.sprintf "%s, %02d:%02d" date tm.tm_hour tm.tm_min
+
+let task_date_overdue ~today value = Cache_model.journal_day_for_ms value < today
+
+let compact_task_metadata ?icon_name ?icon_identifier ?disabled_signal ?overdue_signal ~identifier ~label value on_press : t =
+  custom @@ fun context parent ->
+  let foreground = match overdue_signal with
+    | Some overdue -> Signal.map (fun overdue -> if overdue then "deadline-overdue" else "muted-foreground") overdue
+    | None -> Signal.constant context.Lui_ui.ui_scheduler "muted-foreground" in
+  let accessibility_label = Signal.map (fun value ->
+    if Option.is_some icon_name then label ^ ", " ^ value else label) value in
+  let caption = Lui_elements.text ~value:(reactive value) ~style_class:"footnote single-line"
+    ~foreground_signal:foreground [] in
+  let contents = match icon_name with
+    | None -> [caption]
+    | Some name ->
+      let glyph = icon ~name:(`app name) ~width:16 ~height:16 ~foreground_signal:foreground
+        ?accessibility_identifier:icon_identifier [] in
+      if Lui_ui.host context = Lui_protocol.KotlinHost then
+        [row ~gap:4 ~cross:`center [glyph; caption]]
+      else [glyph; box ~width:4 []; caption] in
+  mount context ?parent (View_base.with_label_signal accessibility_label
+    (button ~text:(reactive value) ~label ~variant:`ghost ~height:28
+      ~padding_horizontal:0 ~padding_vertical:0 ~text_alignment:`start
+      ~foreground_signal:foreground ~style_class:(if Option.is_some icon_name then "single-line" else "")
+      ~accessibility_identifier:identifier ?disabled_signal ~on_press contents))
+
 let adaptive_row stacked children : t = custom (fun context parent ->
   let node = Lui_ui.extension context "native-property-row" in
   attach context parent node;
@@ -142,7 +181,7 @@ let tag_properties model_source raw_source send close : t =
           ~accessibility_identifier:("sheet.tag-properties.done." ^ owner) ~on_press:(fun _ -> close ()) []]
     ])))
 
-let view ?(compact = false) ~render_block model_source raw_source send : t =
+let view ?(compact = false) ?task_completed ~render_block model_source raw_source send : t =
  custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let source = own (Signal.map decode raw_source) in
@@ -198,13 +237,13 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             | action -> send action in
           let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
             | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
-          let label = match task_icon with
-            | Some name -> icon ~name:(`app name) ~width:20 ~height:20 ~foreground:"muted-foreground"
-                ~tooltip:(property_title (Signal.sample model_source) first)
-                ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) []
-            | None -> Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
+          let label = Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
+          let disabled = own (Signal.map2 (fun property (model : Model.logseq_model) ->
+            field "editable" property <> `Bool true || List.exists (function
+              | Model.NodePropertyEffect (_, key, _) -> key = id | _ -> false)
+                (model.pending_effects @ model.in_flight_effects)) property_source model_source) in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
             ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:(if compact then 0.0 else 1.0)
             ~text:(reactive (own (Signal.map2 (fun current p -> let value = display_value p in
@@ -212,9 +251,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
               else if field "kind" p = `String "datetime" && List.mem value ["Today"; "Tomorrow"]
               then View_base.tr current value else value) model_source property_source)))
             ~label:(property_title (Signal.sample model_source) first)
-            ~disabled:(reactive (fun property model -> field "editable" property <> `Bool true || List.exists (function
-              | Model.NodePropertyEffect (_, key, _) -> key = id | _ -> false)
-                (model.Model.pending_effects @ model.in_flight_effects)) property_source model_source)
+            ~disabled_signal:disabled
             ~accessibility_identifier:("property.value." ^ owner ^ "." ^ attr) ~on_press:(fun _ -> edit ()) [] in
           let node_value = reactive (fun property -> match list (field "references" property) with
             | [] -> value
@@ -246,7 +283,30 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
             else adaptive_row (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source)) children in
           mount context ?parent
             (column ~gap:2 ~cross:(if compact then `start else `stretch) [
-              fields [
+              (match task_icon with
+              | Some icon_name ->
+                let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
+                let value = own (Signal.map2 (fun current property ->
+                  match timestamp property with
+                  | Some millis when abs_float (float_of_int millis) <= 8640000000000000. ->
+                    task_date_label current millis
+                  | _ -> display_value property) model_source property_source) in
+                let overdue_signal = match task_completed, attr with
+                  | Some completed, "logseq.property/deadline" ->
+                    let today = own (Signal.map (fun (current : Model.logseq_model) ->
+                      match field "day" current.journal_tasks with
+                      | `Int day -> day
+                      | _ -> Cache_model.journal_day_for_ms (Session_types.now_ms ())) model_source) in
+                    let overdue = own (Signal.map2 (fun today property ->
+                      Option.exists (fun millis -> abs_float (float_of_int millis) <= 8640000000000000.
+                        && task_date_overdue ~today millis) (timestamp property)) today property_source) in
+                    Some (own (Signal.map2 (fun completed overdue -> not completed && overdue) completed overdue))
+                  | _ -> None in
+                compact_task_metadata ~icon_name ~disabled_signal:disabled ?overdue_signal
+                  ~icon_identifier:("property.label." ^ owner ^ "." ^ attr)
+                  ~identifier:("property.value." ^ owner ^ "." ^ attr)
+                  ~label:(property_title (Signal.sample model_source) first) value edit
+              | None -> fields [
                 label;
                 reactive (fun text_layout -> if text_layout then
                   reactive (fun empty -> if empty then row [value] else box ~opacity:0.72 [
@@ -259,7 +319,7 @@ let view ?(compact = false) ~render_block model_source raw_source send : t =
                   else row ~gap:0 ~cross:`center ~accessibility_identifier:("property.inline." ^ owner ^ "." ^ attr) [
                     if field "kind" first = `String "checkbox" then checkbox_value else node_value])
                   (own (Signal.map (fun p -> field "textLayout" p = `Bool true) property_source));
-              ];
+              ]);
               if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
                 (reactive (function None -> box [] | Some property ->
                   let open_nodes = List.map (fun reference ->

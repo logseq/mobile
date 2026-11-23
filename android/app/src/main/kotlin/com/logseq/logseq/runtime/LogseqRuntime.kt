@@ -291,7 +291,7 @@ internal class LogseqRuntime(
         journalDayJob = if (resumed) scope.launch {
             while (true) {
                 if (hasOpenGraph) {
-                    val key = selectedGraphId + ":" + java.time.LocalDate.now().toString()
+                    val key = selectedGraphId + ":" + java.time.ZoneId.systemDefault().id + ":" + java.time.LocalDate.now()
                     if (key != refreshedJournalDay) {
                         val response = bridge.callCore("""{"apiVersion":1,"method":"snapshot","params":{}}""")
                         if (JSONObject(response).optBoolean("ok")) {
