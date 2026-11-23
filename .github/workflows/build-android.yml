@@ -91,6 +91,20 @@ jobs:
           echo "LOGSEQ_ANDROID_VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))" >> "$GITHUB_ENV"
           echo "LOGSEQ_ANDROID_REVISION=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_ENV"
 
+      - name: Validate release notes
+        run: |
+          version=$(sed -n 's/^MARKETING_VERSION *= *//p' version.xcconfig)
+          notes="release-notes/$version/android.txt"
+          test -s "$notes"
+          python3 - "$notes" <<'PY'
+          from pathlib import Path
+          import sys
+          notes = Path(sys.argv[1]).read_text().strip()
+          if len(notes) > 500:
+              raise SystemExit("Google Play release notes must not exceed 500 characters")
+          print(notes)
+          PY
+
       - name: System dependencies
         run: |
           sudo apt-get update
@@ -239,7 +253,9 @@ jobs:
 
       - name: Collect release artifacts
         run: |
-          mkdir -p builds
+          mkdir -p builds/whatsnew
+          version=$(sed -n 's/^MARKETING_VERSION *= *//p' version.xcconfig)
+          cp "release-notes/$version/android.txt" builds/whatsnew/whatsnew-en-US
           mv android/app-signed.apk "builds/Logseq-android-${LOGSEQ_ANDROID_REVISION}-${LOGSEQ_ANDROID_VERSION_CODE}.apk"
           mv android/app-signed.aab "builds/Logseq-android-${LOGSEQ_ANDROID_REVISION}-${LOGSEQ_ANDROID_VERSION_CODE}.aab"
           cp android/app/build/outputs/mapping/release/mapping.txt builds/mapping.txt
@@ -275,3 +291,4 @@ jobs:
           track: ${{ inputs.play-track }}
           status: ${{ inputs.release-status }}
           mappingFile: builds/mapping.txt
+          whatsNewDirectory: builds/whatsnew
