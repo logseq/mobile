@@ -993,6 +993,31 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
       ~padding:32
       [ authentication_content context model_source send ]
 
+let with_graph_quick_switch model_source send content =
+  custom (fun context parent ->
+    match Lui_ui.profile context with
+    | { profile_os = IOS; profile_host = SwiftUIHost }
+    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
+      let node = Lui_ui.extension context "graph-quick-switch" in
+      attach context parent node;
+      let target = Signal.map Model.next_quick_graph model_source in
+      let property name field =
+        Lui_ui.extension_property_signal context node name
+          (Signal.map (fun graph ->
+             View_base.string_wire_value (Option.fold ~none:"" ~some:field graph)) target)
+      in
+      property "target-id" (fun (graph : Model.graph) -> graph.id);
+      property "target-name" View_base.graph_title;
+      Lui_ui.on_event context node (function
+        | ExtensionEvent (_, _, "switch", values) ->
+          (match Lui_protocol.String_map.find_opt "value" values with
+           | Some (StringValue id) -> ignore (send (Model.QuickSwitchGraph id))
+           | _ -> ())
+        | _ -> ());
+      ignore (mount context ~parent:node content);
+      node
+    | _ -> mount context ?parent content)
+
 let application_main_content (context : Lui_ui.ui_context) model_source
     send : t =
   let content_children : t list =
@@ -1133,7 +1158,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
                  )
-               drawer_main drawer_panel);
+               (with_graph_quick_switch model_source send drawer_main) drawer_panel);
         ]
     else
       stack ~grow:1.0 ~container_relative_frame:`both
@@ -1183,7 +1208,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
               (send
                  (if open_ then Model.OpenSidebar else Model.CloseSidebar))
           )
-        drawer_main drawer_panel in
+        (with_graph_quick_switch model_source send drawer_main) drawer_panel in
     if ios_drawer then
       (* The drawer fades the moving page toward its own background token. *)
       let tokens = Signal.map (function
@@ -1212,5 +1237,7 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
 
 let logseq_view context model_source send : t =
   stack ~grow:1.0 [application_view context model_source send;
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.editing_graph_slot <> None) model_source)
+      (View_graphs.graph_slot_picker context model_source send);
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)
       (View_authentication.sheet model_source send)]

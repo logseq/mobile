@@ -121,6 +121,7 @@ let host_action (update : Host_update.host_update) =
         spell_check = settings.spell_check;
         auto_correction = settings.auto_correction;
         sidebar_tabs = settings.sidebar_tabs;
+        graph_quick_slots = settings.graph_quick_slots;
         base_url = settings.base_url;
         version = settings.version;
         revision = settings.revision }
@@ -234,6 +235,7 @@ let encode_settings (settings : Model.settings_projection) =
   ^ ",\"spellCheck\":" ^ string_of_bool settings.spell_check
   ^ ",\"autoCorrection\":" ^ string_of_bool settings.auto_correction
   ^ ",\"sidebarTabs\":" ^ encode_string_vector settings.sidebar_tabs
+  ^ ",\"graphQuickSlots\":" ^ encode_string_vector settings.graph_quick_slots
   ^ ",\"baseURL\":" ^ Lui_wire.quoted settings.base_url ^ "}"
 
 let encode_runtime_log_record (record : Model.runtime_log_record) =
@@ -621,7 +623,8 @@ let extension_event node identifier name text value =
     | _, "backspace" ->
       [ "title", StringValue text; "selection-length", IntValue value ]
     | _, "caret-change" -> [ "caret-utf16-offset", IntValue value ]
-    | "native-property-date", "change" -> ["value", StringValue text]
+    | "native-property-date", "change"
+    | "graph-quick-switch", "switch" -> ["value", StringValue text]
     | _, "query-changed" -> [ "query", StringValue text ]
     | "native-table-viewport", "viewport-changed" ->
       ["offset", IntValue (Option.value ~default:0 (int_of_string_opt text)); "width", IntValue value]

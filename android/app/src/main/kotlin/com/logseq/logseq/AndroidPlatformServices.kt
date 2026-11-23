@@ -29,6 +29,7 @@ internal fun resolveAppFile(filesDirectory: File, path: String): File {
 
 class AndroidPlatformServices(private val context: Context) {
     private val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+    private val graphQuickSlotsKey = "logseq.mobile.graphQuickSlots"
     private val snapshotDownloader = AndroidGraphSnapshotDownloader()
 
     fun loadStorageState(): Map<String, Any> {
@@ -57,6 +58,10 @@ class AndroidPlatformServices(private val context: Context) {
                     .split(',')
                     .map(String::trim)
                     .filter(String::isNotEmpty),
+                "graphQuickSlots" to runCatching {
+                    val slots = JSONArray(preferences.getString(graphQuickSlotsKey, "[]") ?: "[]")
+                    List(slots.length()) { slots.optString(it) }
+                }.getOrDefault(emptyList()),
                 "baseURL" to baseUrl,
                 "version" to packageInfo.versionName.orEmpty().ifBlank { "Development" },
                 "revision" to BuildConfig.GIT_REVISION,
@@ -86,6 +91,11 @@ class AndroidPlatformServices(private val context: Context) {
                 settings.optJSONArray("sidebarTabs")?.toStringList()?.joinToString(",")
                     ?: "journals,flashcards,graphs",
             )
+            .apply {
+                settings.optJSONArray("graphQuickSlots")?.let {
+                    putString(graphQuickSlotsKey, it.toString())
+                }
+            }
             .putString(
                 "logseq.baseURL",
                 normalizedBaseUrl(settings.optString("baseURL", DEFAULT_BASE_URL)),

@@ -71,6 +71,7 @@ type settings_projection =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
+  ; graph_quick_slots : string list
   ; base_url : string
   ; version : string
   ; revision : string
@@ -381,6 +382,7 @@ type logseq_model =
   ; sidebar_open : bool
   ; viewport_width : int
   ; graph_menu_open : bool
+  ; editing_graph_slot : int option
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
@@ -423,6 +425,7 @@ type logseq_model =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
+  ; graph_quick_slots : string list
   ; base_url : string
   ; base_url_draft : string
   ; version : string
@@ -559,6 +562,10 @@ type logseq_action =
   | OpenGraphMenu
   | DismissGraphMenu
   | SelectSidebarGraph of string
+  | ChooseGraphSlot of int
+  | DismissGraphSlotPicker
+  | SetGraphSlot of string
+  | QuickSwitchGraph of string
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
@@ -711,6 +718,9 @@ val graph_local_ : logseq_model -> string -> bool
 val remove_string : string list -> string -> string list
 val required_sidebar_tab_ : string -> bool
 val valid_sidebar_tab_ : string -> bool
+val graph_slot_count : int
+val graph_slot_candidates : logseq_model -> graph list
+val next_quick_graph : logseq_model -> graph option
 val normalize_sidebar_tabs : string list -> string list
 val toggle_sidebar_tab : string list -> string -> string list
 val move_sidebar_tab : string list -> string -> int -> string list
