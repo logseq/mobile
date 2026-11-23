@@ -1,6 +1,110 @@
 open Lui_protocol
 open Lui_elements
 
+let journal_task_field = View_rows.task_field
+let task_text = function `String value -> value | _ -> ""
+
+let task_date_fields = ["scheduled", "Scheduled", "calendar"; "deadline", "Deadline", "deadline"]
+
+let task_effect_active key (current : Model.logseq_model) =
+  List.exists (function
+    | Model.NodePropertyEffect (_, id, _) | Model.LoadPropertyValuesEffect (_, id, _) -> id = key
+    | _ -> false) (current.pending_effects @ current.in_flight_effects)
+
+let task_dates_dialog model_source send : t =
+  let close () = ignore (send Model.CloseTaskDates) in
+  reactive (function
+    | None -> box []
+    | Some (editor : Model.task_date_editor) ->
+      custom @@ fun context parent ->
+      let key = editor.task_date_key in
+      let graph = editor.task_date_graph in
+      let blocks = editor.task_date_targets in
+      let editing = editor.task_date_editing in
+      let name, field_label, _ =
+        List.find (fun (name, _, _) -> name = editor.task_date_field) task_date_fields in
+      let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+      let state initial = Signal.state context.ui_scheduler initial in
+      let current = Signal.sample model_source in
+      let tr = View_base.tr current in
+      let draft = state None in
+      let waiting = own (Signal.map (task_effect_active key) model_source) in
+      let feedback = own (Signal.map (fun (current : Model.logseq_model) ->
+        List.find_map (fun (id, _, error) -> if key = id then error else None) current.result_view_feedback) model_source) in
+      let loaded = own (Signal.map (fun (current : Model.logseq_model) ->
+        match List.assoc_opt key current.property_value_catalogs with
+        | Some data -> (match journal_task_field "targets" (Yojson.Basic.from_string data) with
+          | `List targets -> Some targets | _ -> None)
+        | None -> None) model_source) in
+      let midnight = Session_types.now_ms () |> Cache_model.journal_day_for_ms
+        |> Dev_query.Date_time_util.journal_day_to_local_ms |> Int64.to_int in
+      let saved_dates = own (Signal.map (Option.fold ~none:[] ~some:(fun targets ->
+        List.map (journal_task_field name) targets |> List.sort_uniq compare)) loaded) in
+      let pending = own (Signal.map2 (fun saved edit ->
+        match saved, edit with
+        | [], _ -> None
+        | [value], Some edit when value = edit -> None
+        | _, Some edit -> Some edit
+        | [`Null], None -> Some (`Int midnight)
+        | _ -> None) saved_dates (Signal.value draft)) in
+      let save () =
+        match Signal.sample loaded, Signal.sample pending with
+        | Some targets, Some value when not (Signal.sample waiting) ->
+          let payload = Yojson.Basic.to_string (`Assoc [
+            "action", `String "saveTaskDates"; "graphId", `String graph;
+            "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
+            "targets", `List targets; "changes", `Assoc [name, value]]) in
+          ignore (send (Model.SubmitNodeProperty (key, payload)))
+        | _ -> () in
+      let picker_value = own (Signal.map2 (fun saved edit ->
+        match saved, edit with
+        | _, Some (`Int value) | [`Int value], None -> string_of_int value
+        | _ -> string_of_int midnight) saved_dates (Signal.value draft)) in
+      let clear_disabled = own (Signal.map2 (fun saved edit ->
+        edit = Some `Null || (edit = None && saved = [`Null]))
+        saved_dates (Signal.value draft)) in
+      let error_message = reactive (function None -> box [] | Some error ->
+        text ~foreground:"destructive" ~style_class:"footnote" ~value:(tr error) []) feedback in
+      let controls = column ~gap:12 [
+        View_query.temporal_picker model_source "datetime" ("task-dates." ^ name) picker_value
+          (fun value -> Option.iter (fun value -> Signal.set draft (Some (`Int value))) (Natural_date.timestamp value));
+        if_ ~test:(own (Signal.map2 (fun saved edit -> List.length saved > 1 && edit = None)
+          saved_dates (Signal.value draft)))
+          (text ~style_class:"footnote" ~value:(tr "Mixed dates") []);
+        error_message;
+        button ~variant:`ghost ~min_height:44 ~text:(tr "Clear")
+          ~disabled_signal:clear_disabled ~accessibility_identifier:("task-dates.clear." ^ name)
+          ~on_press:(fun _ -> Signal.set draft (Some `Null)) [];
+      ] in
+      let cancel = toolbar_button ~text:(tr "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
+        ~accessibility_identifier:"task-dates.cancel" ~on_press:(fun _ -> close ()) [] in
+      let disabled = own (Signal.map2 (fun waiting pending -> waiting || pending = None) waiting pending) in
+      let save_button = toolbar_button ~text:(tr "Save") ~variant:`ghost ~style_class:"confirmation-action"
+        ~accessibility_identifier:"task-dates.save" ~disabled_signal:disabled ~on_press:save [] in
+      mount context ?parent (View_base.sheet ~model_source ~title:(tr field_label)
+        ~detents:"large"
+        ~style_class:"navigation-list navigation-inline-title" ~accessibility_identifier:"sheet.task-dates"
+        ~on_dismiss:(fun _ -> close ()) [
+          list ~grow:1.0 ~style:`inset_grouped [
+            list_section [
+              if_list_section_item ~test:(Signal.constant context.ui_scheduler (List.length blocks > 1))
+                (list_section_item [text ~value:(View_base.tr_named current "{1} blocks selected"
+                  (string_of_int (List.length blocks))) ~style_class:"footnote" []]);
+              list_section_item [reactive (function
+                | Some _ -> controls
+                | None -> column [
+                  if_ ~test:waiting (spinner ~accessibility_identifier:"task-dates.loading" []);
+                  error_message;
+                ]) loaded];
+            ];
+          ];
+          (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [
+             button ~text:(tr "Cancel") ~on_press:(fun _ -> close ()) [];
+             button ~text:(tr "Save") ~disabled_signal:disabled ~on_press:(fun _ -> save ()) []]
+           else toolbar ~label:(tr "Task dates") ~style_class:"navigation-actions" [cancel; save_button]);
+        ]))
+    (Signal.map (fun (current : Model.logseq_model) -> current.task_date_editor) model_source)
+
 let code_language row =
     try match Yojson.Basic.from_string row.Model.markup_json with
       | `List (`Assoc fields :: _) -> (match List.assoc_opt "style" fields with Some (`String language) -> language | _ -> "")
@@ -23,7 +127,7 @@ let outliner_editor_view model_source block_id_source title_source caret_source 
          else Outliner_state.native_input_policy)) model_source block_id_source);
    Lui_ui.extension_property_signal context node "focus-enabled"
      (Signal.map (fun (current : Model.logseq_model) -> BoolValue
-       (match current.outliner_autocomplete with
+       (current.task_date_editor = None && match current.outliner_autocomplete with
         | Some {autocomplete_kind = Model.PickerAutocomplete _; _} -> false
         | _ -> true)) model_source);
    Lui_ui.extension_property_signal context node "selection-revision"
@@ -455,12 +559,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
   let editing_source =
     Signal.map View_rows.retained_row_editing_ retained_row_source
   in
-  let not_editing_source =
-    Signal.map2
-      (fun (current : Model.logseq_model) (r : Model.outline_row) ->
-        View_base.row_not_editing_ current r)
-      model_source row_source
-  in
+  let not_editing_source = Signal.map not editing_source in
   let has_children_source =
     Signal.map View_base.outliner_row_has_children row_source
   in
@@ -525,7 +624,7 @@ let outliner_row_content context model_source retained_row_source
         row_source send;
     ]
 
-let native_outliner_row model_source retained_source row_source send : t =
+let native_outliner_row ~allow_drag model_source retained_source row_source send : t =
  custom @@ fun context parent ->
   let node = Lui_ui.extension context "outliner-block-row" in
   attach context parent node;
@@ -551,6 +650,7 @@ let native_outliner_row model_source retained_source row_source send : t =
       "completed", `Bool (View_base.outliner_row_completed_ row);
       "selected", `Bool retained.is_selected;
       "editing", `Bool (View_rows.retained_row_editing_ retained);
+      "allowsDrag", `Bool allow_drag;
       "hasCustomContent", `Bool (View_rows.retained_row_editing_ retained || row.row_display_type = Some "code");
       "canRemoveTags", `Bool (Model.node_can_set_tags current row.row_uuid);
       "removeTagTitle", `String (View_base.tr current "Remove tag");
@@ -599,14 +699,14 @@ let native_outliner_row model_source retained_source row_source send : t =
 let selected_row ~selected_signal content =
   View_base.with_bool_prop_signal Selected selected_signal content
 
-let outliner_row_body (context : Lui_ui.ui_context) model_source
+let outliner_row_body ?(allow_drag = true) (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
   if Lui_ui.host context = SwiftUIHost then
     selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (box ~padding:0 ~accessibility_identifier:(reactive View_base.outliner_row_identifier row_source)
-        [native_outliner_row model_source retained_row_source row_source send])
+        [native_outliner_row ~allow_drag model_source retained_row_source row_source send])
   else
   if
     View_base.outliner_row_list_item_press_enabled_
@@ -691,6 +791,14 @@ let outliner_text_leading context (row : Model.outline_row) =
   else (if status then 49 else if priority then 20 else 26) + (if priority then 25 else 0) in
   leading + row.depth * 22
 
+let outliner_task_date_leading context (row : Model.outline_row) =
+  match row.row_status with
+  | None -> outliner_text_leading context row
+  | Some _ ->
+    (* Center the 16-point property glyph on the status control. *)
+    let root = if Lui_ui.host context = KotlinHost then 30 else 24 in
+    root + row.depth * 22
+
 let outliner_continuation ?(is_body = false) row_source content : t = custom @@ fun context parent ->
   let node = Lui_ui.extension context "outliner-continuation" in
   attach context parent node;
@@ -706,9 +814,13 @@ let outliner_continuation ?(is_body = false) row_source content : t = custom @@ 
   node
 
 let outliner_task_dates context model_source row_source send =
+  let task_completed = Signal.map (fun (row : Model.outline_row) ->
+    Option.exists (fun (status : Model.task_status) ->
+      status.ident = Some "logseq.property/status.done"
+      || status.ident = Some "logseq.property/status.canceled") row.row_status) row_source in
   View_base.with_int_prop_signal PaddingLeft
-    (Signal.map (outliner_text_leading context) row_source)
-    (box ~padding_horizontal:8 [View_property.view ~compact:true ~render_block:(fun _ _ -> box [])
+    (Signal.map (outliner_task_date_leading context) row_source)
+    (box ~padding_horizontal:8 [View_property.view ~compact:true ~task_completed ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
 let discussion_body model_source row_source body : t =
@@ -771,14 +883,17 @@ let with_embed_children model_source edit_scope row_source send render_row rende
         ]))
     (Signal.map (fun (row : Model.outline_row) -> row.row_embed_children <> []) row_source)
 
+let send_scoped_outliner_edit edit_scope send action =
+  match edit_scope, action with
+  | Some scope, Model.BeginOutlinerEdit uuid ->
+    send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, None))
+  | Some scope, Model.BeginOutlinerEditAt (uuid, offset) ->
+    send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, Some offset))
+  | _ -> send action
+
 let rec render_result_block_in_scope context model_source edit_scope row_source send =
   with_embed_children model_source edit_scope row_source send (fun row_source send ->
-    let send action = match edit_scope, action with
-      | Some scope, Model.BeginOutlinerEdit uuid ->
-        send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, None))
-      | Some scope, Model.BeginOutlinerEditAt (uuid, offset) ->
-        send (Model.BeginEmbeddedOutlinerEdit (scope, uuid, Some offset))
-      | _ -> send action in
+    let send = send_scoped_outliner_edit edit_scope send in
     let retained = Signal.map2 (View_rows.make_retained_outline_row ?edit_scope) model_source row_source in
     column ~gap:0 [
       if_ ~test:(Signal.map View_base.outliner_row_structured_breadcrumb_ row_source)
@@ -791,11 +906,14 @@ let rec render_result_block_in_scope context model_source edit_scope row_source 
       outliner_continuation row_source (outliner_task_dates context model_source row_source send)])
     (render_result_block_in_scope context model_source)
 
-let render_result_block context model_source =
-  render_result_block_in_scope context model_source None
+let render_result_block context model_source row_source send =
+  custom (fun mount_context parent ->
+    let uuid = (Signal.sample row_source : Model.outline_row).row_uuid in
+    let scope = Some ("result." ^ string_of_int (Option.value ~default:0 parent) ^ "." ^ uuid) in
+    mount mount_context ?parent (render_result_block_in_scope context model_source scope row_source send))
 
 let node_properties ?(root = false) context model_source send =
-  View_property.view ~render_block:(render_result_block context model_source) model_source
+  View_property.view ~render_block:(render_result_block_in_scope context model_source None) model_source
     (Signal.map (fun (model : Model.logseq_model) -> if root then model.properties_json else match View_base.active_node_projection model with
       | Some route -> route.node_properties_json | None -> model.properties_json) model_source) send
 
@@ -950,6 +1068,14 @@ type selection_tag_snapshot = {
 }
 
 let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
+  let task_selection = Signal.map Model.outliner_task_selection_ model_source in
+  let date_buttons ~width ~height ?size () =
+    List.map (fun (field, label, icon) ->
+      if_toolbar ~test:task_selection
+        (Lui_elements.toolbar_icon_button ~icon:(`app icon) ~variant:`ghost ?size ~width ~height
+          ~label:(View_base.tr (Signal.sample model_source) label)
+          ~accessibility_identifier:("button.outliner.selection." ^ field)
+          ~on_press:(fun () -> ignore (send (Model.OpenSelectedTaskDate field))) [])) task_date_fields in
   let location (current : Model.logseq_model) =
     current.destination,
     Option.map (fun (page : Model.sidebar_page) -> page.uuid) current.selected_page,
@@ -1031,12 +1157,13 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
           toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
             ~accessibility_identifier:"toolbar.outliner.selection"
             ~style_class:"scroll-leading" ~toolbar_gap:4
-            [
+            ([
               selection_toolbar_button model_source (`app "toolbar-copy") "Copy"
                 "button.outliner.selection.copy" "copy" send;
               Lui_elements.toolbar_icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost ~size:`icon ~width:48 ~height:48
                 ~label:tag_label ~accessibility_identifier:"button.outliner.selection.tag"
                 ~on_press:(fun _ -> open_picker ()) [];
+            ] @ date_buttons ~width:48 ~height:48 ~size:`icon () @ [
               selection_toolbar_button model_source (`app "toolbar-outdent") "Outdent"
                 "button.outliner.selection.outdent" "outdent" send;
               selection_toolbar_button model_source (`app "toolbar-indent") "Indent"
@@ -1050,7 +1177,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
                 "button.outliner.selection.copyURL" "copyURL" send;
               selection_toolbar_button model_source (`app "toolbar-unselect") "Unselect"
                 "button.outliner.selection.unselect" "unselect" send;
-            ];
+            ]);
         ]
     else
       let button_width (current : Model.logseq_model) =
@@ -1074,10 +1201,11 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
            ~accessibility_identifier:"toolbar.outliner.selection"
            ~style_class:"scroll-leading"
            ~toolbar_gap:2 ~placement:`bottom
-        [
+        ([
           apple_button (`app "toolbar-copy") "Copy"
             "button.outliner.selection.copy" "copy";
           apple_tag_button;
+        ] @ date_buttons ~width:(button_width current) ~height:46 () @ [
           apple_button (`app "toolbar-outdent") "Outdent"
             "button.outliner.selection.outdent" "outdent";
           apple_button (`app "toolbar-indent") "Indent"
@@ -1095,7 +1223,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
               ignore
                 (send (Model.PerformOutlinerToolbarAction "unselect")))
             ~text:(View_base.tr (Signal.sample model_source) "Unselect") [];
-        ]) model_source
+        ])) model_source
   in
   stack [
     selection_toolbar;
@@ -1225,6 +1353,30 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
 
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =
+  let model_source = Signal.map (fun (model : Model.logseq_model) ->
+    match View_rows.journal_task_editing_row model with
+    | Some row -> {model with outliner_rows = row :: model.outliner_rows}
+    | None -> model) model_source in
+  let editing_task (current : Model.logseq_model) =
+    Option.bind current.outliner_editing (fun editing ->
+      List.find_opt (fun (row : Model.outline_row) ->
+        row.row_uuid = editing.Model.editing_uuid) current.outliner_rows)
+    |> Option.exists (fun row -> metadata_member "isTask" row = `Bool true) in
+  let show_task_dates = Signal.map editing_task model_source in
+  let open_date field () =
+    let current : Model.logseq_model = Signal.sample model_source in
+    if editing_task current then
+      Option.iter (fun editing ->
+        ignore (send (Model.OpenBlockTaskDate (editing.Model.editing_uuid, field)))) current.outliner_editing in
+  let date_label name = View_base.tr (Signal.sample model_source) name in
+  let android_date field name image =
+    icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:48 ~height:48
+      ~label:(date_label name) ~accessibility_identifier:("button.outliner.editor." ^ field)
+      ~on_press:(open_date field) [] in
+  let ios_date field name image =
+    Lui_elements.toolbar_icon_button ~icon:(`app image) ~variant:`ghost ~width:38 ~height:42
+      ~label:(date_label name) ~accessibility_identifier:("button.outliner.editor." ^ field)
+      ~on_press:(open_date field) [] in
   let new_block =
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
       Option.fold ~none:false ~some:(fun editing ->
@@ -1301,6 +1453,8 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                      (send
                         (Model.PerformOutlinerToolbarAction "task")))
                  []);
+            if_ ~test:show_task_dates (android_date "scheduled" "Scheduled" "calendar");
+            if_ ~test:show_task_dates (android_date "deadline" "Deadline" "deadline");
             toolbar_button model_source (`app "toolbar-outdent") "Outdent"
               "button.outliner.editor.outdent" "outdent" send;
             toolbar_button model_source (`app "toolbar-indent") "Indent"
@@ -1345,6 +1499,8 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
       [
         apple_icon_button (`app "toolbar-task") (View_base.outliner_editor_task_label current)
           "button.outliner.editor.task" "task";
+        if_toolbar ~test:show_task_dates (ios_date "scheduled" "Scheduled" "calendar");
+        if_toolbar ~test:show_task_dates (ios_date "deadline" "Deadline" "deadline");
         apple_icon_button (`app "toolbar-outdent") "Outdent"
           "button.outliner.editor.outdent" "outdent";
         apple_icon_button (`app "toolbar-indent") "Indent"
@@ -1491,6 +1647,139 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
         node);
       box ~height:12 []; placeholder]
 
+let journal_task_row context model_source task_source send =
+  let decode task = Option.map (fun row -> {row with Model.row_list_number = None})
+    (Response_snapshot.related_row (journal_task_field "block" task)) in
+  match decode (Signal.sample task_source) with
+  | None -> box []
+  | Some initial ->
+    let uuid = initial.row_uuid in
+    let scope = Some (View_rows.journal_task_scope uuid) in
+    let source = Signal.map (fun task -> Option.value ~default:initial (decode task)) task_source in
+    let view_model = Signal.map (fun (model : Model.logseq_model) ->
+      {model with node_icons = String_map.remove uuid model.node_icons}) model_source in
+    let retained = Signal.map2 (View_rows.make_retained_outline_row ?edit_scope:scope) view_model source in
+    let send_block = function
+      | Model.DropOutlinerBlocks _ -> true
+      | action -> send_scoped_outliner_edit scope send action in
+    let metadata = reactive ~equal:(fun old current -> List.for_all (fun key ->
+      journal_task_field key old = journal_task_field key current) ["scheduled"; "deadline"; "page"]) (fun task ->
+      let current = Signal.sample model_source in
+      let chip id ?icon_name ?overdue_signal ~label value on_press =
+        View_property.compact_task_metadata ?icon_name ?overdue_signal ~label
+          ~identifier:("journal-task." ^ id ^ "." ^ uuid)
+          (Signal.constant context.Lui_ui.ui_scheduler value) on_press in
+      let dates = List.filter_map (fun (key, name, image) ->
+        match journal_task_field key task with
+        | `Int date ->
+          let overdue_signal = if key <> "deadline" then None else
+            Some (Signal.map (fun (current : Model.logseq_model) ->
+              match journal_task_field "day" current.journal_tasks with
+              | `Int today -> View_property.task_date_overdue ~today date
+              | _ -> false) model_source) in
+          Some (chip key ~icon_name:image ?overdue_signal ~label:(View_base.tr current name)
+            (View_property.task_date_label current date)
+            (fun () -> ignore (send (Model.OpenBlockTaskDate (uuid, key)))))
+        | _ -> None) task_date_fields in
+      let page = task_text (journal_task_field "page" task) in
+      let items = dates @ (if page = "" then [] else
+        [chip "page" ~label:(View_base.tr_named current "Open {1}" page) page (fun () ->
+          ignore (send (View_base.request_node_action (Signal.sample model_source) (Signal.sample source).page_id)))]) in
+      let items = List.concat (List.mapi (fun index item ->
+        if index = 0 then [item] else
+          [text ~value:"·" ~style_class:"footnote" ~foreground:"muted-foreground" []; item]) items) in
+      row ~gap:5 ~main:`start ~cross:`center
+        ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_source in
+    column ~gap:0 ~padding_horizontal:8 ~padding_vertical:1
+      ~accessibility_identifier:(View_rows.journal_task_scope uuid) [
+        outliner_row_body ~allow_drag:false context view_model retained source send_block;
+        View_base.with_int_prop_signal PaddingLeft
+          (Signal.map (outliner_task_date_leading context) source)
+          (box [metadata]);
+      ]
+
+let journal_task_entry context model_source send = function
+  | View_rows.Journal_task_gap -> box ~height:80 []
+  | View_rows.Journal_task_heading section ->
+    let label = match section with
+      | "overdue" -> "Overdue"
+      | "doing" -> "Doing"
+      | _ -> "Planned" in
+    let collapsed = Signal.map (fun (model : Model.logseq_model) ->
+      List.mem section (Model.journal_tasks_collapsed model)) model_source in
+    let label = View_base.tr (Signal.sample model_source) label in
+    let title = text ~value:label ~style_class:"semibold" ~foreground:"muted-foreground" [] in
+    let chevron =
+      if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
+        custom (fun context parent ->
+          let node = Lui_ui.extension context "journal-task-chevron" in
+          attach context parent node;
+          Lui_ui.extension_property_signal context node "collapsed"
+            (Signal.map (fun value -> BoolValue value) collapsed);
+          ignore (mount context ~parent:node (icon ~name:(`app "chevron-right")
+            ~width:14 ~height:14 ~foreground:"muted-foreground" []));
+          node)
+      else icon ~name:(`app "chevron-down")
+        ~name_signal:(Signal.map (fun collapsed -> `app (if collapsed then "chevron-right" else "chevron-down")) collapsed)
+        ~width:14 ~height:14 ~foreground:"muted-foreground" [] in
+    let contents = if Lui_ui.host context = KotlinHost then
+        [row ~gap:6 ~cross:`center [title; chevron]]
+      else [title; box ~width:6 []; chevron] in
+    box ~padding_horizontal:16 ~margin_top:12 [
+      separator [];
+      button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
+        ~min_height:44 ~text_alignment:`start ~text:label ~label
+        ~accessibility_identifier:("journal-tasks." ^ section)
+        ~on_press:(fun _ -> ignore (send (Model.ToggleJournalTaskSection section))) contents;
+    ]
+  | View_rows.Journal_task_error ->
+    let reason (current : Model.logseq_model) =
+      if journal_task_field "retained" current.journal_tasks = `Bool true
+      then "Couldn't refresh tasks" else "Couldn't load tasks" in
+    let waiting = Signal.map (task_effect_active "journal-tasks.refresh") model_source in
+    row ~gap:12 ~cross:`center ~padding_horizontal:16 ~padding_vertical:8 ~accessibility_identifier:"journal-tasks.error" [
+      text ~grow:1.0 ~foreground:"muted-foreground" ~value:(reactive (fun current ->
+        View_base.tr current (reason current)) model_source) [];
+      button ~variant:`ghost ~min_height:44 ~text:(View_base.tr (Signal.sample model_source) "Retry")
+        ~disabled_signal:waiting ~accessibility_identifier:"journal-tasks.retry"
+        ~on_press:(fun _ -> ignore (send Model.RefreshJournalTasks)) [];
+    ]
+  | _ -> box []
+
+let journal_refresh_extension model_source send children : t =
+  custom @@ fun context parent ->
+    let node = Lui_ui.extension context "journal-refresh" in
+    attach context parent node;
+    Lui_ui.extension_property_signal context node "enabled" (Signal.map (fun (model : Model.logseq_model) ->
+      BoolValue (Model.journal_task_refresh_available_ model)) model_source);
+    Lui_ui.extension_property_signal context node "refreshing"
+      (Signal.map (fun model -> BoolValue (task_effect_active "journal-tasks.refresh" model)) model_source);
+    List.iter (fun child -> ignore (mount context ~parent:node child)) children;
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, "refresh", _) -> ignore (send Model.RefreshJournalTasks)
+      | _ -> ());
+    node
+
+let journal_refresh_probe model_source send =
+  custom @@ fun context parent ->
+    if Lui_ui.host context = SwiftUIHost then
+      mount context ?parent (journal_refresh_extension model_source send [])
+    else mount context ?parent (box ~height:0 [])
+
+let with_journal_refresh model_source send content =
+  custom @@ fun context parent ->
+    match Lui_ui.platform context, Lui_ui.host context with
+    | _, KotlinHost -> mount context ?parent (journal_refresh_extension model_source send [content])
+    | IOS, SwiftUIHost ->
+      let node = Lui_ui.extension context "journal-task-transition" in
+      attach context parent node;
+      Lui_ui.extension_property_signal context node "collapsed"
+        (Signal.map (fun model ->
+          StringValue (String.concat "," (List.sort String.compare (Model.journal_tasks_collapsed model)))) model_source);
+      ignore (mount context ~parent:node content);
+      node
+    | _ -> mount context ?parent content
+
 let outliner_entries context model_source ~source send : t =
  custom @@ fun mount_context parent ->
   let entries = Signal.own_signal mount_context.Lui_ui.ui_scope
@@ -1511,7 +1800,9 @@ let outliner_entries context model_source ~source send : t =
   let on_window = ensure_content () in
   let on_prefetch = ensure_content () in
   let scroll_target = Signal.own_signal mount_context.ui_scope
-    (Signal.map (fun current -> match View_base.active_node_projection current with
+    (Signal.map (fun (current : Model.logseq_model) ->
+      if current.journal_tasks_reveal && Model.journal_task_refresh_available_ current then Some "journal-tasks.planned"
+      else match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
   mount mount_context ?parent
     (View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window
@@ -1526,7 +1817,12 @@ let outliner_entries context model_source ~source send : t =
         | View_rows.Placeholder_entry value -> placeholder_block context model_source value send
         | View_rows.Reference_entry _ ->
           reference_entry context model_source
-            (Signal.map View_rows.page_entry_reference entry_source) send in
+            (Signal.map View_rows.page_entry_reference entry_source) send
+        | (View_rows.Journal_task_gap | View_rows.Journal_task_heading _ | View_rows.Journal_task_error) as entry ->
+          journal_task_entry context model_source send entry
+        | View_rows.Journal_task_row (initial, _) ->
+          journal_task_row context model_source (Signal.map (function
+            | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send in
         box ~padding:0
           [ reactive (fun ready -> if ready then render ()
               else box ~height:32 ~padding_horizontal:16
@@ -1540,12 +1836,13 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       with_result_page context model_source send
+      (with_journal_refresh model_source send
       (View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
       (virtual_list ~grow:1.0 ~gap:0 ~style_class:"scroll-section-titles" ~accessibility_identifier:"list.outliner"
         ~data_attrs_signal:(Signal.map (fun current ->
           ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
         [
-          box ~height:16 [];
+          box ~height:16 [journal_refresh_probe model_source send];
           if_ ~test:(reactive View_base.active_node_has_breadcrumbs_ model_source)
             (node_breadcrumbs model_source send);
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
@@ -1567,5 +1864,5 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
           box ~height:120 [];
-        ]));
+        ])));
     ])

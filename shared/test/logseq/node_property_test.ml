@@ -126,6 +126,57 @@ let typed_edits_persist_and_sync () = R.with_runtime (fun session runtime conn -
       applied.operation_ids applied.changed_uuids) (Graph_runtime.pending_operations restored);
   check_eq (Graph_runtime.pending_operations restored) [])
 
+let single_choice_can_clear_an_assigned_value () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime conn ->
+    ignore (Ds.transact_conn conn [
+      put R.value_a "block/closed-value-property" (Ds.Ref_to (Q.ref_uuid R.score_property));
+      put R.value_b "block/closed-value-property" (Ds.Ref_to (Q.ref_uuid R.score_property));
+      put R.score_property "logseq.property/default-value" (Ds.Ref_to (Q.ref_uuid R.value_b));
+      put Q.project "logseq.property.class/properties" (Ds.Ref_to (Q.ref_uuid R.score_property))]);
+    Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [];
+    let current uuid = property R.score (result (read session uuid)) in
+    check_eq (member "closed" (current Q.alpha)) (`Bool true);
+    check_eq ~msg:"the declared default has no Clear option"
+      (member "canClearChoice" (current Q.beta)) (`Bool false);
+    ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let apply response = match Response_snapshot.decode_response response with
+        | Ok snapshot -> App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app
+        | Error message -> fail message in
+      App_test.send app (Model.RequestAppNode Q.alpha);
+      apply (Rpc_session.snapshot_visible session);
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+      let click id =
+        let node = find id in
+        check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node);
+        App_test.flush app in
+      let value_id = "property.value." ^ Q.alpha ^ "." ^ R.score in
+      let editor = "property." ^ Q.alpha ^ "." ^ R.score in
+      let clear = "view.edit.clear." ^ editor in
+      let expand = "properties.expand." ^ Q.alpha in
+      if find value_id = -1 then click expand;
+      click value_id;
+      check_eq ~msg:"Clear is an item in the single-choice picker" (App_test.node host (find clear))
+        (Some Lui_protocol.MenuItem);
+      click clear;
+      let id, payload = List.find_map (function
+        | Model.NodePropertyEffect (id, key, body) when key = editor -> Some (id, body)
+        | _ -> None) (App.model app).pending_effects |> Option.get in
+      App_test.send app (Model.DequeueEffect id);
+      let response = Core_effect_test.execute session "node-property" ["text", `String payload] in
+      ignore (result response);
+      apply (J.to_string response);
+      App_test.send app (Model.ResolveEffect (id, true, "")); App_test.flush app;
+      check_eq ~msg:"clearing removes the assigned value" (member "raw" (current Q.alpha)) `Null;
+      check ~msg:"the shared choice remains available"
+        (List.exists (fun choice -> member "uuid" choice = `String R.value_a) (items "choices" (current Q.alpha)));
+      if find value_id = -1 then click expand;
+      click value_id;
+      check_eq ~msg:"an empty selector does not show Clear" (find clear) (-1))))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
 let invalid_and_stale_edits_do_not_write () = R.with_runtime (fun session runtime _ ->
   let p = property R.score (result (read session Q.alpha)) in
   let before = List.length (Graph_runtime.pending_operations runtime) in
@@ -963,6 +1014,7 @@ let cases = [
   case "properties follow node navigation without expanding ordinary blocks" projection_and_navigation;
   case "inherited empty properties, hidden metadata and closed values" inherited_empty_and_closed_values;
   case "typed edits clear, persist and compile for sync" typed_edits_persist_and_sync;
+  case "single choice can clear an assigned value" single_choice_can_clear_an_assigned_value;
   case "invalid and stale edits never enqueue writes" invalid_and_stale_edits_do_not_write;
   case "native property labels, block layout and typed editor" native_labels_layout_and_editor;
   case "text editors refresh empty values and offer existing selector values" text_editor_refresh_and_value_catalog;

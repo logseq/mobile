@@ -7,11 +7,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerFormatter
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TimeInput
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -86,15 +89,39 @@ internal fun LuiExtensionRegistry.registerProperties() {
                 }
             }) { Children() }
     }
+    register("journal-refresh",
+        "lui-extension-v1|15:journal-refresh|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:refreshing:bool:required:none,7:enabled:bool:required:none|events:7:refresh[]",
+        acceptsStandardChildren = true,
+        properties = listOf(
+            LuiExtensionProperty("enabled", LuiExtensionValueKind.BOOLEAN, required = true),
+            LuiExtensionProperty("refreshing", LuiExtensionValueKind.BOOLEAN, required = true),
+        ),
+        events = listOf(LuiExtensionEventSchema("refresh", emptyList())),
+    ) { JournalRefresh(this) }
     register("native-property-date",
-        "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
+        "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,10:time-label:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
         properties = listOf(
             LuiExtensionProperty("identifier", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("kind", LuiExtensionValueKind.STRING, required = true),
+            LuiExtensionProperty("time-label", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true),
         ),
         events = listOf(LuiExtensionEventSchema("change", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true)))),
     ) { PropertyDatePicker(this) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JournalRefresh(context: LuiExtensionContext) {
+    if (context.bool("enabled") == true) {
+        PullToRefreshBox(
+            isRefreshing = context.bool("refreshing") == true,
+            onRefresh = { context.emit("refresh", emptyMap()) },
+            modifier = Modifier.fillMaxSize(),
+        ) { context.Children() }
+    } else {
+        Box(Modifier.fillMaxSize()) { context.Children() }
+    }
 }
 
 @Composable
@@ -160,7 +187,7 @@ private fun PropertyDatePicker(context: LuiExtensionContext) {
     }
     Column(Modifier.fillMaxWidth().testTag(context.string("identifier") ?: "")) {
         DatePicker(state = date, dateFormatter = CalendarDateFormatter, showModeToggle = false)
-        if (time) TimeInput(state = clock)
+        if (time) TimeInput(state = clock, modifier = Modifier.padding(top = 16.dp))
     }
 }
 

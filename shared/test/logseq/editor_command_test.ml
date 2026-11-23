@@ -1317,7 +1317,206 @@ let task_dates_are_visible_and_editable_in_the_outline () =
     check ~msg:"displaying task dates does not add extra semantic writes" (List.length (Graph_runtime.pending_operations runtime) < 10)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
+let editor_task_date_buttons_follow_task_membership () =
+  List.iter (fun backend -> R.with_runtime (fun session runtime conn ->
+    ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let host = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app)
+        ("button.outliner.editor." ^ id) in
+      let expect_dates visible =
+        check ~msg:"the Task action remains available" (find "task" <> -1);
+        List.iter (fun field ->
+          check_eq ~msg:("visibility of " ^ field) (find field <> -1) visible)
+          ["scheduled"; "deadline"] in
+      let refresh () =
+        match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+        | Ok projection ->
+          App_test.send app (Model.ApplyCoreSnapshot projection);
+          App_test.flush app
+        | Error message -> fail message in
+      expect_dates false;
+      let subclass = "10000000-0000-4000-8000-000000000099" in
+      let tag = Ds.Ref_to (Q.ref_uuid subclass) in
+      rebase runtime conn [
+        Ds.Add (Ds.Entity_id 900099, "block/uuid", Ds.Uuid subclass);
+        put subclass "block/title" (Ds.String "Follow-up");
+        put subclass "logseq.property.class/extends" (Ds.Ref_to (Ds.Ident "logseq.class/Task"));
+        put Q.alpha "block/tags" tag];
+      refresh ();
+      expect_dates true;
+      rebase runtime conn [
+        Ds.Retract (Q.ref_uuid Q.alpha, "block/tags", Some tag);
+        put Q.alpha "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.todo"))];
+      refresh ();
+      expect_dates false)))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime conn ->
+  let local = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let date uuid attr time = put uuid attr (Ds.Int64 time) in
+  let now = Int64.to_int (local 20261123) in
+  let scheduled = Journal_task_dates.scheduled and deadline = Journal_task_dates.deadline in
+  rebase runtime conn [
+    date Q.alpha scheduled (local 20261122); date Q.alpha deadline (local 20261124);
+    date Q.beta deadline (Int64.add (local 20261130) 36000000L)];
+  let db = Graph_runtime.db runtime in
+  let cache = Journal_task_dates.create_cache () in
+  let project ?read_rows ?(graph = "tasks") ?(force = false) () =
+    Journal_task_dates.project ?read_rows cache ~graph ~now ~force db in
+  let successful = project () in
+  let uuids section response = List.map (member "uuid") (items section response) in
+  check_eq (uuids "overdue" successful) [`String Q.alpha];
+  check_eq (uuids "planned" successful) [`String Q.beta];
+  let display = member "block" (List.hd (items "overdue" successful)) in
+  check_eq (member "uuid" display) (`String Q.alpha);
+  check ~msg:"agenda retains rich block markup"
+    (List.exists (fun part -> member "type" part = `String "emphasis") (items "markup" display));
+  check ~msg:"dated blocks without status still render the graph's default status"
+    (member "status" display <> `Null);
+  let other_graph = project ~graph:"other" ~read_rows:(fun _ _ _ -> `List [], `List [], `List []) () in
+  check_eq (uuids "overdue" other_graph) [];
+  check_eq ~msg:"revisiting an unchanged resident graph reuses its task projection"
+    (project ~read_rows:(fun _ _ _ -> failwith "cache miss") ()) successful;
+  let broken = project ~read_rows:(fun _ _ _ -> failwith "injected task query failure") ~force:true () in
+  check_eq (member "error" broken) (`Bool true);
+  check_eq (member "retained" broken) (`Bool true);
+  check_eq (member "planned" broken) (member "planned" successful);
+  let other = project ~graph:"unvisited" ~read_rows:(fun _ _ _ -> failwith "injected initial failure") () in
+  check_eq (member "retained" other) (`Bool false);
+  check_eq (uuids "planned" other) [];
+  check_eq (member "error" (project ~force:true ())) (`Bool false))
+
+let selected_task_dates_require_all_task_objects () = R.with_runtime (fun session runtime conn ->
+  let task uuid = put uuid "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task")) in
+  rebase runtime conn [task Q.alpha;
+    put Q.beta "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing"))];
+  let acts response = member "selectedTasksOnly" (state response) in
+  let long_press uuid = event session "longPressBlock" ["uuid", `String uuid] in
+  check_eq ~msg:"a plain block with a status is not a Task"
+    (acts (long_press Q.beta)) (`Bool false);
+  check_eq ~msg:"a Task can set dates before either date exists"
+    (acts (long_press Q.alpha)) (`Bool true);
+  let mixed = event session "tapBlock" ["uuid", `String Q.beta] in
+  check_eq ~msg:"a mixed selection does not offer date actions" (acts mixed) (`Bool false);
+  rebase runtime conn [task Q.beta];
+  check_eq ~msg:"the same selection offers dates once all targets are Tasks"
+    (acts (snapshot session)) (`Bool true))
+
+let journal_doing_tasks_follow_status_and_due_dates () = R.with_runtime (fun _ runtime conn ->
+  let local = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let status uuid choice = put uuid "logseq.property/status"
+    (Ds.Ref_to (Ds.Ident ("logseq.property/status." ^ choice))) in
+  let date uuid day = put uuid Journal_task_dates.deadline (Ds.Int64 (local day)) in
+  rebase runtime conn [
+    status Q.alpha "doing"; status Q.beta "doing"; status Q.owner "doing";
+    status Q.definition "canceled"; date Q.beta 20261124; date Q.owner 20261122;
+    date Q.definition 20261122;
+    put Q.beta "block/updated-at" (Ds.Int64 (local 20261123));
+    put Q.alpha "block/updated-at" (Ds.Int64 (local 20261122))];
+  let cache = Journal_task_dates.create_cache () in
+  let project ?read_rows force =
+    Journal_task_dates.project ?read_rows cache ~graph:"tasks" ~now:(Int64.to_int (local 20261123))
+      ~force (Graph_runtime.db runtime) in
+  let uuids section response = List.map (member "uuid") (items section response) in
+  let initial = project false in
+  check_eq (uuids "overdue" initial) [`String Q.owner];
+  check_eq (uuids "doing" initial) [`String Q.beta; `String Q.alpha];
+  check_eq (uuids "planned" initial) [];
+  let failed = project ~read_rows:(fun _ _ _ -> failwith "query failed") true in
+  check_eq (uuids "doing" failed) (uuids "doing" initial);
+  rebase runtime conn [status Q.alpha "done"; status Q.beta "todo"];
+  let changed = project false in
+  check_eq (uuids "doing" changed) [];
+  check_eq (uuids "planned" changed) [`String Q.beta])
+
+let journal_tasks_use_a_bounded_date_window () = R.with_runtime (fun _ runtime conn ->
+  let local = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let deadline uuid day = put uuid Journal_task_dates.deadline (Ds.Int64 (local day)) in
+  let doing uuid = put uuid "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing")) in
+  rebase runtime conn [
+    deadline Q.alpha 20261116;
+    deadline Q.beta 20261130;
+    deadline Q.owner 20261115;
+    deadline Q.definition 20261201; doing Q.definition];
+  let cache = Journal_task_dates.create_cache () in
+  let project () = Journal_task_dates.project cache ~graph:"tasks" ~now:(Int64.to_int (local 20261123))
+    ~force:false (Graph_runtime.db runtime) in
+  let uuids section response = List.map (member "uuid") (items section response) in
+  let initial = project () in
+  check_eq (uuids "overdue" initial) [`String Q.alpha];
+  check_eq (uuids "planned" initial) [`String Q.beta];
+  check_eq (uuids "doing" initial) [];
+  rebase runtime conn [
+    put Q.owner Journal_task_dates.scheduled (Ds.Int64 (local 20261123));
+    Ds.Retract (Q.ref_uuid Q.definition, Journal_task_dates.deadline, None);
+    put Q.definition "block/updated-at" (Ds.Int64 (local 20261115))];
+  let changed = project () in
+  check_eq (uuids "overdue" changed) [`String Q.alpha];
+  check_eq (uuids "planned" changed) [`String Q.owner; `String Q.beta];
+  check_eq ~msg:"an undated Doing task outside the activity window is omitted"
+    (uuids "doing" changed) [])
+
+let journal_tasks_omit_blocks_from_today () = R.with_runtime (fun _ runtime conn ->
+  let today = 20261123 in
+  let local = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let deadline uuid day = put uuid Journal_task_dates.deadline (Ds.Int64 (local day)) in
+  rebase runtime conn [
+    put Q.page "block/journal-day" (Ds.Int64 (Int64.of_int today));
+    put Q.project "block/journal-day" (Ds.Int64 20261122L);
+    put Q.alpha "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing"));
+    put Q.alpha "block/updated-at" (Ds.Int64 (local today));
+    deadline Q.beta 20261124; deadline Q.definition 20261122;
+    put Q.owner "block/page" (Ds.Ref_to (Q.ref_uuid Q.project));
+    put Q.owner "block/parent" (Ds.Ref_to (Q.ref_uuid Q.project));
+    put Q.owner "block/title" (Ds.String "Alpha **result**");
+    deadline Q.owner 20261122];
+  let projected = Journal_task_dates.project (Journal_task_dates.create_cache ()) ~graph:"tasks"
+    ~now:(Int64.to_int (local today)) ~force:false (Graph_runtime.db runtime) in
+  let uuids section = List.map (member "uuid") (items section projected) in
+  check_eq ~msg:"an older journal's task is still included, even with a matching title"
+    (uuids "overdue") [`String Q.owner];
+  check_eq (uuids "doing") [];
+  check_eq (uuids "planned") [])
+
+let journal_task_projection_survives_page_navigation () = R.with_runtime (fun session runtime conn ->
+  let now = Session_types.now_ms () in
+  rebase runtime conn [put Q.alpha Journal_task_dates.scheduled (Ds.Int64 (Int64.of_int now))];
+  let journal_tasks () = member "journalTasks" (snapshot session) in
+  let expected = journal_tasks () in
+  check_eq (List.map (member "uuid") (items "planned" expected)) [`String Q.alpha];
+  ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.beta])));
+  check_eq ~msg:"an unrelated page keeps the graph's task projection in its snapshot"
+    (journal_tasks ()) expected)
+
+let journal_task_dates_batch_is_atomic_and_guarded () = R.with_runtime (fun session runtime conn ->
+  let local = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let timestamp = Int64.to_int (local 20261123) in
+  let deadline = Journal_task_dates.deadline and scheduled = Journal_task_dates.scheduled in
+  rebase runtime conn [put Q.alpha deadline (Ds.Int64 (local 20261124))];
+  let db = Graph_runtime.db runtime in
+  let targets = Journal_task_dates.values db
+    (Journal_task_dates.targets db [`String Q.alpha; `String Q.beta]) |> member "targets" in
+  let request changes = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "action", `String "saveTaskDates"; "targets", targets; "changes", `Assoc changes])) in
+  ignore (result (request ["scheduled", `Int timestamp]));
+  check_eq (value runtime Q.alpha scheduled) (Some (Ds.Int64 (Int64.of_int timestamp)));
+  check_eq (value runtime Q.beta scheduled) (Some (Ds.Int64 (Int64.of_int timestamp)));
+  check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 (local 20261124)));
+  check_eq (List.length (Graph_runtime.pending_operations runtime)) 1;
+  check_eq (member "ok" (request ["scheduled", `Null; "deadline", `Null])) (`Bool false);
+  check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 (local 20261124)));
+  check_eq (value runtime Q.beta scheduled) (Some (Ds.Int64 (Int64.of_int timestamp))))
+
 let cases = [
+  case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
+  case "journal task buckets recover from query failure" journal_task_dates_partition_and_recover;
+  case "selected date actions require all Task objects" selected_task_dates_require_all_task_objects;
+  case "journal Doing tasks follow status and due dates" journal_doing_tasks_follow_status_and_due_dates;
+  case "journal tasks use a bounded date window" journal_tasks_use_a_bounded_date_window;
+  case "journal tasks omit blocks from today's journal" journal_tasks_omit_blocks_from_today;
+  case "journal task projection survives page navigation" journal_task_projection_survives_page_navigation;
+  case "journal task dates batch uses atomic guarded properties" journal_task_dates_batch_is_atomic_and_guarded;
   case "date command NLP inputs open empty without initializing the engine" temporal_command_inputs_open_empty;
   case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;
   case "date commands submit the previewed selection" temporal_commands_submit_the_previewed_selection;

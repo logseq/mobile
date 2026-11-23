@@ -150,6 +150,7 @@ let decorate db =
         | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
         :: ("reactions", `List (reactions db eid))
+        :: ("isTask", `Bool (Read.entity_is_instance_of db eid "logseq.class/Task"))
         :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
     | _ -> encoded in
   decorate [] 128 false

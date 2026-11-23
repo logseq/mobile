@@ -217,6 +217,7 @@ type node_projection =
   ; node_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; node_outliner_selected_block_ids : string list
+  ; node_outliner_selected_tasks_only : bool
   }
 
 type outline_row_splice =
@@ -262,12 +263,14 @@ type core_projection =
   ; pending_reference_uuid : string option
   ; node_routes : node_projection list
   ; empty_journals : (sidebar_page * int) list
+  ; journal_tasks : Yojson.Basic.t
   ; journal_outliner_rows : outline_row list
   ; projection_outliner_editing : outliner_editing option
   ; projection_outliner_autocomplete : outliner_autocomplete option
   ; projection_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; projection_outliner_selected_block_ids : string list
+  ; projection_outliner_selected_tasks_only : bool
   ; outliner_rows : outline_row list
   ; has_older_journals : bool
   ; is_outliner_patch : bool
@@ -354,6 +357,14 @@ type logseq_effect =
   | ReportErrorEffect of int * string
   | SignInEffect of int * string
   | SignOutEffect of int
+
+type task_date_editor =
+  { task_date_key : string
+  ; task_date_graph : string
+  ; task_date_targets : string list
+  ; task_date_editing : string option
+  ; task_date_field : string
+  }
 
 type logseq_model =
   { selected_graph : string option
@@ -445,9 +456,14 @@ type logseq_model =
   ; node_routes : node_projection list
   ; navigation_root_rows : outline_row list
   ; empty_journals : (sidebar_page * int) list
+  ; journal_tasks : Yojson.Basic.t
+  ; journal_task_disclosures : (int * string list) Lui_protocol.String_map.t
+  ; journal_tasks_reveal : bool
+  ; task_date_editor : task_date_editor option
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
+  ; outliner_selected_tasks_only : bool
   ; outliner_editing : outliner_editing option
   ; outliner_edit_scope : string option
   ; outliner_selection_revision : int
@@ -486,6 +502,11 @@ type logseq_action =
   | PdfWorkspaceEvent of string
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
+  | RefreshJournalTasks
+  | ToggleJournalTaskSection of string
+  | OpenSelectedTaskDate of string
+  | OpenBlockTaskDate of string * string
+  | CloseTaskDates
   | LoadPropertyValues of string * string
   | ReceivePropertyValues of string * string
   | LoadResultRows of string * string
@@ -721,6 +742,9 @@ val required_sidebar_tab_ : string -> bool
 val valid_sidebar_tab_ : string -> bool
 val graph_slot_count : int
 val graph_slot_candidates : logseq_model -> graph list
+val journal_tasks_collapsed : logseq_model -> string list
+val journal_task_refresh_available_ : logseq_model -> bool
+val outliner_task_selection_ : logseq_model -> bool
 val next_quick_graph : logseq_model -> graph option
 val normalize_sidebar_tabs : string list -> string list
 val toggle_sidebar_tab : string list -> string -> string list

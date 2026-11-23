@@ -6658,7 +6658,7 @@ let status_json_requires_both_icon_type_and_id () =
 let empty_outliner_state_keeps_null_and_empty_wire_fields () =
   check_eq
     (Json.to_string (Rpc.outliner_state_json Outliner.empty))
-    "{\"editing\":null,\"selectedBlockIds\":[],\"collapsedBlockIds\":[],\"zoomedBlockIds\":[],\"autocomplete\":null}"
+    "{\"editing\":null,\"selectedBlockIds\":[],\"selectedTasksOnly\":false,\"collapsedBlockIds\":[],\"zoomedBlockIds\":[],\"autocomplete\":null}"
 
 let outliner_state_serializes_drafts_and_orders_identifiers () =
   List.iter
@@ -6684,7 +6684,7 @@ let outliner_state_serializes_drafts_and_orders_identifiers () =
       check_eq
         (Json.to_string (Rpc.outliner_state_json state))
         ("{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"caretUTF16Offset\":2},"
-         ^ "\"selectedBlockIds\":[\"a\",\"z\"],\"collapsedBlockIds\":[\"b\",\"y\"],"
+         ^ "\"selectedBlockIds\":[\"a\",\"z\"],\"selectedTasksOnly\":false,\"collapsedBlockIds\":[\"b\",\"y\"],"
          ^ "\"zoomedBlockIds\":[\"outer\",\"inner\"],\"autocomplete\":{\"kind\":\""
          ^ wire_kind ^ "\",\"query\":\"query\"}}"))
     [

@@ -36,12 +36,13 @@ val outliner_candidates_json :
   Outliner_state.outliner_state ->
   Yojson.Basic.t
 val autocomplete_kind_json : Outliner_state.reducer_autocomplete_kind -> string
-val outliner_state_json : Outliner_state.outliner_state -> Yojson.Basic.t
+val outliner_state_json : ?is_task:(string -> bool) -> Outliner_state.outliner_state -> Yojson.Basic.t
 val outliner_command_json :
   Outliner_effects.outliner_platform_command -> Yojson.Basic.t
 val with_node_icons : (string -> Yojson.Basic.t option) -> Yojson.Basic.t -> Yojson.Basic.t
 val outliner_patch_result :
   ?sync_error:string ->
+  ?is_task:(string -> bool) ->
   int ->
   Outliner_state.outliner_context ->
   Outliner_state.outliner_state ->

@@ -237,6 +237,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
         else Some (string_of_int (int_of_float (fst (Unix.mktime {tm with tm_sec = 0}) *. 1000.))))
     with Failure _ | Invalid_argument _ | Unix.Unix_error _ -> None in
   let initial = Signal.sample source in
+  let tr = View_base.tr (Signal.sample model_source) in
   let input = Signal.state context.Lui_ui.ui_scheduler "" in
   let selection = Signal.state context.ui_scheduler
     (Option.value ~default:(temporal_default kind) (picker_value initial)) in
@@ -257,6 +258,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
   attach context parent node;
   Lui_ui.extension_property context node "kind" (Lui_protocol.StringValue kind);
   Lui_ui.extension_property context node "identifier" (Lui_protocol.StringValue ("view.edit.date." ^ id));
+  Lui_ui.extension_property context node "time-label" (Lui_protocol.StringValue (tr "Time"));
   Lui_ui.extension_property_signal context node "value"
     (Signal.map (fun value -> Lui_protocol.StringValue value) (Signal.value selection));
   Lui_ui.on_event context node (function
@@ -276,7 +278,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
       text_field ~text_signal:(Signal.value input)
         (* The date parser accepts these English tokens, so the hint stays untranslated. *)
         ~placeholder:"YYYY-MM-DD / tomorrow / next Friday"
-        ~label:(View_base.tr (Signal.sample model_source) "Date picker")
+        ~label:(tr "Date picker")
         ~accessibility_identifier:("view.edit.date.input." ^ id)
         ~on_input:(fun value ->
           Signal.set input value;
@@ -550,6 +552,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
   let ref_ = jbool (jfield "ref" col) in
   let closed = jlist (jfield "choices" col) <> [] || jbool (jfield "closed" col) in
   let temporal = not closed && List.mem kind ["date"; "datetime"] in
+  let single_choice = not (plain || temporal || checkbox || many) in
   let query = state (if temporal then (match jtext (jfield "editorValue" property) with "" -> temporal_default kind | value -> value)
     else if attr = "block/title" && jtext (jfield "editorValue" property) <> "" then jtext (jfield "editorValue" property)
     else if attr = "block/title" then (match jfield "raw" property with
@@ -678,9 +681,16 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
               ~on_press:(fun _ -> let value = String.trim (Signal.sample (Signal.value query)) in
                 if many then (Signal.set created (Signal.sample (Signal.value created) @ [value]); Signal.set query "")
                 else submit ~create:true value) []]);
+            if_list_section_item
+              ~test:(Signal.constant context.ui_scheduler (single_choice && jbool (jfield "canClearChoice" property)))
+              (list_section_item ~padding_vertical:0 [menu_item ~min_height:44 ~icon:(`app "close")
+                ~text:(View_base.tr (Signal.sample model_source) "Clear")
+                ~accessibility_identifier:("view.edit.clear." ^ view.id)
+                ~disabled_signal:(waiting model_source view.id)
+                ~on_press:(fun _ -> submit "") []]);
           ];
         ]) @ [
-        if_ ~test:(Signal.constant context.ui_scheduler (attr <> "block/title"))
+        if_ ~test:(Signal.constant context.ui_scheduler (attr <> "block/title" && not single_choice))
         (list_section [list_section_item [button ~text:(View_base.tr (Signal.sample model_source) "Clear") ~variant:`ghost ~min_height:44
           ~accessibility_identifier:("view.edit.clear." ^ view.id) ~disabled_signal:(waiting model_source view.id)
           ~on_press:(fun _ -> if plain then submit "" else if many then (Signal.set selected []; Signal.set created []) else submit "") []]]);

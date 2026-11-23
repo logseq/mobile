@@ -189,6 +189,7 @@ type session =
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; widget_snapshot : (string * Datascript.db * string) option ref
   ; widget_random_sample : (string * int * int list) option ref
+  ; journal_tasks : Journal_task_dates.cache
   ; reference_generation : (string option * int option * int) option ref
   }
 
@@ -314,6 +315,7 @@ let create_session options =
     reference_cache = Hashtbl.create 8;
     reference_collapsed = Hashtbl.create 32;
     result_view_cache = Result_view.create_cache ();
+    journal_tasks = Journal_task_dates.create_cache ();
     reference_generation = ref None;
     pdf_workspace = ref None;
     widget_snapshot = ref None;

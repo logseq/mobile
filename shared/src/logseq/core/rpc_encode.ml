@@ -343,7 +343,8 @@ let autocomplete_kind_json kind =
   | Outliner.Command -> "command"
   | Outliner.Picker picker -> Editor_command.picker_name picker
 
-let outliner_state_json (state : Outliner.outliner_state) =
+let outliner_state_json ?(is_task = fun _ -> false) (state : Outliner.outliner_state) =
+  let selected = Outliner.selected_uuids state in
   Wire.json_object
     [
       ( "editing"
@@ -356,8 +357,8 @@ let outliner_state_json (state : Outliner.outliner_state) =
             ; ("caretUTF16Offset", `Int editing.caret)
             ]
         | None -> `Null )
-    ; ( "selectedBlockIds"
-      , Wire.json_strings (Outliner.selected_uuids state) )
+    ; ("selectedBlockIds", Wire.json_strings selected)
+    ; ("selectedTasksOnly", `Bool (selected <> [] && List.for_all is_task selected))
     ; ( "collapsedBlockIds"
       , Wire.json_strings (Outliner.collapsed_uuids state) )
     ; ("zoomedBlockIds", Wire.json_strings state.zoomed)
@@ -420,7 +421,7 @@ let with_node_icons resolve result =
       (uuid, Option.value ~default:`Null (resolve uuid)) :: icons) ids [])) :: fields)
   | _ -> result
 
-let outliner_patch_result ?sync_error revision context state command_revision commands
+let outliner_patch_result ?sync_error ?is_task revision context state command_revision commands
     pending blocks deleted splices =
   Wire.success
     (Wire.json_object
@@ -429,7 +430,7 @@ let outliner_patch_result ?sync_error revision context state command_revision co
        ; ("blocks", Wire.json_list (List.map visible_block_json blocks))
        ; ("deletedBlockIds", Wire.json_strings deleted)
        ; ("selectedBlock", `Null)
-       ; ("outlinerState", outliner_state_json state)
+       ; ("outlinerState", outliner_state_json ?is_task state)
        ; ( "outlinerAutocompleteCandidates"
          , outliner_candidates_json context state )
        ; ("outlinerRows", Wire.json_list [])

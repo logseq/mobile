@@ -1459,7 +1459,7 @@ let journal_navigation_model (current : Model.logseq_model) =
     }
   in
   if journal_home_visible_ current then root
-  else without_outliner_interaction root
+  else without_outliner_interaction {root with journal_tasks_reveal = false}
 
 let node_route_model ~active (current : Model.logseq_model)
     (route : Model.node_projection) =
@@ -1470,6 +1470,7 @@ let node_route_model ~active (current : Model.logseq_model)
     outliner_rows = route.node_outliner_rows;
     outliner_section_markers = [];
     outliner_selected_block_ids = route.node_outliner_selected_block_ids;
+    outliner_selected_tasks_only = route.node_outliner_selected_tasks_only;
     outliner_editing = route.node_outliner_editing;
     outliner_autocomplete = route.node_outliner_autocomplete;
     outliner_autocomplete_candidates =

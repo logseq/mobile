@@ -268,6 +268,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
           [Option.value ~default:"local" current.selected_graph_id]) model_source)
         ~key:Fun.id ~cmp:String.compare
         ~mount:(fun _ -> View_outliner.with_result_page ~root:true context model_source send
+        (View_outliner.with_journal_refresh model_source send
         (View_base.with_selected_signal visible_source
         (virtual_list ~grow:1.0
            ~data_attrs_signal:(Signal.map (fun current ->
@@ -275,7 +276,8 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
            ~style_class:"retained-pane scroll-section-titles"
            ~accessibility_identifier:"list.outliner"
         [
-          box ~height:16 ~accessibility_identifier:"spacer.outliner.top" [];
+          box ~height:16 ~accessibility_identifier:"spacer.outliner.top"
+            [View_outliner.journal_refresh_probe model_source send];
           if_
             ~test:
               (Signal.map View_base.selected_page_content_title_visible_
@@ -320,7 +322,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
             ];
           View_outliner.page_loading_view model_source;
           box ~height:120 [];
-          ])));
+          ]))));
     ])
 
 let root_outliner_view context model_source visible_source send =
@@ -1330,6 +1332,7 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
 
 let logseq_view context model_source send : t =
   stack ~grow:1.0 [application_view context model_source send;
+    View_outliner.task_dates_dialog model_source send;
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.editing_graph_slot <> None) model_source)
       (View_graphs.graph_slot_picker context model_source send);
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)

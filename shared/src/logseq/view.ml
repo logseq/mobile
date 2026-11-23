@@ -23,6 +23,7 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
     "task-" ^ name, color) in
   surfaces @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
+    ("deadline-overdue", Adaptive { light = "#B42318"; dark = "#FF6961" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
     ("flashcard-again-background", Fixed "#FF3B301F");
@@ -298,12 +299,31 @@ let outliner_continuation_schema () =
     true [] [property "guide-count" IntScalar true None; property "identifier" StringScalar true None;
       property "bullet-depth" IntScalar true None] []
 
+let journal_refresh_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "journal-refresh" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "enabled" BoolScalar true None; property "refreshing" BoolScalar true None]
+    [event "refresh" []]
+
+let journal_task_transition_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "journal-task-transition" [profile IOS SwiftUIHost]
+    true [] [property "collapsed" StringScalar true None] []
+
+let journal_task_chevron_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "journal-task-chevron" [profile IOS SwiftUIHost]
+    true [] [property "collapsed" BoolScalar true None] []
+
 let property_date_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   component "native-property-date" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
     false [] [property "kind" StringScalar true None; property "value" StringScalar true None;
-      property "identifier" StringScalar true None]
+      property "identifier" StringScalar true None; property "time-label" StringScalar true None]
     [event "change" [event_field "value" StringScalar true]]
 
 let pdf_workspace_schema () =
@@ -332,6 +352,9 @@ let extension_registry () =
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (table_viewport_schema ());
   Lui_extension.register_component registry (property_date_schema ());
+  Lui_extension.register_component registry (journal_refresh_schema ());
+  Lui_extension.register_component registry (journal_task_transition_schema ());
+  Lui_extension.register_component registry (journal_task_chevron_schema ());
   Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry (outliner_block_row_schema ());
