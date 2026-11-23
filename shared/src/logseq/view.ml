@@ -182,7 +182,8 @@ let graph_quick_switch_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   component "graph-quick-switch" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
-    true [] [property "target-id" StringScalar true None; property "target-name" StringScalar true None]
+    true [] [property "target-id" StringScalar true None; property "target-name" StringScalar true None;
+             property "action-label" StringScalar true None]
     [event "switch" [event_field "value" StringScalar true]]
 
 let native_navigation_stack_schema () =

@@ -1008,6 +1008,11 @@ let with_graph_quick_switch model_source send content =
       in
       property "target-id" (fun (graph : Model.graph) -> graph.id);
       property "target-name" View_base.graph_title;
+      Lui_ui.extension_property_signal context node "action-label"
+        (Signal.map2 (fun model graph ->
+           View_base.string_wire_value (Option.fold ~none:"" ~some:(fun graph ->
+             View_base.tr_named model "Switch to {1}" (View_base.graph_title graph)) graph))
+           model_source target);
       Lui_ui.on_event context node (function
         | ExtensionEvent (_, _, "switch", values) ->
           (match Lui_protocol.String_map.find_opt "value" values with

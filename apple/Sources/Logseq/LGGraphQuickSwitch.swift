@@ -10,11 +10,12 @@ enum LGGraphQuickSwitch {
         try registry.register(
             LUIAppleExtension(
                 identifier: "graph-quick-switch",
-                fingerprint: "lui-extension-v1|18:graph-quick-switch|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:11:target-name:string:required:none,9:target-id:string:required:none|events:6:switch[5:value:string:required]",
+                fingerprint: "lui-extension-v1|18:graph-quick-switch|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:11:target-name:string:required:none,12:action-label:string:required:none,9:target-id:string:required:none|events:6:switch[5:value:string:required]",
                 acceptsStandardChildren: true,
                 properties: [
                     .init(name: "target-id", kind: .string, isRequired: true),
                     .init(name: "target-name", kind: .string, isRequired: true),
+                    .init(name: "action-label", kind: .string, isRequired: true),
                 ],
                 events: [.init(name: "switch", fields: [.init(name: "value", kind: .string, isRequired: true)])]
             ) { context in
@@ -40,6 +41,7 @@ private struct GraphSwitchSurface: View {
         let _ = context.revision
         let target = string("target-id")
         let name = string("target-name")
+        let actionLabel = string("action-label")
         content
             .background {
                 LeftGraphPan(target: target) { translation in
@@ -49,8 +51,7 @@ private struct GraphSwitchSurface: View {
                         distance = translation
                     }
                 } onCommit: {
-                    UISelectionFeedbackGenerator().selectionChanged()
-                    try? context.emit(name: "switch", values: ["value": .string(target)])
+                    switchGraph(to: target)
                 }
             }
             .overlay(alignment: .top) {
@@ -70,6 +71,17 @@ private struct GraphSwitchSurface: View {
                 }
             }
             .onChange(of: target) { _, _ in distance = 0 }
+            .accessibilityElement(children: .contain)
+            .accessibilityActions {
+                if !target.isEmpty && !actionLabel.isEmpty {
+                    Button(actionLabel) { switchGraph(to: target) }
+                }
+            }
+    }
+
+    private func switchGraph(to target: String) {
+        UISelectionFeedbackGenerator().selectionChanged()
+        try? context.emit(name: "switch", values: ["value": .string(target)])
     }
 
     private func string(_ name: String) -> String {

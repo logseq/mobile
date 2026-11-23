@@ -7572,18 +7572,32 @@ let graph_quick_switch_cycles_and_configures_slots () =
       check ~msg:"slot edits use the persisted settings payload"
         (List.exists (function Model.SaveSettingsEffect (_, settings) -> settings.graph_quick_slots = assigned
           | _ -> false) model.pending_effects);
+      apply (Model.ApplyLocalGraphIds ["Work"; "Notes"]);
+      apply (Model.ApplyAuthentication ("signedOut", None));
+      press "graph-quick-switch.slot.2";
+      check_eq ~msg:"signed-out slot choices omit remote graphs"
+        (descendant_with_identifier renderer root "graph-quick-switch.choice.Ideas") (-1);
+      apply (Model.SetGraphSlot "Ideas");
+      check_eq ~msg:"a stale remote selection cannot change slots while signed out"
+        (App.model application).graph_quick_slots assigned;
+      apply Model.DismissGraphSlotPicker;
       apply Model.ShowJournals;
       let gesture = extension_node application "graph-quick-switch" in
       let target () = extension_property application gesture "target-id" in
+      let action_label () = extension_property application gesture "action-label" in
       let swipe id =
         ignore (Native_bridge.extension_event gesture "graph-quick-switch" "switch" id 0)
       in
       check_eq ~msg:"the last slot wraps to the first, skipping empty slots" (target ())
         (Some (Lui_protocol.StringValue "Notes"));
+      check_eq ~msg:"the accessibility action names the same graph as the swipe"
+        (action_label ()) (Some (Lui_protocol.StringValue "Switch to Notes"));
       swipe "Ideas";
       check ~msg:"ignores a stale target" (not (App.model application).graph_loading);
       apply Model.OpenSidebar;
       check_eq ~msg:"the sidebar owns gestures while open" (target ()) (Some (Lui_protocol.StringValue ""));
+      check_eq ~msg:"the accessibility action is hidden while the sidebar is open"
+        (action_label ()) (Some (Lui_protocol.StringValue ""));
       swipe "Notes";
       check ~msg:"ignores a swipe while the sidebar is open" (not (App.model application).graph_loading);
       apply Model.CloseSidebar;

@@ -1338,7 +1338,10 @@ let normalize_graph_slots slots =
 
 let graph_slot_candidates (current : logseq_model) =
   List.filter (fun (graph : graph) ->
-    graph.is_ready && not (graph_delete_active_ current graph.id)) current.graphs
+    graph.is_ready
+    && not (graph_delete_active_ current graph.id)
+    && (current.authentication_state <> "signedOut" || graph_local_ current graph.id))
+    current.graphs
 
 let next_quick_graph (current : logseq_model) =
   let can_switch =
@@ -1357,8 +1360,7 @@ let next_quick_graph (current : logseq_model) =
     && current.pending_node_deletion = None && current.editing_graph_slot = None
   in
   if not can_switch then None else
-    let candidates = graph_slot_candidates current |> List.filter (fun (graph : graph) ->
-      current.authentication_state <> "signedOut" || graph_local_ current graph.id) in
+    let candidates = graph_slot_candidates current in
     let ordered = List.filter_map (graph_by_id candidates) current.graph_quick_slots in
     match current.selected_graph_id, ordered with
     | Some selected, first :: _ :: _ ->

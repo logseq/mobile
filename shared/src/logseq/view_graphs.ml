@@ -502,7 +502,11 @@ let graph_quick_switch_section model_source send =
     ([ heading ~level:`h5 ~value:(View_base.tr current "Graph Quick Switch") [];
        text ~style_class:"footnote" ~foreground:"muted-foreground"
          ~value:(View_base.tr current
-           "Add your current graph and at least one more. Swipe left in Journals to cycle through them in slot order.") [] ]
+           "Add your current graph and at least one more. Swipe left in Journals to cycle through them in slot order.") [];
+       if_ ~test:(Signal.map (fun (model : Model.logseq_model) ->
+         model.authentication_state = "signedOut") model_source)
+         (text ~style_class:"footnote" ~foreground:"muted-foreground"
+           ~value:(View_base.tr current "Quick Switch uses downloaded graphs while signed out.") []) ]
      @ List.init Model.graph_slot_count (graph_slot_row model_source send))
 
 let graph_slot_picker (context : Lui_ui.ui_context) model_source send =
