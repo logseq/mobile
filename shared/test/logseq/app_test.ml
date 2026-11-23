@@ -7678,12 +7678,19 @@ let resident_journal_keeps_visible_bodies_during_refocus () =
     apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
       graph_name = Some id; selected_graph_id = Some id; graphs; outliner_rows = rows }) in
   let rows = List.init 96 (fun index ->
-    journal_outline_row ("resident-" ^ string_of_int index) "work-page"
-      ("Journal block " ^ string_of_int index) "Today" 20261123 0) in
+    journal_outline_row ("resident-" ^ string_of_int index)
+      (if index < 48 then "work-today" else "work-yesterday")
+      ("Journal block " ^ string_of_int index)
+      (if index < 48 then "Today" else "Yesterday")
+      (if index < 48 then 20261123 else 20261122) 0) in
   let shells = List.mapi (fun index (row : Model.outline_row) ->
     if index < 32 then row else {row with row_title = ""; row_loaded = false}) rows in
+  let unloaded_id = "resident-95" in
+  let sparse = List.map (fun (row : Model.outline_row) ->
+    if row.row_uuid = unloaded_id then {row with row_title = ""; row_loaded = false}
+    else row) rows in
   start application;
-  project "work" rows;
+  project "work" sparse;
   apply (Model.ApplyLocalGraphIds ["work"; "notes"]);
   apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["work"; "notes"; ""] });
   let panes = extension_node application "journal-graph-panes" in
@@ -7694,18 +7701,36 @@ let resident_journal_keeps_visible_bodies_during_refocus () =
   let row () = descendant_with_identifier renderer work "outliner.block.resident-70" in
   let original = row () in
   check ~msg:"the scrolled journal body is mounted before switching" (original <> -1);
-  let switch id rows =
-    apply (Model.ApplyGraphLoading true);
+  let hydration_for uuid =
+    List.filter_map (function
+      | Model.HydrateOutlinerRowsEffect (id, ids) when List.mem uuid ids -> Some id
+      | _ -> None) (App.model application).pending_effects in
+  List.iter (fun id ->
+    apply (Model.DequeueEffect id);
+    apply (Model.ResolveEffect (id, true, ""))) (hydration_for unloaded_id);
+  let switch ?provisional id rows =
+    apply (Model.SelectSidebarGraph id);
+    let effect_id = List.find_map (function
+      | Model.OpenGraphEffect (effect_id, graph_id) when graph_id = id -> Some effect_id
+      | _ -> None) (App.model application).pending_effects |> Option.get in
+    apply (Model.DequeueEffect effect_id);
+    Option.iter (project id) provisional;
     project id rows;
-    apply (Model.ApplyGraphLoading false) in
-  switch "notes" [journal_outline_row "note" "notes-page" "Other graph" "Today" 20261123 0];
-  switch "work" shells;
+    apply (Model.ResolveEffect (effect_id, true, "")) in
+  let notes = [journal_outline_row "note" "notes-page" "Other graph" "Today" 20261123 0] in
+  switch "notes" notes;
+  dispatch application (Lui_protocol.VisibleRange (window, 80, 95));
+  flush application;
+  check_eq ~msg:"an inactive graph cannot hydrate its native window" (hydration_for unloaded_id) [];
+  switch "work" sparse;
+  check ~msg:"refocusing retries the same window hydration" (hydration_for unloaded_id <> []);
+  switch "notes" notes;
+  (* selectGraph returns before the target graph is open. *)
+  switch ~provisional:notes "work" shells;
   check_eq ~msg:"refocusing with shells preserves the mounted native body" (row ()) original;
   let title () = Yojson.Basic.Util.member "title" (native_row_payload application (row ())) in
   check_eq (title ()) (`String "Journal block 70");
-  check ~msg:"cached bodies still request authoritative hydration"
-    (List.exists (function Model.HydrateOutlinerRowsEffect (_, ids) -> List.mem "resident-70" ids | _ -> false)
-       (App.model application).pending_effects);
+  check ~msg:"cached bodies still request authoritative hydration" (hydration_for "resident-70" <> []);
   let updated = { (List.nth rows 70) with row_title = "Updated journal block" } in
   apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with selected_graph_id = Some "work";
     is_outliner_content_patch = true; hydrated_rows = [updated] });

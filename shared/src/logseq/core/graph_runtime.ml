@@ -416,7 +416,7 @@ let repair_legacy_page_deletions runtime =
            end)
     | _ -> ()) (Ops.list runtime.path)
 
-let create_base path server_t conn options =
+let restore_runtime path server_t conn options =
   let started = Unix.gettimeofday () in
   let search_index =
     match options.search_index_path with
@@ -456,17 +456,25 @@ let create_base path server_t conn options =
     }
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
+  runtime
+
+let reconcile_initial_operations runtime =
+  let server_t = (state runtime).server_t in
   repair_legacy_page_creations runtime;
   repair_legacy_page_deletions runtime;
   rebase runtime server_t [] [];
-  let fresh = match search_index with
+  let fresh = match runtime.search_index with
     | None -> false
     | Some index ->
-      (try match Graph_sqlite.search_source_version path with
+      (try match Graph_sqlite.search_source_version runtime.path with
        | Some version -> Graph_sqlite.search_version index.path = Some version
        | None -> false
        with error -> search_error "restore-version" error; false) in
-  runtime.state := { !(runtime.state) with search_index_is_fresh = fresh };
+  runtime.state := { !(runtime.state) with search_index_is_fresh = fresh }
+
+let create_base path server_t conn options =
+  let runtime = restore_runtime path server_t conn options in
+  reconcile_initial_operations runtime;
   runtime
 
 let fresh_uuid () =
@@ -716,15 +724,22 @@ let ensure_today_journal runtime =
               created_at;
             }))
 
+let ensure_initial_journal runtime =
+  if runtime.auto_create_today then
+    (match ensure_today_journal runtime with
+     | Ok () -> ()
+     | Error message ->
+       failwith ("create today's journal: " ^ message))
+
+let activate_prepared runtime =
+  reconcile_initial_operations runtime;
+  ensure_initial_journal runtime
+
 let create path server_t conn options =
   let started = Unix.gettimeofday () in
   let runtime = create_base path server_t conn options in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "base";
-  if options.auto_create_today then
-    (match ensure_today_journal runtime with
-     | Ok () -> ()
-     | Error message ->
-       failwith ("create today's journal: " ^ message));
+  ensure_initial_journal runtime;
   runtime
 
 let blocks runtime =

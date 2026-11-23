@@ -912,9 +912,10 @@ private struct LGNavigationContent: View {
         // Keep returning content mounted while UISearchController animates its toolbar.
         let normalTitle = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         #if os(iOS)
-        let graphSwitchName = path.isEmpty && !searchVisible && navigationTitle.isEmpty
-            ? graphSwitchViewport?.feedback?.name : nil
-        let title = graphSwitchName == nil ? normalTitle : ""
+        let journalTitleViewport = path.isEmpty && !searchVisible && navigationTitle.isEmpty
+            ? graphSwitchViewport : nil
+        let usesJournalTitleItem = journalTitleViewport != nil && !verticalToolbar
+        let title = usesJournalTitleItem || journalTitleViewport?.feedback != nil ? "" : normalTitle
         #else
         let title = normalTitle
         #endif
@@ -986,9 +987,9 @@ private struct LGNavigationContent: View {
                         } else {
                             trailingToolbar(searchPage: false)
                             #if os(iOS)
-                            if let graphSwitchName, !verticalToolbar {
+                            if usesJournalTitleItem, let journalTitleViewport {
                                 ToolbarItem(placement: .principal) {
-                                    LGGraphSwitchNameCapsule(name: graphSwitchName).frame(maxWidth: 240)
+                                    journalTitle(normalTitle, viewport: journalTitleViewport)
                                 }
                             }
                             #endif
@@ -1053,6 +1054,26 @@ private struct LGNavigationContent: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
     }
+
+    #if os(iOS)
+    private func journalTitle(_ title: String, viewport: LGGraphSwitchViewport) -> some View {
+        Group {
+            if let feedback = viewport.feedback {
+                LGGraphSwitchNameCapsule(name: feedback.name)
+                    .frame(maxWidth: 240)
+            } else {
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .transaction {
+            $0.animation = nil
+            $0.disablesAnimations = true
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var rootNavigationSurface: some View {

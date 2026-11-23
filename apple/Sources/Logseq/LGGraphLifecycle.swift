@@ -108,8 +108,7 @@ final class LGGraphLifecycle {
     }
 
     func reconfigureAPI() async throws {
-        residentPreparation?.cancel()
-        residentGraphIDs = nil
+        invalidateResidentPreparation()
         let token = authentication.state == .signedIn
             ? try await authentication.apiToken() : ""
         await syncCoordinator.cancelBackground()
@@ -184,9 +183,14 @@ final class LGGraphLifecycle {
     }
 
     func clearResidentGraphs() async {
-        residentPreparation?.cancel()
-        residentGraphIDs = nil
+        invalidateResidentPreparation()
         await Self.sendResidencyRequest("retainGraphs", payload: ["ids": [String]()])
+    }
+
+    private func invalidateResidentPreparation() {
+        residentPreparation?.cancel()
+        residentPreparation = nil
+        residentGraphIDs = nil
     }
 
     private static func sendResidencyRequest(_ action: String, payload: [String: Any]) async {
@@ -257,6 +261,7 @@ final class LGGraphLifecycle {
         let deletingSelected = defaults.string(forKey: "logseq.selectedGraphId") == graphID
             || store.snapshot.selectedGraphId == graphID
         if deletingSelected {
+            invalidateResidentPreparation()
             await syncCoordinator.stopForeground()
             await store.resetToCatalog(applyResponse: false)
         }
