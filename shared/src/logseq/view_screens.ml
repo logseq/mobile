@@ -395,7 +395,7 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
       ~accessibility_identifier:"journals.loading"
       [ spinner ~accessibility_identifier:"spinner.graph-loading" [] ]
 
-let uses_native_flashcard_toolbar context =
+let uses_ios_flashcard_toolbar context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
@@ -408,7 +408,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
       if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
         (View_flashcards.flashcard_screen
-           ~uses_native_toolbar:(uses_native_flashcard_toolbar context)
+           ~uses_header:(uses_ios_flashcard_toolbar context || Lui_ui.host context = KotlinHost)
            model_source send);
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
@@ -788,6 +788,30 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
            ~source:(reactive View_base.search_node_routes model_source) send));
      node)
 
+let android_main_header context model_source send =
+  let round_action action =
+    column ~width:44 ~height:44 ~corner_radius:22
+      ~background:"glass" ~main:`center ~cross:`center [action] in
+  let header controls =
+    row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
+      ~accessibility_identifier:"header.main"
+      (round_action (main_header_leading context model_source send) :: controls) in
+  let default_header = header [
+    main_header_title context model_source;
+    box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
+      [row ~cross:`center ~gap:4 [
+        main_header_sync context model_source send;
+        main_header_connection model_source send;
+      ]];
+  ] in
+  let flashcard_header =
+    View_flashcards.android_flashcard_header model_source send
+      ~render:(fun menu add ->
+        header [column ~grow:1.0 ~cross:`center [menu]; round_action add]) in
+  if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
+    (dyn (fun flashcards -> if flashcards then flashcard_header else default_header)
+       (Signal.map View_base.flashcards_destination_ model_source))
+
 let native_navigation_view (_context : Lui_ui.ui_context) model_source send
     : t =
  custom @@ fun context parent ->
@@ -839,24 +863,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [
              column ~grow:1.0
                [
-                 if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
-                 (row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
-                   ~accessibility_identifier:"header.main"
-                   [
-                     column ~width:44 ~height:44 ~corner_radius:22
-                       ~background:"glass" ~main:`center ~cross:`center
-                       [ main_header_leading context model_source send ];
-                     main_header_title context model_source;
-                     box ~corner_radius:22 ~background:"glass"
-                       ~padding_horizontal:6
-                       [
-                         row ~cross:`center ~gap:4
-                           [
-                             main_header_sync context model_source send;
-                             main_header_connection model_source send;
-                           ];
-                       ];
-                   ]);
+                 android_main_header context model_source send;
                  stack ~grow:1.0
                    [ native_search_view context model_source send ];
                ];
@@ -885,7 +892,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        (mount context ~parent:node (main_header_leading context model_source send));
      let title = main_header_title context model_source in
      let title_slot =
-       if uses_native_flashcard_toolbar context then
+       if uses_ios_flashcard_toolbar context then
          dyn (fun flashcards ->
            if flashcards then box [View_flashcards.flashcard_toolbar model_source send]
            else title) (Signal.map View_base.flashcards_destination_ model_source)

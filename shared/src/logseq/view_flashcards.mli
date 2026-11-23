@@ -7,9 +7,13 @@ val flashcard_review_content :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_screen :
-  uses_native_toolbar:bool ->
+  uses_header:bool ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_toolbar :
+  Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> Lui_elements.t
+val android_flashcard_header :
+  render:(Lui_elements.t -> Lui_elements.t -> Lui_elements.t) ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
