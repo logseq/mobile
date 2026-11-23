@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 APP_ID = "1601013908"
 ORIGIN = "https://api.appstoreconnect.apple.com"
+DEFAULT_PROCESSING_TIMEOUT = 15 * 60
 TESTING_STATES = {"READY_FOR_BETA_TESTING", "IN_BETA_TESTING"}
 EXTERNAL_STATES = TESTING_STATES | {
     "READY_FOR_BETA_SUBMISSION", "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "BETA_APPROVED",
@@ -22,24 +23,27 @@ EXTERNAL_STATES = TESTING_STATES | {
 
 class AppStoreConnect:
     def __init__(self, key_id, issuer_id, encoded_key):
-        import jwt
-
-        self.token = jwt.encode(
-            {"iss": issuer_id, "aud": "appstoreconnect-v1", "exp": int(time.time()) + 600},
-            base64.b64decode("".join(encoded_key.split()), validate=True),
-            algorithm="ES256",
-            headers={"kid": key_id},
-        )
+        self.key_id = key_id
+        self.issuer_id = issuer_id
+        self.key = base64.b64decode("".join(encoded_key.split()), validate=True)
 
     def request(self, path, *, params=None, method="GET", payload=None):
+        import jwt
+
         url = ORIGIN + path if path.startswith("/") else path
         if not url.startswith(ORIGIN + "/"):
             raise RuntimeError("Unexpected App Store Connect URL")
         if params:
             url += "?" + urlencode(params)
+        token = jwt.encode(
+            {"iss": self.issuer_id, "aud": "appstoreconnect-v1", "exp": int(time.time()) + 600},
+            self.key,
+            algorithm="ES256",
+            headers={"kid": self.key_id},
+        )
         body = json.dumps(payload).encode() if payload is not None else None
         request = Request(url, data=body, method=method, headers={
-            "Authorization": f"Bearer {self.token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         })
         try:
@@ -77,37 +81,71 @@ def read_report(path, source_revision):
     return version, build
 
 
-def wait_for_build(api, version, number):
-    params = {
-        "filter[app]": APP_ID,
-        "filter[preReleaseVersion.version]": version,
-        "filter[version]": number,
-        "include": "preReleaseVersion",
+def poll_until(check, deadline, waiting_message, timeout_message):
+    if time.monotonic() >= deadline:
+        raise TimeoutError(timeout_message)
+    result = check()
+    if result is not None:
+        return result
+    print(waiting_message, flush=True)
+    while (remaining := deadline - time.monotonic()) > 0:
+        time.sleep(min(10, remaining))
+        if time.monotonic() >= deadline:
+            break
+        result = check()
+        if result is not None:
+            return result
+    raise TimeoutError(timeout_message)
+
+
+def version_spellings(version):
+    # App Store Connect may retain either spelling when a patch version is zero.
+    parts = version.split(".")
+    if len(parts) == 2:
+        return (version, version + ".0")
+    if len(parts) == 3 and parts[-1] == "0":
+        return (version, ".".join(parts[:2]))
+    return (version,)
+
+
+def ios_builds(api, params):
+    response = api.request("/v1/builds", params={
+        "filter[app]": APP_ID, "include": "preReleaseVersion", **params,
+    })
+    ios_versions = {
+        entry["id"] for entry in response.get("included", [])
+        if entry["type"] == "preReleaseVersions" and entry["attributes"]["platform"] == "IOS"
     }
-    for attempt in range(25):
-        response = api.request("/v1/builds", params=params)
-        ios_versions = {
-            entry["id"] for entry in response.get("included", [])
-            if entry["type"] == "preReleaseVersions" and entry["attributes"]["platform"] == "IOS"
-        }
-        builds = [
-            build for build in response["data"]
-            if build["relationships"]["preReleaseVersion"]["data"]["id"] in ios_versions
-        ]
-        if len(builds) > 1:
-            raise RuntimeError(f"More than one matching iOS build for {version} ({number})")
-        if builds:
+    return [
+        build for build in response["data"]
+        if build["relationships"]["preReleaseVersion"]["data"]["id"] in ios_versions
+    ]
+
+
+def wait_for_build(api, version, number, deadline):
+    def ready():
+        for spelling in version_spellings(version):
+            builds = ios_builds(api, {
+                "filter[preReleaseVersion.version]": spelling,
+                "filter[version]": number,
+            })
+            if len(builds) > 1:
+                raise RuntimeError(f"More than one matching iOS build for {version} ({number})")
+            if not builds:
+                continue
             build = builds[0]
             state = build["attributes"]["processingState"]
             if build["attributes"]["expired"] or state in {"INVALID", "FAILED"}:
                 raise RuntimeError(f"TestFlight build {version} ({number}) is expired or invalid")
             if state == "VALID":
-                return build["id"]
-        if attempt == 0:
-            print(f"Waiting for TestFlight to process iOS {version} ({number}).", flush=True)
-        if attempt < 24:
-            time.sleep(10)
-    raise RuntimeError(f"TestFlight has not finished processing iOS {version} ({number})")
+                return build["id"], spelling
+            return None
+
+    return poll_until(
+        ready, deadline,
+        f"Waiting for TestFlight to process iOS {version} ({number}).",
+        f"TestFlight has not finished processing iOS {version} ({number}).",
+    )
 
 
 def find_groups(api, distribution):
@@ -127,11 +165,38 @@ def find_groups(api, distribution):
     return matches
 
 
-def beta_detail(api, build_id):
-    details = list(api.items("/v1/buildBetaDetails", {"filter[build]": build_id}))
-    if len(details) != 1:
-        raise RuntimeError("Expected one TestFlight beta detail for the verified build")
-    return details[0]
+def wait_for_beta_detail(api, build_id, state_key, deadline):
+    def ready():
+        details = list(api.items("/v1/buildBetaDetails", {"filter[build]": build_id}))
+        if len(details) > 1:
+            raise RuntimeError("Expected one TestFlight beta detail for the verified build")
+        if details and details[0]["attributes"][state_key] != "PROCESSING":
+            return details[0]
+
+    return poll_until(
+        ready, deadline,
+        f"Waiting for TestFlight beta processing ({state_key}).",
+        f"TestFlight beta processing did not complete ({state_key}).",
+    )
+
+
+def wait_for_review_slot(api, build_id, version, deadline):
+    def available():
+        builds = ios_builds(api, {
+            "filter[preReleaseVersion.version]": version,
+            "filter[betaAppReviewSubmission.betaReviewState]": "WAITING_FOR_REVIEW,IN_REVIEW",
+            "filter[expired]": "false",
+        })
+        if any(build["id"] == build_id for build in builds):
+            return False  # This build already has a review submission.
+        if not builds:
+            return True
+
+    return poll_until(
+        available, deadline,
+        f"Waiting for the current iOS {version} Beta App Review to finish.",
+        f"Another iOS {version} build is in Beta App Review. Rerun the distribution job after it clears.",
+    )
 
 
 def attach_build(api, group, build_id):
@@ -155,23 +220,28 @@ def attach_build(api, group, build_id):
     raise RuntimeError("App Store Connect did not confirm the beta group assignment")
 
 
-def distribute(api, version, number, distribution):
+def distribute(api, version, number, distribution, processing_timeout=DEFAULT_PROCESSING_TIMEOUT):
+    deadline = time.monotonic() + processing_timeout
     groups = find_groups(api, distribution)
-    build_id = wait_for_build(api, version, number)
+    build_id, store_version = wait_for_build(api, version, number, deadline)
     external = distribution == "mobile-testers"
     state_key = "externalBuildState" if external else "internalBuildState"
     allowed_states = EXTERNAL_STATES if external else TESTING_STATES
-    detail = beta_detail(api, build_id)
+    detail = wait_for_beta_detail(api, build_id, state_key, deadline)
     state = detail["attributes"][state_key]
     if state not in allowed_states:
         raise RuntimeError(f"TestFlight build {version} ({number}) cannot be distributed: {state}")
 
+    submit_review = (
+        external and state == "READY_FOR_BETA_SUBMISSION"
+        and wait_for_review_slot(api, build_id, store_version, deadline)
+    )
     if external and not detail["attributes"].get("autoNotifyEnabled"):
         api.request(f"/v1/buildBetaDetails/{detail['id']}", method="PATCH", payload={
             "data": {"type": "buildBetaDetails", "id": detail["id"],
                      "attributes": {"autoNotifyEnabled": True}},
         })
-    if external and state == "READY_FOR_BETA_SUBMISSION":
+    if submit_review:
         submission = api.request("/v1/betaAppReviewSubmissions", method="POST", payload={
             "data": {"type": "betaAppReviewSubmissions", "relationships": {
                 "build": {"data": {"type": "builds", "id": build_id}},
@@ -181,7 +251,9 @@ def distribute(api, version, number, distribution):
 
     for group in groups:
         attach_build(api, group, build_id)
-    state = beta_detail(api, build_id)["attributes"][state_key]
+    # Assignment can finish after the processing deadline. Give the status read its own budget.
+    final_detail = wait_for_beta_detail(api, build_id, state_key, time.monotonic() + 30)
+    state = final_detail["attributes"][state_key]
     if state not in allowed_states:
         raise RuntimeError(f"TestFlight build {version} ({number}) changed to {state}")
     return state
@@ -192,14 +264,18 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--distribution", choices=["mobile-testers", "internal"], required=True)
+    parser.add_argument("--processing-timeout", type=int, default=DEFAULT_PROCESSING_TIMEOUT,
+                        help="Seconds to wait for build processing and an available beta review slot")
     args = parser.parse_args()
+    if args.processing_timeout <= 0:
+        parser.error("--processing-timeout must be positive")
 
     try:
         version, number = read_report(args.report, args.source_revision)
         api = AppStoreConnect(
             os.environ["ASC_KEY_ID"], os.environ["ASC_ISSUER_ID"], os.environ["ASC_KEY"],
         )
-        state = distribute(api, version, number, args.distribution)
+        state = distribute(api, version, number, args.distribution, args.processing_timeout)
     except (KeyError, OSError, RuntimeError, ValueError) as error:
         raise SystemExit(str(error)) from error
     audience = "Mobile Testers" if args.distribution == "mobile-testers" else "internal TestFlight groups"

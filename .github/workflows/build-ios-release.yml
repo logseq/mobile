@@ -305,7 +305,8 @@ jobs:
     name: Distribute to TestFlight testers
     needs: [duniverse, build-app]
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    # The script waits up to 15 minutes before leaving time for assignment.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
