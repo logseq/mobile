@@ -1,0 +1,62 @@
+name: Set up Maestro
+description: Restore the pinned Maestro CLI or download and verify its release archive.
+runs:
+  using: composite
+  steps:
+    - name: Select Maestro release
+      id: release
+      shell: bash
+      run: |
+        echo 'version=2.12.1' >> "$GITHUB_OUTPUT"
+        echo 'sha256=54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7' >> "$GITHUB_OUTPUT"
+
+    - name: Restore Maestro CLI
+      id: maestro
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.maestro/bin
+          ~/.maestro/lib
+        # Both platforms install the same release archive.
+        enableCrossOsArchive: true
+        key: maestro-cli-v1-${{ steps.release.outputs.version }}-${{ steps.release.outputs.sha256 }}
+
+    - name: Download Maestro CLI
+      if: steps.maestro.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        MAESTRO_VERSION: ${{ steps.release.outputs.version }}
+        MAESTRO_SHA256: ${{ steps.release.outputs.sha256 }}
+      run: |
+        download_dir=$(mktemp -d "$RUNNER_TEMP/maestro.XXXXXX")
+        trap 'rm -rf "$download_dir"' EXIT
+        archive="$download_dir/maestro.zip"
+        curl -fsSL --retry 3 --connect-timeout 10 --max-time 600 \
+          "https://github.com/mobile-dev-inc/maestro/releases/download/cli-$MAESTRO_VERSION/maestro.zip" \
+          -o "$archive"
+        printf '%s  %s\n' "$MAESTRO_SHA256" "$archive" | shasum -a 256 -c -
+        unzip -q "$archive" -d "$download_dir"
+        mkdir -p "$HOME/.maestro"
+        rm -rf "$HOME/.maestro/bin" "$HOME/.maestro/lib"
+        mv "$download_dir/maestro/bin" "$download_dir/maestro/lib" "$HOME/.maestro/"
+
+    - name: Verify and expose Maestro CLI
+      shell: bash
+      env:
+        MAESTRO_VERSION: ${{ steps.release.outputs.version }}
+        MAESTRO_CLI_NO_ANALYTICS: "1"
+      run: |
+        installed_version=$("$HOME/.maestro/bin/maestro" --version)
+        echo "Maestro CLI $installed_version"
+        [[ $installed_version == "$MAESTRO_VERSION" ]]
+        echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+    - name: Save Maestro CLI
+      if: steps.maestro.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.maestro/bin
+          ~/.maestro/lib
+        enableCrossOsArchive: true
+        key: ${{ steps.maestro.outputs.cache-primary-key }}

@@ -6,6 +6,16 @@ let logseqNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_NATIVE_
     .split(separator: ":")
     .map(String.init) ?? []
 let logseqSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_SIMULATOR_ENTITLEMENTS"]
+let logseqAppIntentsValuesPath = ProcessInfo.processInfo.environment["LOGSEQ_APP_INTENTS_VALUES_PATH"]
+let logseqAppIntentsSwiftSettings: [SwiftSetting] = logseqAppIntentsValuesPath.map { path in
+    let protocols = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("scripts/app-intents-protocols.json").path
+    return [.unsafeFlags([
+        "-emit-const-values-path", path,
+        "-Xfrontend", "-const-gather-protocols-file", "-Xfrontend", protocols
+    ], .when(platforms: [.iOS]))]
+} ?? []
 // Ctypes resolves these by name, so the static linker cannot see their uses.
 // Retain and export them even when a Release executable strips unused code.
 let logseqRuntimeExports = [
@@ -52,6 +62,7 @@ let package = Package(
             name: "LogseqShell",
             dependencies: ["Logseq"],
             path: "App/Sources",
+            swiftSettings: logseqAppIntentsSwiftSettings,
             linkerSettings: logseqShellLinkerSettings
         ),
         .target(name: "Logseq", dependencies: [
