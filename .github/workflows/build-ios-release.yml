@@ -12,6 +12,13 @@ on:
         description: "Release Git Ref (Which branch or tag to build?)"
         required: true
         default: "main"
+      testflight-distribution:
+        description: "TestFlight audience (Mobile Testers or internal groups only)"
+        type: choice
+        default: mobile-testers
+        options:
+          - mobile-testers
+          - internal
 
 jobs:
   duniverse:
@@ -293,3 +300,41 @@ jobs:
             apple/.build/release-source-packages/repositories
             apple/.build/release-source-packages/artifacts
           key: ${{ steps.swift-packages.outputs.cache-primary-key }}
+
+  distribute-testflight:
+    name: Distribute to TestFlight testers
+    needs: [duniverse, build-app]
+    runs-on: ubuntu-26.04
+    # The script waits up to 15 minutes before leaving time for assignment.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The selected app ref may predate the distribution script.
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-verification-${{ github.run_id }}
+          path: verified-ios
+
+      - name: Install TestFlight API dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/testflight"
+          "$RUNNER_TEMP/testflight/bin/python" -m pip install --quiet 'PyJWT[crypto]==2.10.1'
+
+      - name: Distribute the verified iOS build
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
+          SOURCE_REVISION: ${{ needs.duniverse.outputs.source-revision }}
+          TESTFLIGHT_DISTRIBUTION: ${{ inputs.testflight-distribution }}
+        run: |
+          "$RUNNER_TEMP/testflight/bin/python" -u scripts/distribute_ios_testflight.py \
+            --report verified-ios/ipa-verification.json \
+            --source-revision "$SOURCE_REVISION" \
+            --distribution "$TESTFLIGHT_DISTRIBUTION"
