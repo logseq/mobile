@@ -870,14 +870,6 @@ private struct LGNavigationContent: View {
             .accessibilityIdentifier("surface.composer.dismiss")
     }
 
-    private func composerDismissalToolbar<Content: View>(_ content: Content) -> some View {
-        content.overlay {
-            if composerDismissalEnabled {
-                composerDismissalTarget.accessibilityHidden(true)
-            }
-        }
-    }
-
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
         let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
@@ -915,7 +907,7 @@ private struct LGNavigationContent: View {
                         if !pdfWorkspaceOpen {
                             if #available(iOS 26.0, *) {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    composerDismissalToolbar(context.content(for: leadingID))
+                                    context.content(for: leadingID)
                                         .id(context.contentRevision(for: leadingID))
                                         .modifier(LGLiquidGlassSurface(shape: .circle))
                                         .frame(width: LGNavigationSurfacePolicy.systemToolbarItemWidth(
@@ -927,7 +919,7 @@ private struct LGNavigationContent: View {
                                 .lgPrefersVerticalAxis()
                             } else {
                                 ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                    composerDismissalToolbar(context.content(for: leadingID))
+                                    context.content(for: leadingID)
                                 }
                             }
                         }
@@ -1107,7 +1099,12 @@ private struct LGNavigationContent: View {
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
         if let item = trailingToolbarItem(searchPage: searchPage) {
             ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
-                composerDismissalToolbar(item.content)
+                item.content
+                    .overlay {
+                        if composerDismissalEnabled {
+                            composerDismissalTarget.accessibilityHidden(true)
+                        }
+                    }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
             }

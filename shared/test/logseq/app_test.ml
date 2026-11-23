@@ -5058,10 +5058,16 @@ let composer_dismissal_preserves_an_unsent_draft () =
   in
   let dismissed = Model.update drafted Model.DismissComposer in
   let empty_send = Model.update dismissed Model.SendComposer in
+  let sidebar_open = Model.update drafted Model.OpenSidebar in
   check ~msg:"dismiss collapses composer state"
     (not dismissed.composer_expanded);
   check_eq ~msg:"dismiss preserves the persisted draft"
     dismissed.composer_draft "Later";
+  check ~msg:"opening the sidebar collapses the composer"
+    (sidebar_open.sidebar_open && not sidebar_open.composer_expanded
+     && not sidebar_open.composer_autofocus);
+  check_eq ~msg:"opening the sidebar preserves an unsent draft"
+    sidebar_open.composer_draft "Later";
   check_eq ~msg:"a preserved non-empty draft can still be submitted"
     empty_send.pending_effects
     [
@@ -10225,9 +10231,9 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
        (Some editing) (Some autocomplete) [ candidate ] [] [ row ] false []);
   flush application;
   let renderer = Lui_app.runtime application in
-  let root = main_root renderer application in
+  let drawer = application_shell_root renderer application in
   let sidebar_button =
-    descendant_with_identifier renderer root "button.sidebar"
+    descendant_with_identifier renderer drawer "button.sidebar"
   in
   let navigation = extension_node application "native-navigation-stack" in
   let chrome = native_bottom_chrome renderer application in
@@ -10252,9 +10258,10 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     (property renderer editor_toolbar Lui_protocol.PlacementValue) None;
   let editor_buttons = children renderer editor_toolbar in
   let task_button = List.nth editor_buttons 0 in
-  check
-    ~msg:"editing disables both the sidebar button and drawer gesture"
-    (not (property_bool renderer sidebar_button Lui_protocol.Enabled));
+  check ~msg:"the iOS sidebar button stays enabled while editing"
+    (property_bool renderer sidebar_button Lui_protocol.Enabled);
+  check ~msg:"editing still disables the drawer gesture"
+    (not (property_bool renderer drawer Lui_protocol.Enabled));
   check_eq ~msg:"the editor reserves safe-area layout space like main"
     (extension_property application navigation
        "bottom-occupies-layout-space")
@@ -10375,7 +10382,16 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       Model.OutlinerToolbarEffect (2, "task");
     ];
   check_eq ~msg:"a task mutation hides stale synced state immediately"
-    (App.model application).sync_state Model.SyncingState
+    (App.model application).sync_state Model.SyncingState;
+  dispatch application (Lui_protocol.Press sidebar_button);
+  flush application;
+  check ~msg:"one press opens the drawer while editing"
+    (property_bool renderer drawer Lui_protocol.Selected);
+  check ~msg:"opening the drawer keeps the editor mounted until its commit"
+    ((App.model application).outliner_editing <> None);
+  check ~msg:"opening the drawer queues the editor commit"
+    (List.mem (Model.CancelOutlinerEditingEffect 3)
+       (App.model application).pending_effects)
 
 let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   let application = App.create (kotlin_backend ()) in

@@ -420,6 +420,8 @@ let main_header_model context current =
 
 let main_header_leading_content (context : Lui_ui.ui_context)
     ~source:model_source send : t =
+  let allow_during_editing =
+    Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
   stack
     [
       if_
@@ -445,7 +447,8 @@ let main_header_leading_content (context : Lui_ui.ui_context)
            ~style_class:"drawer-toggle"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
-             (Signal.map View_base.sidebar_drag_disabled_ model_source)
+             (Signal.map (View_base.sidebar_button_disabled_ ~allow_during_editing)
+                model_source)
            ~on_press:(fun _ ->
              ignore
                (send

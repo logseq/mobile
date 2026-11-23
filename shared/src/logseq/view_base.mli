@@ -185,6 +185,8 @@ val outliner_journal_accessibility_label :
   Model.logseq_model -> Model.outline_row -> string
 val node_screen_visible_ : Model.logseq_model -> bool
 val primary_sidebar_button_visible_ : Model.logseq_model -> bool
+val sidebar_button_disabled_ :
+  allow_during_editing:bool -> Model.logseq_model -> bool
 val sidebar_drag_disabled_ : Model.logseq_model -> bool
 val connection_control_visible_ : Model.logseq_model -> bool
 val search_query_present_ : Model.logseq_model -> bool

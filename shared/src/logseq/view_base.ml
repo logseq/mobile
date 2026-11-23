@@ -703,12 +703,15 @@ let primary_sidebar_button_visible_ (current : Model.logseq_model) =
   && (not current.search_open)
   && not (authentication_screen_visible_ current)
 
-let sidebar_drag_disabled_ (current : Model.logseq_model) =
+let sidebar_button_disabled_ ~allow_during_editing (current : Model.logseq_model) =
   (not current.sidebar_open)
   && ((not (primary_sidebar_button_visible_ current))
       || current.app_navigation_path <> []
-      || outliner_editor_active_ current
+      || (not allow_during_editing && outliner_editor_active_ current)
       || outliner_selection_active_ current)
+
+let sidebar_drag_disabled_ current =
+  sidebar_button_disabled_ ~allow_during_editing:false current
 
 let connection_control_visible_ (current : Model.logseq_model) =
   (not current.search_open || current.search_navigation_path <> [])
