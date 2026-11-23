@@ -269,7 +269,9 @@ public struct LogseqRootView : View {
                     forKey: "logseq.mobile.sidebarTabs"
                 )
                 if let slots = settings.graphQuickSlots {
+                    let previous = defaults.stringArray(forKey: "logseq.mobile.graphQuickSlots")
                     defaults.set(slots, forKey: "logseq.mobile.graphQuickSlots")
+                    if previous != slots { graphLifecycle.prepareResidentGraphs() }
                 }
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
                 if LogseqSettingsPolicy.storedBaseURL(in: defaults) != previousBaseURL {
@@ -283,6 +285,7 @@ public struct LogseqRootView : View {
             copyText: { text in Self.copyText(text) },
             signIn: { request in try await authentication.authenticate(request) },
             signOut: {
+                await graphLifecycle.clearResidentGraphs()
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
                 await authentication.signOut()
@@ -494,6 +497,7 @@ public struct LogseqRootView : View {
             await store.loadLaunchSidebar(graphID: graphID)
         }
         didFinishLaunchWork = true
+        graphLifecycle.prepareResidentGraphs()
         refreshWidgetsOnActivation()
         await store.runPendingSyncLoop()
     }

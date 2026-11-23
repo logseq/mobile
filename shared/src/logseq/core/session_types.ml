@@ -81,6 +81,8 @@ type host_options =
   ; storage : Datascript.storage option
   ; outliner_projection_limit : int option
   ; open_graph : (string -> (unit, string) result) option
+  ; retain_graphs : (string list -> unit) option
+  ; prepare_graph : (string -> (unit, string) result) option
   ; close_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (string -> Model.model) option
@@ -195,6 +197,8 @@ let default_options =
     storage = None;
     outliner_projection_limit = None;
     open_graph = None;
+    retain_graphs = None;
+    prepare_graph = None;
     close_graph = None;
     import_snapshot = None;
     model_for_graph = None;

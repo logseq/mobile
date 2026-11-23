@@ -7585,6 +7585,12 @@ let graph_quick_switch_cycles_and_configures_slots () =
       let gesture = extension_node application "graph-quick-switch" in
       let target () = extension_property application gesture "target-id" in
       let action_label () = extension_property application gesture "action-label" in
+      let presentation field =
+        match extension_property application gesture "presentation" with
+        | Some (Lui_protocol.StringValue json) ->
+          Yojson.Basic.Util.member field (Yojson.Basic.from_string json)
+        | _ -> failwith "Missing graph switch presentation"
+      in
       let swipe id =
         ignore (Native_bridge.extension_event gesture "graph-quick-switch" "switch" id 0)
       in
@@ -7592,6 +7598,11 @@ let graph_quick_switch_cycles_and_configures_slots () =
         (Some (Lui_protocol.StringValue "Notes"));
       check_eq ~msg:"the accessibility action names the same graph as the swipe"
         (action_label ()) (Some (Lui_protocol.StringValue "Switch to Notes"));
+      check_eq ~msg:"the motion starts with the source graph identified"
+        (presentation "graphID") (`String "Work");
+      let journal_panes = if platform = 2 then
+        Some (extension_node application "journal-graph-panes") else None in
+      let original_panes = Option.map (children renderer) journal_panes in
       swipe "Ideas";
       check ~msg:"ignores a stale target" (not (App.model application).graph_loading);
       apply Model.OpenSidebar;
@@ -7605,7 +7616,21 @@ let graph_quick_switch_cycles_and_configures_slots () =
       check ~msg:"switches through the standard graph open effect"
         (List.exists (function Model.OpenGraphEffect (_, "Notes") -> true | _ -> false)
            (App.model application).pending_effects);
-      check_eq ~msg:"the in-flight switch disables another swipe" (target ()) (Some (Lui_protocol.StringValue "")))
+      check_eq ~msg:"the graph switch reports that the target is still opening"
+        (presentation "loading") (`Bool true);
+      check_eq ~msg:"the in-flight switch disables another swipe" (target ()) (Some (Lui_protocol.StringValue ""));
+      match journal_panes, original_panes with
+      | Some node, Some [work] ->
+        check_eq ~msg:"the Work view stays mounted during activation" (children renderer node) [work];
+        apply (Model.ApplyCoreSnapshot {projection with graph_name = Some "Notes"; selected_graph_id = Some "Notes"});
+        apply (Model.ApplyGraphLoading false);
+        let resident = children renderer node in
+        check_eq ~msg:"both graph views are mounted" (List.length resident) 2;
+        check ~msg:"the original Work view is retained" (List.mem work resident);
+        apply (Model.ApplyCoreSnapshot projection);
+        check_eq ~msg:"focusing Work preserves both view identities" (children renderer node) resident
+      | None, None -> ()
+      | _ -> fail "Expected one initial iOS journal pane")
   ) [2, 2; 3, 4]
 
 let graph_switch_rearms_journal_pagination () =

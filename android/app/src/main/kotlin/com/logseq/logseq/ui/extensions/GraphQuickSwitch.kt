@@ -37,13 +37,14 @@ internal fun LuiExtensionRegistry.registerGraphQuickSwitch() {
     register(
         "graph-quick-switch",
         "lui-extension-v1|18:graph-quick-switch|profiles:android/kotlin,ios/swiftui|standard-children:1|children:" +
-            "|properties:11:target-name:string:required:none,12:action-label:string:required:none,9:target-id:string:required:none" +
+            "|properties:11:target-name:string:required:none,12:action-label:string:required:none,12:presentation:string:required:none,9:target-id:string:required:none" +
             "|events:6:switch[5:value:string:required]",
         acceptsStandardChildren = true,
         properties = listOf(
             LuiExtensionProperty("target-id", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("target-name", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("action-label", LuiExtensionValueKind.STRING, required = true),
+            LuiExtensionProperty("presentation", LuiExtensionValueKind.STRING, required = true),
         ),
         events = listOf(LuiExtensionEventSchema(
             "switch", listOf(LuiExtensionProperty("value", LuiExtensionValueKind.STRING, required = true)),

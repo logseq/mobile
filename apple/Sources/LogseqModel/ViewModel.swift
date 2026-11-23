@@ -87,7 +87,7 @@ public final class LogseqCore {
               let requestJSON = String(data: data, encoding: .utf8) else {
             return ""
         }
-        var maintenance = request.params.action == "maintainSearchIndex"
+        var maintenance = request.params.action == "maintainSearchIndex" || request.params.action == "prepareGraph"
         if request.params.action == "executeEffect", let payload = request.params.payload,
            let effect = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] {
             maintenance = effect["kind"] as? String == "maintain-search-index"
