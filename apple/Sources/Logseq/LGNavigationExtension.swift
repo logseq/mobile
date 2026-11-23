@@ -991,12 +991,19 @@ private struct LGNavigationContent: View {
                                     flashcardsTitle(flashcardsToolbar.title)
                                 }
                             }
-                            ToolbarItem(placement: trailingToolbarPlacement) {
-                                context.nodeView(of: flashcardsToolbar.add)
-                                    .frame(width: 44, height: 44)
-                                    .buttonStyle(.plain)
+                            let addButton = context.nodeView(of: flashcardsToolbar.add)
+                                .frame(width: 44, height: 44)
+                                .buttonStyle(.plain)
+                            if #available(iOS 26.0, *) {
+                                ToolbarItem(placement: trailingToolbarPlacement) {
+                                    addButton.modifier(LGLiquidGlassSurface(shape: .circle))
+                                }
+                                .sharedBackgroundVisibility(.hidden)
+                                .lgPrefersVerticalAxis()
+                            } else {
+                                ToolbarItem(placement: trailingToolbarPlacement) { addButton }
+                                    .lgPrefersVerticalAxis()
                             }
-                            .lgPrefersVerticalAxis()
                         } else {
                             trailingToolbar(searchPage: false)
                             #if os(iOS)
