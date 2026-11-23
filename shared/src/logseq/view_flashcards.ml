@@ -148,7 +148,7 @@ let flashcard_review_content model_source send : t =
         [];
     ]
 
-let flashcard_group_controls model_source send : t = custom (fun context parent ->
+let flashcard_group_controls ~in_toolbar model_source send : t = custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let graphs = own (Signal.map (fun (model : Model.logseq_model) -> [model.selected_graph_id]) model_source) in
   mount context ?parent
@@ -159,18 +159,21 @@ let flashcard_group_controls model_source send : t = custom (fun context parent 
     let choices = own (Signal.map (fun json -> json_items (json_field "items" json)) metadata) in
     let emit fields = deck_request model_source send fields in
     let adding = Signal.state context.ui_scheduler false in
-    let controls = row ~cross:`center ~padding_horizontal:20 ~height:48 [
+    let title = own (Signal.map (fun json ->
+      let current = Signal.sample model_source in
+      let selected = json_field "selectedUuid" json in
+      if selected = `Null then View_base.tr current "All cards" else
+      match List.find_opt (fun item -> json_field "uuid" item = selected)
+        (json_items (json_field "items" json)) with
+      | Some item -> json_text (json_field "title" item)
+      | None -> View_base.tr current "Unavailable group") metadata) in
+    let all_selected = own (Signal.map ((=) `Null) selected) in
+    let deck_menu show_hint =
       View_base.with_string_prop TextAlignment "start"
-        (menu ~text_signal:(own (Signal.map (fun json ->
-          let current = Signal.sample model_source in
-          let selected = json_field "selectedUuid" json in
-          if selected = `Null then View_base.tr current "All cards" else
-          match List.find_opt (fun item -> json_field "uuid" item = selected)
-            (json_items (json_field "items" json)) with
-          | Some item -> json_text (json_field "title" item)
-          | None -> View_base.tr current "Unavailable group") metadata))
+        (menu ?icon:(if show_hint then Some (`app "chevron-down") else None)
+          ~text_signal:title
           ~label:(View_base.tr (Signal.sample model_source) "Card group") ~accessibility_identifier:"menu.flashcards.deck" [
-          dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "All cards") ~selected_signal:(own (Signal.map ((=) `Null) selected))
+          dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "All cards") ~selected_signal:all_selected
             ~accessibility_identifier:"flashcards.deck.select.all"
             ~on_press:(fun _ -> emit ["action", `String "select"; "uuid", `Null]) [];
           keyed_dropdown_menu_item ~source:choices ~key:(fun item -> json_text (json_field "uuid" item)) ~cmp:String.compare
@@ -180,12 +183,13 @@ let flashcard_group_controls model_source send : t = custom (fun context parent 
                 ~selected_signal:(own (Signal.map ((=) uuid) selected))
                 ~accessibility_identifier:("flashcards.deck.select." ^ json_text uuid)
                 ~on_press:(fun _ -> emit ["action", `String "select"; "uuid", uuid]) []);
-        ]);
-      spacer ~grow:1.0 [];
-      icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "New card group")
+        ]) in
+    let add =
+      icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44
+        ?style_class:(if in_toolbar then Some "system-toolbar-icon" else None)
+        ~label:(View_base.tr (Signal.sample model_source) "New card group")
         ~accessibility_identifier:"button.flashcards.deck.add"
-        ~on_press:(fun _ -> Signal.set adding true) [];
-    ] in
+        ~on_press:(fun _ -> Signal.set adding true) [] in
     let picker = if_ ~test:(Signal.value adding) (custom (fun context parent ->
       let own source = Signal.own_signal context.ui_scope source in
       let name = Signal.state context.ui_scheduler "" in
@@ -279,13 +283,29 @@ let flashcard_group_controls model_source send : t = custom (fun context parent 
           (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; create]
            else toolbar ~label:(View_base.tr (Signal.sample model_source) "Card group actions") ~style_class:"navigation-actions" [toolbar_cancel; toolbar_create]);
         ]))) in
-    mount context ?parent (column ~gap:0 [controls; picker])))))
+    if in_toolbar then begin
+      let show_hint = own (Signal.map (fun groups -> groups <> []) choices) in
+      let node = Lui_ui.extension context "native-flashcards-toolbar" in
+      attach context parent node;
+      List.iter (fun view -> ignore (mount context ~parent:node view))
+        [dyn deck_menu show_hint; add; box [picker]];
+      node
+    end else
+      mount context ?parent (column ~gap:0 [
+        row ~cross:`center ~padding_horizontal:20 ~height:48
+          [deck_menu false; spacer ~grow:1.0 []; add];
+        picker])))))
 
-let flashcard_screen model_source send : t =
+let flashcard_toolbar model_source send =
+  flashcard_group_controls ~in_toolbar:true model_source send
+
+let flashcard_screen ~uses_native_toolbar model_source send : t =
+  let controls =
+    if uses_native_toolbar then []
+    else [flashcard_group_controls ~in_toolbar:false model_source send] in
   column ~accessibility_identifier:"screen.flashcards" ~grow:1.0 ~gap:0
     ~background:"background"
-    [
-      flashcard_group_controls model_source send;
+    (controls @ [
       if_
         ~test:(Signal.map View_base.flashcards_empty_ model_source)
         (custom (fun context parent ->
@@ -326,4 +346,4 @@ let flashcard_screen model_source send : t =
       if_
         ~test:(Signal.map View_base.flashcards_present_ model_source)
         (flashcard_review_content model_source send);
-    ]
+    ])

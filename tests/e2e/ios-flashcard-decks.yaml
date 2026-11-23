@@ -8,6 +8,10 @@ appId: com.logseq.logseq
     id: link.sidebar.flashcards
 - assertVisible:
     id: menu.flashcards.deck
+- assertNotVisible:
+    id: 'sync\.(connected|disconnected|failed)'
+- assertNotVisible:
+    id: button.journal-calendar
 - tapOn:
     id: button.flashcards.deck.add
 - tapOn:

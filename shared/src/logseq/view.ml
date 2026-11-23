@@ -323,6 +323,10 @@ let extension_registry () =
     (outliner_block_content_schema ());
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
+  Lui_extension.register_component registry
+    (Lui_extension.component "native-flashcards-toolbar"
+       [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+       true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
   Lui_extension.register_component registry (native_top_notification_schema ());
   Lui_extension.register_tweak registry

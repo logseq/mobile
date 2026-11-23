@@ -3977,8 +3977,16 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     0;
   check_eq ~msg:"hidden review content does not leave a layout sibling"
     (descendant_with_identifier renderer screen "layout.flashcards.review") (-1);
-  check ~msg:"card group controls remain available above the empty state"
-    (descendant_with_identifier renderer screen "menu.flashcards.deck" <> -1);
+  let navigation = extension_node application "native-navigation-stack" in
+  let toolbar = extension_node application "native-flashcards-toolbar" in
+  check_eq ~msg:"card group controls replace the iOS navigation title slot"
+    (children renderer (List.nth (children renderer navigation) 2)) [toolbar];
+  let deck_menu = child_with_identifier renderer toolbar "menu.flashcards.deck" in
+  check ~msg:"the toolbar carries both the card group menu and the add button"
+    (deck_menu <> -1
+     && child_with_identifier renderer toolbar "button.flashcards.deck.add" <> -1);
+  check_eq ~msg:"the card group menu does not consume space in the review"
+    (descendant_with_identifier renderer screen "menu.flashcards.deck") (-1);
   check_eq ~msg:"the empty state fills the page before centering"
     (property_float renderer empty_state Lui_protocol.GrowValue)
     1.0;
@@ -4000,6 +4008,19 @@ let flashcards_render_empty_and_non_cloze_control_states () =
   check_eq ~msg:"the empty description uses secondary foreground"
     (property_string renderer empty_description Lui_protocol.ForegroundValue)
     "muted-foreground";
+  let projection = { (empty_core_projection ()) with
+    selected_graph_id = (App.model application).selected_graph_id } in
+  let hint = Some (Lui_protocol.StringValue "app:chevron-down") in
+  List.iter (fun (count, expected_icon) ->
+    let groups = List.init count (fun index ->
+      let name = "Group " ^ string_of_int index in
+      `Assoc ["uuid", `String name; "title", `String name]) in
+    let flashcard_decks_json = Yojson.Basic.to_string (`Assoc ["items", `List groups]) in
+    send application (Model.ApplyCoreSnapshot { projection with flashcard_decks_json });
+    flush application;
+    check_eq ~msg:("card group menu hint with " ^ string_of_int count ^ " groups")
+      (property renderer deck_menu Lui_protocol.InlineIconName) expected_icon)
+    [0, None; 1, hint; 2, hint; 0, None];
   send application
     (apply_core_snapshot None (empty_sidebar_projection ())
        [ flashcard "card-a" "Plain question" "Plain question" [] false ]
