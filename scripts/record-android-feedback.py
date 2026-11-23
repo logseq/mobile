@@ -13,7 +13,7 @@ parser.add_argument("phase", choices=["before", "after"])
 parser.add_argument("scenarios", nargs="+")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-output = root / "_build" / "feedback-recordings" / args.phase
+output = root / "tests" / "e2e" / "artifacts" / "feedback-recordings" / args.phase
 output.mkdir(parents=True, exist_ok=True)
 failures, completed, requests = [], set(), []
 server = None

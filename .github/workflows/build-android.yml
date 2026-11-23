@@ -115,6 +115,7 @@ jobs:
           bash scripts/test-android-native-script.sh
           bash scripts/test-no-skip-support.sh
           bash scripts/test-android-e2e-runner.sh
+          python3 -m unittest discover -s scripts -p test_android_measurement.py
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4

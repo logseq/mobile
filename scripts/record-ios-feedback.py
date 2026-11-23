@@ -19,7 +19,7 @@ parser.add_argument("--build-root", type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 build = args.build_root.resolve() if args.build_root else root
-out = root / "_build" / "feedback-recordings" / args.phase
+out = root / "tests" / "e2e" / "artifacts" / "feedback-recordings" / args.phase
 out.mkdir(parents=True, exist_ok=True)
 env = os.environ.copy()
 env["LOGSEQ_IOS_SIMULATOR"] = args.simulator
