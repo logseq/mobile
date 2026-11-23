@@ -1407,10 +1407,13 @@ private struct LGNavigationContent: View {
 private enum LGKeyboardDismissal {
     private static var completion: (() -> Void)?
     private static var observers: [NSObjectProtocol] = []
+    private static var generation = 0
 
     static func perform(_ action: @escaping () -> Void) {
         guard completion == nil else { return }
         completion = action
+        generation += 1
+        let request = generation
         let center = NotificationCenter.default
         var hiding = false
         observers = [
@@ -1418,18 +1421,19 @@ private enum LGKeyboardDismissal {
                 MainActor.assumeIsolated { hiding = true }
             },
             center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { finish() }
+                MainActor.assumeIsolated { finish(request) }
             },
         ]
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         // Without a software keyboard nothing will animate, so dismiss at once.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if !hiding { finish() }
+            if !hiding { finish(request) }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { finish() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { finish(request) }
     }
 
-    private static func finish() {
+    private static func finish(_ request: Int) {
+        guard request == generation, completion != nil else { return }
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         let action = completion
