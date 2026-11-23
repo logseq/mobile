@@ -658,6 +658,7 @@ val search_query_ready : string -> bool
 val journal_section_key : outline_row -> string option
 val refresh_journal_window :
   outline_row list -> outline_row list -> outline_row list
+val retain_shell_contents : outline_row list -> outline_row list -> outline_row list
 val journal_section_title : outline_row -> string
 val journal_section_markers : outline_row list -> journal_section_marker list
 val finish_journal_section :
