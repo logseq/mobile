@@ -73,6 +73,12 @@ Device builds embed both the widget and share extensions. Matching development
 profiles are selected automatically; set `LOGSEQ_IOS_WIDGET_PROFILE` or
 `LOGSEQ_IOS_SHARE_PROFILE` to select a profile explicitly.
 
+Run **Build-iOS** from the `main` branch in GitHub Actions to sign and upload an
+iOS build to TestFlight. By default, the workflow distributes the verified
+build to **Mobile Testers** and submits it for Beta App Review when required.
+Set `testflight-distribution=internal` to distribute only to configured internal
+TestFlight groups. The distribution job reports the build's TestFlight status.
+
 Audio capture continues when the phone is locked. On iOS, a Live Activity shows
 the recording timer and recent transcription on the Lock Screen and Dynamic
 Island; tapping it returns to the current recording. On Android, the ongoing

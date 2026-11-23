@@ -409,6 +409,9 @@ if [[ -n ${LOGSEQ_ADB_ARGS:-} ]]; then
   printf '%s\n' "$*" >>"$LOGSEQ_ADB_ARGS"
 fi
 case "$*" in
+  *"shell dumpsys -t 3 window displays"*)
+    printf '%s\n' '  mCurrentFocus=Window{1a2b3c u0 Application Not Responding: com.google.android.apps.nexuslauncher}'
+    ;;
   *"exec-out uiautomator dump"*)
     printf '%s\n' \
       '<hierarchy><node text="Pixel Launcher isn'"'"'t responding" bounds="[28,979][1052,1485]"/><node text="Close app" bounds="[136,879][314,945]"/><node text="Wait" bounds="[400,879][578,945]"/></hierarchy>'
