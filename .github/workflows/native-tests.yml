@@ -3,7 +3,8 @@ name: Native Tests
 on:
   pull_request:
   schedule:
-    - cron: "17 5 * * *"
+    # 03:17 Asia/Shanghai.
+    - cron: "17 19 * * *"
   workflow_dispatch:
     inputs:
       device_tests:
