@@ -177,7 +177,7 @@ struct LGGraphSwitchNameCapsule: View {
 
     private func nameLabel(font: Font) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "square.stack")
+            Image(systemName: "arrow.right")
                 .font(.system(size: 12))
                 .accessibilityHidden(true)
             Text(name)
