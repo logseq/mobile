@@ -401,25 +401,31 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
-let journal_section_titles current =
+let journal_sections current =
   if not (View_base.journal_home_visible_ current) then [] else
   let previous = ref None in
   page_entries (retained_outliner_rows current) current
   |> List.mapi (fun index entry ->
     let section = match entry with
-      | Outline_entry row -> Option.map (fun title -> row.value.page_id, title) row.value.journal_title
-      | Placeholder_entry {parent_uuid; journal_heading = Some (title, _, _)} -> Some (parent_uuid, title)
+      | Outline_entry row -> Option.map (fun title -> row.value.page_id, row.value.journal_day, title) row.value.journal_title
+      | Placeholder_entry {parent_uuid; journal_heading = Some (title, day, _)} -> Some (parent_uuid, Some day, title)
       | _ -> None in
     match section with
-    | Some (page, title) when !previous <> Some page -> previous := Some page; Some (index, title)
+    | Some (page, day, title) when !previous <> Some page ->
+      previous := Some page;
+      Some (index, day, title)
     | _ -> None)
   |> List.filter_map Fun.id
 
+let journal_section_titles current =
+  List.map (fun (index, day, title) -> index, View_base.journal_display_title current day title)
+    (journal_sections current)
+
 let first_journal_section_count current =
-  match journal_section_titles current with
+  match journal_sections current with
   | [] -> 0
   | [_] -> List.length (page_entries (retained_outliner_rows current) current)
-  | _ :: (index, _) :: _ -> index
+  | _ :: (index, _, _) :: _ -> index
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

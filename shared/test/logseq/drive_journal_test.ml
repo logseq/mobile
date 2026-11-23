@@ -18,13 +18,16 @@ let handle (host : Drive_host.host) model = function
       (Model.DequeueEffect id
       :: (Drive_host.resolved id @ [ Model.RequestAppNode Drive_host.calendar_journal ]))
   | Model.OpenAppNodeEffect (id, uuid) when uuid = Drive_host.calendar_journal ->
+    let day = Drive_host.calendar_journal_day in
+    let title = Journal.day_title day in
     let row =
       App_test.journal_outline_row "calendar-note" Drive_host.calendar_journal
-        "Calendar journal note" "Aug 27th, 2026" 20260827 0
+        "Calendar journal note" title day 0
     in
     let route =
       {
-        (App_test.node_projection uuid uuid "Aug 27th, 2026" [] []) with
+        (App_test.node_projection uuid uuid title [] []) with
+        Model.node_journal_day = Some day;
         Model.node_outliner_rows = [ row ];
       }
     in

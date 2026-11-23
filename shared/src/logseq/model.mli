@@ -203,6 +203,7 @@ type outliner_autocomplete_candidate =
 type node_projection =
   { node_uuid : string
   ; node_page_uuid : string
+  ; node_journal_day : int option
   ; node_title : string
   ; node_breadcrumbs : sidebar_page list
   ; node_scroll_target : string option

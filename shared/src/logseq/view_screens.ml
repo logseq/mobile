@@ -299,7 +299,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
                          (reactive View_base.selected_page_title model_source)
                        ~accessibility_identifier:"title.selected-page" []];
                    ];
-                 reactive (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
+                 reactive (fun has_properties -> View_outliner.page_title_spacer ~has_properties ())
                    (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);
                ]);
           View_outliner.node_properties ~root:true context model_source send;

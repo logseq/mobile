@@ -420,6 +420,7 @@ let node_route input =
           Option.value ~default:node_uuid
             (string_member "uuid" (object_member "page" fields));
         node_title = node_title node_uuid node_is_tag fields;
+        node_journal_day = int_member "journalDay" fields;
         node_is_tag;
         node_is_property = bool_member "isProperty" fields;
         node_breadcrumbs = breadcrumbs fields;

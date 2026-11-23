@@ -1021,6 +1021,8 @@ let empty_journal_pages_keep_their_heading () =
         (find ("button.journal." ^ Q.page) <> -1);
       let placeholder = find ("button.outliner.placeholder." ^ Q.page) in
       check ~msg:"an empty day offers the same editable placeholder" (placeholder <> -1);
+      check_eq ~msg:"empty journals keep the same title spacing"
+        (App_test.property_int host (find "spacer.page-title") Lui_protocol.HeightValue) 20;
       check_eq ~msg:"rendering an empty journal has no writes" (App.model app).pending_effects [];
       App_test.dispatch app (Lui_protocol.Press placeholder); App_test.flush app;
       check ~msg:"the empty day is the insertion destination"
@@ -1068,10 +1070,14 @@ let empty_journals_are_projected_without_writes () = R.with_runtime (fun _ runti
   let session = Rpc_session.create_session {Rpc_session.default_options with
     graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
     graph_blocks = Some (fun () -> Some (Graph_runtime.blocks runtime));
+    graph_node_destination = Some (Graph_runtime.node_destination runtime);
     empty_journals = Some (fun () -> Graph_runtime.empty_journals runtime)} in
   let response = snapshot session in
   check ~msg:"the current empty journal is projected independently of its blocks"
     (List.exists (fun page -> member "uuid" page = `String uuid) (items "emptyJournals" response));
+  let opened = Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String uuid])) in
+  check_eq ~msg:"the empty journal screen has a day to format"
+    (List.map (member "journalDay") (items "nodeRoutes" opened)) [`Int day];
   check_eq (Graph_runtime.pending_operations runtime) pending)
 
 let display_titles_resolve_references_without_changing_source () = R.with_runtime (fun session runtime conn ->

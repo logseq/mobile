@@ -4,6 +4,20 @@ let tr (current : Model.logseq_model) value =
 let tr_named current source name =
   String_kit.replace (tr current source) ~match_:"{1}" ~replacement:name
 
+let journal_title_parts (current : Model.logseq_model) day title =
+  match day with
+  | Some day when Journal.valid_day day && current.journal_title_format = Journal.default_format ->
+    let current_year = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000 in
+    let date, weekday = Localization.journal_date
+      ~language:current.language ~system_language:current.system_language ~current_year day in
+    date, Some ("· " ^ weekday)
+  | _ -> title, None
+
+let journal_display_title current day title = fst (journal_title_parts current day title)
+
+let journal_heading_label current (title, suffix) =
+  tr_named current "Open {1}" (match suffix with None -> title | Some suffix -> title ^ " " ^ suffix)
+
 let property_title current ~attr ~title =
   if attr = "block/title" || (attr = "block/tags" && title = "Set tags") then tr current title
   else title
@@ -672,10 +686,10 @@ let outliner_journal_divider_visible_ (current : Model.logseq_model) row =
   | Some marker -> marker.has_divider
   | None -> false
 
-let outliner_journal_title (current : Model.logseq_model) row =
+let outliner_journal_title_parts (current : Model.logseq_model) row =
   match outliner_journal_marker current row with
-  | Some marker -> marker.section_title
-  | None -> ""
+  | Some marker -> journal_title_parts current row.Model.journal_day marker.section_title
+  | None -> "", None
 
 let outliner_journal_page_id (current : Model.logseq_model) row =
   match outliner_journal_marker current row with
@@ -684,9 +698,6 @@ let outliner_journal_page_id (current : Model.logseq_model) row =
 
 let outliner_journal_button_identifier current row =
   "button.journal." ^ outliner_journal_page_id current row
-
-let outliner_journal_accessibility_label current row =
-  "Open " ^ outliner_journal_title current row
 
 let node_screen_visible_ (current : Model.logseq_model) =
   journals_destination_ current && node_navigation_active_ current
@@ -781,8 +792,19 @@ let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
 
 let active_node_title (current : Model.logseq_model) =
   match active_node_projection current with
-  | Some route -> route.node_title
+  | Some route -> journal_display_title current route.node_journal_day route.node_title
   | None -> tr current "Untitled"
+
+let selected_page_title (current : Model.logseq_model) =
+  match current.selected_page with
+  | Some page ->
+    let day = List.find_map (fun (row : Model.outline_row) ->
+      if row.page_id = page.uuid then row.journal_day else None) current.outliner_rows in
+    let day = match day with Some _ -> day | None ->
+      List.find_map (fun ((journal : Model.sidebar_page), day) ->
+        if journal.uuid = page.uuid then Some day else None) current.empty_journals in
+    journal_display_title current day page.title
+  | None -> ""
 
 let outliner_scroll_identity (current : Model.logseq_model) =
   let graph = Option.value ~default:"local" current.selected_graph_id in
@@ -795,9 +817,10 @@ let outliner_scroll_identity (current : Model.logseq_model) =
 let main_title (current : Model.logseq_model) =
   if current.destination = FlashcardsDestination then tr current "Flashcards"
   else if current.destination = GraphsDestination then tr current "Graphs"
-  else
-    match Model.active_page current with
-    | Some page -> page.title
+  else match Model.active_page current with
+    | Some page when current.selected_page = Some page -> selected_page_title current
+    | Some page -> journal_display_title current
+        (Option.bind (active_node_projection current) (fun route -> route.node_journal_day)) page.title
     | None -> ""
 
 let current_content_active_ (current : Model.logseq_model) =
@@ -1409,11 +1432,6 @@ let selected_page_content_title_visible_ (current : Model.logseq_model) =
   selected_page_present_ current
   && (not current.selected_page_is_tag)
   && page_content_ready_ current
-
-let selected_page_title (current : Model.logseq_model) =
-  match current.selected_page with
-  | Some page -> page.title
-  | None -> ""
 
 let without_outliner_interaction (current : Model.logseq_model) =
   { current with

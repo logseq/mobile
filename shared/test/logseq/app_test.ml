@@ -330,6 +330,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
   {
     Model.node_uuid = uuid;
     node_page_uuid = page_uuid;
+    node_journal_day = None;
     node_title = title;
     node_breadcrumbs = []; node_scroll_target = None;
     node_is_tag = false;
@@ -3419,6 +3420,9 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
     ~msg:"selected page titles preserve the combined main horizontal inset"
     (property_int renderer page_title_layout Lui_protocol.PaddingHorizontal)
     16;
+  check_eq ~msg:"selected page titles leave room before the first block"
+    (property_int renderer (descendant_with_identifier renderer outliner "spacer.page-title") Lui_protocol.HeightValue)
+    20;
   check ~msg:"non-empty selected pages retain a trailing placeholder"
     (add_first <> -1)
 
@@ -6582,6 +6586,9 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
   check_eq ~msg:"node section titles add main's inner horizontal inset"
     (property_int renderer title_layout Lui_protocol.PaddingHorizontal)
     16;
+  check_eq ~msg:"node page titles leave room before their children"
+    (property_int renderer (descendant_with_identifier renderer outliner "spacer.page-title") Lui_protocol.HeightValue)
+    20;
   check ~msg:"node routes render their linked references section"
     (related <> -1);
   check ~msg:"related rows reuse the breadcrumb component with native separators"
@@ -8088,6 +8095,12 @@ let journal_section_markers_recompute_after_row_splices () =
   check ~msg:"outliner patches preserve journal pagination state"
     updated.has_older_journals
 
+let journal_test_year () = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000
+
+let expected_august_date day =
+  if journal_test_year () = 2026 then Printf.sprintf "Aug %d" day
+  else Printf.sprintf "Aug %d, 2026" day
+
 let journal_date_headings_open_their_page_on_both_hosts () =
   List.iter (fun backend ->
     let application = App.create backend in
@@ -8103,12 +8116,59 @@ let journal_date_headings_open_their_page_on_both_hosts () =
     check ~msg:"the journal date is visible" (heading <> -1);
     check_eq ~msg:"journal date buttons satisfy the native accessible-name contract"
       (property_string renderer heading Lui_protocol.AccessibilityLabel)
-      "Open October 21st";
+      (if journal_test_year () = 2026 then "Open Oct 21 · Wed" else "Open Oct 21, 2026 · Wed");
     dispatch application (Lui_protocol.Press heading);
     flush application;
     check_eq ~msg:"the date opens its journal page on each native host"
       (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "journal-page")])
     [ios_backend (); kotlin_backend ()]
+
+let journal_dates_follow_the_app_language () =
+  let format language day = Localization.journal_date ~language ~system_language:"en" ~current_year:2026 day in
+  check_eq (format "zh-CN" 20260101) ("1月1日", "星期四");
+  check_eq (format "zh-CN" 20260102) ("1月2日", "星期五");
+  check_eq (format "zh-CN" 20251231) ("2025年12月31日", "星期三");
+  check_eq (format "zh-CN" 20271231) ("2027年12月31日", "星期五");
+  check_eq (format "en" 20251231) ("Dec 31, 2025", "Wed");
+  check_eq (format "en" 20260101) ("Jan 1", "Thu");
+  List.iter (fun backend ->
+    let app = App.create (backend ()) in
+    start app;
+    let row = journal_outline_row "entry" "journal-page" "Entry" "Nov 23rd, 2026" 20261123 0 in
+    let empty : Model.sidebar_page = {uuid = "empty-day"; title = "Nov 22nd, 2025"} in
+    let projection = {(empty_core_projection ()) with selected_graph_id = Some "test-graph";
+      outliner_rows = [row]; empty_journals = [empty, 20251122]} in
+    let apply projection = send app (Model.ApplyCoreSnapshot projection); flush app in
+    apply projection;
+    send app (Model.ChooseSettingsLanguage "zh-CN");
+    flush app;
+    let renderer = Lui_app.runtime app in
+    let root = main_root renderer app in
+    let check_heading id title suffix =
+      let heading = descendant_with_identifier renderer root ("button.journal." ^ id) in
+      check (heading <> -1);
+      check_eq (descendant_count_with_property_string renderer heading Lui_protocol.TextValue title) 1;
+      let weekday = descendant_with_identifier renderer heading "journal.weekday" in
+      check_eq (property_string renderer weekday Lui_protocol.TextValue) suffix;
+      check_eq (property_string renderer weekday Lui_protocol.ForegroundValue) "muted-foreground";
+      check_eq (property_string renderer heading Lui_protocol.AccessibilityLabel) ("打开 " ^ title ^ " " ^ suffix) in
+    let prefix = if journal_test_year () = 2026 then "" else "2026年" in
+    let title = prefix ^ "11月23日" in
+    let empty_title = if journal_test_year () = 2025 then "11月22日" else "2025年11月22日" in
+    check_heading "journal-page" title "· 星期一";
+    check_heading "empty-day" empty_title "· 星期六";
+    check_eq (List.map snd (View_rows.journal_section_titles (App.model app)))
+      [title; empty_title];
+    check_eq (View_base.journal_display_title
+      {(App.model app) with journal_title_format = "yyyy-MM-dd"} (Some 20261123) "2026-11-23") "2026-11-23";
+    let heading = descendant_with_identifier renderer root "button.journal.journal-page" in
+    dispatch app (Lui_protocol.Press heading);
+    flush app;
+    let routes = Model.app_node_routes (App.model app) in
+    check_eq (List.map (fun (route : Model.node_projection) -> route.node_journal_day) routes) [Some 20261123];
+    apply {projection with node_routes = routes};
+    check_eq (View_base.active_node_title (App.model app)) title)
+    [ios_backend; kotlin_backend]
 
 let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   let application = App.create (ios_backend ()) in
@@ -8184,7 +8244,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check ~msg:"the second journal heading is visible" (second_heading <> -1);
   check_eq
     ~msg:"journal headings announce their title"
-    (descendant_count_with_property_string renderer heading_content Lui_protocol.TextValue "August 27th")
+    (descendant_count_with_property_string renderer heading_content Lui_protocol.TextValue (expected_august_date 27))
     1;
   check ~msg:"the first day's row stays inside the virtualized collection"
     (descendant_with_identifier renderer outliner "outliner.block.day-a"
@@ -8228,7 +8288,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
     8;
   check_eq ~msg:"journal titles keep their bottom inset separate from top spacing"
     (property_int renderer (List.nth heading_surface_children 2) Lui_protocol.HeightValue)
-    12;
+    20;
   check_eq ~msg:"journal titles express their extra top inset as layout"
     (if heading_top_space = -1 then None
      else node renderer heading_top_space)
@@ -8322,7 +8382,7 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     (List.assoc "data-first-section-count" metadata) "3";
   check_eq ~msg:"journal dates remain available outside the mounted block window"
     (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-3" metadata)
-    (Some "August 27th", Some "August 28th");
+    (Some (expected_august_date 27), Some (expected_august_date 28));
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
        List.exists (fun item -> List.mem entry (children renderer item))
@@ -11882,6 +11942,7 @@ let cases =
     case "journal-task-results-edit-and-select-the-source-block" journal_task_results_edit_and_select_the_source_block;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
+    case "journal dates follow the app language on both hosts" journal_dates_follow_the_app_language;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
     case "journal-section-markers-recompute-after-row-splices" journal_section_markers_recompute_after_row_splices;
     case "journal-home-keeps-first-day-viewport-and-later-block-items-flat" journal_home_keeps_first_day_viewport_and_later_block_items_flat;

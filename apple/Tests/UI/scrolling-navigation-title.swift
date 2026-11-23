@@ -26,13 +26,15 @@ import Vision
 
     @MainActor static func check(isPage: Bool, delayedLoad: Bool, groupedJournal: Bool = false) async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
-        let title = isPage ? "Project page" : "Oct 21st, 2026"
+        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
+        let journalTitle = year == 2026 ? "Oct 21" : "Oct 21, 2026"
+        let title = isPage ? "Project page" : journalTitle
         let rows: [[String: Any]] = (0..<60).map { index in
             var block: [String: Any] = ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"]
             if !isPage {
                 let first = !groupedJournal || index < 10
                 block["pageId"] = first ? "page" : "older"
-                block["journalTitle"] = first ? title : "Oct 20th, 2026"
+                block["journalTitle"] = first ? "Oct 21st, 2026" : "Oct 20th, 2026"
                 block["journalDay"] = first ? 20261021 : 20261020
             }
             return ["block": block, "depth": 0]
