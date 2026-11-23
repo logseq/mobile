@@ -675,6 +675,7 @@ private struct LGNativeSearchHost: ViewModifier {
                         // mode its automatic top-edge luminance can oscillate during
                         // scrolling, continuously invalidating UIKit's layout.
                         .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
+                        .scrollEdgeEffectStyle(.soft, for: .top)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
                     Group {
@@ -1022,8 +1023,6 @@ private struct LGNavigationContent: View {
         .background(routeBackground.ignoresSafeArea())
         #if os(iOS)
         .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(routeBackground, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         #endif
         .onAppear {
             LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")

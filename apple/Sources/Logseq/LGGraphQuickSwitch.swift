@@ -253,6 +253,7 @@ private struct JournalGraphPanes: View {
             GeometryReader { geometry in
                 let width = geometry.size.width
                 let gesture = presentation.visible ? motion?.gesture : nil
+                // Let each journal's scroll view draw under the navigation bar and status area.
                 ZStack(alignment: .topLeading) {
                     ForEach(panes, id: \.0) { graphID, childID in
                         let source = gesture?.source == graphID
@@ -282,7 +283,6 @@ private struct JournalGraphPanes: View {
                         loadingPane(background, progress: true)
                     }
                 }
-                .clipped()
             }
         }
     }
