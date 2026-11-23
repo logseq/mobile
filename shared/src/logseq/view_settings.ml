@@ -1224,12 +1224,6 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   in
-  let sync_error =
-    if_ ~test:(reactive View_base.sync_error_present_ model_source)
-      (list_item ~accessibility_identifier:"row.sync.error"
-         [ text ~value:(reactive View_base.sync_error_message model_source)
-             ~foreground:"destructive" [] ])
-  in
   if Lui_ui.host context = KotlinHost then
     View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Sync status") ~height:480
       ~accessibility_identifier:"sheet.sync-status"
@@ -1273,7 +1267,8 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                       ~accessibility_identifier:"sync.cursor" [];
                   ];
               ];
-                    sync_error;
+
+
                   ];
               ];
             row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
@@ -1328,7 +1323,8 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
                     ~accessibility_identifier:"sync.cursor" [];
                 ];
             ];
-          sync_error;
+
+
           sync_now ();
         ];
       toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Sync status actions")
