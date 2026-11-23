@@ -59,13 +59,14 @@ enum LGPropertyExtension {
         })
         try registry.register(LUIAppleExtension(
             identifier: "native-property-date",
-            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required]",
+            fingerprint: "lui-extension-v1|20:native-property-date|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:identifier:string:required:none,4:kind:string:required:none,5:value:string:required:none|events:6:change[5:value:string:required],10:clear-time[5:value:string:required]",
             properties: [
                 .init(name: "identifier", kind: .string, isRequired: true),
                 .init(name: "kind", kind: .string, isRequired: true),
                 .init(name: "value", kind: .string, isRequired: true),
             ],
-            events: [.init(name: "change", fields: [.init(name: "value", kind: .string, isRequired: true)])]
+            events: [.init(name: "change", fields: [.init(name: "value", kind: .string, isRequired: true)]),
+                     .init(name: "clear-time", fields: [.init(name: "value", kind: .string, isRequired: true)])]
         ) { AnyView(LGPropertyDatePicker(context: $0)) })
     }
 }
@@ -102,12 +103,25 @@ private struct LGPropertyRowLayout: Layout {
 
 private struct LGPropertyDatePicker: View {
     let context: LUIAppleExtensionViewContext
+    @State private var editingTime = false
 
     private func string(_ name: String) -> String {
         if case let .string(value) = context.property(name) { return value }
         return ""
     }
     private var includesTime: Bool { string("kind") == "datetime" }
+    private var isTaskDate: Bool {
+        ["logseq.property/scheduled", "logseq.property/deadline"].contains {
+            string("identifier").hasSuffix($0)
+        }
+    }
+    private var hasTime: Bool {
+        let date = selection.wrappedValue
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let midnight = time.hour == 0 && time.minute == 0 && time.second == 0 && time.nanosecond == 0
+        return !midnight && date != calendar.startOfDay(for: date)
+    }
     private var formatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -125,10 +139,32 @@ private struct LGPropertyDatePicker: View {
         })
     }
     var body: some View {
-        DatePicker("Value", selection: selection, displayedComponents: includesTime ? [.date, .hourAndMinute] : [.date])
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .accessibilityIdentifier(string("identifier"))
+        VStack(alignment: .leading, spacing: 8) {
+            DatePicker("Value", selection: Binding(get: { selection.wrappedValue }, set: { date in
+                selection.wrappedValue = isTaskDate && !hasTime && !editingTime
+                    ? Calendar.current.startOfDay(for: date) : date
+            }), displayedComponents: includesTime && (!isTaskDate || hasTime || editingTime) ? [.date, .hourAndMinute] : [.date])
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .accessibilityIdentifier(string("identifier"))
+            if includesTime && isTaskDate {
+                Button {
+                    if hasTime || editingTime {
+                        editingTime = false
+                        let date = Calendar.current.startOfDay(for: selection.wrappedValue)
+                        let value = String(Int64((date.timeIntervalSince1970 * 1000).rounded()))
+                        do { try context.emit(name: "clear-time", values: ["value": .string(value)]) }
+                        catch { logger.error("Could not clear property time: \(String(describing: error))") }
+                    } else {
+                        editingTime = true
+                    }
+                } label: {
+                    Label(hasTime || editingTime ? String(localized: "Clear time") : String(localized: "Add time"),
+                          systemImage: hasTime || editingTime ? "clock.badge.xmark" : "clock")
+                }
+                .accessibilityIdentifier(string("identifier") + ".time-toggle")
+            }
+        }
     }
 }
 

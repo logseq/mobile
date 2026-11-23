@@ -290,7 +290,8 @@ let property_date_schema () =
   component "native-property-date" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
     false [] [property "kind" StringScalar true None; property "value" StringScalar true None;
       property "identifier" StringScalar true None]
-    [event "change" [event_field "value" StringScalar true]]
+    [event "change" [event_field "value" StringScalar true];
+     event "clear-time" [event_field "value" StringScalar true]]
 
 let pdf_workspace_schema () =
   let open Lui_protocol in

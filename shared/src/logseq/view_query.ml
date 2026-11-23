@@ -260,11 +260,11 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
   Lui_ui.extension_property_signal context node "value"
     (Signal.map (fun value -> Lui_protocol.StringValue value) (Signal.value selection));
   Lui_ui.on_event context node (function
-    | Lui_protocol.ExtensionEvent (_, _, "change", fields) ->
+    | Lui_protocol.ExtensionEvent (_, _, (("change" | "clear-time") as event), fields) ->
       (match Lui_protocol.String_map.find_opt "value" fields with
        | Some (Lui_protocol.StringValue value) ->
          (match picker_value value with
-          | Some selected when selected <> Signal.sample (Signal.value selection) ->
+          | Some selected when event = "clear-time" || selected <> Signal.sample (Signal.value selection) ->
             Signal.set selection selected;
             Signal.set input "";
             update value

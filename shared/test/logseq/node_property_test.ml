@@ -360,6 +360,96 @@ let temporal_properties_display_and_edit () = R.with_runtime (fun session runtim
   check ~msg:"clearing removes the assigned date value" (not (List.exists (fun p -> member "attr" p = `String attr)
     (properties (result (read session Q.alpha))))))
 
+let task_date_display_paths () =
+  let day_start = Natural_date_test.reference 2026 1 10 0 0 |> Int64.of_float in
+  List.iteri (fun index attr ->
+    List.iter (fun (timestamp, date_only) ->
+      let def = Printf.sprintf "40000000-0000-4000-8000-%012d" (200 + index) in
+      let base = R.fixture () in
+      let definition = match Ds.entid base "db/ident" (Ds.Keyword attr) with
+        | Some id -> [Ds.Add (Ds.Entity_id id, "logseq.property/type", Ds.Keyword "datetime")]
+        | None -> R.entity (200 + index) def "Date" @ [
+            put def "db/ident" (Ds.Keyword attr); put def "logseq.property/type" (Ds.Keyword "datetime")] in
+      let db = Ds.db_with (definition @ [put Q.alpha attr (Ds.Int64 timestamp)]) base in
+      let p = Result_view.property_json db ~owner:Q.alpha ~attr ~encode_block:(fun _ -> `Null) in
+      let core_text = R.text (member "text" p) in
+      check_eq ~msg:(attr ^ " core projection time") (String.contains core_text ':') (not date_only);
+      let panel = `Assoc ["ownerUuid", `String Q.alpha; "properties", `List [p]] in
+      let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
+        "selectedGraphId", `String "plain-1"; "selectedPage", `Assoc ["uuid", `String Q.alpha; "title", `String "Test"];
+        "nodeProperties", panel; "outlinerRows", `List []]]) in
+      Q.with_ui App_test.ios_backend response (fun app ->
+        let host = Lui_app.runtime app in
+        let node = App_test.descendant_with_identifier host (Lui_app.root_node app) ("property.value." ^ Q.alpha ^ "." ^ attr) in
+        check ~msg:"property value is rendered" (node <> -1);
+        let ui_text = App_test.property_string host node Lui_protocol.TextValue in
+        check_eq ~msg:(attr ^ " UI projection time") (String.contains ui_text ':') (not date_only)))
+      [day_start, index < 2; Int64.add day_start 3600000L, false])
+    ["logseq.property/scheduled"; "logseq.property/deadline"; "user.property/Appointment"]
+
+let task_date_picker_preserves_draft_and_clears_time () =
+  let day = Natural_date_test.reference 2026 1 10 0 0 |> Int64.of_float in
+  let cases = ["seconds", Int64.add day 30000L; "fraction", Int64.add day 123L;
+    "midnight", day; "ordinary", Int64.add day 34230000L] in
+  List.iter (fun attr -> List.iter (fun (label, original) ->
+    List.iter (fun action -> R.with_runtime (fun session runtime conn ->
+      ignore (Ds.transact_conn conn [put Q.alpha attr (Ds.Int64 original)]);
+      Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [Q.alpha];
+      ignore (Q.dispatch session "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha])));
+      ignore (Native_bridge.initialize 2 2 3);
+      Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+        let app = Native_bridge.app () in
+        App_test.send app (Model.RequestAppNode Q.alpha);
+        let snapshot = match Response_snapshot.decode_response (Rpc_session.snapshot_visible session) with
+          | Ok value -> value | Error message -> fail message in
+        App_test.send app (Model.ApplyCoreSnapshot snapshot); App_test.flush app;
+        let host = Lui_app.runtime app in
+        let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
+        let click id = let node = find id in check ~msg:id (node <> -1);
+          App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+        if find ("properties.expand." ^ Q.alpha) <> -1 then click ("properties.expand." ^ Q.alpha);
+        click ("property.value." ^ Q.alpha ^ "." ^ attr);
+        let editor = "property." ^ Q.alpha ^ "." ^ attr in
+        let calendar = App_test.extension_node app "native-property-date" in
+        let preview = match App_test.extension_property app calendar "value" with
+          | Some (Lui_protocol.StringValue value) -> value | _ -> fail "missing picker preview" in
+        let emit name value =
+          ignore (Native_bridge.extension_event calendar "native-property-date" name value 0) in
+        (* Native initialization can repeat the rounded preview without editing the draft. *)
+        emit "change" preview;
+        if action = "clear" || action = "cancel-clear" then emit "clear-time" (Int64.to_string day);
+        if action = "cancel" || action = "cancel-clear" then (
+          click ("view.edit.cancel." ^ editor);
+          check ~msg:(attr ^ " " ^ label ^ " Cancel does not save")
+            (not (List.exists (function Model.NodePropertyEffect _ -> true | _ -> false) (App.model app).pending_effects)))
+        else (
+          click ("view.edit.save." ^ editor);
+          let body = List.find_map (function Model.NodePropertyEffect (_, _, body) -> Some (J.from_string body) | _ -> None)
+            (List.rev (App.model app).pending_effects) |> Option.get in
+          let expected = if action = "clear" then day else original in
+          check_eq ~msg:(attr ^ " " ^ label ^ " " ^ action ^ " editor draft")
+            (member "value" body) (`String (Int64.to_string expected));
+          let p = property attr (result (read session Q.alpha)) in
+          ignore (result (edit session Q.alpha p (R.text (member "value" body)) []));
+          check_eq ~msg:(attr ^ " " ^ label ^ " " ^ action ^ " persisted")
+            (member "editorValue" (property attr (result (read session Q.alpha)))) (`String (Int64.to_string expected))))))
+      ["done"; "clear"; "cancel"; "cancel-clear"]) cases)
+    ["logseq.property/scheduled"; "logseq.property/deadline"]
+
+let task_dates_clear_time_roundtrip () = R.with_runtime (fun session runtime conn ->
+  let before = Natural_date_test.reference 2026 1 10 9 30 |> Int64.of_float in
+  let day = Natural_date_test.reference 2026 1 10 0 0 |> Int64.of_float in
+  let attrs = ["logseq.property/scheduled"; "logseq.property/deadline"] in
+  ignore (Ds.transact_conn conn (List.map (fun attr -> put Q.alpha attr (Ds.Int64 before)) attrs));
+  Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [Q.alpha];
+  List.iter (fun attr ->
+    let p = property attr (result (read session Q.alpha)) in
+    ignore (result (edit session Q.alpha p (Int64.to_string day) []));
+    let reopened = property attr (result (read session Q.alpha)) in
+    check_eq ~msg:(attr ^ " reopens at local day start") (member "editorValue" reopened) (`String (Int64.to_string day));
+    check ~msg:(attr ^ " reopens without a clock") (not (String.contains (R.text (member "text" reopened)) ':')))
+    attrs)
+
 let page_rename_guards_follow_master () =
   let named n uuid title tags parent = R.entity n uuid title @
     [put uuid "block/name" (Ds.String (Dev_query.Unicode.lowercase title))] @
@@ -941,6 +1031,9 @@ let zoomed_journal_delete_effect_preserves_the_journal () =
     check ~msg:"the journal and other entries remain" (exists Q.page && exists Q.beta))
 
 let cases = [
+  case "task date picker preserves draft and clears time" task_date_picker_preserves_draft_and_clears_time;
+  case "task dates clear time and reopen" task_dates_clear_time_roundtrip;
+  case "task dates project date-only and timed values" task_date_display_paths;
   case "deleting a zoomed journal block preserves its journal and siblings" zoomed_journal_delete_effect_preserves_the_journal;
   case "date editors open with empty NLP input and preserve existing values" date_editor_opens_empty_and_preserves_the_selected_date;
   case "Date properties accept natural language" date_properties_accept_natural_language;
