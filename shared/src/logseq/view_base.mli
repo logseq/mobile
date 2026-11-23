@@ -177,12 +177,13 @@ val outliner_journal_heading_visible_ :
   Model.logseq_model -> Model.outline_row -> bool
 val outliner_journal_divider_visible_ :
   Model.logseq_model -> Model.outline_row -> bool
-val outliner_journal_title : Model.logseq_model -> Model.outline_row -> string
+val outliner_journal_title_parts : Model.logseq_model -> Model.outline_row -> string * string option
+val journal_title_parts : Model.logseq_model -> int option -> string -> string * string option
+val journal_heading_label : Model.logseq_model -> string * string option -> string
+val journal_display_title : Model.logseq_model -> int option -> string -> string
 val outliner_journal_page_id :
   Model.logseq_model -> Model.outline_row -> string
 val outliner_journal_button_identifier :
-  Model.logseq_model -> Model.outline_row -> string
-val outliner_journal_accessibility_label :
   Model.logseq_model -> Model.outline_row -> string
 val node_screen_visible_ : Model.logseq_model -> bool
 val primary_sidebar_button_visible_ : Model.logseq_model -> bool

@@ -934,6 +934,10 @@ let node_properties ?(root = false) context model_source send =
     (Signal.map (fun (model : Model.logseq_model) -> if root then model.properties_json else match View_base.active_node_projection model with
       | Some route -> route.node_properties_json | None -> model.properties_json) model_source) send
 
+let page_title_spacer ?(has_properties = false) () =
+  box ~height:(if has_properties then 24 else 20)
+    ~accessibility_identifier:"spacer.page-title" []
+
 let with_result_page ?(root = false) context model_source send fallback : t =
   reactive (fun full_page -> if not full_page then fallback else
     column ~grow:1.0 ~gap:0 ~cross:`stretch ~accessibility_identifier:"page.results" [
@@ -948,7 +952,7 @@ let with_result_page ?(root = false) context model_source send fallback : t =
             heading ~level:`h3 ~style_class:"scroll-section-title"
               ~value:(reactive View_base.active_node_title model_source)
               ~accessibility_identifier:(if root then "title.selected-page" else "title.node") []]];
-          box ~height:12 []]);
+          page_title_spacer ()]);
       node_properties ~root context model_source send;
       box ~grow:1.0 ~padding_horizontal:16 ~padding_vertical:8 [
         View_query.collection ~fill_height:true ~render_block:(render_result_block context model_source)
@@ -988,12 +992,19 @@ let outliner_row context model_source retained_row_source row_source send : t =
       | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source))
     (render_result_block_in_scope context model_source)
 
-let journal_heading model_source row_source send children : t =
+let journal_heading_text parts =
+  [heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive fst parts) [];
+   reactive (function
+     | None -> box []
+     | Some suffix -> text ~value:suffix ~style_class:"subheadline single-line"
+         ~foreground:"muted-foreground" ~accessibility_identifier:"journal.weekday" [])
+     (Signal.map snd parts)]
+
+let journal_heading model_source row_source parts send children : t =
  custom @@ fun context parent ->
   let node =
     mount context ?parent (View_base.with_label_signal
-       (Signal.map2 View_base.outliner_journal_accessibility_label
-          model_source row_source)
+       (Signal.map2 View_base.journal_heading_label model_source parts)
        (box ~padding:0
           ~accessibility_identifier_signal:
             (Signal.map2 View_base.outliner_journal_button_identifier
@@ -1009,6 +1020,7 @@ let journal_heading model_source row_source send children : t =
 
 let outliner_entry context model_source retained_row_source row_source
     send : t =
+  let parts = Signal.map2 View_base.outliner_journal_title_parts model_source row_source in
   column ~padding_horizontal:8
     ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "outliner.entry." ^ row.row_uuid) row_source)
     [
@@ -1027,7 +1039,7 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (journal_heading model_source row_source send
+        (journal_heading model_source row_source parts send
            [
              (* Align the Android title edge with the center of its 24dp bullet slot. *)
              box
@@ -1041,18 +1053,11 @@ let outliner_entry context model_source retained_row_source row_source
                         then 26 else 0)
                       model_source row_source)
                    (box []);
-                 row ~gap:8 ~cross:`center [
+                 row ~gap:8 ~cross:`center (
                  View_base.node_icon_view ~size:28 (Signal.map2 (fun current row ->
-                   View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source);
-                 heading ~level:`h3 ~style_class:"scroll-section-title"
-                   ~value:
-                     (reactive (Signal.map2
-                        (fun (current : Model.logseq_model)
-                             (r : Model.outline_row) ->
-                          View_base.outliner_journal_title current r)
-                        model_source row_source))
-                   []];
-                 box ~height:12 [];
+                   View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source)
+                 :: journal_heading_text parts);
+                 page_title_spacer ();
                ];
            ]);
       outliner_row context model_source retained_row_source row_source
@@ -1656,20 +1661,21 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
           current.outliner_rows) model_source) placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
-  | Some (title, _, divider) ->
+  | Some (title, day, divider) ->
+    let parts = Signal.map (fun current -> View_base.journal_title_parts current (Some day) title) model_source in
     column ~padding_horizontal:8 ~gap:0 [
       (if divider then column ~gap:0 [box ~height:26 []; separator ~accessibility_identifier:"journal.divider" []; box ~height:26 []]
        else box []);
       (custom @@ fun mount_context parent ->
         let node = mount mount_context ?parent (View_base.with_label_signal
-          (Signal.constant mount_context.Lui_ui.ui_scheduler ("Open " ^ title))
+          (Signal.map2 View_base.journal_heading_label model_source parts)
           (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
             ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
-            [heading ~level:`h3 ~style_class:"scroll-section-title" ~value:title []])) in
+            [row ~gap:8 ~cross:`center (journal_heading_text parts)])) in
         Lui_ui.bool_property mount_context node PressEnabled true;
         register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
         node);
-      box ~height:12 []; placeholder]
+      page_title_spacer (); placeholder]
 
 let journal_task_row context model_source task_source send =
   let decode task = Option.map (fun row -> {row with Model.row_list_number = None})
@@ -1864,7 +1870,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                          View_base.node_icon current (View_base.active_node_uuid current)) model_source);
                        heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
                          ~accessibility_identifier:"title.node" [] ] ];
-                 reactive (fun has_properties -> box ~height:(if has_properties then 16 else 12) [])
+                 reactive (fun has_properties -> page_title_spacer ~has_properties ())
                    (Signal.map (fun model -> match View_base.active_node_projection model with
                      | Some route -> View_property.has_properties route.node_properties_json | None -> false) model_source) ]);
           page_loading_view model_source;

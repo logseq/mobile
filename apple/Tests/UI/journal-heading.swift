@@ -40,7 +40,9 @@ import Vision
             try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
             let visible = (request.results ?? []).filter { $0.boundingBox.midY > 0.55 }
                 .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-            guard visible.contains("Oct 21st, 2026") else {
+            let year = Calendar(identifier: .gregorian).component(.year, from: Date())
+            let expectedDate = year == 2026 ? "Oct 21" : "Oct 21, 2026"
+            guard visible.contains(expectedDate), visible.contains("Wed") else {
                 throw failure("Journal date must be visible in the rendered \(appearance) screenshot; found: \(visible)")
             }
             let backend = runtime.renderer.backend

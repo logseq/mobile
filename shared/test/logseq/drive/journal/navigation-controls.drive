@@ -21,5 +21,5 @@ expect-prop ext:native-search-presentation presented false
 expect prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=button.journal-calendar
 wait prop:accessibility-identifier=screen.node
-expect text:"Aug 27th, 2026"
+expect text:"Aug 27"
 expect text:"Calendar journal note"

@@ -78,7 +78,8 @@ let default_settings =
     revision = "Development";
   }
 
-let calendar_journal = "journal-20260827"
+let calendar_journal_day = App_test.journal_test_year () * 10000 + 827
+let calendar_journal = "journal-" ^ string_of_int calendar_journal_day
 
 let contains_substr haystack needle =
   let limit = String.length haystack - String.length needle in
@@ -342,7 +343,7 @@ let node_rows host uuid =
 let append_older_journal host id =
   let row =
     App_test.journal_outline_row (Printf.sprintf "older-%d" id) "journal-older"
-      "Older journal note" "Aug 27th, 2026" 20260827 0
+      "Older journal note" (Journal.day_title calendar_journal_day) calendar_journal_day 0
   in
   host.rows <- row :: host.rows
 

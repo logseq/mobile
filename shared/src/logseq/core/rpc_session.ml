@@ -331,6 +331,7 @@ let reference_blocks_json session current serialize blocks =
 let node_routes_json session serialize serialize_plain =
   let active = active_node_route session in
   let is_task = outliner_is_task session in
+  let db = lazy (query_db session) in
   Rpc.json_list
     (List.map
        (fun (route : Types.node_route) ->
@@ -350,6 +351,12 @@ let node_routes_json session serialize serialize_plain =
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
+           ; ("journalDay", match Lazy.force db with
+               | Some db when route.uuid = route.page.uuid ->
+                 let day = Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid route.uuid))
+                   (fun eid -> Graph_read.int_value (Graph_read.value db eid "block/journal-day")) in
+                 Option.fold ~none:`Null ~some:(fun day -> `Int day) day
+               | _ -> `Null)
            ; ("breadcrumbs", Rpc.json_list (List.map (summary_json session) (route_breadcrumbs context route)))
            ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)

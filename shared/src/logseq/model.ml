@@ -206,6 +206,7 @@ type outliner_autocomplete_candidate =
 type node_projection =
   { node_uuid : string
   ; node_page_uuid : string
+  ; node_journal_day : int option
   ; node_title : string
   ; node_breadcrumbs : sidebar_page list
   ; node_scroll_target : string option
@@ -1211,17 +1212,18 @@ let journal_preview_route (current : logseq_model) uuid =
       markers
   with
   | Some section ->
+    let rows = sub_list section.start_index section.end_index rows in
     Some
       {
         node_uuid = uuid;
         node_page_uuid = uuid;
+        node_journal_day = Option.bind (List.nth_opt rows 0) (fun row -> row.journal_day);
         node_title = section.section_title;
         node_breadcrumbs = [];
         node_scroll_target = None;
         node_is_tag = false;
         node_is_property = false;
-        node_outliner_rows =
-          sub_list section.start_index section.end_index rows;
+        node_outliner_rows = rows;
         node_result_views_json = "";
         node_properties_json = "";
         node_related_rows = [];
@@ -1262,6 +1264,7 @@ let outliner_preview_route (current : logseq_model) uuid =
       {
         node_uuid = uuid;
         node_page_uuid = row.page_id;
+        node_journal_day = None;
         node_title = row.row_title;
         node_breadcrumbs = row.row_breadcrumbs;
         node_scroll_target = None;
