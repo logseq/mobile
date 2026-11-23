@@ -2651,7 +2651,12 @@ let rec update (current : logseq_model) action =
       enqueue_effect current (LoadOlderJournalsEffect id)
     end
   | ApplyViewportWidth width -> { current with viewport_width = max 0 width }
-  | OpenSidebar -> { current with sidebar_open = true }
+  | OpenSidebar ->
+    let updated = { (update current DismissComposer) with sidebar_open = true } in
+    if current.sidebar_open || current.outliner_editing = None then updated
+    else
+      (* Keep the editor mounted until the core commits pending input. *)
+      enqueue_effect updated (CancelOutlinerEditingEffect updated.next_effect_id)
   | CloseSidebar ->
     { current with sidebar_open = false; graph_menu_open = false }
   | OpenGraphMenu -> { current with graph_menu_open = true }

@@ -5,6 +5,39 @@ appId: com.logseq.logseq
 - launchApp
 - runFlow:
     file: "__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn:
+    id: "button.composer.expand"
+    point: "33%,50%"
+    retryTapIfNoChange: false
+- assertVisible:
+    id: "field.composer"
+- tapOn:
+    id: "button.sidebar"
+    retryTapIfNoChange: false
+- assertVisible:
+    id: "link.sidebar.graphs"
+- assertNotVisible:
+    id: "field.composer"
+- tapOn:
+    id: "link.sidebar.journals"
+    retryTapIfNoChange: false
+- tapOn:
+    id: "button.composer.expand"
+    point: "33%,50%"
+    retryTapIfNoChange: false
+- assertVisible:
+    id: "field.composer"
+- swipe:
+    start: "0%,35%"
+    end: "75%,35%"
+    duration: 500
+- assertVisible:
+    id: "link.sidebar.graphs"
+- assertNotVisible:
+    id: "field.composer"
+- tapOn:
+    id: "link.sidebar.journals"
+    retryTapIfNoChange: false
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
