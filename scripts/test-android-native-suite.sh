@@ -23,11 +23,7 @@ _build/default/shared/native/logseq_e2e_seed.exe "$fixture/graph.sqlite" --compo
 
 tests=(
   "$app_id.AndroidBackgroundSyncTest"
-  "$app_id.AndroidEditorKeyboardTest#softwareKeyboardCanConfirmACandidateInTheCurrentBlock"
-  "$app_id.AndroidEditorKeyboardTest#softwareKeyboardNextSplitsImmediatelyWithAnActiveComposition"
-  "$app_id.AndroidEditorKeyboardTest#hardwareEnterCommitsCompositionBeforeSplitting"
-  "$app_id.AndroidEditorKeyboardTest#shiftEnterReplacesAReversedUnicodeSelectionAtTheCorrectCaret"
-  "$app_id.AndroidEditorKeyboardTest#tappingAnotherBlockAppliesItsTextAndCaretInOneFrame"
+  "$app_id.AndroidEditorKeyboardTest"
   "$app_id.AndroidDurableShareTest"
 )
 selector=$(IFS=,; echo "${tests[*]}")
