@@ -1002,6 +1002,7 @@ let journal_refresh_active_ (current : logseq_model) =
 let graph_effect_key eff =
   match eff with
   | RefreshGraphsEffect _ -> "refresh"
+  | OpenGraphEffect _ -> "open"
   | CreateGraphEffect _ -> "create"
   | UnlockGraphEffect _ -> "unlock"
   | DeleteLocalGraphEffect (_, graph_id) -> "delete:" ^ graph_id
@@ -3418,6 +3419,8 @@ and apply_core_snapshot (current : logseq_model)
       projection_is_journal_home
       && current.journal_outliner_rows <> []
       && (not selected_graph_changed)
+      (* selectGraph can set the new ID before bootstrap opens its data. *)
+      && (not (graph_effect_active_ current "open"))
       && (not (journal_refresh_active_ current))
       &&
       (match current.outliner_editing with

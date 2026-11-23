@@ -1820,7 +1820,13 @@ let reopening_repairs_legacy_page_creations_and_unblocks_dependent_changes () =
     ignore (legacy "unrelated-conflict" denied_uuid (Pending.Conflicted "permission denied"));
     let untouched = Graph_sqlite.pending_tx path "unrelated-conflict" in
     let conn = Ds.conn_from_db db in
-    let current = Runtime.create_base path 42 conn Runtime.default_options in
+    let original = Graph_sqlite.pending_tx path "rejected-page" in
+    let original_queue = Pending.list path in
+    let current = Runtime.restore_runtime path 42 conn Runtime.default_options in
+    check_eq ~msg:"prewarming does not rewrite pending datoms"
+      (Graph_sqlite.pending_tx path "rejected-page") original;
+    check_eq ~msg:"prewarming leaves the pending queue unchanged" (Pending.list path) original_queue;
+    Runtime.activate_prepared current;
     let pending = Runtime.pending_operations current in
     check_eq ~msg:"the repaired page resumes before the operations that reference it"
       (List.map (fun (op : Pending.pending_operation) -> op.operation_id) pending)

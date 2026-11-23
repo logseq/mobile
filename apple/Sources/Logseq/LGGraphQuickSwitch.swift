@@ -49,7 +49,13 @@ enum LGGraphQuickSwitch {
     var journalFrame = CGRect.null
     var composerTop: CGFloat?
     var showsNameInVerticalToolbar = false
-    var feedback: GraphSwitchFeedback?
+    private(set) var feedback: GraphSwitchFeedback?
+
+    func setFeedback(_ feedback: GraphSwitchFeedback?) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { self.feedback = feedback }
+    }
 
     var frame: CGRect {
         guard !journalFrame.isNull, let composerTop, composerTop < journalFrame.maxY else { return journalFrame }
@@ -105,15 +111,13 @@ private struct GraphSwitchSurface: View {
                     target: target, presentation: presentation, viewport: viewport, motion: motion,
                     active: scenePhase == .active, reduceMotion: reduceMotion,
                     onPreview: { id, name in
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                            viewport.feedback = GraphSwitchFeedback(id: id, name: name)
-                        }
+                        viewport.setFeedback(GraphSwitchFeedback(id: id, name: name))
                     },
                     onCommit: { id in switchGraph(to: id) },
                     onFinish: { id, succeeded in
-                        guard viewport.feedback?.id == id else { return }
-                        if succeeded { viewport.feedback?.confirmed = true }
-                        else { dismissFeedback() }
+                        guard var feedback = viewport.feedback, feedback.id == id else { return }
+                        feedback.confirmed = succeeded
+                        viewport.setFeedback(succeeded ? feedback : nil)
                     }
                 )
                 .allowsHitTesting(false)
@@ -126,7 +130,6 @@ private struct GraphSwitchSurface: View {
                             .frame(maxWidth: min(240, max(0, geometry.size.width - 192)))
                             .frame(maxWidth: .infinity)
                             .padding(.top, topInset + 4)
-                            .transition(.opacity)
                     }
                 }
                 .allowsHitTesting(false)
@@ -139,7 +142,7 @@ private struct GraphSwitchSurface: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active { viewport.feedback = nil }
+                if phase != .active { viewport.setFeedback(nil) }
             }
             .task(id: viewport.feedback?.confirmed == true ? viewport.feedback?.id : nil) {
                 guard let feedback = viewport.feedback, feedback.confirmed else { return }
@@ -148,12 +151,8 @@ private struct GraphSwitchSurface: View {
                 }
                 do { try await Task.sleep(for: .milliseconds(1100)) } catch { return }
                 guard viewport.feedback?.id == feedback.id else { return }
-                dismissFeedback()
+                viewport.setFeedback(nil)
             }
-    }
-
-    private func dismissFeedback() {
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { viewport.feedback = nil }
     }
 
     private func switchGraph(to target: String) -> Bool {

@@ -145,6 +145,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
     public let assetSize: Int?
     public let assetChecksum: String?
     public let localPath: String?
+    public let isShell: Bool?
 
     public init(
         uuid: String,
@@ -166,7 +167,8 @@ public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
         assetType: String? = nil,
         assetSize: Int? = nil,
         assetChecksum: String? = nil,
-        localPath: String? = nil
+        localPath: String? = nil,
+        isShell: Bool? = nil
     ) {
         self.uuid = uuid
         self.title = title
@@ -188,12 +190,13 @@ public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
         self.assetSize = assetSize
         self.assetChecksum = assetChecksum
         self.localPath = localPath
+        self.isShell = isShell
     }
 
     private enum CodingKeys: String, CodingKey {
         case uuid, title, pageId, parentId, order, createdAt, updatedAt, syncStatus
         case journalTitle, journalDay, tags, references, breadcrumbs, markup, status, isAsset, assetType, assetSize
-        case assetChecksum, localPath
+        case assetChecksum, localPath, isShell
     }
 
     public init(from decoder: Decoder) throws {
@@ -218,6 +221,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
         assetSize = try values.decodeIfPresent(Int.self, forKey: .assetSize)
         assetChecksum = try values.decodeIfPresent(String.self, forKey: .assetChecksum)
         localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
+        isShell = try values.decodeIfPresent(Bool.self, forKey: .isShell)
     }
 
     public var id: String { uuid }
