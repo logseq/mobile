@@ -900,8 +900,11 @@ private struct LGNavigationContent: View {
         let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
             navigationSurface(Group {
-                if toolbarStartIndex != nil { rootNavigationSurface.navigationTitle(title) }
-                else { rootNavigationSurface }
+                if toolbarStartIndex != nil {
+                    rootNavigationSurface.navigationTitle(verticalToolbar && flashcardsToolbar != nil ? "" : title)
+                } else {
+                    rootNavigationSurface
+                }
             }
                 .frame(
                     maxWidth: .infinity,
@@ -949,12 +952,10 @@ private struct LGNavigationContent: View {
                             }
                         }
                         if let flashcardsToolbar, !searchVisible {
-                            ToolbarItem(placement: .principal) {
-                                context.nodeView(of: flashcardsToolbar.title)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                    .menuStyle(.button)
-                                    .buttonStyle(.plain)
+                            if !verticalToolbar {
+                                ToolbarItem(placement: .principal) {
+                                    flashcardsTitle(flashcardsToolbar.title)
+                                }
                             }
                             ToolbarItem(placement: trailingToolbarPlacement) {
                                 context.nodeView(of: flashcardsToolbar.add)
@@ -1018,10 +1019,26 @@ private struct LGNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
+    private func flashcardsTitle(_ nodeID: Int) -> some View {
+        context.nodeView(of: nodeID)
+            .font(.headline)
+            .lineLimit(1)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private var rootNavigationSurface: some View {
         searchSurface(transformedRootContent, active: path.isEmpty)
             .padding(.top, navigationContentTopPadding)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if verticalToolbar, !searchVisible, let flashcardsToolbar {
+                    // A principal item would create a second, horizontal bar.
+                    flashcardsTitle(flashcardsToolbar.title)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(routeBackground)
+                }
+            }
             .background {
                 if let flashcardsToolbar {
                     context.nodeView(of: flashcardsToolbar.container)

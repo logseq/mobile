@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.logseq.logseq.runtime.EffectDispatch
 import com.logseq.logseq.runtime.LogseqNativeBridge
 import com.logseq.logseq.runtime.LuiPatchFilter
 import com.logseq.logseq.runtime.dispatchLuiEvent
@@ -48,7 +50,7 @@ class AndroidReviewLayoutTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun app(error: String? = null, projection: JSONObject? = null) {
+    private fun app(error: String? = null, projection: JSONObject? = null): (JSONObject) -> Unit {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = { events.add(it); dispatchLuiEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
@@ -59,13 +61,17 @@ class AndroidReviewLayoutTest {
         val result = JSONObject().put("graphName", "Review graph").put("selectedGraphId", "review-layout")
             .put("isGraphUnlocked", true).put("syncConnected", false).put("outlinerRows", JSONArray())
         if (error != null) result.put("pendingSyncError", error)
-        projection?.keys()?.forEach { result.put(it, projection.get(it)) }
-        filter.applyJson(native.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
+        fun applyProjection(update: JSONObject) {
+            update.keys().forEach { result.put(it, update.get(it)) }
+            filter.applyJson(native.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
+        }
+        applyProjection(projection ?: JSONObject())
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
             }
         }
+        return ::applyProjection
     }
 
     private fun settings() {
@@ -93,7 +99,9 @@ class AndroidReviewLayoutTest {
 
     @Test fun flashcardGroupControlsUseTheMainHeader() {
         val groups = JSONArray().put(JSONObject().put("uuid", "project").put("title", "Project cards"))
-        app(projection = JSONObject().put("flashcardDecks", JSONObject().put("items", groups)))
+        fun projection(selected: Any) = JSONObject().put("flashcardDecks",
+            JSONObject().put("items", groups).put("selectedUuid", selected))
+        val applyProjection = app(projection = projection(JSONObject.NULL))
         ui.onNodeWithTag("button.sidebar").performClick()
         ui.onNodeWithTag("link.sidebar.flashcards").performClick()
 
@@ -107,9 +115,25 @@ class AndroidReviewLayoutTest {
         ui.onNodeWithTag("sync.disconnected").assertDoesNotExist()
         ui.onNodeWithTag("button.journal-calendar").assertDoesNotExist()
 
+        fun assertSelection(selected: Any) = ui.runOnIdle {
+            val native = checkNotNull(bridge)
+            val effect = generateSequence { native.takeEffect().takeIf(String::isNotEmpty) }
+                .map { EffectDispatch.decode(it).effect }
+                .first { it.kind == "flashcard-deck" }
+            val request = JSONObject(effect.text)
+            assertEquals("select", request.getString("action"))
+            assertEquals(selected, request.get("uuid"))
+            applyProjection(projection(selected))
+        }
+
         menu.performClick()
-        ui.onNodeWithText("Project cards").assertIsDisplayed()
+        ui.onNodeWithTag("flashcards.deck.select.project").assertIsDisplayed().performClick()
+        assertSelection("project")
+        menu.assertTextEquals("Project cards")
+        menu.performClick()
         ui.onNodeWithTag("flashcards.deck.select.all").performClick()
+        assertSelection(JSONObject.NULL)
+        menu.assertTextEquals("All cards")
         add.performClick()
         ui.onNodeWithTag("field.flashcards.deck.name").assertIsDisplayed()
         ui.onNodeWithTag("button.flashcards.deck.cancel").performClick()

@@ -28,6 +28,8 @@ appId: com.logseq.logseq
     id: button.flashcards.deck.create
 - tapOn:
     id: button.flashcards.deck.create
+- assertNotVisible:
+    id: field.flashcards.deck.name
 - assertVisible: No cards due
 - assertVisible:
     id: menu.flashcards.deck
