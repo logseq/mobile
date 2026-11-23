@@ -59,6 +59,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fingerprint iOS E2E build inputs
+        id: ios-build-inputs
+        shell: bash
+        # Git already records the tracked paths, file modes and content hashes.
+        # Reading the index avoids walking and rehashing the checkout on the runner.
+        run: |
+          fingerprint=$(git ls-files --stage -z -- \
+            ':(top,glob)apple/Package*' apple/Sources apple/App shared scripts \
+            ':(top,exclude,glob)scripts/test-*' \
+            ':(top,glob)dune*' ':(top,glob)logseq.opam*' version.xcconfig \
+            .github/actions/ocaml-tools/action.yml .github/actions/ocaml-vendor/action.yml \
+            | git hash-object --stdin)
+          echo "value=$fingerprint" >> "$GITHUB_OUTPUT"
+
       - name: Select Xcode 26
         # lui declares swift-tools-version 6.2; the image default (16.4) ships
         # Swift 6.1, so select the Xcode 26 toolchain (Swift 6.2).
@@ -89,7 +103,7 @@ jobs:
           path: |
             apple/.build/Logseq.app
             _build/default/shared/native/logseq_e2e_seed.exe
-          key: ios-e2e-binaries-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ hashFiles('apple/Package*', 'apple/Sources/**', 'apple/App/**', 'shared/**', 'scripts/**', '!scripts/test-*', 'dune*', 'logseq.opam*', 'version.xcconfig', '.github/actions/ocaml-tools/action.yml', '.github/actions/ocaml-vendor/action.yml') }}
+          key: ios-e2e-binaries-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.3-debug-ios17-${{ env.IOS_MODULE }}-${{ steps.ios-build-inputs.outputs.value }}
 
       - name: System dependencies
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
