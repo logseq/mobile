@@ -1459,7 +1459,7 @@ let journal_navigation_model (current : Model.logseq_model) =
     }
   in
   if journal_home_visible_ current then root
-  else without_outliner_interaction {root with journal_tasks_reveal = false}
+  else without_outliner_interaction root
 
 let node_route_model ~active (current : Model.logseq_model)
     (route : Model.node_projection) =

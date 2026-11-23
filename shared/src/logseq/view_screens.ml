@@ -259,6 +259,10 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
 let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source visible_source
     send : t =
   let allow_pagination = Option.value ~default:(Signal.constant context.ui_scheduler true) allow_pagination in
+  let prefetch_history () =
+    Signal.sample allow_pagination && Signal.sample visible_source
+    && View_base.older_journals_visible_ (Signal.sample model_source)
+    && send Model.LoadOlderJournals in
   View_base.with_reading_insets
     (box ~grow:1.0 ~accessibility_identifier:"layout.outliner.horizontal-inset"
     [
@@ -268,7 +272,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
           [Option.value ~default:"local" current.selected_graph_id]) model_source)
         ~key:Fun.id ~cmp:String.compare
         ~mount:(fun _ -> View_outliner.with_result_page ~root:true context model_source send
-        (View_outliner.with_journal_refresh model_source send
+        (View_outliner.with_journal_task_transition model_source
         (View_base.with_selected_signal visible_source
         (virtual_list ~grow:1.0
            ~data_attrs_signal:(Signal.map (fun current ->
@@ -277,7 +281,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
            ~accessibility_identifier:"list.outliner"
         [
           box ~height:16 ~accessibility_identifier:"spacer.outliner.top"
-            [View_outliner.journal_refresh_probe model_source send];
+            [];
           if_
             ~test:
               (Signal.map View_base.selected_page_content_title_visible_
@@ -299,7 +303,7 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
                    (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);
                ]);
           View_outliner.node_properties ~root:true context model_source send;
-          View_outliner.outliner_entries context model_source
+          View_outliner.outliner_entries ~prefetch_history context model_source
             ~source:
               (Signal.map View_rows.retained_outliner_rows
                  model_source)

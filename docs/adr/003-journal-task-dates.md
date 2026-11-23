@@ -61,26 +61,21 @@ The editor and selection toolbars can give users a direct path to the same date 
 - Leave extra space before the task area. Use muted section titles and a right-side chevron
   that stays the same size in both states. Animate disclosures on iOS, respecting Reduce Motion.
 
-### Reveal Planned on pull to refresh
+### Update task sections from the graph
 
-- Pull to refresh at the top of the journal scroll surface re-evaluates the sections from the local
-  graph, including pending edits. When Planned has results, reopen it if collapsed and bring its
-  heading into view. Keep the viewport in place while an editor or block selection is active.
-  When Planned is empty, finish the refresh in place and keep the section hidden.
-- Coalesce overlapping refreshes and discard results for a stale graph, route, or day. Refresh
-  membership after date or status changes, sync transactions, and a change in the local journal day
-  or time zone. Automatic updates preserve the current scroll position and disclosure state. A
-  manual refresh completes from local data, including offline, while normal sync continues.
+- Re-evaluate membership from the local graph, including pending edits, after date or status changes,
+  sync transactions, and a change in the local journal day or time zone. Updates preserve the scroll
+  position and disclosure state. Leave the journal scroll surface to handle ordinary scrolling.
 
 ### Keep the journal usable when the task query fails
 
 - Contain query errors and exceptions at the task selector boundary. Return a recoverable error
-  state to both hosts and always end the refresh indicator. Journal browsing, editing, and capture
-  remain usable after a task query failure.
+  state to both hosts so journal browsing, editing, and capture remain usable.
 - Show **Couldn't load tasks** and a **Retry** action inline below today's journal. If the current
   graph and day already have a successful result, keep those rows visible and show **Couldn't
-  refresh tasks** above them. Retry runs the local query again, and a successful result clears the
-  message. A successful empty query simply hides the empty sections.
+  refresh tasks** above them. Retry runs the local query again, including offline. Coalesce
+  overlapping retries and discard the results of requests for a stale graph, route, or day.
+  A successful result clears the message and an empty result hides the empty sections.
 
 ### Set dates from the editor or block selection
 
@@ -106,8 +101,8 @@ The editor and selection toolbars can give users a direct path to the same date 
 
 The OCaml core owns the selector, disclosure state, and date mutations. Read the two date attributes
 from the optimistic graph and scope the projection to today's journal. Feed the results into the
-existing virtualized outline using stable row keys. Swift and Kotlin forward refresh and editor
-events and present the shared state. [Journal entries](../../shared/src/logseq/view_rows.ml) ·
+existing virtualized outline using stable row keys. Swift and Kotlin forward editor events and
+present the shared state. [Journal entries](../../shared/src/logseq/view_rows.ml) ·
 [Pending property projection](../../shared/src/logseq/core/pending_projection.ml)
 
 Use the guarded property-operation path and stage multi-block changes as one atomic intent. Validate
@@ -118,8 +113,8 @@ applying a partial batch. Local projection and sync reconciliation use the same 
 Verify empty journals, empty results, blocks with two dates, unset and terminal statuses, the
 lookahead boundary, midnight rollover, and a daylight saving transition. On both hosts, verify
 that all three sections start expanded, each date uses its own icon and accessibility label, and
-offline pull to refresh reveals Planned when it has results. Inject a query failure on initial
-load and on refresh. Verify the inline message, the completed refresh indicator, journal editing,
-retention of the last successful result for the current graph and day, and recovery via Retry.
+fast scrolling crosses between today and older journals in both directions. Inject a query failure
+on initial load and on Retry. Verify the inline message, journal editing, retention of the last
+successful result for the current graph and day, and recovery via Retry.
 Verify navigation to the source block, draft and caret retention, and batch set, clear, cancel,
 and conflict handling. Run `dune build @shared/native/runtest` when implementing the core changes.

@@ -7500,6 +7500,32 @@ let short_journals_rearm_pagination_after_each_response () =
     check_eq ~msg:"pagination stops at the oldest journal" (sentinel ()) (-1)
   ) [ios_backend; kotlin_backend]
 
+let journal_prefetches_before_reaching_its_loaded_end () =
+  List.iter (fun backend ->
+    let application = App.create (backend ()) in
+    let today = List.init 32 (fun index ->
+      journal_outline_row (string_of_int index) "today-page" "Journal block" "Today" 20260829 0) in
+    let projection = { (empty_core_projection ()) with
+      graph_name = Some "Lambda"; selected_graph_id = Some "lambda";
+      outliner_rows = today; has_older_journals = true } in
+    start application;
+    send application (Model.ApplyCoreSnapshot projection);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let window = descendant_with_identifier renderer (main_root renderer application) "outliner.window" in
+    let report first last =
+      dispatch application (Lui_protocol.VisibleRange (window, first, last));
+      flush application in
+    report 0 12;
+    check_eq ~msg:"a distant history boundary needs no request" (App.model application).pending_effects [];
+    report 10 22;
+    check_eq ~msg:"prefetch starts with rows still below the viewport"
+      (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1];
+    report 10 23;
+    check_eq ~msg:"visible range updates coalesce with the in-flight request"
+      (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1]
+  ) [ios_backend; kotlin_backend]
+
 let downloaded_graph_rearms_initially_exhausted_journals () =
   List.iter (fun backend ->
     List.iter (fun expanded_snapshot ->
@@ -7824,8 +7850,8 @@ let journal_agenda_is_retained_across_navigation () =
       journal_tasks = `Null};
     check_eq ~msg:"the hidden journal keeps the same task heading" (heading ()) original_heading;
     check_eq ~msg:"the hidden journal keeps the same task row" (overdue ()) original_overdue;
-    check ~msg:"refresh belongs to today and the journal feed"
-      (not (Model.journal_task_refresh_available_ (App.model app)));
+    check ~msg:"retry is unavailable on other pages"
+      (not (Model.journal_task_retry_available_ (App.model app)));
     snapshot work;
     check_eq ~msg:"returning to the journal keeps the task row mounted" (overdue ()) original_overdue;
     check_eq ~msg:"returning does not expand a collapsed section" (planned ()) (-1);
@@ -7845,7 +7871,24 @@ let journal_agenda_is_retained_across_navigation () =
     check_eq ~msg:"the graph remembers its own disclosure state"
       (Model.journal_tasks_collapsed (App.model app)) ["planned"];
     if ios then
-      check_eq ~msg:"focusing the resident graph keeps the same task row" (overdue ()) original_overdue
+      check_eq ~msg:"focusing the resident graph keeps the same task row" (overdue ()) original_overdue;
+    let failure = `Assoc (["error", `Bool true; "retained", `Bool true] @
+      Yojson.Basic.Util.to_assoc work.journal_tasks) in
+    snapshot {work with journal_tasks = failure};
+    let retry () = find pane "journal-tasks.retry" in
+    check ~msg:"the query error exposes Retry without removing the agenda"
+      (retry () <> -1 && overdue () <> -1);
+    dispatch app (Lui_protocol.Press (retry ()));
+    flush app;
+    let retry_id = List.find_map (function
+      | Model.NodePropertyEffect (id, "journal-tasks.refresh", _) -> Some id
+      | _ -> None) (App.model app).pending_effects in
+    let id = match retry_id with Some id -> id | None -> fail "Expected task retry to enqueue a query" in
+    apply (Model.DequeueEffect id);
+    snapshot work;
+    apply (Model.ResolveEffect (id, true, ""));
+    check_eq ~msg:"a successful retry dismisses the error" (retry ()) (-1);
+    check_eq ~msg:"retry preserves the collapsed Planned section" (planned ()) (-1)
   ) [true, ios_backend; false, kotlin_backend]
 
 let journal_task_results_edit_and_select_the_source_block () =
@@ -11815,6 +11858,7 @@ let cases =
     case "older-journals-use-an-invisible-scroll-sentinel" older_journals_use_an_invisible_scroll_sentinel;
     case "encrypted-graph-creation-requests-and-confirms-account-password" encrypted_graph_creation_requests_and_confirms_account_password;
     case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
+    case "journal-prefetches-before-reaching-its-loaded-end" journal_prefetches_before_reaching_its_loaded_end;
     case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
     case "graph-quick-switch-cycles-and-configures-slots" graph_quick_switch_cycles_and_configures_slots;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;

@@ -461,7 +461,6 @@ type logseq_model =
   ; empty_journals : (sidebar_page * int) list
   ; journal_tasks : Yojson.Basic.t
   ; journal_task_disclosures : (int * string list) Lui_protocol.String_map.t
-  ; journal_tasks_reveal : bool
   ; task_date_editor : task_date_editor option
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
@@ -505,7 +504,7 @@ type logseq_action =
   | PdfWorkspaceEvent of string
   | SubmitResultView of string * string
   | SubmitNodeProperty of string * string
-  | RefreshJournalTasks
+  | RetryJournalTasks
   | ToggleJournalTaskSection of string
   | OpenSelectedTaskDate of string
   | OpenBlockTaskDate of string * string
@@ -850,7 +849,6 @@ let initial () =
     empty_journals = [];
     journal_tasks = `Null;
     journal_task_disclosures = Lui_protocol.String_map.empty;
-    journal_tasks_reveal = false;
     task_date_editor = None;
     journal_outliner_rows = [];
     outliner_rows = [];
@@ -1051,8 +1049,8 @@ let journal_task_route (current : logseq_model) =
   | [], Some page -> `String page.uuid
   | [], None -> `Null
 
-let journal_task_refresh_available_ (current : logseq_model) =
-  journal_task_field "enabled" current.journal_tasks = `Bool true
+let journal_task_retry_available_ (current : logseq_model) =
+  journal_task_field "error" current.journal_tasks = `Bool true
   && (let route = journal_task_route current in
       route = `Null || route = journal_task_field "page" current.journal_tasks)
 
@@ -1892,7 +1890,6 @@ let resolve_successful_effect (current : logseq_model) eff message =
          selected_graph_id = Some graph_id;
          selected_graph = Some selected.name;
          journal_tasks = (if current.selected_graph_id = Some graph_id then current.journal_tasks else `Null);
-         journal_tasks_reveal = current.selected_graph_id = Some graph_id && current.journal_tasks_reveal;
          recent_graph_ids = graph_id :: remove_string current.recent_graph_ids graph_id;
             }
      | None ->
@@ -1924,7 +1921,6 @@ let resolve_successful_effect (current : logseq_model) eff message =
       selected_graph =
         (if deleting_selected then None else current.selected_graph);
       journal_tasks = (if deleting_selected then `Null else current.journal_tasks);
-      journal_tasks_reveal = not deleting_selected && current.journal_tasks_reveal;
       journal_task_disclosures = Lui_protocol.String_map.remove graph_id current.journal_task_disclosures;
     }
   | SignOutEffect _ ->
@@ -2229,19 +2225,19 @@ let rec update (current : logseq_model) action =
     else current
   | ToggleJournalTaskSection section ->
     let collapsed = journal_tasks_collapsed current in
-    set_journal_tasks_collapsed {current with journal_tasks_reveal = false}
+    set_journal_tasks_collapsed current
       (if List.mem section collapsed then List.filter ((<>) section) collapsed
        else section :: collapsed)
-  | RefreshJournalTasks ->
+  | RetryJournalTasks ->
     let key = "journal-tasks.refresh" in
     let running = List.exists (function NodePropertyEffect (_, id, _) -> id = key | _ -> false)
       (current.pending_effects @ current.in_flight_effects) in
     (match current.selected_graph_id with
-     | Some graph when not running && journal_task_refresh_available_ current ->
+     | Some graph when not running && journal_task_retry_available_ current ->
        let payload = Yojson.Basic.to_string (`Assoc ["action", `String "refreshJournalTasks";
          "graphId", `String graph; "day", journal_task_field "day" current.journal_tasks;
          "route", journal_task_route current]) in
-       update {current with journal_tasks_reveal = false} (SubmitNodeProperty (key, payload))
+       update current (SubmitNodeProperty (key, payload))
      | _ -> current)
   | SubmitNodeProperty (uuid, payload) ->
     enqueue_effect {current with result_view_feedback = List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback}
@@ -2331,9 +2327,6 @@ let rec update (current : logseq_model) action =
     let applied =
       if current.outliner_editing <> None && applied.outliner_editing = None then
         {applied with outliner_edit_scope = None}
-      else applied in
-    let applied = if journal_task_route applied <> journal_task_route current then
-        {applied with journal_tasks_reveal = false}
       else applied in
     (* The block editor takes ownership of keyboard focus. Retaining an expanded
        composer here would remount its autofocus field when editing ends. *)
@@ -2681,13 +2674,6 @@ let rec update (current : logseq_model) action =
            `Assoc (["error", `Bool true; "retained", `Bool retained] @
              List.filter (fun (key, _) -> key <> "error" && key <> "retained") fields)
          | tasks -> tasks in
-       let reveal_planned = matching_task_refresh && succeeded
-         && journal_task_field "error" journal_tasks = `Bool false
-         && (match journal_task_field "planned" journal_tasks with `List (_ :: _) -> true | _ -> false) in
-       let resolved_current = if reveal_planned then
-           set_journal_tasks_collapsed resolved_current
-             (List.filter ((<>) "planned") (journal_tasks_collapsed resolved_current))
-         else resolved_current in
        let resolved = {
          resolved_current with
          in_flight_effects = remove_effect current.in_flight_effects id;
@@ -2704,8 +2690,6 @@ let rec update (current : logseq_model) action =
            | NodePropertyEffect (_, key, _), Some editor when key = editor.task_date_key && succeeded -> None
            | _ -> resolved_current.task_date_editor);
          journal_tasks;
-         journal_tasks_reveal = resolved_current.journal_tasks_reveal ||
-           (reveal_planned && resolved_current.outliner_editing = None && resolved_current.outliner_selected_block_ids = []);
          result_view_feedback = (match eff with
            | LoadResultRowsEffect (_, key, _) | LoadPropertyValuesEffect (_, key, _) ->
              let previous = List.filter (fun (view, _, _) -> view <> key) current.result_view_feedback in
@@ -3406,9 +3390,6 @@ let rec update (current : logseq_model) action =
 
 and apply_core_snapshot (current : logseq_model)
     (projection : core_projection) =
-  let section_id = function
-    | `Assoc fields -> List.assoc_opt "day" fields, List.assoc_opt "page" fields
-    | _ -> None, None in
   let graph_id = if projection.is_outliner_patch then current.selected_graph_id
     else projection.selected_graph_id in
   let same_graph = graph_id = current.selected_graph_id in
@@ -3419,8 +3400,6 @@ and apply_core_snapshot (current : logseq_model)
          | _ -> true) -> tasks
     | _ when same_graph -> current.journal_tasks
     | _ -> `Null in
-  let reveal_tasks = same_graph && current.journal_tasks_reveal
-    && section_id current.journal_tasks = section_id journal_tasks in
   if Option.is_some projection.tag_choices_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else {current with composer_tag_choices = Option.get projection.tag_choices_update; composer_tags_loading = false}
@@ -3487,7 +3466,6 @@ and apply_core_snapshot (current : logseq_model)
       selected_graph = projection.graph_name;
       selected_graph_id = projection.selected_graph_id;
       journal_tasks = (if same_graph then current.journal_tasks else `Null);
-      journal_tasks_reveal = same_graph && current.journal_tasks_reveal;
       journal_title_format = Option.value
         ~default:(if current.selected_graph_id = projection.selected_graph_id then current.journal_title_format else Journal.default_format)
         projection.journal_title_format;
@@ -3543,7 +3521,6 @@ and apply_core_snapshot (current : logseq_model)
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
       empty_journals = projection.empty_journals;
       journal_tasks;
-      journal_tasks_reveal = reveal_tasks;
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = snapshot_autocomplete current projection;
@@ -3754,7 +3731,6 @@ and apply_core_snapshot (current : logseq_model)
         empty_journals = projection.empty_journals;
         journal_tasks;
         task_date_editor = (if selected_graph_changed then None else current.task_date_editor);
-        journal_tasks_reveal = reveal_tasks;
         journal_outliner_rows = journal_rows;
         outliner_editing = snapshot_outliner_editing current projection;
         outliner_autocomplete = snapshot_autocomplete current projection;
