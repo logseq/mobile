@@ -732,6 +732,7 @@ private struct LGNavigationContent: View {
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
     @State private var dockedKeyboardInset: CGFloat = 0
+    @Environment(\.lgGraphSwitchViewport) private var graphSwitchViewport
     #endif
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
@@ -839,6 +840,12 @@ private struct LGNavigationContent: View {
             .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
                 if !searchVisible { visibleScrollTitle = title }
             }
+            #if os(iOS)
+            .onChange(of: verticalToolbar && path.isEmpty && !searchVisible && navigationTitle.isEmpty,
+                      initial: true) { _, showsName in
+                if toolbarStartIndex != nil { graphSwitchViewport?.showsNameInVerticalToolbar = showsName }
+            }
+            #endif
     }
 
     @ViewBuilder
@@ -860,6 +867,12 @@ private struct LGNavigationContent: View {
                         VStack {
                             Spacer(minLength: 0)
                             floatingBottomChrome
+                                #if os(iOS)
+                                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                                    graphSwitchViewport?.composerTop = top
+                                }
+                                .onDisappear { graphSwitchViewport?.composerTop = nil }
+                                #endif
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea(.all, edges: .bottom)
@@ -897,7 +910,14 @@ private struct LGNavigationContent: View {
 
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
-        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        let normalTitle = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
+        #if os(iOS)
+        let graphSwitchName = path.isEmpty && !searchVisible && navigationTitle.isEmpty
+            ? graphSwitchViewport?.feedback?.name : nil
+        let title = graphSwitchName == nil ? normalTitle : ""
+        #else
+        let title = normalTitle
+        #endif
         return NavigationStack(path: pathBinding) {
             navigationSurface(Group {
                 if toolbarStartIndex != nil {
@@ -965,6 +985,13 @@ private struct LGNavigationContent: View {
                             .lgPrefersVerticalAxis()
                         } else {
                             trailingToolbar(searchPage: false)
+                            #if os(iOS)
+                            if let graphSwitchName, !verticalToolbar {
+                                ToolbarItem(placement: .principal) {
+                                    LGGraphSwitchNameCapsule(name: graphSwitchName).frame(maxWidth: 240)
+                                }
+                            }
+                            #endif
                         }
                     }
                 }
@@ -1045,6 +1072,9 @@ private struct LGNavigationContent: View {
                 }
             }
             #if os(iOS)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                if toolbarStartIndex != nil { graphSwitchViewport?.journalFrame = frame }
+            }
             .background(LGNavigationControllerObserver(transitions: transitions).allowsHitTesting(false))
             .background {
                 if toolbarStartIndex != nil {

@@ -57,6 +57,8 @@ final class LGGraphLifecycle {
     private let syncCoordinator: GraphSyncCoordinator
     private let databasePath: String
     private let openCreatedGraph: (@MainActor (String) async -> LGEffectResolution)?
+    private var residentPreparation: Task<Void, Never>?
+    private var residentGraphIDs: [String]?
 
     init(
         store: LogseqStore,
@@ -106,6 +108,8 @@ final class LGGraphLifecycle {
     }
 
     func reconfigureAPI() async throws {
+        residentPreparation?.cancel()
+        residentGraphIDs = nil
         let token = authentication.state == .signedIn
             ? try await authentication.apiToken() : ""
         await syncCoordinator.cancelBackground()
@@ -142,7 +146,54 @@ final class LGGraphLifecycle {
             allowSnapshotDownload: !accessToken.isEmpty
         ) else { return false }
         if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
+        prepareResidentGraphs(force: true)
         return true
+    }
+
+    func prepareResidentGraphs(force: Bool = false) {
+        #if os(iOS)
+        let slots = UserDefaults.standard.stringArray(forKey: "logseq.mobile.graphQuickSlots") ?? []
+        let graphs = slots.prefix(3).compactMap { id in
+            store.snapshot.graphs?.first { $0.id == id && $0.isReady }
+        }
+        let ids = graphs.map(\.id)
+        guard force || ids != residentGraphIDs else { return }
+        residentPreparation?.cancel()
+        residentGraphIDs = ids
+        let active = store.snapshot.selectedGraphId
+        residentPreparation = Task { [databasePath] in
+            guard !Task.isCancelled else { return }
+            await Self.sendResidencyRequest("retainGraphs", payload: ["ids": ids])
+            do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            for graph in graphs where graph.id != active && !graph.isEncrypted {
+                guard !Task.isCancelled else { return }
+                let directory = LogseqGraphLocalStorage.directoryURL(
+                    databasePath: databasePath, graphID: graph.id, graphName: graph.name
+                )
+                let database = directory.appendingPathComponent("graph.sqlite").path
+                let checkpoint = directory.appendingPathComponent("sync.checkpoint").path
+                guard FileManager.default.fileExists(atPath: database),
+                      FileManager.default.fileExists(atPath: checkpoint) else { continue }
+                await Self.sendResidencyRequest("prepareGraph", payload: [
+                    "graphId": graph.id, "activePath": database, "checkpointPath": checkpoint,
+                    "isEncrypted": false,
+                ])
+            }
+        }
+        #endif
+    }
+
+    func clearResidentGraphs() async {
+        residentPreparation?.cancel()
+        residentGraphIDs = nil
+        await Self.sendResidencyRequest("retainGraphs", payload: ["ids": [String]()])
+    }
+
+    private static func sendResidencyRequest(_ action: String, payload: [String: Any]) async {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        _ = await LogseqCore.callAsync(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(
+            action: action, payload: String(decoding: data, as: UTF8.self)
+        )))
     }
 
     private func openGraph(
@@ -167,6 +218,7 @@ final class LGGraphLifecycle {
             UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
         }
         publishLocalGraphIDs()
+        prepareResidentGraphs()
         if store.graphSyncAllowed { startSync(graphID: graphID, baseURL: baseURL) }
         return resolution(succeeded: true)
     }

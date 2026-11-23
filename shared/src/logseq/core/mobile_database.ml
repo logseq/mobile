@@ -18,6 +18,7 @@ let close_projection database =
   database.projection := None
 
 let close_graph database graph_id =
+  Graph.evict_graph database.graph graph_id;
   (match !(database.graph.current) with
    | Some opened when opened.graph_id = graph_id ->
      close_projection database;
@@ -31,6 +32,7 @@ let close database =
    | None -> ());
   database.catalog := None;
   close_projection database;
+  Graph.retain_graphs database.graph [];
   database.graph.current := None
 
 let open_catalog database path =
