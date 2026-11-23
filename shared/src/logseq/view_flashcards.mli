@@ -7,5 +7,9 @@ val flashcard_review_content :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_screen :
+  uses_native_toolbar:bool ->
+  Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> Lui_elements.t
+val flashcard_toolbar :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t

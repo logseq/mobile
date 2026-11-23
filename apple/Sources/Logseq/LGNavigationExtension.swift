@@ -187,6 +187,7 @@ private struct LGSheetControlTint: ViewModifier {
 @MainActor
 enum LGNavigationExtension {
     static let identifier = "native-navigation-stack"
+    static let flashcardsToolbarIdentifier = "native-flashcards-toolbar"
     static let destinationIdentifier = "native-navigation-title"
     static let destinationFingerprint = "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none"
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
@@ -264,6 +265,18 @@ enum LGNavigationExtension {
                 events: [.init(name: "viewport-changed", fields: [.init(name: "width", kind: .int, isRequired: true)])]
             ) { context in
                 AnyView(LGSidebarNavigation(context: context))
+            }
+        )
+        try registry.register(
+            LUIAppleExtension(
+                identifier: flashcardsToolbarIdentifier,
+                fingerprint: "lui-extension-v1|25:native-flashcards-toolbar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
+                acceptsStandardChildren: true
+            ) { context in
+                let _ = context.revision
+                // The navigation stack hosts the first two children in its toolbar.
+                // Render the sheet anchor in the screen's view hierarchy.
+                return context.childIDs.dropFirst(2).first.map { context.content(for: $0) } ?? AnyView(EmptyView())
             }
         )
         try registry.register(
@@ -756,6 +769,18 @@ private struct LGNavigationContent: View {
         verticalToolbar && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
+    private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
+        guard let toolbarStartIndex,
+              let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
+        let _ = context.measureStamp(of: titleSlot)
+        guard let container = context.childIDs(of: titleSlot).first,
+              context.extensionIdentifier(of: container) == LGNavigationExtension.flashcardsToolbarIdentifier
+        else { return nil }
+        let children = context.childIDs(of: container)
+        guard children.count == 3 else { return nil }
+        return (container, children[0], children[1])
+    }
+
 
     // This view observes the extension independently of its parent. Read the
     // route depth and chrome from the same live model as the child IDs.
@@ -923,7 +948,23 @@ private struct LGNavigationContent: View {
                                 }
                             }
                         }
-                        trailingToolbar(searchPage: false)
+                        if let flashcardsToolbar, !searchVisible {
+                            ToolbarItem(placement: .principal) {
+                                context.nodeView(of: flashcardsToolbar.title)
+                                    .font(.headline)
+                                    .lineLimit(1)
+                                    .menuStyle(.button)
+                                    .buttonStyle(.plain)
+                            }
+                            ToolbarItem(placement: trailingToolbarPlacement) {
+                                context.nodeView(of: flashcardsToolbar.add)
+                                    .frame(width: 44, height: 44)
+                                    .buttonStyle(.plain)
+                            }
+                            .lgPrefersVerticalAxis()
+                        } else {
+                            trailingToolbar(searchPage: false)
+                        }
                     }
                 }
                 .modifier(LGNativeSearchHost(search: search))
@@ -981,6 +1022,11 @@ private struct LGNavigationContent: View {
     private var rootNavigationSurface: some View {
         searchSurface(transformedRootContent, active: path.isEmpty)
             .padding(.top, navigationContentTopPadding)
+            .background {
+                if let flashcardsToolbar {
+                    context.nodeView(of: flashcardsToolbar.container)
+                }
+            }
             #if os(iOS)
             .background(LGNavigationControllerObserver(transitions: transitions).allowsHitTesting(false))
             .background {

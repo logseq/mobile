@@ -395,6 +395,9 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
       ~accessibility_identifier:"journals.loading"
       [ spinner ~accessibility_identifier:"spinner.graph-loading" [] ]
 
+let uses_native_flashcard_toolbar context =
+  Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
+
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
     =
   stack ~grow:1.0
@@ -404,7 +407,9 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
         (journal_tree_panes context model_source send);
       if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
-        (View_flashcards.flashcard_screen model_source send);
+        (View_flashcards.flashcard_screen
+           ~uses_native_toolbar:(uses_native_flashcard_toolbar context)
+           model_source send);
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
         (View_graphs.graphs_screen context model_source send);
@@ -878,7 +883,14 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            ]));
      ignore
        (mount context ~parent:node (main_header_leading context model_source send));
-     ignore (mount context ~parent:node (main_header_title context model_source));
+     let title = main_header_title context model_source in
+     let title_slot =
+       if uses_native_flashcard_toolbar context then
+         dyn (fun flashcards ->
+           if flashcards then box [View_flashcards.flashcard_toolbar model_source send]
+           else title) (Signal.map View_base.flashcards_destination_ model_source)
+       else title in
+     ignore (mount context ~parent:node title_slot);
      ignore
        (mount context ~parent:node (main_header_sync context model_source send));
      ignore
