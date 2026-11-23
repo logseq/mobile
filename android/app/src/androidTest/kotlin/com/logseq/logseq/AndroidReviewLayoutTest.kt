@@ -91,6 +91,31 @@ class AndroidReviewLayoutTest {
         assertEquals("The completion state is centered on the screen", screen.center.x, complete.center.x, 1f)
     }
 
+    @Test fun flashcardGroupControlsUseTheMainHeader() {
+        val groups = JSONArray().put(JSONObject().put("uuid", "project").put("title", "Project cards"))
+        app(projection = JSONObject().put("flashcardDecks", JSONObject().put("items", groups)))
+        ui.onNodeWithTag("button.sidebar").performClick()
+        ui.onNodeWithTag("link.sidebar.flashcards").performClick()
+
+        val header = ui.onNodeWithTag("header.main").fetchSemanticsNode().boundsInRoot
+        val menu = ui.onNodeWithTag("menu.flashcards.deck")
+        val add = ui.onNodeWithTag("button.flashcards.deck.add")
+        val menuBounds = menu.fetchSemanticsNode().boundsInRoot
+        val addBounds = add.fetchSemanticsNode().boundsInRoot
+        assertEquals(header.center.x, menuBounds.center.x, 1f)
+        assertTrue(addBounds.left > menuBounds.right && addBounds.bottom <= header.bottom)
+        ui.onNodeWithTag("sync.disconnected").assertDoesNotExist()
+        ui.onNodeWithTag("button.journal-calendar").assertDoesNotExist()
+
+        menu.performClick()
+        ui.onNodeWithText("Project cards").assertIsDisplayed()
+        ui.onNodeWithTag("flashcards.deck.select.all").performClick()
+        add.performClick()
+        ui.onNodeWithTag("field.flashcards.deck.name").assertIsDisplayed()
+        ui.onNodeWithTag("button.flashcards.deck.cancel").performClick()
+        ui.onNodeWithTag("field.flashcards.deck.name").assertDoesNotExist()
+    }
+
     @Test fun graphUnlockFormFillsTheSheetWithEvenInsets() {
         app(projection = JSONObject().put("isGraphEncrypted", true).put("isGraphUnlocked", false))
         val sheet = ui.onNodeWithTag("sheet.graph-unlock").getUnclippedBoundsInRoot()

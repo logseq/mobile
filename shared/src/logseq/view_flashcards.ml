@@ -148,7 +148,12 @@ let flashcard_review_content model_source send : t =
         [];
     ]
 
-let flashcard_group_controls ~in_toolbar model_source send : t = custom (fun context parent ->
+type group_controls_layout =
+  | In_body
+  | In_ios_toolbar
+  | In_android_header of (t -> t -> t)
+
+let flashcard_group_controls layout model_source send : t = custom (fun context parent ->
   let own source = Signal.own_signal context.ui_scope source in
   let graphs = own (Signal.map (fun (model : Model.logseq_model) -> [model.selected_graph_id]) model_source) in
   mount context ?parent
@@ -186,7 +191,7 @@ let flashcard_group_controls ~in_toolbar model_source send : t = custom (fun con
         ]) in
     let add =
       icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44
-        ?style_class:(if in_toolbar then Some "system-toolbar-icon" else None)
+        ?style_class:(match layout with In_ios_toolbar -> Some "system-toolbar-icon" | _ -> None)
         ~label:(View_base.tr (Signal.sample model_source) "New card group")
         ~accessibility_identifier:"button.flashcards.deck.add"
         ~on_press:(fun _ -> Signal.set adding true) [] in
@@ -283,26 +288,34 @@ let flashcard_group_controls ~in_toolbar model_source send : t = custom (fun con
           (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [cancel; create]
            else toolbar ~label:(View_base.tr (Signal.sample model_source) "Card group actions") ~style_class:"navigation-actions" [toolbar_cancel; toolbar_create]);
         ]))) in
-    if in_toolbar then begin
+    let header_menu () =
       let show_hint = own (Signal.map (fun groups -> groups <> []) choices) in
+      dyn deck_menu show_hint in
+    match layout with
+    | In_ios_toolbar ->
       let node = Lui_ui.extension context "native-flashcards-toolbar" in
       attach context parent node;
       List.iter (fun view -> ignore (mount context ~parent:node view))
-        [dyn deck_menu show_hint; add; box [picker]];
+        [header_menu (); add; box [picker]];
       node
-    end else
+    | In_android_header render ->
+      mount context ?parent (column ~gap:0 [render (header_menu ()) add; picker])
+    | In_body ->
       mount context ?parent (column ~gap:0 [
         row ~cross:`center ~padding_horizontal:20 ~height:48
           [deck_menu false; spacer ~grow:1.0 []; add];
         picker])))))
 
 let flashcard_toolbar model_source send =
-  flashcard_group_controls ~in_toolbar:true model_source send
+  flashcard_group_controls In_ios_toolbar model_source send
 
-let flashcard_screen ~uses_native_toolbar model_source send : t =
+let android_flashcard_header ~render model_source send =
+  flashcard_group_controls (In_android_header render) model_source send
+
+let flashcard_screen ~uses_header model_source send : t =
   let controls =
-    if uses_native_toolbar then []
-    else [flashcard_group_controls ~in_toolbar:false model_source send] in
+    if uses_header then []
+    else [flashcard_group_controls In_body model_source send] in
   column ~accessibility_identifier:"screen.flashcards" ~grow:1.0 ~gap:0
     ~background:"background"
     (controls @ [
