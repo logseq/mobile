@@ -13,7 +13,8 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
     (row : Model.outline_row) =
   match current.outliner_editing with
   | Some editing ->
-    if editing.editing_uuid = row.row_uuid && current.outliner_edit_scope = edit_scope then
+    if editing.editing_uuid = row.row_uuid
+       && current.outliner_edit_scope = Option.map (fun scope -> scope, row.row_uuid) edit_scope then
       {
         render_key = "active-outliner-editor";
         value = row;
@@ -287,13 +288,13 @@ let journal_task_scope uuid = "journal-task." ^ uuid
 
 let journal_task_editing (current : Model.logseq_model) task =
   let uuid = journal_task_uuid task in
-  current.outliner_edit_scope = Some (journal_task_scope uuid)
+  current.outliner_edit_scope = Some (journal_task_scope uuid, uuid)
   && Option.exists (fun (editing : Model.outliner_editing) -> editing.editing_uuid = uuid)
     current.outliner_editing
 
 let journal_task_editing_row (current : Model.logseq_model) =
   match current.outliner_edit_scope with
-  | Some scope when String.starts_with ~prefix:"journal-task." scope ->
+  | Some (scope, _) when String.starts_with ~prefix:"journal-task." scope ->
     ["overdue"; "doing"; "planned"] |> List.find_map (fun section ->
       match task_field section current.journal_tasks with
       | `List tasks ->

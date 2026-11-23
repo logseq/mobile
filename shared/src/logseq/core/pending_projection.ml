@@ -463,6 +463,10 @@ let resolve_page_references literal_blocks db intent =
     | _ -> intent in
   if !created = [] then next else Ops.Atomic (List.rev !created @ [next])
 
+let activity_at_least db uuid timestamp =
+  Option.exists (fun current -> current >= timestamp)
+    (Graph_read.int_value (one_value db (lookup uuid) "block/updated-at"))
+
 let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
   let resolved = resolve_page_references literal_blocks db intent in
   if resolved <> intent then compile_with_literals literal_blocks db resolved else
@@ -561,11 +565,12 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
            value.changes)
     then Error "property changed on the server"
     else
-      Ok
-        (List.concat_map
-           (fun (change : Ops.property_change) ->
-             property_txs db value.uuid change.attr change.value)
-           value.changes)
+      let writes = List.concat_map (fun (change : Ops.property_change) ->
+        property_txs db value.uuid change.attr change.value) value.changes in
+      Ok (match value.updated_at with
+        | Some timestamp when not (activity_at_least db value.uuid timestamp) ->
+          Ds.Add (lookup value.uuid, "block/updated-at", Ds.Int64 (Int64.of_int timestamp)) :: writes
+        | _ -> writes)
   | Ops.Insert_block value ->
     if Ds.entid db "block/uuid" (Ds.Uuid value.uuid) <> None then
       Error "inserted block UUID already exists"
@@ -1035,6 +1040,7 @@ let rec satisfied db (intent : Ops.pending_intent) =
       value.value
   | Ops.Set_properties value ->
     value.changes <> []
+    && Option.fold ~none:true ~some:(activity_at_least db value.uuid) value.updated_at
     && List.for_all
          (fun (change : Ops.property_change) ->
            semantic_value_equal db

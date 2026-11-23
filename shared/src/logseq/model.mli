@@ -176,6 +176,7 @@ type journal_section_marker =
 type outliner_editing =
   { editing_uuid : string
   ; editing_title : string
+  ; editing_is_task : bool option
   ; caret_utf16_offset : int
   }
 
@@ -464,7 +465,7 @@ type logseq_model =
   ; outliner_selected_block_ids : string list
   ; outliner_selected_tasks_only : bool
   ; outliner_editing : outliner_editing option
-  ; outliner_edit_scope : string option
+  ; outliner_edit_scope : (string * string) option
   ; outliner_selection_revision : int
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list

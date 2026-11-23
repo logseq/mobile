@@ -118,12 +118,11 @@ let explicit_task_status_and_move_batches_preserve_haptics () =
   let operation = only_operation result in
   check_eq operation.Ops.base_t 43;
   check_eq operation.intent
-    (Ops.Set_property
+    (Ops.Set_properties
        {
          uuid = "first";
-         attr = "logseq.property/status";
-         expected = None;
-         value = Some (Ops.Ref_uuid "waiting");
+         updated_at = Some 100;
+         changes = [{attr = "logseq.property/status"; expected = None; value = Some (Ops.Ref_uuid "waiting")}];
        });
   check_eq result.platform
     [ Effects.Platform_haptic State.Impact ];
@@ -140,12 +139,12 @@ let explicit_task_status_and_move_batches_preserve_haptics () =
 let task_cycle_without_status_stays_a_semantic_operation () =
   let result = expect_ok (interpret [ State.Cycle_task_status "first" ]) in
   check_eq (only_operation result).Ops.intent
-    (Ops.Set_property
+    (Ops.Set_properties
        {
          uuid = "first";
-         attr = "logseq.property/status";
-         expected = None;
-         value = Some (Ops.Ref_ident "logseq.property/status.todo");
+         updated_at = Some 100;
+         changes = [{attr = "logseq.property/status"; expected = None;
+           value = Some (Ops.Ref_ident "logseq.property/status.todo")}];
        });
   check_eq result.platform []
 
@@ -272,7 +271,7 @@ let task_cycle_preserves_guards_for_built_in_custom_and_uuid_statuses () =
                 [ State.Cycle_task_status "task" ]))
       in
       match operation.Ops.intent with
-      | Ops.Set_property property ->
+      | Ops.Set_properties {changes = [property]; updated_at = Some 100; _} ->
         check_eq property.expected expected;
         check_eq property.value value
       | _ -> check false)

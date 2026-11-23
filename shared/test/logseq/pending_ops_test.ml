@@ -30,6 +30,7 @@ let intents : Ops.pending_intent list =
     Ops.Set_properties
       {
         uuid = "block";
+        updated_at = None;
         changes =
           [
             {
@@ -205,6 +206,7 @@ let search_refresh_ignores_unrelated_properties () =
        (Ops.Set_properties
           {
             uuid = "block";
+            updated_at = None;
             changes =
               [
                 { Ops.attr = "custom"; expected = None; value = None };
@@ -353,7 +355,7 @@ let normalization_converts_only_fsrs_time_fields () =
       in
       let batch =
         normalization_operation
-          (Ops.Set_properties { uuid = "block"; changes = [ change ] })
+          (Ops.Set_properties { uuid = "block"; updated_at = None; changes = [ change ] })
       in
       check_eq
         (Ops.normalize_operation db op)
@@ -377,6 +379,7 @@ let normalization_converts_only_fsrs_time_fields () =
                Ops.Set_properties
                  {
                    uuid = "block";
+                   updated_at = None;
                    changes =
                      [
                        {

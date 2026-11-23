@@ -15,7 +15,7 @@ let multiline_blocks_keep_a_way_to_continue_editing () =
     send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
       graph_name = Some "Work"; selected_graph_id = Some "test-graph";
       outliner_rows = [row]; projection_outliner_editing = Some {
-        Model.editing_uuid = "last"; editing_title = "x^2"; caret_utf16_offset = 3} });
+        Model.editing_uuid = "last"; editing_is_task = None; editing_title = "x^2"; caret_utf16_offset = 3} });
     flush app;
     let runtime = Lui_app.runtime app in
     check ~msg:("A multiline " ^ typ ^ " editor must leave the following block tappable")

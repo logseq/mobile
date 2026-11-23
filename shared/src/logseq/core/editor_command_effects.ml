@@ -149,7 +149,7 @@ let template_intent db writes properties =
       if Pending_projection.semantic_value_equal inserted raw (Some value) then None
       else Some {Ops.attr; expected = Option.map (semantic inserted attr) raw; value = Some value})
       properties in
-    if changes = [] then None else Some (Ops.Set_properties {uuid; changes})) properties in
+    if changes = [] then None else Some (Ops.Set_properties {uuid; updated_at = None; changes})) properties in
   Ops.Atomic (writes @ properties)
 
 let plain_placeholder db node =

@@ -3578,6 +3578,7 @@ let journal_node_insertion_keeps_the_rendered_sibling_position () =
         Some
           {
             Model.editing_uuid = "a";
+            editing_is_task = None;
             editing_title = "First";
             caret_utf16_offset = 5;
           };
@@ -3608,6 +3609,7 @@ let journal_node_insertion_keeps_the_rendered_sibling_position () =
                  Some
                    {
                      Model.editing_uuid = "b";
+                     editing_is_task = None;
                      editing_title = "Inserted";
                      caret_utf16_offset = 8;
                    };
@@ -4823,6 +4825,7 @@ let bottom_chrome_presentation_is_mutually_exclusive () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft";
       caret_utf16_offset = 5;
     }
@@ -5120,6 +5123,7 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
   let latest =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Latest local text";
       caret_utf16_offset = 17;
     }
@@ -5127,6 +5131,7 @@ let pending_outliner_text_keeps_the_latest_optimistic_edit () =
   let stale =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Stale core text";
       caret_utf16_offset = 15;
     }
@@ -5169,7 +5174,7 @@ let reference_autocomplete_remains_mounted_while_typing () =
   List.iter (fun (kind, before, after, caret) ->
   let application = App.create (ios_backend ()) in
   start application;
-  let editing = { Model.editing_uuid = "editing"; editing_title = before; caret_utf16_offset = caret } in
+  let editing = { Model.editing_uuid = "editing"; editing_is_task = None; editing_title = before; caret_utf16_offset = caret } in
   let candidate index label value = { Model.candidate_index = index; candidate_group = None; candidate_label = label; candidate_markup_json = "[]"; candidate_value = value } in
   let candidates = [candidate 0 "Project" "project"; candidate 1 "Progress" "progress"] in
   let projection = { (empty_core_projection ()) with
@@ -5257,6 +5262,7 @@ let outliner_typing_retains_reference_candidates () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft [[";
       caret_utf16_offset = 7;
     }
@@ -5300,7 +5306,7 @@ let outliner_typing_retains_reference_candidates () =
 let completion_requests_native_caret_selection () =
   let application = App.create (ios_backend ()) in
   start application;
-  let editing = { Model.editing_uuid = "editing"; editing_title = "[[wow]]"; caret_utf16_offset = 5 } in
+  let editing = { Model.editing_uuid = "editing"; editing_is_task = None; editing_title = "[[wow]]"; caret_utf16_offset = 5 } in
   let projection = { (empty_core_projection ()) with selected_graph_id = Some "graph";
     projection_outliner_editing = Some editing;
     projection_outliner_autocomplete = Some { Model.autocomplete_kind = Model.NodeAutocomplete; autocomplete_query = "wow" };
@@ -5329,6 +5335,7 @@ let autocomplete_selection_waits_for_pending_text_to_settle () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft #Project";
       caret_utf16_offset = 14;
     }
@@ -5369,7 +5376,7 @@ let autocomplete_selection_waits_for_pending_text_to_settle () =
 
 let hide_keyboard_waits_for_saved_outliner_projection () =
   let editing =
-    { Model.editing_uuid = "block-a"; editing_title = "Latest local text";
+    { Model.editing_uuid = "block-a"; editing_is_task = None; editing_title = "Latest local text";
       caret_utf16_offset = 17 } in
   let autocomplete =
     { Model.autocomplete_kind = Model.NodeAutocomplete;
@@ -5412,7 +5419,7 @@ let hide_keyboard_waits_for_saved_outliner_projection () =
     [([], []); ([change], []); ([], [change])]
 
 let leaving_block_editor_does_not_reopen_capture () =
-  let editing = {Model.editing_uuid = "block-a"; editing_title = "Block";
+  let editing = {Model.editing_uuid = "block-a"; editing_is_task = None; editing_title = "Block";
     caret_utf16_offset = 5} in
   let current = Model.update (Model.initial ()) Model.ExpandComposer in
   let current = {current with Model.composer_draft = "Unsent capture"} in
@@ -5441,6 +5448,7 @@ let outliner_return_handoff_retains_one_native_editor_node () =
   let first_editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "First";
       caret_utf16_offset = 5;
     }
@@ -5448,6 +5456,7 @@ let outliner_return_handoff_retains_one_native_editor_node () =
   let second_editing =
     {
       Model.editing_uuid = "block-b";
+      editing_is_task = None;
       editing_title = "";
       caret_utf16_offset = 0;
     }
@@ -6417,6 +6426,7 @@ let destination_navigation_ends_active_outliner_editing () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft";
       caret_utf16_offset = 5;
     }
@@ -6824,7 +6834,7 @@ let editor_pickers_own_focus_without_unmounting_the_block () =
   List.iter (fun backend ->
     let app = App.create backend in
     start app;
-    let editing = {Model.editing_uuid = "focus-block"; editing_title = "/"; caret_utf16_offset = 1} in
+    let editing = {Model.editing_uuid = "focus-block"; editing_is_task = None; editing_title = "/"; caret_utf16_offset = 1} in
     let row = journal_outline_row "focus-block" "journal" "/" "Today" 20261023 0 in
     List.iter (fun (kind, enabled) ->
       send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
@@ -6848,7 +6858,7 @@ let retained_panes_mount_only_the_visible_editor () =
   List.iter (fun backend ->
     let application = App.create backend in
     let row = journal_outline_row "shared-block" "journal-page" "Hello world" "Today" 20261023 0 in
-    let editing = { Model.editing_uuid = "shared-block"; editing_title = "Hello world"; caret_utf16_offset = 5 } in
+    let editing = { Model.editing_uuid = "shared-block"; editing_is_task = None; editing_title = "Hello world"; caret_utf16_offset = 5 } in
     let projection sidebar routes =
       { (empty_core_projection ()) with
         graph_name = Some "Work"; selected_graph_id = Some "test-graph";
@@ -7160,6 +7170,7 @@ let block_navigation_exposes_an_immediate_outliner_preview_route () =
   let editing =
     {
       Model.editing_uuid = "child";
+      editing_is_task = None;
       editing_title = "Child";
       caret_utf16_offset = 5;
     }
@@ -7922,7 +7933,7 @@ let journal_task_results_edit_and_select_the_source_block () =
       (List.exists (function Model.TapOutlinerBlockEffect (_, id) -> id = uuid | _ -> false)
         (App.model app).pending_effects);
     check_eq ~msg:"tapping the task title keeps the journal open" (App.model app).app_navigation_path [];
-    let editing = Some {Model.editing_uuid = uuid; editing_title = "Draft"; caret_utf16_offset = 3} in
+    let editing = Some {Model.editing_uuid = uuid; editing_is_task = None; editing_title = "Draft"; caret_utf16_offset = 3} in
     let active = {projection with projection_outliner_editing = editing} in
     apply active;
     let editor = editing_node (row ()) in
@@ -8867,6 +8878,7 @@ let core_snapshot_renders_keyed_outliner_rows () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Project note";
       caret_utf16_offset = 4;
     }
@@ -9306,7 +9318,7 @@ let scrolling_keeps_the_active_editor_outside_the_visible_window () =
     start application;
     let rows = List.init 10_000 (fun index ->
       { (outline_row ("retained-" ^ string_of_int index) "Block") with Model.page_id = "page" }) in
-    let editing = { Model.editing_uuid = "retained-8"; editing_title = "Unsaved draft"; caret_utf16_offset = 4 } in
+    let editing = { Model.editing_uuid = "retained-8"; editing_is_task = None; editing_title = "Unsaved draft"; caret_utf16_offset = 4 } in
     send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] []
       (Some editing) None [] [] rows false []);
     flush application;
@@ -10048,7 +10060,7 @@ let ios_tweak_mounts_keep_children_before_attachment () =
     selected_graph_id = Some "test-graph"; outliner_rows = [row]; task_statuses = [todo] } in
   send application (Model.ApplyCoreSnapshot projection);
   assert_order "journals";
-  let editing = { Model.editing_uuid = "editing"; editing_title = "Draft"; caret_utf16_offset = 5 } in
+  let editing = { Model.editing_uuid = "editing"; editing_is_task = None; editing_title = "Draft"; caret_utf16_offset = 5 } in
   let editing_projection = { projection with projection_outliner_editing = Some editing } in
   send application (Model.ApplyCoreSnapshot editing_projection);
   assert_order "editor";
@@ -10425,7 +10437,7 @@ let typed_toolbars_keep_reactive_width_and_labels () =
       Alcotest.(check int) "typed selection actions keep responsive widths" width
         (property_int renderer (find "button.outliner.selection.copy") Lui_protocol.WidthValue))
       [375, 46; 393, 50; 768, 58; 375, 46];
-    let editing = Some {Model.editing_uuid = row.row_uuid; editing_title = row.row_title; caret_utf16_offset = 0} in
+    let editing = Some {Model.editing_uuid = row.row_uuid; editing_is_task = None; editing_title = row.row_title; caret_utf16_offset = 0} in
     let done_status = Some {Model.uuid = "done"; ident = None; title = "Done";
       icon_type = None; icon_id = None; icon_color = None} in
     List.iter (fun status ->
@@ -10577,6 +10589,7 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft";
       caret_utf16_offset = 5;
     }
@@ -10634,6 +10647,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Project [[Pro";
       caret_utf16_offset = 13;
     }
@@ -10827,6 +10841,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   let editing =
     {
       Model.editing_uuid = "block-a";
+      editing_is_task = None;
       editing_title = "Draft #";
       caret_utf16_offset = 7;
     }

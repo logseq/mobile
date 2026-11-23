@@ -179,6 +179,7 @@ type journal_section_marker =
 type outliner_editing =
   { editing_uuid : string
   ; editing_title : string
+  ; editing_is_task : bool option
   ; caret_utf16_offset : int
   }
 
@@ -467,7 +468,7 @@ type logseq_model =
   ; outliner_selected_block_ids : string list
   ; outliner_selected_tasks_only : bool
   ; outliner_editing : outliner_editing option
-  ; outliner_edit_scope : string option
+  ; outliner_edit_scope : (string * string) option
   ; outliner_selection_revision : int
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
@@ -1966,7 +1967,7 @@ let update_editing (current : logseq_model) uuid title caret =
       {
         current with
         outliner_editing =
-          Some { editing_uuid = uuid; editing_title = title; caret_utf16_offset = caret };
+          Some { editing with editing_title = title; caret_utf16_offset = caret };
       }
     else current
   | None -> current
@@ -2324,8 +2325,10 @@ let rec update (current : logseq_model) action =
           composer_autofocus = false }
       | _ -> current in
     let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
+    let editing_uuid model = Option.map (fun editing -> editing.editing_uuid) model.outliner_editing in
     let applied =
-      if current.outliner_editing <> None && applied.outliner_editing = None then
+      if editing_uuid current <> editing_uuid applied
+         && not (Option.exists (fun (_, uuid) -> editing_uuid applied = Some uuid) applied.outliner_edit_scope) then
         {applied with outliner_edit_scope = None}
       else applied in
     (* The block editor takes ownership of keyboard focus. Retaining an expanded
@@ -2375,7 +2378,7 @@ let rec update (current : logseq_model) action =
     let action = match caret with
       | Some offset -> BeginOutlinerEditAt (uuid, offset)
       | None -> BeginOutlinerEdit uuid in
-    { (update current action) with outliner_edit_scope = Some scope }
+    { (update current action) with outliner_edit_scope = Some (scope, uuid) }
   | EditorCompletion (kind, value) ->
     let fields = if kind = "searchAutocomplete" then ["query", `String value]
       else if kind = "submitAutocomplete" then ["value", `String value] else [] in

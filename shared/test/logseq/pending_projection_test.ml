@@ -404,6 +404,7 @@ let flashcard_property_batch_is_atomic () =
     Ops.Set_properties
       {
         Ops.uuid = "block";
+        updated_at = None;
         changes =
           [
             {

@@ -53,6 +53,7 @@ type pending_property =
 type pending_properties =
   { uuid : string
   ; changes : property_change list
+  ; updated_at : int option
   }
 
 type pending_insert =
@@ -182,6 +183,8 @@ val normalize_operation :
 val subtree_uuids : Datascript.db -> string list -> string list
 val search_visible_property : string -> bool
 val affected_uuids : Datascript.db -> pending_intent -> string list
+val task_status_edit : now:int -> uuid:string -> expected:semantic_value option ->
+  value:semantic_value option -> pending_intent
 val safe_to_rebase : pending_intent -> bool
 val committed_despite_later_changes :
   int -> Datascript.db -> pending_operation -> bool

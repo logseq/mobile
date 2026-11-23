@@ -1455,7 +1455,16 @@ let journal_tasks_use_a_bounded_date_window () = R.with_runtime (fun _ runtime c
   check_eq (uuids "overdue" changed) [`String Q.alpha];
   check_eq (uuids "planned" changed) [`String Q.owner; `String Q.beta];
   check_eq ~msg:"an undated Doing task outside the activity window is omitted"
-    (uuids "doing" changed) [])
+    (uuids "doing" changed) [];
+  let db = Graph_runtime.db runtime in
+  let schema = List.map (fun (attr, spec) ->
+    if List.mem attr [Journal_task_dates.scheduled; Journal_task_dates.deadline]
+      then attr, {spec with Ds.indexed = false}
+    else attr, spec) (Ds.schema db) in
+  let unindexed = Ds.with_schema db schema in
+  let fallback = Journal_task_dates.project cache ~graph:"tasks" ~now:(Int64.to_int (local 20261123))
+    ~force:false unindexed in
+  check_eq ~msg:"graphs without date indexes produce the same agenda" fallback changed)
 
 let journal_tasks_omit_blocks_from_today () = R.with_runtime (fun _ runtime conn ->
   let today = 20261123 in
@@ -1508,7 +1517,134 @@ let journal_task_dates_batch_is_atomic_and_guarded () = R.with_runtime (fun sess
   check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 (local 20261124)));
   check_eq (value runtime Q.beta scheduled) (Some (Ds.Int64 (Int64.of_int timestamp))))
 
+let task_date_sheet_rejects_invalid_text () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let runtime = Lui_app.runtime app in
+      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
+      let send action = App_test.send app action; App_test.flush app in
+      let dispatch event = App_test.dispatch app event; App_test.flush app in
+      send (Model.OpenBlockTaskDate (Q.alpha, "deadline"));
+      let key = match (App.model app).task_date_editor with
+        | Some editor -> editor.task_date_key | None -> fail "Expected task date editor" in
+      let load_id = List.find_map (function
+        | Model.LoadPropertyValuesEffect (id, name, _) when name = key -> Some id
+        | _ -> None) (App.model app).pending_effects |> Option.get in
+      send (Model.DequeueEffect load_id);
+      send (Model.ReceivePropertyValues (key, J.to_string (`Assoc ["targets", `List [
+        `Assoc ["uuid", `String Q.alpha; "deadline", `Null]]])));
+      send (Model.ResolveEffect (load_id, true, ""));
+      let input = find "view.edit.date.input.task-dates.deadline" in
+      let save = find "task-dates.save" in
+      check (input <> -1 && save <> -1);
+      let press_save () = dispatch (Lui_protocol.Press save) in
+      let submitted () = List.find_map (function
+        | Model.NodePropertyEffect (_, name, payload) when name = key -> Some (J.from_string payload)
+        | _ -> None) (App.model app).pending_effects in
+      let type_date value = dispatch (Lui_protocol.TextChanged (input, value)) in
+      type_date "invalid date";
+      press_save ();
+      check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
+      type_date "tomorrow";
+      type_date "still invalid";
+      press_save ();
+      check_eq ~msg:"invalid text cannot submit a previous valid date" (submitted ()) None;
+      type_date "October 15, 2030 at 3:00pm";
+      press_save ();
+      match submitted () with
+      | Some request ->
+        check_eq (member "deadline" (member "changes" request))
+          (`Int (int_of_float (Natural_date_test.reference 2030 10 15 15 0)))
+      | None -> fail "Expected the corrected date to be submitted")))
+    [App_test.ios_backend; App_test.kotlin_backend]
+
+let agenda_date_save_releases_hidden_editor () = R.with_runtime (fun session runtime conn ->
+  let now = Session_types.now_ms () in
+  let date = Journal_task_dates.scheduled in
+  let future = now + (30 * 86400000) in
+  rebase runtime conn [put Q.alpha date (Ds.Int64 (Int64.of_int now))];
+  ignore (start session "Edited agenda task");
+  let db = Graph_runtime.db runtime in
+  let targets = Journal_task_dates.values db
+    (Journal_task_dates.targets db [`String Q.alpha]) |> member "targets" in
+  let save targets collapsed time = Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "action", `String "saveTaskDates"; "targets", targets; "editingUuid", `String Q.alpha;
+    "agendaCollapsedSections", `List collapsed; "changes", `Assoc ["scheduled", `Int time]])) in
+  let stale = `List [`Assoc ["uuid", `String Q.alpha; "scheduled", `Null]] in
+  check_eq (member "ok" (save stale [] future)) (`Bool false);
+  check_eq (member "uuid" (draft (snapshot session))) (`String Q.alpha);
+  let visible = result (save targets [] (now + 1)) in
+  check_eq (member "uuid" (draft visible)) (`String Q.alpha);
+  let targets time = `List [`Assoc ["uuid", `String Q.alpha; "scheduled", `Int time]] in
+  let collapsed = result (save (targets (now + 1)) [`String "planned"] (now + 2)) in
+  check_eq ~msg:"a date in a collapsed section releases the scoped editor" (draft collapsed) `Null;
+  ignore (event session "tapBlock" ["uuid", `String Q.alpha]);
+  let hidden = result (save (targets (now + 2)) [] future) in
+  check_eq ~msg:"a date outside the agenda releases the scoped editor" (draft hidden) `Null;
+  check_eq ~msg:"the title draft is saved before closing" (value runtime Q.alpha "block/title")
+    (Some (Ds.String "Edited agenda task")))
+
+let starting_old_task_makes_it_recent () = R.with_runtime (fun session runtime conn ->
+  let before = Session_types.now_ms () in
+  let old = Int64.of_int (before - (30 * 86400000)) in
+  rebase runtime conn [put Q.alpha "block/created-at" (Ds.Int64 old);
+    put Q.alpha "block/updated-at" (Ds.Int64 old)];
+  let doing response = List.map (member "uuid") (items "doing" (member "journalTasks" response)) in
+  check (not (List.mem (`String Q.alpha) (doing (snapshot session))));
+  let started = event session "setTaskStatus" ["uuid", `String Q.alpha;
+    "statusIdent", `String "logseq.property/status.doing"] in
+  check ~msg:"the optimistic agenda includes the task immediately" (List.mem (`String Q.alpha) (doing started));
+  let operations = Graph_runtime.pending_operations runtime in
+  (match operations with
+   | [{Pending_ops.intent = Pending_ops.Set_properties {updated_at = Some time; _} as intent; _}] ->
+     check (time >= before);
+     check_eq (Pending_ops.intent_of_json (Pending_ops.intent_json intent)) intent
+   | _ -> fail "Expected a single durable status and activity write");
+  rebase runtime conn [];
+  check (List.mem (`String Q.alpha) (doing (snapshot session))))
+
+let splitting_query_result_focuses_new_outline_row () =
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
+    Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+      let runtime = Lui_app.runtime app in
+      let root = Lui_app.root_node app in
+      let find = App_test.descendant_with_identifier runtime root in
+      let editor parent = App_test.descendant_with_extension runtime app parent "outliner-editor" in
+      let result_row = find ("query.result." ^ Q.owner ^ ".0") in
+      check (result_row <> -1);
+      let source = App_test.descendant_with_identifier runtime result_row ("outliner.block." ^ Q.alpha) in
+      check (source <> -1);
+      let native = App_test.descendant_with_extension runtime app source "outliner-block-row" in
+      let node, extension = if native <> -1 then native, "outliner-block-row"
+        else App_test.descendant_with_extension runtime app source "outliner-block-content", "outliner-block-content" in
+      check (node <> -1);
+      App_test.dispatch app (Lui_protocol.ExtensionEvent (node, extension, "edit",
+        Lui_protocol.String_map.singleton "uuid" (Lui_protocol.StringValue Q.alpha)));
+      App_test.flush app;
+      let apply kind fields =
+        let response = Rpc_test.dispatch_json session "outlinerEvent"
+          (J.to_string (`Assoc (("type", `String kind) :: fields))) in
+        let projection = match Response_snapshot.decode_response (J.to_string response) with
+          | Ok projection -> projection | Error message -> fail message in
+        App_test.send app (Model.ApplyCoreSnapshot projection);
+        App_test.flush app;
+        member "result" response in
+      let active = apply "tapBlock" ["uuid", `String Q.alpha] in
+      check ~msg:"the query result receives the first editor" (editor result_row <> -1);
+      let title = text (member "title" (draft active)) in
+      let split = apply "returnPressed" ["title", `String title;
+        "caretUTF16Offset", `Int (Outliner_state.utf16_length title)] in
+      let uuid = text (member "uuid" (draft split)) in
+      check (uuid <> "" && uuid <> Q.alpha);
+      let row = find ("outliner.entry." ^ uuid) in
+      check ~msg:"the new outline row receives the editor" (row <> -1 && editor row <> -1);
+      check_eq (App.model app).outliner_edit_scope None))) [App_test.ios_backend; App_test.kotlin_backend]
+
 let cases = [
+  case "task date sheet rejects invalid text" task_date_sheet_rejects_invalid_text;
+  case "agenda date save releases the hidden editor" agenda_date_save_releases_hidden_editor;
+  case "starting an old undated task makes it recent" starting_old_task_makes_it_recent;
+  case "splitting a query result focuses the new outline row" splitting_query_result_focuses_new_outline_row;
   case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
   case "journal task buckets recover from query failure" journal_task_dates_partition_and_recover;
   case "selected date actions require all Task objects" selected_task_dates_require_all_task_objects;

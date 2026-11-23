@@ -2507,8 +2507,8 @@ let task_status_stages_canonical_property_reference () =
   let operation = List.hd !staged in
   check_eq operation.Ops.base_t 92;
   match operation.intent with
-  | Ops.Set_property change ->
-    check_eq change.uuid "task";
+  | Ops.Set_properties {uuid; changes = [change]; updated_at = Some _} ->
+    check_eq uuid "task";
     check_eq change.attr "logseq.property/status";
     check (change.expected = None);
     check_eq change.value (Some (Ops.Ref_ident "user.status/waiting"))
@@ -3534,7 +3534,7 @@ let editing_status_uses_live_properties_instead_of_stale_overlay () =
        "{\"type\":\"setTaskStatus\",\"uuid\":\"status-source\",\"statusIdent\":\"logseq.property/status.doing\"}");
   check_eq (List.length !staged) 1;
   match (List.hd !staged).Ops.intent with
-  | Ops.Set_property change ->
+  | Ops.Set_properties {changes = [change]; updated_at = Some _; _} ->
     check_eq
       change.expected
       (Some (Ops.Ref_ident "logseq.property/status.todo"))
@@ -6683,7 +6683,7 @@ let outliner_state_serializes_drafts_and_orders_identifiers () =
       in
       check_eq
         (Json.to_string (Rpc.outliner_state_json state))
-        ("{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"caretUTF16Offset\":2},"
+        ("{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"isTask\":false,\"caretUTF16Offset\":2},"
          ^ "\"selectedBlockIds\":[\"a\",\"z\"],\"selectedTasksOnly\":false,\"collapsedBlockIds\":[\"b\",\"y\"],"
          ^ "\"zoomedBlockIds\":[\"outer\",\"inner\"],\"autocomplete\":{\"kind\":\""
          ^ wire_kind ^ "\",\"query\":\"query\"}}"))

@@ -224,7 +224,7 @@ let temporal_default kind =
   if kind = "datetime" then Printf.sprintf "%.0f" (floor (now /. 60.) *. 60000.)
   else let t = Unix.localtime now in Printf.sprintf "%04d-%02d-%02d" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday
 
-let temporal_picker ?on_submit model_source kind id source set : t = custom @@ fun context parent ->
+let temporal_picker ?on_submit ?input ?(on_validity = fun _ -> ()) model_source kind id source set : t = custom @@ fun context parent ->
   let picker_value value =
     try
       if kind = "date" then Option.map (fun day ->
@@ -238,7 +238,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
     with Failure _ | Invalid_argument _ | Unix.Unix_error _ -> None in
   let initial = Signal.sample source in
   let tr = View_base.tr (Signal.sample model_source) in
-  let input = Signal.state context.Lui_ui.ui_scheduler "" in
+  let input = match input with Some input -> input | None -> Signal.state context.Lui_ui.ui_scheduler "" in
   let selection = Signal.state context.ui_scheduler
     (Option.value ~default:(temporal_default kind) (picker_value initial)) in
   let sync value =
@@ -269,6 +269,7 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
           | Some selected when selected <> Signal.sample (Signal.value selection) ->
             Signal.set selection selected;
             Signal.set input "";
+            on_validity true;
             update value
           | _ -> ())
        | _ -> ())
@@ -282,7 +283,9 @@ let temporal_picker ?on_submit model_source kind id source set : t = custom @@ f
         ~accessibility_identifier:("view.edit.date.input." ^ id)
         ~on_input:(fun value ->
           Signal.set input value;
-          Option.iter update (sync value))
+          let selected = sync value in
+          on_validity (String.trim value = "" || Option.is_some selected);
+          Option.iter update selected)
         ?on_submit [];
       calendar])
 

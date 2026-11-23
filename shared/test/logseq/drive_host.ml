@@ -367,6 +367,7 @@ let editing_snapshot ~uuid ~title ~caret ?(autocomplete = None) ?(candidates = [
       Some
         {
           Model.editing_uuid = uuid;
+          editing_is_task = None;
           editing_title = title;
           caret_utf16_offset = caret;
         };

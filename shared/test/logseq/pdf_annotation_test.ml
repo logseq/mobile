@@ -144,7 +144,7 @@ let desktop_area_annotations_keep_their_original_data () = with_pdf (fun session
     | _ -> assert false in
   let semantic value = match Pending_ops.semantic_value_from_datascript value with Ok value -> value | Error message -> fail message in
   check_ok (Graph_runtime.stage runtime {Pending_ops.operation_id = "desktop-area"; base_t = 42;
-    state = Pending_ops.Queued; intent = Pending_ops.Set_properties {uuid = highlight_id; changes =
+    state = Pending_ops.Queued; intent = Pending_ops.Set_properties {uuid = highlight_id; updated_at = None; changes =
       [{attr = "logseq.property.pdf/hl-value"; expected = Some (semantic original); value = Some (semantic area)};
        {attr = "logseq.property.pdf/hl-type"; expected = None; value = Some (Pending_ops.Keyword_value "area")}]}});
   let changed = annotations (call session "recolor" ["id", `String highlight_id; "color", `String "blue"]) in

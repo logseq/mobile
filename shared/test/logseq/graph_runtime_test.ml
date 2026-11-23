@@ -376,6 +376,7 @@ let legacy_fsrs_instants_never_reach_the_wire_as_dates () =
           (Pending.Set_properties
              {
                uuid = "block";
+               updated_at = None;
                changes =
                  [
                    {
