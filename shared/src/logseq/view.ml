@@ -178,6 +178,13 @@ let outliner_block_row_schema () =
      Lui_extension.event "set-priority" [Lui_extension.event_field "priority" StringScalar true];
      Lui_extension.event "set-status" [uuid; Lui_extension.event_field "count" IntScalar true]]
 
+let graph_quick_switch_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "graph-quick-switch" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
+    true [] [property "target-id" StringScalar true None; property "target-name" StringScalar true None]
+    [event "switch" [event_field "value" StringScalar true]]
+
 let native_navigation_stack_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -312,6 +319,7 @@ let extension_registry () =
         Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost]
        true [] [Lui_extension.property "kind" Lui_extension.StringScalar true None] []);
   Lui_extension.register_component registry (pdf_workspace_schema ());
+  Lui_extension.register_component registry (graph_quick_switch_schema ());
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (table_viewport_schema ());

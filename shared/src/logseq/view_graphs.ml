@@ -463,6 +463,111 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
         ];
     ]
 
+let slot_title model index =
+  View_base.tr_named model "Slot {1}" (string_of_int (index + 1))
+
+let slot_graph_id (current : Model.logseq_model) index =
+  Option.value ~default:"" (List.nth_opt current.graph_quick_slots index)
+
+let graph_slot_row model_source send index =
+  let subtitle (current : Model.logseq_model) =
+    match slot_graph_id current index with
+    | "" -> View_base.tr current "Choose a graph"
+    | id ->
+      (match List.find_opt (fun (graph : Model.graph) -> graph.id = id) current.graphs with
+       | Some graph -> View_base.graph_title graph
+       | None -> View_base.tr current "Graph unavailable")
+  in
+  let title (current : Model.logseq_model) =
+    let title = slot_title current index in
+    if Some (slot_graph_id current index) = current.selected_graph_id then
+      title ^ " · " ^ View_base.tr current "Current graph"
+    else title
+  in
+  list_item ~min_height:52 ~padding_horizontal:12 ~padding_vertical:8
+    ~accessibility_identifier:("graph-quick-switch.slot." ^ string_of_int (index + 1))
+    ~on_press:(press send (Model.ChooseGraphSlot index))
+    [ row ~grow:1.0 ~cross:`center ~gap:12
+        [ column ~grow:1.0 ~gap:2
+            [ text ~value:(reactive title model_source) ~style_class:"caption"
+                ~foreground:"muted-foreground" [];
+              text ~value:(reactive subtitle model_source) [] ];
+          icon ~name:(`app "chevron-right") ~width:18 ~height:18
+            ~foreground:"muted-foreground" [] ] ]
+
+let graph_quick_switch_section model_source send =
+  let current = Signal.sample model_source in
+  column ~padding:12 ~gap:4
+    ~accessibility_identifier:"section.graph-quick-switch"
+    ([ heading ~level:`h5 ~value:(View_base.tr current "Graph Quick Switch") [];
+       text ~style_class:"footnote" ~foreground:"muted-foreground"
+         ~value:(View_base.tr current
+           "Add your current graph and at least one more. Swipe left in Journals to cycle through them in slot order.") [] ]
+     @ List.init Model.graph_slot_count (graph_slot_row model_source send))
+
+let graph_slot_picker (context : Lui_ui.ui_context) model_source send =
+  let title current =
+    match current.Model.editing_graph_slot with
+    | Some index -> slot_title current index
+    | None -> View_base.tr current "Choose a graph"
+  in
+  let current = Signal.sample model_source in
+  let cancel = press send Model.DismissGraphSlotPicker in
+  let candidates (current : Model.logseq_model) =
+    Model.graph_slot_candidates current |> List.stable_sort (fun (a : Model.graph) (b : Model.graph) ->
+      compare (Some b.id = current.selected_graph_id, Model.graph_local_ current b.id)
+        (Some a.id = current.selected_graph_id, Model.graph_local_ current a.id))
+  in
+  let choice graph_source =
+    let (graph : Model.graph) = Signal.sample graph_source in
+    let detail (current : Model.logseq_model) =
+      let index = List.find_index (String.equal graph.id) current.graph_quick_slots in
+      match index, current.editing_graph_slot with
+      | Some index, Some editing when index = editing -> View_base.tr current "Assigned to this slot"
+      | Some index, _ ->
+        View_base.tr_named current "Swap with slot {1}" (string_of_int (index + 1))
+      | None, _ when Some graph.id = current.selected_graph_id -> View_base.tr current "Current graph"
+      | None, _ when not (Model.graph_local_ current graph.id) -> View_base.tr current "Downloads on first open"
+      | None, _ -> ""
+    in
+    list_item ~min_height:48 ~padding_horizontal:16 ~padding_vertical:8
+      ~accessibility_identifier:("graph-quick-switch.choice." ^ graph.id)
+      ~selected:(reactive (fun model -> Option.fold ~none:false
+        ~some:(fun index -> slot_graph_id model index = graph.id) model.Model.editing_graph_slot) model_source)
+      ~on_press:(press send (Model.SetGraphSlot graph.id))
+      [ column ~gap:2 ~grow:1.0
+          [ text ~value:(reactive View_base.graph_title graph_source) [];
+            if_ ~test:(Signal.map (fun model -> detail model <> "") model_source)
+              (text ~style_class:"footnote" ~foreground:"muted-foreground"
+                ~value:(reactive detail model_source) []) ] ]
+  in
+  let list = list ~grow:1.0
+    [ if_ ~test:(Signal.map (fun model -> candidates model = []) model_source)
+        (text ~foreground:"muted-foreground"
+          ~value:(View_base.tr current "No graphs ready to add") []);
+      keyed ~source:(Signal.map candidates model_source) ~key:View_base.graph_identifier
+        ~cmp:compare ~mount:choice;
+      if_ ~test:(Signal.map (fun (model : Model.logseq_model) ->
+        Option.fold ~none:false ~some:(fun index -> slot_graph_id model index <> "") model.editing_graph_slot)
+        model_source)
+        (list_item ~min_height:48 ~padding_horizontal:16
+           ~accessibility_identifier:"graph-quick-switch.clear"
+           ~text:(View_base.tr current "Clear slot")
+           ~on_press:(press send (Model.SetGraphSlot "")) []) ]
+  in
+  View_base.sheet ~model_source ~title:(title current) ~title_signal:(Signal.map title model_source)
+    ~style_class:"navigation-list" ~detents:"medium,large"
+    ~accessibility_identifier:"sheet.graph-quick-switch" ~on_dismiss:cancel
+    (if Lui_ui.host context = KotlinHost then
+       [ column ~grow:1.0 [ list;
+           button ~variant:`ghost ~text:(View_base.tr current "Cancel") ~on_press:cancel [] ] ]
+     else
+       [ list;
+         toolbar ~orientation:`horizontal ~style_class:"navigation-actions"
+           ~label:(title current)
+           [ toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
+               ~text:(View_base.tr current "Cancel") ~on_press:cancel [] ] ])
+
 let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     list ~accessibility_identifier:"screen.graphs" ~gap:0
@@ -486,6 +591,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~test:(Signal.map Model.graph_refresh_active_ model_source)
           (box ~padding:16
              [ spinner ~accessibility_identifier:"graphs.loading" [] ]);
+        graph_quick_switch_section model_source send;
         box ~padding:16
           [ heading ~level:`h5 ~value:(View_base.tr (Signal.sample model_source) "Local graphs") [] ];
         if_
@@ -536,6 +642,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~on_press:(press send Model.OpenCreateGraph)
           ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
 
+        graph_quick_switch_section model_source send;
         heading ~level:`h5
           ~accessibility_identifier:"heading.graphs.local"
           ~value:(View_base.tr (Signal.sample model_source) "Local graphs") [];

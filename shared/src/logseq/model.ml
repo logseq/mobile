@@ -74,6 +74,7 @@ type settings_projection =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
+  ; graph_quick_slots : string list
   ; base_url : string
   ; version : string
   ; revision : string
@@ -384,6 +385,7 @@ type logseq_model =
   ; sidebar_open : bool
   ; viewport_width : int
   ; graph_menu_open : bool
+  ; editing_graph_slot : int option
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
@@ -426,6 +428,7 @@ type logseq_model =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
+  ; graph_quick_slots : string list
   ; base_url : string
   ; base_url_draft : string
   ; version : string
@@ -562,6 +565,10 @@ type logseq_action =
   | OpenGraphMenu
   | DismissGraphMenu
   | SelectSidebarGraph of string
+  | ChooseGraphSlot of int
+  | DismissGraphSlotPicker
+  | SetGraphSlot of string
+  | QuickSwitchGraph of string
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
@@ -727,6 +734,8 @@ let settings_language_choice_selected_ (current : logseq_model)
     (choice : settings_language_choice) =
   current.language = choice.id
 
+let graph_slot_count = 3
+
 let initial () =
   {
     selected_graph = None;
@@ -755,6 +764,7 @@ let initial () =
     sidebar_open = false;
     viewport_width = 0;
     graph_menu_open = false;
+    editing_graph_slot = None;
     favorites = [];
     recent_pages = [];
     selected_page = None;
@@ -797,6 +807,7 @@ let initial () =
     spell_check = true;
     auto_correction = true;
     sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
+    graph_quick_slots = List.init graph_slot_count (fun _ -> "");
     base_url = "https://api.logseq.io";
     base_url_draft = "https://api.logseq.io";
     version = "Development";
@@ -1316,6 +1327,50 @@ let required_sidebar_tab_ tab = tab = "journals" || tab = "graphs"
 let valid_sidebar_tab_ tab =
   tab = "journals" || tab = "flashcards" || tab = "graphs"
 
+let normalize_graph_slots slots =
+  let seen = ref [] in
+  List.init graph_slot_count (fun index ->
+    match List.nth_opt slots index with
+    | Some id when id <> "" && not (List.mem id !seen) ->
+      seen := id :: !seen;
+      id
+    | _ -> "")
+
+let graph_slot_candidates (current : logseq_model) =
+  List.filter (fun (graph : graph) ->
+    graph.is_ready && not (graph_delete_active_ current graph.id)) current.graphs
+
+let next_quick_graph (current : logseq_model) =
+  let can_switch =
+    current.destination = JournalsDestination
+    && current.selected_page = None && current.app_navigation_path = []
+    && not current.sidebar_open && not current.graph_menu_open
+    && not current.graph_loading && not current.graph_password_open
+    && (not current.is_graph_encrypted || current.is_graph_unlocked)
+    && not current.search_open && current.pdf_workspace = None && current.asset_preview = None
+    && current.outliner_editing = None && current.outliner_selected_block_ids = []
+    && not current.composer_expanded && not current.composer_tags_open
+    && not current.settings_open && not current.sync_details_open
+    && not current.create_graph_open && not current.attachment_picker_open
+    && not current.task_status_picker_open && not current.authentication_form.opened
+    && not current.pending_sign_out && current.pending_graph_deletion = None
+    && current.pending_node_deletion = None && current.editing_graph_slot = None
+  in
+  if not can_switch then None else
+    let candidates = graph_slot_candidates current |> List.filter (fun (graph : graph) ->
+      current.authentication_state <> "signedOut" || graph_local_ current graph.id) in
+    let ordered = List.filter_map (graph_by_id candidates) current.graph_quick_slots in
+    match current.selected_graph_id, ordered with
+    | Some selected, first :: _ :: _ ->
+      let rec next = function
+        | (graph : graph) :: rest when graph.id = selected ->
+          (match rest with next :: _ -> Some next | [] -> Some first)
+        | _ :: rest -> next rest
+        | [] -> None
+      in
+      next ordered
+    | _ -> None
+
 let normalize_sidebar_tabs tabs =
   match tabs with
   | [] -> [ "journals"; "flashcards"; "graphs" ]
@@ -1441,6 +1496,7 @@ let current_settings (current : logseq_model) =
     spell_check = current.spell_check;
     auto_correction = current.auto_correction;
     sidebar_tabs = current.sidebar_tabs;
+    graph_quick_slots = current.graph_quick_slots;
     base_url = String.trim current.base_url;
     version = current.version;
     revision = current.revision;
@@ -2661,6 +2717,25 @@ let rec update (current : logseq_model) action =
     { current with sidebar_open = false; graph_menu_open = false }
   | OpenGraphMenu -> { current with graph_menu_open = true }
   | DismissGraphMenu -> { current with graph_menu_open = false }
+  | ChooseGraphSlot index ->
+    if current.destination <> GraphsDestination || index < 0 || index >= graph_slot_count then current
+    else { current with editing_graph_slot = Some index }
+  | DismissGraphSlotPicker -> { current with editing_graph_slot = None }
+  | SetGraphSlot graph_id ->
+    (match current.editing_graph_slot with
+     | Some index when graph_id = "" || graph_by_id (graph_slot_candidates current) graph_id <> None ->
+       let replaced = List.nth current.graph_quick_slots index in
+       let slots = List.mapi (fun position id ->
+         if position = index then graph_id
+         else if graph_id <> "" && id = graph_id then replaced
+         else id) current.graph_quick_slots in
+       persist_settings_change current
+         { current with graph_quick_slots = slots; editing_graph_slot = None }
+     | _ -> current)
+  | QuickSwitchGraph graph_id ->
+    (match next_quick_graph current with
+     | Some graph when graph.id = graph_id -> update current (SelectSidebarGraph graph_id)
+     | _ -> current)
   | SelectSidebarGraph graph_id ->
     (match graph_by_id current.graphs graph_id with
      | Some graph ->
@@ -2890,6 +2965,7 @@ let rec update (current : logseq_model) action =
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
       sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
+      graph_quick_slots = normalize_graph_slots settings.graph_quick_slots;
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
       version = settings.version;

@@ -5594,6 +5594,17 @@ let dictionaries = [
     ("Card group name", "卡片组名称");
     ("Categories", "分类");
     ("Choose a graph", "选择图谱");
+    ("Graph Quick Switch", "快速切换图谱");
+    ("Add your current graph and at least one more. Swipe left in Journals to cycle through them in slot order.",
+     "添加当前图谱和至少一个其他图谱。在日记页向左滑动，即可按槽位顺序循环切换。");
+    ("Slot {1}", "槽位 {1}");
+    ("Graph unavailable", "图谱不可用");
+    ("Assigned to this slot", "已分配到此槽位");
+    ("Swap with slot {1}", "与槽位 {1} 交换");
+    ("Current graph", "当前图谱");
+    ("Downloads on first open", "首次打开时下载");
+    ("No graphs ready to add", "暂无可添加的图谱");
+    ("Clear slot", "清空槽位");
     ("Choose an E2EE password for your encrypted graphs. Keep it safe; you will need it on other devices.", "为加密图谱设置端到端加密密码。请妥善保管，在其他设备上需要使用同一密码。");
     ("Clear priority", "清除优先级");
     ("Clear task status", "清除任务状态");

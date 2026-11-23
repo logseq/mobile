@@ -198,6 +198,7 @@ public struct LogseqRootView : View {
         let spellCheck: Bool
         let autoCorrection: Bool
         let sidebarTabs: [String]
+        let graphQuickSlots: [String]
         let baseURL: String
         let version: String
         let revision: String
@@ -267,6 +268,9 @@ public struct LogseqRootView : View {
                     settings.sidebarTabs.joined(separator: ","),
                     forKey: "logseq.mobile.sidebarTabs"
                 )
+                if let slots = settings.graphQuickSlots {
+                    defaults.set(slots, forKey: "logseq.mobile.graphQuickSlots")
+                }
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
                 if LogseqSettingsPolicy.storedBaseURL(in: defaults) != previousBaseURL {
                     try await graphLifecycle.reconfigureAPI()
@@ -614,6 +618,7 @@ public struct LogseqRootView : View {
             sidebarTabs: rawTabs.isEmpty
                 ? []
                 : rawTabs.split(separator: ",").map { value in String(value) },
+            graphQuickSlots: defaults.stringArray(forKey: "logseq.mobile.graphQuickSlots") ?? [],
             baseURL: LogseqSettingsPolicy.storedBaseURL(in: defaults),
             version: LogseqSettingsPolicy.version,
             revision: LogseqSettingsPolicy.revision

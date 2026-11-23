@@ -269,6 +269,10 @@ let main_root runtime application =
   in
   let stack = List.nth (children runtime shell_root) 0 in
   let stack =
+    if stack = extension_node application "graph-quick-switch" then
+      List.hd (children runtime stack)
+    else stack in
+  let stack =
     if node runtime stack = Some Lui_protocol.Overlay then
       List.hd (children runtime stack)
     else stack in
@@ -490,6 +494,7 @@ let settings tabs =
     spell_check = true;
     auto_correction = true;
     sidebar_tabs = tabs;
+    graph_quick_slots = [];
     base_url = "https://api.logseq.com";
     version = "1.0";
     revision = "abc123";
@@ -7533,6 +7538,62 @@ let downloaded_graph_rearms_initially_exhausted_journals () =
     ) [false; true]
   ) [ios_backend; kotlin_backend]
 
+let graph_quick_switch_cycles_and_configures_slots () =
+  let graph id = { Model.id; name = id; is_encrypted = false; is_ready = true; role = None } in
+  let projection = { (empty_core_projection ()) with
+    graph_name = Some "Work"; selected_graph_id = Some "Work";
+    graphs = [graph "Work"; graph "Notes"; graph "Ideas"] } in
+  List.iter (fun (platform, host) ->
+    ignore (Native_bridge.initialize platform host 0);
+    Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+      let application = Native_bridge.app () in
+      let apply action = send application action; flush application in
+      apply (Model.ApplyCoreSnapshot projection);
+      apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["Work"; ""; "Notes"] });
+      let renderer = Lui_app.runtime application in
+      let root = Lui_app.root_node application in
+      let press identifier =
+        let id = descendant_with_identifier renderer root identifier in
+        check ~msg:("renders " ^ identifier) (id <> -1);
+        dispatch application (Lui_protocol.Press id);
+        flush application
+      in
+      apply Model.ShowGraphs;
+      press "graph-quick-switch.slot.2";
+      press "graph-quick-switch.choice.Ideas";
+      press "graph-quick-switch.slot.1";
+      press "graph-quick-switch.choice.Notes";
+      press "graph-quick-switch.slot.2";
+      press "graph-quick-switch.clear";
+      let assigned = ["Notes"; ""; "Work"] in
+      let model = App.model application in
+      check_eq ~msg:"choosing an assigned graph swaps the slots and clearing preserves order"
+        model.graph_quick_slots assigned;
+      check ~msg:"slot edits use the persisted settings payload"
+        (List.exists (function Model.SaveSettingsEffect (_, settings) -> settings.graph_quick_slots = assigned
+          | _ -> false) model.pending_effects);
+      apply Model.ShowJournals;
+      let gesture = extension_node application "graph-quick-switch" in
+      let target () = extension_property application gesture "target-id" in
+      let swipe id =
+        ignore (Native_bridge.extension_event gesture "graph-quick-switch" "switch" id 0)
+      in
+      check_eq ~msg:"the last slot wraps to the first, skipping empty slots" (target ())
+        (Some (Lui_protocol.StringValue "Notes"));
+      swipe "Ideas";
+      check ~msg:"ignores a stale target" (not (App.model application).graph_loading);
+      apply Model.OpenSidebar;
+      check_eq ~msg:"the sidebar owns gestures while open" (target ()) (Some (Lui_protocol.StringValue ""));
+      swipe "Notes";
+      check ~msg:"ignores a swipe while the sidebar is open" (not (App.model application).graph_loading);
+      apply Model.CloseSidebar;
+      swipe "Notes";
+      check ~msg:"switches through the standard graph open effect"
+        (List.exists (function Model.OpenGraphEffect (_, "Notes") -> true | _ -> false)
+           (App.model application).pending_effects);
+      check_eq ~msg:"the in-flight switch disables another swipe" (target ()) (Some (Lui_protocol.StringValue "")))
+  ) [2, 2; 3, 4]
+
 let graph_switch_rearms_journal_pagination () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
@@ -11464,6 +11525,7 @@ let cases =
     case "encrypted-graph-creation-requests-and-confirms-account-password" encrypted_graph_creation_requests_and_confirms_account_password;
     case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
     case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
+    case "graph-quick-switch-cycles-and-configures-slots" graph_quick_switch_cycles_and_configures_slots;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
