@@ -13,6 +13,7 @@ Logseq Mobile is the native iPhone, iPad, and Android app for Logseq database gr
 - **Capture from your home screen.** On iPhone, long-press the app icon for **Voice** or **Quick Add**, or add the **Quick Capture** widget. On iOS 18 and later, you can also add **Quick Add** and **Record Audio** to Control Center or the Lock Screen. On Android, long-press the app icon for **Capture** or **Journal**, or add the **Capture** or **Today's Journal** widget.
 - **Record with your phone locked.** On iPhone, the recording Live Activity shows the timer and recent transcription on the Lock Screen and on devices with Dynamic Island. On Android, the ongoing notification shows both when you allow notifications.
 - **Read and highlight PDFs.** Open an attached PDF and highlight passages to save annotations in your graph. On a wider screen, you can read the PDF beside your notes.
+- **Review flashcards.** Tag a block with `#Card`, then open **Flashcards** in the sidebar to review it with spaced repetition. If the tab is hidden, turn it on under **Settings → Tabs**.
 
 See what's changed in the [release notes](release-notes). Report a reproducible problem in the [Logseq DB issue tracker](https://github.com/logseq/db-test/issues) or ask a question in the [Logseq community forum](https://discuss.logseq.com/).
 
