@@ -1003,7 +1003,8 @@ private let testEmptySnapshotJSON = """
 
         #expect(elapsed < 0.1)
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish selectGraph")
+            let events = probe.events
+            return events.contains("finish selectGraph") && events.contains("finish open")
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
