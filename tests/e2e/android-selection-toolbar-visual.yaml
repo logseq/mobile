@@ -13,4 +13,4 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.copy"
 - assertVisible:
     id: "button.outliner.selection.unselect"
-- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-material
+- takeScreenshot: tests/e2e/screenshots/android-selection-material

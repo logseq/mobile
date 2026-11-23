@@ -1,4 +1,0 @@
-- Black is now the default dark theme. You can switch to Solarized in Settings.
-- Embedded pages and blocks now appear as inline outlines. Tap the arrow next to an embed to open its source.
-- Improve dark-mode contrast in the sidebar, sheets, and sign-in screen.
-- Keep the graph usable during sync recovery and prevent Enter from splitting a block while the keyboard is composing text.

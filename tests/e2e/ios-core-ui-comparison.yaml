@@ -6,12 +6,12 @@ appId: com.logseq.logseq
       id: "button.sidebar"
     timeout: 30000
 - assertVisible: "Journals"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/journals"
+- takeScreenshot: "tests/e2e/screenshots/ios-journals"
 - tapOn:
     id: "button.sidebar"
 - assertVisible:
     id: "sidebar.navigation"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/sidebar"
+- takeScreenshot: "tests/e2e/screenshots/ios-sidebar"
 - tapOn:
     id: "link.sidebar.journals"
 - scrollUntilVisible:
@@ -23,4 +23,4 @@ appId: com.logseq.logseq
 - tapOn: "Open Aug 24th, 2026"
 - assertVisible:
     id: "BackButton"
-- takeScreenshot: "docs/agent-guide/ui-comparison/ios/node"
+- takeScreenshot: "tests/e2e/screenshots/ios-node"
