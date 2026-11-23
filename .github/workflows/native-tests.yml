@@ -1,0 +1,184 @@
+name: Native Tests
+
+on:
+  pull_request:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      device_tests:
+        description: Also run the nightly simulator and emulator tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-tests-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  ios-model:
+    name: iOS model tests
+    if: github.event_name != 'schedule'
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+      - name: Run Swift model tests
+        run: python3 scripts/test-swift-model-suite.py
+
+  android-jvm:
+    name: Android JVM tests
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the LUI pin
+        id: lui
+        run: |
+          revision=$(sed -nE 's@.*logseq/lui\.git#([a-f0-9]{40})".*@\1@p' logseq.opam)
+          test -n "$revision"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: logseq/lui
+          ref: ${{ steps.lui.outputs.revision }}
+          path: duniverse/lui
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+      - name: Run Android JVM tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest -PlogseqRequireNativeCore=false
+
+  duniverse:
+    name: Vendor native test dependencies
+    if: github.event_name == 'schedule' || inputs.device_tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/ocaml-vendor
+        with:
+          mode: prepare
+
+  ios-simulator:
+    name: iOS simulator tests
+    needs: duniverse
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+      - name: Boot an iOS simulator
+        run: |
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; rs.sort(key=lambda r: [int(x) for x in r["version"].split(".")]); print(rs[-1]["identifier"])')
+          udid=$(xcrun simctl create "Native tests" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          xcrun simctl boot "$udid"
+          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+      - name: Install system dependencies
+        run: brew install sdl2 sdl2_ttf
+      - uses: ./.github/actions/ocaml-tools
+        with:
+          image: macos-15
+      - uses: ./.github/actions/ocaml-vendor
+      - name: Restore the iOS OCaml toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+      - name: Build the simulator app with testable Swift modules
+        env:
+          LOGSEQ_IOS_ENABLE_TESTING: "1"
+        run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+      - name: Wait for the simulator
+        id: boot-ready
+        run: xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR" -b
+      - name: Check sync recovery
+        run: python3 scripts/test-ios-sync-recovery.py --simulator
+      - name: Check editor focus
+        if: ${{ !cancelled() && steps.boot-ready.outcome == 'success' }}
+        run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/outliner-editor-focus.swift OutlinerEditorFocusCheck
+
+  android-instrumentation:
+    name: Android instrumentation tests
+    needs: duniverse
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      LOGSEQ_ANDROID_ABI: x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config libsdl2-dev libsdl2-ttf-dev libsdl3-dev libpango1.0-dev
+      - uses: ./.github/actions/ocaml-tools
+        with:
+          image: ubuntu-26.04
+      - uses: ./.github/actions/ocaml-vendor
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+      - name: Restore the Android OCaml toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/android-toolchain
+            _build/android-dependency-sources
+            _build/android-sqlite-host
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run background sync, editor keyboard and durable share tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: >-
+            opam exec -- ./android/gradlew -p android :app:connectedDebugAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.logseq.AndroidBackgroundSyncTest,com.logseq.logseq.AndroidEditorKeyboardTest,com.logseq.logseq.AndroidDurableShareTest
+      - name: Upload instrumentation results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation
+          path: |
+            android/app/build/outputs/androidTest-results/connected/
+            android/app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
