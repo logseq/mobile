@@ -269,7 +269,7 @@ let insert db ~now ~fresh_uuid content nodes =
       if List.mem attr structural || String.starts_with ~prefix:"block.temp/" attr then None
       else let expected = raw projected uuid attr and value = Some (semantic projected (remap_value mapping v)) in
         if expected = value then None else Some {O.attr; expected; value}) node.attrs in
-    if changes <> [] then stage (O.Set_properties {uuid; changes})) nodes;
+    if changes <> [] then stage (O.Set_properties {uuid; updated_at = None; changes})) nodes;
   let last = List.hd (List.rev nodes) in
   let uuid = Hashtbl.find mapping last.uuid in
   {intent = O.Atomic (List.rev !operations); focus = Some uuid;

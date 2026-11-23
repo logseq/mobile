@@ -14,6 +14,6 @@ val block_values : render_block:(Model.outline_row Signal.signal -> (Model.logse
 
 val waiting : Model.logseq_model Signal.signal -> string -> bool Signal.signal
 
-val temporal_picker : ?on_submit:(unit -> unit) ->
+val temporal_picker : ?on_submit:(unit -> unit) -> ?input:string Signal.state -> ?on_validity:(bool -> unit) ->
   Model.logseq_model Signal.signal -> string -> string -> string Signal.signal -> (string -> unit) -> Lui_elements.t
 val temporal_default : string -> string

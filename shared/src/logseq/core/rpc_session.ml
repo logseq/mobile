@@ -1027,7 +1027,7 @@ let refresh_retained_search session =
     session.Types.state := {current with search_result_pages = [found];
       search_result_count = List.length found; search_has_more = has_more})
 
-let stage_result session operation_id base_t intent =
+let stage_result_with ~after_stage session operation_id base_t intent =
   match
     enqueue_semantic session
       {
@@ -1041,8 +1041,11 @@ let stage_result session operation_id base_t intent =
     let rec changes_title = function Ops.Save_title _ -> true
       | Ops.Atomic intents -> List.exists changes_title intents | _ -> false in
     if changes_title intent then refresh_retained_search session;
+    after_stage ();
     snapshot_visible session
   | Error message -> Rpc.failure "stage_operation_failed" message
+
+let stage_result = stage_result_with ~after_stage:(fun () -> ())
 
 let editing_cursor session =
   match projection_server_t session with
@@ -2605,7 +2608,22 @@ let rec dispatch session action payload =
              (match flush, intent with
               | Error response, _ -> response
               | Ok (), None -> snapshot_visible session
-              | Ok (), Some intent -> stage_result session (fresh_squuid ()) cursor intent))
+              | Ok (), Some intent ->
+                let after_stage () =
+                  let current = state session in
+                  match Json.Util.member "agendaCollapsedSections" input,
+                        Json.Util.member "editingUuid" input, current.outliner_state.editing with
+                  | `List collapsed, `String uuid, Some editing when editing.uuid = uuid ->
+                    let agenda = journal_tasks_json session in
+                    let visible = List.exists (fun section ->
+                      not (List.mem (`String section) collapsed)
+                      && match Json.Util.member section agenda with
+                         | `List tasks -> List.exists (fun task -> Json.Util.member "uuid" task = `String uuid) tasks
+                         | _ -> false) ["overdue"; "doing"; "planned"] in
+                    if not visible then session.state := {current with
+                      outliner_state = {current.outliner_state with editing = None; autocomplete = None}}
+                  | _ -> () in
+                stage_result_with ~after_stage session (fresh_squuid ()) cursor intent))
          else match editing_cursor session with
          | Error (code, message) -> Rpc.failure code message
          | Ok cursor when Yojson.Basic.Util.member "action" input = `String "editText" ->

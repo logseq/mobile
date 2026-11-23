@@ -28,6 +28,8 @@ let task_dates_dialog model_source send : t =
       let current = Signal.sample model_source in
       let tr = View_base.tr current in
       let draft = state None in
+      let input = state "" in
+      let input_valid = state true in
       let waiting = own (Signal.map (task_effect_active key) model_source) in
       let feedback = own (Signal.map (fun (current : Model.logseq_model) ->
         List.find_map (fun (id, _, error) -> if key = id then error else None) current.result_view_feedback) model_source) in
@@ -49,10 +51,16 @@ let task_dates_dialog model_source send : t =
         | _ -> None) saved_dates (Signal.value draft)) in
       let save () =
         match Signal.sample loaded, Signal.sample pending with
-        | Some targets, Some value when not (Signal.sample waiting) ->
+        | Some targets, Some value when not (Signal.sample waiting) && Signal.sample (Signal.value input_valid) ->
+          let current = Signal.sample model_source in
+          let collapsed = match editing, current.outliner_edit_scope with
+            | Some uuid, Some (scope, target) when target = uuid && scope = View_rows.journal_task_scope uuid ->
+              `List (List.map (fun name -> `String name) (Model.journal_tasks_collapsed current))
+            | _ -> `Null in
           let payload = Yojson.Basic.to_string (`Assoc [
             "action", `String "saveTaskDates"; "graphId", `String graph;
             "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
+            "agendaCollapsedSections", collapsed;
             "targets", `List targets; "changes", `Assoc [name, value]]) in
           ignore (send (Model.SubmitNodeProperty (key, payload)))
         | _ -> () in
@@ -66,19 +74,27 @@ let task_dates_dialog model_source send : t =
       let error_message = reactive (function None -> box [] | Some error ->
         text ~foreground:"destructive" ~style_class:"footnote" ~value:(tr error) []) feedback in
       let controls = column ~gap:12 [
-        View_query.temporal_picker model_source "datetime" ("task-dates." ^ name) picker_value
+        View_query.temporal_picker ~input ~on_validity:(Signal.set input_valid)
+          model_source "datetime" ("task-dates." ^ name) picker_value
           (fun value -> Option.iter (fun value -> Signal.set draft (Some (`Int value))) (Natural_date.timestamp value));
+        if_ ~test:(own (Signal.map not (Signal.value input_valid)))
+          (text ~foreground:"destructive" ~style_class:"footnote" ~value:(tr "Choose a valid date and time") []);
         if_ ~test:(own (Signal.map2 (fun saved edit -> List.length saved > 1 && edit = None)
           saved_dates (Signal.value draft)))
           (text ~style_class:"footnote" ~value:(tr "Mixed dates") []);
         error_message;
         button ~variant:`ghost ~min_height:44 ~text:(tr "Clear")
           ~disabled_signal:clear_disabled ~accessibility_identifier:("task-dates.clear." ^ name)
-          ~on_press:(fun _ -> Signal.set draft (Some `Null)) [];
+          ~on_press:(fun _ ->
+            Signal.set input "";
+            Signal.set input_valid true;
+            Signal.set draft (Some `Null)) [];
       ] in
       let cancel = toolbar_button ~text:(tr "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
         ~accessibility_identifier:"task-dates.cancel" ~on_press:(fun _ -> close ()) [] in
-      let disabled = own (Signal.map2 (fun waiting pending -> waiting || pending = None) waiting pending) in
+      let unavailable = own (Signal.map2 (fun waiting pending -> waiting || pending = None) waiting pending) in
+      let disabled = own (Signal.map2 (fun unavailable valid -> unavailable || not valid)
+        unavailable (Signal.value input_valid)) in
       let save_button = toolbar_button ~text:(tr "Save") ~variant:`ghost ~style_class:"confirmation-action"
         ~accessibility_identifier:"task-dates.save" ~disabled_signal:disabled ~on_press:save [] in
       mount context ?parent (View_base.sheet ~model_source ~title:(tr field_label)
@@ -100,7 +116,8 @@ let task_dates_dialog model_source send : t =
           ];
           (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [
              button ~text:(tr "Cancel") ~on_press:(fun _ -> close ()) [];
-             button ~text:(tr "Save") ~disabled_signal:disabled ~on_press:(fun _ -> save ()) []]
+             button ~text:(tr "Save") ~disabled_signal:disabled ~accessibility_identifier:"task-dates.save"
+               ~on_press:(fun _ -> save ()) []]
            else toolbar ~label:(tr "Task dates") ~style_class:"navigation-actions" [cancel; save_button]);
         ]))
     (Signal.map (fun (current : Model.logseq_model) -> current.task_date_editor) model_source)
@@ -1363,10 +1380,12 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     | Some row -> {model with outliner_rows = row :: model.outliner_rows}
     | None -> model) model_source in
   let editing_task (current : Model.logseq_model) =
-    Option.bind current.outliner_editing (fun editing ->
-      List.find_opt (fun (row : Model.outline_row) ->
-        row.row_uuid = editing.Model.editing_uuid) current.outliner_rows)
-    |> Option.exists (fun row -> metadata_member "isTask" row = `Bool true) in
+    Option.exists (fun (editing : Model.outliner_editing) ->
+      match editing.editing_is_task with
+      | Some is_task -> is_task
+      | None -> List.exists (fun (row : Model.outline_row) ->
+          row.row_uuid = editing.editing_uuid && metadata_member "isTask" row = `Bool true)
+          current.outliner_rows) current.outliner_editing in
   let show_task_dates = Signal.map editing_task model_source in
   let open_date field () =
     let current : Model.logseq_model = Signal.sample model_source in

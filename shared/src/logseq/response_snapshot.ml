@@ -323,7 +323,9 @@ let outliner_editing input =
       int_member "caretUTF16Offset" fields )
   with
   | Some editing_uuid, Some editing_title, Some caret_utf16_offset ->
-    Some { Model.editing_uuid; editing_title; caret_utf16_offset }
+    let editing_is_task = match List.assoc_opt "isTask" fields with
+      | Some (`Bool value) -> Some value | _ -> None in
+    Some { Model.editing_uuid; editing_title; editing_is_task; caret_utf16_offset }
   | _ -> None
 
 let outliner_autocomplete input =

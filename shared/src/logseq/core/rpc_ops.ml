@@ -377,6 +377,11 @@ let rec project_outliner_intent (blocks : Model.block list)
     List.filter
       (fun block -> not (List.mem block.Model.uuid value.uuids))
       blocks
+  | Ops.Set_properties value ->
+    List.fold_left (fun blocks (change : Ops.property_change) ->
+      project_outliner_intent blocks (Ops.Set_property {
+        uuid = value.uuid; attr = change.attr; expected = change.expected; value = change.value}))
+      blocks value.changes
   | Ops.Set_property value ->
     if value.attr = "logseq.property/status" || value.attr = "logseq.property/priority" then
       let status = projected_status value.value in

@@ -354,6 +354,7 @@ let outliner_state_json ?(is_task = fun _ -> false) (state : Outliner.outliner_s
             [
               ("uuid", `String editing.uuid)
             ; ("title", `String editing.title)
+            ; ("isTask", `Bool (is_task editing.uuid))
             ; ("caretUTF16Offset", `Int editing.caret)
             ]
         | None -> `Null )

@@ -194,13 +194,8 @@ let command base_t now fresh_uuid context cmd =
          (result
             [
               operation base_t fresh_uuid
-                (Ops.Set_property
-                   {
-                     uuid;
-                     attr = "logseq.property/status";
-                     expected = expected_status context block;
-                     value = next_status_value block;
-                   });
+                (Ops.task_status_edit ~now:(now ()) ~uuid
+                   ~expected:(expected_status context block) ~value:(next_status_value block));
             ]
             [])
      | None -> Error "task block no longer exists")
@@ -211,13 +206,8 @@ let command base_t now fresh_uuid context cmd =
          (result
             [
               operation base_t fresh_uuid
-                (Ops.Set_property
-                   {
-                     uuid = value.status_uuid;
-                     attr = "logseq.property/status";
-                     expected = expected_status context block;
-                     value = Some value.status;
-                   });
+                (Ops.task_status_edit ~now:(now ()) ~uuid:value.status_uuid
+                   ~expected:(expected_status context block) ~value:(Some value.status));
             ]
             [])
      | None -> Error "task block no longer exists")

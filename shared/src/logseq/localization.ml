@@ -5414,6 +5414,7 @@ let dictionaries = [
     ("Clear", "清空");
     ("Time", "时间");
     ("Mixed dates", "日期不同");
+    ("Choose a valid date and time", "请选择有效的日期和时间");
     ("Set value", "设置值");
     ("Open {1}", "打开 {1}");
     ("Create {1}", "创建 {1}");
@@ -5849,6 +5850,7 @@ let dictionaries = [
     ("Clear", "清空");
     ("Time", "時間");
     ("Mixed dates", "日期不同");
+    ("Choose a valid date and time", "請選擇有效的日期和時間");
     ("Set value", "設定值");
     ("Open {1}", "開啟 {1}");
     ("Create {1}", "建立 {1}");

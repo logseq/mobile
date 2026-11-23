@@ -597,7 +597,10 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
       Some (if p.many then Ops.Set_value (List.map (fun text -> value (String.trim text)) (String.split_on_char ',' text))
         else value text)
       | _ -> invalid_arg "Invalid selected values" in
-    let intent = Ops.Set_property {uuid = target; attr; expected = Option.map (semantic db) (raw db target_id attr); value = assigned} in
+    let expected = Option.map (semantic db) (raw db target_id attr) in
+    let intent = if attr = "logseq.property/status" then
+        Ops.task_status_edit ~now ~uuid:target ~expected ~value:assigned
+      else Ops.Set_property {uuid = target; attr; expected; value = assigned} in
     if !created = [] then intent else Ops.Atomic (List.rev !created @ [intent])
 let begin_text_edit db ~now ~fresh_uuid input =
   let owner = required "blockUuid" input and attr = required "attr" input in
@@ -696,10 +699,10 @@ let mutation db ~now ~fresh_uuid json =
         let settings = List.filter (fun (attr, _) -> not (List.mem_assoc attr settings)) defaults @ settings in
         Ok (Ops.Atomic (create_page @ [Ops.Insert_block {uuid = view; title = name; page_uuid = page;
           parent_uuid = page; order; created_at = now}; Ops.Set_properties {uuid = view;
-            changes = List.map (fun (attr, value) -> {Ops.attr; expected = None; value = Some value}) settings}]))
+            updated_at = None; changes = List.map (fun (attr, value) -> {Ops.attr; expected = None; value = Some value}) settings}]))
       ) else
         let title = display (get db (eid db view) "block/title") in
         let intents = (if title = name then [] else [Ops.Save_title {uuid = view; expected_title = title; title = name}])
-          @ (if settings = [] then [] else [Ops.Set_properties {uuid = view; changes = List.map (property_change db view) settings}]) in
+          @ (if settings = [] then [] else [Ops.Set_properties {uuid = view; updated_at = None; changes = List.map (property_change db view) settings}]) in
         match intents with [] -> Error "No view settings changed" | [intent] -> Ok intent | intents -> Ok (Ops.Atomic intents)
   with error -> Error (match error with Invalid_argument message -> message | _ -> Printexc.to_string error)

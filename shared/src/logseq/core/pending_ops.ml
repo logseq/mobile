@@ -85,6 +85,7 @@ type pending_property =
 type pending_properties =
   { uuid : string
   ; changes : property_change list
+  ; updated_at : int option
   }
 
 type pending_insert =
@@ -301,6 +302,11 @@ let rec normalize_operation db operation =
     | other -> Ok other
   in
   Ok { operation with intent }
+
+let task_status_edit ~now ~uuid ~expected ~value =
+  let attr = "logseq.property/status" in
+  if expected = value then Set_property {uuid; attr; expected; value}
+  else Set_properties {uuid; changes = [{attr; expected; value}]; updated_at = Some now}
 
 let subtree_uuids db roots =
   let rec loop pending result =
@@ -629,7 +635,7 @@ let rec intent_json intent =
       , [
           ("uuid", `String value.uuid);
           ("changes", json_array (List.map change_json value.changes));
-        ] )
+        ] @ Option.fold ~none:[] ~some:(fun time -> ["updatedAt", `Int time]) value.updated_at )
     | Insert_block value -> ("insert-block", insert_fields value)
     | Create_asset value ->
       ( "create-asset"
@@ -757,6 +763,9 @@ let rec intent_of_json input =
       {
         uuid = string_field fields "uuid";
         changes = List.map change_of_json (array_field fields "changes");
+        updated_at = (match field fields "updatedAt" with
+          | None -> None | Some (`Int time) -> Some time
+          | _ -> invalid_arg "invalid pending intent field: updatedAt");
       }
   | "create-property-value" ->
     Create_property_value {uuid = string_field fields "uuid";

@@ -315,7 +315,7 @@ let result_list_breadcrumbs_and_local_children () =
       toggle ();
       check_eq (find beta) (-1))) [App_test.ios_backend; App_test.kotlin_backend]
 
-let cross_page_session () =
+let cross_page_session ?(task = false) () =
   let other = "10000000-0000-4000-8000-000000000007" in
   let db = fixture "#Project" in
   let db = Ds.db_with [Ds.Add (Ds.Entity_id 900007, "block/uuid", Ds.Uuid other);
@@ -324,6 +324,7 @@ let cross_page_session () =
     put alpha "block/parent" (Ds.Ref_to (ref_uuid other));
     put beta "block/page" (Ds.Ref_to (ref_uuid other));
     put beta "block/parent" (Ds.Ref_to (ref_uuid alpha))] db in
+  let db = if task then Ds.db_with [put alpha "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task"))] db else db in
   let session = Session.create_session {Session.default_options with
     load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
     graph_db = Some (fun () -> Some db);
@@ -359,6 +360,17 @@ let cross_page_result_actions () =
   let result = List.hd (items "rows" (member "query" owner)) in
   check_eq ~msg:"result trees include nonmatching children"
     (List.map (member "uuid") (items "children" (member "block" result))) [`String beta]
+
+let cross_page_task_result_shows_editor_dates () =
+  List.iter (fun backend ->
+    let session = cross_page_session ~task:true () in
+    ignore (Rpc_test.outliner_block_event session "tapBlock" alpha);
+    with_ui backend (Session.snapshot_visible session) (fun app ->
+      let model = App.model app in
+      check (not (List.exists (fun (row : Model.outline_row) -> row.row_uuid = alpha) model.outliner_rows));
+      let find = App_test.descendant_with_identifier (Lui_app.runtime app) (Lui_app.root_node app) in
+      List.iter (fun field -> check (find ("button.outliner.editor." ^ field) <> -1)) ["scheduled"; "deadline"]))
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let result_selection_toolbar () =
   List.iter (fun backend ->
@@ -604,6 +616,7 @@ let query_patch_preserves_page_and_editing () =
     | Ok projection -> Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection)
     | Error message -> fail message in
   let before = {before with Model.outliner_editing = Some {editing_uuid = alpha;
+    editing_is_task = None;
     editing_title = "Unsaved local draft"; caret_utf16_offset = 3}} in
   let patch graph expanded = Json.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
     "isQueryPatch", `Bool true; "selectedGraphId", graph;
@@ -851,6 +864,7 @@ let cases = [
   case "queries stay unevaluated until expanded and refresh when reopened" collapsed_queries_do_not_evaluate_until_opened;
   case "result lists render breadcrumbs and independently folded children" result_list_breadcrumbs_and_local_children;
   case "cross-page results retain editing and select bar actions" cross_page_result_actions;
+  case "cross-page Task results show both editor date controls" cross_page_task_result_shows_editor_dates;
   case "result long press displays the functional shared selection toolbar" result_selection_toolbar;
   case "query children survive owner filtering and honor nested result options" current_query_children_remain_visible;
   case "interactive patches refresh unchanged query owners" interactive_patches_refresh_query_results;

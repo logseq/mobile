@@ -812,6 +812,7 @@ let review_flashcard runtime uuid rating now operation_id =
          (Ops.Set_properties
             {
               Ops.uuid;
+              updated_at = None;
               changes =
                 [
                   {

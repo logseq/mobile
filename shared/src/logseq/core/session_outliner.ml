@@ -647,6 +647,7 @@ let event_patch_plan ?db (message : Outliner.outliner_message) operations =
             | Some db -> linked_dependents db title.uuid
             | None -> [title.uuid])
         | Ops.Set_property property -> Patch_blocks [ property.uuid ]
+        | Ops.Set_properties properties -> Patch_blocks [ properties.uuid ]
         | _ -> Structural_diff)
      | [] ->
        (match message with

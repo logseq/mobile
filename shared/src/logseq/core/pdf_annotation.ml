@@ -138,7 +138,7 @@ let expected db block_uuid attr = Option.bind (eid db block_uuid) (fun id ->
       | Some (Ds.Keyword ident) -> Some (Ops.Ref_ident ident)
       | _ -> Option.map (fun uuid -> Ops.Ref_uuid uuid) (uuid db target))
   | None -> Option.bind (value db id attr) (fun value -> Result.to_option (Ops.semantic_value_from_datascript value)))
-let changes db uuid fields = Ops.Set_properties {uuid; changes = List.map (fun (attr, value) ->
+let changes db uuid fields = Ops.Set_properties {uuid; updated_at = None; changes = List.map (fun (attr, value) ->
   {Ops.attr; expected = expected db uuid attr; value = Some value}) fields}
 let same db uuid attr next = Pending_projection.semantic_value_equal db
   (Option.bind (eid db uuid) (fun id -> value db id attr)) (Some next)

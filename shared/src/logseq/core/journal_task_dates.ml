@@ -43,6 +43,9 @@ let rows db today lookahead =
   let first_day = offset_day (-week_days) in
   let last_day = offset_day week_days in
   let end_day = Option.map offset_day lookahead in
+  let midnight = Dev_query.Date_time_util.journal_day_to_local_ms in
+  let start = midnight first_day in
+  let stop = Int64.pred (midnight (offset_day (week_days + 1))) in
   let within_window = function
     | Some timestamp as value ->
       let day = Cache_model.journal_day_for_ms timestamp in
@@ -83,7 +86,13 @@ let rows db today lookahead =
   let dated_eids = match end_day with
     | None -> Seq.empty
     | Some _ -> List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
-      Ds.Db.datoms db Ds.Aevt ~a:attr () |> Seq.map (fun datom -> datom.Ds.e)) in
+      let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) attr then
+          Ds.index_range db attr ~start:(Ds.Int64 start) ~stop:(Ds.Int64 stop) ()
+        else Ds.Db.datoms db Ds.Aevt ~a:attr () in
+      Seq.filter_map (fun (datom : Ds.datom) ->
+        match datom.v with
+        | Ds.Int64 time | Ds.Instant time when time >= start && time <= stop -> Some datom.e
+        | _ -> None) datoms) in
   let candidates = Seq.filter_map (fun eid ->
     if Hashtbl.mem seen eid then None else (
       Hashtbl.add seen eid ();
@@ -93,6 +102,11 @@ let rows db today lookahead =
         | Some a, Some b -> Some (min a b)
         | Some a, None | None, Some a -> Some a
         | None, None -> None in
+      let activity = lazy (last_activity eid) in
+      let doing_qualifies = if scheduled_at = None && deadline_at = None then
+          within_window (Lazy.force activity) <> None
+        else earliest <> None in
+      if not doing_qualifies then None else
       let status = Read.status_for_eid identity db eid in
       let ident = Option.bind status (fun status -> status.Cache_model.ident) in
       let dated_section = match earliest, end_day with
@@ -106,10 +120,7 @@ let rows db today lookahead =
         | (Some "logseq.property/status.done" | Some "logseq.property/status.canceled"), _ -> None
         | _, Some (Overdue, _) -> dated_section
         | Some ident, _ when ident = doing_ident ->
-          let active = last_activity eid in
-          let qualifying = if scheduled_at = None && deadline_at = None
-            then within_window active else earliest in
-          Option.map (fun _ -> Doing, -(Option.value ~default:0 active)) qualifying
+          Some (Doing, -(Option.value ~default:0 (Lazy.force activity)))
         | _, _ -> dated_section in
       Option.bind section (fun (section, order) ->
         if Read.recycled db eid then None
@@ -211,7 +222,7 @@ let mutation db input =
       if current = next then None else
         let value = Option.map (fun value -> Pending_ops.Int_value value) in
         Some {Pending_ops.attr; expected = value current; value = value next}) edits in
-    if changes = [] then None else Some (Pending_ops.Set_properties {uuid; changes})) targets expected
+    if changes = [] then None else Some (Pending_ops.Set_properties {uuid; updated_at = None; changes})) targets expected
     |> List.filter_map Fun.id in
   match writes with
   | [] -> None
