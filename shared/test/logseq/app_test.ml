@@ -318,6 +318,7 @@ let empty_sidebar_projection () =
     Model.favorites = [];
     recent_pages = [];
     selected_page = None;
+    selected_page_journal_day = None;
     selected_page_is_tag = false;
     selected_page_is_property = false;
     result_views_json = "";
@@ -3011,6 +3012,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
            Model.favorites = [ favorite ];
            recent_pages = [ recent ];
            selected_page = None;
+           selected_page_journal_day = None;
            selected_page_is_tag = false;
            selected_page_is_property = false;
            result_views_json = "";
@@ -3030,6 +3032,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
       Model.favorites = [ favorite ];
       recent_pages = [ recent ];
       selected_page = Some favorite;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
@@ -3084,6 +3087,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       Model.favorites = [ favorite ];
       recent_pages = [];
       selected_page = None;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
@@ -3315,6 +3319,7 @@ let sidebar_drag_reserves_app_navigation () =
       Model.favorites = [];
       recent_pages = [];
       selected_page = None;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
@@ -3358,6 +3363,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
       Model.favorites = [ page ];
       recent_pages = [ page ];
       selected_page = Some page;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";
@@ -8131,6 +8137,11 @@ let journal_dates_follow_the_app_language () =
   check_eq (format "zh-CN" 20271231) ("2027年12月31日", "星期五");
   check_eq (format "en" 20251231) ("Dec 31, 2025", "Wed");
   check_eq (format "en" 20260101) ("Jan 1", "Thu");
+  check_eq (format "nb-NO" 20251231) ("31. des. 2025", "ons.");
+  check_eq (format "pt-BR" 20251231) ("31 de dez. de 2025", "qua.");
+  check_eq (format "pt-PT" 20251231) ("31/12/2025", "quarta");
+  check_eq (format "ar" 20251231) ("٣١ ديسمبر ٢٠٢٥", "الأربعاء");
+  check_eq (format "fa" 20251231) ("۳۱ دسامبر ۲۰۲۵", "چهارشنبه");
   List.iter (fun backend ->
     let app = App.create (backend ()) in
     start app;
@@ -8159,8 +8170,13 @@ let journal_dates_follow_the_app_language () =
     check_heading "empty-day" empty_title "· 星期六";
     check_eq (List.map snd (View_rows.journal_section_titles (App.model app)))
       [title; empty_title];
-    check_eq (View_base.journal_display_title
-      {(App.model app) with journal_title_format = "yyyy-MM-dd"} (Some 20261123) "2026-11-23") "2026-11-23";
+    List.iter (fun (format, original, date) ->
+      let model = {(App.model app) with journal_title_format = format} in
+      check_eq (View_base.journal_title_parts model (Some 20261123) original) (date, Some "· 星期一");
+      check_eq (View_base.journal_display_title model (Some 20261123) original) date)
+      ["yyyy-MM-dd", "2026-11-23", "2026-11-23";
+       "yyyy-MM-dd EEEE", "2026-11-23 Monday", "2026-11-23";
+       "EEE, dd-MM-yyyy", "Mon, 23-11-2026", "23-11-2026"];
     let heading = descendant_with_identifier renderer root "button.journal.journal-page" in
     dispatch app (Lui_protocol.Press heading);
     flush app;

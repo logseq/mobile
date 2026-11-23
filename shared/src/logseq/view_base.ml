@@ -6,10 +6,12 @@ let tr_named current source name =
 
 let journal_title_parts (current : Model.logseq_model) day title =
   match day with
-  | Some day when Journal.valid_day day && current.journal_title_format = Journal.default_format ->
+  | Some day when Journal.valid_day day ->
     let current_year = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000 in
     let date, weekday = Localization.journal_date
       ~language:current.language ~system_language:current.system_language ~current_year day in
+    let date = if current.journal_title_format = Journal.default_format then date
+      else Option.value ~default:title (Journal.title_without_weekday day current.journal_title_format) in
     date, Some ("· " ^ weekday)
   | _ -> title, None
 
@@ -798,11 +800,14 @@ let active_node_title (current : Model.logseq_model) =
 let selected_page_title (current : Model.logseq_model) =
   match current.selected_page with
   | Some page ->
-    let day = List.find_map (fun (row : Model.outline_row) ->
-      if row.page_id = page.uuid then row.journal_day else None) current.outliner_rows in
-    let day = match day with Some _ -> day | None ->
-      List.find_map (fun ((journal : Model.sidebar_page), day) ->
-        if journal.uuid = page.uuid then Some day else None) current.empty_journals in
+    let day = match current.selected_page_journal_day with
+      | Some _ as day -> day
+      | None ->
+        match List.find_map (fun (row : Model.outline_row) ->
+          if row.page_id = page.uuid then row.journal_day else None) current.outliner_rows with
+        | Some _ as day -> day
+        | None -> List.find_map (fun ((journal : Model.sidebar_page), day) ->
+            if journal.uuid = page.uuid then Some day else None) current.empty_journals in
     journal_display_title current day page.title
   | None -> ""
 
@@ -1462,6 +1467,7 @@ let journal_navigation_model (current : Model.logseq_model) =
       current with
       destination = JournalsDestination;
       selected_page = None;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       result_views_json = "";

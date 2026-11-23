@@ -34,7 +34,7 @@ let handle (host : Drive_host.host) model = function
       :: Drive_host.resolved id)
   | Model.LoadPageReferencesEffect (id, uuid) ->
     let row =
-      App_test.journal_outline_row "cited-1" uuid "Cited block" "Today" 20260828 0
+      App_test.journal_outline_row "cited-1" uuid "Cited block" "Today" Drive_host.journal_seed_day 0
     in
     Some
       [ Model.DequeueEffect id

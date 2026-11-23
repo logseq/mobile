@@ -156,6 +156,7 @@ type sidebar_projection =
   { favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
+  ; selected_page_journal_day : int option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; result_views_json : string
@@ -399,6 +400,7 @@ type logseq_model =
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
+  ; selected_page_journal_day : int option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; selected_page_ready : bool

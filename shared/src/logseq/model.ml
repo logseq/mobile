@@ -159,6 +159,7 @@ type sidebar_projection =
   { favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
+  ; selected_page_journal_day : int option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; result_views_json : string
@@ -402,6 +403,7 @@ type logseq_model =
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
+  ; selected_page_journal_day : int option
   ; selected_page_is_tag : bool
   ; selected_page_is_property : bool
   ; selected_page_ready : bool
@@ -790,6 +792,7 @@ let initial () =
     favorites = [];
     recent_pages = [];
     selected_page = None;
+    selected_page_journal_day = None;
     selected_page_is_tag = false;
     selected_page_is_property = false;
     selected_page_ready = true;
@@ -1357,6 +1360,7 @@ let preview_sidebar_page (current : logseq_model) uuid =
     {
       current with
       selected_page = Some page;
+      selected_page_journal_day = None;
       selected_page_ready = rows <> [];
       selected_page_is_tag = false;
       selected_page_is_property = false;
@@ -2093,6 +2097,7 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
       composer_tags = session.composer_tags;
       destination = JournalsDestination;
       selected_page = None;
+      selected_page_journal_day = None;
       selected_page_is_tag = false;
       selected_page_is_property = false;
       composer_expanded = false;
@@ -3701,6 +3706,7 @@ and apply_core_snapshot (current : logseq_model)
         favorites = sidebar.favorites;
         recent_pages = sidebar.recent_pages;
         selected_page = sidebar.selected_page;
+        selected_page_journal_day = sidebar.selected_page_journal_day;
         selected_page_ready = true;
         selected_page_is_tag = sidebar.selected_page_is_tag;
         selected_page_is_property = sidebar.selected_page_is_property;

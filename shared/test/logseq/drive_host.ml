@@ -10,13 +10,15 @@ let graph_entry id name encrypted =
 let catalog_projection graphs =
   { (App_test.empty_core_projection ()) with Model.graphs }
 
+let journal_seed_day = App_test.journal_test_year () * 10000 + 828
+
 let journal_rows =
   [
     (App_test.journal_outline_row "journal-block-1" "journal"
-       "First seeded block" "Today" 20260828 0
+       "First seeded block" "Today" journal_seed_day 0
     |> fun (row : Model.outline_row) -> { row with has_children = true });
     App_test.journal_outline_row "journal-block-2" "journal"
-      "Second seeded block" "Today" 20260828 1;
+      "Second seeded block" "Today" journal_seed_day 1;
   ]
 
 let flashcard_seed =
@@ -55,7 +57,7 @@ let page_candidate =
   }
 
 let search_block =
-  App_test.journal_outline_row "block-1" "page-1" "alpha block" "Today" 20260828 0
+  App_test.journal_outline_row "block-1" "page-1" "alpha block" "Today" journal_seed_day 0
 
 let priority_seed =
   [
@@ -78,7 +80,7 @@ let default_settings =
     revision = "Development";
   }
 
-let calendar_journal_day = App_test.journal_test_year () * 10000 + 827
+let calendar_journal_day = journal_seed_day - 1
 let calendar_journal = "journal-" ^ string_of_int calendar_journal_day
 
 let contains_substr haystack needle =
@@ -345,14 +347,14 @@ let append_older_journal host id =
     App_test.journal_outline_row (Printf.sprintf "older-%d" id) "journal-older"
       "Older journal note" (Journal.day_title calendar_journal_day) calendar_journal_day 0
   in
-  host.rows <- row :: host.rows
+  host.rows <- host.rows @ [row]
 
 let append_capture host id title ?status ?(tags = []) ?uuid () =
   let row_uuid =
     match uuid with Some uuid -> uuid | None -> Printf.sprintf "capture-%d" id
   in
   let row =
-    App_test.journal_outline_row row_uuid "journal" title "Today" 20260828
+    App_test.journal_outline_row row_uuid "journal" title "Today" journal_seed_day
       (List.length host.rows)
   in
   let row =
@@ -419,13 +421,13 @@ let query_json expanded = Yojson.Basic.to_string (query_document expanded)
 
 let query_row expanded =
   let row =
-    App_test.journal_outline_row "query-block" "journal" "Query block" "Today" 20260828 2
+    App_test.journal_outline_row "query-block" "journal" "Query block" "Today" journal_seed_day 2
   in
   { row with Model.query_json = query_json expanded }
 
 let pdf_row =
   let row =
-    App_test.journal_outline_row "pdf-1" "journal" "Notes.pdf" "Today" 20260828 2
+    App_test.journal_outline_row "pdf-1" "journal" "Notes.pdf" "Today" journal_seed_day 2
   in
   {
     row with
@@ -436,7 +438,7 @@ let pdf_row =
 
 let code_row =
   let row =
-    App_test.journal_outline_row "code-1" "journal" "let x = 1" "Today" 20260828 0
+    App_test.journal_outline_row "code-1" "journal" "let x = 1" "Today" journal_seed_day 0
   in
   { row with Model.row_display_type = Some "code" }
 

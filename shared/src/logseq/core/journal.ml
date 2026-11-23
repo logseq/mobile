@@ -88,7 +88,7 @@ let weekday_index (y, m, d) =
 
 (* tf/format inverse of date_of_formatter for the tokenized
    journal-title formatters. *)
-let formatter_of_date (fmt : string) (year, month, day : int * int * int)
+let format_tokens tokens (year, month, day : int * int * int)
     : string =
   let pad2 n = Printf.sprintf "%02d" n in
   let b = Buffer.create 32 in
@@ -117,14 +117,31 @@ let formatter_of_date (fmt : string) (year, month, day : int * int * int)
           in
           (* tf/format emits capitalized English weekday names *)
           Buffer.add_string b (String.capitalize_ascii name))
-    (tokens_of_formatter fmt);
+    tokens;
   Buffer.contents b
+
+let formatter_of_date fmt date = format_tokens (tokens_of_formatter fmt) date
 
 (* common-date/int->journal-title *)
 let int_to_journal_title (day : int) (date_formatter : string) : string =
   formatter_of_date
     date_formatter
     (day / 10000, (day / 100) mod 100, day mod 100)
+
+let title_without_weekday day format =
+  let tokens = tokens_of_formatter format in
+  let rec trim_separators = function
+    | TokLit (' ' | ',') :: remaining -> trim_separators remaining
+    | tokens -> tokens in
+  let rec remove_weekday = function
+    | TokWeekday _ :: remaining -> remove_weekday (trim_separators remaining)
+    | token :: remaining -> token :: remove_weekday remaining
+    | [] -> [] in
+  let stripped = remove_weekday tokens in
+  if stripped = tokens then None
+  else
+    let stripped = List.rev (trim_separators (List.rev stripped)) in
+    Some (format_tokens stripped (day / 10000, day / 100 mod 100, day mod 100))
 
 let month_names = Array.to_list month_short
 

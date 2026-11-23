@@ -125,6 +125,12 @@ let current_summary session (summary : Model.entity_summary) =
 
 let summary_json session summary = Rpc.summary_json (current_summary session summary)
 
+let journal_day_json db uuid =
+  let day = Option.bind db (fun db ->
+    Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+      (fun eid -> Graph_read.int_value (Graph_read.value db eid "block/journal-day"))) in
+  Option.fold ~none:`Null ~some:(fun day -> `Int day) day
+
 let result_block_encoder db =
   let presentation = Node_presentation.decorate db in
   let children = Hashtbl.create 32 in
@@ -351,12 +357,8 @@ let node_routes_json session serialize serialize_plain =
          Rpc.json_object
            [
              ("uuid", `String route.uuid)
-           ; ("journalDay", match Lazy.force db with
-               | Some db when route.uuid = route.page.uuid ->
-                 let day = Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid route.uuid))
-                   (fun eid -> Graph_read.int_value (Graph_read.value db eid "block/journal-day")) in
-                 Option.fold ~none:`Null ~some:(fun day -> `Int day) day
-               | _ -> `Null)
+           ; ("journalDay", if route.uuid = route.page.uuid
+               then journal_day_json (Lazy.force db) route.uuid else `Null)
            ; ("breadcrumbs", Rpc.json_list (List.map (summary_json session) (route_breadcrumbs context route)))
            ; ("scrollTarget", match route.scroll_target with Some uuid -> `String uuid | None -> `Null)
            ; ("isTag", `Bool route.is_tag)
@@ -493,6 +495,9 @@ let snapshot ?(graph_snapshot_recovery = false) session context_blocks blocks =
            , match s.selected_sidebar_page with
              | Some page -> summary_json session page
              | None -> `Null )
+         ; ("selectedPageJournalDay", match s.selected_sidebar_page with
+             | Some page -> journal_day_json (query_db session) page.uuid
+             | None -> `Null)
          ; ( "isGraphEncrypted"
            , `Bool (selected_graph_is_encrypted session) )
          ; ( "isGraphUnlocked"
