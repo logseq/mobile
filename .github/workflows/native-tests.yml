@@ -171,15 +171,11 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-boot-timeout: 600
-          script: >-
-            opam exec -- ./android/gradlew -p android :app:connectedDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.logseq.AndroidBackgroundSyncTest,com.logseq.logseq.AndroidEditorKeyboardTest,com.logseq.logseq.AndroidDurableShareTest
+          script: opam exec -- bash scripts/test-android-native-suite.sh
       - name: Upload instrumentation results
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: android-instrumentation
-          path: |
-            android/app/build/outputs/androidTest-results/connected/
-            android/app/build/reports/androidTests/connected/
+          path: android/app/build/native-tests/instrumentation.log
           if-no-files-found: ignore
