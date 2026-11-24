@@ -235,6 +235,7 @@ type outline_row_splice =
 
 type core_projection =
   { tag_choices_update : sidebar_page list option
+  ; reference_candidates_update : (string * outliner_autocomplete_candidate list) option
   ; graph_name : string option
   ; selected_graph_id : string option
   ; journal_title_format : string option
@@ -290,6 +291,7 @@ type composer_submission =
   ; capture_status : task_status option
   ; capture_tags : sidebar_page list
   ; capture_graph_id : string option
+  ; capture_dates : (string * int) list
   }
 
 type logseq_effect =
@@ -300,6 +302,7 @@ type logseq_effect =
   | LoadResultRowsEffect of int * string * string
   | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
+  | LoadComposerReferencesEffect of int * string
   | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
   | SendAssetEffect of int * composer_asset * sidebar_page list * string option
@@ -482,6 +485,11 @@ type logseq_model =
   ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
+  ; composer_task_dates : (string * int) list
+  ; composer_task_date_field : string option
+  ; composer_reference_query : string option
+  ; composer_reference_candidates : outliner_autocomplete_candidate list
+  ; composer_reference_caret : int option
   ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
@@ -572,6 +580,12 @@ type logseq_action =
   | OpenTaskStatusPicker
   | CloseTaskStatusPicker
   | ChooseTaskStatus of string
+  | ToggleComposerTodo
+  | OpenComposerTaskDate of string
+  | CloseComposerTaskDate
+  | SetComposerTaskDate of string * int option
+  | ChooseComposerReference of string
+  | DismissComposerReference
   | ClearTaskStatus
   | RequestAppNode of string
   | ResolveAppNode of string * bool
@@ -866,6 +880,11 @@ let initial () =
     composer_tags_loading = false;
     composer_assets = [];
     composer_autofocus = false;
+    composer_task_dates = [];
+    composer_task_date_field = None;
+    composer_reference_query = None;
+    composer_reference_candidates = [];
+    composer_reference_caret = None;
     capture_confirmation = None;
     result_view_feedback = [];
     property_value_catalogs = [];
@@ -919,6 +938,7 @@ let effect_id eff =
   | PdfAnnotationEffect (id, _)
   | LoadResultRowsEffect (id, _, _) | LoadPropertyValuesEffect (id, _, _) | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
   | LoadComposerTagsEffect (id, _) -> id
+  | LoadComposerReferencesEffect (id, _) -> id
   | SendTaggedCaptureEffect (id, _) -> id
   | SendCaptureEffect (id, _) -> id
   | SendAssetEffect (id, _, _, _) -> id
@@ -1374,6 +1394,22 @@ let available_task_statuses = function
   | [] -> built_in_task_statuses ()
   | catalog -> catalog
 
+let default_task_status statuses =
+  let statuses = available_task_statuses statuses in
+  match List.find_opt (fun (status : task_status) ->
+    status.ident = Some "logseq.property/status.todo") statuses with
+  | Some _ as todo -> todo
+  | None -> List.nth_opt statuses 0
+
+let clear_task_status (current : logseq_model) =
+  {
+    current with
+    selected_task_status = None;
+    task_status_picker_open = false;
+    composer_task_dates = [];
+    composer_task_date_field = None;
+  }
+
 let string_vector_contains_ values target = List.mem target values
 
 let graph_local_ (current : logseq_model) graph_id =
@@ -1763,7 +1799,8 @@ let rollback_navigation_effect (current : logseq_model) eff =
 let composer_for_graph (current : logseq_model) graph_id =
   if current.selected_graph_id = graph_id then current
   else {current with composer_tags = []; composer_tag_choices = [];
-    composer_tags_open = false; composer_tags_loading = false}
+    composer_tags_open = false; composer_tags_loading = false;
+    composer_reference_query = None; composer_reference_candidates = []}
 
 let resolve_failed_effect (current : logseq_model) eff message =
   match eff with
@@ -1782,7 +1819,9 @@ let resolve_failed_effect (current : logseq_model) eff message =
     if capture.capture_graph_id <> current.selected_graph_id then current
     else {current with capture_confirmation = None;
       composer_draft = (if current.composer_draft = "" then capture.capture_text else current.composer_draft);
-      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags)}
+      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags);
+      composer_task_dates = (if current.composer_draft = "" && current.composer_task_dates = [] then capture.capture_dates
+        else current.composer_task_dates)}
   | SendCaptureEffect _ | SendTaskEffect _ ->
     { current with capture_confirmation = None }
   | SendAssetEffect (_, asset, tags, graph_id) ->
@@ -1982,6 +2021,32 @@ let remove_search_effects effects =
       | SearchNodesEffect _ | LoadSearchPageEffect _ -> false
       | _ -> true)
     effects
+
+let composer_edit_caret previous next =
+  let previous_length = String.length previous and next_length = String.length next in
+  let rec common_prefix index =
+    if index < previous_length && index < next_length && previous.[index] = next.[index]
+    then common_prefix (index + 1) else index in
+  let prefix = common_prefix 0 in
+  let rec common_suffix index =
+    if index < previous_length - prefix && index < next_length - prefix
+       && previous.[previous_length - 1 - index] = next.[next_length - 1 - index]
+    then common_suffix (index + 1) else index in
+  let rec char_boundary index =
+    if index < next_length && Char.code next.[index] land 0xC0 = 0x80
+    then char_boundary (index + 1) else index in
+  let caret = char_boundary (next_length - common_suffix 0) in
+  prefix, Outliner_state.utf16_length (String.sub next 0 caret)
+
+let composer_reference_request active previous draft =
+  let edit_start, caret = composer_edit_caret previous draft in
+  match Outliner_state.autocomplete_for draft caret with
+  | Some { Outliner_state.kind = Node; query } ->
+    let caret_byte = Outliner_state.byte_index_of_utf16 draft caret in
+    let typed = Option.exists (fun start -> start + 2 > edit_start)
+      (Outliner_state.last_substring (String.sub draft 0 caret_byte) "[[") in
+    if active = None && not typed then None else Some (query, caret)
+  | _ -> None
 
 let remove_composer_draft_effects effects =
   List.filter
@@ -2506,17 +2571,45 @@ let rec update (current : logseq_model) action =
     { current with composer_autofocus = not current.composer_autofocus }
   | ApplyComposerDraft draft -> { current with composer_draft = draft }
   | ChangeComposerDraft draft ->
+    let request = composer_reference_request current.composer_reference_query
+      current.composer_draft draft in
+    let query = Option.map fst request in
     let updated =
       {
         current with
         composer_draft = draft;
         composer_autofocus = false;
+        composer_reference_query = query;
+        composer_reference_caret = Option.map snd request;
+        composer_reference_candidates =
+          (if query = None then [] else current.composer_reference_candidates);
         pending_effects =
           remove_composer_draft_effects current.pending_effects;
       }
     in
     let id = updated.next_effect_id in
-    enqueue_effect updated (PersistComposerDraftEffect (id, draft))
+    let persisted = enqueue_effect updated (PersistComposerDraftEffect (id, draft)) in
+    (match query with
+     | Some query when query <> Option.value ~default:"" current.composer_reference_query
+                       || current.composer_reference_query = None ->
+       let pending = List.filter (function
+         | LoadComposerReferencesEffect _ -> false | _ -> true) persisted.pending_effects in
+       enqueue_effect {persisted with pending_effects = pending}
+         (LoadComposerReferencesEffect (persisted.next_effect_id, query))
+     | _ -> persisted)
+  | ChooseComposerReference value ->
+    let caret = Option.bind current.composer_reference_query
+      (fun _ -> current.composer_reference_caret) in
+    (match Option.bind caret (fun caret ->
+       Outliner_state.complete_node_text current.composer_draft caret value) with
+     | Some (draft, _) ->
+       let updated = {current with composer_draft = draft; composer_autofocus = not current.composer_autofocus;
+         composer_reference_query = None; composer_reference_candidates = [];
+         pending_effects = remove_composer_draft_effects current.pending_effects} in
+       enqueue_effect updated (PersistComposerDraftEffect (updated.next_effect_id, draft))
+     | None -> {current with composer_reference_query = None; composer_reference_candidates = []})
+  | DismissComposerReference ->
+    {current with composer_reference_query = None; composer_reference_candidates = []}
   | DismissComposer ->
     { current with composer_expanded = false; composer_autofocus = false }
   | StageComposerAsset asset ->
@@ -2546,6 +2639,7 @@ let rec update (current : logseq_model) action =
           | _ -> asset.payload with _ -> asset.payload in
         {asset with payload}) current.composer_assets in
       let submission = String.trim current.composer_draft in
+      let task_dates = if current.selected_task_status = None then [] else current.composer_task_dates in
       let current = { current with composer_assets = [];
         composer_tags = (if submission = "" && assets = [] then tags else []);
         capture_confirmation =
@@ -2559,6 +2653,9 @@ let rec update (current : logseq_model) action =
               composer_expanded = true;
               composer_draft = "";
               composer_autofocus = true;
+              composer_task_dates = [];
+              composer_reference_query = None;
+              composer_reference_candidates = [];
               pending_effects =
                 remove_composer_draft_effects current.pending_effects;
             }
@@ -2568,9 +2665,9 @@ let rec update (current : logseq_model) action =
               (PersistComposerDraftEffect (cleared.next_effect_id, ""))
           in
           enqueue_effect persisted
-            (if tags <> [] then SendTaggedCaptureEffect (persisted.next_effect_id,
+            (if tags <> [] || task_dates <> [] then SendTaggedCaptureEffect (persisted.next_effect_id,
                {capture_text = submission; capture_status = current.selected_task_status;
-                capture_tags = tags; capture_graph_id = graph_id})
+                capture_tags = tags; capture_graph_id = graph_id; capture_dates = task_dates})
              else match current.selected_task_status with
              | Some status ->
                SendTaskEffect (persisted.next_effect_id, submission, status)
@@ -2720,12 +2817,21 @@ let rec update (current : logseq_model) action =
          task_status_picker_open = false;
        }
      | None -> current)
-  | ClearTaskStatus ->
-    {
-      current with
-      selected_task_status = None;
-      task_status_picker_open = false;
-    }
+  | ToggleComposerTodo ->
+    (match current.selected_task_status with
+     | Some _ -> clear_task_status current
+     | None ->
+       {current with selected_task_status = default_task_status current.task_statuses})
+  | ClearTaskStatus -> clear_task_status current
+  | OpenComposerTaskDate field ->
+    if current.selected_task_status <> None && (field = "scheduled" || field = "deadline") then
+      {current with composer_task_date_field = Some field; composer_autofocus = false}
+    else current
+  | CloseComposerTaskDate -> {current with composer_task_date_field = None}
+  | SetComposerTaskDate (field, value) ->
+    let dates = List.remove_assoc field current.composer_task_dates in
+    {current with composer_task_date_field = None;
+      composer_task_dates = (match value with Some value -> dates @ [field, value] | None -> dates)}
   | RequestAppNode uuid ->
     let path = current.app_navigation_path in
     let requested = request_route path (NodeRoute uuid) in
@@ -2870,13 +2976,7 @@ let rec update (current : logseq_model) action =
           composer_expanded = kind <> "journal";
           composer_autofocus = kind = "capture" || kind = "task";
           selected_task_status =
-            (if kind = "task" then begin
-               let statuses = available_task_statuses current.task_statuses in
-               match List.find_opt (fun (status : task_status) ->
-                 status.ident = Some "logseq.property/status.todo") statuses with
-               | Some _ as todo -> todo
-               | None -> List.nth_opt statuses 0
-             end
+            (if kind = "task" then default_task_status current.task_statuses
              else current.selected_task_status);
         }
       in
@@ -3346,7 +3446,13 @@ and apply_core_snapshot (current : logseq_model)
          | _ -> true) -> tasks
     | _ when same_graph -> current.journal_tasks
     | _ -> `Null in
-  if Option.is_some projection.tag_choices_update then
+  if Option.is_some projection.reference_candidates_update then
+    match projection.reference_candidates_update with
+    | Some (query, candidates) when projection.selected_graph_id = current.selected_graph_id
+                                   && current.composer_reference_query = Some query ->
+      {current with composer_reference_candidates = candidates}
+    | _ -> current
+  else if Option.is_some projection.tag_choices_update then
     if projection.selected_graph_id <> current.selected_graph_id then current
     else {current with composer_tag_choices = Option.get projection.tag_choices_update; composer_tags_loading = false}
   else if Option.is_some projection.query_update then

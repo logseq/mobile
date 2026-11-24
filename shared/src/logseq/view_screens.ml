@@ -195,6 +195,8 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
                model_source)
           (column ~gap:0 ~padding_horizontal:16
              [
+               if_ ~test:(reactive View_base.composer_reference_active_ model_source)
+                 (View_outliner.composer_reference_bar context model_source send);
                box ~height:6 [];
                row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
@@ -247,6 +249,9 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
           (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
              [
+               if_ ~test:(reactive View_base.composer_reference_active_ model_source)
+                 (View_base.with_liquid_glass "container"
+                    (View_outliner.composer_reference_bar context model_source send));
                box ~height:6 [];
                row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
@@ -1247,5 +1252,6 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
 let logseq_view context model_source send : t =
   stack ~grow:1.0 [application_view context model_source send;
     View_outliner.task_dates_dialog model_source send;
+    View_outliner.composer_task_date_dialog model_source send;
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)
       (View_authentication.sheet model_source send)]

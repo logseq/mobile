@@ -31,6 +31,7 @@ val structural_outliner_delta :
   Outliner_state.outliner_context ->
   Outliner_state.outliner_state ->
   Cache_model.block list * string list * Yojson.Basic.t list
+val reference_candidates_json : Outliner_state.outliner_context -> string -> Yojson.Basic.t
 val outliner_candidates_json :
   Outliner_state.outliner_context ->
   Outliner_state.outliner_state ->

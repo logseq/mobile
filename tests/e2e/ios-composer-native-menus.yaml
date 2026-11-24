@@ -109,47 +109,14 @@ appId: com.logseq.logseq
 - tapOn:
     retryTapIfNoChange: false
     id: button.task-status
+- assertVisible:
+    id: button.composer.scheduled
 - takeScreenshot: composer-native-status-order
 - tapOn:
-    text: Backlog
-    retryTapIfNoChange: false
-- tapOn:
     retryTapIfNoChange: false
     id: button.task-status
-- assertVisible: Clear task status
-- tapOn:
-    text: Todo
-    retryTapIfNoChange: false
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.task-status
-- tapOn:
-    text: Doing
-    retryTapIfNoChange: false
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.task-status
-- tapOn:
-    text: In Review
-    retryTapIfNoChange: false
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.task-status
-- tapOn:
-    text: Done
-    retryTapIfNoChange: false
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.task-status
-- tapOn:
-    text: Canceled
-    retryTapIfNoChange: false
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.task-status
-- tapOn:
-    text: Clear task status
-    retryTapIfNoChange: false
+- assertNotVisible:
+    id: button.composer.scheduled
 - tapOn:
     retryTapIfNoChange: false
     id: spacer.composer.controls

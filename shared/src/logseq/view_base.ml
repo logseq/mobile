@@ -763,6 +763,9 @@ let search_editor_active_ (current : Model.logseq_model) =
 let bottom_chrome_editor_ (current : Model.logseq_model) =
   bottom_chrome_presentation current = "outliner-editor"
 
+let composer_reference_active_ (current : Model.logseq_model) =
+  current.composer_reference_query <> None
+
 let bottom_chrome_expanded_composer_ (current : Model.logseq_model) =
   bottom_chrome_presentation current = "expanded-composer"
 

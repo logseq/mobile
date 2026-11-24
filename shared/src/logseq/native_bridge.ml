@@ -255,11 +255,15 @@ let encode_effect (eff : Model.logseq_effect) =
     ^ Lui_wire.quoted asset.payload ^ "}"
   | LoadComposerTagsEffect (id, _) ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"load-composer-tags\",\"text\":\"\"}"
+  | LoadComposerReferencesEffect (id, query) ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"load-composer-references\",\"text\":"
+    ^ Lui_wire.quoted query ^ "}"
   | SendTaggedCaptureEffect (id, capture) ->
     let status = match capture.capture_status with None -> `Null
       | Some status -> Yojson.Basic.from_string (encode_task_status status) in
-    let payload = Yojson.Basic.to_string (`Assoc ["text", `String capture.capture_text;
-      "tags", Model.composer_tag_selection capture.capture_tags; "status", status]) in
+    let dates = List.map (fun (field, value) -> field, `Int value) capture.capture_dates in
+    let payload = Yojson.Basic.to_string (`Assoc (["text", `String capture.capture_text;
+      "tags", Model.composer_tag_selection capture.capture_tags; "status", status] @ dates)) in
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"send-tagged\",\"text\":" ^ Lui_wire.quoted payload ^ "}"
   | SendCaptureEffect (id, text) ->
     "{\"id\":" ^ string_of_int id

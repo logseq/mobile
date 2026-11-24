@@ -50,12 +50,8 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-menus-") as temporary:
             assert events.count("REQUEST " + service) == count, (service, events)
         assets = [json.loads(line.removeprefix("STAGED ")) for line in events if line.startswith("STAGED ")]
         assert any(asset["assetType"] == "m4a" and asset["assetSize"] > 0 for asset in assets), assets
-        for status in ("backlog", "todo", "doing", "in-review", "done", "canceled"):
-            assert any(line.startswith("EVENT press button.task-status.option.") and status in line
-                       for line in events), (status, events)
-        assert "EVENT press button.task-status.clear" in events, events
         assert events.count("EVENT press menu.graph.other") == 1, events
-        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging, every task status and native header graph switching")
+        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging, the task todo toggle and native header graph switching")
     finally:
         container = subprocess.run(["xcrun", "simctl", "get_app_container", SIMULATOR, BUNDLE, "data"],
                                    capture_output=True, text=True)
