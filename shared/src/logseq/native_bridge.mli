@@ -33,9 +33,9 @@ val encode_runtime_log_record : Model.runtime_log_record -> string
 
 val encode_runtime_log_records : Model.runtime_log_record list -> string
 
-val encode_effect : Model.logseq_effect -> string
+val encode_effect : ?model:Model.logseq_model -> Model.logseq_effect -> string
 
-val encode_effect_dispatch : Model.logseq_effect -> string -> string
+val encode_effect_dispatch : ?model:Model.logseq_model -> Model.logseq_effect -> string -> string
 
 val set_search_index_source : (unit -> string option) -> unit
 

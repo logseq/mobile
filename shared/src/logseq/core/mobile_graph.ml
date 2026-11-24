@@ -343,7 +343,7 @@ let apply_sync_event (host : mobile_graph) body =
         opened.read_runtime journal.t applied.operation_ids applied.changed_uuids;
       Ok ()
 
-let search_page host ~offset ~limit query =
+let search_page host ?journal_day ~offset ~limit query =
   match !(host.current) with
-  | Some opened -> Runtime.search_page opened.read_runtime ~offset ~limit query
+  | Some opened -> Runtime.search_page opened.read_runtime ?journal_day ~offset ~limit query
   | None -> [], false

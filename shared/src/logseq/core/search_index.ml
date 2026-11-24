@@ -580,7 +580,7 @@ let refresh index db =
 let query_rows index sql binds =
   try search_query index.path sql binds with Failure _ -> []
 
-let full_text_rows ?(prioritize_pages = false) ~offset ~limit index query =
+let full_text_rows ?(prioritize_pages = false) ?exclude_uuid ~offset ~limit index query =
   let query = String.trim query in
   let query = if String.starts_with ~prefix:"#" query && not (String.exists whitespace_char query)
     then String.sub query 1 (String.length query - 1) else query in
@@ -594,6 +594,9 @@ let full_text_rows ?(prioritize_pages = false) ~offset ~limit index query =
           query ["\\"; "%"; "_"] in
         "title LIKE ? ESCAPE '\\'", "%" ^ escaped ^ "%"
       else "title MATCH ?", get_match_input query in
+    let predicate, search_binds = match exclude_uuid with
+      | Some uuid -> predicate ^ " AND id <> ?", [Sqlite3.Data.TEXT input; Sqlite3.Data.TEXT uuid]
+      | None -> predicate, [Sqlite3.Data.TEXT input] in
     let order, rank_binds =
       if prioritize_pages then
         (* Rank page titles before LIMIT/OFFSET. Preserve the existing FTS
@@ -606,7 +609,7 @@ let full_text_rows ?(prioritize_pages = false) ~offset ~limit index query =
     try Sql.with_search_db index.path (fun connection ->
       Sql.query connection
         ("SELECT id, page, title FROM blocks_fts WHERE " ^ predicate ^ order ^ " LIMIT ? OFFSET ?")
-        (Sqlite3.Data.TEXT input :: rank_binds @ [Sqlite3.Data.INT (Int64.of_int limit);
+        (search_binds @ rank_binds @ [Sqlite3.Data.INT (Int64.of_int limit);
          Sqlite3.Data.INT (Int64.of_int (max 0 offset))])
         (fun row ->
           let uuid = Sqlite3.column_text row 0 and page_uuid = Sqlite3.column_text row 1 in
@@ -662,11 +665,26 @@ let search_hits limit index db query =
     |> Seq.take limit |> List.of_seq
   else hydrate_hits db (search limit index query)
 
-(* Rank before slicing and only hydrate the requested window. *)
-let search_hits_page ~offset ~limit index db query =
+let journal_title_match db day =
+  if not (Journal.valid_day day) then None else
+  Option.bind (Graph.journal_page_uuid db day) (fun uuid ->
+    match row_for_uuid db uuid with
+    | Some (uuid, title, page_uuid) when uuid = page_uuid -> Some {uuid; page_uuid; title; is_page = true}
+    | _ -> None)
+
+let journal_search_hit db day =
+  Option.bind (journal_title_match db day) (fun row -> List.nth_opt (hydrate_hits db [row]) 0)
+
+(* Place the exact journal match before the paged full-text results and omit its indexed duplicate. *)
+let search_hits_page ?journal_day ~offset ~limit index db query =
   if limit <= 0 then [], false else
     let limit = min 100 limit in
-    let results = full_text_rows ~prioritize_pages:true ~offset ~limit:(limit + 1) index query in
+    let results = match Option.bind journal_day (journal_title_match db) with
+      | None -> full_text_rows ~prioritize_pages:true ~offset ~limit:(limit + 1) index query
+      | Some journal when offset <= 0 ->
+        journal :: full_text_rows ~prioritize_pages:true ~exclude_uuid:journal.uuid ~offset:0 ~limit index query
+      | Some journal ->
+        full_text_rows ~prioritize_pages:true ~exclude_uuid:journal.uuid ~offset:(offset - 1) ~limit:(limit + 1) index query in
     let rec take n acc = function
       | [] -> List.rev acc, false
       | _ when n = 0 -> List.rev acc, true
