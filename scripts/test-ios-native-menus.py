@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-menus-") as temporary:
         assets = [json.loads(line.removeprefix("STAGED ")) for line in events if line.startswith("STAGED ")]
         assert any(asset["assetType"] == "m4a" and asset["assetSize"] > 0 for asset in assets), assets
         assert events.count("EVENT press menu.graph.other") == 1, events
-        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging, the task todo toggle and native sidebar graph switching")
+        print("PASS: single-tap native menus, all attachment presentations, repeated dismissal, audio staging, the task todo toggle and native header graph switching")
     finally:
         container = subprocess.run(["xcrun", "simctl", "get_app_container", SIMULATOR, BUNDLE, "data"],
                                    capture_output=True, text=True)

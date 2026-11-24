@@ -1133,9 +1133,10 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
       | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source))
     (render_result_block_in_scope context model_source)
 
-let page_heading_text ?accessibility_identifier parts =
+let page_heading_text ?accessibility_identifier ?(tracks_scroll_title = true) parts =
   let suffix = Signal.map snd parts in
-  [heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive fst parts)
+  let style_class = if tracks_scroll_title then Some "scroll-section-title" else None in
+  [heading ~level:`h3 ?style_class ~value:(reactive fst parts)
      ?accessibility_identifier [];
    if_ ~test:(Signal.map Option.is_some suffix)
      (text ~value:(reactive (Option.value ~default:"") suffix) ~style_class:"subheadline single-line"
@@ -1199,7 +1200,7 @@ let outliner_entry context model_source retained_row_source row_source
                  row ~gap:8 ~cross:`center (
                  View_base.node_icon_view ~size:28 (Signal.map2 (fun current row ->
                    View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source)
-                 :: page_heading_text parts);
+                 :: page_heading_text ~tracks_scroll_title:false parts);
                  page_title_spacer ();
                ];
            ]));
@@ -1825,7 +1826,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) show_
           (Signal.map2 View_base.journal_heading_label model_source parts)
           (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
             ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
-            [row ~gap:8 ~cross:`center (page_heading_text parts)])) in
+            [row ~gap:8 ~cross:`center (page_heading_text ~tracks_scroll_title:false parts)])) in
         Lui_ui.bool_property mount_context node PressEnabled true;
         register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
         node);
@@ -1975,8 +1976,6 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
     (Signal.map2 project_entries source model_source) in
   let first_section = Signal.own_signal mount_context.ui_scope
     (Signal.map View_rows.first_journal_section_count model_source) in
-  let section_titles = Signal.own_signal mount_context.ui_scope
-    (Signal.map View_rows.journal_section_titles model_source) in
   let ensure_content () =
     let requested = ref [] in
     fun entries ->
@@ -2001,7 +2000,7 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
       match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
   mount mount_context ?parent
-    (View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window ~on_visible_range
+    (View_rows.windowed_keyed ~scroll_target ~first_section ~on_window ~on_visible_range
       ~on_prefetch ~is_pinned:View_rows.page_entry_pinned_ ~source:entries
       ~key:View_rows.page_entry_identifier ~cmp:compare
       ~mount:(fun entry_source ->
@@ -2030,6 +2029,10 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
               (Signal.map View_rows.page_entry_ready entry_source) ]) ())
 
 let node_screen (context : Lui_ui.ui_context) model_source send : t =
+  let list_style = Signal.map (fun current ->
+    match View_base.active_node_projection current with
+    | Some {Model.node_journal_day = Some _; _} -> ""
+    | _ -> "scroll-section-titles") model_source in
   View_base.with_reading_insets
     (column ~accessibility_identifier:"screen.node"
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
@@ -2037,7 +2040,8 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
       with_result_page context model_source send
       (with_journal_task_transition model_source
       (View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
-      (virtual_list ~grow:1.0 ~gap:0 ~style_class:"scroll-section-titles" ~accessibility_identifier:"list.outliner"
+      (View_base.with_string_prop_signal StyleClass list_style
+      (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.outliner"
         ~data_attrs_signal:(Signal.map (fun current ->
           ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
         [
@@ -2063,5 +2067,5 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
           outliner_bottom_spacer ();
-        ])));
+        ]))));
     ])

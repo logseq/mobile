@@ -804,18 +804,22 @@ let active_node_title_parts (current : Model.logseq_model) =
 
 let active_node_title current = fst (active_node_title_parts current)
 
-let selected_page_title_parts (current : Model.logseq_model) =
+let selected_page_journal_day (current : Model.logseq_model) =
   match current.selected_page with
   | Some page ->
-    let day = match current.selected_page_journal_day with
+    (match current.selected_page_journal_day with
       | Some _ as day -> day
       | None ->
         match List.find_map (fun (row : Model.outline_row) ->
           if row.page_id = page.uuid then row.journal_day else None) current.outliner_rows with
         | Some _ as day -> day
         | None -> List.find_map (fun ((journal : Model.sidebar_page), day) ->
-            if journal.uuid = page.uuid then Some day else None) current.empty_journals in
-    journal_title_parts current day page.title
+            if journal.uuid = page.uuid then Some day else None) current.empty_journals)
+  | None -> None
+
+let selected_page_title_parts (current : Model.logseq_model) =
+  match current.selected_page with
+  | Some page -> journal_title_parts current (selected_page_journal_day current) page.title
   | None -> "", None
 
 let selected_page_title current = fst (selected_page_title_parts current)

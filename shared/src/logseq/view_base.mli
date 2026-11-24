@@ -372,6 +372,7 @@ val sync_error_present_ : Model.logseq_model -> bool
 val sync_error_message : Model.logseq_model -> string
 val selected_page_content_title_visible_ : Model.logseq_model -> bool
 val selected_page_title : Model.logseq_model -> string
+val selected_page_journal_day : Model.logseq_model -> int option
 val selected_page_title_parts : Model.logseq_model -> string * string option
 val navigation_root_model : Model.logseq_model -> Model.logseq_model
 val without_outliner_interaction : Model.logseq_model -> Model.logseq_model

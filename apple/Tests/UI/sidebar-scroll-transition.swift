@@ -45,6 +45,9 @@ import SwiftUI
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let backend = runtime.renderer.backend
+        var frames: [Int: CGRect] = [:]
+        backend.frameReportingEnabled = true
+        backend.onFramesReport = { frames = $0 }
         func descendants(_ id: Int) -> [Int] {
             [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
         }
@@ -70,6 +73,14 @@ import SwiftUI
         }) else { throw failure("Missing Recent/Favorites scroller") }
         print("SIDEBAR_SCROLL type=\(type(of: scroll)) size=\(scroll.contentSize) frame=\(scroll.frame) inset=\(scroll.adjustedContentInset)")
         let bottom = scroll.contentSize.height - scroll.bounds.height
+        guard let settingsID = find("button.sidebar.settings"), let settings = frames[settingsID],
+              let panelID = find("sidebar.navigation"), let panel = frames[panelID],
+              let lastRecentID = find("link.sidebar.page.recent-39") else {
+            throw failure("Missing sidebar footer or last Recent row")
+        }
+        guard abs(scroll.convert(scroll.bounds, to: window).maxY - panel.maxY) < 1 else {
+            throw failure("The sidebar scroll viewport must extend behind Settings to the bottom of the panel")
+        }
         for offset: CGFloat in [0, 400, 2200, bottom] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
             try await Task.sleep(for: .milliseconds(200))
@@ -89,6 +100,12 @@ import SwiftUI
             guard scroll.isScrollEnabled, scroll.window === window else {
                 throw failure("The retained sidebar must resume scrolling after transitions")
             }
+            guard frames[settingsID] == settings else { throw failure("Settings must stay fixed while the sidebar scrolls") }
+        }
+        let viewport = scroll.convert(scroll.bounds, to: window)
+        guard let lastRecent = frames[lastRecentID], lastRecent.minY >= viewport.minY,
+              lastRecent.maxY <= settings.minY + 1 else {
+            throw failure("The last Recent row must scroll fully above Settings")
         }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }
         print("PASS: Recent/Favorites retain their displayed scroll position while toggling the sidebar")

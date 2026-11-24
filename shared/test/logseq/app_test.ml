@@ -2592,9 +2592,10 @@ let graph_and_sync_actions_update_retained_status_in_place () =
     [ sidebar_control; sync_control ];
   check ~msg:"the journal trailing action opens the calendar"
     (descendant_with_identifier renderer connection_control "button.journal-calendar" <> -1);
-  check_eq ~msg:"the journal root leaves its default navigation title empty"
-    (property_string renderer title Lui_protocol.TextValue)
-    "";
+  let graph_switch = descendant_with_identifier renderer title "button.graph-switch" in
+  check_eq ~msg:"the journal root uses the selected graph as its header title"
+    (property_string renderer graph_switch Lui_protocol.TextValue)
+    "Work";
   check_eq ~msg:"begin sync exposes progress"
     (property_string renderer sync_control Lui_protocol.AccessibilityLabel)
     "Syncing";
@@ -3132,8 +3133,10 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let dismiss =
     child_with_identifier renderer sidebar_view "button.sidebar.dismiss"
   in
+  let navigation = extension_node application "native-navigation-stack" in
+  let header_title = child_with_identifier renderer navigation "title.main" in
   let graph_switch =
-    descendant_with_identifier renderer sidebar_view "button.graph-switch"
+    descendant_with_identifier renderer header_title "button.graph-switch"
   in
   let journals =
     descendant_with_identifier renderer sidebar_view "link.sidebar.journals"
@@ -3152,7 +3155,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorites_heading_top = List.nth favorites_heading_children 0 in
   let favorites_heading_content = List.nth favorites_heading_children 1 in
   let favorites_heading_bottom = List.nth favorites_heading_children 2 in
-  let favorites_heading_icon =
+  let favorites_heading_label =
     List.nth (children renderer favorites_heading_content) 0
   in
   let recent =
@@ -3161,9 +3164,9 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorite_link =
     descendant_with_identifier renderer favorites "link.sidebar.page.page-a"
   in
-  check_eq ~msg:"sidebar keeps the main branch content inset"
+  check_eq ~msg:"the native sidebar has a 16-point content inset"
     (property_int renderer sidebar_content Lui_protocol.PaddingValue)
-    12;
+    16;
   let pages_scroll =
     descendant_with_identifier renderer sidebar_view "scroll.sidebar.pages"
   in
@@ -3173,40 +3176,34 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"Recent belongs to the same content as the navigation rows"
     (descendant_with_identifier renderer sidebar_content "section.sidebar.recent") recent;
   let native_sidebar = extension_node application "native-sidebar" in
-  check ~msg:"the native scrolling surface owns sidebar header placement"
+  check ~msg:"the native surface owns sidebar layout"
     (native_sidebar <> -1);
-  check_eq ~msg:"graph switching belongs to the native sidebar"
+  check ~msg:"Settings is mounted beside the sidebar's scrolling content"
+    (descendant_with_identifier renderer (List.nth (children renderer native_sidebar) 1)
+       "button.sidebar.settings" <> -1);
+  check_eq ~msg:"the sidebar has no duplicate graph switch"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
-    graph_switch;
+    (-1);
+  let journals_tweak = List.hd (children renderer sidebar_content) in
   check_eq ~msg:"the sidebar content starts directly with navigation rows"
-    (List.hd (children renderer sidebar_content)) journals;
-  check_eq ~msg:"sidebar keeps the main branch row spacing"
+    (child_with_identifier renderer journals_tweak "link.sidebar.journals") journals;
+  check_eq ~msg:"VoiceOver can identify Journals as the current destination"
+    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue true));
+  check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
-    4;
+    2;
   check_eq
     ~msg:"the main surface owns dismissal instead of rendering a close row"
     dismiss (-1);
-  check ~msg:"sidebar keeps the graph switch identifier" (graph_switch <> -1);
+  check ~msg:"the main title hosts the graph switch" (graph_switch <> -1);
   check_eq ~msg:"the graph switch displays the selected graph name"
     (property_string renderer graph_switch Lui_protocol.TextValue)
     "sync 2";
+  check_eq ~msg:"the graph switch label and icon use the muted foreground"
+    (property_string renderer graph_switch Lui_protocol.ForegroundValue)
+    "muted-foreground";
   check_eq ~msg:"the graph switch is a native menu button"
     (node renderer graph_switch) (Some Lui_protocol.Button);
-  let main_width = (App.model application).viewport_width in
-  List.iter (fun (width, expected) ->
-    let accepted = try
-      dispatch application (Lui_protocol.ExtensionEvent
-        (native_sidebar, "native-sidebar", "viewport-changed",
-         Lui_protocol.String_map.singleton "width" (Lui_protocol.IntValue width)));
-      true
-      with Invalid_argument _ -> false in
-    check ~msg:"the sidebar accepts its measured native width" accepted;
-    flush application;
-    check_eq ~msg:"the actual sidebar width bounds the native menu label"
-      (property_int renderer graph_switch Lui_protocol.WidthValue) expected;
-    check_eq ~msg:"sidebar measurement leaves the main viewport independent"
-      (App.model application).viewport_width main_width)
-    [318, 182; 240, 104; 600, 464];
   check_eq ~msg:"the graph switch keeps the disclosure affordance"
     (property_string renderer graph_switch Lui_protocol.InlineIconName)
     "app:chevron-down";
@@ -3216,28 +3213,32 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"sidebar destinations use native navigation rows"
     (property_string renderer journals Lui_protocol.RoleValue)
     "navigation";
-  check_eq ~msg:"journals keeps its navigation icon"
-    (property_string renderer journals Lui_protocol.InlineIconName)
-    "app:calendar";
-  check ~msg:"the current journal destination keeps its selected row"
-    (property_bool renderer journals Lui_protocol.Selected);
-  check_eq ~msg:"flashcards keeps its navigation icon"
-    (property_string renderer flashcards Lui_protocol.InlineIconName)
-    "app:flashcards";
-  check_eq ~msg:"graphs keeps its navigation icon"
-    (property_string renderer graphs Lui_protocol.InlineIconName)
-    "app:folder";
+  List.iter (fun (row, icon, icon_size) ->
+    check_eq ~msg:"sidebar destinations have a spacious touch target"
+      (property_int renderer row Lui_protocol.MinHeight) 48;
+    check_eq ~msg:"sidebar destinations keep their navigation icon"
+      (descendant_count_with_property_string renderer row Lui_protocol.IconName icon) 1;
+    check_eq ~msg:"sidebar glyphs use their intended optical size"
+      (property_int renderer (descendant_with_node_kind renderer row Lui_protocol.Icon) Lui_protocol.WidthValue) icon_size;
+    let label = descendant_with_node_kind renderer row Lui_protocol.Text in
+    check_eq ~msg:"sidebar destinations use the iOS system font"
+      (property_string renderer label Lui_protocol.FontFamily) "system-ui";
+    check_eq ~msg:"sidebar destinations use medium font weight"
+      (property_int renderer label Lui_protocol.FontWeight) 500;
+    check ~msg:"sidebar destinations have no selected background"
+      (not (property_bool renderer row Lui_protocol.Selected)))
+    [journals, "app:calendar", 22; flashcards, "app:flashcards", 28; graphs, "app:folder", 22];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
     "app:document";
-  check_eq ~msg:"sidebar section glyphs match main's caption2 metrics"
-    (property_int renderer favorites_heading_icon Lui_protocol.WidthValue)
-    14;
-  check_eq ~msg:"sidebar section headings keep main's top spacing"
+  check_eq ~msg:"sidebar section names use the iOS system font"
+    (property_string renderer favorites_heading_label Lui_protocol.FontFamily)
+    "system-ui";
+  check_eq ~msg:"sidebar section headings have clear space above them"
     (property_int renderer favorites_heading_top Lui_protocol.HeightValue)
-    16;
-  check_eq ~msg:"sidebar section headings keep main's bottom spacing"
+    18;
+  check_eq ~msg:"sidebar section headings have a small gap below them"
     (property_int renderer favorites_heading_bottom Lui_protocol.HeightValue)
     6;
   dispatch application (Lui_protocol.Press favorite_link);
@@ -3253,18 +3254,15 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (property_bool renderer root Lui_protocol.Enabled);
   check_eq ~msg:"the selected favorite page is previewed at the root"
     (App.model application).selected_page (Some favorite);
-  dispatch application
-    (Lui_protocol.Press
-       (descendant_with_identifier renderer root "button.sidebar"));
-  flush application;
-  let reopened_sidebar =
-    descendant_with_identifier renderer root "sidebar.navigation"
-  in
-  let switch_button =
-    descendant_with_identifier renderer reopened_sidebar "button.graph-switch"
-  in
+  check ~msg:"the favorite link has no selected background after navigation"
+    (not (property_bool renderer favorite_link Lui_protocol.Selected));
+  let favorite_tweak = parent_with_child_identifier renderer favorites "link.sidebar.page.page-a" in
+  check_eq ~msg:"VoiceOver can identify the current favorite"
+    (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
+  check_eq ~msg:"VoiceOver no longer identifies Journals as current"
+    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue false));
   let menu =
-    descendant_with_identifier renderer switch_button "menu.graph-switch"
+    descendant_with_identifier renderer graph_switch "menu.graph-switch"
   in
   check_eq ~msg:"the graph button owns a system menu without a popup portal"
     (node renderer menu) (Some Lui_protocol.ContextMenu);
@@ -3281,27 +3279,36 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (not (property_bool renderer preparing_item Lui_protocol.Enabled));
     check_eq ~msg:"opening the graph menu keeps the current destination"
       (App.model application).destination Model.JournalsDestination;
-    check ~msg:"opening the graph menu keeps the drawer visible"
-      (property_bool renderer root Lui_protocol.Selected);
+    check ~msg:"the graph menu is available with the drawer closed"
+      (not (property_bool renderer root Lui_protocol.Selected));
     check ~msg:"system presentation does not require model-owned popup state"
       (not (App.model application).graph_menu_open);
-    let reopened_menu =
-      descendant_with_identifier renderer reopened_sidebar
-        "menu.graph-switch"
-    in
-    if reopened_menu <> -1 then begin
-      let remote_item =
-        child_with_identifier renderer reopened_menu "menu.graph.remote"
-      in
-      dispatch application (Lui_protocol.Press remote_item);
-      flush application;
-      check
-        ~msg:"choosing another graph reuses the typed open-graph effect"
-        (List.exists (function Model.OpenGraphEffect (_, "remote") -> true | _ -> false)
-          (App.model application).pending_effects);
-      check ~msg:"choosing a graph closes the controlled drawer"
-        (not (property_bool renderer root Lui_protocol.Selected))
-    end
+    let selecting = {(App.model application) with outliner_selected_block_ids = ["selected-block"]} in
+    let attempted_switch = Model.update selecting (Model.SelectSidebarGraph "remote") in
+    check_eq ~msg:"switching graphs cannot clear an active block selection"
+      attempted_switch.outliner_selected_block_ids selecting.outliner_selected_block_ids;
+    check_eq ~msg:"switching graphs cannot enqueue an effect during block selection"
+      attempted_switch.pending_effects selecting.pending_effects;
+    send application Model.ShowFlashcards;
+    flush application;
+    check ~msg:"Flashcards retains its deck picker"
+      (descendant_with_identifier renderer navigation "menu.flashcards.deck" <> -1);
+    let flashcards_switch = descendant_with_identifier renderer navigation "button.graph-switch" in
+    let remote_item = descendant_with_identifier renderer flashcards_switch "menu.graph.remote" in
+    check ~msg:"Flashcards also exposes the native graph switch" (remote_item <> -1);
+    send application (Model.ApplyComposerDraft "Unsent capture");
+    send application Model.ExpandComposer;
+    flush application;
+    dispatch application (Lui_protocol.Press remote_item);
+    flush application;
+    check
+      ~msg:"choosing another graph reuses the typed open-graph effect"
+      (List.exists (function Model.OpenGraphEffect (_, "remote") -> true | _ -> false)
+        (App.model application).pending_effects);
+    check ~msg:"switching graphs closes the composer and clears autofocus"
+      (not ((App.model application).composer_expanded || (App.model application).composer_autofocus));
+    check_eq ~msg:"switching graphs keeps the unsent draft"
+      (App.model application).composer_draft "Unsent capture"
   end
 
 let sidebar_drag_reserves_app_navigation () =
@@ -3375,8 +3382,7 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
     descendant_with_identifier renderer root "list.outliner"
   in
   let title =
-    descendant_with_identifier renderer (Lui_app.root_node application)
-      "title.main"
+    extension_property application (extension_node application "native-navigation-stack") "title"
   in
   let related =
     descendant_with_identifier renderer outliner
@@ -3398,9 +3404,8 @@ let selected_sidebar_pages_render_their_outliner_and_related_content () =
   let page_title_layout =
     descendant_with_identifier renderer outliner "layout.selected-page.title"
   in
-  check_eq ~msg:"selected pages own the main header title"
-    (property_string renderer title Lui_protocol.TextValue)
-    "Project";
+  check_eq ~msg:"an inline page heading leaves the contextual header title empty"
+    title (Some (Lui_protocol.StringValue ""));
   check ~msg:"selected pages render their core-projected linked references"
     (related <> -1);
   check_eq
@@ -3991,8 +3996,10 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     (descendant_with_identifier renderer screen "layout.flashcards.review") (-1);
   let navigation = extension_node application "native-navigation-stack" in
   let toolbar = extension_node application "native-flashcards-toolbar" in
-  check_eq ~msg:"card group controls replace the iOS navigation title slot"
-    (children renderer (List.nth (children renderer navigation) 2)) [toolbar];
+  let title_slot = List.nth (children renderer navigation) 2 in
+  let graph_switch = child_with_identifier renderer title_slot "button.graph-switch" in
+  check ~msg:"the navigation title hosts both the card group controls and the graph switch"
+    (graph_switch <> -1 && children renderer title_slot = [toolbar; graph_switch]);
   let deck_menu = child_with_identifier renderer toolbar "menu.flashcards.deck" in
   check ~msg:"the toolbar carries both the card group menu and the add button"
     (deck_menu <> -1
@@ -8052,8 +8059,6 @@ let journal_dates_follow_the_app_language () =
     let empty_title = if journal_test_year () = 2025 then "11月22日" else "2025年11月22日" in
     check_heading "journal-page" title "· 星期一";
     check_heading "empty-day" empty_title "· 星期六";
-    check_eq (List.map snd (View_rows.journal_section_titles (App.model app)))
-      [title; empty_title];
     List.iter (fun (format, original, date) ->
       let model = {(App.model app) with journal_title_format = format} in
       check_eq (View_base.journal_title_parts model (Some 20261123) original) (date, Some "· 星期一");
@@ -8286,9 +8291,6 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
     (List.assoc "data-first-section-count" metadata) "3";
-  check_eq ~msg:"journal dates remain available outside the mounted block window"
-    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-3" metadata)
-    (Some (expected_august_date 27), Some (expected_august_date 28));
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
        List.exists (fun item -> List.mem entry (children renderer item))
@@ -11057,17 +11059,6 @@ let native_bridge_preserves_viewport_width () =
   ignore (Native_bridge.extension_event navigation "native-navigation-stack"
     "viewport-changed" "" 820);
   check_eq ~msg:"the native ABI preserves tablet width" (App.model application).viewport_width 820;
-  let sidebar = extension_node application "native-sidebar" in
-  let accepts_sidebar = try
-    ignore (Native_bridge.extension_event sidebar "native-sidebar" "viewport-changed" "" 318);
-    true with Invalid_argument _ -> false in
-  check ~msg:"the native ABI preserves the sidebar's measured width" accepts_sidebar;
-  let renderer = Lui_app.runtime application in
-  let switch = descendant_with_identifier renderer sidebar "button.graph-switch" in
-  check_eq ~msg:"the native ABI bounds the actual menu label"
-    (property_int renderer switch Lui_protocol.WidthValue) 182;
-  check_eq ~msg:"the sidebar ABI leaves the main viewport independent"
-    (App.model application).viewport_width 820;
   send application Model.OpenSidebar;
   send application Model.ShowJournals;
   flush application;
@@ -11367,7 +11358,7 @@ let sidebar_settings_opens_sheet_directly () =
   let renderer = Lui_app.runtime application in
   let root = Lui_app.root_node application in
   let settings = descendant_with_identifier renderer root "button.sidebar.settings" in
-  check ~msg:"settings is available directly beside the graph switch" (settings <> -1);
+  check ~msg:"settings is available directly in the sidebar" (settings <> -1);
   dispatch application (Lui_protocol.Press settings);
   flush application;
   check ~msg:"a single settings click opens the sheet" (App.model application).settings_open;

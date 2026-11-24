@@ -50,17 +50,32 @@ import SwiftUI
         }
         try backend.performPress(node: id("button.sidebar"))
         try await Task.sleep(for: .milliseconds(1500))
-        let graph = try frame("button.graph-switch")
         let settings = try frame("button.sidebar.settings")
-        // Navigation bars include system bottom spacing outside the controls.
-        // Compare the actual toolbar control, rather than the bar's outer box.
+        let sidebar = try frame("sidebar.navigation")
+        let composer = try frame("row.bottom.capture")
+        let journalsButton = try frame("link.sidebar.journals")
+        let journalsID = try id("link.sidebar.journals")
+        guard let contentID = backend.model(id: journalsID)?.children.first,
+              let journals = frames[contentID] else { throw failure("Missing Journals label frame") }
         let toolbar = try frame("button.sidebar")
-        print("CHROME graph=\(graph) settings=\(settings) toolbar=\(toolbar)")
-        for (name, control) in [("graph switch", graph), ("sidebar settings", settings)] {
-            if abs(control.midY - toolbar.midY) > 0.5 { errors.append(name + " is not vertically aligned with the main toolbar") }
+        print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
+        if journals.midY <= toolbar.midY || journals.midY > toolbar.maxY + 4 {
+            errors.append("Journals must sit just below the header controls")
         }
+        if journalsButton.minY < window.safeAreaInsets.top {
+            errors.append("The Journals touch target must clear the status area")
+        }
+        if abs(sidebar.maxX - settings.maxX - 16) > 1 || settings.width < 44 || settings.height < 44 {
+            errors.append("Settings must sit at the sidebar's bottom trailing corner with a 44-point touch target")
+        }
+        if abs(settings.midY - composer.midY) > 1 {
+            errors.append("Settings must share the collapsed composer's vertical center")
+        }
+        try backend.performPress(node: id("button.sidebar.settings"))
+        try await Task.sleep(for: .milliseconds(300))
+        _ = try id("sheet.settings")
         guard errors.isEmpty else { throw failure(errors.joined(separator: "; ")) }
-        print("PASS: native composer controls and sidebar header share their toolbar center lines")
+        print("PASS: native composer controls are aligned and the sidebar button opens Settings")
     }
 
     static func failure(_ message: String) -> NSError {

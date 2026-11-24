@@ -106,7 +106,7 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
       [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
         offset source (Signal.value viewport)) ~key ~cmp ~mount]))
 
-let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
+let windowed_keyed ?scroll_target ?first_section ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
     ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount () : Lui_elements.t =
@@ -156,12 +156,6 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
        "data-pinned-index", string_of_int pinned_index]) window layout) in
-    let section_titles = match section_titles with
-      | Some source -> source | None -> Signal.constant context.ui_scheduler [] in
-    let metadata_base = own (Signal.map2 (fun metadata titles ->
-      List.rev_append (List.rev_map (fun (index, title) ->
-        ("data-section-title-" ^ string_of_int index, title)) titles) metadata)
-      metadata_base section_titles) in
     let metadata = own (Signal.map2 (fun metadata request ->
       match request with None -> metadata | Some (uuid, index) ->
         ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
@@ -452,31 +446,20 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
-let journal_sections current =
-  if not (View_base.journal_home_visible_ current) then [] else
-  let previous = ref None in
-  page_entries (retained_outliner_rows current) current
-  |> List.mapi (fun index entry ->
-    let section = match entry with
-      | Outline_entry row -> Option.map (fun title -> row.value.page_id, row.value.journal_day, title) row.value.journal_title
-      | Placeholder_entry {parent_uuid; journal_heading = Some (title, day, _); _} -> Some (parent_uuid, Some day, title)
-      | _ -> None in
-    match section with
-    | Some (page, day, title) when !previous <> Some page ->
-      previous := Some page;
-      Some (index, day, title)
-    | _ -> None)
-  |> List.filter_map Fun.id
-
-let journal_section_titles current =
-  List.map (fun (index, day, title) -> index, View_base.journal_display_title current day title)
-    (journal_sections current)
-
 let first_journal_section_count current =
-  match journal_sections current with
-  | [] -> 0
-  | [_] -> List.length (page_entries (retained_outliner_rows current) current)
-  | _ :: (index, _, _) :: _ -> index
+  if not (View_base.journal_home_visible_ current) then 0 else
+  let section_page = function
+    | Outline_entry row when row.value.journal_title <> None -> Some row.value.page_id
+    | Placeholder_entry {parent_uuid; journal_heading = Some _; _} -> Some parent_uuid
+    | _ -> None in
+  let rec count index first_page = function
+    | [] -> if first_page = None then 0 else index
+    | entry :: rest ->
+      match first_page, section_page entry with
+      | Some first, Some page when first <> page -> index
+      | None, (Some _ as page) -> count (index + 1) page rest
+      | _ -> count (index + 1) first_page rest in
+  count 0 None (page_entries (retained_outliner_rows current) current)
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

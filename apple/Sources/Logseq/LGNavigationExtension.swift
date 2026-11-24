@@ -5,77 +5,11 @@ import Observation
 import UIKit
 #endif
 
-#if os(iOS)
-@MainActor @Observable
-private final class JournalScrollTitle {
-    private(set) var displayed: String?
-    @ObservationIgnored private var candidate: String?
-    @ObservationIgnored private var scrollingCandidate: String?
-    @ObservationIgnored private var isScrolling = false
-    @ObservationIgnored private var updateTask: Task<Void, Never>?
-
-    func receive(_ title: String?) {
-        candidate = title
-        if isScrolling {
-            // The inline heading can temporarily leave the toolbar title empty.
-            if let title { scrollingCandidate = title }
-        } else {
-            cancelUpdate()
-        }
-        scheduleUpdate()
-    }
-
-    func setScrolling(_ scrolling: Bool) {
-        guard isScrolling != scrolling else { return }
-        isScrolling = scrolling
-        scrollingCandidate = scrolling ? candidate ?? displayed : nil
-        cancelUpdate()
-        scheduleUpdate()
-    }
-
-    private func cancelUpdate() {
-        updateTask?.cancel()
-        updateTask = nil
-    }
-
-    private var nextTitle: String? { isScrolling ? scrollingCandidate : candidate }
-
-    private func scheduleUpdate() {
-        guard updateTask == nil, nextTitle != displayed else { return }
-        // Coalesce fast section changes while moving and settle the final heading at rest.
-        let delay: Duration = .milliseconds(isScrolling ? 150 : 120)
-        updateTask = Task { [weak self] in
-            do { try await Task.sleep(for: delay) } catch { return }
-            guard let self else { return }
-            updateTask = nil
-            displayed = nextTitle
-        }
-    }
-}
-
-private struct JournalScrollTitleModifier: ViewModifier {
-    @State private var title = JournalScrollTitle()
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        let displayed = title.displayed
-        let tracked = content
-            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title.receive($0) }
-            .transformPreference(LUIScrollTitlePreferenceKey.self) { $0 = displayed }
-        if #available(iOS 18.0, *) {
-            tracked.onScrollPhaseChange { _, phase in
-                title.setScrolling(phase != .idle)
-            }
-        } else {
-            tracked
-        }
-    }
-}
-#endif
-
 enum LGNavigationSurfacePolicy {
     static let androidContentTopPadding = CGFloat(0)
     static let androidDestinationContentTopPadding = CGFloat(56)
+    // The collapsed composer is 58 points tall and sits 21 points from the bottom.
+    static let collapsedComposerCenterFromBottom: CGFloat = 21 + 58 / 2
 
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
         contentPreference
@@ -262,16 +196,16 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
-        #if os(iOS)
         try registry.registerTweak(
             LUIAppleTweak(
-                identifier: "journal-scroll-title",
-                fingerprint: "lui-tweak-v1|20:journal-scroll-title|profiles:ios/swiftui|properties:"
-            ) { content, _ in
-                AnyView(content.modifier(JournalScrollTitleModifier()))
+                identifier: "sidebar-current-item",
+                fingerprint: "lui-tweak-v1|20:sidebar-current-item|profiles:ios/swiftui|properties:7:current:bool:required:none",
+                properties: [.init(name: "current", kind: .bool, isRequired: true)]
+            ) { content, context in
+                let isCurrent = context.property("current") == .bool(true)
+                return AnyView(content.accessibilityAddTraits(isCurrent ? .isSelected : []))
             }
         )
-        #endif
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-auth-input",
@@ -339,9 +273,8 @@ enum LGNavigationExtension {
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-sidebar",
-                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:16:viewport-changed[5:width:int:required]",
-                acceptsStandardChildren: true,
-                events: [.init(name: "viewport-changed", fields: [.init(name: "width", kind: .int, isRequired: true)])]
+                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
+                acceptsStandardChildren: true
             ) { context in
                 AnyView(LGSidebarNavigation(context: context))
             }
@@ -438,8 +371,9 @@ struct LGWindowVerticalInsetsReader: UIViewRepresentable {
         override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); measure() }
         func measure() {
             guard let window else { return }
-            // The drawer fills the window, so SwiftUI's inherited safe area is empty.
-            let frame = convert(bounds, to: window)
+            // A full-window drawer scales during transitions without changing its layout insets.
+            let frame = abs(bounds.height - window.bounds.height) < 1
+                ? window.bounds : convert(bounds, to: window)
             let insets = UIEdgeInsets(top: max(0, window.safeAreaInsets.top - frame.minY),
                                       left: 0,
                                       bottom: max(0, frame.maxY - (window.bounds.maxY - window.safeAreaInsets.bottom)),
@@ -453,12 +387,16 @@ struct LGWindowVerticalInsetsReader: UIViewRepresentable {
 #endif
 
 private struct LGSidebarNavigation: View {
+    private static let settingsButtonHeight: CGFloat = 44
     let context: LUIAppleExtensionViewContext
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
     @State private var topInset: CGFloat = 0
-    @State private var bottomInset: CGFloat = 0
+
+    private var settingsBottomPadding: CGFloat {
+        LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - Self.settingsButtonHeight / 2
+    }
 
     private var palette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -476,22 +414,11 @@ private struct LGSidebarNavigation: View {
             ? Color.white
             : LogseqThemePolicy.accent
         let scroll = ScrollView {
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    child(at: 1).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    child(at: 2)
-                }
-                .frame(minHeight: 44)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                child(at: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // The drawer host extends to the window edges. Keep this spacing
-            // inside the scroll content so rows pass behind the frosted edge.
-            .padding(.top, topInset)
-            .padding(.bottom, bottomInset)
+            child(at: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // Let the rows scroll into the status area while starting just below it.
+                .padding(.top, topInset)
+                .padding(.bottom, settingsBottomPadding + Self.settingsButtonHeight + 4)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -510,16 +437,15 @@ private struct LGSidebarNavigation: View {
             scroll
             #endif
         }
+        .overlay(alignment: .bottomTrailing) {
+            child(at: 1)
+                .padding(.trailing, 16)
+                .padding(.bottom, settingsBottomPadding)
+        }
         #if os(iOS)
-        .background(LGWindowVerticalInsetsReader {
-            topInset = $0.top
-            bottomInset = $0.bottom
-        })
+        .background(LGWindowVerticalInsetsReader { topInset = $0.top })
         #endif
         .background(background.ignoresSafeArea())
-        .onGeometryChange(for: Int.self) { Int($0.size.width.rounded(.down)) } action: { width in
-            try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
-        }
     }
 
     private func child(at index: Int) -> AnyView {
@@ -762,8 +688,6 @@ private struct LGNativeSearchHost: ViewModifier {
     #if os(iOS)
     let transitions: LGNavigationTransitions
     #endif
-    @Environment(\.lgVerticalToolbar) private var verticalToolbar
-
     @ViewBuilder
     func body(content: Content) -> some View {
         if let search {
@@ -796,16 +720,6 @@ private struct LGNativeSearchHost: ViewModifier {
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
                     placement: .automatic, prompt: Text(search.title))
                 #endif
-            }
-            .toolbar {
-                if search.isVisible && !verticalToolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text(search.statusTitle)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("search.status")
-                    }
-                }
             }
         } else { content }
     }
@@ -890,16 +804,17 @@ private struct LGNavigationContent: View {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
-    private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
+    private var flashcardsToolbar: (container: Int, title: Int, add: Int, graph: Int)? {
         guard let toolbarStartIndex,
               let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
         let _ = context.measureStamp(of: titleSlot)
-        guard let container = context.childIDs(of: titleSlot).first,
-              context.extensionIdentifier(of: container) == LGNavigationExtension.flashcardsToolbarIdentifier
-        else { return nil }
+        let slots = context.childIDs(of: titleSlot)
+        guard slots.count == 2,
+              context.extensionIdentifier(of: slots[0]) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
+        let container = slots[0]
         let children = context.childIDs(of: container)
         guard children.count == 3 else { return nil }
-        return (container, children[0], children[1])
+        return (container, children[0], children[1], slots[1])
     }
 
 
@@ -1054,11 +969,10 @@ private struct LGNavigationContent: View {
 
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
-        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
-        return NavigationStack(path: pathBinding) {
+        NavigationStack(path: pathBinding) {
             navigationSurface(Group {
                 if toolbarStartIndex != nil {
-                    rootNavigationSurface.navigationTitle(verticalToolbar && flashcardsToolbar != nil ? "" : title)
+                    rootNavigationSurface.navigationTitle(verticalToolbar ? "" : contextualTitle)
                 } else {
                     rootNavigationSurface
                 }
@@ -1070,6 +984,8 @@ private struct LGNavigationContent: View {
                 )
                 .background(routeBackground), active: path.isEmpty)
                 .navigationDestination(for: Int.self) { childID in
+                    let searchPage = searchRoutes.contains(childID)
+                    let destinationSearch = searchPage ? nil : search
                     navigationSurface(destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
                         .frame(
@@ -1079,9 +995,14 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground), active: path.last == childID)
                         .toolbar {
-                            trailingToolbar(searchPage: searchRoutes.contains(childID))
+                            trailingToolbar(searchPage: searchPage)
+                            if !verticalToolbar, let destinationSearch, destinationSearch.isVisible {
+                                ToolbarItem(placement: .principal) {
+                                    searchStatusTitle(destinationSearch.statusTitle)
+                                }
+                            }
                         }
-                        .modifier(nativeSearchHost(searchRoutes.contains(childID) ? nil : search))
+                        .modifier(nativeSearchHost(destinationSearch))
                         #if os(iOS)
                         .toolbar(.visible, for: .navigationBar)
                         #endif
@@ -1108,12 +1029,18 @@ private struct LGNavigationContent: View {
                                 }
                             }
                         }
-                        if let flashcardsToolbar, !searchVisible {
-                            if !verticalToolbar {
-                                ToolbarItem(placement: .principal) {
-                                    flashcardsTitle(flashcardsToolbar.title)
+                        if !verticalToolbar, !pdfWorkspaceOpen || searchVisible {
+                            ToolbarItem(placement: .principal) {
+                                if let search, searchVisible {
+                                    searchStatusTitle(search.statusTitle)
+                                } else if let flashcardsToolbar {
+                                    flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
+                                } else {
+                                    graphSwitchTitle
                                 }
                             }
+                        }
+                        if let flashcardsToolbar, !searchVisible {
                             let addButton = context.nodeView(of: flashcardsToolbar.add)
                                 .frame(width: 44, height: 44)
                                 .buttonStyle(.plain)
@@ -1182,26 +1109,71 @@ private struct LGNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
-    private func flashcardsTitle(_ nodeID: Int) -> some View {
-        context.nodeView(of: nodeID)
+    private func flashcardsHeader(deck: Int, graph: Int) -> some View {
+        HStack(spacing: 8) {
+            context.nodeView(of: deck)
+                .font(.headline)
+                .lineLimit(1)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+            graphSwitchMenu(graph)
+        }
+    }
+
+    private func searchStatusTitle(_ title: String) -> some View {
+        Text(title)
             .font(.headline)
             .lineLimit(1)
+            .accessibilityIdentifier("search.status")
+    }
+
+    private func graphSwitchMenu(_ nodeID: Int) -> some View {
+        context.nodeView(of: nodeID)
+            .lineLimit(1)
+            .truncationMode(.middle)
             .menuStyle(.button)
             .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .disabled(selectionActive)
+    }
+
+    private var graphSwitchTitle: some View {
+        VStack(spacing: 0) {
+            if let toolbarStartIndex,
+               let titleSlot = childID(at: toolbarStartIndex + 1),
+               let graphSwitch = context.childIDs(of: titleSlot).first {
+                graphSwitchMenu(graphSwitch)
+            }
+            if !contextualTitle.isEmpty {
+                Text(verbatim: contextualTitle)
+                    .lineLimit(1)
+                    .font(.caption.weight(.semibold))
+            }
+        }
+        .frame(minHeight: 44)
     }
 
     @ViewBuilder
     private var rootNavigationSurface: some View {
-        withAppTint(searchSurface(transformedRootContent, active: path.isEmpty))
-            .padding(.top, navigationContentTopPadding)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if verticalToolbar, !searchVisible, let flashcardsToolbar {
-                    // A principal item would create a second, horizontal bar.
-                    flashcardsTitle(flashcardsToolbar.title)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(routeBackground)
+        let base = AnyView(transformedRootContent.safeAreaInset(edge: .top, spacing: 0) {
+            if verticalToolbar, toolbarStartIndex != nil {
+                // A principal item would create a second, horizontal bar on Duo.
+                let hideTitle = searchVisible || pdfWorkspaceOpen
+                Group {
+                    if let flashcardsToolbar {
+                        flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
+                    } else {
+                        graphSwitchTitle
+                    }
                 }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .opacity(hideTitle ? 0 : 1)
+                .allowsHitTesting(!hideTitle)
+                .accessibilityHidden(hideTitle)
             }
+        })
+        withAppTint(searchSurface(base, active: path.isEmpty))
+            .padding(.top, navigationContentTopPadding)
             .background {
                 if let flashcardsToolbar {
                     context.nodeView(of: flashcardsToolbar.container)
@@ -1328,6 +1300,10 @@ private struct LGNavigationContent: View {
     private var navigationTitle: String {
         guard case let .string(value) = context.property("title") else { return "" }
         return value
+    }
+
+    private var contextualTitle: String {
+        navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle
     }
 
     private var navigationContentTopPadding: CGFloat {

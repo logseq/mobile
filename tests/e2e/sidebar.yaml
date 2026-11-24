@@ -6,10 +6,12 @@ appId: com.logseq.logseq
     visible:
       id: "button.sidebar"
     timeout: 30000
+- assertVisible:
+    id: "button.graph-switch"
 - tapOn:
     id: "button.sidebar"
 - assertVisible:
-    id: "button.graph-switch"
+    id: "button.sidebar.settings"
 - assertVisible:
     id: "link.sidebar.graphs"
 - assertVisible: "Favorites"
@@ -18,6 +20,12 @@ appId: com.logseq.logseq
     id: "section.sidebar.favorites"
 - assertVisible:
     id: "section.sidebar.recent"
+- tapOn:
+    id: "button.sidebar.settings"
+- assertVisible:
+    id: "screen.settings"
+- tapOn:
+    id: "button.connection.cancel"
 - tapOn:
     id: "button.sidebar"
 - assertNotVisible:
@@ -34,3 +42,11 @@ appId: com.logseq.logseq
     duration: 500
 - assertNotVisible:
     id: "link.sidebar.graphs"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
+- assertVisible:
+    id: "menu.flashcards.deck"
+- assertVisible:
+    id: "button.graph-switch"

@@ -14,12 +14,9 @@ appId: com.logseq.logseq
 - assertNotVisible: Camera
 - assertVisible:
     id: button.composer.expand
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.sidebar
 - assertVisible:
     id: button.graph-switch
-- takeScreenshot: native-sidebar-toolbar-alignment
+- takeScreenshot: native-graph-header
 - tapOn:
     retryTapIfNoChange: false
     id: button.graph-switch

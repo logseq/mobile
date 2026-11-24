@@ -223,7 +223,7 @@ let native_navigation_title_schema () =
 let native_sidebar_schema () =
   let open Lui_protocol in
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
-    true [] [] [Lui_extension.event "viewport-changed" [Lui_extension.event_field "width" Lui_extension.IntScalar true]]
+    true [] [] []
 
 let native_top_notification_schema () =
   let open Lui_protocol in
@@ -389,6 +389,7 @@ let extension_registry () =
   Lui_extension.register_tweak registry (native_control_tint_schema ());
   Lui_extension.register_tweak registry (adaptive_content_insets_schema ());
   Lui_extension.register_tweak registry
-    (Lui_extension.tweak "journal-scroll-title"
-       [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost] []);
+    (Lui_extension.tweak "sidebar-current-item"
+      [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+      [Lui_extension.property "current" Lui_extension.BoolScalar true None]);
   registry

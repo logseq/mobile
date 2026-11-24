@@ -6,43 +6,25 @@ import Vision
 
 @main struct ScrollingNavigationTitleCheck {
     @MainActor static func main() async throws {
-        let tracker = LUIScrollSectionTitleTracker()
-        let oldRow = UUID(), replacement = UUID()
-        tracker.update(index: 0, title: "Today", startsSection: true, registration: oldRow)
-        tracker.update(index: 0, title: "Today", startsSection: true, registration: replacement)
-        tracker.update(index: 0, title: nil, registration: oldRow)
-        tracker.update(index: 1, title: "Today", registration: UUID())
-        guard tracker.title == nil else { throw failure("An old row must not unregister its visible replacement") }
-        tracker.updateHeading(title: "Today", isPastTop: true)
-        guard tracker.title == "Today" else { throw failure("The replacement must still track its heading") }
         for delayedLoad in [true, false] {
-            for isPage in [false, true] {
-                try await check(isPage: isPage, delayedLoad: delayedLoad)
-            }
-            try await check(isPage: false, delayedLoad: delayedLoad, groupedJournal: true)
+            try await check(delayedLoad: delayedLoad)
         }
-        print("PASS: native journal and page titles follow scrolling after warm and delayed cold loads, and clear on return")
+        print("PASS: the graph switch stays visible alongside the page title while scrolling after warm and cold loads")
     }
 
-    @MainActor static func check(isPage: Bool, delayedLoad: Bool, groupedJournal: Bool = false) async throws {
+    @MainActor static func check(delayedLoad: Bool) async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
-        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
-        let journalTitle = year == 2026 ? "Oct 21" : "Oct 21, 2026"
-        let title = isPage ? "Project page" : journalTitle
+        let title = "Project page"
         let rows: [[String: Any]] = (0..<60).map { index in
-            var block: [String: Any] = ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"]
-            if !isPage {
-                let first = !groupedJournal || index < 10
-                block["pageId"] = first ? "page" : "older"
-                block["journalTitle"] = first ? "Oct 21st, 2026" : "Oct 20th, 2026"
-                block["journalDay"] = first ? 20261021 : 20261020
-            }
-            return ["block": block, "depth": 0]
+            ["block": ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"], "depth": 0]
         }
-        var result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
-            "outlinerState": ["selectedBlockIds": []]]
-        if isPage { result["selectedPage"] = ["uuid": "page", "title": title] }
-        let snapshot = String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
+        func encodeSnapshot(rows: [[String: Any]]) throws -> String {
+            let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
+                "selectedPage": ["uuid": "page", "title": title],
+                "outlinerState": ["selectedBlockIds": []]]
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
+        }
+        let snapshot = try encodeSnapshot(rows: rows)
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         if !delayedLoad { try runtime.applyCoreResponse(snapshot) }
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
@@ -78,12 +60,17 @@ import Vision
         if observed != nil {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("title-initial-failure.png"))
-            throw failure("The toolbar title must stay hidden while its content heading is visible")
+            throw failure("The contextual toolbar title must stay hidden while its content heading is visible")
         }
         let top = -scroll.adjustedContentInset.top
         scroll.setContentOffset(CGPoint(x: 0, y: top + 180), animated: false)
         try await Task.sleep(for: .milliseconds(700))
         guard observed == title else { throw failure("The title must appear after its heading crosses the viewport top") }
+        var updatedRows = rows
+        updatedRows[3] = ["block": ["uuid": "replacement", "title": "Replacement row", "pageId": "page"], "depth": 0]
+        try runtime.applyCoreResponse(encodeSnapshot(rows: updatedRows))
+        try await Task.sleep(for: .milliseconds(700))
+        guard observed == title else { throw failure("Replacing a visible page row must keep the contextual title") }
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         guard let bar = views(window).compactMap({ $0 as? UINavigationBar }).first(where: {
             let frame = $0.convert($0.bounds, to: window)
@@ -94,7 +81,7 @@ import Vision
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("scrolling-title-\(delayedLoad ? "cold" : "warm")-\(isPage ? "page" : "journal").png"))
+        try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("scrolling-title-\(delayedLoad ? "cold" : "warm")-page.png"))
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.regionOfInterest = CGRect(x: frame.minX / window.bounds.width,
@@ -102,8 +89,8 @@ import Vision
             width: frame.width / window.bounds.width, height: frame.height / window.bounds.height)
         try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
         let visible = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        guard visible.contains(title) else {
-            throw failure("The native top bar must actually display \(title) after \(delayedLoad ? "cold" : "warm") loading; found: \(visible)")
+        guard visible.contains(title), visible.contains("Work") else {
+            throw failure("The native top bar must display the graph and \(title) after \(delayedLoad ? "cold" : "warm") loading; found: \(visible)")
         }
         scroll.setContentOffset(CGPoint(x: 0, y: top), animated: false)
         try await Task.sleep(for: .milliseconds(700))
