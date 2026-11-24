@@ -1,8 +1,8 @@
 package com.logseq.logseq.runtime
 
+import android.os.Trace
 import android.util.Log
 import com.logseq.logseq.NativeCore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 // JNI bridge into liblogseq_core.so — the Kotlin port of
@@ -12,8 +12,8 @@ import kotlinx.coroutines.withContext
 // produced mid-flight cannot interleave with a busy core RPC; the effect
 // entry points (takeEffect / resolveEffect / applySnapshot /
 // applyHostUpdate) return "" and re-queue while the core is busy.
-// `call` runs the blocking JNI call on Dispatchers.Default, matching the
-// Dart implementation's worker-isolate call.
+// `callCore` runs on NativeCoreThread, the same thread the runtime uses for
+// every other core entry point.
 internal class LogseqNativeBridge(
     private val onPatch: (String) -> Unit = {},
     private val runtimeScheduler: NativeRuntimeScheduler = NativeRuntimeScheduler(),
@@ -42,46 +42,46 @@ internal class LogseqNativeBridge(
         hostCode: Int = 4,
         authenticationCode: Int = 1,
     ): Long {
-        apply(decode(NativeCore.luiInitialize(platformCode, hostCode, authenticationCode)))
+        apply(decode(traced("core.luiInitialize") { NativeCore.luiInitialize(platformCode, hostCode, authenticationCode) }))
         return NativeCore.luiRootNode()
     }
 
-    fun close() = runtimeScheduler.runUi { apply(decode(NativeCore.luiDispose())) }
+    fun close() = runtimeScheduler.runUi { apply(decode(traced("core.luiDispose") { NativeCore.luiDispose() })) }
 
     fun resync(onSnapshot: (String) -> Unit) = runtimeScheduler.runUi {
-        onSnapshot(decode(NativeCore.luiResync()))
+        onSnapshot(decode(traced("core.luiResync") { NativeCore.luiResync() }))
     }
 
-    fun appear(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiAppear(node))) }
-    fun press(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiPress(node))) }
-    fun longPress(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiLongPress(node))) }
-    fun submit(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiSubmit(node))) }
-    fun change(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiChange(node))) }
-    fun dismiss(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiDismiss(node))) }
-    fun doublePress(node: Long) = runtimeScheduler.runUi { apply(decode(NativeCore.luiDoublePress(node))) }
+    fun appear(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiAppear") { NativeCore.luiAppear(node) })) }
+    fun press(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiPress") { NativeCore.luiPress(node) })) }
+    fun longPress(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiLongPress") { NativeCore.luiLongPress(node) })) }
+    fun submit(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiSubmit") { NativeCore.luiSubmit(node) })) }
+    fun change(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiChange") { NativeCore.luiChange(node) })) }
+    fun dismiss(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiDismiss") { NativeCore.luiDismiss(node) })) }
+    fun doublePress(node: Long) = runtimeScheduler.runUi { apply(decode(traced("core.luiDoublePress") { NativeCore.luiDoublePress(node) })) }
 
     fun textChanged(node: Long, text: String) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiTextChanged(node, encode(text))))
+        apply(decode(traced("core.luiTextChanged") { NativeCore.luiTextChanged(node, encode(text)) }))
     }
 
     fun toggleChanged(node: Long, checked: Boolean) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiToggleChanged(node, if (checked) 1 else 0)))
+        apply(decode(traced("core.luiToggleChanged") { NativeCore.luiToggleChanged(node, if (checked) 1 else 0) }))
     }
 
     fun valueChanged(node: Long, value: Double) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiValueChanged(node, value)))
+        apply(decode(traced("core.luiValueChanged") { NativeCore.luiValueChanged(node, value) }))
     }
 
     fun picked(node: Long, payload: String) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiPicked(node, encode(payload))))
+        apply(decode(traced("core.luiPicked") { NativeCore.luiPicked(node, encode(payload)) }))
     }
 
     fun visibleRange(node: Long, first: Long, last: Long) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiVisibleRange(node, first, last)))
+        apply(decode(traced("core.luiVisibleRange") { NativeCore.luiVisibleRange(node, first, last) }))
     }
 
     fun scrollCompleted(node: Long, token: Long, outcome: String) = runtimeScheduler.runUi {
-        apply(decode(NativeCore.luiScrollCompleted(node, token, encode(outcome))))
+        apply(decode(traced("core.luiScrollCompleted") { NativeCore.luiScrollCompleted(node, token, encode(outcome)) }))
     }
 
     fun extensionEvent(
@@ -93,13 +93,15 @@ internal class LogseqNativeBridge(
     ) = runtimeScheduler.runUi {
         apply(
             decode(
-                NativeCore.luiExtensionEvent(
-                    node,
-                    encode(identifier),
-                    encode(name),
-                    encode(text),
-                    value,
-                )
+                traced("core.luiExtensionEvent") {
+                    NativeCore.luiExtensionEvent(
+                        node,
+                        encode(identifier),
+                        encode(name),
+                        encode(text),
+                        value,
+                    )
+                }
             )
         )
     }
@@ -107,44 +109,44 @@ internal class LogseqNativeBridge(
     // --- NativeEffectRuntime surface ---
 
     fun takeEffect(): String =
-        if (runtimeScheduler.isCoreBusy) "" else decode(NativeCore.luiTakeEffect())
+        if (runtimeScheduler.isCoreBusy) "" else decode(traced("core.luiTakeEffect") { NativeCore.luiTakeEffect() })
 
     fun resolveEffect(id: Long, succeeded: Boolean, message: String): String {
         if (runtimeScheduler.isCoreBusy) {
             runtimeScheduler.runUi {
-                apply(decode(NativeCore.luiResolveEffect(id, if (succeeded) 1 else 0, encode(message))))
+                apply(decode(traced("core.luiResolveEffect") { NativeCore.luiResolveEffect(id, if (succeeded) 1 else 0, encode(message)) }))
             }
             return ""
         }
-        return decode(NativeCore.luiResolveEffect(id, if (succeeded) 1 else 0, encode(message)))
+        return decode(traced("core.luiResolveEffect") { NativeCore.luiResolveEffect(id, if (succeeded) 1 else 0, encode(message)) })
     }
 
     fun applySnapshot(response: String): String {
         if (runtimeScheduler.isCoreBusy) {
             runtimeScheduler.runUi {
-                apply(decode(NativeCore.luiApplySnapshot(encode(response))))
+                apply(decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) }))
             }
             return ""
         }
-        return decode(NativeCore.luiApplySnapshot(encode(response)))
+        return decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
     }
 
     fun applyHostUpdate(kind: String, payload: String): String {
         if (runtimeScheduler.isCoreBusy) {
             runtimeScheduler.runUi {
-                apply(decode(NativeCore.luiApplyHostUpdate(encode(kind), encode(payload))))
+                apply(decode(traced("core.luiApplyHostUpdate") { NativeCore.luiApplyHostUpdate(encode(kind), encode(payload)) }))
             }
             return ""
         }
-        return decode(NativeCore.luiApplyHostUpdate(encode(kind), encode(payload)))
+        return decode(traced("core.luiApplyHostUpdate") { NativeCore.luiApplyHostUpdate(encode(kind), encode(payload)) })
     }
 
     // Core RPC ({apiVersion:1, method:open|dispatch, params:{...}}) —
     // blocking JNI call on a background thread, serialized on the core lane.
     suspend fun callCore(request: String): String =
-        runtimeScheduler.runCore {
-            withContext(Dispatchers.Default) {
-                decode(NativeCore.logseqCall(encode(request)))
+        withContext(NativeCoreThread.dispatcher) {
+            runtimeScheduler.runCore {
+                decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
             }
         }
 
@@ -156,7 +158,11 @@ internal class LogseqNativeBridge(
         false
     }
 
+    private fun rpcMethod(request: String): String =
+        if (!Trace.isEnabled()) "" else RPC_METHOD.find(request)?.groupValues?.get(1) ?: "unknown"
+
     private companion object {
         const val TAG = "LogseqBridge"
+        val RPC_METHOD = Regex("\"method\"\\s*:\\s*\"([^\"]+)\"")
     }
 }

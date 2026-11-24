@@ -27,10 +27,7 @@ internal object NativeEditorInput {
 internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqNativeBridge) {
     when (event) {
         is LuiEvent.Appear -> native.appear(event.node)
-        is LuiEvent.Press -> {
-            NativeEditorInput.flush()
-            native.press(event.node)
-        }
+        is LuiEvent.Press -> native.press(event.node)
         is LuiEvent.LongPress -> native.longPress(event.node)
         is LuiEvent.DoublePress -> native.doublePress(event.node)
         is LuiEvent.Change -> native.change(event.node)

@@ -56,7 +56,7 @@ val sentryUpload = providers.environmentVariable("SENTRY_AUTH_TOKEN").map(String
 sentry {
     org.set("logseq")
     projectName.set("logseq-android")
-    ignoredBuildTypes.set(setOf("debug", "profile"))
+    ignoredBuildTypes.set(setOf("debug", "profile", "benchmark"))
     autoInstallation.enabled.set(false)
     tracingInstrumentation.enabled.set(false)
     includeDependenciesReport.set(false)
@@ -96,6 +96,16 @@ android {
             proguardFiles("proguard-rules.pro")
             optimization {
                 enable = true
+            }
+        }
+        // Release code without R8, so :baselineprofile records unobfuscated
+        // names for src/main/baseline-prof.txt.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            optimization {
+                enable = false
             }
         }
         // E2E variant: debuggable like the previous profile APK the Maestro
@@ -176,6 +186,8 @@ dependencies {
     implementation("androidx.pdf:pdf-document-service:1.0.0-beta01")
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    // Installs src/main/baseline-prof.txt on sideloaded and Play installs.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("ru.noties:jlatexmath-android:0.2.0")
 
