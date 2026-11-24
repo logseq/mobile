@@ -33,6 +33,7 @@ type outliner_state =
   ; pending_deletion : string list
   ; autocomplete : reducer_autocomplete option
   ; completion_dismissed : bool
+  ; composition_started_empty : bool option
   ; collapsed : Sset.t
   ; zoomed : string list
   }
@@ -97,6 +98,7 @@ type outliner_message =
   | Block_toolbar of string * outliner_toolbar
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
+  | Text_composing of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
   | Return_pressed
@@ -200,6 +202,7 @@ let empty =
     pending_deletion = [];
     autocomplete = None;
     completion_dismissed = false;
+    composition_started_empty = None;
     collapsed = Sset.empty;
     zoomed = [];
   }
@@ -1534,9 +1537,13 @@ let enter context state editing =
     else split_or_outdent context state editing
 
 let rec update context (state : outliner_state) message =
+  let composition_started_empty = state.composition_started_empty in
   let state =
     {
       state with
+      composition_started_empty = (match message with
+        | Text_composing _ | Caret_moved _ -> composition_started_empty
+        | _ -> None);
       zoomed =
         take_while
           (fun uuid -> Option.is_some (find_block context uuid))
@@ -1602,14 +1609,14 @@ let rec update context (state : outliner_state) message =
   | Text_changed {title; caret}
       when caret > 0 && String_kit.starts_with ~prefix:">" title
         && Option.fold ~none:false ~some:(fun (editing : editor_draft) ->
-          (title = ">" || editing.title = "")
+          (title = ">" || Option.value composition_started_empty ~default:(editing.title = ""))
           && Option.fold ~none:false ~some:(fun (block : Model.block) -> block.display_type = None)
             (find_block context editing.uuid)) state.editing ->
     let editing = Option.get state.editing in
     apply_editor_action context state
       {editing with title = String.sub title 1 (String.length title - 1); caret = caret - 1}
       (Editor_command.Properties ["logseq.property.node/display-type", Some (Ops.Keyword_value "quote")])
-  | Text_pasted value | Text_changed value ->
+  | Text_pasted value | Text_composing value | Text_changed value ->
     (match state.editing with
      | Some editing ->
        step
@@ -1617,6 +1624,9 @@ let rec update context (state : outliner_state) message =
            state with
            editing =
              Some { editing with title = value.title; caret = value.caret };
+           composition_started_empty = (match message with
+             | Text_composing _ -> Some (Option.value composition_started_empty ~default:(editing.title = ""))
+             | _ -> None);
            autocomplete = (match message with Text_pasted _ -> None | _ ->
              let request = autocomplete_for value.title value.caret in
              let prefix = prefix_at value.title value.caret in
@@ -1630,8 +1640,9 @@ let rec update context (state : outliner_state) message =
          []
      | None -> step state [])
   | Caret_moved caret ->
-    (match state.editing with
-     | Some editing ->
+    (match state.editing, state.autocomplete with
+     | _, Some {kind = Picker _; _} -> step state []
+     | Some editing, _ ->
        step
          {
            state with
@@ -1641,7 +1652,7 @@ let rec update context (state : outliner_state) message =
              | Some _ -> autocomplete_for editing.title caret);
          }
          []
-     | None -> step state [])
+     | None, _ -> step state [])
   | Choose_autocomplete value -> choose_completion context state value
   | Dismiss_autocomplete -> step {state with autocomplete = None; completion_dismissed = true} []
   | Search_autocomplete query ->

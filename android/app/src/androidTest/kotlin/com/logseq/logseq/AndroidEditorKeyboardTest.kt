@@ -101,6 +101,17 @@ class AndroidEditorKeyboardTest {
         }
     }
 
+    @Test fun blockEditorCannotTakeInputWhilePickerOwnsFocus() {
+        val editor = render("Before")
+        ui.runOnIdle {
+            val ops = JSONArray().put(JSONObject().put("op", "set-extension-prop").put("id", 2)
+                .put("property", "focus-enabled").put("value", false))
+            assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+        }
+        editor.performTouchInput { click() }
+        editor.assert(!isFocused()).assertIsNotEnabled()
+    }
+
     @Test fun codeEditingHighlightsDefinitionsAndPreservesSelectionAndInput() {
         val source = "(def answer 42)\n(defn square [x] (* x x))"
         val field = render(source, """{"multiline":true,"code":true,"language":"clojure"}""")
@@ -282,6 +293,28 @@ class AndroidEditorKeyboardTest {
             assertTrue(connection.commitText("你好", 1))
         }
         assertCommittedInCurrentBlock(editor, "Draft 你好")
+    }
+
+    @Test fun softwareKeyboardPublishesSlashQueriesBeforeFinishingComposition() {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle { assertTrue(connection.commitText("/", 1)) }
+        assertCommittedInCurrentBlock(editor, "/")
+        for (query in listOf("d", "date")) {
+            ui.runOnIdle { assertTrue(connection.setComposingText(query, 1)) }
+            val title = "/$query"
+            ui.waitUntil(5_000) {
+                events.filterIsInstance<LuiEvent.Extension>().any {
+                    it.name == "composing-text-change" && it.values["title"] == title &&
+                        it.values["caret-utf16-offset"] == title.length
+                }
+            }
+            acknowledge("keyboard-block", title, title.length)
+            editor.assertIsFocused().assertTextEquals(title)
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, TextRange(1, title.length)))
+        }
+        ui.runOnIdle { assertTrue(connection.finishComposingText()) }
+        assertCommittedInCurrentBlock(editor, "/date")
     }
 
     @Test fun softwareKeyboardNextSplitsImmediatelyWithAnActiveComposition() {

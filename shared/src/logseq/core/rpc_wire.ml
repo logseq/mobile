@@ -212,10 +212,11 @@ let decode_outliner_event fields =
   | "textChanged" ->
     let* title = required_string fields "title" in
     let* caret = event_int fields "caretUTF16Offset" in
-    Ok
-      (if List.assoc_opt "inputOrigin" fields = Some (`String "paste") then
-         Outliner.Text_pasted { Outliner.title; caret }
-       else Outliner.Text_changed { Outliner.title; caret })
+    let value = { Outliner.title; caret } in
+    Ok (match List.assoc_opt "inputOrigin" fields with
+      | Some (`String "paste") -> Outliner.Text_pasted value
+      | Some (`String "composition") -> Outliner.Text_composing value
+      | _ -> Outliner.Text_changed value)
   | "caretMoved" ->
     let* caret = event_int fields "caretUTF16Offset" in
     Ok (Outliner.Caret_moved caret)

@@ -109,6 +109,11 @@ let outliner_editor_schema () =
           Lui_extension.event_field "title" StringScalar true;
           Lui_extension.event_field "caret-utf16-offset" IntScalar true;
         ];
+      Lui_extension.event "composing-text-change"
+        [
+          Lui_extension.event_field "title" StringScalar true;
+          Lui_extension.event_field "caret-utf16-offset" IntScalar true;
+        ];
       Lui_extension.event "paste"
         [Lui_extension.event_field "title" StringScalar true;
          Lui_extension.event_field "caret-utf16-offset" IntScalar true];

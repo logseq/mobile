@@ -39,7 +39,7 @@ let app () =
 let effect_deadlines = Hashtbl.create 8
 
 let debounced_query = function
-  | Model.SearchNodesEffect _ | Model.ChangeOutlinerTextEffect _
+  | Model.SearchNodesEffect _ | Model.ChangeOutlinerTextEffect _ | Model.ComposeOutlinerTextEffect _
   | Model.MoveOutlinerCaretEffect _ -> true
   | _ -> false
 
@@ -364,9 +364,13 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
   | PasteOutlinerTextEffect (id, uuid, title, caret) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "paste-outliner-text";
       "text", `String title; "uuid", `String uuid; "value", `Int caret])
-  | ChangeOutlinerTextEffect (id, uuid, title, caret) ->
+  | (ChangeOutlinerTextEffect (id, uuid, title, caret)
+    | ComposeOutlinerTextEffect (id, uuid, title, caret)) as input ->
+    let kind = match input with
+      | ComposeOutlinerTextEffect _ -> "compose-outliner-text"
+      | _ -> "change-outliner-text" in
     "{\"id\":" ^ string_of_int id
-    ^ ",\"kind\":\"change-outliner-text\",\"text\":"
+    ^ ",\"kind\":" ^ Lui_wire.quoted kind ^ ",\"text\":"
     ^ Lui_wire.quoted title ^ ",\"uuid\":" ^ Lui_wire.quoted uuid
     ^ ",\"value\":" ^ string_of_int caret ^ "}"
   | ReturnOutlinerEditorEffect (id, uuid, title, caret) ->
@@ -625,7 +629,7 @@ let extension_event node identifier name text value =
              | _ -> "after") );
       ]
     | _, "paste-content" -> ["value", StringValue text]
-    | _, ("text-change" | "paste" | "return") ->
+    | _, ("text-change" | "composing-text-change" | "paste" | "return") ->
       [
         "title", StringValue text;
         "caret-utf16-offset", IntValue value;

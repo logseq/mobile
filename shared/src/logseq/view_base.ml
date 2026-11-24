@@ -149,12 +149,11 @@ let handle_outliner_editor_event input_event block_id_source send =
       send (Model.PasteOutlinerContent (uuid, extension_string values "value"))
     else if name = "paste" then
       send (Model.PasteOutlinerText (uuid, extension_string values "title", extension_int values "caret-utf16-offset"))
-    else if name = "text-change" then
-      send
-        (Model.ChangeOutlinerText
-           ( uuid
-           , extension_string values "title"
-           , extension_int values "caret-utf16-offset" ))
+    else if name = "text-change" || name = "composing-text-change" then
+      let title = extension_string values "title" in
+      let caret = extension_int values "caret-utf16-offset" in
+      send (if name = "composing-text-change" then Model.ComposeOutlinerText (uuid, title, caret)
+            else Model.ChangeOutlinerText (uuid, title, caret))
     else if name = "return" then
       send
         (Model.ReturnOutlinerEditor
