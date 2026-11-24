@@ -52,7 +52,20 @@ let check db =
     let merged = within_budget "backspace merge" 50_000_000. Workload.backspace in
     let editing = Workload.member "editing" (Workload.member "outlinerState" merged) in
     assert (Workload.member "uuid" editing = `String (Workload.block 1));
-    print_endline "Today typing, saving and backspace merge allocation and response sizes are within budget")
+    print_endline "Today typing, saving and backspace merge allocation and response sizes are within budget";
+    let older_journal = Workload.uuid (Workload.journal + 1) in
+    let done_task = `String (Workload.uuid (Workload.row 1 2)) in
+    ignore (Workload.result (Workload.dispatch session "selectPage" older_journal));
+    ignore (Workload.result (Workload.event session "tapBlock" ["uuid", done_task]));
+    ignore (Workload.result (Workload.event session "textChanged"
+      ["uuid", done_task; "title", `String "Updated completed task"; "caretUTF16Offset", `Int 22]));
+    let saved = Workload.result (Workload.save session) in
+    assert (Json.Util.to_list (Workload.member "blocks" saved) |> List.exists (fun block ->
+      Workload.member "uuid" block = done_task
+      && Workload.member "title" block = `String "Updated completed task"));
+    if Workload.member "journalTasks" saved <> `Null then
+      failwith "Saving a completed task resent an unchanged Today agenda";
+    print_endline "Saving a completed task does not resend an unchanged Today agenda")
 
 let () =
   let db = Workload.fixture () in

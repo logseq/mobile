@@ -118,7 +118,8 @@ let journal_tasks_json ?(force = false) ?(only_changed = false) session =
        let cache = session.Types.journal_tasks in
        let previous = if only_changed then Journal_task_dates.cached_result cache ~graph:graph_id else None in
        let agenda = Journal_task_dates.project cache ~graph:graph_id ~now:(now_ms ()) ~force db in
-       if Option.exists ((==) agenda) previous then `Null else agenda
+       if Option.exists (fun previous -> agenda == previous || agenda = previous) previous
+       then `Null else agenda
      | None -> `Null)
   | _ -> `Null
 
