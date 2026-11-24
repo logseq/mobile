@@ -31,6 +31,7 @@ import UIKit
 
 @MainActor private final class JournalKeyboardEffects: LGEffectExecuting {
     var editing: String?
+    var showsCommands = false
     let imagePath: String
 
     init(imagePath: String) { self.imagePath = imagePath }
@@ -55,11 +56,17 @@ import UIKit
             }
             return ["depth": 0, "block": block]
         }
-        let state = editing.map { id in
-            ["editing": ["uuid": id, "title": "Row \(id.dropFirst(4))", "caretUTF16Offset": 0]]
-        } ?? [:]
-        let result: [String: Any] = ["selectedGraphId": "demo", "graphName": "Journals", "outlinerRows": rows,
+        var state: [String: Any] = [:]
+        if let editing {
+            let title = "Row \(editing.dropFirst(4))" + (showsCommands ? "/" : "")
+            state["editing"] = ["uuid": editing, "title": title, "caretUTF16Offset": showsCommands ? title.utf16.count : 0]
+            if showsCommands { state["autocomplete"] = ["kind": "command", "query": ""] }
+        }
+        var result: [String: Any] = ["selectedGraphId": "demo", "graphName": "Journals", "outlinerRows": rows,
                                      "journalTasks": agenda, "outlinerState": state]
+        if showsCommands {
+            result["outlinerAutocompleteCandidates"] = [["label": "Underline", "value": "command:underline", "group": "FORMAT"]]
+        }
         return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
     }
 
@@ -80,6 +87,7 @@ import UIKit
     @MainActor static func main() async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         try checkUnmaterializedAnchor(in: scene)
+        try checkDuplicateTaskAnchor(in: scene)
         let imageURL = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
         let image = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 130)).image { context in
             UIColor.orange.setFill()
@@ -209,7 +217,70 @@ import UIKit
                 throw failure("Closing the keyboard moved \(targetID) by \(drift)pt, with up to \(transient)pt across frames")
             }
         }
+        for _ in 0..<4 {
+            guard let scroll = currentList() else { throw failure("Missing journal list for Commands") }
+            scroll.contentOffset.y = end(scroll)
+            try await wait(180)
+        }
+        guard let last = label("row-95"), let row = last.superview as? OutlinerTextRowView else {
+            throw failure("The last block must be visible")
+        }
+        row.activateTitle(at: CGPoint(x: 10, y: last.bounds.midY))
+        try await wait(700)
+        guard editor()?.accessibilityIdentifier == "field.outliner.block.row-95" else {
+            throw failure("The last block must enter editing")
+        }
+        effects.showsCommands = true
+        try runtime.applyCoreResponse(effects.snapshot())
+        try await wait(850)
+        guard let field = editor(), let caretRange = field.selectedTextRange,
+              let toolbar = views(window).compactMap({ $0 as? OutlinerEditorToolbarGuide.Probe }).first,
+              toolbar.bounds.height > 220, node("toolbar.outliner.autocomplete") != nil else {
+            throw failure("The last block must show Commands with its keyboard")
+        }
+        let caret = field.convert(field.caretRect(for: caretRange.end), to: window)
+        guard caret.maxY <= frame(toolbar).minY - 2 else {
+            throw failure("Commands covers the last block's caret: \(caret) vs \(frame(toolbar))")
+        }
         print("PASS: journal assets and task sections preserve editor position across keyboard changes")
+        print("PASS: duplicate task anchors stay independent and Commands clears the last block's caret")
+    }
+
+    @MainActor private static func checkDuplicateTaskAnchor(in scene: UIWindowScene) throws {
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let scroll = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.contentInset.bottom = 280
+        scroll.contentSize = CGSize(width: 390, height: 4000)
+        controller.view.addSubview(scroll)
+        let editor = UITextView(frame: CGRect(x: 0, y: 1400, width: 390, height: 44))
+        editor.accessibilityIdentifier = "field.outliner.block.task"
+        func marker(_ id: String, y: CGFloat) -> OutlinerScrollAnchorMarker.Marker {
+            let marker = OutlinerScrollAnchorMarker.Marker(frame: CGRect(x: 0, y: y, width: 100, height: 28))
+            marker.blockID = "task"
+            marker.anchorID = id
+            scroll.addSubview(marker)
+            return marker
+        }
+        scroll.addSubview(editor)
+        let agenda = marker("journal-task.task/task", y: 1400)
+        let source = marker("task", y: 1540)
+        scroll.contentOffset.y = 1200
+        let retention = OutlinerScrollRetention()
+        defer { retention.cancelRestoration() }
+        var keyboardDismissed = false
+        retention.preserve(scroll, editor: editor, bottomSafeArea: 34, anchorID: agenda.anchorID) { keyboardDismissed }
+        editor.removeFromSuperview()
+        source.frame.origin.y -= 22
+        keyboardDismissed = true
+        scroll.contentInset.bottom = 34
+        guard abs(agenda.frame.minY - scroll.contentOffset.y - 200) < 1 else {
+            throw failure("Dismissing the agenda editor must hold its position when the duplicate source row moves")
+        }
     }
 
     @MainActor private static func checkUnmaterializedAnchor(in scene: UIWindowScene) throws {

@@ -48,6 +48,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
     }
     let uuid: String
+    let scrollAnchorID: String?
     let embedSourceUuid: String?
     let title: String
     let markup: [LogseqMarkupNode]
@@ -389,6 +390,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 if hasCustomContent, let editor = context.childIDs.first {
                     context.content(for: editor)
                         .font(row.markup.contains { $0.type == .codeBlock } ? .caption : .body)
+                        #if os(iOS)
+                        .environment(\.outlinerAnchorID, row.scrollAnchorID ?? row.uuid)
+                        #endif
                 } else if row.isAsset {
                     LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath,
                         allowsInteraction: { context.isUserInteractionEnabled },
@@ -434,7 +438,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             #if os(iOS)
-            .background(OutlinerScrollAnchorMarker(blockID: row.uuid))
+            .background(OutlinerScrollAnchorMarker(blockID: row.uuid, anchorID: row.scrollAnchorID ?? row.uuid))
             #endif
             if row.hasChildren {
                 let hitSize = OutlinerLayoutMetrics.disclosureHitSize

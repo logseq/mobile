@@ -123,6 +123,15 @@ jobs:
       - name: Check editor focus
         if: ${{ !cancelled() && steps.boot-ready.outcome == 'success' }}
         run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/outliner-editor-focus.swift OutlinerEditorFocusCheck
+      - name: Check journal editing and keyboard layout
+        if: ${{ !cancelled() && steps.boot-ready.outcome == 'success' }}
+        env:
+          LOGSEQ_RUNTIME_CHECK_TIMEOUT: "200"
+        run: |
+          runner=apple/Tests/UI/run-simulator-runtime-check.py
+          python3 "$runner" apple/Tests/UI/journal-task-insertion.swift JournalTaskInsertionCheck
+          python3 "$runner" apple/Tests/UI/journal-keyboard-layout.swift JournalKeyboardCheck
+          python3 "$runner" apple/Tests/UI/journal-keyboard-stress.swift JournalKeyboardStressCheck
 
   android-instrumentation:
     name: Android instrumentation tests

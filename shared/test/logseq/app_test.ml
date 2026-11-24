@@ -7187,7 +7187,23 @@ let journal_placeholders_only_follow_their_own_page_editor () =
     let code = {today with row_display_type = Some "code"} in
     apply {projection with outliner_rows = [code; older]; journal_outliner_rows = [code; older];
       projection_outliner_editing = editing};
-    check ~msg:"editing a code block keeps its date's Add block control" (button "today" <> -1)
+    check ~msg:"editing a code block keeps its date's Add block control" (button "today" <> -1);
+    let embed child = {today with row_is_embed = true; row_embed_children = [child]} in
+    let apply_embed child editing =
+      let rows = [embed child; older] in
+      apply {projection with outliner_rows = rows; journal_outliner_rows = rows;
+        projection_outliner_editing = editing} in
+    apply_embed older None;
+    let scope = View_rows.embedded_edit_scope ~parent_scope:None ~page:"today" ~row:today.row_uuid ~mount_id:1 in
+    send app (Model.BeginEmbeddedOutlinerEdit (scope, older.row_uuid, None));
+    let embedded_editing = Some {Model.editing_uuid = older.row_uuid; editing_is_task = None;
+      editing_title = older.row_title; caret_utf16_offset = 0} in
+    apply_embed older embedded_editing;
+    check_eq ~msg:"the date hosting the embedded editor hides Add block" (button "today") (-1);
+    check_eq ~msg:"the source date keeps Add block during an embed edit" (button "older") older_button;
+    check_eq ~msg:"an unrelated empty date keeps Add block during an embed edit" (button "empty") empty_button;
+    apply_embed {older with row_display_type = Some "math"} embedded_editing;
+    check ~msg:"an embedded math block keeps Add block available on its host date" (button "today" <> -1)
   ) [ios_backend; kotlin_backend]
 
 let block_navigation_exposes_an_immediate_outliner_preview_route () =
@@ -7813,6 +7829,17 @@ let journal_task_results_edit_and_select_the_source_block () =
     check ~msg:"editing opens in the clicked result" (editor <> -1);
     check_eq ~msg:"the duplicate source row stays in read mode"
       (editing_node (find ("outliner.entry." ^ uuid))) (-1);
+    if ios then begin
+      let anchor parent =
+        let node = descendant_with_extension runtime app parent "outliner-block-row" in
+        match extension_property app node "payload" with
+        | Some (Lui_protocol.StringValue json) -> Yojson.Basic.Util.member "scrollAnchorID" (Yojson.Basic.from_string json)
+        | _ -> `Null in
+      check_eq ~msg:"the agenda task has its own scroll anchor occurrence"
+        (anchor (row ())) (`String ("journal-task." ^ uuid ^ "/" ^ uuid));
+      check_eq ~msg:"the source task has its own scroll anchor occurrence"
+        (anchor (find ("outliner.entry." ^ uuid))) (`String uuid)
+    end;
     check ~msg:"the scoped Task editor retains the date toolbar"
       (find "button.outliner.editor.scheduled" <> -1 && find "button.outliner.editor.deadline" <> -1);
     apply {active with journal_tasks = agenda "Updated task"};

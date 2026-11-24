@@ -706,6 +706,8 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
     let row = View_rows.retained_row_value retained in
     Yojson.Basic.to_string (`Assoc [
       "uuid", `String row.row_uuid; "title", `String row.row_title;
+      "scrollAnchorID", `String (Option.fold ~none:row.row_uuid
+        ~some:(fun scope -> scope ^ "/" ^ row.row_uuid) retained.edit_scope);
       "embedSourceUuid", (match row.row_embed_source_uuid with Some uuid -> `String uuid | None -> `Null);
       "pdfAnnotation", metadata_member "pdfAnnotation" row;
       "listNumber", (match (if row.row_is_embed then None else row.row_list_number) with Some n -> `Int n | None -> `Null);
@@ -936,7 +938,8 @@ let with_embed_children model_source edit_scope row_source send render_row rende
         let initial = Signal.sample row_source in
         let child_scope =
           if initial.Model.row_is_embed then
-            Some (initial.row_uuid ^ "." ^ string_of_int (Option.value ~default:0 parent))
+            Some (View_rows.embedded_edit_scope ~parent_scope:edit_scope ~page:initial.page_id
+              ~row:initial.row_uuid ~mount_id:(Option.value ~default:0 parent))
           else edit_scope in
         let collapsed = Signal.state context.Lui_ui.ui_scheduler None in
         let row_source = Signal.map2 (fun (row : Model.outline_row) collapsed ->

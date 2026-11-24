@@ -91,6 +91,10 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let failure = UILabel()
     private var tags: [UIButton] = []
     private var row: OutlinerRowPayload?
+
+    var scrollAnchor: (id: String, title: UIView)? {
+        row.map { ($0.scrollAnchorID ?? $0.uuid, title) }
+    }
     private var layoutWidth: CGFloat?
     private var semanticColors: [String: Color] = [:]
     private var emit: ((String, String?, [String: LUIExtensionValue]) -> Void)?

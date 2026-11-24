@@ -818,6 +818,7 @@ private struct LGNavigationContent: View {
     @State private var minimumScrollViewport: CGRect?
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
+    @State private var outlinerToolbarReserve = OutlinerToolbarReserve()
     @State private var dockedKeyboardInset: CGFloat = 0
     #endif
     @State private var usesSystemGroupedBackground = false
@@ -938,6 +939,9 @@ private struct LGNavigationContent: View {
         let _ = context.revision
         let _ = search?.context.revision
         navigationStack
+            #if os(iOS)
+            .environment(\.outlinerToolbarReserve, outlinerToolbarReserve)
+            #endif
             .environment(\.luiMinimumScrollViewport, minimumScrollViewport)
             .background {
                 GeometryReader { _ in
@@ -1452,6 +1456,10 @@ private struct LGNavigationContent: View {
                 .fixedSize(horizontal: false, vertical: true)
                 #if os(iOS)
                 .background(OutlinerEditorToolbarGuide())
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    outlinerToolbarReserve.chromeHeight = height
+                }
+                .onDisappear { outlinerToolbarReserve.chromeHeight = 0 }
                 #endif
                 .modifier(LGBottomChromeSurface())
                 .modifier(LGBottomChromeHitTarget(isRounded: true))

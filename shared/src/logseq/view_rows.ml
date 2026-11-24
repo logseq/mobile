@@ -4,6 +4,7 @@ let outliner_editor_key = "active-outliner-editor"
 
 type retained_row =
   { render_key : string
+  ; edit_scope : string option
   ; value : Model.outline_row
   ; is_editing : bool
   ; is_selected : bool
@@ -19,6 +20,7 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
        && current.outliner_edit_scope = Option.map (fun scope -> scope, row.row_uuid) edit_scope then
       {
         render_key = outliner_editor_key;
+        edit_scope;
         value = row;
         is_editing = true;
         is_selected;
@@ -28,6 +30,7 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
     else
       {
         render_key = row.row_uuid;
+        edit_scope;
         value = row;
         is_editing = false;
         is_selected;
@@ -37,6 +40,7 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
   | None ->
     {
       render_key = row.row_uuid;
+      edit_scope;
       value = row;
       is_editing = false;
       is_selected;
@@ -291,9 +295,26 @@ let needs_placeholder rows = match List.rev rows with
     let title = if last.is_editing then last.editing_title else last.value.row_title in
     not ((last.value.row_loaded || last.value.row_cached) && String_kit.is_blank title && not last.value.has_children)
 
-let placeholder_button_visible rows =
-  not (List.exists (fun row -> row.is_editing
-    && not (List.mem row.value.row_display_type [Some "math"; Some "code"])) rows)
+let embedded_host_page scope =
+  match String.split_on_char ':' scope with
+  | "embed" :: page :: _ -> Some page
+  | _ -> None
+
+let embedded_edit_scope ~parent_scope ~page ~row ~mount_id =
+  let page = Option.value ~default:page (Option.bind parent_scope embedded_host_page) in
+  Printf.sprintf "embed:%s:%s.%d" page row mount_id
+
+let placeholder_button_visible (current : Model.logseq_model) rows =
+  let regular (row : Model.outline_row) = not (List.mem row.row_display_type [Some "math"; Some "code"]) in
+  let rec contains_regular uuid (row : Model.outline_row) =
+    (row.row_uuid = uuid && regular row) || List.exists (contains_regular uuid) row.row_embed_children in
+  let embedded = match current.outliner_edit_scope, current.outliner_editing with
+    | Some (scope, uuid), Some editing when uuid = editing.editing_uuid ->
+      Option.map (fun page -> page, uuid) (embedded_host_page scope)
+    | _ -> None in
+  let embedded_edit row = Option.exists (fun (page, uuid) -> page = row.value.page_id
+    && List.exists (contains_regular uuid) row.value.row_embed_children) embedded in
+  not (List.exists (fun row -> (row.is_editing && regular row.value) || embedded_edit row) rows)
 
 let outline_entries rows = List.map (fun row -> Outline_entry row) rows
 
@@ -367,7 +388,7 @@ let journal_entries rows (current : Model.logseq_model) =
     | Some title, Some day when needs_button || tasks <> [] ->
       outline @ [Placeholder_entry {parent_uuid = page;
         journal_heading = (if rows = [] then Some (title, day, index > 0) else None);
-        show_button = needs_button && placeholder_button_visible rows}]
+        show_button = needs_button && placeholder_button_visible current rows}]
     | _ -> outline in
     outline @ tasks) sections in
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
@@ -390,7 +411,7 @@ let page_entries rows current =
         let needs_button = needs_placeholder rows in
         if needs_button || tasks <> [] then
           outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None;
-            show_button = needs_button && placeholder_button_visible rows}]
+            show_button = needs_button && placeholder_button_visible current rows}]
         else outline in
       outline @ tasks in
   let references =
