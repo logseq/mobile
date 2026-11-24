@@ -15,6 +15,10 @@ appId: com.logseq.logseq
     visible:
       id: "screen.graphs"
     timeout: 15000
+- extendedWaitUntil:
+    notVisible:
+      id: "graphs.loading"
+    timeout: 15000
 - runFlow:
     when:
       notVisible: "logseq-local-e2e-fixture"
@@ -30,7 +34,22 @@ appId: com.logseq.logseq
       - tapOn:
           id: "button.graph-add.confirm"
       - extendedWaitUntil:
-          visible:
-            id: "journals.graph-loaded"
+          notVisible:
+            id: "screen.graphs"
           timeout: 60000
+- runFlow:
+    when:
+      visible:
+        text: "logseq-local-e2e-fixture"
+        below: "Local graphs|Remote graphs"
+    commands:
+      - tapOn:
+          text: "logseq-local-e2e-fixture"
+          below: "Local graphs|Remote graphs"
+- extendedWaitUntil:
+    notVisible:
+      id: "screen.graphs"
+    timeout: 60000
+- assertVisible:
+    id: "button.composer.expand"
 - stopApp

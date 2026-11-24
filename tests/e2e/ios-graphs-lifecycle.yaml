@@ -48,13 +48,15 @@ appId: com.logseq.logseq
 - tapOn:
     id: button.graph-delete.confirm
 - extendedWaitUntil:
-    notVisible:
-      id: button.graph-delete.confirm
+    visible:
+      text: "logseq-local-e2e-fixture"
+      below: "Remote graphs"
+      enabled: true
     timeout: 15000
-- assertVisible: "Remote graphs"
-- longPressOn: "logseq-local-e2e-fixture"
-- assertNotVisible: "Delete local graph"
-- tapOn: "logseq-local-e2e-fixture"
+- tapOn:
+    text: "logseq-local-e2e-fixture"
+    below: "Remote graphs"
+    enabled: true
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"
