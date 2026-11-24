@@ -410,7 +410,7 @@ private struct LGTopNotification: View {
         .padding(.top, topInset ?? 0)
         .opacity(topInset == nil ? 0 : 1)
         #if os(iOS)
-        .background(LGNotificationSafeAreaReader { topInset = $0 })
+        .background(LGWindowVerticalInsetsReader { topInset = $0.top })
         #else
         .onAppear { topInset = 0 }
         #endif
@@ -418,16 +418,16 @@ private struct LGTopNotification: View {
 }
 
 #if os(iOS)
-struct LGNotificationSafeAreaReader: UIViewRepresentable {
-    let update: (CGFloat) -> Void
+struct LGWindowVerticalInsetsReader: UIViewRepresentable {
+    let update: (UIEdgeInsets) -> Void
 
     func makeUIView(context: Context) -> Probe { Probe(update: update) }
     func updateUIView(_ view: Probe, context: Context) { view.measure() }
 
     final class Probe: UIView {
-        let update: (CGFloat) -> Void
-        private var reported: CGFloat?
-        init(update: @escaping (CGFloat) -> Void) {
+        let update: (UIEdgeInsets) -> Void
+        private var reported: UIEdgeInsets?
+        init(update: @escaping (UIEdgeInsets) -> Void) {
             self.update = update
             super.init(frame: .zero)
             isUserInteractionEnabled = false
@@ -439,10 +439,14 @@ struct LGNotificationSafeAreaReader: UIViewRepresentable {
         func measure() {
             guard let window else { return }
             // The drawer fills the window, so SwiftUI's inherited safe area is empty.
-            let inset = max(0, window.safeAreaInsets.top - convert(CGPoint.zero, to: window).y)
-            guard inset != reported else { return }
-            reported = inset
-            DispatchQueue.main.async { [update] in update(inset) }
+            let frame = convert(bounds, to: window)
+            let insets = UIEdgeInsets(top: max(0, window.safeAreaInsets.top - frame.minY),
+                                      left: 0,
+                                      bottom: max(0, frame.maxY - (window.bounds.maxY - window.safeAreaInsets.bottom)),
+                                      right: 0)
+            guard insets != reported else { return }
+            reported = insets
+            DispatchQueue.main.async { [update] in update(insets) }
         }
     }
 }
@@ -453,6 +457,8 @@ private struct LGSidebarNavigation: View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
+    @State private var topInset: CGFloat = 0
+    @State private var bottomInset: CGFloat = 0
 
     private var palette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -469,39 +475,48 @@ private struct LGSidebarNavigation: View {
         let selectionTint = palette.backgroundHex == LogseqThemePolicy.black.backgroundHex
             ? Color.white
             : LogseqThemePolicy.accent
-        NavigationStack {
-            child(at: 0)
-                .accentColor(selectionTint)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(background.ignoresSafeArea())
-                #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(background, for: .navigationBar)
-                #endif
-                .toolbar {
-                    #if os(iOS)
-                    if #available(iOS 26.0, *) {
-                        ToolbarItem(placement: .topBarLeading) {
-                            child(at: 1)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .sharedBackgroundVisibility(.hidden)
-                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
-                            .sharedBackgroundVisibility(.hidden)
-                            .lgPrefersVerticalAxis()
-                    } else {
-                        ToolbarItem(placement: .topBarLeading) {
-                            child(at: 1).lineLimit(1).truncationMode(.middle)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) { child(at: 2) }
-                    }
-                    #else
-                    ToolbarItem(placement: .navigation) { child(at: 1) }
-                    ToolbarItem(placement: .primaryAction) { child(at: 2) }
-                    #endif
+        let scroll = ScrollView {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    child(at: 1).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    child(at: 2)
                 }
+                .frame(minHeight: 44)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+                child(at: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The drawer host extends to the window edges. Keep this spacing
+            // inside the scroll content so rows pass behind the frosted edge.
+            .padding(.top, topInset)
+            .padding(.bottom, bottomInset)
         }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("scroll.sidebar.pages")
+        .accentColor(selectionTint)
+        Group {
+            #if os(iOS)
+            if #available(iOS 26.0, *) {
+                scroll
+                    .scrollEdgeEffectStyle(.soft, for: .top)
+                    .scrollEdgeEffectHidden(true, for: .bottom)
+            } else {
+                scroll
+            }
+            #else
+            scroll
+            #endif
+        }
+        #if os(iOS)
+        .background(LGWindowVerticalInsetsReader {
+            topInset = $0.top
+            bottomInset = $0.bottom
+        })
+        #endif
+        .background(background.ignoresSafeArea())
         .onGeometryChange(for: Int.self) { Int($0.size.width.rounded(.down)) } action: { width in
             try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
         }

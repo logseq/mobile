@@ -4,6 +4,18 @@ appId: com.logseq.logseq
     id: button.composer.expand
 - tapOn:
     retryTapIfNoChange: false
+    id: button.composer.attachment
+- assertVisible: File
+- assertVisible: Camera
+- assertVisible: Photo
+- assertVisible: Audio recording
+- tapOn:
+    point: "3%,50%"
+- assertNotVisible: Camera
+- assertVisible:
+    id: button.composer.expand
+- tapOn:
+    retryTapIfNoChange: false
     id: button.sidebar
 - assertVisible:
     id: button.graph-switch

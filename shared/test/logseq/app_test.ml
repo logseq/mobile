@@ -3166,19 +3166,15 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let pages_scroll =
     descendant_with_identifier renderer sidebar_view "scroll.sidebar.pages"
   in
-  check ~msg:"Favorites and Recent have their own scroll region"
-    (pages_scroll <> -1);
-  check_eq ~msg:"top navigation stays outside the scroll region"
-    (descendant_with_identifier renderer pages_scroll "link.sidebar.journals")
-    (-1);
-  check_eq ~msg:"scrolling starts with Favorites"
-    (descendant_with_identifier renderer pages_scroll
-       "section.sidebar.favorites")
-    favorites;
+  check_eq ~msg:"the native sidebar owns scrolling for all sections" pages_scroll (-1);
+  check_eq ~msg:"Favorites belong to the same content as the navigation rows"
+    (descendant_with_identifier renderer sidebar_content "section.sidebar.favorites") favorites;
+  check_eq ~msg:"Recent belongs to the same content as the navigation rows"
+    (descendant_with_identifier renderer sidebar_content "section.sidebar.recent") recent;
   let native_sidebar = extension_node application "native-sidebar" in
-  check ~msg:"the system navigation bar owns sidebar header placement"
+  check ~msg:"the native scrolling surface owns sidebar header placement"
     (native_sidebar <> -1);
-  check_eq ~msg:"graph switching belongs to the native toolbar"
+  check_eq ~msg:"graph switching belongs to the native sidebar"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     graph_switch;
   check_eq ~msg:"the sidebar content starts directly with navigation rows"
@@ -5704,7 +5700,7 @@ let collapsed_capture_camera_opens_directly () =
     flush application;
     check ~msg:"the adjacent Capture button still opens the text composer"
       (App.model application).composer_expanded)
-    [ios_backend; kotlin_backend]
+    [kotlin_backend]
 
 let ios_navigation_capture_controls_preserve_drafts_and_actions () =
   let application = App.create (ios_backend ()) in
@@ -5778,16 +5774,18 @@ let composer_attachment_selection_is_owned_by_lg () =
     "{\"id\":7,\"kind\":\"present-attachment\",\"text\":\"files\"}"
 
 let composer_attachment_picker_owns_each_presented_action () =
-  List.iter (fun service ->
+  let check_surface (expanded, trigger_identifier) service =
     let application = App.create (ios_backend ()) in
     start application;
     send application (Model.SelectGraph "Work");
-    send application Model.ExpandComposer;
+    if expanded then send application Model.ExpandComposer;
     flush application;
     let renderer = Lui_app.runtime application in
     let root = Lui_app.root_node application in
     let identifier = "button.attachment." ^ service in
-    let trigger = descendant_with_identifier renderer root "button.attachment" in
+    let trigger = descendant_with_identifier renderer root trigger_identifier in
+    check_eq ~msg:"the attachment trigger displays the plus icon"
+      (property_string renderer trigger Lui_protocol.InlineIconName) "app:composer-add";
     let menu = descendant_with_node_kind renderer trigger Lui_protocol.ContextMenu in
     check ~msg:"the attachment button owns a system menu before the tap"
       (menu <> -1);
@@ -5797,10 +5795,13 @@ let composer_attachment_picker_owns_each_presented_action () =
     flush application;
     check ~msg:"system menu actions do not open a model-owned popup"
       (not (App.model application).attachment_picker_open);
+    check_eq ~msg:"the attachment menu preserves composer expansion"
+      (App.model application).composer_expanded expanded;
     check_eq ~msg:"the selected service reaches native presentation exactly once"
       (App.model application).pending_effects
-      [Model.PresentAttachmentEffect (1, service)])
-    ["files"; "camera"; "photos"; "audio"]
+      [Model.PresentAttachmentEffect (1, service)] in
+  List.iter (fun surface -> List.iter (check_surface surface) ["files"; "camera"; "photos"; "audio"])
+    [false, "button.composer.attachment"; true, "button.attachment"]
 
 let composer_attachment_menu_preserves_main_actions () =
   let application = App.create (ios_backend ()) in

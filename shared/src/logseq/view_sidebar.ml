@@ -171,12 +171,13 @@ let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
       ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
-  let native_toolbar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+  let native_sidebar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
   let settings =
-    icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
-      ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
-      ~accessibility_identifier:"button.sidebar.settings"
-      ~on_press:(press send Model.OpenSettings) [] in
+    View_base.with_liquid_glass "circle"
+      (icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+        ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
+        ~accessibility_identifier:"button.sidebar.settings"
+        ~on_press:(press send Model.OpenSettings) []) in
   let header =
     [box ~height:(if Lui_ui.host context = KotlinHost then 8 else 48) [];
       row ~cross:`center ~gap:4
@@ -197,10 +198,48 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
           settings;
         ];
       box ~height:12 []] in
+  let pages =
+    column ~gap:4
+      [
+        column ~accessibility_identifier:"section.sidebar.favorites"
+          ~gap:2
+          [
+            sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Favorites") (`app "star");
+            if_
+              ~test:(Signal.map View_base.favorites_empty_ model_source)
+              (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No favorites yet"));
+            keyed
+              ~source:
+                (Signal.map View_base.sidebar_favorites model_source)
+              ~key:View_base.sidebar_page_identifier ~cmp:compare
+              ~mount:(fun page_source ->
+                 sidebar_page_row context model_source page_source
+                   send);
+          ];
+        column ~accessibility_identifier:"section.sidebar.recent"
+          ~gap:2
+          [
+            sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Recent") (`app "history");
+            if_
+              ~test:
+                (Signal.map View_base.recent_pages_empty_ model_source)
+              (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No recent pages"));
+            keyed
+              ~source:
+                (Signal.map View_base.sidebar_recent_pages model_source)
+              ~key:View_base.sidebar_page_identifier ~cmp:compare
+              ~mount:(fun page_source ->
+                 sidebar_page_row context model_source page_source
+                   send);
+          ];
+      ] in
+  let pages =
+    if native_sidebar then pages
+    else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
-    column ~accessibility_identifier:(if native_toolbar then "sidebar.content" else "sidebar.navigation")
+    column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:4 ~padding:12
-      ((if native_toolbar then [] else header) @ [
+      ((if native_sidebar then [] else header) @ [
       sidebar_journals_row context model_source send;
       if_
         ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
@@ -208,45 +247,9 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
       if_
         ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
         (sidebar_graphs_row context model_source send);
-      scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages"
-        [
-          column ~gap:4
-            [
-              column ~accessibility_identifier:"section.sidebar.favorites"
-                ~gap:2
-                [
-                  sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Favorites") (`app "star");
-                  if_
-                    ~test:(Signal.map View_base.favorites_empty_ model_source)
-                    (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No favorites yet"));
-                  keyed
-                    ~source:
-                      (Signal.map View_base.sidebar_favorites model_source)
-                    ~key:View_base.sidebar_page_identifier ~cmp:compare
-                    ~mount:(fun page_source ->
-                       sidebar_page_row context model_source page_source
-                         send);
-                ];
-              column ~accessibility_identifier:"section.sidebar.recent"
-                ~gap:2
-                [
-                  sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Recent") (`app "history");
-                  if_
-                    ~test:
-                      (Signal.map View_base.recent_pages_empty_ model_source)
-                    (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No recent pages"));
-                  keyed
-                    ~source:
-                      (Signal.map View_base.sidebar_recent_pages model_source)
-                    ~key:View_base.sidebar_page_identifier ~cmp:compare
-                    ~mount:(fun page_source ->
-                       sidebar_page_row context model_source page_source
-                         send);
-                ];
-            ];
-        ];
+      pages;
     ]) in
-  if native_toolbar then
+  if native_sidebar then
     box ~accessibility_identifier:"sidebar.navigation" ~grow:1.0
       [custom (fun context parent ->
           let node = Lui_ui.extension context "native-sidebar" in
@@ -254,7 +257,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
           let graph_width = Signal.state context.ui_scheduler 160 in
           Lui_ui.on_event context node (function
             | ExtensionEvent (_, _, "viewport-changed", values) ->
-              (* Reserve Settings, the sidebar toggle, and the native toolbar margins. *)
+              (* Reserve room for Settings and the drawer margins. *)
               Signal.set graph_width (max 44 (View_base.extension_int values "width" - 2 * 44 - 3 * 16))
             | _ -> ());
           let switch = View_base.with_int_prop_signal WidthValue (Signal.value graph_width)

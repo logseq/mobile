@@ -31,21 +31,25 @@ let attachment_picker_items item model_source context send =
 
 let composer_default_action_foreground = "border"
 
-let composer_attachment_button model_source (context : Lui_ui.ui_context) send : t =
+let composer_attachment_control ?(width = 32) ?(height = 44)
+    ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
+    model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     let item ~icon ~accessibility_identifier ~text ~on_press children =
       dropdown_menu_item ~icon ~accessibility_identifier ~text ~on_press children in
-    menu_trigger ~icon:(`app "composer-add") ~foreground:composer_default_action_foreground
+    menu_trigger ~icon:(`app "composer-add") ~foreground
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment")
-      ~accessibility_identifier:"button.attachment"
+      ~accessibility_identifier:identifier
       (dropdown_menu (attachment_picker_items item model_source context send))
   else
     let item ~icon ~accessibility_identifier ~text ~on_press _ =
       context_menu_item ~icon ~accessibility_identifier ~text ~on_press () in
-    icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
-      ~foreground:composer_default_action_foreground
-      ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:"button.attachment"
+    icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width ~height ~foreground
+      ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:identifier
       [context_menu (attachment_picker_items item model_source context send)]
+
+let composer_attachment_button model_source context send =
+  composer_attachment_control model_source context send
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -334,10 +338,8 @@ let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
     [
       with_press (press send Model.ExpandComposer)
         (box ~width:8 ~height:58 []);
-      icon_button ~icon:(`app "toolbar-camera") ~variant:`ghost ~size:`icon
-        ~width:44 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Camera")
-        ~accessibility_identifier:"button.composer.camera"
-        ~on_press:(press send (Model.ChooseAttachment "camera")) [];
+      composer_attachment_control ~width:44 ~height:58 ~foreground:"foreground"
+        ~identifier:"button.composer.attachment" model_source context send;
       button ~variant:`ghost ~grow:1.0 ~height:58 ~padding_horizontal:0
         ~foreground:"muted-foreground" ~text_alignment:`start ~style_class:"body"
         ~label:(View_base.tr (Signal.sample model_source) "Capture") ~accessibility_identifier:"button.composer.expand"
