@@ -17,3 +17,13 @@
  (name search_pages)
  (modules search_pages)
  (libraries logseq_core unix yojson))
+
+(library
+ (name outliner_workload)
+ (modules outliner_workload)
+ (libraries logseq_core datascript-ocaml-native yojson))
+
+(test
+ (name outliner_perf)
+ (modules outliner_perf)
+ (libraries outliner_workload unix yojson))

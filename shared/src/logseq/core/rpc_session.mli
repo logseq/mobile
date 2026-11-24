@@ -1,7 +1,7 @@
 (** Session-level RPC dispatcher and snapshot encoders. *)
 
 val default_options : Session_types.host_options
-val create_session : Session_types.host_options -> Session_types.session
+val create_session : ?journal_tasks:Journal_task_dates.cache -> Session_types.host_options -> Session_types.session
 val state : Session_types.session -> Session_types.session_state
 val host : Session_types.session -> Session_types.host_options
 val now_ms : unit -> int
@@ -197,6 +197,7 @@ val snapshot :
   Cache_model.block list ->
   string
 val outliner_patch_result :
+  ?refresh_agenda:bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->
   Cache_model.block list ->
@@ -204,11 +205,13 @@ val outliner_patch_result :
   Yojson.Basic.t list ->
   string
 val outliner_patch :
+  ?refresh_agenda:bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->
   string list ->
   string
 val structural_outliner_patch :
+  ?refresh_agenda:bool ->
   bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->
