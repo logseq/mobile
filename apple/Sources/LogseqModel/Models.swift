@@ -474,24 +474,37 @@ public struct LogseqOutlinerState: Codable, Equatable, Sendable {
 }
 
 public struct LogseqOutlinerCommand: Codable, Equatable, Sendable {
+    public struct ImageClipboard: Codable, Equatable, Sendable {
+        public struct Asset: Codable, Equatable, Sendable {
+            public let uuid: String
+            public let assetType: String
+        }
+
+        public let graphId: String
+        public let images: [Asset]
+    }
+
     public let type: String
     public let style: String?
     public let uuid: String?
     public let uuids: [String]?
     public let text: String?
+    public let imageClipboard: ImageClipboard?
 
     public init(
         type: String,
         style: String? = nil,
         uuid: String? = nil,
         uuids: [String]? = nil,
-        text: String? = nil
+        text: String? = nil,
+        imageClipboard: ImageClipboard? = nil
     ) {
         self.type = type
         self.style = style
         self.uuid = uuid
         self.uuids = uuids
         self.text = text
+        self.imageClipboard = imageClipboard
     }
 }
 

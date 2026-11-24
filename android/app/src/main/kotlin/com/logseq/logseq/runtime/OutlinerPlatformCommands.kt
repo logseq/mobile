@@ -12,7 +12,22 @@ internal data class OutlinerPlatformCommand(
     val text: String? = null,
     val uuid: String? = null,
     val uuids: List<String> = emptyList(),
+    val imageClipboard: ImageClipboard? = null,
 ) {
+    data class ImageClipboard(val graphId: String, val images: List<Asset>) {
+        data class Asset(val uuid: String, val assetType: String)
+
+        companion object {
+            fun fromJson(value: JSONObject): ImageClipboard {
+                val images = value.getJSONArray("images")
+                return ImageClipboard(value.getString("graphId"), (0 until images.length()).map { index ->
+                    val asset = images.getJSONObject(index)
+                    Asset(asset.getString("uuid"), asset.getString("assetType"))
+                })
+            }
+        }
+    }
+
     companion object {
         fun fromJson(value: JSONObject): OutlinerPlatformCommand {
             val uuids = value.optJSONArray("uuids")
@@ -24,6 +39,7 @@ internal data class OutlinerPlatformCommand(
                 uuids = uuids?.let { array ->
                     (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotEmpty) }
                 } ?: emptyList(),
+                imageClipboard = value.optJSONObject("imageClipboard")?.let(ImageClipboard::fromJson),
             )
         }
     }

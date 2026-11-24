@@ -105,6 +105,23 @@ class AndroidPlatformServices(private val context: Context) {
         clipboard.setPrimaryClip(ClipData.newPlainText("Logseq", text))
     }
 
+    fun clipboardTimestamp(): Long? =
+        context.getSystemService(ClipboardManager::class.java).primaryClipDescription?.timestamp
+
+    fun copyImages(paths: List<String>, replacing: Long?) {
+        if (paths.isEmpty()) return
+        val uris = paths.map { path ->
+            val file = File(path)
+            check(file.isFile) { "The image file could not be found" }
+            contentUri(file)
+        }
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        if (clipboard.primaryClipDescription?.timestamp != replacing) return
+        val clip = ClipData.newUri(context.contentResolver, "Logseq", uris.first())
+        uris.drop(1).forEach { clip.addItem(context.contentResolver, ClipData.Item(it)) }
+        clipboard.setPrimaryClip(clip)
+    }
+
     fun refreshRuntimeLog(source: String, flags: Int): String {
         val requestedSource = AndroidRuntimeLogSource.entries.firstOrNull {
             it.wireValue == source

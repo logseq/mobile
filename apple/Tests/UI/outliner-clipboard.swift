@@ -47,6 +47,18 @@ import LogseqModel
             errors.append("Ordinary Copy must invalidate the previous rich block snapshot")
         }
 
+        let png = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 3)).pngData { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 3))
+        }
+        let imageURL = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        try png.write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        try await LGImageClipboard.write([imageURL], replacing: UIPasteboard.general.changeCount)
+        if UIPasteboard.general.string != nil || UIPasteboard.general.data(forPasteboardType: "public.png") != png {
+            errors.append("Image Copy must write the original PNG to the native clipboard")
+        }
+
         func snapshot(uuid: String, title: String, caret: Int) throws -> String {
             String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": [
                 "selectedGraphId": "demo", "graphName": "Demo", "outlinerRows": [

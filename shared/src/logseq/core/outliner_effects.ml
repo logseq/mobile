@@ -8,6 +8,7 @@ type outliner_platform_command =
   | Focus_block of string
   | Confirm_delete of string list
   | Set_clipboard_blocks of string
+  | Set_clipboard_images of string * (string * string) list
   | Set_clipboard_text of string
   | Set_clipboard_references of string list
   | Set_clipboard_urls of string list
@@ -324,6 +325,10 @@ let command base_t now fresh_uuid context cmd =
      | Some db, Some graph -> let* payload = Block_clipboard.copy db ~graph uuids in
        Ok (result [] [Set_clipboard_blocks payload])
      | _ -> Error "Select a graph before copying blocks")
+  | State.Copy_images images ->
+    (match context.State.graph_id with
+     | Some graph -> Ok (result [] [Set_clipboard_images (graph, images)])
+     | None -> Error "Select a graph before copying images")
   | State.Paste_blocks content ->
     (match context.State.db, context.graph_id with
      | Some db, Some graph ->

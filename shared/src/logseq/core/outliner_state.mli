@@ -166,6 +166,7 @@ type outliner_command =
   | Record_audio of string
   | Insert_root_block of outliner_root
   | Copy_blocks of string list
+  | Copy_images of (string * string) list
   | Paste_blocks of Block_clipboard.content
   | Copy_text of string
   | Copy_references of string list
