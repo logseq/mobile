@@ -1,18 +1,14 @@
 package com.logseq.logseq
 
-import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.inspector.WindowInspector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toPixelMap
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
@@ -50,7 +46,7 @@ class AndroidComposerMenuTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun composer(scheme: ColorScheme = LogseqTheme.lightScheme) {
+    private fun composer() {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(
             onEvent = { dispatchLuiEvent(it, native) },
@@ -65,14 +61,14 @@ class AndroidComposerMenuTest {
         filter.applyJson(native.applySnapshot("""{"ok":true,"result":{
             "graphName":"Composer test","selectedGraphId":"composer-test",
             "isGraphUnlocked":true,"outlinerRows":[]}}"""))
-        content(backend, root, scheme)
+        content(backend, root)
         ui.onNodeWithTag("button.composer.expand").performClick()
         ui.onNodeWithTag("field.composer").performTextInput("Unsent draft 中文")
     }
 
-    private fun content(backend: LuiBackend, root: Long, scheme: ColorScheme = LogseqTheme.lightScheme) {
+    private fun content(backend: LuiBackend, root: Long) {
         ui.setContent {
-            MaterialTheme(colorScheme = scheme, typography = LogseqTheme.typography) {
+            MaterialTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
             }
         }
@@ -100,65 +96,16 @@ class AndroidComposerMenuTest {
         ui.onNodeWithText("Photo").assertIsDisplayed()
     }
 
-    @Test fun selectingStatusRetainsTheExitTransitionAndMarksTheReopenedChoice() {
+    @Test fun taskStatusButtonTogglesTodoSelection() {
         composer()
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Todo").assertIsDisplayed()
-        ui.mainClock.autoAdvance = false
-        ui.onNodeWithText("Todo").performClick()
-        ui.mainClock.advanceTimeByFrame()
-        ui.onNodeWithText("Todo").assertExists()
-        ui.mainClock.advanceTimeBy(500)
-        ui.onNodeWithText("Todo").assertDoesNotExist()
-        ui.mainClock.autoAdvance = true
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Todo").assertIsSelected()
-        ui.onNodeWithText("Clear task status").performClick()
-        ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Clear task status").assertDoesNotExist()
-    }
-
-    @Test fun outsideDismissalDoesNotChangeTheDraftOrStatus() {
-        composer()
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Todo").assertIsDisplayed()
-        ui.runOnIdle {
-            val now = SystemClock.uptimeMillis()
-            val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_OUTSIDE, -1f, -1f, 0)
-            try { WindowInspector.getGlobalWindowViews().last().dispatchTouchEvent(event) }
-            finally { event.recycle() }
-        }
-        ui.onNodeWithText("Todo").assertDoesNotExist()
-        ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Clear task status").assertDoesNotExist()
-    }
-
-    @Test fun taskStatusChoicesExposeNativeSingleSelectionSemantics() {
-        composer()
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Todo")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
-    }
-
-    @Test fun selectedMenuItemUsesTheLightSelectionPalette() {
-        assertSelectedMenuColor(LogseqTheme.lightScheme)
-    }
-
-    @Test fun selectedMenuItemUsesTheDarkSelectionPalette() {
-        assertSelectedMenuColor(LogseqTheme.darkScheme)
-    }
-
-    private fun assertSelectedMenuColor(scheme: ColorScheme) {
-        composer(scheme)
         val status = ui.onNodeWithTag("button.task-status")
-        val todo = ui.onNodeWithText("Todo")
         status.performClick()
-        todo.performClick()
+        status.assertIsSelected()
+        ui.onNodeWithTag("button.composer.scheduled").assertIsDisplayed()
         status.performClick()
-        val pixels = todo.assertIsSelected().captureToImage().toPixelMap()
-        assertEquals(scheme.secondaryContainer, pixels[pixels.width * 9 / 10, pixels.height / 2])
+        status.assertIsNotSelected()
+        ui.onNodeWithTag("button.composer.scheduled").assertDoesNotExist()
+        ui.onNodeWithTag("field.composer").assertTextEquals("Unsent draft 中文")
     }
 
     @Test fun tappingOutsideTheComposerClosesItAndPreservesTheDraft() {

@@ -580,6 +580,7 @@ type logseq_action =
   | OpenTaskStatusPicker
   | CloseTaskStatusPicker
   | ChooseTaskStatus of string
+  | ToggleComposerTodo
   | OpenComposerTaskDate of string
   | CloseComposerTaskDate
   | SetComposerTaskDate of string * int option
@@ -1392,6 +1393,22 @@ let task_status_by_id statuses target =
 let available_task_statuses = function
   | [] -> built_in_task_statuses ()
   | catalog -> catalog
+
+let default_task_status statuses =
+  let statuses = available_task_statuses statuses in
+  match List.find_opt (fun (status : task_status) ->
+    status.ident = Some "logseq.property/status.todo") statuses with
+  | Some _ as todo -> todo
+  | None -> List.nth_opt statuses 0
+
+let clear_task_status (current : logseq_model) =
+  {
+    current with
+    selected_task_status = None;
+    task_status_picker_open = false;
+    composer_task_dates = [];
+    composer_task_date_field = None;
+  }
 
 let string_vector_contains_ values target = List.mem target values
 
@@ -2800,14 +2817,12 @@ let rec update (current : logseq_model) action =
          task_status_picker_open = false;
        }
      | None -> current)
-  | ClearTaskStatus ->
-    {
-      current with
-      selected_task_status = None;
-      task_status_picker_open = false;
-      composer_task_dates = [];
-      composer_task_date_field = None;
-    }
+  | ToggleComposerTodo ->
+    (match current.selected_task_status with
+     | Some _ -> clear_task_status current
+     | None ->
+       {current with selected_task_status = default_task_status current.task_statuses})
+  | ClearTaskStatus -> clear_task_status current
   | OpenComposerTaskDate field ->
     if current.selected_task_status <> None && (field = "scheduled" || field = "deadline") then
       {current with composer_task_date_field = Some field; composer_autofocus = false}
@@ -2960,13 +2975,7 @@ let rec update (current : logseq_model) action =
           composer_expanded = kind <> "journal";
           composer_autofocus = kind = "capture" || kind = "task";
           selected_task_status =
-            (if kind = "task" then begin
-               let statuses = available_task_statuses current.task_statuses in
-               match List.find_opt (fun (status : task_status) ->
-                 status.ident = Some "logseq.property/status.todo") statuses with
-               | Some _ as todo -> todo
-               | None -> List.nth_opt statuses 0
-             end
+            (if kind = "task" then default_task_status current.task_statuses
              else current.selected_task_status);
         }
       in

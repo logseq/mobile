@@ -4985,9 +4985,9 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     (property_string renderer control_spacer
        Lui_protocol.AccessibilityIdentifier)
     "spacer.composer.controls";
-  check_eq ~msg:"the unset task status uses main's circular outline"
+  check_eq ~msg:"the composer task button uses main's task icon"
     (property_string renderer task_status_node Lui_protocol.InlineIconName)
-    "app:task-todo";
+    "app:toolbar-task";
   check_eq ~msg:"a flexible spacer keeps Send at the trailing edge"
     (property_float renderer control_spacer Lui_protocol.GrowValue)
     1.0;
@@ -5892,7 +5892,7 @@ let composer_task_status_selection_and_send_are_owned_by_lg () =
   check_eq ~msg:"the status can be cleared without changing the draft"
     cleared.selected_task_status None
 
-let composer_task_status_menu_preserves_main_actions () =
+let composer_task_status_button_toggles_todo () =
   let application = App.create (ios_backend ()) in
   let todo =
     task_status "todo" (Some "logseq.property/status.todo") "Todo"
@@ -5907,41 +5907,32 @@ let composer_task_status_menu_preserves_main_actions () =
          task_statuses = [ todo ];
        });
   send application Model.ExpandComposer;
-  send application Model.OpenTaskStatusPicker;
   flush application;
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
-  let option =
-    descendant_with_identifier renderer navigation
-      "button.task-status.option.todo"
-  in
-  let trigger =
+  let button =
     descendant_with_identifier renderer navigation "button.task-status"
   in
-  let menu = descendant_with_node_kind renderer trigger Lui_protocol.ContextMenu in
-  check ~msg:"the task status button owns a system menu" (menu <> -1);
-  check ~msg:"the task status menu renders Todo" (option <> -1);
-  check_eq ~msg:"the native task status action preserves its label"
-    (property_string renderer option Lui_protocol.TextValue)
-    "Todo";
-  check_eq ~msg:"the task status menu preserves main's semantic icon"
-    (property_string renderer option Lui_protocol.InlineIconName)
-    "app:task-todo";
-  check_eq ~msg:"the task status menu preserves main's semantic color"
-    (property_string renderer option Lui_protocol.ForegroundValue)
-    "task-todo";
-  dispatch application (Lui_protocol.Press option);
+  check ~msg:"the task status button is present" (button <> -1);
+  dispatch application (Lui_protocol.Press button);
   flush application;
-  check_eq ~msg:"the system menu selects the same semantic task status"
+  check_eq ~msg:"pressing the task button selects TODO"
     (App.model application).selected_task_status (Some todo);
-  check ~msg:"the selected status is checked in the system menu"
-    (property_bool renderer option Lui_protocol.Selected);
-  let clear = descendant_with_identifier renderer trigger "button.task-status.clear" in
-  check ~msg:"a selected status exposes the clear action" (clear <> -1);
-  dispatch application (Lui_protocol.Press clear);
+  let scheduled =
+    descendant_with_identifier renderer navigation "button.composer.scheduled"
+  in
+  check ~msg:"selecting TODO reveals the scheduled button" (scheduled <> -1);
+  check ~msg:"the task button exposes its selected state"
+    (property_bool renderer button Lui_protocol.Selected);
+  dispatch application (Lui_protocol.Press button);
   flush application;
-  check_eq ~msg:"clearing the status updates the composer"
-    (App.model application).selected_task_status None
+  check_eq ~msg:"pressing the selected task button clears the status"
+    (App.model application).selected_task_status None;
+  check_eq ~msg:"clearing TODO hides the scheduled button"
+    (descendant_with_identifier renderer navigation "button.composer.scheduled")
+    (-1);
+  check ~msg:"the task button exposes its cleared state"
+    (not (property_bool renderer button Lui_protocol.Selected))
 
 let task_capture_has_a_stable_native_effect_payload () =
   let todo =
@@ -11819,7 +11810,7 @@ let cases =
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
     case "composer-attachment-picker-owns-each-presented-action" composer_attachment_picker_owns_each_presented_action;
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;
-    case "composer-task-status-menu-preserves-main-actions" composer_task_status_menu_preserves_main_actions;
+    case "composer-task-status-button-toggles-todo" composer_task_status_button_toggles_todo;
     case "task-capture-has-a-stable-native-effect-payload" task_capture_has_a_stable_native_effect_payload;
     case "task-status-choices-respect-configured-catalog-and-unloaded-fallback" task_status_choices_respect_configured_catalog_and_unloaded_fallback;
     case "native-bridge-renders-restored-authentication-in-the-first-patch" native_bridge_renders_restored_authentication_in_the_first_patch;

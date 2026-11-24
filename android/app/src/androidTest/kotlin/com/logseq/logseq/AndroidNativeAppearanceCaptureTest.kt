@@ -73,9 +73,8 @@ class AndroidNativeAppearanceCaptureTest {
             capture("attachments")
             back()
             click("button.task-status")
-            waitFor { it.text?.toString() == "Todo" }
+            waitFor { it.viewIdResourceName == "button.task-status" && it.isSelected }
             capture("status")
-            back()
         } finally {
             if (wasCollapsed) click("surface.composer.dismiss")
         }

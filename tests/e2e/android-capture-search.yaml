@@ -17,10 +17,8 @@ appId: com.logseq.logseq
     id: "button.task-status"
 - tapOn:
     id: "button.task-status"
-- extendedWaitUntil:
-    visible: "Todo"
-    timeout: 5000
-- tapOn: "Todo"
+- assertVisible:
+    id: "button.composer.scheduled"
 - tapOn:
     id: "field.composer"
 - inputText: "Android E2E capture"

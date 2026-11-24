@@ -120,53 +120,20 @@ let task_status_context_row model_source status_source send =
     ~accessibility_identifier:(View_base.task_status_identifier status)
     ~on_press:(fun () -> ignore (send (Model.ChooseTaskStatus (Signal.sample status_source).uuid))) ()
 
-let task_status_picker_items model_source send =
-    [
-      keyed_dropdown_menu_item
-        ~source:(reactive View_base.model_task_statuses model_source)
-        ~key:View_base.task_status_identifier ~cmp:compare
-        ~mount:(fun status_source -> task_status_row model_source status_source send);
-      if_dropdown_menu_item
-        ~test:(reactive View_base.task_status_selected_ model_source)
-        (dropdown_menu_item ~accessibility_identifier:"button.task-status.clear"
-          ~text:(View_base.tr (Signal.sample model_source) "Clear task status")
-          ~on_press:(press send Model.ClearTaskStatus) []);
-    ]
-
-let task_status_context_items model_source send =
-    [
-      keyed_context_menu_item
-        ~source:(reactive View_base.model_task_statuses model_source)
-        ~key:View_base.task_status_identifier ~cmp:compare
-        ~mount:(fun status_source -> task_status_context_row model_source status_source send);
-      if_context_menu_item
-        ~test:(reactive View_base.task_status_selected_ model_source)
-        (context_menu_item ~accessibility_identifier:"button.task-status.clear"
-          ~text:(View_base.tr (Signal.sample model_source) "Clear task status")
-          ~on_press:(press send Model.ClearTaskStatus) ());
-    ]
-
 let composer_task_status_button (context : Lui_ui.ui_context) model_source send : t =
-  let icon (current : Model.logseq_model) =
-    match current.selected_task_status with
-    | Some status ->
-      View_base.icon_of_wire_name (View_base.task_status_icon_name status)
-    | None -> `app "task-todo" in
   let foreground (current : Model.logseq_model) =
     match current.selected_task_status with
     | Some status -> View_base.task_status_foreground status
     | None -> composer_default_action_foreground in
-  if Lui_ui.host context = KotlinHost then
-    menu_trigger ~icon:(reactive icon model_source)
-      ~foreground:(reactive foreground model_source) ~label:(View_base.tr (Signal.sample model_source) "Task status")
-      ~accessibility_identifier:"button.task-status"
-      (dropdown_menu (task_status_picker_items model_source send))
-  else
-    icon_button ~icon:(reactive icon model_source)
-      ~variant:`ghost ~size:`icon ~width:32 ~height:44
-      ~foreground_signal:(Signal.map foreground model_source) ~label:(View_base.tr (Signal.sample model_source) "Task status")
-      ~accessibility_identifier:"button.task-status"
-      [context_menu (task_status_context_items model_source send)]
+  icon_button ~icon:(`app "toolbar-task") ~variant:`ghost
+    ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
+    ~foreground:(reactive foreground model_source)
+    ~selected_signal:
+      (reactive (fun (current : Model.logseq_model) ->
+         current.selected_task_status <> None) model_source)
+    ~label:(View_base.tr (Signal.sample model_source) "Task status")
+    ~accessibility_identifier:"button.task-status"
+    ~on_press:(press send Model.ToggleComposerTodo) []
 
 let composer_task_date_button (context : Lui_ui.ui_context) model_source send field : t =
   let icon, label = if field = "scheduled" then "calendar", "Scheduled" else "deadline", "Deadline" in
