@@ -223,7 +223,7 @@ let native_navigation_title_schema () =
 let native_sidebar_schema () =
   let open Lui_protocol in
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
-    true [] [] [Lui_extension.event "viewport-changed" [Lui_extension.event_field "width" Lui_extension.IntScalar true]]
+    true [] [] []
 
 let native_top_notification_schema () =
   let open Lui_protocol in

@@ -105,6 +105,18 @@ let sidebar_graph_switch_content model_source : t =
         ~foreground:"muted-foreground" [];
     ]
 
+let native_graph_switch ?grow ?(min_height = 44) ?(foreground = "foreground") model_source send : t =
+  View_base.with_label_signal
+    (Signal.map (fun current ->
+       View_base.graph_label current ^ ", " ^ View_base.tr current "Switch graph") model_source)
+    (button ~variant:`ghost ~min_height ?grow
+      ~text:(reactive View_base.graph_label model_source)
+      ~style_class:"semibold" ~foreground
+      ~icon:(`app "chevron-down") ~icon_placement:`trailing
+      ~accessibility_identifier:"button.graph-switch"
+      [context_menu ~accessibility_identifier:"menu.graph-switch"
+         (sidebar_graph_menu_items keyed_context_menu_item sidebar_graph_context_item model_source send)])
+
 let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     View_base.with_label "Switch graph"
@@ -112,15 +124,7 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          ~accessibility_identifier:"button.graph-switch"
          ~on_press:(press send Model.OpenGraphMenu)
          [ sidebar_graph_switch_content model_source ])
-  else
-    View_base.with_label "Switch graph"
-      (button ~variant:`ghost ~min_height:44 ~grow:1.0
-      ~text:(reactive View_base.graph_label model_source)
-      ~text_alignment:`start ~style_class:"semibold" ~foreground:"foreground"
-      ~icon:(`app "chevron-down") ~icon_placement:`trailing
-      ~accessibility_identifier:"button.graph-switch"
-      [context_menu ~accessibility_identifier:"menu.graph-switch"
-         (sidebar_graph_menu_items keyed_context_menu_item sidebar_graph_context_item model_source send)])
+  else native_graph_switch ~grow:1.0 model_source send
 
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
@@ -254,14 +258,6 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
       [custom (fun context parent ->
           let node = Lui_ui.extension context "native-sidebar" in
           attach context parent node;
-          let graph_width = Signal.state context.ui_scheduler 160 in
-          Lui_ui.on_event context node (function
-            | ExtensionEvent (_, _, "viewport-changed", values) ->
-              (* Reserve room for Settings and the drawer margins. *)
-              Signal.set graph_width (max 44 (View_base.extension_int values "width" - 2 * 44 - 3 * 16))
-            | _ -> ());
-          let switch = View_base.with_int_prop_signal WidthValue (Signal.value graph_width)
-            (sidebar_graph_switch context model_source send) in
-          mount_children context node [content; switch; settings];
+          mount_children context node [content; settings];
           node)]
   else content

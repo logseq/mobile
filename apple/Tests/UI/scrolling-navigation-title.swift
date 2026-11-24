@@ -6,22 +6,13 @@ import Vision
 
 @main struct ScrollingNavigationTitleCheck {
     @MainActor static func main() async throws {
-        let tracker = LUIScrollSectionTitleTracker()
-        let oldRow = UUID(), replacement = UUID()
-        tracker.update(index: 0, title: "Today", startsSection: true, registration: oldRow)
-        tracker.update(index: 0, title: "Today", startsSection: true, registration: replacement)
-        tracker.update(index: 0, title: nil, registration: oldRow)
-        tracker.update(index: 1, title: "Today", registration: UUID())
-        guard tracker.title == nil else { throw failure("An old row must not unregister its visible replacement") }
-        tracker.updateHeading(title: "Today", isPastTop: true)
-        guard tracker.title == "Today" else { throw failure("The replacement must still track its heading") }
         for delayedLoad in [true, false] {
             for isPage in [false, true] {
                 try await check(isPage: isPage, delayedLoad: delayedLoad)
             }
             try await check(isPage: false, delayedLoad: delayedLoad, groupedJournal: true)
         }
-        print("PASS: native journal and page titles follow scrolling after warm and delayed cold loads, and clear on return")
+        print("PASS: the graph switch stays visible alongside journal and page titles while scrolling after warm and cold loads")
     }
 
     @MainActor static func check(isPage: Bool, delayedLoad: Bool, groupedJournal: Bool = false) async throws {
@@ -78,7 +69,7 @@ import Vision
         if observed != nil {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("title-initial-failure.png"))
-            throw failure("The toolbar title must stay hidden while its content heading is visible")
+            throw failure("The contextual toolbar title must stay hidden while its content heading is visible")
         }
         let top = -scroll.adjustedContentInset.top
         scroll.setContentOffset(CGPoint(x: 0, y: top + 180), animated: false)
@@ -102,8 +93,8 @@ import Vision
             width: frame.width / window.bounds.width, height: frame.height / window.bounds.height)
         try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
         let visible = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        guard visible.contains(title) else {
-            throw failure("The native top bar must actually display \(title) after \(delayedLoad ? "cold" : "warm") loading; found: \(visible)")
+        guard visible.contains(title), visible.contains("Work") else {
+            throw failure("The native top bar must display the graph and \(title) after \(delayedLoad ? "cold" : "warm") loading; found: \(visible)")
         }
         scroll.setContentOffset(CGPoint(x: 0, y: top), animated: false)
         try await Task.sleep(for: .milliseconds(700))

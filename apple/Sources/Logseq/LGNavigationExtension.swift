@@ -339,9 +339,8 @@ enum LGNavigationExtension {
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-sidebar",
-                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:16:viewport-changed[5:width:int:required]",
-                acceptsStandardChildren: true,
-                events: [.init(name: "viewport-changed", fields: [.init(name: "width", kind: .int, isRequired: true)])]
+                fingerprint: "lui-extension-v1|14:native-sidebar|profiles:ios/swiftui|standard-children:1|children:|properties:|events:",
+                acceptsStandardChildren: true
             ) { context in
                 AnyView(LGSidebarNavigation(context: context))
             }
@@ -476,22 +475,10 @@ private struct LGSidebarNavigation: View {
             ? Color.white
             : LogseqThemePolicy.accent
         let scroll = ScrollView {
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    child(at: 1).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    child(at: 2)
-                }
-                .frame(minHeight: 44)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                child(at: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // The drawer host extends to the window edges. Keep this spacing
-            // inside the scroll content so rows pass behind the frosted edge.
-            .padding(.top, topInset)
-            .padding(.bottom, bottomInset)
+            child(at: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // The drawer fills the window. Rows scroll into the top safe area.
+                .padding(.top, topInset)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -510,6 +497,14 @@ private struct LGSidebarNavigation: View {
             scroll
             #endif
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            child(at: 1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, bottomInset + 8)
+                .background(background)
+        }
         #if os(iOS)
         .background(LGWindowVerticalInsetsReader {
             topInset = $0.top
@@ -517,9 +512,6 @@ private struct LGSidebarNavigation: View {
         })
         #endif
         .background(background.ignoresSafeArea())
-        .onGeometryChange(for: Int.self) { Int($0.size.width.rounded(.down)) } action: { width in
-            try? context.emit(name: "viewport-changed", values: ["width": .int(width)])
-        }
     }
 
     private func child(at index: Int) -> AnyView {
@@ -762,8 +754,6 @@ private struct LGNativeSearchHost: ViewModifier {
     #if os(iOS)
     let transitions: LGNavigationTransitions
     #endif
-    @Environment(\.lgVerticalToolbar) private var verticalToolbar
-
     @ViewBuilder
     func body(content: Content) -> some View {
         if let search {
@@ -796,16 +786,6 @@ private struct LGNativeSearchHost: ViewModifier {
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
                     placement: .automatic, prompt: Text(search.title))
                 #endif
-            }
-            .toolbar {
-                if search.isVisible && !verticalToolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text(search.statusTitle)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("search.status")
-                    }
-                }
             }
         } else { content }
     }
@@ -1054,11 +1034,10 @@ private struct LGNavigationContent: View {
 
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
-        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
-        return NavigationStack(path: pathBinding) {
+        NavigationStack(path: pathBinding) {
             navigationSurface(Group {
                 if toolbarStartIndex != nil {
-                    rootNavigationSurface.navigationTitle(verticalToolbar && flashcardsToolbar != nil ? "" : title)
+                    rootNavigationSurface.navigationTitle(verticalToolbar ? "" : contextualTitle)
                 } else {
                     rootNavigationSurface
                 }
@@ -1070,6 +1049,8 @@ private struct LGNavigationContent: View {
                 )
                 .background(routeBackground), active: path.isEmpty)
                 .navigationDestination(for: Int.self) { childID in
+                    let searchPage = searchRoutes.contains(childID)
+                    let destinationSearch = searchPage ? nil : search
                     navigationSurface(destinationSurface(childID)
                         .padding(.top, destinationContentTopPadding)
                         .frame(
@@ -1079,9 +1060,14 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground), active: path.last == childID)
                         .toolbar {
-                            trailingToolbar(searchPage: searchRoutes.contains(childID))
+                            trailingToolbar(searchPage: searchPage)
+                            if !verticalToolbar, let destinationSearch, destinationSearch.isVisible {
+                                ToolbarItem(placement: .principal) {
+                                    searchStatusTitle(destinationSearch.statusTitle)
+                                }
+                            }
                         }
-                        .modifier(nativeSearchHost(searchRoutes.contains(childID) ? nil : search))
+                        .modifier(nativeSearchHost(destinationSearch))
                         #if os(iOS)
                         .toolbar(.visible, for: .navigationBar)
                         #endif
@@ -1108,12 +1094,18 @@ private struct LGNavigationContent: View {
                                 }
                             }
                         }
-                        if let flashcardsToolbar, !searchVisible {
-                            if !verticalToolbar {
-                                ToolbarItem(placement: .principal) {
+                        if !verticalToolbar, !pdfWorkspaceOpen || searchVisible {
+                            ToolbarItem(placement: .principal) {
+                                if let search, searchVisible {
+                                    searchStatusTitle(search.statusTitle)
+                                } else if let flashcardsToolbar {
                                     flashcardsTitle(flashcardsToolbar.title)
+                                } else {
+                                    graphSwitchTitle
                                 }
                             }
+                        }
+                        if let flashcardsToolbar, !searchVisible {
                             let addButton = context.nodeView(of: flashcardsToolbar.add)
                                 .frame(width: 44, height: 44)
                                 .buttonStyle(.plain)
@@ -1190,9 +1182,46 @@ private struct LGNavigationContent: View {
             .buttonStyle(.plain)
     }
 
+    private func searchStatusTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .lineLimit(1)
+            .accessibilityIdentifier("search.status")
+    }
+
+    private var graphSwitchTitle: some View {
+        VStack(spacing: 0) {
+            if let toolbarStartIndex,
+               let titleSlot = childID(at: toolbarStartIndex + 1),
+               let graphSwitch = context.childIDs(of: titleSlot).first {
+                context.nodeView(of: graphSwitch)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+            }
+            if !contextualTitle.isEmpty {
+                Text(verbatim: contextualTitle)
+                    .lineLimit(1)
+                    .font(.caption.weight(.semibold))
+            }
+        }
+        .frame(minHeight: 44)
+    }
+
     @ViewBuilder
     private var rootNavigationSurface: some View {
-        withAppTint(searchSurface(transformedRootContent, active: path.isEmpty))
+        let base = AnyView(transformedRootContent.safeAreaInset(edge: .top, spacing: 0) {
+            if verticalToolbar, toolbarStartIndex != nil, flashcardsToolbar == nil {
+                // Retain the journal viewport while the native search bar is presented.
+                graphSwitchTitle
+                    .frame(maxWidth: .infinity)
+                    .background(routeBackground)
+                    .opacity(searchVisible || pdfWorkspaceOpen ? 0 : 1)
+            }
+        })
+        withAppTint(searchSurface(base, active: path.isEmpty))
             .padding(.top, navigationContentTopPadding)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if verticalToolbar, !searchVisible, let flashcardsToolbar {
@@ -1328,6 +1357,10 @@ private struct LGNavigationContent: View {
     private var navigationTitle: String {
         guard case let .string(value) = context.property("title") else { return "" }
         return value
+    }
+
+    private var contextualTitle: String {
+        navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle
     }
 
     private var navigationContentTopPadding: CGFloat {

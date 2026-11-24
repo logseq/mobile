@@ -923,13 +923,19 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
         ]));
      ignore
        (mount context ~parent:node (main_header_leading context model_source send));
-     let title = main_header_title context model_source in
      let title_slot =
        if uses_ios_flashcard_toolbar context then
+         let width = Signal.map (fun (current : Model.logseq_model) ->
+           (* Leave space for the sidebar toggle, two trailing actions, and bar margins. *)
+           let viewport = if current.viewport_width > 0 then current.viewport_width else 320 in
+           max 44 (min 320 (viewport - 3 * 44 - 2 * 16 - 2 * 12))) model_source in
+         let title = box ~accessibility_identifier:"title.main"
+           [View_base.with_int_prop_signal WidthValue width
+              (View_sidebar.native_graph_switch ~min_height:28 ~foreground:"muted-foreground" model_source send)] in
          dyn (fun flashcards ->
            if flashcards then box [View_flashcards.flashcard_toolbar model_source send]
            else title) (Signal.map View_base.flashcards_destination_ model_source)
-       else title in
+       else main_header_title context model_source in
      ignore (mount context ~parent:node title_slot);
      ignore
        (mount context ~parent:node (main_header_sync context model_source send));

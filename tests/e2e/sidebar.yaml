@@ -6,10 +6,12 @@ appId: com.logseq.logseq
     visible:
       id: "button.sidebar"
     timeout: 30000
+- assertVisible:
+    id: "button.graph-switch"
 - tapOn:
     id: "button.sidebar"
 - assertVisible:
-    id: "button.graph-switch"
+    id: "button.sidebar.settings"
 - assertVisible:
     id: "link.sidebar.graphs"
 - assertVisible: "Favorites"
