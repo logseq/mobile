@@ -77,7 +77,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
         }
     }
 
-    val background = MaterialTheme.colorScheme.background
+    val colors = MaterialTheme.colorScheme
     val dark = LocalLuiThemeDark.current ?: androidx.compose.foundation.isSystemInDarkTheme()
     BoxWithConstraints(Modifier.fillMaxSize().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
@@ -105,7 +105,14 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                             (1f - progress) * (widthPx - slidePx).coerceAtLeast(0f)
                         } else 0f
                     }.then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
-                ) { context.child(panel) }
+                ) {
+                    // Rows share the drawer's backdrop while retaining their selected semantics.
+                    MaterialTheme(colorScheme = colors.copy(
+                        surface = Color.Transparent,
+                        secondaryContainer = Color.Transparent,
+                        onSecondaryContainer = colors.onSurface,
+                    )) { context.child(panel) }
+                }
             },
         ) {
             val progress = revealFraction()
@@ -118,7 +125,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                     ) { context.child(main) }
                 }
                 Canvas(Modifier.fillMaxSize()) {
-                    drawRect(background.copy(alpha = revealFraction() * if (dark) 0.72f else 0.86f))
+                    drawRect(colors.background.copy(alpha = revealFraction() * if (dark) 0.72f else 0.86f))
                 }
             }
         }

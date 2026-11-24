@@ -115,18 +115,12 @@ let sidebar_empty_section_label model_source title : t =
       box ~height:6 [];
     ]
 
-let sidebar_graph_switch_content model_source : t =
-  row ~grow:1.0 ~main:`space_between ~cross:`center
-    [
-      text ~value:(reactive View_base.graph_label model_source) [];
-      Lui_elements.icon ~name:(`app "chevron-down") ~width:18 ~height:18
-        ~foreground:"muted-foreground" [];
-    ]
+let graph_switch_label model_source =
+  Signal.map (fun current ->
+    View_base.graph_label current ^ ", " ^ View_base.tr current "Switch graph") model_source
 
 let native_graph_switch ?grow ?(min_height = 44) ?(foreground = "foreground") model_source send : t =
-  View_base.with_label_signal
-    (Signal.map (fun current ->
-       View_base.graph_label current ^ ", " ^ View_base.tr current "Switch graph") model_source)
+  View_base.with_label_signal (graph_switch_label model_source)
     (button ~variant:`ghost ~min_height ?grow
       ~text:(reactive View_base.graph_label model_source)
       ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
@@ -136,14 +130,28 @@ let native_graph_switch ?grow ?(min_height = 44) ?(foreground = "foreground") mo
       [context_menu ~accessibility_identifier:"menu.graph-switch"
          (sidebar_graph_menu_items keyed_context_menu_item sidebar_graph_context_item model_source send)])
 
-let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    View_base.with_label "Switch graph"
-      (list_item
-         ~accessibility_identifier:"button.graph-switch"
-         ~on_press:(press send Model.OpenGraphMenu)
-         [ sidebar_graph_switch_content model_source ])
-  else native_graph_switch ~grow:1.0 model_source send
+let android_graph_switch model_source send : t =
+  let label_width = Signal.map (fun (current : Model.logseq_model) ->
+    (* Leave space for the header actions, margins, and chevron. *)
+    if current.viewport_width > 0 then max 24 (min 280 (current.viewport_width - 236))
+    else 160) model_source in
+  stack
+    [View_base.with_label_signal (graph_switch_label model_source)
+       (button ~variant:`ghost ~min_height:44 ~padding_horizontal:8 ~foreground:"muted-foreground"
+          ~text:""
+          ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
+          ~accessibility_identifier:"button.graph-switch" ~on_press:(press send Model.OpenGraphMenu)
+          [View_base.with_int_prop_signal MaxWidth label_width
+             (text ~value:(reactive View_base.graph_label model_source) ~style_class:"headline navigation-title"
+                ~foreground:"muted-foreground" ~white_space:`nowrap ~text_overflow:`ellipsis
+                ~accessibility_identifier:"title.main" []);
+           icon ~name:(`app "chevron-down") ~width:16 ~height:16 ~foreground:"muted-foreground" []]);
+     if_ ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
+       (dropdown_menu_view (dropdown_menu
+          ~target:(Menu_anchor { side = `below; align = `start; offset = 0. })
+          ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
+          ~style_class:"anchored-popover" ~gap:0 ~on_dismiss:(press send Model.DismissGraphMenu)
+          (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)))]
 
 let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~id ~icon ~selected ~action : t =
   let value = View_base.tr (Signal.sample model_source) title in
@@ -189,24 +197,12 @@ let sidebar_settings context model_source send : t =
 let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
   let native_sidebar = uses_native_sidebar context in
   let header =
-    [box ~height:(if Lui_ui.host context = KotlinHost then 8 else 48) [];
-      row ~cross:`center ~gap:4
-        ([
-          stack ~grow:1.0
-            [
-              sidebar_graph_switch context model_source send;
-              if_
-                ~test:(Signal.map (fun current -> Lui_ui.host context = KotlinHost
-                  && View_base.model_graph_menu_open_ current) model_source)
-                (dropdown_menu_view (dropdown_menu
-                   ~target:(Menu_anchor { side = `below; align = `start; offset = 0. })
-                   ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
-                   ~style_class:"anchored-popover" ~gap:0
-                   ~on_dismiss:(press send Model.DismissGraphMenu)
-                   (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)));
-            ];
-        ] @ Option.to_list settings);
-      box ~height:12 []] in
+    if native_sidebar then []
+    else if Lui_ui.host context = KotlinHost then [box ~height:8 []]
+    else [box ~height:48 [];
+          row ~cross:`center ~gap:4
+            (native_graph_switch ~grow:1.0 model_source send :: Option.to_list settings);
+          box ~height:12 []] in
   let section_heading title icon =
     if native_sidebar then
       column ~gap:0 [
@@ -264,7 +260,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
   let content =
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)
-      ((if native_sidebar then [] else header) @ [
+      (header @ [
       sidebar_journals_row context model_source send;
       if_
         ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)

@@ -9,12 +9,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -27,6 +30,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.logseq.logseq.runtime.EffectDispatch
 import com.logseq.logseq.runtime.LogseqNativeBridge
@@ -194,6 +198,23 @@ class AndroidReviewLayoutTest {
             shell.bottom - gear.bottom <= 24.dp)
         settings.performTouchInput { click(center) }
         ui.onNodeWithTag("screen.settings").assertIsDisplayed()
+    }
+
+    @Test fun graphSwitchIsOnlyInTheJournalsHeader() {
+        val graphs = JSONArray()
+            .put(JSONObject().put("id", "review-layout").put("name", "Review graph").put("isReady", true))
+            .put(JSONObject().put("id", "preparing").put("name", "Preparing graph").put("isReady", false))
+        app(projection = JSONObject().put("graphs", graphs))
+        val graphSwitch = hasTestTag("button.graph-switch")
+        ui.onNode(graphSwitch and hasAnyAncestor(hasTestTag("header.main")))
+            .assertIsDisplayed().performTouchInput { click(center) }
+        ui.onNodeWithTag("menu.graph.review-layout").assertIsDisplayed()
+        ui.onNodeWithTag("menu.graph.preparing").assertIsNotEnabled()
+        pressBack()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        ui.onNode(graphSwitch and hasAnyAncestor(hasTestTag("sidebar.navigation"))).assertDoesNotExist()
+        ui.onNodeWithTag("link.sidebar.graphs").performClick()
+        ui.onNodeWithTag("button.graph-switch").assertDoesNotExist()
     }
 
     @Test fun graphActionsAreVisibleOnFirstOpen() {

@@ -857,8 +857,13 @@ let android_main_header context model_source send =
     row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
       ~accessibility_identifier:"header.main"
       (round_action (main_header_leading context model_source send) :: controls) in
+  let title = dyn (fun journals ->
+      if journals then column ~grow:1.0 ~cross:`center [View_sidebar.android_graph_switch model_source send]
+      else main_header_title context model_source)
+    (Signal.map (fun current -> View_base.journals_sidebar_selected_ current
+      && View_base.app_navigation_depth current = 0) model_source) in
   let default_header = header [
-    main_header_title context model_source;
+    title;
     reactive (fun selecting ->
       if selecting then round_action (selection_done model_source send)
       else box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
