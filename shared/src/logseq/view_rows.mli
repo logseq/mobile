@@ -1,5 +1,6 @@
 type retained_row = {
   render_key : string;
+  edit_scope : string option;
   value : Model.outline_row;
   is_editing : bool;
   is_selected : bool;
@@ -8,6 +9,7 @@ type retained_row = {
 }
 val make_retained_outline_row :
   ?edit_scope:string -> Model.logseq_model -> Model.outline_row -> retained_row
+val embedded_edit_scope : parent_scope:string option -> page:string -> row:string -> mount_id:int -> string
 val retained_outliner_rows : Model.logseq_model -> retained_row list
 val first_journal_section_visible_ : Model.logseq_model -> bool
 val retained_row_value : retained_row -> Model.outline_row

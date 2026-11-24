@@ -117,11 +117,12 @@ private struct LGJournalTaskTransition: View {
 private struct LGOutlinerBottomSpacer: View {
     let height: CGFloat
     @Environment(\.outlinerScrollRetention) private var scrollRetention
+    @Environment(\.outlinerToolbarReserve) private var toolbarReserve
 
     var body: some View {
         // Keep the reserve in the content so UIKit does not treat it as keyboard occlusion.
         Color.clear
-            .frame(height: height + (scrollRetention?.bottomSpace ?? 0))
+            .frame(height: height + (scrollRetention?.bottomSpace ?? 0) + (toolbarReserve?.extraSpace ?? 0))
             .accessibilityHidden(true)
     }
 }

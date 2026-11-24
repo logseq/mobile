@@ -173,6 +173,8 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let onCaretChange: (Int) -> Void
 
     @Environment(\.outlinerScrollRetention) private var scrollRetention
+    @Environment(\.outlinerToolbarReserve) private var toolbarReserve
+    @Environment(\.outlinerAnchorID) private var anchorID
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -181,6 +183,8 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = FocusRetainingTextView()
         textView.scrollRetention = scrollRetention
+        textView.toolbarReserve = toolbarReserve
+        textView.anchorID = anchorID
         let coordinator = context.coordinator
         textView.onPasteContent = { [weak coordinator, weak textView] payload in
             guard let coordinator, let textView,
@@ -247,7 +251,11 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         // the last native selection until teardown so UIKit cannot reveal a
         // transient empty field during keyboard dismissal.
         guard !blockID.isEmpty else { return }
-        (textView as? FocusRetainingTextView)?.scrollRetention = scrollRetention
+        if let editor = textView as? FocusRetainingTextView {
+            editor.scrollRetention = scrollRetention
+            editor.toolbarReserve = toolbarReserve
+            editor.anchorID = anchorID
+        }
         applyTextLayout(to: textView)
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
@@ -599,10 +607,24 @@ struct OutlinerEditorToolbarGuide: UIViewRepresentable {
 
 extension EnvironmentValues {
     @Entry var outlinerScrollRetention: OutlinerScrollRetention? = nil
+    @Entry var outlinerToolbarReserve: OutlinerToolbarReserve? = nil
+    @Entry var outlinerAnchorID: String? = nil
+}
+
+@MainActor @Observable
+final class OutlinerToolbarReserve {
+    static let standardFooter: CGFloat = 120
+    var chromeHeight: CGFloat = 0
+
+    var extraSpace: CGFloat {
+        max(0, chromeHeight + LGNavigationSurfacePolicy.bottomPadding(occupiesLayoutSpace: true)
+            + 8 - Self.standardFooter)
+    }
 }
 
 struct OutlinerScrollAnchorMarker: UIViewRepresentable {
     let blockID: String
+    let anchorID: String
 
     func makeUIView(context: Context) -> Marker {
         let view = Marker()
@@ -610,10 +632,14 @@ struct OutlinerScrollAnchorMarker: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: Marker, context: Context) { view.blockID = blockID }
+    func updateUIView(_ view: Marker, context: Context) {
+        view.blockID = blockID
+        view.anchorID = anchorID
+    }
 
     final class Marker: UIView {
         var blockID = ""
+        var anchorID = ""
     }
 }
 
@@ -624,14 +650,17 @@ final class OutlinerScrollRetention {
     @ObservationIgnored private var restoration: OutlinerRowAnchor?
 
     func preserve(_ scroll: UIScrollView, editor: UITextView, bottomSafeArea: CGFloat,
+                  toolbarSpace: CGFloat = 0, anchorID: String? = nil,
                   keyboardDismissed: @escaping () -> Bool) {
-        let keyboardSpace = scroll.adjustedContentInset.bottom - bottomSafeArea
-        let amountPastEnd = ceil(scroll.contentOffset.y - end(of: scroll, bottomInset: bottomSafeArea))
+        let keyboardSpace = max(0, scroll.adjustedContentInset.bottom - bottomSafeArea)
+        let availableSpace = keyboardSpace + toolbarSpace
+        let regularEnd = max(-scroll.adjustedContentInset.top, end(of: scroll, bottomInset: bottomSafeArea) - toolbarSpace)
+        let amountPastEnd = ceil(scroll.contentOffset.y - regularEnd)
         LGInteractionDiagnostics.event("scroll.dismiss.prepare", "offset=\(scroll.contentOffset.y) content=\(scroll.contentSize.height) inset=\(scroll.adjustedContentInset.bottom) reserve=\(bottomSpace) pastEnd=\(amountPastEnd)")
-        guard keyboardSpace > 0 else { return }
+        guard availableSpace > 0 else { return }
         cancelRestoration()
-        restoration = OutlinerRowAnchor(scroll: scroll, editor: editor, keyboardDismissed: keyboardDismissed)
-        let space = min(keyboardSpace, amountPastEnd)
+        restoration = OutlinerRowAnchor(scroll: scroll, editor: editor, anchorID: anchorID, keyboardDismissed: keyboardDismissed)
+        let space = min(availableSpace, amountPastEnd)
         guard space > bottomSpace else { return }
         setBottomSpace(space)
 
@@ -701,7 +730,7 @@ private final class OutlinerRowAnchor: NSObject {
     private var scrollObservations: [NSKeyValueObservation] = []
     private var isRestoring = false
 
-    init(scroll: UIScrollView, editor: UITextView, keyboardDismissed: @escaping () -> Bool) {
+    init(scroll: UIScrollView, editor: UITextView, anchorID: String?, keyboardDismissed: @escaping () -> Bool) {
         self.scroll = scroll
         self.keyboardDismissed = keyboardDismissed
         initialBottomInset = scroll.adjustedContentInset.bottom
@@ -714,11 +743,11 @@ private final class OutlinerRowAnchor: NSObject {
         if let id = editor.accessibilityIdentifier, id.hasPrefix(Self.editorPrefix) {
             let y = editor.convert(editor.bounds, to: scroll).minY - scroll.contentOffset.y
             if top < y + editor.bounds.height && y < bottom {
-                let blockID = String(id.dropFirst(Self.editorPrefix.count))
-                anchors.removeAll { $0.0 == blockID }
+                let occurrence = anchorID ?? String(id.dropFirst(Self.editorPrefix.count))
+                anchors.removeAll { $0.0 == occurrence }
                 // Rich rows include controls above the editor. Capture their
                 // shared marker in both editing and reading layouts.
-                anchors.insert((blockID, positions[blockID] ?? y), at: 0)
+                anchors.insert((occurrence, positions[occurrence] ?? y), at: 0)
             }
         }
         self.anchors = anchors
@@ -781,7 +810,11 @@ private final class OutlinerRowAnchor: NSObject {
         func visit(_ view: UIView) {
             guard !view.isHidden else { return }
             if let marker = view as? OutlinerScrollAnchorMarker.Marker, marker.bounds.height > 0 {
-                positions[marker.blockID] = marker.convert(marker.bounds, to: scroll).minY - scroll.contentOffset.y
+                positions[marker.anchorID] = marker.convert(marker.bounds, to: scroll).minY - scroll.contentOffset.y
+                return
+            }
+            if let row = view as? OutlinerTextRowView, let anchor = row.scrollAnchor, anchor.title.bounds.height > 0 {
+                positions[anchor.id] = anchor.title.convert(anchor.title.bounds, to: scroll).minY - scroll.contentOffset.y
                 return
             }
             if let id = view.accessibilityIdentifier, id.hasPrefix(titlePrefix), view.bounds.height > 0 {
@@ -826,6 +859,8 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
     var onPasteContent: ((String) -> Bool)?
     var onPasteImages: (([LGImageClipboard.Image]) -> Bool)?
     weak var scrollRetention: OutlinerScrollRetention?
+    weak var toolbarReserve: OutlinerToolbarReserve?
+    var anchorID: String?
     private var focusPending = false
     private var caretRevealScheduled = false
     private var isDismissingKeyboard = false
@@ -838,7 +873,8 @@ private final class FocusRetainingTextView: OutlinerLayoutTextView {
         isDismissingKeyboard = true
         guard let window else { return }
         if let scroll = outlinerScrollView {
-            scrollRetention?.preserve(scroll, editor: self, bottomSafeArea: window.safeAreaInsets.bottom) { [weak self] in
+            scrollRetention?.preserve(scroll, editor: self, bottomSafeArea: window.safeAreaInsets.bottom,
+                toolbarSpace: toolbarReserve?.extraSpace ?? 0, anchorID: anchorID) { [weak self] in
                 self?.isFirstResponder != true
             }
         }
