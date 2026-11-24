@@ -69,7 +69,7 @@ struct LGFileDownloadFeedbackHost: ViewModifier {
                 .padding(12)
                 .padding(.top, topInset ?? 0)
                 .opacity(topInset == nil ? 0 : 1)
-                .background(LGNotificationSafeAreaReader { topInset = $0 })
+                .background(LGWindowVerticalInsetsReader { topInset = $0.top })
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("asset.download-feedback")
                 .allowsHitTesting(false)
