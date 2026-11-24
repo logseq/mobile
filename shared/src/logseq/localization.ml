@@ -5420,6 +5420,8 @@ let dictionaries = [
     ("Create {1}", "创建 {1}");
     ("About", "关于");
     ("Account", "账户");
+    ("Incorrect password.", "密码不正确。");
+    ("Could not unlock the graph.", "无法解锁图谱。");
     ("Add attachment", "添加附件");
     ("Add block", "添加块");
     ("Add graph", "添加图谱");
@@ -5856,6 +5858,8 @@ let dictionaries = [
     ("3 months ago", "3 個月前");
     ("About", "關於");
     ("Account", "帳戶");
+    ("Incorrect password.", "密碼不正確。");
+    ("Could not unlock the graph.", "無法解鎖圖譜。");
     ("Add block", "新增區塊");
     ("More editor tools", "更多編輯工具");
     ("Add property", "添加屬性");

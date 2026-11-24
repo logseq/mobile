@@ -1244,8 +1244,8 @@ let graph_unlock_error_present_ (current : Model.logseq_model) =
 
 let graph_unlock_error_message (current : Model.logseq_model) =
   match effect_error_message current with
-  | "authenticationFailure" -> "Incorrect password."
-  | message -> message
+  | "authenticationFailure" -> tr current "Incorrect password."
+  | _ -> tr current "Could not unlock the graph."
 
 let global_effect_error_present_ (current : Model.logseq_model) =
   effect_error_present_ current

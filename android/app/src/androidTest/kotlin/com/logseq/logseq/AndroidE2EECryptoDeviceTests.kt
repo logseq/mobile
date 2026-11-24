@@ -28,6 +28,21 @@ class AndroidE2EECryptoDeviceTests {
         assertEquals("22".repeat(32), value(call("""{"operation":"loadGraphKey","graphID":"second"}""")))
     }
 
+    @Test
+    fun incorrectAccountPasswordReturnsAnAuthenticationError() {
+        val encrypted = call("""{"operation":"encryptPrivateKey","password":"test-password","privateKey":"010203"}""")
+        val request = JSONObject()
+            .put("operation", "decryptPrivateKey")
+            .put("password", "wrong-password")
+            .put("salt", encrypted.getString("salt"))
+            .put("iv", encrypted.getString("iv"))
+            .put("ciphertext", encrypted.getString("ciphertext"))
+            .put("iterations", 600000)
+        val response = JSONObject(AndroidE2EECrypto.call(request.toString()))
+        assertEquals(false, response.getBoolean("ok"))
+        assertEquals(E2EE_AUTHENTICATION_FAILURE, response.getString("error"))
+    }
+
     private fun call(request: String): JSONObject = JSONObject(AndroidE2EECrypto.call(request)).also {
         assertEquals(it.optString("error"), true, it.getBoolean("ok"))
     }

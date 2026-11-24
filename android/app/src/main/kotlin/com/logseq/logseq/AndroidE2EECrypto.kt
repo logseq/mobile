@@ -6,6 +6,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import java.security.KeyPairGenerator
 import java.security.KeyFactory
 import java.security.KeyStore
@@ -13,6 +14,7 @@ import java.security.SecureRandom
 import java.security.spec.MGF1ParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.Mac
@@ -22,6 +24,8 @@ import javax.crypto.spec.OAEPParameterSpec
 import javax.crypto.spec.PSource
 import javax.crypto.spec.SecretKeySpec
 import org.json.JSONObject
+
+internal const val E2EE_AUTHENTICATION_FAILURE = "authenticationFailure"
 
 // Native JNI calls these entry points by class and method name.
 @Keep
@@ -111,7 +115,12 @@ object AndroidE2EECrypto {
         iv: ByteArray,
         ciphertext: ByteArray
     ): ByteArray {
-        return aesDecrypt(pbkdf2(password.encodeToByteArray(), salt, iterations), iv, ciphertext)
+        return try {
+            aesDecrypt(pbkdf2(password.encodeToByteArray(), salt, iterations), iv, ciphertext)
+        } catch (failure: BadPaddingException) {
+            Log.i("AndroidE2EECrypto", "Account key authentication failed", failure)
+            throw IllegalArgumentException(E2EE_AUTHENTICATION_FAILURE, failure)
+        }
     }
 
     private fun pbkdf2(password: ByteArray, salt: ByteArray, iterations: Int): ByteArray {

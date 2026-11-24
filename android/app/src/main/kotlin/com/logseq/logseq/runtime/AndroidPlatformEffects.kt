@@ -5,6 +5,8 @@ import com.logseq.logseq.CognitoAuthProvider
 import com.logseq.logseq.CognitoSessionUnavailableException
 import com.logseq.logseq.DEFAULT_BASE_URL
 import com.logseq.logseq.DEFAULT_DARK_THEME
+import com.logseq.logseq.E2EE_AUTHENTICATION_FAILURE
+import com.logseq.logseq.NETWORK_UNAVAILABLE
 import com.logseq.logseq.normalizedDarkTheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -194,7 +196,8 @@ internal class AndroidPlatformEffects(
         when (effect.kind) {
             "report-error" -> {
                 platform.appendRuntimeLog(
-                    if (effect.text == com.logseq.logseq.NETWORK_UNAVAILABLE) "INFO" else "ERROR",
+                    if (effect.text == NETWORK_UNAVAILABLE || effect.text == E2EE_AUTHENTICATION_FAILURE)
+                        "INFO" else "ERROR",
                     "ui", effect.text,
                 )
                 NativeEffectResolution.Discard()

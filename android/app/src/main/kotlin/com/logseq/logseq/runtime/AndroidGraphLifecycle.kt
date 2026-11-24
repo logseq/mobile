@@ -1,5 +1,6 @@
 package com.logseq.logseq.runtime
 
+import com.logseq.logseq.E2EE_AUTHENTICATION_FAILURE
 import com.logseq.logseq.NETWORK_UNAVAILABLE
 import com.logseq.logseq.isNetworkUnavailable
 
@@ -188,7 +189,9 @@ internal class AndroidGraphLifecycle(
         val message = error?.optString("message")?.takeIf(String::isNotEmpty)
             ?: "The OCaml core rejected the graph operation"
         return NativeEffectResolution.Discard(succeeded = false,
-            message = if (message == NETWORK_UNAVAILABLE) message else "$code\n$message")
+            message = if (message == NETWORK_UNAVAILABLE ||
+                code == "graph_unlock_failed" && message == E2EE_AUTHENTICATION_FAILURE
+            ) message else "$code\n$message")
     }
 
     private fun selectedGraphId(response: String): String =

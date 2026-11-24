@@ -365,6 +365,10 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
                     [];
                   text ~style_class:"footnote" ~foreground:"muted-foreground"
                     ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
+                  if_ ~test:(Signal.map View_base.graph_unlock_error_present_ model_source)
+                    (text ~style_class:"footnote" ~foreground:"destructive"
+                      ~accessibility_identifier:"error.graph-unlock"
+                      ~value:(reactive View_base.graph_unlock_error_message model_source) []);
                 ];
             ];
             row ~main:`space_between ~cross:`center ~padding_horizontal:24 ~padding_vertical:16 [
