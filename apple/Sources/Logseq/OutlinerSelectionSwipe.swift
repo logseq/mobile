@@ -17,11 +17,12 @@ struct OutlinerSelectionSwipe: ViewModifier {
     }
 
     @ViewBuilder private func swipeContent(_ content: Content) -> some View {
+        let maximumDisplacement = leadingSpace + 24
         if #available(iOS 18.0, *) {
-            content.offset(x: -min(displacement, leadingSpace + 16))
+            content.offset(x: -min(displacement, maximumDisplacement))
                 .gesture(OutlinerLeftSwipe(track: { displacement = Self.offset(for: $0) }, finish: finish))
         } else {
-            content.offset(x: -min(legacyDisplacement, leadingSpace + 16))
+            content.offset(x: -min(legacyDisplacement, maximumDisplacement))
                 .background(OutlinerLegacyScrollLock(active: legacyDisplacement > 0))
                 .simultaneousGesture(DragGesture(minimumDistance: 12)
                     .updating($legacyDisplacement) { value, offset, _ in

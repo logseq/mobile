@@ -315,7 +315,8 @@ internal fun OutlinerBlockContent(
         modifier = rowModifier,
     ) {
         Column(Modifier.graphicsLayer {
-            translationX = -minOf(displayedSwipeOffset, (rowPosition.x + 8 * density).coerceAtLeast(0f))
+            val maximumDisplacement = (rowPosition.x + 16 * density).coerceAtLeast(0f)
+            translationX = -minOf(displayedSwipeOffset, maximumDisplacement)
         }) {
             if (isAsset) {
                 ProjectedAsset(
