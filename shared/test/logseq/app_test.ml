@@ -1053,17 +1053,18 @@ let runtime_log_filters_refresh_and_successful_results_enter_lg_state () =
 
 let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
   let local = graph "local" "Local" false true in
+  let other = graph "other" "Other" false true in
   let projected =
     Model.update (Model.initial ())
       (Model.ApplyCoreSnapshot
          {
            (empty_core_projection ()) with
-           graphs = [ local ];
+           graphs = [ local; other ];
            selected_graph_id = None;
          })
   in
   let known_local =
-    Model.update projected (Model.ApplyLocalGraphIds [ "local" ])
+    Model.update projected (Model.ApplyLocalGraphIds [ "local"; "other" ])
   in
   let requested =
     Model.update known_local (Model.RequestOpenGraph "local")
@@ -1081,7 +1082,12 @@ let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
       (Model.update deletion_requested Model.ConfirmDeleteGraph)
       (Model.DequeueEffect 2)
   in
-  let deleted = Model.update deleting (Model.ResolveEffect (2, true, "ok")) in
+  let next_deletion_requested =
+    Model.update deleting (Model.RequestDeleteGraph "other")
+  in
+  let deleted =
+    Model.update next_deletion_requested (Model.ResolveEffect (2, true, "ok"))
+  in
   check_eq
     ~msg:"opening a graph updates LG selection after platform success"
     opened.selected_graph_id (Some "local");
@@ -1097,7 +1103,12 @@ let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
   check_eq ~msg:"deleting the selected local graph clears its title"
     deleted.selected_graph None;
   check_eq ~msg:"deleting a local graph removes it from local storage state"
-    deleted.local_graph_ids []
+    deleted.local_graph_ids [ "other" ];
+  check_eq ~msg:"completing a deletion preserves another graph's confirmation"
+    deleted.pending_graph_deletion (Some other);
+  let confirmed = Model.update deleted Model.ConfirmDeleteGraph in
+  check_eq ~msg:"the retained confirmation deletes the second graph only"
+    confirmed.pending_effects [ Model.DeleteLocalGraphEffect (3, "other") ]
 
 let graph_refresh_failure_enters_the_picker_error_state () =
   let requested = Model.update (Model.initial ()) Model.RefreshGraphs in

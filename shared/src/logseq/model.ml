@@ -1925,7 +1925,6 @@ let resolve_successful_effect (current : logseq_model) eff message =
     in
     {
       current with
-      pending_graph_deletion = None;
       local_graph_ids = remove_string current.local_graph_ids graph_id;
       selected_graph_id =
         (if deleting_selected then None else current.selected_graph_id);
