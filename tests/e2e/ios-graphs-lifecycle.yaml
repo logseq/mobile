@@ -53,6 +53,10 @@ appId: com.logseq.logseq
       below: "Remote graphs"
       enabled: true
     timeout: 15000
+- longPressOn:
+    text: "logseq-local-e2e-fixture"
+    below: "Remote graphs"
+- assertNotVisible: "Delete local graph"
 - tapOn:
     text: "logseq-local-e2e-fixture"
     below: "Remote graphs"
