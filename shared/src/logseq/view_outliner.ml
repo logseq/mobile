@@ -1573,6 +1573,11 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
       | Some status -> View_base.task_status_foreground status
       | None -> "foreground"
     in
+    let more_item icon label identifier action =
+      dropdown_menu_item ~icon:(`app icon)
+        ~text:(View_base.tr (Signal.sample model_source) label)
+        ~accessibility_identifier:identifier
+        ~on_press:(fun _ -> ignore (send (Model.PerformOutlinerToolbarAction action))) [] in
     box
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
@@ -1595,6 +1600,8 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                  []);
             if_ ~test:show_task_dates (android_date "scheduled" "Scheduled" "calendar");
             if_ ~test:show_task_dates (android_date "deadline" "Deadline" "deadline");
+            toolbar_button model_source (`app "toolbar-tag") "Tag"
+              "button.outliner.editor.tag" "tag" send;
             toolbar_button model_source (`app "toolbar-outdent") "Outdent"
               "button.outliner.editor.outdent" "outdent" send;
             toolbar_button model_source (`app "toolbar-indent") "Indent"
@@ -1605,18 +1612,16 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               "button.outliner.editor.moveDown" "moveDown" send;
             new_block;
             line_break;
-            toolbar_button model_source (`app "toolbar-tag") "Tag"
-              "button.outliner.editor.tag" "tag" send;
-            toolbar_button model_source (`app "toolbar-camera") "Take photo"
-              "button.outliner.editor.camera" "camera" send;
-            toolbar_button model_source (`app "toolbar-audio") "Record audio"
-              "button.outliner.editor.audio" "audio" send;
-            toolbar_button model_source (`app "toolbar-attachment") "Upload asset"
-              "button.outliner.editor.attachment" "attachment" send;
-            toolbar_button model_source (`app "toolbar-page-reference")
-              (View_base.tr (Signal.sample model_source) "Page reference")
-              "button.outliner.editor.pageReference" "pageReference" send;
               ] ];
+            menu_trigger ~icon:(`app "more-horiz")
+              ~label:(View_base.tr (Signal.sample model_source) "More editor tools")
+              ~accessibility_identifier:"button.outliner.editor.more"
+              (dropdown_menu [
+                more_item "toolbar-camera" "Take photo" "button.outliner.editor.camera" "camera";
+                more_item "toolbar-audio" "Record audio" "button.outliner.editor.audio" "audio";
+                more_item "toolbar-attachment" "Upload asset" "button.outliner.editor.attachment" "attachment";
+                more_item "toolbar-page-reference" "Page reference" "button.outliner.editor.pageReference" "pageReference";
+              ]);
             toolbar_button model_source (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];
@@ -1753,18 +1758,23 @@ let page_loading_view model_source : t =
          text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "Loading blocks…") [] ])
 
 let placeholder_block context model_source (value : View_rows.placeholder) show_button send : t =
+  let android = Lui_ui.host context = KotlinHost in
+  let label = View_base.tr (Signal.sample model_source) "Add block" in
   let placeholder : t = custom @@ fun mount_context parent ->
-    let node = mount mount_context ?parent (box ~height:28
+    let node = mount mount_context ?parent (box
+      ?height:(if android then None else Some 28) ~min_height:28
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
       [row ~cross:`center ~gap:0 ~padding_vertical:2
         [box ~opacity:0.35 [icon ~name:(`app "outliner-bullet") ~width:24 ~height:24 ~foreground:"muted-foreground"
            ~accessibility_identifier:("outliner.placeholder.bullet." ^ value.parent_uuid) []];
-         box ~grow:1.0 []]]) in
-    Lui_ui.string_property mount_context node AccessibilityLabel "Add block";
+         (if android then text ~value:label ~style_class:"caption" ~foreground:"muted-foreground" []
+          else box ~grow:1.0 [])]]) in
+    Lui_ui.string_property mount_context node AccessibilityLabel label;
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
-  let placeholder = box ~height:28 [if_ ~test:show_button placeholder] in
+  let placeholder = box ?height:(if android then None else Some 28) ~min_height:28
+    [if_ ~test:show_button placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, day, divider) ->

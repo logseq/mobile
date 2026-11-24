@@ -109,26 +109,25 @@ class AndroidOutlinerToolbarTest {
         }
     }
 
-    @Test fun editorOverflowKeepsHideKeyboardReachableAndEmitsOneAction() {
+    @Test fun editorOverflowKeepsHideKeyboardReachableAndEmitsEachActionOnce() {
         toolbar()
         val hide = ui.onNodeWithTag("button.outliner.editor.hideKeyboard")
         hide.assertIsDisplayed()
         val before = hide.fetchSemanticsNode().boundsInRoot
-        val reference = ui.onNodeWithTag("button.outliner.editor.pageReference")
-        repeat(2) {
-            ui.onNodeWithTag("toolbar.outliner.editor").performTouchInput {
-                swipeLeft(startX = width * 0.7f, endX = width * 0.15f, durationMillis = 400)
-            }
+        val more = ui.onNodeWithTag("button.outliner.editor.more").assertIsDisplayed()
+        more.performClick()
+        for (action in listOf("camera", "audio", "attachment", "pageReference")) {
+            ui.onNodeWithTag("button.outliner.editor.$action").assertIsDisplayed()
         }
         capture("editor-overflow")
-        reference.assertIsDisplayed()
-        ui.onNode(
-            hasContentDescription("Page reference") and
-                hasAnyAncestor(hasTestTag("button.outliner.editor.pageReference")),
-            useUnmergedTree = true,
-        ).assertHeightIsEqualTo(24.dp)
-        assertEquals(before, hide.fetchSemanticsNode().boundsInRoot)
         ui.runOnIdle { events.clear() }
+        ui.onNodeWithTag("button.outliner.editor.pageReference").performClick()
+        ui.onNodeWithTag("button.outliner.editor.pageReference").assertDoesNotExist()
+        assertEquals(before, hide.fetchSemanticsNode().boundsInRoot)
+        ui.runOnIdle {
+            assertEquals(listOf("pageReference"), pendingToolbarActions())
+            events.clear()
+        }
         hide.performClick()
         ui.runOnIdle {
             assertEquals(1, events.filterIsInstance<LuiEvent.Press>().size)

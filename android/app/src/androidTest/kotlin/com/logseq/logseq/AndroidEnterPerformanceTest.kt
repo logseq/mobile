@@ -4,13 +4,13 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -73,13 +73,7 @@ class AndroidEnterPerformanceTest {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         val first = waitFor(90_000) { it.text?.toString()?.startsWith("Performance row 001-01") == true }
         assertTrue(first.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-        var current = waitFor { editor(it) }
-        val original = current.text.toString()
-        assertTrue(current.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
-            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
-            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 0)
-        }))
-        waitFor { editor(it) && it.textSelectionStart == 0 }
+        waitFor { editor(it) }
         automation.waitForIdle(100, 5_000)
         lateinit var root: ViewRootForTest
         fun findRoot(view: View): ViewRootForTest? {
@@ -94,30 +88,36 @@ class AndroidEnterPerformanceTest {
             root = requireNotNull(findRoot(activity.window.decorView))
         }
         data class Editor(val tag: String, val text: String, val caret: Int, val semanticsId: Int)
+        fun focusedEditorNode(node: SemanticsNode): SemanticsNode? {
+            val tag = node.config.getOrNull(SemanticsProperties.TestTag).orEmpty()
+            if (tag.startsWith("field.outliner.block.") && node.config.getOrNull(SemanticsProperties.Focused) == true) return node
+            return node.children.firstNotNullOfOrNull(::focusedEditorNode)
+        }
         fun focusedEditor(): Editor? {
             var result: Editor? = null
             instrumentation.runOnMainSync {
-                fun visit(node: SemanticsNode) {
-                    val tag = node.config.getOrNull(SemanticsProperties.TestTag).orEmpty()
-                    if (tag.startsWith("field.outliner.block.") && node.config.getOrNull(SemanticsProperties.Focused) == true) {
-                        result = Editor(tag, node.config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty(),
-                            node.config.getOrNull(SemanticsProperties.TextSelectionRange)?.start ?: -1, node.id)
-                    } else if (result == null) node.children.forEach(::visit)
+                focusedEditorNode(root.semanticsOwner.unmergedRootSemanticsNode)?.let { node ->
+                    result = Editor(node.config[SemanticsProperties.TestTag],
+                        node.config[SemanticsProperties.EditableText].text,
+                        node.config[SemanticsProperties.TextSelectionRange].start, node.id)
                 }
-                visit(root.semanticsOwner.unmergedRootSemanticsNode)
             }
             return result
         }
-        var inputConnection: android.view.inputmethod.InputConnection? = null
-        if (inputMode == "ime") instrumentation.runOnMainSync {
-            inputConnection = root.view.onCreateInputConnection(android.view.inputmethod.EditorInfo())
-            requireNotNull(inputConnection).finishComposingText()
-            requireNotNull(inputConnection).setSelection(0, 0)
+        lateinit var inputConnection: android.view.inputmethod.InputConnection
+        instrumentation.runOnMainSync {
+            inputConnection = requireNotNull(root.view.onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+        }
+        fun moveCaret(offset: Int) = instrumentation.runOnMainSync {
+            val node = requireNotNull(focusedEditorNode(root.semanticsOwner.unmergedRootSemanticsNode))
+            check(requireNotNull(node.config[SemanticsActions.SetSelection].action)(offset, offset, false))
+            // Measure splitting a committed block without timing IME candidate confirmation.
+            check(inputConnection.finishComposingText())
         }
         fun enter() {
             if (inputMode == "ime") {
                 instrumentation.runOnMainSync {
-                    check(requireNotNull(inputConnection).performEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT))
+                    check(inputConnection.performEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT))
                 }
             } else {
                 val now = SystemClock.uptimeMillis()
@@ -125,28 +125,39 @@ class AndroidEnterPerformanceTest {
                 check(automation.injectInputEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0), false))
             }
         }
-        var active = requireNotNull(focusedEditor())
-        val samples = mutableListOf<Double>()
-        val ids = mutableSetOf(active.tag)
-        val nativeEditors = mutableSetOf(active.semanticsId)
-        repeat(15) { iteration ->
-            val previous = active.tag
+        fun measureHandoff(previous: Editor, expectedText: String): Pair<Editor, Double> {
             val started = SystemClock.uptimeMillis()
             enter()
             val deadline = started + 10_000
             do {
                 val next = focusedEditor()
-                if (next != null && next.tag != previous && next.text == original && next.caret == 0) { active = next; break }
+                if (next != null && next.tag != previous.tag && next.text == expectedText && next.caret == 0) {
+                    return next to (SystemClock.uptimeMillis() - started).toDouble()
+                }
                 SystemClock.sleep(2)
             } while (SystemClock.uptimeMillis() < deadline)
-            assertTrue("Enter must hand off to a new block; previous=$previous next=${focusedEditor()}", active.tag != previous)
-            val elapsed = (SystemClock.uptimeMillis() - started).toDouble()
-            assertEquals("Each split preserves the original text", original, active.text)
-            assertEquals("The caret stays at the start for repeated insertion", 0, active.caret)
+            error("Enter did not focus a new block with <$expectedText>; previous=$previous next=${focusedEditor()}")
+        }
+
+        var active = requireNotNull(focusedEditor())
+        assertTrue(active.text.startsWith("Performance row 001-01"))
+        val samples = mutableListOf<Double>()
+        val ids = mutableSetOf(active.tag)
+        val nativeEditors = mutableSetOf(active.semanticsId)
+        repeat(15) { iteration ->
+            // Split a populated block on every sample. Carry the suffix into the next split.
+            moveCaret(1)
+            active = requireNotNull(focusedEditor())
+            assertEquals(1, active.caret)
+            assertTrue("Each measured split must leave a nonempty suffix", active.text.length > 1)
+            val (next, elapsed) = measureHandoff(active, active.text.drop(1))
+            active = next
             assertTrue("Each Enter creates a different block", ids.add(active.tag))
             nativeEditors.add(active.semanticsId)
             if (iteration >= 3) samples.add(elapsed)
         }
+        moveCaret(0)
+        val (_, insertBeforeMs) = measureHandoff(active, "")
         val burstCount = 20
         repeat(burstCount) {
             enter()
@@ -187,15 +198,15 @@ class AndroidEnterPerformanceTest {
             File(context.filesDir, "enter-failure.txt").writeText(tree.toString())
             error("The native editor lost focus during the burst")
         }
-        assertEquals("Fast Enter preserves text", original, settled.text)
+        assertEquals("Fast Enter focuses an empty block", "", settled.text)
         assertEquals("Fast Enter preserves the insertion caret", 0, settled.caret)
         val ordered = samples.sorted()
         val median = (ordered[5] + ordered[6]) / 2
         val p95 = ordered.last()
         val report = JSONObject().put("fixture_blocks", count).put("warmup_enters", 3)
             .put("input_mode", inputMode).put("burst_enters", burstCount).put("native_editor_instances", nativeEditors.size)
-            .put("samples_ms", JSONArray(samples)).put("median_ms", median).put("p95_ms", p95)
-            .put("measurement", "Injected Enter down to focused editor in the live Compose semantics tree; no accessibility IPC polling")
+            .put("insert_before_ms", insertBeforeMs).put("samples_ms", JSONArray(samples)).put("median_ms", median).put("p95_ms", p95)
+            .put("measurement", "Enter inside populated text to focused suffix editor in the live Compose semantics tree; no accessibility IPC polling")
             .put("label", label).put("build_revision", BuildConfig.GIT_REVISION)
         File(context.filesDir, "enter-benchmark-$count-$label-$inputMode.json").writeText(report.toString(2))
         println("ENTER_BENCHMARK $report")

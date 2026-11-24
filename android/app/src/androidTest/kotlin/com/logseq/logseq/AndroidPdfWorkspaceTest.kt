@@ -33,6 +33,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
+import com.logseq.logseq.ui.extensions.pdfTextSelectionAvailable
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
 import java.io.File
@@ -87,6 +88,7 @@ class AndroidPdfWorkspaceTest {
         payload = JSONObject().put("assetUuid", "a9000000-0000-4000-8000-000000000001")
             .put("graphId", "pdf-native-test").put("title", "Research.pdf").put("path", file.path)
             .put("highlights", JSONArray()).put("page", 1).put("loading", true)
+        if (!compact) payload.put("fullScreen", false)
         backend = LuiBackend(extensions = logseqExtensionRegistry(), onEvent = { event ->
             if (event is LuiEvent.Extension && event.name == "event") {
                 val command = JSONObject(event.values["payload"] as String)
@@ -117,33 +119,34 @@ class AndroidPdfWorkspaceTest {
         try {
             if (compact) {
                 ui.onNodeWithText("Main remains available").assertDoesNotExist()
-                ui.onNodeWithTag("pdf.toggle-fullscreen").performClick()
+            } else {
+                ui.onNodeWithText("Main remains available").assertIsDisplayed()
             }
-            ui.onNodeWithText("Main remains available").assertIsDisplayed()
             ui.waitUntil(15_000) {
                 var loaded = false
                 instrumentation.runOnMainSync { loaded = pdf()?.pdfToViewPoint(PdfPoint(0, 40f, 90f)) != null }
                 loaded
             }
-            ui.runOnIdle { payload.put("page", 2).put("loading", false); update(payload.toString()) }
-            ui.waitUntil(5_000) {
-                var restored = false
-                instrumentation.runOnMainSync { restored = pdf()?.firstVisiblePage == 1 }
-                restored
+            fun waitForPage(pageIndex: Int) {
+                ui.waitUntil(10_000) {
+                    var onPage = false
+                    instrumentation.runOnMainSync { onPage = pdf()?.firstVisiblePage == pageIndex }
+                    onPage
+                }
             }
-            instrumentation.runOnMainSync { requireNotNull(pdf()).scrollToPage(0) }
-            ui.runOnIdle { payload.put("targetPage", 2).put("navigationToken", 1); update(payload.toString()) }
-            ui.waitUntil(5_000) {
-                var navigated = false
-                instrumentation.runOnMainSync { navigated = pdf()?.firstVisiblePage == 1 }
-                navigated
+            // Exercise navigation in the default full-screen case on every extension level.
+            ui.runOnIdle { payload.put("page", if (compact) 2 else 1).put("loading", false); update(payload.toString()) }
+            if (compact) {
+                waitForPage(1)
+                ui.runOnIdle { payload.put("targetPage", 1).put("navigationToken", 1); update(payload.toString()) }
+                waitForPage(0)
+                ui.runOnIdle { payload.put("targetPage", 2).put("navigationToken", 2); update(payload.toString()) }
+                waitForPage(1)
+                ui.runOnIdle { payload.put("targetPage", 1).put("navigationToken", 3); update(payload.toString()) }
+                waitForPage(0)
+                ui.onNodeWithTag("pdf.toggle-fullscreen").performClick()
             }
-            ui.runOnIdle { payload.put("targetPage", 1).put("navigationToken", 2); update(payload.toString()) }
-            ui.waitUntil(5_000) {
-                var navigated = false
-                instrumentation.runOnMainSync { navigated = pdf()?.firstVisiblePage == 0 }
-                navigated
-            }
+            ui.onNodeWithText("Main remains available").assertIsDisplayed()
             try {
                 ui.waitUntil(15_000) {
                     var loaded = false
@@ -157,17 +160,7 @@ class AndroidPdfWorkspaceTest {
                 val view = requireNotNull(pdf())
                 nativeDocument = requireNotNull(view.pdfDocument)
                 view.scrollToPosition(PdfPoint(0, 300f, 90f))
-                val start = requireNotNull(view.pdfToViewPoint(PdfPoint(0, 42f, 90f)))
-                val end = requireNotNull(view.pdfToViewPoint(PdfPoint(0, 230f, 90f)))
-                val location = IntArray(2).also(view::getLocationOnScreen)
-                points[0] = start.x + location[0]; points[1] = start.y + location[1]
-                points[2] = end.x + location[0]; points[3] = end.y + location[1]
             }
-            val expectedText = runBlocking {
-                nativeDocument.getSelectionBounds(0, android.graphics.PointF(42f, 90f), android.graphics.PointF(230f, 90f))
-                    ?.selectedContents?.filterIsInstance<androidx.pdf.content.PdfPageTextContent>()?.joinToString(" ") { it.text }
-            }
-            assertTrue("The PDF fixture must expose selectable text", !expectedText.isNullOrBlank())
             fun dragWithStylus() {
                 instrumentation.runOnMainSync {
                     val view = requireNotNull(pdf())
@@ -195,6 +188,22 @@ class AndroidPdfWorkspaceTest {
                     SystemClock.sleep(40)
                 }
             }
+            fun longPressWithFinger() {
+                val touchDown = SystemClock.uptimeMillis()
+                val properties = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER }
+                val coordinates = MotionEvent.PointerCoords().apply {
+                    x = points[0] + (points[2] - points[0]) * 0.15f
+                    y = points[1]
+                    pressure = 1f
+                }
+                fun touch(action: Int) = MotionEvent.obtain(touchDown, SystemClock.uptimeMillis(), action, 1,
+                    arrayOf(properties), arrayOf(coordinates), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+                val down = touch(MotionEvent.ACTION_DOWN)
+                try { instrumentation.sendPointerSync(down) } finally { down.recycle() }
+                SystemClock.sleep(800)
+                val up = touch(MotionEvent.ACTION_UP)
+                try { instrumentation.sendPointerSync(up) } finally { up.recycle() }
+            }
             ui.onNodeWithTag("pdf.toggle-fullscreen").performClick()
             ui.onNodeWithText("Main remains available").assertDoesNotExist()
             instrumentation.runOnMainSync { assertTrue("Full-screen reading must retain the native document", requireNotNull(pdf()).pdfDocument === nativeDocument) }
@@ -204,6 +213,18 @@ class AndroidPdfWorkspaceTest {
             ui.onNodeWithText("Notes").performClick()
             ui.onNodeWithText("Main remains available").assertIsDisplayed()
             dragWithStylus()
+            if (!pdfTextSelectionAvailable()) {
+                ui.onNodeWithTag("pdf.document").assertIsDisplayed()
+                ui.onNodeWithText("Text highlighting is unavailable on this device", substring = true).assertIsDisplayed()
+                ui.onNodeWithTag("pdf.highlight").assertDoesNotExist()
+                assertTrue(commands.none { it.optString("action") == "save" })
+                return
+            }
+            val expectedText = runBlocking {
+                nativeDocument.getSelectionBounds(0, android.graphics.PointF(42f, 90f), android.graphics.PointF(230f, 90f))
+                    ?.selectedContents?.filterIsInstance<androidx.pdf.content.PdfPageTextContent>()?.joinToString(" ") { it.text }
+            }
+            assertTrue("The PDF fixture must expose selectable text", !expectedText.isNullOrBlank())
             ui.waitUntil(10_000) {
                 runCatching { ui.onNodeWithTag("pdf.highlight").assertIsEnabled(); true }.getOrDefault(false)
             }
@@ -238,12 +259,7 @@ class AndroidPdfWorkspaceTest {
             ui.waitUntil(10_000) {
                 runCatching { ui.onNodeWithTag("pdf.highlight").assertIsEnabled(); true }.getOrDefault(false)
             }
-            val touchDown = SystemClock.uptimeMillis()
-            instrumentation.sendPointerSync(MotionEvent.obtain(touchDown, touchDown, MotionEvent.ACTION_DOWN,
-                points[0], points[1], 0).apply { source = InputDevice.SOURCE_TOUCHSCREEN })
-            SystemClock.sleep(800)
-            instrumentation.sendPointerSync(MotionEvent.obtain(touchDown, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP,
-                points[0], points[1], 0).apply { source = InputDevice.SOURCE_TOUCHSCREEN })
+            longPressWithFinger()
             ui.waitUntil(5_000) {
                 var selected = false
                 instrumentation.runOnMainSync { selected = pdf()?.currentSelection is androidx.pdf.selection.model.TextSelection }

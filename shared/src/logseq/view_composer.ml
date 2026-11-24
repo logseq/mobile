@@ -32,8 +32,10 @@ let attachment_picker_items item model_source context send =
 let composer_default_action_foreground = "border"
 
 let composer_action_foreground context =
-  if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then "foreground"
-  else composer_default_action_foreground
+  match Lui_ui.host context with
+  | KotlinHost -> "muted-foreground"
+  | SwiftUIHost when Lui_ui.platform context = IOS -> "foreground"
+  | _ -> composer_default_action_foreground
 
 let composer_attachment_control ?(width = 32) ?(height = 44)
     ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
@@ -125,24 +127,36 @@ let task_status_context_row model_source status_source send =
     ~on_press:(fun () -> ignore (send (Model.ChooseTaskStatus (Signal.sample status_source).uuid))) ()
 
 let composer_task_status_button (context : Lui_ui.ui_context) model_source send : t =
-  let foreground (current : Model.logseq_model) =
-    match current.selected_task_status with
-    | Some status -> View_base.task_status_foreground status
-    | None -> composer_action_foreground context in
-  icon_button ~icon:(`app "toolbar-task") ~variant:`ghost
-    ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
-    ~foreground:(reactive foreground model_source)
-    ~selected_signal:
-      (reactive (fun (current : Model.logseq_model) ->
-         current.selected_task_status <> None) model_source)
-    ~label:(View_base.tr (Signal.sample model_source) "Task status")
-    ~accessibility_identifier:"button.task-status"
-    ~on_press:(press send Model.ToggleComposerTodo) []
+  let selected =
+    Signal.map (fun (current : Model.logseq_model) -> current.selected_task_status <> None)
+      model_source in
+  let label = View_base.tr (Signal.sample model_source) "Task status" in
+  if Lui_ui.host context = KotlinHost then
+    custom (fun context parent ->
+      let node = Lui_ui.extension context "composer-task-toggle" in
+      Lui_ui.extension_property context node "label" (Lui_protocol.StringValue label);
+      Lui_ui.extension_property_signal context node "selected"
+        (Signal.map (fun value -> Lui_protocol.BoolValue value) selected);
+      Lui_ui.on_event context node (function
+        | Lui_protocol.ExtensionEvent (_, _, "press", _) -> ignore (send Model.ToggleComposerTodo)
+        | _ -> ());
+      attach context parent node;
+      node)
+  else
+    let foreground (current : Model.logseq_model) =
+      match current.selected_task_status with
+      | Some status -> View_base.task_status_foreground status
+      | None -> composer_action_foreground context in
+    icon_button ~icon:(`app "toolbar-task") ~variant:`ghost ~width:32 ~height:44
+      ~foreground:(reactive foreground model_source) ~selected_signal:selected ~label
+      ~accessibility_identifier:"button.task-status"
+      ~on_press:(press send Model.ToggleComposerTodo) []
 
 let composer_task_date_button (context : Lui_ui.ui_context) model_source send field : t =
   let icon, label = if field = "scheduled" then "calendar", "Scheduled" else "deadline", "Deadline" in
   let foreground (current : Model.logseq_model) =
     if List.mem_assoc field current.composer_task_dates then "foreground"
+    else if Lui_ui.host context = KotlinHost then composer_action_foreground context
     else composer_default_action_foreground in
   icon_button ~icon:(`app icon) ~variant:`ghost
     ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44

@@ -1062,9 +1062,11 @@ let authentication_content (context : Lui_ui.ui_context) model_source
 let authentication_screen (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = KotlinHost then
-    column ~accessibility_identifier:"screen.authentication" ~grow:1.0
-      ~main:`center ~cross:`stretch ~padding:32
-      [ authentication_content context model_source send ]
+    overlay ~accessibility_identifier:"screen.authentication" ~grow:1.0
+      ~alignment:`center
+      [ box [];
+        scroll ~max_width:464 ~padding:32
+          [authentication_content context model_source send] ]
   else
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
       ~container_relative_frame:`vertical ~main:`center ~cross:`center

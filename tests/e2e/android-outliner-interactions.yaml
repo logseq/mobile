@@ -19,12 +19,15 @@ appId: com.logseq.logseq
     id: "button.outliner.editor.indent"
 - assertVisible:
     id: "button.outliner.editor.tag"
+- tapOn:
+    id: "button.outliner.editor.more"
 - assertVisible:
     id: "button.outliner.editor.camera"
 - assertVisible:
     id: "button.outliner.editor.audio"
 - assertVisible:
     id: "button.outliner.editor.attachment"
+- pressKey: BACK
 - assertVisible: "Hide keyboard"
 - assertVisible: "Task: None"
 - takeScreenshot: tests/e2e/screenshots/android-editor-leading
@@ -48,12 +51,11 @@ appId: com.logseq.logseq
 - extendedWaitUntil:
     visible: "Task: None"
     timeout: 2000
-- swipe:
-    start: 80%, 60%
-    end: 20%, 60%
-    duration: 800
+- tapOn:
+    id: "button.outliner.editor.more"
 - assertVisible:
     id: "button.outliner.editor.pageReference"
+- pressKey: BACK
 - assertVisible:
     id: "button.outliner.editor.hideKeyboard"
 - takeScreenshot: tests/e2e/screenshots/android-editor-trailing

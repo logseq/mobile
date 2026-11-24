@@ -21,10 +21,8 @@ appId: com.logseq.logseq
     id: "toolbar.outliner.autocomplete"
 - assertVisible:
     id: "toolbar.outliner.editor"
-- swipe:
-    start: 80%, 94%
-    end: 15%, 94%
-    duration: 800
+- tapOn:
+    id: "button.outliner.editor.more"
 - tapOn:
     id: "button.outliner.editor.pageReference"
 - extendedWaitUntil:

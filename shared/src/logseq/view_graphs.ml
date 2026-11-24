@@ -286,69 +286,30 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
 
-let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
-    =
-  if Lui_ui.host context = KotlinHost then
-    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph") ~height:320
-      ~accessibility_identifier:"dialog.graph-delete"
-      ~on_dismiss:(press send Model.CancelDeleteGraph)
-      [
-        column ~gap:16 ~cross:`stretch
-          [
-            row ~gap:12 ~cross:`center
-              [
-                icon ~name:(`app "warning") ~width:28 ~height:28
-                  ~foreground:"destructive"
-                  ~accessibility_identifier:"icon.graph-delete-warning" [];
-                text
-                  ~value:
-                    (reactive (Signal.map View_base.graph_deletion_message
-                       model_source))
-                  ~grow:1.0
-                  ~accessibility_identifier:"text.graph-delete-warning"
-                  [];
-              ];
-            text ~foreground:"muted-foreground"
-              ~value:(View_base.tr (Signal.sample model_source)
-                "Cloud copies are not deleted. Unsynced changes on this device will be lost.")
-              [];
-            spacer ~grow:1.0 [];
-            row ~main:`end_
-              [
-                toolbar ~orientation:`horizontal ~toolbar_gap:12
-                  ~label:(View_base.tr (Signal.sample model_source) "Graph deletion actions")
-                  ~accessibility_identifier:"toolbar.graph-delete"
-                  [
-                    Lui_elements.toolbar_button ~variant:`ghost ~style_class:"cancellation-action"
-                      ~accessibility_identifier:
-                        "button.graph-delete.cancel"
-                      ~on_press:(press send Model.CancelDeleteGraph)
-                      ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-                    Lui_elements.toolbar_button ~variant:`destructive
-                      ~accessibility_identifier:
-                        "button.graph-delete.confirm"
-                      ~on_press:(press send Model.ConfirmDeleteGraph)
-                      ~text:(View_base.tr (Signal.sample model_source) "Delete local copy") [];
-                  ];
-              ];
-          ];
-      ]
-  else
-    (* Text-and-buttons-only children keep the dialog on the native alert
-       path (rich children fall back to a custom sheet). *)
-    dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph") ~style_class:"alert"
-      ~accessibility_identifier:"dialog.graph-delete"
-      ~on_dismiss:(press send Model.CancelDeleteGraph)
+let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t =
+  let android = Lui_ui.host context = KotlinHost in
+  let warning_icon =
+    if android then
+      [ icon ~name:(`app "warning") ~width:28 ~height:28
+          ~foreground:"destructive"
+          ~accessibility_identifier:"icon.graph-delete-warning" [] ]
+    else []
+  in
+  (* Direct button children occupy the native alert's action slots.
+     The explanation can scroll independently when space is tight. *)
+  dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph")
+    ?style_class:(if android then None else Some "alert")
+    ~accessibility_identifier:"dialog.graph-delete"
+    ~on_dismiss:(press send Model.CancelDeleteGraph)
+    (warning_icon @
       [
         text
-          ~value:
-            (reactive (Signal.map View_base.graph_deletion_message model_source))
+          ~value:(reactive (Signal.map View_base.graph_deletion_message model_source))
           ~accessibility_identifier:"text.graph-delete-warning" [];
-        text
+        text ?foreground:(if android then Some "muted-foreground" else None)
           ~value:(View_base.tr (Signal.sample model_source)
-            "Cloud copies are not deleted. Unsynced changes on this device will be lost.")
-          [];
-        button ~style_class:"cancellation-action"
+            "Cloud copies are not deleted. Unsynced changes on this device will be lost.") [];
+        button ?variant:(if android then Some `ghost else None) ~style_class:"cancellation-action"
           ~accessibility_identifier:"button.graph-delete.cancel"
           ~on_press:(press send Model.CancelDeleteGraph)
           ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
@@ -356,7 +317,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
           ~accessibility_identifier:"button.graph-delete.confirm"
           ~on_press:(press send Model.ConfirmDeleteGraph)
           ~text:(View_base.tr (Signal.sample model_source) "Delete local copy") [];
-      ]
+      ])
 
 let graph_picker_overflow_menu model_source send : t =
  custom (fun context parent ->
@@ -404,6 +365,10 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
                     [];
                   text ~style_class:"footnote" ~foreground:"muted-foreground"
                     ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
+                  if_ ~test:(Signal.map View_base.graph_unlock_error_present_ model_source)
+                    (text ~style_class:"footnote" ~foreground:"destructive"
+                      ~accessibility_identifier:"error.graph-unlock"
+                      ~value:(reactive View_base.graph_unlock_error_message model_source) []);
                 ];
             ];
             row ~main:`space_between ~cross:`center ~padding_horizontal:24 ~padding_vertical:16 [

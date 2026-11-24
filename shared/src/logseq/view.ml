@@ -82,12 +82,23 @@ let logseq_view (context : Lui_ui.ui_context) model_source send =
   let language (model : Model.logseq_model) =
     Localization.resolve model.language model.system_language
   in
+  let screen =
+    if Lui_ui.host context = KotlinHost then
+      (* Sidebar and navigation extensions reference children by node ID.
+         Replace the locale branch as a unit so those IDs stay consistent. *)
+      Lui_elements.keyed
+        ~source:(Signal.map (fun model -> [language model]) model_source)
+        ~key:Fun.id ~cmp:String.compare
+        ~mount:(fun _ -> View_screens.logseq_view context model_source send)
+    else
+      reactive ~equal:(fun left right -> language left = language right)
+        (fun _ -> View_screens.logseq_view context model_source send) model_source
+  in
   let dark_theme (model : Model.logseq_model) = model.dark_theme in
   with_ui_state model_source (Lui_elements.themed
     ~tokens_signal:(Signal.map (logseq_theme_tokens context) (Signal.map dark_theme model_source))
     ~mode:(reactive logseq_theme_mode model_source)
-    (reactive ~equal:(fun left right -> language left = language right)
-      (fun _ -> View_screens.logseq_view context model_source send) model_source))
+    screen)
 
 let outliner_editor_schema () =
   let open Lui_protocol in
@@ -398,6 +409,11 @@ let extension_registry () =
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
        true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "composer-task-toggle" [profile AndroidOS KotlinHost] false []
+      [property "label" StringScalar true None; property "selected" BoolScalar true None]
+      [event "press" []]);
   Lui_extension.register_component registry (sidebar_overlay_schema ());
   Lui_extension.register_component registry (native_top_notification_schema ());
   Lui_extension.register_tweak registry

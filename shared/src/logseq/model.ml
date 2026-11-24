@@ -3059,7 +3059,7 @@ let rec update (current : logseq_model) action =
        else current
      | None -> current)
   | ChangeGraphPassword password ->
-    { current with graph_password = password }
+    { current with graph_password = password; effect_error = None }
   | SubmitGraphPassword ->
     if
       String_kit.is_blank current.graph_password

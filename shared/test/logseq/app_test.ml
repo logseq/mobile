@@ -790,6 +790,24 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
           (Model.ChangeOutlinerText ("offline-block", "Draft", 5))))
     "Not connected"
 
+let capture_and_offline_transport_show_pending_sync () =
+  let ready = { (Model.initial ()) with Model.sync_state = SyncedState;
+    authentication_state = "signedIn"; composer_draft = "Keep this note" } in
+  let submitted = Model.update ready Model.SendComposer in
+  check_eq (View_base.sync_indicator_label submitted) "Syncing";
+  check_eq (View_base.sync_pending_label submitted) "Waiting to save";
+  check_eq (View_base.sync_indicator_foreground submitted) "warning-foreground";
+  let capture_id = List.find_map (function Model.SendCaptureEffect (id, _) -> Some id
+    | _ -> None) submitted.pending_effects |> Option.get in
+  let in_flight = Model.update submitted (Model.DequeueEffect capture_id) in
+  check_eq (View_base.sync_indicator_label in_flight) "Syncing";
+  let waiting = { submitted with has_pending_semantic_operations = true;
+    pending_sync_error = Some "Upload asset: network_unavailable\n\nnetwork_unavailable" } in
+  check_eq (View_base.sync_indicator_label waiting) "Not connected";
+  check_eq (View_base.sync_pending_label waiting) "Waiting to save";
+  let rejected = { waiting with pending_sync_error = Some "Server rejected the change\n\nnetwork_unavailable" } in
+  check_eq (View_base.sync_indicator_label rejected) "Sync failed"
+
 let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter
     (fun sync_state ->
@@ -4721,6 +4739,28 @@ let graph_deletion_confirmation_names_the_local_graph () =
   check ~msg:"the host log preserves the platform reason"
     (List.mem "Could not delete graph" (reported_errors (App.model application)))
 
+let kotlin_language_changes_keep_the_sidebar_children_live () =
+  let application = App.create (kotlin_backend ()) in
+  start application;
+  send application (Model.ApplyCoreSnapshot
+    { (empty_core_projection ()) with selected_graph_id = Some "local";
+      graph_name = Some "Local graph" });
+  List.iter (fun language ->
+    send application (Model.ChooseSettingsLanguage language);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let sidebar = extension_node application "sidebar-overlay" in
+    List.iter (fun key ->
+      match extension_property application sidebar key with
+      | Some (Lui_protocol.IntValue child) ->
+        check ~msg:(language ^ " keeps a live sidebar " ^ key)
+          (node renderer child <> None)
+      | _ -> failwith ("Missing sidebar child: " ^ key))
+      ["main-id"; "panel-id"; "settings-id"];
+    check ~msg:(language ^ " retains Journals")
+      (descendant_with_identifier renderer (Lui_app.root_node application) "pane.journals" <> -1))
+    ["zh-CN"; "ar"; "system"]
+
 let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
   let application = App.create (kotlin_backend ()) in
   let local = graph "local" "Local graph" false true in
@@ -4744,25 +4784,18 @@ let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
   let warning_icon =
     descendant_with_identifier renderer dialog "icon.graph-delete-warning"
   in
-  let actions =
-    descendant_with_identifier renderer dialog "toolbar.graph-delete"
-  in
   let cancel =
-    descendant_with_identifier renderer actions "button.graph-delete.cancel"
+    descendant_with_identifier renderer dialog "button.graph-delete.cancel"
   in
   let confirm =
-    descendant_with_identifier renderer actions "button.graph-delete.confirm"
+    descendant_with_identifier renderer dialog "button.graph-delete.confirm"
   in
-  check_eq
-    ~msg:"the Material dialog has enough room without filling the screen"
-    (property_int renderer dialog Lui_protocol.HeightValue)
-    320;
   check_eq ~msg:"the irreversible warning uses a Material icon"
     (property_string renderer warning_icon Lui_protocol.IconName)
     "app:warning";
-  check_eq ~msg:"dialog actions follow the Material horizontal action row"
-    (property_string renderer actions Lui_protocol.OrientationValue)
-    "horizontal";
+  check ~msg:"the native dialog owns both action buttons"
+    (List.mem cancel (children renderer dialog) &&
+     List.mem confirm (children renderer dialog));
   check_eq ~msg:"Cancel remains the quiet action"
     (property_string renderer cancel Lui_protocol.VariantValue)
     "ghost";
@@ -10626,13 +10659,15 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.editor"
   in
-  let buttons =
+  let scrolling_buttons =
     let rec actions id =
       if property_int renderer id Lui_protocol.WidthValue = 48 then [id]
       else List.concat_map actions (children renderer id) in
-    actions toolbar in
-  check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 14;
+    actions (descendant_with_node_kind renderer toolbar Lui_protocol.Scroll) in
+  check_eq ~msg:"frequent editor actions remain in the horizontal toolbar"
+    (List.length scrolling_buttons) 9;
+  let hide_keyboard = descendant_with_identifier renderer toolbar
+    "button.outliner.editor.hideKeyboard" in
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -10644,19 +10679,26 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
        check_eq ~msg:"every editor action uses a 24dp Material glyph"
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
-    buttons;
-  let line_break = List.nth buttons 7 in
+    (hide_keyboard :: scrolling_buttons);
+  let line_break = List.nth scrolling_buttons 8 in
   check_eq ~msg:"line break follows the structural editor actions"
     (property_string renderer line_break Lui_protocol.AccessibilityIdentifier)
     "button.outliner.editor.lineBreak";
-  let page_reference = List.nth buttons 12 in
+  let more = descendant_with_identifier renderer toolbar
+    "button.outliner.editor.more" in
+  let menu = descendant_with_node_kind renderer more Lui_protocol.DropdownMenu in
+  check_eq ~msg:"the pinned overflow exposes media and page reference"
+    (List.length (children renderer menu)) 4;
+  let page_reference = menu_item_with_text renderer more "Page reference" in
   check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "app:toolbar-page-reference";
-  check_eq ~msg:"page reference renders as an icon button"
-    (property_string renderer page_reference Lui_protocol.TextValue)
-    "<missing>";
-  dispatch application (Lui_protocol.Press (List.nth buttons 13));
+  dispatch application (Lui_protocol.Press page_reference);
+  flush application;
+  check ~msg:"Android Page reference crosses the typed core boundary"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "pageReference") -> true
+       | _ -> false) (App.model application).pending_effects);
+  dispatch application (Lui_protocol.Press hide_keyboard);
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"
     (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true
@@ -11733,6 +11775,7 @@ let cases =
     case "empty-outliner-rows-use-the-main-untitled-accessibility-title" empty_outliner_rows_use_the_main_untitled_accessibility_title;
     case "synced-header-control-uses-the-main-accessibility-label" synced_header_control_uses_the_main_accessibility_label;
     case "sync-indicator-prioritizes-connectivity-before-pending-work" sync_indicator_prioritizes_connectivity_before_pending_work;
+    case "capture-and-offline-transport-show-pending-sync" capture_and_offline_transport_show_pending_sync;
     case "authenticated-sync-indicator-uses-only-yellow-or-green" authenticated_sync_indicator_uses_only_yellow_or_green;
     case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
@@ -11815,6 +11858,7 @@ let cases =
     case "graph-lifecycle-effects-disable-duplicate-actions" graph_lifecycle_effects_disable_duplicate_actions;
     case "empty-graph-picker-replaces-refresh-with-progress-while-loading" empty_graph_picker_replaces_refresh_with_progress_while_loading;
     case "graph-deletion-confirmation-names-the-local-graph" graph_deletion_confirmation_names_the_local_graph;
+    case "kotlin-language-keeps-sidebar-children-live" kotlin_language_changes_keep_the_sidebar_children_live;
     case "kotlin-graph-deletion-uses-a-material-destructive-dialog" kotlin_graph_deletion_uses_a_material_destructive_dialog;
     case "search-lifecycle-keeps-query-owned-by-the-lg-model" search_lifecycle_keeps_query_owned_by_the_lg_model;
     case "bottom-chrome-presentation-is-mutually-exclusive" bottom_chrome_presentation_is_mutually_exclusive;

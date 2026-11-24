@@ -151,6 +151,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
     val scope = request.scope
     val locked = state.preparing || request.busy
     val transcriptScroll = rememberScrollState()
+    val error = request.error ?: state.error
 
     fun startRecording() {
         if (request.busy || state.hasRecording || state.preparing) return
@@ -197,6 +198,8 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                         Checkbox(
                             checked = request.transcriptionEnabled,
                             enabled = !locked,
+                            modifier = Modifier.testTag("toggle.audio.transcription")
+                                .semantics { testTagsAsResourceId = true },
                             onCheckedChange = {
                                 request.transcriptionEnabled = it
                                 preferences.edit { putBoolean("transcribe", it) }
@@ -224,13 +227,13 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                         }
                     }
                 }
-                if (request.transcriptionEnabled) {
+                if (request.transcriptionEnabled && (error == null || state.transcript.isNotBlank())) {
                     Column(modifier = Modifier.padding(top = 12.dp).height(180.dp).verticalScroll(transcriptScroll)) {
-                        if (state.preparing || state.preparingTranscription) {
+                        if (error == null && (state.preparing || state.preparingTranscription)) {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             Text(stringResource(R.string.audio_preparing), modifier = Modifier.padding(top = 8.dp))
                         }
-                        if (state.transcript.isNotBlank() || (!state.preparing && !state.preparingTranscription)) {
+                        if (state.transcript.isNotBlank() || (state.recording && !state.preparingTranscription)) {
                             SelectionContainer {
                                 Text(state.transcript.ifBlank { stringResource(R.string.audio_listening) },
                                     modifier = Modifier.testTag("audio.transcript"))
@@ -238,7 +241,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
                         }
                     }
                 }
-                (request.error ?: state.error)?.let {
+                error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
                 }
             }

@@ -22,16 +22,16 @@ internal class AndroidPendingWebSocket(private val socket: WebSocket, private va
         val response = CompletableDeferred<AndroidPendingSyncResult>()
         synchronized(this) {
             if (closed || request.url != url || request.body == null || active != null)
-                return AndroidPendingSyncResult(null, null, "The graph WebSocket is unavailable")
+                return AndroidPendingSyncResult(null, null, NETWORK_UNAVAILABLE)
             active = request.id to response
         }
         try {
-            if (!socket.send(request.body!!)) close("WebSocket send failed")
+            if (!socket.send(request.body!!)) close()
             return withTimeout(30_000) { response.await() }
         } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             close("The graph WebSocket response timed out")
-            return AndroidPendingSyncResult(null, null, "The graph WebSocket response timed out")
+            return AndroidPendingSyncResult(null, null, NETWORK_UNAVAILABLE)
         } catch (error: kotlinx.coroutines.CancellationException) {
             close("WebSocket upload cancelled")
             throw error
@@ -44,7 +44,7 @@ internal class AndroidPendingWebSocket(private val socket: WebSocket, private va
         if (active?.first == id) active?.second?.complete(AndroidPendingSyncResult(200, body, null))
     }
 
-    @Synchronized fun close(message: String = "The graph WebSocket closed") {
+    @Synchronized fun close(message: String = NETWORK_UNAVAILABLE) {
         closed = true
         socket.cancel()
         active?.second?.complete(AndroidPendingSyncResult(null, null, message))

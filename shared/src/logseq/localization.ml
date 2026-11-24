@@ -5420,7 +5420,10 @@ let dictionaries = [
     ("Create {1}", "创建 {1}");
     ("About", "关于");
     ("Account", "账户");
+    ("Incorrect password.", "密码不正确。");
+    ("Could not unlock the graph.", "无法解锁图谱。");
     ("Add attachment", "添加附件");
+    ("Add block", "添加块");
     ("Add graph", "添加图谱");
     ("Add sync graph", "添加同步图谱");
     ("Appearance", "外观");
@@ -5457,6 +5460,7 @@ let dictionaries = [
     ("Loading blocks…", "正在加载内容…");
     ("Move down", "下移");
     ("Move up", "上移");
+    ("More editor tools", "更多编辑工具");
     ("No graphs", "没有图谱");
     ("No results", "没有结果");
     ("No tagged nodes", "没有带此标签的内容");
@@ -5854,6 +5858,10 @@ let dictionaries = [
     ("3 months ago", "3 個月前");
     ("About", "關於");
     ("Account", "帳戶");
+    ("Incorrect password.", "密碼不正確。");
+    ("Could not unlock the graph.", "無法解鎖圖譜。");
+    ("Add block", "新增區塊");
+    ("More editor tools", "更多編輯工具");
     ("Add property", "添加屬性");
     ("Advanced", "進階功能");
     ("Again", "重來");
