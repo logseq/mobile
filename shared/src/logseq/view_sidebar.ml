@@ -142,7 +142,20 @@ let android_graph_switch model_source send : t =
           ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
           ~accessibility_identifier:"button.graph-switch" ~on_press:(press send Model.OpenGraphMenu)
           [View_base.with_int_prop_signal MaxWidth label_width
-             (text ~value:(reactive View_base.graph_label model_source) ~style_class:"headline navigation-title"
+             (text
+                ~value:
+                  (reactive
+                     (fun (current : Model.logseq_model) ->
+                       let width =
+                         if current.viewport_width > 0
+                         then max 24 (min 280 (current.viewport_width - 236))
+                         else 160
+                       in
+                       View_base.ellipsize_middle
+                         (View_base.graph_label current)
+                         (max 10 (width / 11)))
+                     model_source)
+                ~style_class:"headline navigation-title"
                 ~foreground:"muted-foreground" ~white_space:`nowrap ~text_overflow:`ellipsis
                 ~accessibility_identifier:"title.main" []);
            icon ~name:(`app "chevron-down") ~width:16 ~height:16 ~foreground:"muted-foreground" []]);

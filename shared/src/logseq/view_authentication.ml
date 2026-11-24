@@ -98,7 +98,7 @@ let sheet source send : t =
             (Signal.map (fun current -> let t = form current in
               t.stage, List.map fst t.attributes, t.mfa_choices) source);
           if_ ~test:(Signal.map (fun current -> (form current).error <> None) source)
-            (text ~accessibility_identifier:"auth.error" ~foreground:"destructive" ~style_class:"footnote"
+            (text ~accessibility_identifier:"auth.error" ~foreground:"error-foreground" ~style_class:"footnote"
               ~value:(reactive (fun current -> tr source (Option.value ~default:"" (form current).error)) source) []);
           if_ ~test:(Signal.map (fun current -> (form current).notice <> None) source)
             (text ~accessibility_identifier:"auth.notice" ~foreground:"muted-foreground" ~style_class:"footnote"

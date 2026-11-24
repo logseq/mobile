@@ -201,6 +201,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "settings" to Icons.Outlined.Settings,
     "share" to Icons.Outlined.Share,
     "sidebar-toggle" to sidebarToggle,
+    "sign-in" to Icons.Filled.Login,
     "sign-out" to Icons.AutoMirrored.Filled.Logout,
     "star" to Icons.Outlined.Star,
     "star-filled" to Icons.Filled.Star,

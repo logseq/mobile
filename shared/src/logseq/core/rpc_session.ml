@@ -2017,7 +2017,17 @@ let sync_transport_event session _input fields =
         | None -> Error "Graph sync transport is unavailable"
         | Some apply ->
           (match apply body with
-           | Error _ as error -> error
+           | Error _ as error ->
+             (* A still-open socket can deliver journals for a graph this
+                session has switched away from; dropping those frames is not
+                a sync failure. *)
+             (match Journal_sync.decode body with
+              | Ok journal
+                when Option.fold ~none:false
+                       ~some:(fun id -> id <> Sync_driver.graph_id previous)
+                       journal.Journal_sync.graph_id ->
+                Ok (projection_server_t session)
+              | _ -> error)
            | Ok () -> reconcile_authoritative_blocks session; Ok (projection_server_t session)) in
       let receive event = Sync_driver.receive ~cursor:(projection_server_t session)
         ~editing:(sync_transport_editing session) ~apply_frame event previous in

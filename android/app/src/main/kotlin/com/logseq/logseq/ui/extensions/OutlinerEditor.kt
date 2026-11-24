@@ -6,7 +6,10 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.TextAttribute
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -124,7 +127,7 @@ private class EditorFieldValue(private val state: TextFieldState) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun OutlinerEditor(
     context: LuiExtensionContext,
@@ -290,6 +293,14 @@ internal fun OutlinerEditor(
     }
 
     LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
+    // When the system dismisses the IME while this editor still owns focus,
+    // end the editing session so the editor toolbar doesn't stay orphaned.
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(focusEnabled, imeVisible) {
+        if (!focusEnabled || imeVisible) return@LaunchedEffect
+        delay(300)
+        context.emit("ime-dismissed")
+    }
     // Debounced text-change emission, cancelled by the next edit.
     LaunchedEffect(debounceSeq, focusEnabled) {
         if (debounceSeq == 0 || awaitingHandoff || !focusEnabled) return@LaunchedEffect

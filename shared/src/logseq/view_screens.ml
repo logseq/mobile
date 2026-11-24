@@ -497,7 +497,8 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
     ~value:
       (reactive
          (fun current ->
-           View_base.main_title (main_header_model context current))
+           let title = View_base.main_title (main_header_model context current) in
+           if android then View_base.ellipsize_middle title 16 else title)
          model_source)
     ~style_class:"headline navigation-title" ~accessibility_identifier:"title.main" []
 

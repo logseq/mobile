@@ -1930,6 +1930,10 @@ let resolve_successful_effect (current : logseq_model) eff message =
       settings_open = false;
       settings_tabs_open = false;
       runtime_log_open = false;
+      graphs =
+        List.filter
+          (fun (entry : graph) -> graph_local_ current entry.id)
+          current.graphs;
     }
   | _ -> current
 
