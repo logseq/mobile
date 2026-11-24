@@ -57,7 +57,7 @@ val active_page_favorite_label : Model.logseq_model -> string
 val node_deletion_pending_ : Model.logseq_model -> bool
 val sign_out_pending_ : Model.logseq_model -> bool
 val sidebar_page_identifier : Model.sidebar_page -> string
-val sidebar_page_title : Model.sidebar_page -> string
+val sidebar_page_title : Model.logseq_model -> Model.sidebar_page -> string
 val sidebar_graph_identifier : Model.graph -> string
 val graph_title : Model.graph -> string
 val sidebar_graph_selected_ : Model.logseq_model -> Model.graph -> bool
@@ -106,8 +106,8 @@ val task_status_icon_name : Model.task_status -> string
 val task_status_foreground : Model.task_status -> string
 val task_status_selected_ : Model.logseq_model -> bool
 val search_result_identifier : Model.search_hit -> string
-val search_result_title : Model.search_hit -> string
-val search_result_breadcrumb : Model.search_hit -> string
+val search_result_title : Model.logseq_model -> Model.search_hit -> string
+val search_result_breadcrumb : Model.logseq_model -> Model.search_hit -> string
 val page_search_results : Model.logseq_model -> Model.search_hit list
 val block_search_results : Model.logseq_model -> Model.search_hit list
 val page_search_results_present_ : Model.logseq_model -> bool
@@ -233,7 +233,6 @@ val outliner_row_breadcrumb : Model.outline_row -> string
 val outliner_row_structured_breadcrumb_ : Model.outline_row -> bool
 val outliner_row_fallback_breadcrumb_ : Model.outline_row -> bool
 val breadcrumb_identifier : Model.sidebar_page -> string
-val breadcrumb_title : Model.sidebar_page -> string
 val editing_title : Model.logseq_model -> string
 val editing_caret : Model.logseq_model -> int
 val outliner_row_has_status_ : Model.outline_row -> bool

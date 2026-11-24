@@ -10,8 +10,11 @@ let journal_title_parts (current : Model.logseq_model) day title =
     let current_year = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000 in
     let date, weekday = Localization.journal_date
       ~language:current.language ~system_language:current.system_language ~current_year day in
-    let date = if current.journal_title_format = Journal.default_format then date
-      else Option.value ~default:title (Journal.title_without_weekday day current.journal_title_format) in
+    let format = current.journal_title_format in
+    let date = if format = Journal.default_format then date
+      else match Journal.title_without_weekday day format with
+        | Some date -> date
+        | None -> Journal.int_to_journal_title day format in
     date, Some ("· " ^ weekday)
   | _ -> title, None
 
@@ -322,7 +325,8 @@ let sign_out_pending_ (current : Model.logseq_model) =
 let sidebar_page_identifier (page : Model.sidebar_page) =
   "link.sidebar.page." ^ page.uuid
 
-let sidebar_page_title (page : Model.sidebar_page) = page.title
+let sidebar_page_title current (page : Model.sidebar_page) =
+  journal_display_title current page.page_journal_day page.title
 let sidebar_graph_identifier (graph : Model.graph) = "menu.graph." ^ graph.id
 let graph_title (graph : Model.graph) = graph.name
 
@@ -465,8 +469,13 @@ let task_status_selected_ (current : Model.logseq_model) =
 let search_result_identifier (hit : Model.search_hit) =
   "search.result." ^ hit.hit_uuid
 
-let search_result_title (hit : Model.search_hit) = hit.hit_title
-let search_result_breadcrumb (hit : Model.search_hit) = hit.breadcrumb
+let search_result_title current (hit : Model.search_hit) =
+  journal_display_title current hit.hit_journal_day hit.hit_title
+
+let search_result_breadcrumb current (hit : Model.search_hit) =
+  match hit.breadcrumbs with
+  | [] -> hit.breadcrumb
+  | pages -> String.concat " › " (List.map (sidebar_page_title current) pages)
 
 let loaded_search_results (current : Model.logseq_model) =
   List.concat_map Fun.id (List.rev current.search_result_pages)
@@ -837,8 +846,7 @@ let main_title (current : Model.logseq_model) =
   else if current.destination = GraphsDestination then tr current "Graphs"
   else match Model.active_page current with
     | Some page when current.selected_page = Some page -> selected_page_title current
-    | Some page -> journal_display_title current
-        (Option.bind (active_node_projection current) (fun route -> route.node_journal_day)) page.title
+    | Some page -> sidebar_page_title current page
     | None -> ""
 
 let current_content_active_ (current : Model.logseq_model) =
@@ -944,8 +952,6 @@ let outliner_row_fallback_breadcrumb_ (row : Model.outline_row) =
 
 let breadcrumb_identifier (breadcrumb : Model.sidebar_page) =
   "button.breadcrumb." ^ breadcrumb.uuid
-
-let breadcrumb_title (breadcrumb : Model.sidebar_page) = breadcrumb.title
 
 let editing_title (current : Model.logseq_model) =
   match current.outliner_editing with

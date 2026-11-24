@@ -27,9 +27,6 @@ val outliner_collapse_button :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_indent_view : int Signal.signal -> Lui_elements.t
-val breadcrumb_button :
-  Model.sidebar_page Signal.signal ->
-  bool -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val node_breadcrumb_button :
   Model.logseq_model Signal.signal ->
   Model.sidebar_page Signal.signal ->

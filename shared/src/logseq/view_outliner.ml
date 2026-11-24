@@ -362,10 +362,11 @@ let outliner_indent_view width_source : t =
    Lui_ui.int_property_signal context node WidthValue width_source;
    node
 
-let breadcrumb_button breadcrumb_source search_open send : t =
+let node_breadcrumb_button model_source breadcrumb_source send : t =
   let breadcrumb = Signal.sample breadcrumb_source in
+  let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
   button
-    ~text:(reactive View_base.breadcrumb_title breadcrumb_source)
+    ~text:(reactive (Signal.map2 View_base.sidebar_page_title model_source breadcrumb_source))
     ~variant:`ghost ~style_class:"caption single-line" ~padding:0 ~height:28 ~foreground:"muted-foreground"
     ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
     ~on_press:(fun _ ->
@@ -378,10 +379,6 @@ let breadcrumb_button breadcrumb_source search_open send : t =
               Model.RequestAppNode
                 (Signal.sample breadcrumb_source : Model.sidebar_page).uuid)))
     []
-
-let node_breadcrumb_button model_source breadcrumb_source send : t =
-  let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
-  breadcrumb_button breadcrumb_source search_open send
 
 let node_breadcrumbs model_source send : t =
   scroll ~orientation:`horizontal ~height:32 ~padding_horizontal:16
@@ -1847,15 +1844,20 @@ let journal_task_row context model_source task_source send =
     let send_block = function
       | Model.DropOutlinerBlocks _ -> true
       | action -> send_scoped_outliner_edit scope send action in
-    let metadata = reactive ~equal:(fun old current -> List.for_all (fun key ->
-      journal_task_field key old = journal_task_field key current) ["scheduled"; "deadline"; "page"]) (fun task ->
+    let task_metadata = Signal.map2 (fun current task ->
+      let day = match journal_task_field "pageJournalDay" task with `Int day -> Some day | _ -> None in
+      let page = View_base.journal_display_title current day (task_text (journal_task_field "page" task)) in
+      let dates = List.map (fun (key, name, image) ->
+        key, name, image, journal_task_field key task) task_date_fields in
+      (current.Model.language, current.system_language), dates, page) model_source task_source in
+    let metadata = reactive (fun (_, dates, page) ->
       let current = Signal.sample model_source in
       let chip id ?icon_name ?overdue_signal ~label value on_press =
         View_property.compact_task_metadata ?icon_name ?overdue_signal ~label
           ~identifier:("journal-task." ^ id ^ "." ^ uuid)
           (Signal.constant context.Lui_ui.ui_scheduler value) on_press in
-      let dates = List.filter_map (fun (key, name, image) ->
-        match journal_task_field key task with
+      let dates = List.filter_map (fun (key, name, image, date) ->
+        match date with
         | `Int date ->
           let overdue_signal = if key <> "deadline" then None else
             Some (Signal.map (fun (current : Model.logseq_model) ->
@@ -1865,8 +1867,7 @@ let journal_task_row context model_source task_source send =
           Some (chip key ~icon_name:image ?overdue_signal ~label:(View_base.tr current name)
             (View_property.task_date_label current date)
             (fun () -> ignore (send (Model.OpenBlockTaskDate (uuid, key)))))
-        | _ -> None) task_date_fields in
-      let page = task_text (journal_task_field "page" task) in
+        | _ -> None) dates in
       let items = dates @ (if page = "" then [] else
         [chip "page" ~label:(View_base.tr_named current "Open {1}" page) page (fun () ->
           ignore (send (View_base.request_node_action (Signal.sample model_source) (Signal.sample source).page_id)))]) in
@@ -1874,7 +1875,7 @@ let journal_task_row context model_source task_source send =
         if index = 0 then [item] else
           [text ~value:"·" ~style_class:"footnote" ~foreground:"muted-foreground" []; item]) items) in
       row ~gap:5 ~main:`start ~cross:`center
-        ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_source in
+        ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_metadata in
     let inset = 8 in
     with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [

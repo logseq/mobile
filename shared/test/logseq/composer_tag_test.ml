@@ -199,7 +199,7 @@ let graph_changes_reset_the_tag_picker () =
     let snapshot = Rpc_session.snapshot_visible session in
     Q.with_ui backend snapshot (fun app ->
       let old_graph = (App.model app).selected_graph_id in
-      App_test.send app (Model.SetComposerTags [{Model.uuid = Q.project; title = "Project"}]);
+      App_test.send app (Model.SetComposerTags [{Model.uuid = Q.project; title = "Project"; page_journal_day = None}]);
       App_test.send app Model.OpenComposerTags; App_test.flush app;
       let load = List.find (function Model.LoadComposerTagsEffect _ -> true | _ -> false) (App.model app).pending_effects in
       let load_id = match member "id" (J.from_string (Native_bridge.encode_effect load)) with `Int id -> id | _ -> fail "Missing load id" in
@@ -230,7 +230,7 @@ let failed_asset_captures_recover_only_in_their_graph () =
     let snapshot = Rpc_session.snapshot_visible session in
     Q.with_ui backend snapshot (fun app ->
       let asset = {Model.uuid = captured; title = "Photo.png"; local_path = "/tmp/Photo.png"; payload = "{}"} in
-      App_test.send app (Model.SetComposerTags [{Model.uuid = Q.project; title = "Project"}]);
+      App_test.send app (Model.SetComposerTags [{Model.uuid = Q.project; title = "Project"; page_journal_day = None}]);
       App_test.send app (Model.StageComposerAsset asset);
       App_test.send app Model.SendComposer; App_test.flush app;
       let eff = List.find (function Model.SendAssetEffect _ -> true | _ -> false) (App.model app).pending_effects in

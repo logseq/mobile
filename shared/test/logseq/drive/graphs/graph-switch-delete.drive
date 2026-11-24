@@ -1,5 +1,5 @@
 # Create Alpha, open the Graphs screen, create Beta, switch back to
-# Alpha through the sidebar graph menu, then delete a graph row from
+# Alpha through the Journals graph menu, then delete a graph row from
 # the picker via its context menu.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
@@ -10,11 +10,12 @@ wait prop:accessibility-identifier=application.shell
 expect prop:accessibility-identifier=title.main
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=graph.Alpha
+expect-absent prop:accessibility-identifier=button.graph-switch
 press prop:accessibility-identifier=button.graph-add
 wait prop:accessibility-identifier=field.graph-name
 type prop:accessibility-identifier=field.graph-name "Beta"
 press prop:accessibility-identifier=button.graph-add.confirm
-wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=menu.graph.Beta
 press prop:accessibility-identifier=button.graph-switch
 wait prop:accessibility-identifier=menu.graph-switch
 expect prop:accessibility-identifier=menu.graph.Alpha

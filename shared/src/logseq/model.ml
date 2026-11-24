@@ -30,6 +30,7 @@ type asset_preview =
 type sidebar_page =
   { uuid : string
   ; title : string
+  ; page_journal_day : int option
   }
 
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
@@ -116,6 +117,7 @@ type flashcard =
 type search_hit =
   { hit_uuid : string
   ; hit_title : string
+  ; hit_journal_day : int option
   ; breadcrumb : string
   ; breadcrumbs : sidebar_page list
   ; is_page : bool
@@ -1371,7 +1373,7 @@ let preview_sidebar_page (current : logseq_model) uuid =
     {
       current with
       selected_page = Some page;
-      selected_page_journal_day = None;
+      selected_page_journal_day = page.page_journal_day;
       selected_page_ready = rows <> [];
       selected_page_is_tag = false;
       selected_page_is_property = false;
@@ -1564,7 +1566,7 @@ let active_page (current : logseq_model) =
     | _ ->
       (match last_opt routes with
        | Some route ->
-         Some { uuid = route.node_page_uuid; title = route.node_title }
+         Some { uuid = route.node_page_uuid; title = route.node_title; page_journal_day = route.node_journal_day }
        | None -> None)
   end
 
@@ -1588,7 +1590,7 @@ let active_delete_target (current : logseq_model) =
     (* The displayed stack can lag behind a new route request. *)
     match last_opt (app_node_routes_from current path 0) with
     | Some route when route.node_uuid = uuid && node_permission current uuid "canDelete" ->
-      let node = { uuid; title = route.node_title } in
+      let node = { uuid; title = route.node_title; page_journal_day = route.node_journal_day } in
       if uuid = route.node_page_uuid then Some (PageToDelete node)
       else if current.applied_server_t <> None then Some (BlockToDelete node)
       else None

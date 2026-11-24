@@ -8,7 +8,9 @@ val block_json : Cache_model.block -> Yojson.Basic.t
 val visible_block_json : Cache_model.block -> Yojson.Basic.t
 val flashcard_json : Flashcards.due_card -> Yojson.Basic.t
 val graph_json : Api.api_graph -> Yojson.Basic.t
-val search_hit_json : Search_index.indexed_search_hit -> Yojson.Basic.t
+val search_hit_json :
+  ?summary_json:(Cache_model.entity_summary -> Yojson.Basic.t) ->
+  Search_index.indexed_search_hit -> Yojson.Basic.t
 val outliner_row_json :
   string option ->
   (Cache_model.block -> Yojson.Basic.t) ->

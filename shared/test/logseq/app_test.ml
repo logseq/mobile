@@ -2995,8 +2995,8 @@ let graph_catalog_patches_preserve_the_active_editor_state () =
     updated.graphs [ graph ]
 
 let sidebar_state_and_page_selection_are_owned_by_lg () =
-  let favorite = { Model.uuid = "page-a"; title = "Favorite" } in
-  let recent = { Model.uuid = "page-b"; title = "Recent" } in
+  let favorite = { Model.uuid = "page-a"; title = "Favorite"; page_journal_day = None} in
+  let recent = { Model.uuid = "page-b"; title = "Recent"; page_journal_day = None} in
   let journal_row =
     journal_outline_row "page-a-root" "page-a" "Loaded journal content"
       "Favorite" 20260829 0
@@ -3075,7 +3075,7 @@ let sidebar_state_and_page_selection_are_owned_by_lg () =
 
 let sidebar_renders_main_branch_navigation_identifiers () =
   let application = App.create (ios_backend ()) in
-  let favorite = { Model.uuid = "page-a"; title = "Favorite" } in
+  let favorite = { Model.uuid = "page-a"; title = "Favorite"; page_journal_day = None} in
   let current_graph = graph "current" "sync 2" false true in
   let remote_graph = graph "remote" "Remote graph" false true in
   let preparing_graph = graph "preparing" "Preparing graph" false false in
@@ -3093,16 +3093,13 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       linked_reference_rows = [];
     }
   in
+  let projection = { (empty_core_projection ()) with
+    graph_name = Some "sync 2";
+    selected_graph_id = Some "current";
+    graphs = [current_graph; remote_graph; preparing_graph];
+    sidebar } in
   start application;
-  send application
-    (Model.ApplyCoreSnapshot
-       {
-         (empty_core_projection ()) with
-         graph_name = Some "sync 2";
-         selected_graph_id = Some "current";
-         graphs = [ current_graph; remote_graph; preparing_graph ];
-         sidebar;
-       });
+  send application (Model.ApplyCoreSnapshot projection);
   flush application;
   let renderer = Lui_app.runtime application in
   let root = application_shell_root renderer application in
@@ -3261,6 +3258,12 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
   check_eq ~msg:"VoiceOver no longer identifies Journals as current"
     (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue false));
+  check_eq ~msg:"a selected page has no graph switch in its header"
+    (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
+  send application Model.ShowJournals;
+  send application (Model.ApplyCoreSnapshot projection);
+  flush application;
+  let graph_switch = descendant_with_identifier renderer navigation "button.graph-switch" in
   let menu =
     descendant_with_identifier renderer graph_switch "menu.graph-switch"
   in
@@ -3293,12 +3296,18 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     flush application;
     check ~msg:"Flashcards retains its deck picker"
       (descendant_with_identifier renderer navigation "menu.flashcards.deck" <> -1);
-    let flashcards_switch = descendant_with_identifier renderer navigation "button.graph-switch" in
-    let remote_item = descendant_with_identifier renderer flashcards_switch "menu.graph.remote" in
-    check ~msg:"Flashcards also exposes the native graph switch" (remote_item <> -1);
+    check_eq ~msg:"Flashcards has no graph switch in its header"
+      (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
+    send application Model.ShowGraphs;
+    flush application;
+    check_eq ~msg:"Graphs has no graph switch in its header"
+      (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
+    send application Model.ShowJournals;
     send application (Model.ApplyComposerDraft "Unsent capture");
     send application Model.ExpandComposer;
     flush application;
+    let remote_item = descendant_with_identifier renderer navigation "menu.graph.remote" in
+    check ~msg:"returning to Journals restores the switch menu" (remote_item <> -1);
     dispatch application (Lui_protocol.Press remote_item);
     flush application;
     check
@@ -3343,7 +3352,7 @@ let sidebar_drag_reserves_app_navigation () =
 
 let selected_sidebar_pages_render_their_outliner_and_related_content () =
   let application = App.create (ios_backend ()) in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let related_row =
     {
       (outline_row "reference" "Linked from journal") with
@@ -3683,7 +3692,7 @@ let capture_refreshes_the_retained_journal_behind_a_node_route () =
     updated.journal_outliner_rows [ first_row; captured_row ]
 
 let recent_journal_edits_refresh_the_retained_journals_pane () =
-  let page = { Model.uuid = "today"; title = "Today" } in
+  let page = { Model.uuid = "today"; title = "Today"; page_journal_day = None} in
   let original =
     journal_outline_row "first" "today" "Original" "Today" 20260906 0
   in
@@ -3997,9 +4006,8 @@ let flashcards_render_empty_and_non_cloze_control_states () =
   let navigation = extension_node application "native-navigation-stack" in
   let toolbar = extension_node application "native-flashcards-toolbar" in
   let title_slot = List.nth (children renderer navigation) 2 in
-  let graph_switch = child_with_identifier renderer title_slot "button.graph-switch" in
-  check ~msg:"the navigation title hosts both the card group controls and the graph switch"
-    (graph_switch <> -1 && children renderer title_slot = [toolbar; graph_switch]);
+  check_eq ~msg:"the navigation title hosts the card group controls"
+    (children renderer title_slot) [toolbar];
   let deck_menu = child_with_identifier renderer toolbar "menu.flashcards.deck" in
   check ~msg:"the toolbar carries both the card group menu and the add button"
     (deck_menu <> -1
@@ -6196,7 +6204,7 @@ let app_navigation_matches_the_main_branch_path_contract () =
 
 let native_header_title_follows_the_active_destination () =
   let initial = Model.initial () in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let route = node_projection "node-a" "page-a" "Nested" [] [] in
   let routed =
     {
@@ -6527,7 +6535,7 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
            {
              (outline_row "reference" "Linked from journal") with
              row_breadcrumb = "Journal";
-             row_breadcrumbs = [ { Model.uuid = "journal"; title = "Journal" } ];
+             row_breadcrumbs = [ { Model.uuid = "journal"; title = "Journal"; page_journal_day = None} ];
            };
          ]
          [])
@@ -6802,7 +6810,7 @@ let kotlin_navigation_places_only_the_latest_page () =
 
 let kotlin_selected_pages_retain_the_hidden_journal_pane () =
   let application = App.create (kotlin_backend ()) in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let row =
     journal_outline_row "selected-row" "page-a" "Selected row" "" 0 0
   in
@@ -6883,7 +6891,7 @@ let retained_panes_mount_only_the_visible_editor () =
     send application (Model.ApplyCoreSnapshot (projection (empty_sidebar_projection ()) []));
     flush application;
     check_eq ~msg:"the visible journal owns exactly one native editor" (editor_count ()) 1;
-    let sidebar = { (empty_sidebar_projection ()) with Model.selected_page = Some { Model.uuid = "journal-page"; title = "Today" } } in
+    let sidebar = { (empty_sidebar_projection ()) with Model.selected_page = Some { Model.uuid = "journal-page"; title = "Today"; page_journal_day = None} } in
     send application (Model.ApplyCoreSnapshot (projection sidebar []));
     flush application;
     check_eq ~msg:"opening a journal as a page must not focus a hidden duplicate editor" (editor_count ()) 1;
@@ -6902,7 +6910,7 @@ let retained_panes_mount_only_the_visible_editor () =
 
 let kotlin_selected_page_navigation_renders_the_opened_node () =
   let application = App.create (kotlin_backend ()) in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let selected_row =
     journal_outline_row "selected-row" "page-a" "Selected row" "" 0 0
   in
@@ -7169,7 +7177,7 @@ let journal_placeholders_only_follow_their_own_page_editor () =
       selected_graph_id = Some "graph";
       outliner_rows = [today; older];
       journal_outliner_rows = [today; older];
-      empty_journals = [({uuid = "empty"; title = "Earlier"}, 20261114)] } in
+      empty_journals = [({uuid = "empty"; title = "Earlier"; page_journal_day = None}, 20261114)] } in
     let apply projection = send app (Model.ApplyCoreSnapshot projection); flush app in
     let button page = descendant_with_identifier renderer (Lui_app.root_node app)
       ("button.outliner.placeholder." ^ page) in
@@ -7747,7 +7755,7 @@ let journal_agenda_is_retained_across_navigation () =
         (extension_property app (extension_node app "journal-task-transition") "collapsed")
         (Some (Lui_protocol.StringValue "planned"));
     check_eq (planned ()) (-1);
-    let page = {Model.uuid = "other-page"; title = "Project"} in
+    let page = {Model.uuid = "other-page"; title = "Project"; page_journal_day = None} in
     snapshot {work with
       sidebar = {(empty_sidebar_projection ()) with selected_page = Some page};
       outliner_rows = [outline_row "project-block" "Project"];
@@ -7887,7 +7895,7 @@ let older_journals_only_appear_at_the_journal_root () =
     {
       available with
       Model.selected_page =
-        Some { Model.uuid = "page-a"; title = "Page" };
+        Some { Model.uuid = "page-a"; title = "Page"; page_journal_day = None};
     }
   in
   let nested =
@@ -8037,7 +8045,7 @@ let journal_dates_follow_the_app_language () =
     let app = App.create (backend ()) in
     start app;
     let row = journal_outline_row "entry" "journal-page" "Entry" "Nov 23rd, 2026" 20261123 0 in
-    let empty : Model.sidebar_page = {uuid = "empty-day"; title = "Nov 22nd, 2025"} in
+    let empty : Model.sidebar_page = {uuid = "empty-day"; title = "Nov 22nd, 2025"; page_journal_day = None} in
     let projection = {(empty_core_projection ()) with selected_graph_id = Some "test-graph";
       outliner_rows = [row]; empty_journals = [empty, 20251122]} in
     let apply projection = send app (Model.ApplyCoreSnapshot projection); flush app in
@@ -8312,7 +8320,7 @@ let selected_pages_do_not_render_journal_home_headings () =
     {
       (empty_sidebar_projection ()) with
       Model.selected_page =
-        Some { Model.uuid = "page-a"; title = "August 27th" };
+        Some { Model.uuid = "page-a"; title = "August 27th"; page_journal_day = None};
     }
   in
   start application;
@@ -8382,7 +8390,7 @@ let search_query_publishes_a_core_effect_and_rejects_stale_results () =
   let hit =
     {
       Model.hit_uuid = "page-a";
-      hit_title = "Project Alpha";
+      hit_title = "Project Alpha"; hit_journal_day = None;
       breadcrumb = "";
       breadcrumbs = [];
       is_page = true;
@@ -8447,7 +8455,7 @@ let native_search_accepts_nonempty_unicode_queries () =
   ) [ios_backend; kotlin_backend]
 
 let shortening_search_clears_results_and_queued_requests () =
-  let hit = {Model.hit_uuid = "found"; hit_title = "Found";
+  let hit = {Model.hit_uuid = "found"; hit_title = "Found"; hit_journal_day = None;
     breadcrumb = ""; breadcrumbs = []; is_page = false} in
   let queried = Model.update (Model.initial ()) (Model.ChangeSearchQuery "中文页") in
   let loaded = Model.update queried (Model.ApplySearchResults ("中文页", [hit])) in
@@ -8481,7 +8489,7 @@ let search_results_render_as_keyed_native_rows () =
   let hit =
     {
       Model.hit_uuid = "block-a";
-      hit_title = "Project note";
+      hit_title = "Project note"; hit_journal_day = None;
       breadcrumb = "Journal › Parent";
       breadcrumbs = [];
       is_page = false;
@@ -8534,7 +8542,7 @@ let search_renders_main_empty_states_and_result_sections () =
   let page =
     {
       Model.hit_uuid = "page-a";
-      hit_title = "Project";
+      hit_title = "Project"; hit_journal_day = None;
       breadcrumb = "";
       breadcrumbs = [];
       is_page = true;
@@ -8543,7 +8551,7 @@ let search_renders_main_empty_states_and_result_sections () =
   let block =
     {
       Model.hit_uuid = "block-a";
-      hit_title = "Project note";
+      hit_title = "Project note"; hit_journal_day = None;
       breadcrumb = "Journal";
       breadcrumbs = [];
       is_page = false;
@@ -8651,7 +8659,7 @@ let search_uses_a_regular_list_and_paginates_on_scroll () =
     send application Model.OpenSearch;
     send application (Model.ChangeSearchQuery "needle");
     let hit i = { Model.hit_uuid = Printf.sprintf "hit-%03d" i;
-      hit_title = "Needle"; breadcrumb = ""; breadcrumbs = []; is_page = false } in
+      hit_title = "Needle"; hit_journal_day = None; breadcrumb = ""; breadcrumbs = []; is_page = false } in
     send application (Model.ApplySearchResults ("needle", List.init 500 hit));
     flush application;
     let renderer = Lui_app.runtime application in
@@ -8718,7 +8726,7 @@ let search_navigation_preserves_the_result_list () =
   send application Model.OpenSearch;
   send application (Model.ChangeSearchQuery "needle");
   let hit i = { Model.hit_uuid = Printf.sprintf "hit-%03d" i;
-    hit_title = "Needle"; breadcrumb = "Journal"; breadcrumbs = []; is_page = false } in
+    hit_title = "Needle"; hit_journal_day = None; breadcrumb = "Journal"; breadcrumbs = []; is_page = false } in
   send application (Model.ApplySearchResults ("needle", List.init 500 hit));
   flush application;
   let renderer = Lui_app.runtime application in
@@ -8757,7 +8765,7 @@ let search_navigation_preserves_the_result_list () =
     (find "screen.search.results" <> list_id)
 
 let duplicate_search_query_events_preserve_completed_results () =
-  let hit = { Model.hit_uuid = "found"; hit_title = "Found";
+  let hit = { Model.hit_uuid = "found"; hit_title = "Found"; hit_journal_day = None;
     breadcrumb = ""; breadcrumbs = []; is_page = false } in
   let queried = Model.update (Model.initial ()) (Model.ChangeSearchQuery "needle") in
   let loaded = Model.update queried (Model.ApplySearchResults ("needle", [hit])) in
@@ -8933,8 +8941,8 @@ let reference_breadcrumbs_keep_their_navigation_context () =
   List.iter (fun backend ->
     List.iter (fun search ->
       let application = App.create (backend ()) in
-      let source = { Model.uuid = "source"; title = "Source page" } in
-      let parent = { Model.uuid = "parent"; title = "Parent block" } in
+      let source = { Model.uuid = "source"; title = "Source page"; page_journal_day = None} in
+      let parent = { Model.uuid = "parent"; title = "Parent block"; page_journal_day = None} in
       let reference = { (outline_row "reference" "Linked note") with
         Model.page_id = "source";
         Model.row_breadcrumb = "Source page › Parent block";
@@ -8979,8 +8987,8 @@ let reference_breadcrumbs_keep_their_navigation_context () =
 let linked_reference_groups_and_disclosure_reach_native_rows () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
-    let source : Model.sidebar_page = {uuid = "source"; title = "Source"} in
-    let ancestor : Model.sidebar_page = {uuid = "ancestor"; title = "Ancestor"} in
+    let source : Model.sidebar_page = {uuid = "source"; title = "Source"; page_journal_day = None} in
+    let ancestor : Model.sidebar_page = {uuid = "ancestor"; title = "Ancestor"; page_journal_day = None} in
     let base uuid = {(outline_row uuid uuid) with Model.page_id = source.uuid;
       row_breadcrumbs = [source; ancestor]; row_breadcrumb = "Source › Ancestor"} in
     let parent = {(base "parent") with has_children = true} in
@@ -9065,7 +9073,7 @@ let tagged_nodes_keep_the_linked_references_section () =
           let application = App.create (backend ()) in
           let related = if has_tagged_nodes then [outline_row "tagged" "Tagged book"] else [] in
           let linked = [outline_row "reference" "Mentions Book"] in
-          let page = { Model.uuid = "book"; title = "Book" } in
+          let page = { Model.uuid = "book"; title = "Book"; page_journal_day = None} in
           let sidebar = { (empty_sidebar_projection ()) with
             Model.selected_page = Some page;
             selected_page_is_tag = is_tag;
@@ -9105,7 +9113,7 @@ let tag_and_property_pages_hide_blocks_but_keep_objects () =
             let rows = if populated then [{(outline_row "hidden-child" "Page child") with Model.page_id = "book"}] else [] in
             let views = {|{"ownerUuid":"book","featureType":"tagged","views":[{"uuid":"objects-view","type":"list","name":"All","rows":[{"block":{"uuid":"object-result","title":"Object result","pageId":"elsewhere"}}]}]}|} in
             let sidebar = {(empty_sidebar_projection ()) with
-              Model.selected_page = Some {uuid = "book"; title = "Book"};
+              Model.selected_page = Some {uuid = "book"; title = "Book"; page_journal_day = None};
               selected_page_is_tag = kind = "tag"; selected_page_is_property = kind = "property";
               result_views_json = views} in
             let routes = if destination = "main" then [] else
@@ -9221,7 +9229,7 @@ let large_tag_and_reference_sections_virtualize_each_block () =
     let application = App.create (ios_backend ()) in
     let rows = thousand_nested_rows () in
     let sidebar = { (empty_sidebar_projection ()) with
-      Model.selected_page = Some { Model.uuid = "page-a"; title = "Large page" };
+      Model.selected_page = Some { Model.uuid = "page-a"; title = "Large page"; page_journal_day = None};
       selected_page_is_tag = is_tag;
       related_rows = rows } in
     start application;
@@ -9241,7 +9249,7 @@ let ten_thousand_blocks_mount_only_the_requested_window () =
       { (outline_row ("window-" ^ string_of_int index) "Nested block") with
         Model.depth = index mod 4; has_children = index mod 4 < 3;
         page_id = "page-a"; journal_title = Some "Journal"; journal_day = Some 20261019 }) in
-    let page = { Model.uuid = "page-a"; title = "Large page" } in
+    let page = { Model.uuid = "page-a"; title = "Large page"; page_journal_day = None} in
     let sidebar = { (empty_sidebar_projection ()) with
       Model.selected_page = (if destination = "journals" then None else Some page); selected_page_is_tag = destination = "tag";
       related_rows = if (destination = "tag" || destination = "mixed") then rows else [] } in
@@ -9347,7 +9355,7 @@ let distant_outline_contents_are_loaded_without_replacing_the_page () =
     let projection = { (empty_core_projection ()) with
       Model.graph_name = Some "Work"; selected_graph_id = Some "graph";
       sidebar = { (empty_sidebar_projection ()) with
-        selected_page = Some { Model.uuid = "page"; title = "Large page" };
+        selected_page = Some { Model.uuid = "page"; title = "Large page"; page_journal_day = None};
         selected_page_is_tag = is_tag; related_rows = if is_tag then rows else [] };
       outliner_rows = if is_tag then [] else rows } in
     start application;
@@ -9409,7 +9417,7 @@ let returning_to_a_scrolled_page_keeps_hydrated_rows_mounted () =
   let root = { (empty_core_projection ()) with
     Model.graph_name = Some "Work"; selected_graph_id = Some "graph";
     sidebar = { (empty_sidebar_projection ()) with
-      selected_page = Some { Model.uuid = "page"; title = "Long page" };
+      selected_page = Some { Model.uuid = "page"; title = "Long page"; page_journal_day = None};
       related_rows = [outline_row "linked-ref" "Linked reference"] };
     outliner_rows = rows; journal_outliner_rows = shells } in
   start application;
@@ -9452,7 +9460,7 @@ let search_only_patches_preserve_the_open_outline () =
   let current = { (Model.initial ()) with Model.selected_graph_id = Some "graph";
     search_query = "latest"; search_loading = true;
     outliner_rows = [outline_row "kept" "Keep this block"] } in
-  let hit = { Model.hit_uuid = "result"; hit_title = "Result"; breadcrumb = ""; breadcrumbs = []; is_page = true } in
+  let hit = { Model.hit_uuid = "result"; hit_title = "Result"; hit_journal_day = None; breadcrumb = ""; breadcrumbs = []; is_page = true } in
   let projection = { (empty_core_projection ()) with Model.is_search_patch = true;
     selected_graph_id = Some "graph"; projection_search_query = "latest"; search_results = [hit] } in
   let updated = Model.update current (Model.ApplyCoreSnapshot projection) in
@@ -9465,7 +9473,7 @@ let search_only_patches_preserve_the_open_outline () =
 let selected_page_waits_for_blocks_before_showing_empty_state () =
   List.iter (fun cached ->
     let application = App.create (ios_backend ()) in
-    let page = { Model.uuid = "page-a"; title = "Project" } in
+    let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
     let rows = if cached then
       [{ (outline_row "cached" "Cached content") with Model.page_id = "page-a";
          journal_title = Some "Project"; journal_day = Some 20261019 }] else [] in
@@ -9496,7 +9504,7 @@ let selected_page_waits_for_blocks_before_showing_empty_state () =
 let reselecting_the_current_page_preserves_loaded_rows () =
   List.iter (fun is_tag ->
     let application = App.create (ios_backend ()) in
-    let page = { Model.uuid = "page-a"; title = "Project" } in
+    let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
     let rows = thousand_nested_rows () in
     let sidebar = { (empty_sidebar_projection ()) with
       Model.favorites = [ page ]; selected_page = Some page;
@@ -9684,7 +9692,7 @@ let kotlin_rich_rows_own_their_primary_tap () =
     true
 
 let active_page_actions_use_typed_core_and_platform_effects () =
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let asset =
     {
       (outline_row "asset-a" "Photo.jpg") with
@@ -9731,7 +9739,7 @@ let active_page_actions_use_typed_core_and_platform_effects () =
 
 let page_delete_dialog_exposes_stable_material_actions () =
   let application = App.create (kotlin_backend ()) in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let sidebar =
     { (empty_sidebar_projection ()) with Model.selected_page = Some page }
   in
@@ -9759,7 +9767,7 @@ let zoomed_journal_block_has_a_block_delete_action () =
   let block_route = node_projection uuid journal "Journal entry" [] [] in
   let snapshot = { (empty_core_projection ()) with
     selected_graph_id = Some "work"; applied_server_t = Some 42;
-    sidebar = { (empty_sidebar_projection ()) with selected_page = Some { uuid = journal; title = "Journal" } };
+    sidebar = { (empty_sidebar_projection ()) with selected_page = Some { uuid = journal; title = "Journal"; page_journal_day = None} };
     node_routes = [page_route] } in
   start app;
   send app (Model.RequestAppNode journal);
@@ -9807,7 +9815,7 @@ let zoomed_journal_block_has_a_block_delete_action () =
 
 let connection_menu_matches_active_page_actions () =
   let application = App.create (ios_backend ()) in
-  let page = { Model.uuid = "page-a"; title = "Project" } in
+  let page = { Model.uuid = "page-a"; title = "Project"; page_journal_day = None} in
   let sidebar =
     {
       (empty_sidebar_projection ()) with
@@ -9852,8 +9860,8 @@ let page_and_block_overflow_keeps_one_native_icon () =
   start application;
   send application (Model.SelectGraph "Work");
   let renderer = Lui_app.runtime application in
-  let page_a = { Model.uuid = "page-a"; title = "Project A" } in
-  let page_b = { Model.uuid = "page-b"; title = "Project B" } in
+  let page_a = { Model.uuid = "page-a"; title = "Project A"; page_journal_day = None} in
+  let page_b = { Model.uuid = "page-b"; title = "Project B"; page_journal_day = None} in
   let project page routes =
     send application
       (Model.ApplyCoreSnapshot
@@ -9902,7 +9910,7 @@ let native_toolbar_navigation_replay () =
     (fun batch -> batches := Lui_wire.encode_batch batch :: !batches; true) } in
   let application = App.create backend in
   let pages = List.mapi (fun index title ->
-    { Model.uuid = "toolbar-page-" ^ string_of_int index; title })
+    { Model.uuid = "toolbar-page-" ^ string_of_int index; title; page_journal_day = None })
     [ "DB release checklist"; "Logseq public roadmap"; "CLI TODOs for next round";
       "Logseq Pro"; "invalid-data";
       "A very long page title that must never hide either trailing control" ] in
@@ -10211,7 +10219,7 @@ let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;
-    tags = [{ Model.uuid = "tag"; title = "Tag" }] } in
+    tags = [{ Model.uuid = "tag"; title = "Tag"; page_journal_day = None}] } in
   start application;
   send application (apply_core_snapshot None (empty_sidebar_projection ()) [] false "" [] [] None None [] [] [row] false []);
   flush application;
@@ -10247,7 +10255,7 @@ let outliner_rows_render_status_tags_and_sync_failures () =
   let todo =
     Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo"
   in
-  let tag = { Model.uuid = "tag-a"; title = "Project" } in
+  let tag = { Model.uuid = "tag-a"; title = "Project"; page_journal_day = None} in
   let row =
     {
       (outline_row "block-a" "Ship it") with
@@ -10286,7 +10294,7 @@ let existing_outliner_tag_menus_remove_from_the_owning_node () =
     let application = App.create (backend ()) in
     start application;
     let row = { (outline_row "block-a" "Ship it") with
-      Model.tags = [{Model.uuid = "tag-a"; title = "Project"}] } in
+      Model.tags = [{Model.uuid = "tag-a"; title = "Project"; page_journal_day = None}] } in
     send application (apply_core_snapshot None (empty_sidebar_projection ()) [] true "" [] []
       None None [] [] [row] false []);
     flush application;
@@ -11081,8 +11089,8 @@ let native_bridge_preserves_native_navigation_back_counts () =
 
 let journal_list_remains_retained_across_sidebar_destinations () =
   let application = App.create (ios_backend ()) in
-  let first_page = { Model.uuid = "page-a"; title = "First" } in
-  let second_page = { Model.uuid = "page-b"; title = "Second" } in
+  let first_page = { Model.uuid = "page-a"; title = "First"; page_journal_day = None} in
+  let second_page = { Model.uuid = "page-b"; title = "Second"; page_journal_day = None} in
   let sidebar =
     {
       (empty_sidebar_projection ()) with
@@ -11143,7 +11151,7 @@ let journal_list_remains_retained_across_sidebar_destinations () =
     (first_selected_list <> second_selected_list)
 
 let sidebar_selection_follows_visible_destination () =
-  let page = { Model.uuid = "page-a"; title = "Page A" } in
+  let page = { Model.uuid = "page-a"; title = "Page A"; page_journal_day = None} in
   let current =
     { (Model.initial ()) with Model.selected_page = Some page }
   in
@@ -11408,7 +11416,7 @@ let selected_page_survives_node_navigation () =
   let application = App.create (ios_backend ()) in
   let rows = [outline_row "parent" "Parent"; outline_row "child" "Child"] in
   let sidebar = { (empty_sidebar_projection ()) with
-    Model.selected_page = Some { uuid = "page"; title = "Page" } } in
+    Model.selected_page = Some { uuid = "page"; title = "Page"; page_journal_day = None} } in
   let projection = { (empty_core_projection ()) with
     Model.selected_graph_id = Some "graph"; sidebar;
     journal_outliner_rows = rows; outliner_rows = rows } in
@@ -11444,8 +11452,8 @@ let block_node_breadcrumbs_preserve_navigation_context () =
            with
            row_breadcrumbs =
              [
-               { Model.uuid = "journal"; title = "Journal" };
-               { Model.uuid = "parent"; title = "Parent" };
+               { Model.uuid = "journal"; title = "Journal"; page_journal_day = None};
+               { Model.uuid = "parent"; title = "Parent"; page_journal_day = None};
              ];
          }
        in
@@ -11552,9 +11560,9 @@ let ui_session_relaunch_opens_home_and_preserves_capture () =
       Model.selected_graph_id = Some "graph-a";
       recent_graph_ids = ["graph-a"; "graph-b"];
       destination = Model.FlashcardsDestination;
-      selected_page = Some {Model.uuid = "page-a"; title = "Previous page"};
+      selected_page = Some {Model.uuid = "page-a"; title = "Previous page"; page_journal_day = None};
       composer_expanded = true;
-      composer_tags = [{Model.uuid = "person"; title = "Person"}];
+      composer_tags = [{Model.uuid = "person"; title = "Person"; page_journal_day = None}];
       composer_assets = [{Model.uuid = "attachment"; title = "Unsent image";
         local_path = "/tmp/unsent.png"; payload = "{}"}];
       search_open = true;
@@ -11607,7 +11615,7 @@ let ui_session_preserves_independently_restored_composer_draft () =
 let library_does_not_offer_an_empty_outline_editor () =
   let base = { (Model.initial ()) with Model.selected_graph = Some "Work";
     selected_page_ready = true } in
-  let page title = { base with Model.selected_page = Some { uuid = "page"; title } } in
+  let page title = { base with Model.selected_page = Some { uuid = "page"; title; page_journal_day = None } } in
   check ~msg:"normal empty pages still allow a first block"
     (View_base.node_can_add_first_block_ (page "Notes"));
   check ~msg:"Library has no empty outliner prompt"

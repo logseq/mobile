@@ -220,7 +220,8 @@ let reference_section_rows key rows =
       let new_page = !previous_page <> Some row.page_id in
       let page = List.find_opt (fun (page : Model.sidebar_page) -> page.uuid = row.page_id) row.row_breadcrumbs in
       let page = Option.value ~default:{Model.uuid = row.page_id;
-        title = Option.value ~default:(if row.opens_as_page then row.row_title else row.page_id) row.journal_title} page in
+        title = Option.value ~default:(if row.opens_as_page then row.row_title else row.page_id) row.journal_title;
+        page_journal_day = row.journal_day} page in
       let entries = if new_page then begin
           previous_page := Some row.page_id; previous_ancestors := [];
           Reference_page (key, page) :: entries
