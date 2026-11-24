@@ -11,6 +11,9 @@ extension EnvironmentValues {
 @MainActor
 enum LGPropertyExtension {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        #if os(iOS)
+        try LGTaskDateSheetExtension.register(in: registry)
+        #endif
         try registry.register(LUIAppleExtension(
             identifier: "native-table-viewport",
             fingerprint: "lui-extension-v1|21:native-table-viewport|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:identifier:string:required:none|events:16:viewport-changed[5:width:int:required,6:offset:int:required]",

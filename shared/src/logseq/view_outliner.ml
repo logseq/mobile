@@ -27,9 +27,6 @@ let task_dates_dialog model_source send : t =
       let state initial = Signal.state context.ui_scheduler initial in
       let current = Signal.sample model_source in
       let tr = View_base.tr current in
-      let draft = state None in
-      let input = state "" in
-      let input_valid = state true in
       let waiting = own (Signal.map (task_effect_active key) model_source) in
       let feedback = own (Signal.map (fun (current : Model.logseq_model) ->
         List.find_map (fun (id, _, error) -> if key = id then error else None) current.result_view_feedback) model_source) in
@@ -38,20 +35,11 @@ let task_dates_dialog model_source send : t =
         | Some data -> (match journal_task_field "targets" (Yojson.Basic.from_string data) with
           | `List targets -> Some targets | _ -> None)
         | None -> None) model_source) in
-      let midnight = Session_types.now_ms () |> Cache_model.journal_day_for_ms
-        |> Dev_query.Date_time_util.journal_day_to_local_ms |> Int64.to_int in
       let saved_dates = own (Signal.map (Option.fold ~none:[] ~some:(fun targets ->
         List.map (journal_task_field name) targets |> List.sort_uniq compare)) loaded) in
-      let pending = own (Signal.map2 (fun saved edit ->
-        match saved, edit with
-        | [], _ -> None
-        | [value], Some edit when value = edit -> None
-        | _, Some edit -> Some edit
-        | [`Null], None -> Some (`Int midnight)
-        | _ -> None) saved_dates (Signal.value draft)) in
-      let save () =
-        match Signal.sample loaded, Signal.sample pending with
-        | Some targets, Some value when not (Signal.sample waiting) && Signal.sample (Signal.value input_valid) ->
+      let submit value =
+        match Signal.sample loaded with
+        | Some targets when not (Signal.sample waiting) ->
           let current = Signal.sample model_source in
           let collapsed = match editing, current.outliner_edit_scope with
             | Some uuid, Some (scope, target) when target = uuid && scope = View_rows.journal_task_scope uuid ->
@@ -64,6 +52,63 @@ let task_dates_dialog model_source send : t =
             "targets", `List targets; "changes", `Assoc [name, value]]) in
           ignore (send (Model.SubmitNodeProperty (key, payload)))
         | _ -> () in
+      if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then begin
+        let node = Lui_ui.extension context "native-task-date-sheet" in
+        attach context parent node;
+        let invalid = state false in
+        let dates = own (Signal.map2 (fun saved loaded -> saved, Option.is_some loaded) saved_dates loaded) in
+        let error = own (Signal.map2 (fun error invalid ->
+          let error = if invalid then Some (tr "Choose a valid date and time") else Option.map tr error in
+          Option.fold ~none:`Null ~some:(fun error -> `String error) error)
+          feedback (Signal.value invalid)) in
+        let status = own (Signal.map2 (fun waiting error -> waiting, error) waiting error) in
+        let payload = own (Signal.map2 (fun (saved, ready) (waiting, error) ->
+          StringValue (Yojson.Basic.to_string (`Assoc [
+            "title", `String (tr field_label); "clearTitle", `String (tr "Clear" ^ " " ^ tr field_label);
+            "submitTitle", `String (tr "Save"); "mixedTitle", `String (tr "Mixed dates");
+            "value", (match saved with [(`Int _ as value)] -> value | _ -> `Null);
+            "ready", `Bool ready; "waiting", `Bool waiting;
+            "canClear", `Bool (List.exists (fun value -> value <> `Null) saved);
+            "mixed", `Bool (List.length saved > 1);
+            "error", error
+          ]))) dates status) in
+        Lui_ui.extension_property_signal context node "payload" payload;
+        let apply value =
+          if Option.is_some (Signal.sample loaded) && not (Signal.sample waiting) then begin
+            Signal.set invalid false;
+            if Signal.sample saved_dates = [value] then close () else submit value
+          end in
+        Lui_ui.on_event context node (function
+          | ExtensionEvent (_, _, "dismiss", _) -> close ()
+          | ExtensionEvent (_, _, "clear", _) -> apply `Null
+          | ExtensionEvent (_, _, "choose", fields) ->
+            (match String_map.find_opt "value" fields with
+             | Some (StringValue value) -> Option.iter (fun millis -> apply (`Int millis)) (int_of_string_opt value)
+             | _ -> ())
+          | ExtensionEvent (_, _, "submit", fields) ->
+            (match String_map.find_opt "value" fields with
+             | Some (StringValue text) ->
+               (match Natural_date.timestamp text with
+                | Some value -> apply (`Int value)
+                | None -> Signal.set invalid true)
+             | _ -> ())
+          | _ -> ());
+        node
+      end else
+      let draft = state None in
+      let input = state "" in
+      let input_valid = state true in
+      let midnight = Session_types.now_ms () |> Cache_model.journal_day_for_ms
+        |> Dev_query.Date_time_util.journal_day_to_local_ms |> Int64.to_int in
+      let pending = own (Signal.map2 (fun saved edit ->
+        match saved, edit with
+        | [], _ -> None
+        | [value], Some edit when value = edit -> None
+        | _, Some edit -> Some edit
+        | [`Null], None -> Some (`Int midnight)
+        | _ -> None) saved_dates (Signal.value draft)) in
+      let save () =
+        if Signal.sample (Signal.value input_valid) then Option.iter submit (Signal.sample pending) in
       let picker_value = own (Signal.map2 (fun saved edit ->
         match saved, edit with
         | _, Some (`Int value) | [`Int value], None -> string_of_int value

@@ -322,6 +322,14 @@ let property_date_schema () =
       property "identifier" StringScalar true None; property "time-label" StringScalar true None]
     [event "change" [event_field "value" StringScalar true]]
 
+let task_date_sheet_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "native-task-date-sheet" [profile IOS SwiftUIHost]
+    false [] [property "payload" StringScalar true None]
+    [event "clear" []; event "choose" [event_field "value" StringScalar true];
+      event "submit" [event_field "value" StringScalar true]; event "dismiss" []]
+
 let pdf_workspace_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -346,6 +354,7 @@ let extension_registry () =
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (table_viewport_schema ());
   Lui_extension.register_component registry (property_date_schema ());
+  Lui_extension.register_component registry (task_date_sheet_schema ());
   Lui_extension.register_component registry (journal_task_transition_schema ());
   Lui_extension.register_component registry (outliner_bottom_spacer_schema ());
   Lui_extension.register_component registry (journal_task_chevron_schema ());
