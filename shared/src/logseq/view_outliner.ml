@@ -992,13 +992,13 @@ let outliner_row context model_source retained_row_source row_source send : t =
       | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source))
     (render_result_block_in_scope context model_source)
 
-let journal_heading_text parts =
-  [heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive fst parts) [];
-   reactive (function
-     | None -> box []
-     | Some suffix -> text ~value:suffix ~style_class:"subheadline single-line"
-         ~foreground:"muted-foreground" ~accessibility_identifier:"journal.weekday" [])
-     (Signal.map snd parts)]
+let page_heading_text ?accessibility_identifier parts =
+  let suffix = Signal.map snd parts in
+  [heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive fst parts)
+     ?accessibility_identifier [];
+   if_ ~test:(Signal.map Option.is_some suffix)
+     (text ~value:(reactive (Option.value ~default:"") suffix) ~style_class:"subheadline single-line"
+        ~foreground:"muted-foreground" ~accessibility_identifier:"journal.weekday" [])]
 
 let journal_heading model_source row_source parts send children : t =
  custom @@ fun context parent ->
@@ -1056,7 +1056,7 @@ let outliner_entry context model_source retained_row_source row_source
                  row ~gap:8 ~cross:`center (
                  View_base.node_icon_view ~size:28 (Signal.map2 (fun current row ->
                    View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source)
-                 :: journal_heading_text parts);
+                 :: page_heading_text parts);
                  page_title_spacer ();
                ];
            ]);
@@ -1671,7 +1671,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
           (Signal.map2 View_base.journal_heading_label model_source parts)
           (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
             ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
-            [row ~gap:8 ~cross:`center (journal_heading_text parts)])) in
+            [row ~gap:8 ~cross:`center (page_heading_text parts)])) in
         Lui_ui.bool_property mount_context node PressEnabled true;
         register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
         node);
@@ -1865,11 +1865,11 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
                [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
-                   [ row ~gap:8 ~cross:`center [
+                   [ row ~gap:8 ~cross:`center (
                        View_base.node_icon_view ~size:28 (Signal.map (fun current ->
-                         View_base.node_icon current (View_base.active_node_uuid current)) model_source);
-                       heading ~level:`h3 ~style_class:"scroll-section-title" ~value:(reactive View_base.active_node_title model_source)
-                         ~accessibility_identifier:"title.node" [] ] ];
+                         View_base.node_icon current (View_base.active_node_uuid current)) model_source)
+                       :: page_heading_text ~accessibility_identifier:"title.node"
+                         (Signal.map View_base.active_node_title_parts model_source)) ];
                  reactive (fun has_properties -> page_title_spacer ~has_properties ())
                    (Signal.map (fun model -> match View_base.active_node_projection model with
                      | Some route -> View_property.has_properties route.node_properties_json | None -> false) model_source) ]);

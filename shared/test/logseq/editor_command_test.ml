@@ -1111,8 +1111,11 @@ let empty_journal_favorites_localize_outside_history () = R.with_runtime (fun _ 
     App_test.send app (Model.ChooseSettingsLanguage "fr");
     App_test.flush app;
     let host = Lui_app.runtime app in
-    let heading = App_test.descendant_with_identifier host (Lui_app.root_node app) "title.selected-page" in
-    check_eq (App_test.property_string host heading Lui_protocol.TextValue) "21 oct. 2000"))
+    let detail = App_test.descendant_with_identifier host (Lui_app.root_node app) "layout.selected-page.title" in
+    let heading = App_test.descendant_with_identifier host detail "title.selected-page" in
+    let weekday = App_test.descendant_with_identifier host detail "journal.weekday" in
+    check_eq (App_test.property_string host heading Lui_protocol.TextValue) "21 oct. 2000";
+    check_eq (App_test.property_string host weekday Lui_protocol.TextValue) "· sam."))
     [App_test.ios_backend; App_test.kotlin_backend])
 
 let display_titles_resolve_references_without_changing_source () = R.with_runtime (fun session runtime conn ->

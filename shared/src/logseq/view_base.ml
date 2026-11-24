@@ -792,12 +792,14 @@ let active_node_breadcrumbs (current : Model.logseq_model) =
 let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
   active_node_breadcrumbs current <> []
 
-let active_node_title (current : Model.logseq_model) =
+let active_node_title_parts (current : Model.logseq_model) =
   match active_node_projection current with
-  | Some route -> journal_display_title current route.node_journal_day route.node_title
-  | None -> tr current "Untitled"
+  | Some route -> journal_title_parts current route.node_journal_day route.node_title
+  | None -> tr current "Untitled", None
 
-let selected_page_title (current : Model.logseq_model) =
+let active_node_title current = fst (active_node_title_parts current)
+
+let selected_page_title_parts (current : Model.logseq_model) =
   match current.selected_page with
   | Some page ->
     let day = match current.selected_page_journal_day with
@@ -808,8 +810,10 @@ let selected_page_title (current : Model.logseq_model) =
         | Some _ as day -> day
         | None -> List.find_map (fun ((journal : Model.sidebar_page), day) ->
             if journal.uuid = page.uuid then Some day else None) current.empty_journals in
-    journal_display_title current day page.title
-  | None -> ""
+    journal_title_parts current day page.title
+  | None -> "", None
+
+let selected_page_title current = fst (selected_page_title_parts current)
 
 let outliner_scroll_identity (current : Model.logseq_model) =
   let graph = Option.value ~default:"local" current.selected_graph_id in

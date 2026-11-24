@@ -6589,6 +6589,7 @@ let active_node_route_renders_a_core_backed_navigation_screen () =
   check_eq ~msg:"node section titles use main's title2 typography"
     (property_int renderer title Lui_protocol.HeadingLevel)
     3;
+  check_eq (descendant_with_identifier renderer title_layout "journal.weekday") (-1);
   check_eq ~msg:"node section titles add main's inner horizontal inset"
     (property_int renderer title_layout Lui_protocol.PaddingHorizontal)
     16;
@@ -8183,6 +8184,12 @@ let journal_dates_follow_the_app_language () =
     let routes = Model.app_node_routes (App.model app) in
     check_eq (List.map (fun (route : Model.node_projection) -> route.node_journal_day) routes) [Some 20261123];
     apply {projection with node_routes = routes};
+    let detail = descendant_with_identifier renderer (Lui_app.root_node app) "layout.node.title" in
+    let heading = descendant_with_identifier renderer detail "title.node" in
+    let weekday = descendant_with_identifier renderer detail "journal.weekday" in
+    check_eq (property_string renderer heading Lui_protocol.TextValue) title;
+    check_eq (property_string renderer weekday Lui_protocol.TextValue) "· 星期一";
+    check_eq (property_string renderer weekday Lui_protocol.ForegroundValue) "muted-foreground";
     check_eq (View_base.active_node_title (App.model app)) title)
     [ios_backend; kotlin_backend]
 
