@@ -60,6 +60,10 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let youtubeURL: String
     let completed: Bool
     let selected: Bool
+    let selectionMode: Bool?
+    let selectionMember: Bool?
+    let isTask: Bool?
+    let menuLabels: [String: String]?
     let editing: Bool?
     let allowsDrag: Bool?
     let trailingInset: CGFloat?
@@ -114,16 +118,17 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     static let identifier = "outliner-block-row"
-    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry, playback: LGYouTubePlaybackState) throws {
         let uuid = LUIExtensionEventField(name: "uuid", kind: .string, isRequired: true)
         try registry.register(LUIAppleExtension(identifier: identifier, fingerprint: fingerprint,
             acceptsStandardChildren: true,
             properties: [.init(name: "payload", kind: .string, isRequired: true)],
-            events: ["open-node", "remove-tag", "collapse", "long-press", "drag-start"].map {
+            events: ["open-node", "remove-tag", "collapse", "long-press", "drag-start", "toggle-selection"].map {
                 LUIExtensionEvent(name: $0, fields: [uuid])
             } + [.init(name: "edit", fields: [uuid, .init(name: "caret-utf16-offset", kind: .int, isRequired: false)]),
+                 .init(name: "menu-action", fields: [.init(name: "payload", kind: .string, isRequired: true)]),
                  .init(name: "drop", fields: [uuid, .init(name: "placement", kind: .string, isRequired: true)]),
                  .init(name: "set-status", fields: [uuid, .init(name: "count", kind: .int, isRequired: true)]),
                  .init(name: "set-priority", fields: [.init(name: "priority", kind: .string, isRequired: true)])]
@@ -165,12 +170,13 @@ struct OutlinerRowPayload: Decodable, Equatable {
         if !(row.editing ?? !context.childIDs.isEmpty) {
             let selectable = content
                 .contentShape(Rectangle())
-                .highPriorityGesture(LongPressGesture().onEnded { _ in emit("long-press") })
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 10))
+                .contextMenu { blockMenu }
+                .modifier(OutlinerSelectionSwipe { emit("toggle-selection") })
             if row.allowsDrag != false {
                 selectable
                 .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
-                .onDrag { emit("drag-start"); return NSItemProvider(object: row.uuid as NSString) }
                 .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry, depth: row.depth) {
                     emit("drop", extra: ["placement": .string($0.eventValue)])
                     return true
@@ -202,12 +208,87 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
         .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
         .padding(.trailing, row.hasChildren ? 0 : row.trailingInset ?? 0)
+        #if os(iOS)
+        .padding(.trailing, row.selectionMode == true ? 34 : 0)
+        .overlay(alignment: .topTrailing) {
+            if row.selectionMode == true {
+                let isSelected = row.selectionMember ?? row.selected
+                Button { emit("toggle-selection") } label: {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 34, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(menuText(isSelected ? "Unselect" : "Select"))
+                .accessibilityIdentifier("button.outliner.select." + row.uuid)
+            }
+        }
+        #endif
     }
+
+    #if os(iOS)
+    @ViewBuilder private var blockMenu: some View {
+        Button { emit("open-node", uuid: row.embedSourceUuid) } label: {
+            Label { menuText("Open block") } icon: { Image(systemName: "arrow.up.right") }
+        }
+        if row.isTask == true {
+            Section {
+                menuButton("Scheduled", icon: "calendar", action: "scheduled")
+                menuButton("Deadline", icon: "flag", action: "deadline")
+                if !row.statuses.isEmpty {
+                    Menu {
+                        ForEach(Array(row.statuses.enumerated()), id: \.element.id) { index, status in
+                            Button { emit("set-status", extra: ["count": .int(index)]) } label: {
+                                Text(verbatim: status.title)
+                            }
+                        }
+                    } label: { Label { menuText("Status") } icon: { Image(systemName: "checkmark.circle") } }
+                }
+            }
+        }
+        Section {
+            menuButton("Copy", icon: "doc.on.doc", action: "copy")
+            menuButton("Cut", icon: "scissors", action: "cut")
+            menuButton("Copy reference", icon: "r.square", action: "copyReference")
+            menuButton("Copy URL", icon: "link", action: "copyURL")
+        }
+        Menu {
+            menuButton("Move up", icon: "arrow.up", action: "moveUp")
+            menuButton("Move down", icon: "arrow.down", action: "moveDown")
+            menuButton("Outdent", icon: "arrow.left", action: "outdent")
+            menuButton("Indent", icon: "arrow.right", action: "indent")
+        } label: { Label { menuText("Move") } icon: { Image(systemName: "arrow.up.arrow.down") } }
+        Button(role: .destructive) { emitMenuAction("delete") } label: {
+            Label { menuText("Delete") } icon: { Image(systemName: "trash") }
+        }
+    }
+
+    private func menuText(_ key: String) -> Text { Text(verbatim: row.menuLabels?[key] ?? key) }
+
+    private func menuButton(_ title: String, icon: String, action: String) -> some View {
+        Button { emitMenuAction(action) } label: { Label { menuText(title) } icon: { Image(systemName: icon) } }
+    }
+
+    private func emitMenuAction(_ action: String) {
+        emit("menu-action", extra: ["payload": .string(action)])
+    }
+
+    @ViewBuilder private func draggableBullet<Content: View>(_ content: Content) -> some View {
+        if row.allowsDrag != false && row.editing != true && !row.journalBullet {
+            content.onDrag {
+                emit("drag-start")
+                return NSItemProvider(object: row.uuid as NSString)
+            }
+        } else { content }
+    }
+    #endif
 
     private var swiftUIContent: some View {
         HStack(alignment: .top, spacing: 0) {
             Color.clear.frame(width: CGFloat(max(0, row.depth)) * 22, height: 1)
-            Group {
+            let bullet = Group {
                 if row.journalBullet {
                     IconImage(name: row.collapsed && row.hasChildren ? "outliner_bullet_closed" : "outliner_bullet", size: 24).frame(height: 24)
                         .foregroundStyle(bulletForeground)
@@ -229,6 +310,12 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     .accessibilityIdentifier("button.outliner.zoom." + row.uuid + "." + row.title)
                 }
             }
+            #if os(iOS)
+            let rowBullet = draggableBullet(bullet)
+            #else
+            let rowBullet = bullet
+            #endif
+            rowBullet
             .simultaneousGesture(LongPressGesture().onEnded { _ in
                 if row.editing == true { emit("long-press") }
             })
@@ -303,7 +390,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
                         .onTapGesture(coordinateSpace: .local) { point in
                             #if os(iOS)
-                            if !row.opensAsPage && !OutlinerRichMarkupPolicy.containsRich(row.markup) {
+                            if row.selectionMode == true { emit("toggle-selection") }
+                            else if !row.opensAsPage && !OutlinerRichMarkupPolicy.containsRich(row.markup) {
                                 emit("edit", extra: ["caret-utf16-offset": .int(OutlinerTapCaret.offset(
                                     at: point, width: titleWidth, title: row.title, nodes: row.markup))])
                             } else { emit(row.opensAsPage ? "open-node" : "edit") }
@@ -366,9 +454,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
         OutlinerMixedRichMarkupContent(nodes: row.markup, fallback: row.title,
             youtubePlaybackStarts: playback.starts,
             onSeekYouTube: { playback.starts[$0] = $1 },
-            allowsLinkInteraction: { context.isUserInteractionEnabled },
+            allowsLinkInteraction: { context.isUserInteractionEnabled && row.selectionMode != true },
             onOpenMarkupLink: { link in if case let .node(uuid) = link { emit("open-node", uuid: uuid) } },
-            onEdit: { emit(row.opensAsPage ? "open-node" : "edit") })
+            onEdit: { emit(row.selectionMode == true ? "toggle-selection" : row.opensAsPage ? "open-node" : "edit") })
             .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
             .strikethrough(row.completed)
             .foregroundStyle(row.completed ? .secondary : .primary)
@@ -387,7 +475,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     private func emit(_ name: String, uuid: String? = nil, extra: [String: LUIExtensionValue] = [:]) {
         guard context.isUserInteractionEnabled else { return }
         var values = extra
-        if name != "set-priority" { values["uuid"] = .string(uuid ?? row.uuid) }
+        if name != "set-priority" && name != "menu-action" { values["uuid"] = .string(uuid ?? row.uuid) }
         do { try context.emit(name: name, values: values) }
         catch { LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: "Outliner interaction failed: \(error)") }
     }

@@ -79,7 +79,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
 }
 
-@MainActor final class OutlinerTextRowView: UIView {
+@MainActor final class OutlinerTextRowView: UIView, UIDragInteractionDelegate {
     // URL activation is handled here; UILabel's standard link attribute forces system blue.
     private static let linkAttribute = NSAttributedString.Key("LogseqURL")
     private let guides = OutlinerIndentGuideView()
@@ -105,6 +105,9 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.setImage(UIImage(named: "outliner_bullet", in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.tintColor = UIColor.secondaryLabel.withAlphaComponent(0.4)
         bullet.addTarget(self, action: #selector(open), for: .touchUpInside)
+        let drag = UIDragInteraction(delegate: self)
+        drag.isEnabled = true
+        bullet.addInteraction(drag)
         priority.showsMenuAsPrimaryAction = true
         priority.preferredMenuElementOrder = .fixed
         priority.accessibilityIdentifier = "button.block-task-priority"
@@ -336,7 +339,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
 
     func activateTitle(at point: CGPoint) {
-        guard let row, !row.opensAsPage else { edit(); return }
+        guard let row, !row.opensAsPage, row.selectionMode != true else { edit(); return }
         guard let attributed = title.attributedText, attributed.length > 0 else {
             emit?("edit", nil, ["caret-utf16-offset": .int(0)])
             return
@@ -366,9 +369,17 @@ struct OutlinerTextRow: UIViewRepresentable {
         let offset = OutlinerTapCaret.position(at: location, manager: manager, container: container, text: text.string as NSString)
         emit?("edit", nil, ["caret-utf16-offset": .int(OutlinerTapCaret.sourceOffset(offset, title: row.title, nodes: row.markup))])
     }
-    @objc private func edit() { emit?(row?.opensAsPage == true ? "open-node" : "edit", nil, [:]) }
+    @objc private func edit() {
+        let action = row?.selectionMode == true ? "toggle-selection" : (row?.opensAsPage == true ? "open-node" : "edit")
+        emit?(action, nil, [:])
+    }
     @objc private func open() { emit?("open-node", row?.embedSourceUuid, [:]) }
     @objc private func collapse() { emit?("collapse", nil, [:]) }
+    func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: any UIDragSession) -> [UIDragItem] {
+        guard let row, row.allowsDrag != false else { return [] }
+        emit?("drag-start", nil, [:])
+        return [UIDragItem(itemProvider: NSItemProvider(object: row.uuid as NSString))]
+    }
     @objc private func openTag(_ sender: UIButton) {
         guard let row, row.tags.indices.contains(sender.tag) else { return }
         emit?("open-node", row.tags[sender.tag].uuid, [:])

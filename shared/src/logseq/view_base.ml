@@ -202,6 +202,8 @@ let handle_outliner_block_content_event input_event model_source send =
     end
     else if name = "drag-start" then
       send (Model.BeginOutlinerDrag (extension_string values "uuid"))
+    else if name = "toggle-selection" then
+      send (Model.ToggleOutlinerSelection (extension_string values "uuid"))
     else if name = "drop" then
       send
         (Model.DropOutlinerBlocks

@@ -50,6 +50,7 @@ let toolbar_action wire =
   | "newBlock" -> Ok Outliner.New_block
   | "lineBreak" -> Ok Outliner.Line_break
   | "copy" -> Ok Outliner.Copy
+  | "cut" -> Ok Outliner.Cut
   | "delete" -> Ok Outliner.Delete
   | "copyReference" -> Ok Outliner.Copy_reference
   | "copyURL" -> Ok Outliner.Copy_url
@@ -196,6 +197,9 @@ let decode_outliner_event fields =
   | "longPressBlock" ->
     let* uuid = required_string fields "uuid" in
     Ok (Outliner.Long_press_block uuid)
+  | "toggleBlockSelection" ->
+    let* uuid = required_string fields "uuid" in
+    Ok (Outliner.Toggle_block_selection uuid)
   | "pasteContent" ->
     let* target_uuid = required_string fields "uuid" in
     let* before_title = required_string fields "beforeTitle" in
@@ -246,6 +250,14 @@ let decode_outliner_event fields =
     let* wire = required_string fields "action" in
     let* action = toolbar_action wire in
     Ok (Outliner.Toolbar action)
+  | "blockToolbar" ->
+    let* uuid = required_string fields "uuid" in
+    let* raw = required_string fields "action" in
+    let* action = toolbar_action raw in
+    (match action with
+     | Outliner.Copy | Cut | Copy_reference | Copy_url | Indent | Outdent | Move_up | Move_down | Delete ->
+       Ok (Outliner.Block_toolbar (uuid, action))
+     | _ -> Error "unsupported block menu action")
   | "dropBlocks" ->
     let* uuid = required_string fields "targetUuid" in
     let* wire = required_string fields "placement" in

@@ -70,13 +70,14 @@ private const val RICH_FINGERPRINT =
         "required:none,11:markup-json:string:required:none,12:is-completed:bool:" +
         "required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|" +
-        "events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required," +
+        "events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required," +
         "9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[" +
         "4:uuid:string:required]"
 private const val NAVIGATION_FINGERPRINT =
     "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
         "properties:10:back-depth:int:required:none," +
+        "16:selection-active:bool:optional:none," +
         "26:composer-dismissal-enabled:bool:required:none," +
         "28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none," +
         "5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[" +
@@ -173,6 +174,10 @@ fun logseqExtensionRegistry(
                 listOf(LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true)),
             ),
             LuiExtensionEventSchema(
+                "toggle-selection",
+                listOf(LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true)),
+            ),
+            LuiExtensionEventSchema(
                 "drop",
                 listOf(
                     LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true),
@@ -219,6 +224,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("composer-dismissal-enabled", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("back-depth", LuiExtensionValueKind.INTEGER),
+            LuiExtensionProperty("selection-active", LuiExtensionValueKind.BOOLEAN, required = false),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
         ),

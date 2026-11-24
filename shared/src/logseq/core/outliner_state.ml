@@ -52,6 +52,7 @@ type outliner_toolbar =
   | New_block
   | Line_break
   | Copy
+  | Cut
   | Delete
   | Copy_reference
   | Copy_url
@@ -92,6 +93,8 @@ type outliner_message =
   | Tap_block of string
   | Tap_block_at of string * int
   | Long_press_block of string
+  | Toggle_block_selection of string
+  | Block_toolbar of string * outliner_toolbar
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
   | Text_changed of outliner_text
@@ -1516,7 +1519,7 @@ let enter context state editing =
         title = replace_range editing.title index index "\n"; caret = editing.caret + 1}} []
     else split_or_outdent context state editing
 
-let update context (state : outliner_state) message =
+let rec update context (state : outliner_state) message =
   let state =
     {
       state with
@@ -1529,7 +1532,7 @@ let update context (state : outliner_state) message =
   match message with
   | Tap_block uuid | Tap_block_at (uuid, _) ->
     if not (Sset.is_empty state.selected) then
-      step { state with selected = toggle_member state.selected uuid } []
+      step { state with selected = toggle_member state.selected uuid } [ Haptic Selection ]
     else
       (match find_block context uuid with
        | Some block ->
@@ -1560,6 +1563,21 @@ let update context (state : outliner_state) message =
         autocomplete = None;
       }
       (commit_effect ~trim:true context state.editing @ [ Haptic Selection ])
+  | Toggle_block_selection uuid ->
+    (match find_block context uuid with
+     | None -> step state []
+     | Some _ ->
+       step { state with editing = None; selected = toggle_member state.selected uuid; autocomplete = None }
+         (commit_effect ~trim:true context state.editing @ [ Haptic Selection ]))
+  | Block_toolbar (uuid, action) ->
+    (match find_block context uuid with
+     | None -> step state []
+     | Some _ ->
+       let uses_selection = Sset.mem uuid state.selected in
+       let selected = if uses_selection then state.selected else Sset.singleton uuid in
+       let next, commands = update context {state with selected; editing = None; autocomplete = None} (Toolbar action) in
+       let next = if uses_selection then next else {next with selected = state.selected} in
+       step next (commit_effect ~trim:true context state.editing @ commands))
   | Paste_content content ->
     (match state.editing with
      | Some editing when editing.uuid = content.Block_clipboard.target_uuid ->
@@ -1709,10 +1727,13 @@ let update context (state : outliner_state) message =
        step { state with editing = None; autocomplete = None }
          (commit_effect ~trim:false context state.editing @ [ Pick_attachment editing.uuid; Haptic Impact ])
      | None -> step state [])
-  | Toolbar Copy ->
+  | Toolbar (Copy | Cut as action) ->
     let uuids = List.filter_map (fun (block : Model.block) ->
       if Sset.mem block.uuid state.selected then Some block.uuid else None) context.blocks in
-    step {state with selected = Sset.empty} [Copy_blocks uuids; Haptic Impact]
+    if action = Cut && uuids = [] then step state []
+    else
+      let remove = if action = Cut then [Remove_blocks uuids] else [] in
+      step {state with selected = Sset.empty} (Copy_blocks uuids :: remove @ [Haptic Impact])
   | Toolbar Copy_reference ->
     step
       { state with selected = Sset.empty }

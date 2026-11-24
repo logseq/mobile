@@ -318,7 +318,26 @@ let quote_paste_preserves_paragraphs_inside_one_block () =
     check_eq (member "caretUTF16Offset" editing) (`Int caret)))
     ["", 0, 0; "Before 🙂 replace after", 10, 7]
 
+let cut_exports_blocks_before_removing_them () = R.with_runtime (fun session runtime _ ->
+  insert runtime child Q.alpha "a0" "Nested cut block";
+  block_event session "toggleBlockSelection" Q.alpha;
+  let response = event session ["type", `String "toolbar"; "action", `String "cut"] in
+  success response;
+  let result = member "result" response in
+  let clipboard = Q.items "outlinerCommands" result |> List.find_opt (fun command ->
+    member "type" command = `String "setClipboardBlocks") in
+  (match clipboard with
+   | Some command ->
+     let copied = J.from_string (text (member "text" command)) in
+     check ~msg:"the clipboard still includes the removed descendants"
+       (String_kit.index_of ~sub:"Nested cut block" ~start:0 (text (member "plainText" copied)) <> None)
+   | None -> fail "Cut must write the rich block clipboard");
+  let remaining = ids (Graph_runtime.blocks_for_page runtime Q.page) in
+  check ~msg:"Cut removes the source subtree" (not (List.mem Q.alpha remaining || List.mem child remaining));
+  check ~msg:"Cut leaves unselected siblings" (List.mem Q.beta remaining))
+
 let cases = [
+  case "Cut copies a subtree before removing it" cut_exports_blocks_before_removing_them;
   case "Quote paste retains paragraphs and Markdown in one block" quote_paste_preserves_paragraphs_inside_one_block;
   case "pasted code and math never create reference pages" pasted_literal_blocks_do_not_create_reference_pages;
   case "reference-created pages are searchable immediately" created_reference_pages_are_searchable_immediately;

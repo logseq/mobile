@@ -259,7 +259,7 @@ enum LGNavigationExtension {
     static let flashcardsToolbarIdentifier = "native-flashcards-toolbar"
     static let destinationIdentifier = "native-navigation-title"
     static let destinationFingerprint = "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         #if os(iOS)
@@ -366,6 +366,7 @@ enum LGNavigationExtension {
                 properties: [
                     .init(name: "back-depth", kind: .int, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
+                    .init(name: "selection-active", kind: .bool),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                     .init(name: "composer-dismissal-enabled", kind: .bool, isRequired: true),
                     .init(name: "title", kind: .string, isRequired: true),
@@ -1257,7 +1258,19 @@ private struct LGNavigationContent: View {
 
     @ToolbarContentBuilder
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
-        if let item = trailingToolbarItem(searchPage: searchPage) {
+        if case .bool(true) = context.property("selection-active"), let toolbarStartIndex {
+            let done = childContent(at: toolbarStartIndex + 3).frame(width: 44, height: 44)
+                .buttonStyle(.plain)
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: trailingToolbarPlacement) {
+                    done.modifier(LGLiquidGlassSurface(shape: .circle))
+                }
+                .sharedBackgroundVisibility(.hidden)
+                .lgPrefersVerticalAxis()
+            } else {
+                ToolbarItem(placement: trailingToolbarPlacement) { done }
+            }
+        } else if let item = trailingToolbarItem(searchPage: searchPage) {
             ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
                 item.content
                     .overlay {

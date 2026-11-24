@@ -537,6 +537,8 @@ type logseq_action =
   | ToggleOutlinerCollapsed of string
   | ToggleReferenceCollapsed of string * bool
   | LongPressOutlinerBlock of string
+  | ToggleOutlinerSelection of string
+  | PerformOutlinerBlockAction of string * string
   | BeginOutlinerDrag of string
   | DropOutlinerBlocks of string * string
   | ConfirmOutlinerDelete
@@ -624,6 +626,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | SetSelectedOutlinerTaskStatus of string
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
@@ -2398,6 +2401,12 @@ let rec update (current : logseq_model) action =
   | LongPressOutlinerBlock uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (LongPressOutlinerBlockEffect (id, uuid))
+  | ToggleOutlinerSelection uuid ->
+    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc ["type", `String "toggleBlockSelection"; "uuid", `String uuid])))
+  | PerformOutlinerBlockAction (uuid, action) ->
+    enqueue_effect current (EditorOutlinerEventEffect (current.next_effect_id,
+      Yojson.Basic.to_string (`Assoc ["type", `String "blockToolbar"; "uuid", `String uuid; "action", `String action])))
   | BeginOutlinerDrag uuid ->
     if string_vector_contains_ current.outliner_selected_block_ids uuid then
       current
@@ -3051,6 +3060,11 @@ let rec update (current : logseq_model) action =
        enqueue_effect updated
          (SetOutlinerTaskStatusEffect (id, block_id, status))
      | None -> current)
+  | SetSelectedOutlinerTaskStatus status_id ->
+    if outliner_task_selection_ current then
+      List.fold_left (fun current uuid -> update current (SetOutlinerTaskStatus (uuid, status_id)))
+        current current.outliner_selected_block_ids
+    else current
   | SetOutlinerTaskPriority (block_id, priority_id) ->
     let priority = task_status_by_id current.task_priorities priority_id in
     if priority_id <> "" && priority = None then current

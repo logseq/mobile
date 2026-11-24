@@ -652,13 +652,13 @@ let event_patch_plan ?db (message : Outliner.outliner_message) operations =
      | [] ->
        (match message with
         | Outliner.Tap_block _ | Outliner.Tap_block_at _ -> Patch_blocks []
-        | Outliner.Long_press_block _ -> Patch_blocks []
+        | Outliner.Long_press_block _ | Outliner.Toggle_block_selection _ -> Patch_blocks []
         | Outliner.Text_changed _ -> Patch_blocks []
         | Outliner.Caret_moved _ -> Patch_blocks []
         | Outliner.Choose_autocomplete _ -> Patch_blocks []
         | Outliner.Save_editing -> Patch_blocks []
         | Outliner.Cancel_editing -> Patch_blocks []
-        | Outliner.Toolbar _ -> Patch_blocks []
+        | Outliner.Toolbar _ | Outliner.Block_toolbar _ -> Patch_blocks []
         | _ -> Structural_diff)
      | _ -> Structural_diff)
 

@@ -534,6 +534,8 @@ type logseq_action =
   | ToggleOutlinerCollapsed of string
   | ToggleReferenceCollapsed of string * bool
   | LongPressOutlinerBlock of string
+  | ToggleOutlinerSelection of string
+  | PerformOutlinerBlockAction of string * string
   | BeginOutlinerDrag of string
   | DropOutlinerBlocks of string * string
   | ConfirmOutlinerDelete
@@ -621,6 +623,7 @@ type logseq_action =
   | CloseSyncDetails
   | SyncNow
   | SetOutlinerTaskStatus of string * string
+  | SetSelectedOutlinerTaskStatus of string
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings

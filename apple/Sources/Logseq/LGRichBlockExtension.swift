@@ -104,7 +104,7 @@ struct OutlinerRowDropDelegate: DropDelegate {
 @MainActor
 private enum LGRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -127,6 +127,9 @@ private enum LGRichBlockExtension {
                 ],
                 events: [
                     .init(name: "drag-start", fields: [
+                        .init(name: "uuid", kind: .string, isRequired: true),
+                    ]),
+                    .init(name: "toggle-selection", fields: [
                         .init(name: "uuid", kind: .string, isRequired: true),
                     ]),
                     .init(name: "drop", fields: [
@@ -157,6 +160,10 @@ private struct LGRichBlock: View {
     var body: some View {
         #if os(iOS)
         content
+            .modifier(OutlinerSelectionSwipe {
+                guard context.isUserInteractionEnabled else { return }
+                try? context.emit(name: "toggle-selection", values: ["uuid": .string(blockID)])
+            })
             .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: 0) }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 dropGeometry.height = height
