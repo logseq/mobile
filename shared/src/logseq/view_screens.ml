@@ -705,7 +705,8 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
           mount context ?parent (stack [
                (if uses_ios_native_header context then
                   if_ ~test:(Signal.map View_base.graphs_destination_ model_source)
-                    (icon_button ~icon:(`app "add") ~size:`icon ~variant:`ghost ~width:44 ~height:44
+                    (icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44
+                      ~style_class:"system-toolbar-icon"
                       ~label:(View_base.tr (Signal.sample model_source) "Add sync graph")
                       ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) [])
                 else if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)

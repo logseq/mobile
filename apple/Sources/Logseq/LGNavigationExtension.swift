@@ -1328,19 +1328,43 @@ private struct LGNavigationContent: View {
         }
     }
 
+    @ViewBuilder
     private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
+        if !searchPage && hasPrimaryToolbarAction(at: index) {
+            pairedTrailingControls(index: index, glass: glass)
+        } else {
+            let action = Group {
+                if selectionActive {
+                    headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
+                } else if let item = trailingToolbarItem(searchPage: searchPage) {
+                    item.content
+                }
+            }
+            .frame(width: 44, height: 44)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .overlay {
+                if composerDismissalEnabled { composerDismissalTarget.accessibilityHidden(true) }
+            }
+            if glass {
+                action.modifier(LGLiquidGlassSurface(shape: .circle))
+            } else {
+                action
+            }
+        }
+    }
+
+    private func pairedTrailingControls(index: Int, glass: Bool) -> some View {
         let size: CGFloat = 44
-        let vertical = verticalToolbar && !searchPage
-        let actionCount: CGFloat = !searchPage && hasPrimaryToolbarAction(at: index) ? 2 : 1
-        let fullWidth = vertical ? size : size * actionCount
-        let fullHeight = vertical ? size * actionCount : size
-        let alignment: Alignment = vertical ? .top : .trailing
+        let fullWidth = verticalToolbar ? size : size * 2
+        let fullHeight = verticalToolbar ? size * 2 : size
+        let alignment: Alignment = verticalToolbar ? .top : .trailing
         let contents = ZStack(alignment: alignment) {
             if selectionActive {
                 headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
                     .frame(width: size, height: size)
                     .transition(.opacity)
-            } else if let item = trailingToolbarItem(searchPage: searchPage) {
+            } else if let item = trailingToolbarItem(searchPage: false) {
                 item.content
                     .transition(.opacity)
             }
