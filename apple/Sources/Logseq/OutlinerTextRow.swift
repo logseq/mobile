@@ -12,6 +12,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
     let emit: (String, String?, [String: LUIExtensionValue]) -> Void
     let onOpenLink: (URL) -> Void
+    var interactions: OutlinerBlockInteractions.Configuration? = nil
 
     static func supports(_ row: OutlinerRowPayload) -> Bool {
         !row.isAsset && row.pdfAnnotation == nil && row.markup.allSatisfy { node in
@@ -21,6 +22,7 @@ struct OutlinerTextRow: UIViewRepresentable {
 
     func makeUIView(context: Context) -> OutlinerTextRowView { OutlinerTextRowView() }
     func updateUIView(_ view: OutlinerTextRowView, context: Context) {
+        view.updateInteractions(interactions)
         view.update(row, semanticColors: semanticColors,
             linkColor: LogseqThemePolicy.linkColor(isDark: colorScheme == .dark), emit: emit, onOpenLink: onOpenLink)
     }
@@ -79,7 +81,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
 }
 
-@MainActor final class OutlinerTextRowView: UIView, UIDragInteractionDelegate {
+@MainActor final class OutlinerTextRowView: UIView {
     // URL activation is handled here; UILabel's standard link attribute forces system blue.
     private static let linkAttribute = NSAttributedString.Key("LogseqURL")
     private let guides = OutlinerIndentGuideView()
@@ -91,6 +93,7 @@ struct OutlinerTextRow: UIViewRepresentable {
     private let failure = UILabel()
     private var tags: [UIButton] = []
     private var row: OutlinerRowPayload?
+    private var blockInteractions: OutlinerBlockInteractions?
 
     var scrollAnchor: (id: String, title: UIView)? {
         row.map { ($0.scrollAnchorID ?? $0.uuid, title) }
@@ -109,9 +112,6 @@ struct OutlinerTextRow: UIViewRepresentable {
         bullet.setImage(UIImage(named: "outliner_bullet", in: .module, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate), for: .normal)
         bullet.tintColor = UIColor.secondaryLabel.withAlphaComponent(0.4)
         bullet.addTarget(self, action: #selector(open), for: .touchUpInside)
-        let drag = UIDragInteraction(delegate: self)
-        drag.isEnabled = true
-        bullet.addInteraction(drag)
         priority.showsMenuAsPrimaryAction = true
         priority.preferredMenuElementOrder = .fixed
         priority.accessibilityIdentifier = "button.block-task-priority"
@@ -137,6 +137,15 @@ struct OutlinerTextRow: UIViewRepresentable {
         updateFonts()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    func updateInteractions(_ configuration: OutlinerBlockInteractions.Configuration?) {
+        if configuration != nil && blockInteractions == nil {
+            let interactions = OutlinerBlockInteractions()
+            interactions.install(on: self)
+            blockInteractions = interactions
+        }
+        blockInteractions?.configuration = configuration
+    }
 
     private var resolvedLinkColor: UIColor?
 
@@ -379,11 +388,6 @@ struct OutlinerTextRow: UIViewRepresentable {
     }
     @objc private func open() { emit?("open-node", row?.embedSourceUuid, [:]) }
     @objc private func collapse() { emit?("collapse", nil, [:]) }
-    func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: any UIDragSession) -> [UIDragItem] {
-        guard let row, row.allowsDrag != false else { return [] }
-        emit?("drag-start", nil, [:])
-        return [UIDragItem(itemProvider: NSItemProvider(object: row.uuid as NSString))]
-    }
     @objc private func openTag(_ sender: UIButton) {
         guard let row, row.tags.indices.contains(sender.tag) else { return }
         emit?("open-node", row.tags[sender.tag].uuid, [:])
