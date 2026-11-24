@@ -232,7 +232,7 @@ internal class LogseqRuntime(
                 )
                 val drain = NativeEffectDrain(
                     runtime = object : NativeEffectRuntime {
-                        override suspend fun takeEffect() = onCore { bridge.takeEffect() }
+                        override suspend fun takeEffect() = onCore { deliverDispatchPatch(bridge.takeEffect()) }
                         // Patches decode on the core thread and reach the main thread
                         // before the drain resumes, so the returned string is empty.
                         override suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String) =
@@ -329,6 +329,16 @@ internal class LogseqRuntime(
     /** Apply a host update on the core thread and queue its patch for the main thread. */
     private suspend fun hostUpdate(kind: String, payload: String) =
         onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)) }
+
+    // Core thread: hand a dequeued effect's patch to deliverPatch in this same core
+    // task, so later events cannot overtake it. The drain sees an empty patch.
+    private fun deliverDispatchPatch(encoded: String): String {
+        val envelope = runCatching { JSONObject(encoded) }.getOrNull() ?: return encoded
+        val patch = envelope.optString("patch")
+        if (patch.isEmpty()) return encoded
+        deliverPatch(patch)
+        return envelope.put("patch", "").toString()
+    }
 
     // Core thread: decode here, then apply on the main thread in production order.
     private fun deliverPatch(patch: String) {
