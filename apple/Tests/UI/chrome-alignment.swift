@@ -52,12 +52,14 @@ import SwiftUI
         try await Task.sleep(for: .milliseconds(1500))
         let settings = try frame("button.sidebar.settings")
         let sidebar = try frame("sidebar.navigation")
-        let journals = try frame("link.sidebar.journals")
+        let journalsID = try id("link.sidebar.journals")
+        guard let contentID = backend.model(id: journalsID)?.children.first,
+              let journals = frames[contentID] else { throw failure("Missing Journals label frame") }
         let toolbar = try frame("button.sidebar")
         let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
         print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) safeBottom=\(safeBottom)")
-        if journals.minY <= toolbar.maxY {
-            errors.append("Journals must start below the navigation header")
+        if journals.midY <= toolbar.midY || journals.midY > toolbar.maxY + 4 {
+            errors.append("Journals must sit just below the header controls")
         }
         if abs(sidebar.maxX - settings.maxX - 16) > 1 || abs(safeBottom - settings.maxY) > 1
             || settings.width < 44 || settings.height < 44 {
@@ -67,7 +69,7 @@ import SwiftUI
         try await Task.sleep(for: .milliseconds(300))
         _ = try id("sheet.settings")
         guard errors.isEmpty else { throw failure(errors.joined(separator: "; ")) }
-        print("PASS: native composer controls are aligned and the sidebar footer opens Settings")
+        print("PASS: native composer controls are aligned and the sidebar button opens Settings")
     }
 
     static func failure(_ message: String) -> NSError {

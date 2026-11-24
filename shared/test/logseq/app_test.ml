@@ -3187,7 +3187,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (List.hd (children renderer sidebar_content)) journals;
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
-    4;
+    2;
   check_eq
     ~msg:"the main surface owns dismissal instead of rendering a close row"
     dismiss (-1);
@@ -3209,29 +3209,34 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"sidebar destinations use native navigation rows"
     (property_string renderer journals Lui_protocol.RoleValue)
     "navigation";
-  List.iter (fun (row, icon) ->
+  List.iter (fun (row, icon, icon_size) ->
     check_eq ~msg:"sidebar destinations have a spacious touch target"
-      (property_int renderer row Lui_protocol.MinHeight) 52;
+      (property_int renderer row Lui_protocol.MinHeight) 48;
     check_eq ~msg:"sidebar destinations keep their navigation icon"
       (descendant_count_with_property_string renderer row Lui_protocol.IconName icon) 1;
-    check_eq ~msg:"sidebar destinations use the title font"
-      (descendant_count_with_property_string renderer row Lui_protocol.StyleClass "title semibold single-line") 1;
+    check_eq ~msg:"sidebar glyphs use their intended optical size"
+      (property_int renderer (descendant_with_node_kind renderer row Lui_protocol.Icon) Lui_protocol.WidthValue) icon_size;
+    let label = descendant_with_node_kind renderer row Lui_protocol.Text in
+    check_eq ~msg:"sidebar destinations use the iOS system font"
+      (property_string renderer label Lui_protocol.FontFamily) "system-ui";
+    check_eq ~msg:"sidebar destinations use medium font weight"
+      (property_int renderer label Lui_protocol.FontWeight) 500;
     check ~msg:"sidebar destinations have no selected background"
       (not (property_bool renderer row Lui_protocol.Selected)))
-    [journals, "app:calendar"; flashcards, "app:flashcards"; graphs, "app:folder"];
+    [journals, "app:calendar", 22; flashcards, "app:flashcards", 28; graphs, "app:folder", 22];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
     "app:document";
-  check_eq ~msg:"sidebar section names use the headline font"
-    (property_string renderer favorites_heading_label Lui_protocol.StyleClass)
-    "headline";
+  check_eq ~msg:"sidebar section names use the iOS system font"
+    (property_string renderer favorites_heading_label Lui_protocol.FontFamily)
+    "system-ui";
   check_eq ~msg:"sidebar section headings have clear space above them"
     (property_int renderer favorites_heading_top Lui_protocol.HeightValue)
-    22;
+    18;
   check_eq ~msg:"sidebar section headings have a small gap below them"
     (property_int renderer favorites_heading_bottom Lui_protocol.HeightValue)
-    8;
+    6;
   dispatch application (Lui_protocol.Press favorite_link);
   flush application;
   check ~msg:"page selection closes the controlled drawer"

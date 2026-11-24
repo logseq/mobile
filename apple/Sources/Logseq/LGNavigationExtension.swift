@@ -400,8 +400,8 @@ private struct LGSidebarNavigation: View {
         let scroll = ScrollView {
             child(at: 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Start below the navigation bar while allowing rows to scroll into the top edge.
-                .padding(.top, topInset + 44)
+                // Let the rows scroll into the status area while starting just below it.
+                .padding(.top, topInset)
                 .padding(.bottom, bottomInset + 48)
         }
         .scrollIndicators(.hidden)

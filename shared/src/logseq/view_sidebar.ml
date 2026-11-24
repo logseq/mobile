@@ -17,7 +17,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
     View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
       (list_item ~corner_radius:10
         ?height:(if Lui_ui.host context = KotlinHost then Some 48 else None)
-        ?min_height:(if ios then Some 48 else None)
+        ?min_height:(if ios then Some 44 else None)
         ?padding_vertical:(if Lui_ui.host context = KotlinHost then Some 0 else None)
         ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
         ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
@@ -27,7 +27,8 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
         ~on_press:navigate
         (if custom then [row ~gap:10 ~cross:`center [
           View_base.node_icon_view ~muted:true ~size:20 icon_source;
-          text ~value:(reactive View_base.sidebar_page_title page_source) []]] else [])) in
+          text ?font_family:(if ios then Some "system-ui" else None)
+            ~value:(reactive View_base.sidebar_page_title page_source) []]] else [])) in
   column ~gap:0 [
     if_ ~test:(Signal.map (fun icon -> icon <> "") icon_source) (item true);
     if_ ~test:(Signal.map (fun icon -> icon = "") icon_source) (item false)]
@@ -131,21 +132,24 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          [ sidebar_graph_switch_content model_source ])
   else native_graph_switch ~grow:1.0 model_source send
 
-let sidebar_destination_row context model_source send ~title ~id ~icon ~selected ~action : t =
+let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~id ~icon ~selected ~action : t =
   let value = View_base.tr (Signal.sample model_source) title in
   let ios = uses_native_sidebar context in
   View_base.with_label (if ios then value else title)
     (list_item ~corner_radius:10
       ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
-      ?min_height:(if ios then Some 52 else None)
+      ?min_height:(if ios then Some 48 else None)
       ?icon:(if ios then None else Some icon)
       ?selected_signal:(if ios then None else Some (Signal.map selected model_source))
       ?text:(if ios then None else Some value)
       ~accessibility_identifier:("link.sidebar." ^ id)
       ~on_press:(press send action)
       (if ios then [row ~gap:12 ~cross:`center [
-        Lui_elements.icon ~name:icon ~width:22 ~height:22 ~foreground:"foreground" [];
-        text ~value ~style_class:"title semibold single-line" [];
+        row ~width:28 ~height:28 ~main:`center ~cross:`center [
+          Lui_elements.icon ~name:icon ~width:icon_size ~height:icon_size ~foreground:"foreground" [];
+        ];
+        text ~value ~font_family:"system-ui" ~font_size:"21" ~font_weight:500
+          ~style_class:"single-line" [];
       ]] else []))
 
 let sidebar_journals_row context model_source send =
@@ -153,7 +157,8 @@ let sidebar_journals_row context model_source send =
     ~icon:(`app "calendar") ~selected:View_base.journals_sidebar_selected_ ~action:Model.ShowJournals
 
 let sidebar_flashcards_row context model_source send =
-  sidebar_destination_row context model_source send ~title:"Flashcards" ~id:"flashcards"
+  (* The stacked-card artwork has more inset than the other navigation glyphs. *)
+  sidebar_destination_row ~icon_size:28 context model_source send ~title:"Flashcards" ~id:"flashcards"
     ~icon:(`app "flashcards") ~selected:View_base.flashcards_sidebar_selected_ ~action:Model.ShowFlashcards
 
 let sidebar_graphs_row context model_source send =
@@ -165,6 +170,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
   let settings =
     View_base.with_liquid_glass "circle"
       (icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+        ?foreground:(if native_sidebar then Some "foreground" else None)
         ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
         ~accessibility_identifier:"button.sidebar.settings"
         ~on_press:(press send Model.OpenSettings) []) in
@@ -191,24 +197,24 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
   let section_heading title icon =
     if native_sidebar then
       column ~gap:0 [
-        box ~height:22 [];
+        box ~height:18 [];
         row ~padding_horizontal:12 [
           text ~value:(View_base.tr (Signal.sample model_source) title)
-            ~style_class:"headline" [];
+            ~font_family:"system-ui" ~font_weight:500 [];
         ];
-        box ~height:8 [];
+        box ~height:6 [];
       ]
     else sidebar_section_heading model_source title icon in
   let empty_section title =
     if native_sidebar then
-      row ~padding_horizontal:12 [text ~style_class:"subheadline"
+      row ~padding_horizontal:12 [text ~font_family:"system-ui" ~font_size:"15"
         ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) title) []]
     else sidebar_empty_section_label model_source title in
   let pages =
-    column ~gap:4
+    column ~gap:(if native_sidebar then 2 else 4)
       [
         column ~accessibility_identifier:"section.sidebar.favorites"
-          ~gap:2
+          ~gap:(if native_sidebar then 1 else 2)
           [
             section_heading "Favorites" (`app "star");
             if_
@@ -223,7 +229,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                    send);
           ];
         column ~accessibility_identifier:"section.sidebar.recent"
-          ~gap:2
+          ~gap:(if native_sidebar then 1 else 2)
           [
             section_heading "Recent" (`app "history");
             if_
@@ -244,7 +250,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
-      ~grow:1.0 ~gap:4 ~padding:(if native_sidebar then 16 else 12)
+      ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)
       ((if native_sidebar then [] else header) @ [
       sidebar_journals_row context model_source send;
       if_
