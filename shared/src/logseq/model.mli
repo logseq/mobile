@@ -4,6 +4,8 @@ type sync_state =
   | SyncedState
   | FailedState of string
 
+val sync_error_is_offline : string -> bool
+
 type navigation_route =
   | NodeRoute of string
 

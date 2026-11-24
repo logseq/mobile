@@ -806,7 +806,16 @@ let capture_and_offline_transport_show_pending_sync () =
   check_eq (View_base.sync_indicator_label waiting) "Not connected";
   check_eq (View_base.sync_pending_label waiting) "Waiting to save";
   let rejected = { waiting with pending_sync_error = Some "Server rejected the change\n\nnetwork_unavailable" } in
-  check_eq (View_base.sync_indicator_label rejected) "Sync failed"
+  check_eq (View_base.sync_indicator_label rejected) "Sync failed";
+  let app = App.create (ios_backend ()) in
+  start app;
+  send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    pending_sync_error = waiting.pending_sync_error });
+  check_eq ~msg:"temporary offline sync does not raise a diagnostic alert" (reported_errors (App.model app)) [];
+  send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    pending_sync_error = rejected.pending_sync_error });
+  check_eq ~msg:"a rejected change still raises a diagnostic alert"
+    (reported_errors (App.model app)) (Option.to_list rejected.pending_sync_error)
 
 let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter

@@ -224,19 +224,11 @@ let graph_label (current : Model.logseq_model) =
   | Some graph_name -> graph_name
   | None -> tr current "No graph selected"
 
-let displayed_sync_state (current : Model.logseq_model) =
-  match current.pending_sync_error with
-  | None -> current.sync_state
-  | Some detail ->
-    (* The pending pump can combine an asset error and a transport error.
-       A failed server response still takes precedence over a lost connection. *)
-    let reasons = String.split_on_char '\n' detail |> List.map String.trim
-      |> List.filter (fun line -> line <> "") in
-    if reasons <> [] && List.for_all (fun line ->
-         line = "network_unavailable" || String.ends_with ~suffix:": network_unavailable" line)
-         reasons
-    then OfflineState
-    else FailedState detail
+let displayed_sync_state (current : Model.logseq_model) : Model.sync_state =
+  match current.pending_sync_error, current.sync_state with
+  | Some detail, _ | None, FailedState detail ->
+    if Model.sync_error_is_offline detail then OfflineState else FailedState detail
+  | None, state -> state
 
 let sync_work_pending (current : Model.logseq_model) =
   let is_capture = function
@@ -1459,7 +1451,7 @@ let sync_error_message (current : Model.logseq_model) =
     match current.sync_state with
     | FailedState reason -> reason
     | _ -> "" in
-  if message = "network_unavailable" then tr current "Offline" else message
+  if Model.sync_error_is_offline message then tr current "Offline" else message
 
 let selected_page_content_title_visible_ (current : Model.logseq_model) =
   selected_page_present_ current

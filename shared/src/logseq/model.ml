@@ -4,6 +4,15 @@ type sync_state =
   | SyncedState
   | FailedState of string
 
+let sync_error_is_offline detail =
+  (* The pending pump can combine transport and asset errors. A server
+     rejection still takes precedence over a lost connection. *)
+  let reasons = String.split_on_char '\n' detail |> List.map String.trim
+    |> List.filter (fun line -> line <> "") in
+  reasons <> [] && List.for_all (fun line ->
+    line = "network_unavailable" || String.ends_with ~suffix:": network_unavailable" line)
+    reasons
+
 type navigation_route =
   | NodeRoute of string
 
