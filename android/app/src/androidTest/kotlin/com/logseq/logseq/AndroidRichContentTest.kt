@@ -267,6 +267,51 @@ class AndroidRichContentTest {
         }
     }
 
+    @Test fun linkOnlyBlockMenuOffersEditInTheOutliner() {
+        render("""[{"type":"link","url":"https://logseq.com","children":[{"type":"text","text":"Website"}]}]""",
+            rowActions = JSONObject())
+        ui.onNodeWithText("Website").performTouchInput { longClick() }
+        ui.onNodeWithText("Edit").assertIsDisplayed().performClick()
+        ui.runOnIdle {
+            assertEquals(listOf("edit"), events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+        }
+    }
+
+    @Test fun shortTapStillOpensALinkOnlyBlockTarget() {
+        render("""[{"type":"nodeReference","uuid":"page-target","title":"Destination"}]""", rowActions = JSONObject())
+        val link = layout("[[Destination]]").getBoundingBox(3)
+        ui.onNodeWithText("[[Destination]]").performTouchInput { click(link.center) }
+        ui.runOnIdle {
+            assertEquals(listOf("open-node" to "page-target"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
+        }
+    }
+
+    @Test fun calculatorSurfaceSwipesFromItsResult() {
+        val registry = logseqExtensionRegistry()
+        val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
+        val identifier = "outliner-calculator-swipe"
+        val ops = JSONArray()
+            .put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
+            .put(JSONObject().put("op", "create-extension").put("id", 2)
+                .put("identifier", identifier).put("fingerprint", registry.registration(identifier)!!.fingerprint))
+            .put(property("block-id", "calculator-block"))
+            .put(property("enabled", true))
+            .put(JSONObject().put("op", "create-node").put("id", 3).put("kind", "text"))
+            .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 2).put("index", 0))
+            .put(JSONObject().put("op", "insert-child").put("parent", 2).put("child", 3).put("index", 0))
+            .put(JSONObject().put("op", "set-prop").put("id", 3).put("property", "text").put("value", "Result 42"))
+        assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString()))
+        ui.setContent { MaterialTheme { backend.Content(1) } }
+        ui.onNodeWithText("Result 42").performTouchInput {
+            swipe(Offset(width * 0.7f, centerY), Offset(-120f, centerY), durationMillis = 300)
+        }
+        ui.runOnIdle {
+            assertEquals(listOf("toggle-selection" to "calculator-block"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
+        }
+    }
+
     private fun assertLinkTheme(dark: Boolean, color: Color) {
         render("""[{"type":"nodeReference","uuid":"page-target","title":"Destination"},
             {"type":"text","text":" "},{"type":"link","url":"https://logseq.com","children":[{"type":"text","text":"Website"}]}]""",

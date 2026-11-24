@@ -291,6 +291,11 @@ let asset_file_name file_name asset_type =
   if Filename.extension file_name <> "" || extension = "" then file_name
   else file_name ^ "." ^ extension
 
+let is_image_asset_type asset_type =
+  String.starts_with ~prefix:"image/" (String.lowercase_ascii (String.trim asset_type))
+  || List.mem (normalize_asset_type asset_type)
+       ["jpg"; "jpeg"; "png"; "gif"; "heic"; "heif"; "webp"; "avif"; "bmp"; "wbmp"]
+
 let content_type_for_asset_type asset_type =
   match normalize_asset_type asset_type with
   | "jpg" | "jpeg" -> "image/jpeg"

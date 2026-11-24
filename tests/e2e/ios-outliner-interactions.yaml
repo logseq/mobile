@@ -148,13 +148,16 @@ appId: com.logseq.logseq
     start: 50%, 25%
     end: 50%, 35%
     duration: 1000
-- longPressOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+- swipe:
+    from:
+      text: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+    direction: LEFT
 - extendedWaitUntil:
     visible:
       id: "toolbar.outliner.selection"
     timeout: 10000
-- assertVisible:
-    id: "button.outliner.selection.copy"
-- assertVisible:
-    id: "button.outliner.selection.delete"
+- tapOn:
+    id: "button.outliner.selection.more"
+- assertVisible: "Copy"
+- assertVisible: "Delete"
 - stopApp

@@ -54,20 +54,21 @@ class AndroidOutlinerToolbarTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun snapshot(editing: Boolean, caret: Int = title.length): String {
+    private fun snapshot(editing: Boolean, caret: Int = title.length, taskSelected: Boolean = false): String {
         val state = if (editing) JSONObject().put("editing", JSONObject().put("uuid", "toolbar-block")
             .put("title", title).put("caretUTF16Offset", caret))
         else JSONObject().put("selectedBlockIds", org.json.JSONArray().put("toolbar-block"))
+        if (taskSelected) state.put("selectedTaskBlockIds", org.json.JSONArray().put("toolbar-block"))
         return JSONObject().put("ok", true).put("result", JSONObject()
             .put("graphName", "Toolbar test").put("selectedGraphId", "toolbar-test")
             .put("isGraphUnlocked", true).put("outlinerState", state)
             .put("outlinerRows", org.json.JSONArray().put(JSONObject().put("depth", 0)
                 .put("hasChildren", false).put("block", JSONObject().put("uuid", "toolbar-block")
-                    .put("title", title).put("pageId", "toolbar-journal")
+                    .put("title", title).put("isTask", taskSelected).put("pageId", "toolbar-journal")
                     .put("journalTitle", "Oct 22nd, 2026").put("journalDay", 20261022))))).toString()
     }
 
-    private fun toolbar(editing: Boolean = true) {
+    private fun toolbar(editing: Boolean = true, taskSelected: Boolean = false) {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = {
             events.add(it)
@@ -77,7 +78,7 @@ class AndroidOutlinerToolbarTest {
         native = LogseqNativeBridge(onPatch = { filter.applyJson(it) })
         bridge = native
         val root = native.initialize(authenticationCode = 3)
-        filter.applyJson(native.applySnapshot(snapshot(editing)))
+        filter.applyJson(native.applySnapshot(snapshot(editing, taskSelected = taskSelected)))
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
@@ -136,14 +137,25 @@ class AndroidOutlinerToolbarTest {
     }
 
     @Test fun selectionMenuAndHeaderDoneStayReachable() {
-        toolbar(editing = false)
+        toolbar(editing = false, taskSelected = true)
         val done = ui.onNodeWithTag("button.outliner.selection.done").assertIsDisplayed()
         ui.onNodeWithTag("button.outliner.selection.status").assertIsDisplayed()
         for (direction in listOf("outdent", "indent", "moveUp", "moveDown")) {
             ui.onNodeWithTag("button.outliner.selection.$direction").assertIsDisplayed()
         }
         ui.onNodeWithTag("button.outliner.select.toolbar-block").assertDoesNotExist()
-        ui.onNodeWithTag("button.outliner.selection.more").performClick()
+        val more = ui.onNodeWithTag("button.outliner.selection.more").assertIsDisplayed()
+        val moreBounds = more.fetchSemanticsNode().boundsInRoot
+        ui.onNodeWithTag("toolbar.outliner.selection").performTouchInput {
+            swipeLeft(startX = width * 0.8f, endX = width * 0.15f, durationMillis = 400)
+        }
+        ui.onNodeWithTag("button.outliner.selection.copy").assertIsDisplayed()
+        ui.onNodeWithTag("button.outliner.selection.tag").assertIsDisplayed()
+        ui.onNodeWithTag("button.outliner.selection.scheduled").assertIsDisplayed()
+        ui.onNodeWithTag("button.outliner.selection.deadline").assertIsDisplayed()
+        assertEquals(moreBounds.left, more.fetchSemanticsNode().boundsInRoot.left)
+        more.assertIsDisplayed()
+        more.performClick()
         ui.onNodeWithText("Copy URL").assertIsDisplayed().performClick()
         ui.runOnIdle {
             assertEquals(listOf("copyURL"), pendingToolbarActions())

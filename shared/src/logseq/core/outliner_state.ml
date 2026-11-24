@@ -1732,14 +1732,16 @@ let rec update context (state : outliner_state) message =
     let blocks = List.filter (fun (block : Model.block) ->
       Sset.mem block.uuid state.selected) context.blocks in
     let uuids = List.map (fun (block : Model.block) -> block.uuid) blocks in
-    if action = Cut && uuids = [] then step state []
+    if action = Cut && List.length uuids <> Sset.cardinal state.selected then
+      step state [Editor_error "Inline property values cannot be cut as blocks"]
+    else if action = Cut && uuids = [] then step state []
     else
       let images =
         if action = Cut then []
         else List.filter_map (fun (block : Model.block) ->
-          let kind = Api.normalize_asset_type (Option.value ~default:"" block.asset_type) in
-          if block.is_asset && String.starts_with ~prefix:"image/" (Api.content_type_for_asset_type kind)
-          then Some (block.uuid, kind) else None) blocks in
+          let kind = Option.value ~default:"" block.asset_type in
+          if block.is_asset && Api.is_image_asset_type kind
+          then Some (block.uuid, Api.normalize_asset_type kind) else None) blocks in
       let copy =
         if images <> [] && List.length images = List.length blocks then Copy_images images
         else Copy_blocks uuids in

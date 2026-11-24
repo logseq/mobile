@@ -94,60 +94,71 @@ appId: com.logseq.logseq
 - tapOn: "Hide keyboard"
 - assertVisible:
     id: "button.composer.expand"
-- longPressOn: "Android E2E continuous first"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
+- swipe:
+    from:
+      text: "Android E2E continuous first"
+    direction: LEFT
+    duration: 400
 - tapOn: "Android E2E continuous [Ss]econd"
 - assertVisible:
     id: "toolbar.outliner.selection"
 - assertVisible:
-    id: "button.outliner.selection.copy"
+    id: "button.outliner.selection.done"
 - assertVisible:
     id: "button.outliner.selection.outdent"
 - assertVisible:
     id: "button.outliner.selection.indent"
 - assertVisible:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.moveUp"
 - assertVisible:
-    id: "button.outliner.selection.copyReference"
+    id: "button.outliner.selection.moveDown"
 - takeScreenshot: tests/e2e/screenshots/android-selection-leading
 - swipe:
-    start: 70%, 92%
-    end: 15%, 92%
-    duration: 800
+    from:
+      id: "toolbar.outliner.selection"
+    direction: LEFT
 - assertVisible:
-    id: "button.outliner.selection.copyURL"
+    id: "button.outliner.selection.copy"
 - assertVisible:
-    id: "button.outliner.selection.unselect"
+    id: "button.outliner.selection.tag"
+- assertVisible:
+    id: "button.outliner.selection.more"
 - takeScreenshot: tests/e2e/screenshots/android-selection-trailing
-- swipe:
-    start: 15%, 92%
-    end: 70%, 92%
-    duration: 800
 - tapOn:
-    id: "button.outliner.selection.indent"
-- assertVisible:
+    id: "button.outliner.selection.more"
+- assertVisible: "Copy reference"
+- assertVisible: "Copy URL"
+- back
+- tapOn:
+    id: "button.outliner.selection.done"
+- assertNotVisible:
     id: "toolbar.outliner.selection"
-- tapOn:
-    id: "button.outliner.selection.outdent"
-- assertVisible:
-    id: "toolbar.outliner.selection"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
 - swipe:
-    start: 15%, 92%
-    end: 70%, 92%
-    duration: 800
-- assertVisible:
-    id: "button.outliner.selection.delete"
+    from:
+      text: "Android E2E continuous first"
+    direction: LEFT
+- tapOn: "Android E2E continuous [Ss]econd"
 - tapOn:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.more"
+- tapOn: "Delete"
 - assertVisible: "Delete blocks?"
 - tapOn: "Cancel"
 - assertNotVisible:
     id: "toolbar.outliner.selection"
 - assertVisible: "Android E2E continuous first"
-- longPressOn: "Android E2E continuous second"
+- swipe:
+    from:
+      text: "Android E2E continuous [Ss]econd"
+    direction: LEFT
 - assertVisible:
     id: "toolbar.outliner.selection"
 - tapOn:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.more"
+- tapOn: "Delete"
 - assertVisible: "Delete block?"
 - tapOn:
     id: "button.outliner-delete.confirm"

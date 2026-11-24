@@ -153,6 +153,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lgPropertyValue) private var propertyValue
     @Environment(\.lgOpenPDFAnnotation) private var openPDFAnnotation
 
     private var bulletForeground: Color {
@@ -250,7 +251,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
         Section {
             menuButton("Copy", icon: "doc.on.doc", action: "copy")
-            menuButton("Cut", icon: "scissors", action: "cut")
+            if !propertyValue { menuButton("Cut", icon: "scissors", action: "cut") }
             menuButton("Copy reference", icon: "r.square", action: "copyReference")
             menuButton("Copy URL", icon: "link", action: "copyURL")
         }
@@ -390,9 +391,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .font(row.markup.contains { $0.type == .codeBlock } ? .caption : .body)
                 } else if row.isAsset {
                     LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath,
-                        allowsInteraction: { context.isUserInteractionEnabled && row.selectionMode != true })
-                        .gesture(TapGesture().onEnded { emit("toggle-selection") },
-                                 including: row.selectionMode == true ? .all : .subviews)
+                        allowsInteraction: { context.isUserInteractionEnabled },
+                        selectBlock: row.selectionMode == true ? { emit("toggle-selection") } : nil,
+                        selectionLabel: row.selectionMode == true ? row.editAccessibilityLabel : nil)
                 } else {
                     title
                         .accessibilityIdentifier("outliner.block-action." + row.uuid)

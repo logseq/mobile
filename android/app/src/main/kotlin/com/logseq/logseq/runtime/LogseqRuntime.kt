@@ -84,6 +84,10 @@ internal class LogseqRuntime(
             resolveAssetPath = platformServices::resolveAssetPath,
             onOpenImage = ::openImageGallery,
             loadImage = { uuid, type -> graphAssetLoader.load(uuid, type) },
+            importPastedImage = { uri ->
+                val asset = checkNotNull(assetImporter.importShared(uri)) { "The image could not be imported" }
+                AndroidImportedAsset.fromMap(asset).payload()
+            },
         ),
         icons = logseqIconResolver,
     )

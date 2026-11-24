@@ -1,5 +1,7 @@
 package com.logseq.logseq
 
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.View
@@ -24,6 +26,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 
 class AndroidEditorKeyboardTest {
     @get:Rule val ui = createAndroidComposeRule<ComponentActivity>()
@@ -39,8 +42,9 @@ class AndroidEditorKeyboardTest {
         }
     }
 
-    private fun render(title: String, inputPolicy: String = "{}"): SemanticsNodeInteraction {
-        val registry = logseqExtensionRegistry { it }
+    private fun render(title: String, inputPolicy: String = "{}",
+        importPastedImage: (suspend (Uri) -> JSONObject)? = null): SemanticsNodeInteraction {
+        val registry = logseqExtensionRegistry(importPastedImage = importPastedImage)
         backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray().put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
             .put(JSONObject().put("op", "create-extension").put("id", 2).put("identifier", "outliner-editor")
@@ -53,6 +57,38 @@ class AndroidEditorKeyboardTest {
         assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 1).put("ops", ops).toString()))
         ui.setContent { MaterialExpressiveTheme { backend.Content(1) } }
         return ui.onNodeWithTag("field.outliner.block.keyboard-block").assertIsFocused()
+    }
+
+    @Test fun pasteFromImageClipboardHandsTheEditorAnAsset() {
+        val file = File.createTempFile("image-paste", ".png", ui.activity.cacheDir)
+        val image = Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+        file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        image.recycle()
+        try {
+            val editor = render("") { uri ->
+                val bytes = ui.activity.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                assertArrayEquals(file.readBytes(), bytes)
+                JSONObject().put("localPath", file.path).put("assetType", "png")
+            }
+            ui.runOnIdle {
+                val platform = AndroidPlatformServices(ui.activity)
+                platform.copyImages(listOf(file.path), replacing = platform.clipboardTimestamp())
+            }
+            editor.performKeyInput {
+                keyDown(Key.CtrlLeft)
+                pressKey(Key.V)
+                keyUp(Key.CtrlLeft)
+            }
+            ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "paste-content" } }
+            ui.runOnIdle {
+                val event = events.filterIsInstance<LuiEvent.Extension>().single { it.name == "paste-content" }
+                val payload = JSONObject(event.values["value"] as String)
+                assertEquals("", payload.getString("beforeTitle"))
+                assertEquals("png", payload.getJSONArray("assets").getJSONObject(0).getString("assetType"))
+            }
+        } finally {
+            file.delete()
+        }
     }
 
     private fun acknowledge(block: String, title: String, caret: Int) {

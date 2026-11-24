@@ -87,12 +87,16 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "toolbar.outliner.editor"
 - tapOn: "Hide keyboard"
-- longPressOn: "E2E continuous first"
-- tapOn: "E2E continuous second"
+- swipe:
+    from:
+      text: "(Edit block )?E2E continuous first"
+    direction: LEFT
+- tapOn: "(Select block )?E2E continuous second"
 - assertVisible:
     id: "toolbar.outliner.selection"
 - tapOn:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.more"
+- tapOn: "Delete"
 - assertVisible: "Delete blocks?"
 - tapOn: "Delete"
 - assertNotVisible: "E2E continuous first"

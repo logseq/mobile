@@ -21,8 +21,8 @@ appId: com.logseq.logseq
       visible: "E2E parent __LOGSEQ_E2E_RUN_ID__"
     commands:
       - longPressOn: "E2E parent __LOGSEQ_E2E_RUN_ID__"
-      - tapOn:
-          id: "button.outliner.selection.delete"
+      - tapOn: "Delete"
+      - assertVisible: "Delete block?"
       - tapOn: "Delete"
 - tapOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - pressKey: ENTER
@@ -56,7 +56,10 @@ appId: com.logseq.logseq
 - assertVisible: "E2E parent __LOGSEQ_E2E_RUN_ID__"
 - assertNotVisible:
     id: "toolbar.outliner.editor"
-- longPressOn: "E2E child __LOGSEQ_E2E_RUN_ID__"
+- swipe:
+    from:
+      text: "(Edit block )?E2E child __LOGSEQ_E2E_RUN_ID__"
+    direction: LEFT
 - assertVisible:
     id: "toolbar.outliner.selection"
 - swipe:

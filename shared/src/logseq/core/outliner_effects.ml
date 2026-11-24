@@ -326,9 +326,17 @@ let command base_t now fresh_uuid context cmd =
        Ok (result [] [Set_clipboard_blocks payload])
      | _ -> Error "Select a graph before copying blocks")
   | State.Copy_images images ->
-    (match context.State.graph_id with
-     | Some graph -> Ok (result [] [Set_clipboard_images (graph, images)])
-     | None -> Error "Select a graph before copying images")
+    (match context.State.db, context.State.graph_id with
+     | Some db, Some graph ->
+       let uuids = List.map fst images in
+       let has_children uuid =
+         Option.exists (fun eid -> Pending_projection.children db eid <> [])
+           (Datascript.entid db "block/uuid" (Datascript.Uuid uuid)) in
+       if List.exists has_children uuids then
+         let* payload = Block_clipboard.copy db ~graph uuids in
+         Ok (result [] [Set_clipboard_blocks payload])
+       else Ok (result [] [Set_clipboard_images (graph, images)])
+     | _ -> Error "Select a graph before copying images")
   | State.Paste_blocks content ->
     (match context.State.db, context.graph_id with
      | Some db, Some graph ->
@@ -352,15 +360,18 @@ let command base_t now fresh_uuid context cmd =
      | None -> Ok (result [] [Set_clipboard_urls uuids]))
 
 let interpret base_t now fresh_uuid context commands =
-  let rec loop index operations platform =
-    if index = List.length commands then Ok (result operations platform)
-    else
-      match
-        command base_t now fresh_uuid context (List.nth commands index)
-      with
-      | Ok next ->
-        loop (index + 1) (operations @ next.operations)
-          (platform @ next.platform)
-      | Error _ as error -> error
+  let ( let* ) = Result.bind in
+  let rec loop operations platform = function
+    | [] -> Ok (result (List.rev operations) (List.rev platform))
+    | cmd :: rest ->
+      let* command_context = match cmd, context.State.db, operations with
+        | State.Copy_blocks _, Some db, _ :: _ ->
+          let intents = List.rev_map (fun (operation : Ops.pending_operation) -> operation.intent) operations in
+          let* tx = Pending_projection.compile db (Ops.Atomic intents) in
+          Ok {context with State.db = Some (Datascript.db_with tx db)}
+        | _ -> Ok context in
+      let* next = command base_t now fresh_uuid command_context cmd in
+      loop (List.rev_append next.operations operations)
+        (List.rev_append next.platform platform) rest
   in
-  loop 0 [] []
+  loop [] [] commands
