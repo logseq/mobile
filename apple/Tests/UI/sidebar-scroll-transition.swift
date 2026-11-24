@@ -37,8 +37,12 @@ import SwiftUI
     @MainActor static func main() async throws {
         let pages: [[String: Any]] = (0..<40).map { ["uuid": "favorite-\($0)", "title": "Favorite page \($0)"] }
         let recent: [[String: Any]] = (0..<40).map { ["uuid": "recent-\($0)", "title": "Recent page \($0)"] }
+        let journalRows: [[String: Any]] = (0..<70).map { index in
+            ["depth": 0, "block": ["uuid": "sidebar-row-\(index)", "title": "Journal row \(index)",
+                                  "pageId": "today", "journalTitle": "Nov 24th, 2026", "journalDay": 20261124]]
+        }
         let result: [String: Any] = ["graphName": "Sidebar regression", "selectedGraphId": "sidebar",
-            "favorites": pages, "recentPages": recent]
+            "favorites": pages, "recentPages": recent, "outlinerRows": journalRows]
         let snapshot = String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         try runtime.applyCoreResponse(snapshot)
@@ -66,6 +70,13 @@ import SwiftUI
         guard let drawer = backend.rootIDs.flatMap(descendants).first(where: { backend.model(id: $0)?.kind == .drawer }) else {
             throw failure("Missing drawer")
         }
+        let overlay = views(window).flatMap { $0.gestureRecognizers ?? [] }.contains { $0.name == "logseq.sidebar" }
+        let journal = views(window).compactMap { $0 as? UIScrollView }.first {
+            $0.contentSize.height > $0.bounds.height + 300 && $0.bounds.width > window.bounds.width / 2
+        }
+        journal?.setContentOffset(CGPoint(x: 0, y: 120), animated: false)
+        let journalFrame = journal.map { $0.convert($0.bounds, to: window) }
+        let journalOffset = journal?.contentOffset
         try backend.performPress(node: find("button.sidebar")!)
         try await Task.sleep(for: .milliseconds(500))
         guard let scroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
@@ -80,6 +91,15 @@ import SwiftUI
         }
         guard abs(scroll.convert(scroll.bounds, to: window).maxY - panel.maxY) < 1 else {
             throw failure("The sidebar scroll viewport must extend behind Settings to the bottom of the panel")
+        }
+        if overlay {
+            guard let journal, journal.convert(journal.bounds, to: window) == journalFrame,
+                  journal.contentOffset == journalOffset else { throw failure("Opening the overlay moved the journal") }
+            let bottom = max(window.safeAreaInsets.bottom, LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - 22)
+            guard abs(window.bounds.maxX - settings.maxX - window.safeAreaInsets.right - 16) < 1,
+                  abs(window.bounds.maxY - settings.maxY - bottom) < 1 else {
+                throw failure("Settings must be at the bottom-right of the window")
+            }
         }
         for offset: CGFloat in [0, 400, 2200, bottom] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)

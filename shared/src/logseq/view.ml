@@ -225,6 +225,16 @@ let native_sidebar_schema () =
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
     true [] [] []
 
+let sidebar_overlay_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "sidebar-overlay" [profile AndroidOS KotlinHost; profile IOS SwiftUIHost] true []
+    [property "open" BoolScalar true None; property "enabled" BoolScalar true None;
+     property "width" IntScalar true None; property "main-id" IntScalar true None;
+     property "panel-id" IntScalar true None; property "settings-id" IntScalar true None;
+     property "dismiss-label" StringScalar true None]
+    [event "open" []; event "close" []]
+
 let native_top_notification_schema () =
   let open Lui_protocol in
   Lui_extension.component "native-top-notification" [profile IOS SwiftUIHost]
@@ -383,6 +393,7 @@ let extension_registry () =
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
        true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (sidebar_overlay_schema ());
   Lui_extension.register_component registry (native_top_notification_schema ());
   Lui_extension.register_tweak registry
     (native_navigation_title_schema ());

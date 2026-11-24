@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -12,14 +13,18 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -163,6 +168,32 @@ class AndroidReviewLayoutTest {
             assertTrue("Adjacent $prefix rows stay compact", second.top - first.top <= 50.dp)
             assertTrue("Page rows retain a 48 dp height", first.bottom - first.top >= 48.dp)
         }
+    }
+
+    @Test fun sidebarOverlaysTheStationaryPageAndClosesFromTheBackdrop() {
+        app()
+        val toolbar = ui.onNodeWithTag("header.main", useUnmergedTree = true)
+        val initial = toolbar.getUnclippedBoundsInRoot()
+        ui.onRoot().performTouchInput {
+            swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
+        }
+        ui.onNodeWithTag("link.sidebar.journals").assertIsDisplayed()
+        assertEquals(initial, toolbar.getUnclippedBoundsInRoot())
+        ui.onRoot().performTouchInput { click(Offset(width * 0.94f, height * 0.60f)) }
+        ui.runOnIdle {
+            assertEquals(listOf("open", "close"), events.filterIsInstance<LuiEvent.Extension>()
+                .filter { it.identifier == "sidebar-overlay" }.map { it.name })
+        }
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performTouchInput { click(center) }
+        ui.onNodeWithTag("link.sidebar.journals").assertIsDisplayed()
+        assertEquals(initial, toolbar.getUnclippedBoundsInRoot())
+        val shell = ui.onNodeWithTag("application.shell").getUnclippedBoundsInRoot()
+        val settings = ui.onNodeWithTag("button.sidebar.settings").assertIsDisplayed()
+        val gear = settings.getUnclippedBoundsInRoot()
+        assertTrue("Settings is in the bottom-right corner", shell.right - gear.right <= 24.dp &&
+            shell.bottom - gear.bottom <= 24.dp)
+        settings.performTouchInput { click(center) }
+        ui.onNodeWithTag("screen.settings").assertIsDisplayed()
     }
 
     @Test fun graphActionsAreVisibleOnFirstOpen() {

@@ -178,19 +178,20 @@ let sidebar_graphs_row context model_source send =
   sidebar_destination_row context model_source send ~title:"Graphs" ~id:"graphs"
     ~icon:(`app "folder") ~selected:View_base.graphs_sidebar_selected_ ~action:Model.ShowGraphs
 
-let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
+let sidebar_settings context model_source send : t =
+  View_base.with_liquid_glass "circle"
+    (icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
+      ?foreground:(if uses_native_sidebar context then Some "foreground" else None)
+      ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
+      ~accessibility_identifier:"button.sidebar.settings"
+      ~on_press:(press send Model.OpenSettings) [])
+
+let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
   let native_sidebar = uses_native_sidebar context in
-  let settings =
-    View_base.with_liquid_glass "circle"
-      (icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
-        ?foreground:(if native_sidebar then Some "foreground" else None)
-        ~width:44 ~height:44 ~label:(View_base.tr (Signal.sample model_source) "Settings")
-        ~accessibility_identifier:"button.sidebar.settings"
-        ~on_press:(press send Model.OpenSettings) []) in
   let header =
     [box ~height:(if Lui_ui.host context = KotlinHost then 8 else 48) [];
       row ~cross:`center ~gap:4
-        [
+        ([
           stack ~grow:1.0
             [
               sidebar_graph_switch context model_source send;
@@ -204,8 +205,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                    ~on_dismiss:(press send Model.DismissGraphMenu)
                    (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)));
             ];
-          settings;
-        ];
+        ] @ Option.to_list settings);
       box ~height:12 []] in
   let section_heading title icon =
     if native_sidebar then
@@ -279,6 +279,6 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
       [custom (fun context parent ->
           let node = Lui_ui.extension context "native-sidebar" in
           attach context parent node;
-          mount_children context node [content; settings];
+          mount_children context node (content :: Option.to_list settings);
           node)]
   else content

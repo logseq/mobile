@@ -1179,9 +1179,45 @@ let application_main_content (context : Lui_ui.ui_context) model_source
   overlay ~alignment:`top ~accessibility_identifier:"capture.confirmation.overlay"
     [content; confirmation]
 
+let application_sidebar model_source send ~width main : t =
+  let selected = Signal.map View_base.drawer_selected_ model_source in
+  let disabled = Signal.map View_base.drawer_disabled_ model_source in
+  let navigate open_ = ignore (send (if open_ then Model.OpenSidebar else Model.CloseSidebar)) in
+  let shell main panel =
+    drawer ~selected_signal:selected ~disabled_signal:disabled ~width
+      ~label:(View_base.tr (Signal.sample model_source) "Navigation")
+      ~accessibility_identifier:"application.shell" ~on_toggle:navigate main panel in
+  custom (fun context parent ->
+    let ios = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+    let android = Lui_ui.platform context = AndroidOS && Lui_ui.host context = KotlinHost in
+    let settings = View_sidebar.sidebar_settings context model_source send in
+    let panel settings = View_sidebar.sidebar_view context model_source send ~settings in
+    if not (ios || android) then
+      mount context ?parent (shell main (panel (Some settings)))
+    else
+      let node = Lui_ui.extension context "sidebar-overlay" in
+      attach context parent node;
+      Lui_ui.extension_property_signal context node "open" (Signal.map (fun open_ -> BoolValue open_) selected);
+      Lui_ui.extension_property_signal context node "enabled" (Signal.map (fun disabled -> BoolValue (not disabled)) disabled);
+      Lui_ui.extension_property context node "width" (IntValue width);
+      Lui_ui.extension_property_signal context node "dismiss-label"
+        (Signal.map (fun current -> StringValue (View_base.tr current "Close sidebar")) model_source);
+      let child key body = custom (fun context parent ->
+        let id = mount context ?parent body in
+        Lui_ui.extension_property context node key (IntValue id);
+        id) in
+      Lui_ui.on_event context node (function
+        | ExtensionEvent (_, _, "open", _) -> navigate true
+        | ExtensionEvent (_, _, "close", _) -> navigate false
+        | _ -> ());
+      let settings = child "settings-id" settings in
+      let panel = panel (if android then None else Some settings) in
+      ignore (mount context ~parent:node (shell (child "main-id" main) (child "panel-id" panel)));
+      if android then ignore (mount context ~parent:node settings);
+      node)
+
 let application_drawer_view (context : Lui_ui.ui_context) model_source send : t =
   let drawer_main = application_main_content context model_source send in
-  let drawer_panel = View_sidebar.sidebar_view context model_source send in
   if Lui_ui.platform context = AndroidOS then
     if Lui_ui.host context = KotlinHost then
       stack ~grow:1.0
@@ -1193,20 +1229,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
             (authentication_screen context model_source send);
           if_
             ~test:(reactive View_base.application_shell_visible_ model_source)
-            (drawer
-               ~selected_signal:
-                 (Signal.map View_base.drawer_selected_ model_source)
-               ~disabled_signal:
-                 (Signal.map View_base.drawer_disabled_ model_source)
-               ~width:320 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
-               ~accessibility_identifier:"application.shell"
-               ~on_toggle:(fun open_ ->
-                   ignore
-                     (send
-                        (if open_ then Model.OpenSidebar
-                         else Model.CloseSidebar))
-                 )
-               drawer_main drawer_panel);
+            (application_sidebar model_source send ~width:320 drawer_main);
         ]
     else
       stack ~grow:1.0 ~container_relative_frame:`both
@@ -1218,20 +1241,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
             (authentication_screen context model_source send);
           if_
             ~test:(reactive View_base.application_shell_visible_ model_source)
-            (drawer
-               ~selected_signal:
-                 (Signal.map View_base.drawer_selected_ model_source)
-               ~disabled_signal:
-                 (Signal.map View_base.drawer_disabled_ model_source)
-               ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
-               ~accessibility_identifier:"application.shell"
-               ~on_toggle:(fun open_ ->
-                   ignore
-                     (send
-                        (if open_ then Model.OpenSidebar
-                         else Model.CloseSidebar))
-                 )
-               drawer_main drawer_panel);
+            (application_sidebar model_source send ~width:360 drawer_main);
         ]
   else
     let ios_drawer = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
@@ -1243,26 +1253,12 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
           | _ -> []) dark_theme in
         themed ~tokens_signal:tokens drawer_main
       else drawer_main in
-    let shell =
-      drawer
-        ~selected_signal:
-          (Signal.map View_base.drawer_selected_ model_source)
-        ~disabled_signal:
-          (Signal.map View_base.drawer_disabled_ model_source)
-        ~width:360 ~label:(View_base.tr (Signal.sample model_source) "Navigation")
-        ~accessibility_identifier:"application.shell"
-        ~on_toggle:(fun open_ ->
-            ignore
-              (send
-                 (if open_ then Model.OpenSidebar else Model.CloseSidebar))
-          )
-        drawer_main drawer_panel in
+    let shell = application_sidebar model_source send ~width:360 drawer_main in
     if ios_drawer then
-      (* The drawer fades the moving page toward its own background token. *)
       let tokens = Signal.map (function
         | "black" -> [ "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#2C2C2C" } ]
         | _ -> []) dark_theme in
-      themed ~tokens_signal:tokens shell
+      themed ~tokens_signal:tokens (box ~grow:1.0 [shell])
     else shell
 
 let application_view (context : Lui_ui.ui_context) model_source send : t =

@@ -29,7 +29,11 @@ val sidebar_graphs_row :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val sidebar_view :
+val sidebar_settings :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
+val sidebar_view :
+  Lui_ui.ui_context ->
+  Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> settings:Lui_elements.t option -> Lui_elements.t
