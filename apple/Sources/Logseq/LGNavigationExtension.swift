@@ -687,13 +687,17 @@ private final class LGNativeSearchState {
     }
 
     var presentationBinding: Binding<Bool> {
+        presentationBinding(onDismiss: finishDismissal)
+    }
+
+    func presentationBinding(onDismiss: @escaping () -> Void) -> Binding<Bool> {
         Binding(get: { self.nativePresented }, set: { value in
             if value { self.open() }
             else {
                 self.nativePresented = false
                 if self.depth == 0 {
                     self.close()
-                    self.finishDismissal()
+                    onDismiss()
                 }
             }
         })
@@ -740,6 +744,9 @@ private struct LGSearchPresentation: View {
 
 private struct LGNativeSearchHost: ViewModifier {
     let search: LGNativeSearchState?
+    #if os(iOS)
+    let transitions: LGNavigationTransitions
+    #endif
     @Environment(\.lgVerticalToolbar) private var verticalToolbar
 
     @ViewBuilder
@@ -758,18 +765,22 @@ private struct LGNativeSearchHost: ViewModifier {
                         .scrollEdgeEffectStyle(.soft, for: .top)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
-                    Group {
-                        // The drawer is always visible while attached, so attach it only during search.
-                        if search.nativePresented {
-                            content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
-                                placement: .navigationBarDrawer(displayMode: .always), prompt: Text(search.title))
-                        } else {
-                            content
+                    content
+                        .background {
+                            if search.nativePresented {
+                                Color.clear.searchable(
+                                    text: search.queryBinding,
+                                    isPresented: search.presentationBinding {
+                                        transitions.afterSearchDismissal(search.finishDismissal)
+                                    },
+                                    placement: .navigationBarDrawer(displayMode: .always),
+                                    prompt: Text(search.title)
+                                )
+                            }
                         }
-                    }
-                    .onChange(of: search.nativePresented) { _, presented in
-                        LogseqCrashReporting.uiState(nativeSearchActive: presented)
-                    }
+                        .onChange(of: search.nativePresented) { _, presented in
+                            LogseqCrashReporting.uiState(nativeSearchActive: presented)
+                        }
                 }
                 #else
                 content.searchable(text: search.queryBinding, isPresented: search.presentationBinding,
@@ -829,6 +840,13 @@ private struct LGNavigationContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
+    private func nativeSearchHost(_ search: LGNativeSearchState?) -> LGNativeSearchHost {
+        #if os(iOS)
+        LGNativeSearchHost(search: search, transitions: transitions)
+        #else
+        LGNativeSearchHost(search: search)
+        #endif
+    }
     private var searchVisible: Bool { search?.isVisible == true }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
@@ -1037,7 +1055,7 @@ private struct LGNavigationContent: View {
                         .toolbar {
                             trailingToolbar(searchPage: searchRoutes.contains(childID))
                         }
-                        .modifier(LGNativeSearchHost(search: searchRoutes.contains(childID) ? nil : search))
+                        .modifier(nativeSearchHost(searchRoutes.contains(childID) ? nil : search))
                         #if os(iOS)
                         .toolbar(.visible, for: .navigationBar)
                         #endif
@@ -1088,7 +1106,7 @@ private struct LGNavigationContent: View {
                         }
                     }
                 }
-                .modifier(LGNativeSearchHost(search: search))
+                .modifier(nativeSearchHost(search))
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(toolbarStartIndex == nil ? .hidden : .visible, for: .navigationBar)
@@ -1610,6 +1628,17 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
 @MainActor
 private final class LGNavigationTransitions {
     weak var controller: UINavigationController?
+
+    func afterSearchDismissal(_ completion: @escaping @MainActor () -> Void) {
+        let search = controller?.topViewController?.navigationItem.searchController
+        Task { @MainActor in
+            if let coordinator = search?.transitionCoordinator,
+               coordinator.animate(alongsideTransition: nil, completion: { _ in completion() }) {
+                return
+            }
+            completion()
+        }
+    }
 
     func afterPop(_ completion: @escaping @MainActor () -> Void) {
         guard let coordinator = controller?.transitionCoordinator else {

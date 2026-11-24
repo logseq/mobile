@@ -114,6 +114,9 @@ import SwiftUI
         try await wait("Search must accept native input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }
+        guard journal.window === window, journal.isDescendant(of: mainNavigation.view) else {
+            throw failure("Activating search must retain the journal content")
+        }
         guard let nativeSearch = mainNavigation.topViewController?.navigationItem.searchController else {
             throw failure("Search must belong to the main navigation controller")
         }
