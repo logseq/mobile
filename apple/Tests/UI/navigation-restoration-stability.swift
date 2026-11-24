@@ -100,9 +100,21 @@ import UIKit
                 func navigation() -> UINavigationController? {
                     window.rootViewController.flatMap { controllers($0).compactMap { $0 as? UINavigationController }.first }
                 }
+                func rendersFirstRow(of page: String, in navigation: UINavigationController?) -> Bool {
+                    guard let content = navigation?.topViewController?.viewIfLoaded else { return false }
+                    return views(content).contains { view in
+                        guard let label = view as? UILabel,
+                              label.accessibilityIdentifier == "outliner.block-action." + page + "-child-0",
+                              let text = label.attributedText?.string ?? label.text, !text.isEmpty,
+                              label.window === window, !label.isHidden else { return false }
+                        return window.bounds.intersects(label.convert(label.bounds, to: window))
+                    }
+                }
                 await runtime.drainEffectsForTesting()
                 try await wait("Session restore must open the journal root without replaying old routes") {
-                    navigation()?.viewControllers.count == 1 && find("outliner.block.journal-child-0") != nil && routes.isEmpty
+                    let controller = navigation()
+                    return controller?.viewControllers.count == 1 &&
+                        rendersFirstRow(of: "journal", in: controller) && routes.isEmpty
                 }
                 let retainedNavigation = navigation()!
                 if search {
@@ -124,7 +136,8 @@ import UIKit
                 } else {
                     try openNode(from: "journal-child-0", uuid: "First")
                     try await wait("The first page must hydrate before opening its child") {
-                        retainedNavigation.viewControllers.count == 2 && find("outliner.block.First-child-0") != nil
+                        retainedNavigation.viewControllers.count == 2 &&
+                            rendersFirstRow(of: "First", in: retainedNavigation)
                     }
                     try openNode(from: "First-child-0", uuid: "Second")
                 }
@@ -134,10 +147,10 @@ import UIKit
                     try await wait("The live route must reach native depth and contain real rows") {
                         retainedNavigation.viewControllers.count == expectedDepth &&
                             retainedNavigation.transitionCoordinator == nil &&
-                            find("outliner.block." + target + "-child-0") != nil
+                            rendersFirstRow(of: target, in: retainedNavigation)
                     }
                 } catch {
-                    print("LIVE_ROUTE search=\(search) routes=\(routes) depth=\(retainedNavigation.viewControllers.count) target=\(find("outliner.block." + target + "-child-0") != nil) lastError=\(runtime.lastError ?? "none")")
+                    print("LIVE_ROUTE search=\(search) routes=\(routes) depth=\(retainedNavigation.viewControllers.count) target=\(rendersFirstRow(of: target, in: retainedNavigation)) lastError=\(runtime.lastError ?? "none")")
                     throw error
                 }
                 let retained = retainedNavigation.topViewController!
@@ -149,6 +162,9 @@ import UIKit
                         throw NSError(domain: "NavigationRestoration", code: 2,
                                       userInfo: [NSLocalizedDescriptionKey: "Hydrating a live route replaces its native controller"])
                     }
+                }
+                try await wait("The retained native page must still render its rows after hydration") {
+                    rendersFirstRow(of: target, in: retainedNavigation)
                 }
                 _ = retainedNavigation.popToRootViewController(animated: true)
                 try await wait("Native back must acknowledge every live route") {
