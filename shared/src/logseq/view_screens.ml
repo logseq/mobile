@@ -528,14 +528,14 @@ let ios_journal_header context current =
   uses_ios_native_header context && View_base.journal_home_visible_ current
 
 let main_header_primary_action (context : Lui_ui.ui_context) model_source send : t =
-  stack
-    [
+  stack [
+    if uses_ios_native_header context then
       if_ ~test:(Signal.map (ios_journal_header context) model_source)
-        (journal_calendar_control model_source send);
+        (journal_calendar_control model_source send)
+    else
       if_
         ~test:
-          (Signal.map (fun current -> View_base.connection_control_visible_ current
-            && not (ios_journal_header context current)) model_source)
+          (Signal.map View_base.connection_control_visible_ model_source)
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
            (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
@@ -548,8 +548,8 @@ let main_header_primary_action (context : Lui_ui.ui_context) model_source send :
                 (Signal.map View_base.sync_accessibility_identifier
                    model_source)
               ~on_press:(fun _ -> open_sync_status model_source send ())
-              []));
-    ]
+              []))
+  ]
 
 let active_overflow_menu model_source send : t =
  custom @@ fun context parent ->
@@ -703,11 +703,14 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
           (Signal.map View_base.connection_control_visible_ model_source)
         (custom @@ fun context parent ->
           mount context ?parent (stack [
-               if_ ~test:(Signal.map (fun current -> View_base.connection_settings_visible_ current
-                 && not (ios_journal_header context current)) model_source)
-                 (journal_calendar_control model_source send);
-               if_ ~test:(Signal.map (ios_journal_header context) model_source)
-                 (journal_overflow_menu model_source send);
+               (if uses_ios_native_header context then
+                  if_ ~test:(Signal.map View_base.graphs_destination_ model_source)
+                    (icon_button ~icon:(`app "add") ~size:`icon ~variant:`ghost ~width:44 ~height:44
+                      ~label:(View_base.tr (Signal.sample model_source) "Add sync graph")
+                      ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) [])
+                else if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
+                  (journal_calendar_control model_source send));
+               if_ ~test:(Signal.map (ios_journal_header context) model_source) (journal_overflow_menu model_source send);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
     ] in

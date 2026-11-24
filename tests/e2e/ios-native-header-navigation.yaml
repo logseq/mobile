@@ -31,6 +31,8 @@ appId: com.logseq.logseq
     text: "Aug 24th, 2026"
 - assertVisible:
     id: "BackButton"
+- assertNotVisible:
+    id: 'sync\.(connected|disconnected|failed)'
 - takeScreenshot: "ios-native-header-node"
 - tapOn:
     id: "BackButton"

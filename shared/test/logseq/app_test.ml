@@ -4315,7 +4315,8 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
   let refresh =
     child_with_identifier renderer screen "button.graphs.refresh"
   in
-  let add = child_with_identifier renderer screen "button.graph-add" in
+  let navigation = extension_node application "native-navigation-stack" in
+  let add = descendant_with_identifier renderer navigation "button.graph-add" in
   let local_row = child_with_identifier renderer screen "graph.local" in
   let remote_row = child_with_identifier renderer screen "graph.remote" in
   let delete =
@@ -4344,9 +4345,13 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
   check_eq ~msg:"Refresh uses main's clockwise arrow"
     (property_string renderer refresh Lui_protocol.InlineIconName)
     "app:refresh";
-  check_eq ~msg:"Add sync graph matches main's text-only row"
+  check_eq ~msg:"Add sync graph uses a plus in the toolbar"
     (property_string renderer add Lui_protocol.InlineIconName)
-    "<missing>";
+    "app:add";
+  check_eq ~msg:"Graphs has a single create action in its header"
+    (child_with_identifier renderer screen "button.graph-add") (-1);
+  check_eq ~msg:"Graphs uses the create action instead of Calendar"
+    (descendant_with_identifier renderer navigation "button.journal-calendar") (-1);
   check_eq ~msg:"downloaded graphs use native list rows"
     (node renderer local_row)
     (Some Lui_protocol.ListItem);
@@ -4356,9 +4361,9 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
   check_eq ~msg:"Refresh is a native List row rather than a styled button"
     (node renderer refresh)
     (Some Lui_protocol.ListItem);
-  check_eq ~msg:"Add sync graph is a native List row rather than a styled button"
+  check_eq ~msg:"Add sync graph is a native toolbar button"
     (node renderer add)
-    (Some Lui_protocol.ListItem);
+    (Some Lui_protocol.Button);
   check_eq ~msg:"local graph rows use main's database icon"
     (property_string renderer local_row Lui_protocol.InlineIconName)
     "app:graph-local";
@@ -7033,12 +7038,8 @@ let native_navigation_retains_the_journal_and_every_node_route () =
     (property_string renderer (List.nth nav_children 2)
        Lui_protocol.AccessibilityIdentifier)
     "title.main";
-  check_eq ~msg:"LG supplies the native sync control"
-    (property_string renderer
-       (descendant_with_identifier renderer (List.nth nav_children 3)
-          "sync.disconnected")
-       Lui_protocol.InlineIconName)
-    "app:status-dot";
+  check_eq ~msg:"a pushed page has an empty primary toolbar slot"
+    (children renderer (List.nth nav_children 3)) [];
   check ~msg:"LG supplies the native trailing menu"
     (descendant_with_node_kind renderer
        (List.nth (children renderer (List.nth nav_children 4)) 0)
@@ -9918,7 +9919,7 @@ let native_toolbar_navigation_replay () =
     { Model.uuid = "toolbar-page-" ^ string_of_int index; title; page_journal_day = None })
     [ "DB release checklist"; "Logseq public roadmap"; "CLI TODOs for next round";
       "Logseq Pro"; "invalid-data";
-      "A very long page title that must never hide either trailing control" ] in
+      "A very long page title that must never hide the overflow control" ] in
   let record name =
     stages := `Assoc ["name", `String name;
       "patches", `List (List.map (fun json -> `String json) (List.rev !batches))] :: !stages;
@@ -9933,9 +9934,12 @@ let native_toolbar_navigation_replay () =
           favorites = pages };
         node_routes = routes });
     flush application;
-    check ~msg:"the active toolbar keeps the semantic sync action"
-      (descendant_with_identifier (Lui_app.runtime application)
-        (Lui_app.root_node application) "sync.connected" <> -1)
+    let renderer = Lui_app.runtime application in
+    let navigation = extension_node application "native-navigation-stack" in
+    check ~msg:"the active page keeps its overflow action"
+      (descendant_with_identifier renderer navigation "button.connection" <> -1);
+    check_eq ~msg:"the active page toolbar has no standalone sync action"
+      (descendant_with_identifier renderer navigation "sync.connected") (-1)
   in
   start application;
   List.iteri (fun index page -> project page []; record ("page-" ^ string_of_int index)) pages;
