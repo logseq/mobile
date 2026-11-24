@@ -347,6 +347,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
 let empty_core_projection () =
   {
     Model.tag_choices_update = None;
+    reference_candidates_update = None;
     graph_name = None;
     selected_graph_id = None;
     journal_title_format = None;
@@ -4979,7 +4980,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     (property_int renderer controls Lui_protocol.HeightValue)
     44;
   check_eq ~msg:"main's controls include a flexible trailing spacer"
-    (List.length control_children) 5;
+    (List.length control_children) 7;
   check_eq ~msg:"the composer spacer remains directly testable"
     (property_string renderer control_spacer
        Lui_protocol.AccessibilityIdentifier)

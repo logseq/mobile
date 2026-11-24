@@ -29,6 +29,7 @@ let request ~now ~fresh_id payload =
     let operation () = ["operationId", `String (fresh_id ()); "now", `Int (now ())] in
     match kind with
     | "load-composer-tags" -> empty "composerTags"
+    | "load-composer-references" -> let* value = text () in json "composerReferences" ["query", `String value]
     | "send-tagged" ->
       let* value = text () in let* value = object_string value in
       (match value with `Assoc fields -> json "sendTagged" (identity () @ fields) | _ -> assert false)

@@ -615,6 +615,21 @@ let candidate_label (context : outliner_context) candidates value =
       else None)
     candidates
 
+let node_completion_context context query =
+  let query = String_kit.trim query in
+  if query = "" then context
+  else
+    let pages = node_search_candidates context query @ context.pages in
+    let label_values = candidate_label_values (pages @ context.tags) in
+    { context with pages; label_values; dup_labels = duplicated_of label_values }
+
+let node_completion_text context value =
+  if context.is_block_reference value then value
+  else
+    match candidate_label context (context.pages @ context.tags) value with
+    | Some label -> label
+    | None -> value
+
 let reference_token_end title caret_byte =
   let size = String.length title in
   let rec loop index =
@@ -629,21 +644,23 @@ let reference_token_end title caret_byte =
   in
   loop caret_byte
 
+let complete_node_text title caret text =
+  let caret_byte = byte_index_of_utf16 title caret in
+  match last_substring (String.sub title 0 caret_byte) "[[" with
+  | None -> None
+  | Some start ->
+    let replacement = "[[" ^ text ^ "]]" in
+    let title =
+      replace_range title start (reference_token_end title caret_byte) replacement
+    in
+    Some (title, utf16_length (String.sub title 0 (start + String.length replacement)))
+
 let complete (context : outliner_context) (editing : editor_draft) kind value =
   let caret_byte = byte_index_of_utf16 editing.title editing.caret in
   let prefix = String.sub editing.title 0 caret_byte in
   let completion =
     match kind with
-    | Node ->
-      let text =
-        if context.is_block_reference value then value
-        else match candidate_label context (context.pages @ context.tags) value with
-        | Some label -> label
-        | None -> value
-      in
-      (match last_substring prefix "[[" with
-       | Some index -> Some (index, "[[" ^ text ^ "]]")
-       | None -> None)
+    | Node -> None
     | Tag ->
       let label = candidate_label context context.tags value in
       let text = match label with Some label -> label | None -> value in
@@ -664,13 +681,12 @@ let complete (context : outliner_context) (editing : editor_draft) kind value =
       Some (start, value ^ ":: ")
     | Command | Picker _ -> None
   in
-  match completion with
-  | Some (start, replacement) ->
-    let finish =
-      if kind = Node then reference_token_end editing.title caret_byte
-      else caret_byte
-    in
-    let title = replace_range editing.title start finish replacement in
+  match kind, completion with
+  | Node, _ ->
+    Option.map (fun (title, caret) -> { editing with title; caret })
+      (complete_node_text editing.title editing.caret (node_completion_text context value))
+  | _, Some (start, replacement) ->
+    let title = replace_range editing.title start caret_byte replacement in
     Some
       {
         editing with
@@ -679,7 +695,7 @@ let complete (context : outliner_context) (editing : editor_draft) kind value =
           utf16_length
             (String.sub title 0 (start + String.length replacement));
       }
-  | None -> None
+  | _, None -> None
 
 let trim_right value =
   let rec loop finish =
@@ -1431,10 +1447,7 @@ let choose_completion context (state : outliner_state) value =
         [Execute_editor (Editor_command.Apply_template (editing.uuid, value, editing.title)); Haptic Selection]
   | Some editing, Some request
     when autocomplete_for editing.title editing.caret = Some request ->
-    let context = if request.kind = Node && String_kit.trim request.query <> "" then
-        let pages = node_search_candidates context (String_kit.trim request.query) @ context.pages in
-        let label_values = candidate_label_values (pages @ context.tags) in
-        { context with pages; label_values; dup_labels = duplicated_of label_values }
+    let context = if request.kind = Node then node_completion_context context request.query
       else context in
     if request.kind = Tag then
       let caret = byte_index_of_utf16 editing.title editing.caret in
