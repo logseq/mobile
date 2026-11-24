@@ -57,10 +57,12 @@ appId: com.logseq.logseq
     text: "logseq-local-e2e-fixture"
     below: "Remote graphs"
 - assertNotVisible: "Delete local graph"
+# A remote row with no context menu can open on a long press.
 - tapOn:
     text: "logseq-local-e2e-fixture"
     below: "Remote graphs"
     enabled: true
+    optional: true
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

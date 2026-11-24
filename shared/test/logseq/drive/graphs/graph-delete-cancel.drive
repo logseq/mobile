@@ -15,6 +15,7 @@ wait prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=graph.Alpha
 press kind:menu-item&text:"Delete local graph"
+appear prop:accessibility-identifier=graph-delete.presentation-gate
 wait kind:sheet&text:"Delete local graph"
 press prop:accessibility-identifier=button.graph-delete.cancel
 expect-absent kind:sheet&text:"Delete local graph"
