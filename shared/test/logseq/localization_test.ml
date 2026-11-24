@@ -108,10 +108,17 @@ let confirmation_cancel_actions_are_semantic_and_localized () =
           selected_page = Some {Model.uuid = "page"; title = "Project"; page_journal_day = None} } });
       send app (Model.ApplyLocalGraphIds ["local"]);
       send app (Model.ApplySettingsSnapshot { (settings []) with Model.language = language });
+      if identifier = "button.graph-delete.cancel" then send app Model.ShowGraphs;
       send app request;
       flush app;
       let runtime = Lui_app.runtime app in
-      let cancel = descendant_with_identifier runtime (Lui_app.root_node app) identifier in
+      let root = Lui_app.root_node app in
+      let gate = descendant_with_identifier runtime root "graph-delete.presentation-gate" in
+      if gate <> -1 then begin
+        dispatch app (Lui_protocol.Appear gate);
+        flush app
+      end;
+      let cancel = descendant_with_identifier runtime root identifier in
       check ~msg:("dialog exposes its cancellation action: " ^ identifier) (cancel <> -1);
       check_eq ~msg:"cancel labels remain localized"
         (property_string runtime cancel Lui_protocol.TextValue)
