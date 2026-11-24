@@ -16,6 +16,29 @@ import UIKit
         precondition(state.transcript.hasSuffix("👩🏽‍💻 "), "The latest transcription was discarded")
         precondition(attributes.timerRange.upperBound.timeIntervalSince(attributes.startedAt) == 600)
 
+        let runtime = LogseqLogseqRuntime.shared
+        let coordinator = runtime.presentationCoordinator
+        let audioURL = URL(string: "logseq://audio")!
+        let inbox = SharedCaptureInbox.shared
+        let existingItems = inbox.pendingItems()
+        precondition(coordinator.presentAttachment("audio", targetBlockID: "original"))
+        let request = coordinator.attachmentRequestID
+        runtime.acceptSharedCaptureURL(audioURL)
+        precondition(coordinator.attachmentRequestID == request && coordinator.attachmentTargetBlockID == "original",
+                     "The lock-screen URL replaced the active recording")
+        let existingIDs = Set(existingItems.map(\.id))
+        defer {
+            for item in inbox.pendingItems() where !existingIDs.contains(item.id) {
+                inbox.acknowledge(id: item.id)
+            }
+        }
+        precondition(inbox.pendingItems() == existingItems, "An active recording must not queue another audio request")
+        coordinator.completeAttachment()
+        runtime.acceptSharedCaptureURL(audioURL)
+        let newItems = inbox.pendingItems().filter { !existingIDs.contains($0.id) }
+        precondition(newItems.count == 1 && newItems.first?.captureLink == SharedDeepLink(audioURL),
+                     "The audio URL must start a new request after the recording ends")
+
         let card = RecordingActivityCard(attributes: attributes, state: .init(
             elapsedSeconds: 8, isRecording: true,
             transcript: "Just out for a walk. Looks like someone’s opening a small café down the street."
@@ -28,7 +51,7 @@ import UIKit
         guard let image = renderer.uiImage?.pngData() else { preconditionFailure("Recording activity did not render") }
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         try image.write(to: documents.appendingPathComponent("recording-live-activity.png"))
-        print("PASS: lock-screen card renders and the payload is bounded")
+        print("PASS: lock-screen card renders, the payload is bounded, and the audio URL preserves an active recording")
 
         precondition(ActivityAuthorizationInfo().areActivitiesEnabled, "Live Activities must be enabled for this runtime check")
         let live = RecordingLiveActivity()
