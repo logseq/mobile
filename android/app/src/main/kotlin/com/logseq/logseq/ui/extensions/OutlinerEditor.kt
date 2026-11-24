@@ -561,6 +561,7 @@ internal fun OutlinerEditor(
     ) {
     BasicTextField(
         state = fieldState,
+        enabled = focusEnabled,
         inputTransformation = inputTransformation,
         outputTransformation = outputTransformation,
         modifier = Modifier

@@ -101,6 +101,17 @@ class AndroidEditorKeyboardTest {
         }
     }
 
+    @Test fun blockEditorCannotTakeInputWhilePickerOwnsFocus() {
+        val editor = render("Before")
+        ui.runOnIdle {
+            val ops = JSONArray().put(JSONObject().put("op", "set-extension-prop").put("id", 2)
+                .put("property", "focus-enabled").put("value", false))
+            assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
+        }
+        editor.performTouchInput { click() }
+        editor.assert(!isFocused()).assertIsNotEnabled()
+    }
+
     @Test fun codeEditingHighlightsDefinitionsAndPreservesSelectionAndInput() {
         val source = "(def answer 42)\n(defn square [x] (* x x))"
         val field = render(source, """{"multiline":true,"code":true,"language":"clojure"}""")
