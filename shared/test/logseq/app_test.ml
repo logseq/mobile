@@ -4721,6 +4721,28 @@ let graph_deletion_confirmation_names_the_local_graph () =
   check ~msg:"the host log preserves the platform reason"
     (List.mem "Could not delete graph" (reported_errors (App.model application)))
 
+let kotlin_language_changes_keep_the_sidebar_children_live () =
+  let application = App.create (kotlin_backend ()) in
+  start application;
+  send application (Model.ApplyCoreSnapshot
+    { (empty_core_projection ()) with selected_graph_id = Some "local";
+      graph_name = Some "Local graph" });
+  List.iter (fun language ->
+    send application (Model.ChooseSettingsLanguage language);
+    flush application;
+    let renderer = Lui_app.runtime application in
+    let sidebar = extension_node application "sidebar-overlay" in
+    List.iter (fun key ->
+      match extension_property application sidebar key with
+      | Some (Lui_protocol.IntValue child) ->
+        check ~msg:(language ^ " keeps a live sidebar " ^ key)
+          (node renderer child <> None)
+      | _ -> failwith ("Missing sidebar child: " ^ key))
+      ["main-id"; "panel-id"; "settings-id"];
+    check ~msg:(language ^ " retains Journals")
+      (descendant_with_identifier renderer (Lui_app.root_node application) "pane.journals" <> -1))
+    ["zh-CN"; "ar"; "system"]
+
 let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
   let application = App.create (kotlin_backend ()) in
   let local = graph "local" "Local graph" false true in
@@ -11808,6 +11830,7 @@ let cases =
     case "graph-lifecycle-effects-disable-duplicate-actions" graph_lifecycle_effects_disable_duplicate_actions;
     case "empty-graph-picker-replaces-refresh-with-progress-while-loading" empty_graph_picker_replaces_refresh_with_progress_while_loading;
     case "graph-deletion-confirmation-names-the-local-graph" graph_deletion_confirmation_names_the_local_graph;
+    case "kotlin-language-keeps-sidebar-children-live" kotlin_language_changes_keep_the_sidebar_children_live;
     case "kotlin-graph-deletion-uses-a-material-destructive-dialog" kotlin_graph_deletion_uses_a_material_destructive_dialog;
     case "search-lifecycle-keeps-query-owned-by-the-lg-model" search_lifecycle_keeps_query_owned_by_the_lg_model;
     case "bottom-chrome-presentation-is-mutually-exclusive" bottom_chrome_presentation_is_mutually_exclusive;
