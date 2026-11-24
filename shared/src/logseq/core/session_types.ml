@@ -284,7 +284,7 @@ let record_accepted_server_t session accepted =
            | None -> accepted);
     }
 
-let create_session options =
+let create_session ?(journal_tasks = Journal_task_dates.create_cache ()) options =
   let options =
     {
       options with
@@ -311,7 +311,7 @@ let create_session options =
     reference_cache = Hashtbl.create 8;
     reference_collapsed = Hashtbl.create 32;
     result_view_cache = Result_view.create_cache ();
-    journal_tasks = Journal_task_dates.create_cache ();
+    journal_tasks;
     reference_generation = ref None;
     pdf_workspace = ref None;
     widget_snapshot = ref None;

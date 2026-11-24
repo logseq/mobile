@@ -103,6 +103,7 @@
  (name runtest)
  (deps
   (alias ../test/runtest)
+  (alias ../bench/runtest)
   (alias ../test/nlp-startup/runtest)
   logseq_e2e_seed.exe
   logseq_live_sync.exe

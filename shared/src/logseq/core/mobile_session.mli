@@ -11,6 +11,7 @@ val graph_catalog_address : string
 val snapshot_request : string
 val discard_value : ('a, string) result -> (unit, string) result
 val host_options :
+  ?journal_tasks:Journal_task_dates.cache ->
   Mobile_database.mobile_database ->
   E2ee_keyring.e2ee_keyring ->
   Sqlite.session option ->
