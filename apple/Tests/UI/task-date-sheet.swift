@@ -6,18 +6,24 @@ import SwiftUI
 // fixture directory, then run task-date-sheet.yaml against the same simulator.
 @MainActor @Observable private final class TaskDateEffects: LGEffectExecuting {
     private let scheduled = 1_795_504_200_000
+    private let title = "Check the release date"
     private var deadline: Int? = 1_795_504_200_000
+    private var editing = false
     var cleared = false
     private var deadlineValue: Any { deadline.map { $0 as Any } ?? NSNull() }
 
     func snapshot() throws -> String {
-        try response([
+        let outlinerState = editing
+            ? ["editing": ["uuid": "task", "title": title, "isTask": true, "caretUTF16Offset": 0]]
+            : [:]
+        return try response([
             "selectedGraphId": "task-graph",
             "graphName": "Journals",
             "outlinerRows": [["depth": 0, "block": [
                 "uuid": "note", "pageId": "today", "title": "Release notes",
                 "journalTitle": "November 24", "journalDay": 20261124
             ]]],
+            "outlinerState": outlinerState,
             "journalTasks": [
                 "graphId": "task-graph",
                 "page": "today",
@@ -26,7 +32,7 @@ import SwiftUI
                 "success": true,
                 "doing": [[
                     "uuid": "task",
-                    "block": ["uuid": "task", "pageId": "older", "title": "Check the release date", "isTask": true],
+                    "block": ["uuid": "task", "pageId": "older", "title": title, "isTask": true],
                     "scheduled": scheduled,
                     "deadline": deadlineValue
                 ]]
@@ -37,6 +43,13 @@ import SwiftUI
     func execute(_ effect: LGEffect) async -> LGEffectResolution {
         do {
             switch effect.kind {
+            case "editor-outliner-event":
+                let input = try JSONSerialization.jsonObject(with: Data(effect.text.utf8)) as? [String: Any]
+                guard input?["type"] as? String == "tapBlock", input?["uuid"] as? String == "task" else {
+                    return .init(succeeded: true, message: "", output: .discard)
+                }
+                editing = true
+                return .init(succeeded: true, message: try snapshot())
             case "load-property-values":
                 let input = try JSONSerialization.jsonObject(with: Data(effect.text.utf8)) as? [String: Any]
                 guard let key = input?["key"] as? String else {
