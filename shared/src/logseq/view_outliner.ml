@@ -849,6 +849,11 @@ let android_outliner_row_swipe model_source retained_source row_source send cont
     Lui_ui.extension_property_signal context node "block-id" (Signal.map View_base.outliner_row_id_wire_value row_source);
     Lui_ui.extension_property_signal context node "enabled"
       (Signal.map (fun row -> BoolValue (not (View_rows.retained_row_editing_ row))) retained_source);
+    Lui_ui.extension_property_signal context node "marker-inset"
+      (Signal.map (fun (row : Model.outline_row) ->
+        (* The icon is centered in a 24-point slot. Numbered markers may fill it. *)
+        let padding = if row.row_list_number <> None && not row.row_is_embed then 0 else 3 in
+        IntValue (View_base.outliner_row_indent row + padding)) row_source);
     Lui_ui.on_event context node (fun input ->
       ignore (View_base.handle_outliner_block_content_event input model_source send));
     ignore (mount context ~parent:node content);

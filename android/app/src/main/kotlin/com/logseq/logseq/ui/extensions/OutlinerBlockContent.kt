@@ -79,6 +79,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -336,7 +337,6 @@ private fun Modifier.outlinerSelectionSwipe(
     onFinish: (Boolean) -> Unit,
 ): Modifier = pointerInput(uuid) {
     val swipeDistance = 44.dp.toPx()
-    val resistanceStart = 36.dp.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
@@ -350,11 +350,7 @@ private fun Modifier.outlinerSelectionSwipe(
         try {
             val released = horizontalDrag(start.id) { change ->
                 distance -= change.positionChange().x
-                if (leftSwipe) {
-                    val travel = distance.coerceAtLeast(0f)
-                    onDrag(minOf(travel, resistanceStart) +
-                        ((travel - resistanceStart).coerceAtLeast(0f) * 0.18f).coerceAtMost(12.dp.toPx()))
-                }
+                if (leftSwipe) onDrag(distance.coerceAtLeast(0f))
                 change.consume()
             }
             selected = released && leftSwipe && distance >= swipeDistance
@@ -368,21 +364,32 @@ private fun Modifier.outlinerSelectionSwipe(
 internal fun OutlinerRowSwipeSurface(context: LuiExtensionContext) {
     val blockId = context.string("block-id").orEmpty()
     val currentContext by rememberUpdatedState(context)
+    var rowLeft by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val markerInset = with(density) { (context.int("marker-inset") ?: 0).dp.toPx() }
+    val maxSwipe = with(density) { 48.dp.toPx() }
+    // The marker stays in view while selection uses the full finger travel.
+    val swipeLimit by rememberUpdatedState((rowLeft + markerInset).coerceIn(0f, maxSwipe))
     var offset by remember(blockId) { mutableFloatStateOf(0f) }
     var swiping by remember(blockId) { mutableStateOf(false) }
     val displacement by animateFloatAsState(offset, if (swiping) snap() else spring(), label = "blockSwipeOffset")
     val swipe = if (!context.flag("enabled")) Modifier else Modifier.outlinerSelectionSwipe(
         blockId,
         onStart = { swiping = true },
-        onDrag = { offset = it },
+        onDrag = { travel ->
+            val resistanceStart = swipeLimit * 0.75f
+            val resistedTravel = minOf(travel, resistanceStart) +
+                (travel - resistanceStart).coerceAtLeast(0f) * 0.18f
+            offset = minOf(resistedTravel, swipeLimit)
+        },
         onFinish = { selected ->
             swiping = false
             offset = 0f
             if (selected) currentContext.emit("toggle-selection", "uuid" to blockId)
         },
     )
-    Box(Modifier.fillMaxWidth().then(swipe)) {
-        Box(Modifier.graphicsLayer { translationX = -displacement }) {
+    Box(Modifier.fillMaxWidth().onGloballyPositioned { rowLeft = it.positionInWindow().x }.then(swipe)) {
+        Box(Modifier.graphicsLayer { translationX = -minOf(displacement, swipeLimit) }) {
             context.Children()
         }
     }

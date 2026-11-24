@@ -104,11 +104,12 @@ fun logseqExtensionRegistry(
     registerPdfWorkspace(loadImage)
     register(
         "outliner-row-swipe",
-        "lui-extension-v1|18:outliner-row-swipe|profiles:android/kotlin|standard-children:1|children:|properties:7:enabled:bool:required:none,8:block-id:string:required:none|events:16:toggle-selection[4:uuid:string:required]",
+        "lui-extension-v1|18:outliner-row-swipe|profiles:android/kotlin|standard-children:1|children:|properties:12:marker-inset:int:required:none,7:enabled:bool:required:none,8:block-id:string:required:none|events:16:toggle-selection[4:uuid:string:required]",
         acceptsStandardChildren = true,
         properties = listOf(
             LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING, required = true),
             LuiExtensionProperty("enabled", LuiExtensionValueKind.BOOLEAN, required = true),
+            LuiExtensionProperty("marker-inset", LuiExtensionValueKind.INTEGER, required = true),
         ),
         events = listOf(LuiExtensionEventSchema("toggle-selection", listOf(
             LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true),

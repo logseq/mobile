@@ -77,6 +77,7 @@ class AndroidRichContentTest {
                 .put("identifier", identifier).put("fingerprint", registry.registration(identifier)!!.fingerprint))
                 .put(property("block-id", "rich-block").put("id", 4))
                 .put(property("enabled", true).put("id", 4))
+                .put(property("marker-inset", 0).put("id", 4))
                 .put(JSONObject().put("op", "create-node").put("id", 5).put("kind", "box"))
                 .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 4).put("index", 0))
                 .put(JSONObject().put("op", "insert-child").put("parent", 4).put("child", 5).put("index", 0))
@@ -178,7 +179,8 @@ class AndroidRichContentTest {
 
     @Test fun inlineMathFitsTheParagraphAndInvalidTexRemainsReadable() {
         val wide = List(10) { "\\frac{1234567890}{9876543210}" }.joinToString("+")
-        val invalid = "\\unknowncommand{"
+        val invalid = "\\unknowncommand{" + "source must remain readable ".repeat(16).trimEnd() + "}"
+        val prefix = "Before $wide after "
         val markup = JSONArray()
             .put(JSONObject().put("type", "text").put("text", "Before "))
             .put(JSONObject().put("type", "math").put("style", "inline").put("text", wide))
@@ -187,8 +189,12 @@ class AndroidRichContentTest {
         render(markup.toString())
         ui.waitUntil(10_000) { ui.onAllNodesWithContentDescription(wide).fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithContentDescription(wide).assertIsDisplayed()
-        val paragraph = layout("Before $wide after $invalid")
+        val paragraph = layout(prefix + invalid)
         assertTrue(paragraph.placeholderRects.single()!!.width <= paragraph.size.width)
+        val firstInvalidLine = paragraph.getLineForOffset(prefix.length)
+        val lastInvalidLine = paragraph.getLineForOffset(prefix.length + invalid.lastIndex)
+        assertTrue("The invalid LaTeX spans multiple lines", lastInvalidLine > firstInvalidLine)
+        assertEquals(prefix.length + invalid.length, paragraph.getLineEnd(lastInvalidLine, visibleEnd = true))
     }
 
     @Test fun malformedBodyLongPressStillSelects() = assertLongPressSelects("not-json", "Readable fallback")
@@ -324,6 +330,7 @@ class AndroidRichContentTest {
                 .put("identifier", identifier).put("fingerprint", registry.registration(identifier)!!.fingerprint))
             .put(property("block-id", "calculator-block"))
             .put(property("enabled", true))
+            .put(property("marker-inset", 0))
             .put(JSONObject().put("op", "create-node").put("id", 3).put("kind", "text"))
             .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 2).put("index", 0))
             .put(JSONObject().put("op", "insert-child").put("parent", 2).put("child", 3).put("index", 0))
