@@ -1698,7 +1698,7 @@ let page_loading_view model_source : t =
        [ spinner ~width:16 ~height:16 [];
          text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "Loading blocks…") [] ])
 
-let placeholder_block context model_source (value : View_rows.placeholder) send : t =
+let placeholder_block context model_source (value : View_rows.placeholder) show_button send : t =
   let placeholder : t = custom @@ fun mount_context parent ->
     let node = mount mount_context ?parent (box ~height:28
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
@@ -1710,13 +1710,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) send 
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
-  let placeholder = box ~height:28 [
-    if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
-      match current.outliner_editing with
-      | None -> true
-      | Some editing -> List.exists (fun (row : Model.outline_row) ->
-          row.row_uuid = editing.editing_uuid && List.mem row.row_display_type [Some "math"; Some "code"])
-          current.outliner_rows) model_source) placeholder] in
+  let placeholder = box ~height:28 [if_ ~test:show_button placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, day, divider) ->
@@ -1848,10 +1842,35 @@ let with_journal_task_transition model_source content =
       node
     | _ -> mount context ?parent content
 
+let outliner_bottom_spacer () =
+  let height = 120 in
+  custom @@ fun context parent ->
+    match Lui_ui.platform context, Lui_ui.host context with
+    | IOS, SwiftUIHost ->
+      let node = Lui_ui.extension context "outliner-bottom-spacer" in
+      attach context parent node;
+      Lui_ui.extension_property context node "height" (IntValue height);
+      node
+    | _ -> mount context ?parent (box ~height [])
+
 let outliner_entries ?prefetch_history context model_source ~source send : t =
  custom @@ fun mount_context parent ->
+  let previous_pin = ref None in
+  let ios = Lui_ui.platform mount_context = IOS && Lui_ui.host mount_context = SwiftUIHost in
+  let project_entries rows current =
+    let entries = View_rows.page_entries rows current in
+    if ios && View_base.journal_home_visible_ current then begin
+      (* Keep the last edited row in its native slot as the editor becomes a
+         read-only row. Swapping both identities makes the lazy list remeasure. *)
+      let pin, entries = View_rows.retain_page_entry_pin !previous_pin entries in
+      previous_pin := pin;
+      entries
+    end else begin
+      previous_pin := None;
+      entries
+    end in
   let entries = Signal.own_signal mount_context.Lui_ui.ui_scope
-    (Signal.map2 View_rows.page_entries source model_source) in
+    (Signal.map2 project_entries source model_source) in
   let first_section = Signal.own_signal mount_context.ui_scope
     (Signal.map View_rows.first_journal_section_count model_source) in
   let section_titles = Signal.own_signal mount_context.ui_scope
@@ -1881,7 +1900,7 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
   mount mount_context ?parent
     (View_rows.windowed_keyed ~scroll_target ~first_section ~section_titles ~on_window ~on_visible_range
-      ~on_prefetch ~is_pinned:View_rows.page_entry_editor_ ~source:entries
+      ~on_prefetch ~is_pinned:View_rows.page_entry_pinned_ ~source:entries
       ~key:View_rows.page_entry_identifier ~cmp:compare
       ~mount:(fun entry_source ->
         let render () = match Signal.sample entry_source with
@@ -1889,7 +1908,10 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
           let retained = Signal.map View_rows.page_entry_outline entry_source in
           outliner_entry context model_source retained
             (Signal.map View_rows.retained_row_value retained) send
-        | View_rows.Placeholder_entry value -> placeholder_block context model_source value send
+        | View_rows.Placeholder_entry value ->
+          let show_button = Signal.map (function View_rows.Placeholder_entry value -> value.show_button
+            | _ -> false) entry_source in
+          placeholder_block context model_source value show_button send
         | View_rows.Reference_entry _ ->
           reference_entry context model_source
             (Signal.map View_rows.page_entry_reference entry_source) send
@@ -1938,6 +1960,6 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
             (node_properties context model_source send);
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
-          box ~height:120 [];
+          outliner_bottom_spacer ();
         ])));
     ])

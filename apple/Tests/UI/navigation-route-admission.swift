@@ -21,7 +21,7 @@ import UIKit
             ["op": "insert-child", "parent": parent, "child": id, "index": index]
         }
         let slots = (2...8).flatMap { id -> [[String: Any]] in
-            [["op": "create-node", "id": id, "kind": "column"], insert(id, at: id - 2)]
+            [["op": "create-node", "id": id, "kind": id == 2 ? "scroll" : "column"], insert(id, at: id - 2)]
         }
         // The seventh child is the capture controls while there's no page route.
         try apply([
@@ -31,13 +31,16 @@ import UIKit
             property("bottom-occupies-layout-space", false), property("composer-dismissal-enabled", false),
         ] + slots + [
             ["op": "set-prop", "id": 8, "property": "accessibility-identifier", "value": "navigation.capture-controls"],
+            ["op": "create-node", "id": 11, "kind": "box"],
+            ["op": "set-prop", "id": 11, "property": "height", "value": 1200],
+            insert(11, at: 0, parent: 2),
         ])
 
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
             throw failure("Missing simulator scene")
         }
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: LUISwiftUIRoot(backend: backend, rootID: 1))
+        let host = UIHostingController(rootView: LUISwiftUIRoot(backend: backend, rootID: 1).tint(LogseqThemePolicy.accent))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
@@ -50,6 +53,14 @@ import UIKit
         }
         guard let navigation = navigation(in: host), let journal = navigation.topViewController else {
             throw failure("The journal must start in a native navigation stack")
+        }
+        if #available(iOS 26.0, *) {
+            func scrollView(in view: UIView) -> UIScrollView? {
+                (view as? UIScrollView) ?? view.subviews.lazy.compactMap(scrollView).first
+            }
+            guard let scroll = scrollView(in: journal.view), scroll.topEdgeEffect.style == .soft else {
+                throw failure("The journal must use a soft top scroll edge when there is no search host")
+            }
         }
 
         try apply([property("depth", 1)])
@@ -67,7 +78,17 @@ import UIKit
         ])
         for _ in 0..<100 {
             if navigation.viewControllers.count == 2, navigation.topViewController?.navigationItem.title == "Linked page" {
-                print("PASS: only the linked page enters the navigation stack")
+                if #available(iOS 26.0, *) {
+                    guard navigation.navigationBar.tintColor != UIColor(LogseqThemePolicy.accent) else {
+                        throw failure("The native Back button must use the system's glass foreground")
+                    }
+                }
+                try await Task.sleep(for: .milliseconds(550))
+                guard navigation.interactivePopGestureRecognizer?.isEnabled == true,
+                      navigation.topViewController?.navigationItem.hidesBackButton == false else {
+                    throw failure("The pushed page must keep the native Back control and edge swipe")
+                }
+                print("PASS: only the linked page enters the navigation stack with native Back and edge swipe")
                 return
             }
             try await Task.sleep(for: .milliseconds(20))

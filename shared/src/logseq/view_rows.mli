@@ -40,7 +40,11 @@ val reference_entries : Model.logseq_model -> reference_entry list
 val reference_entry_identifier : reference_entry -> string
 val reference_entry_row : reference_entry -> Model.outline_row
 
-type placeholder = { parent_uuid : string; journal_heading : (string * int * bool) option }
+type placeholder = {
+  parent_uuid : string;
+  journal_heading : (string * int * bool) option;
+  show_button : bool;
+}
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
   | Placeholder_entry of placeholder
   | Journal_task_gap
@@ -61,6 +65,7 @@ val unloaded_entry_id : page_entry -> string option
 
 val page_entry_ready : page_entry -> bool
 
-val page_entry_editor_ : page_entry -> bool
+val page_entry_pinned_ : page_entry -> bool
+val retain_page_entry_pin : string option -> page_entry list -> string option * page_entry list
 
 val journal_section_titles : Model.logseq_model -> (int * string) list

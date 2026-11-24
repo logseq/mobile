@@ -758,11 +758,6 @@ private struct LGNativeSearchHost: ViewModifier {
                 let _ = search.nativePresented
                 if #available(iOS 26.0, *) {
                     content
-                        // Duo's vertical bar needs no horizontal edge effect. In dark
-                        // mode its automatic top-edge luminance can oscillate during
-                        // scrolling, continuously invalidating UIKit's layout.
-                        .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
-                        .scrollEdgeEffectStyle(.soft, for: .top)
                         .background(LGNativeSearchControllerBridge(search: search).allowsHitTesting(false))
                 } else {
                     content
@@ -963,21 +958,19 @@ private struct LGNavigationContent: View {
 
     @ViewBuilder
     private func navigationSurface<Content: View>(_ content: Content, active: Bool) -> some View {
-        content
+        let surface = content
             .overlay {
                 if active && composerDismissalEnabled {
                     composerDismissalTarget
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if active && bottomOccupiesLayoutSpace && showsBottomChrome {
-                    sizedBottomChrome
-                }
-            }
             .overlay(alignment: .bottom) {
                 ZStack(alignment: .bottom) {
-                    if active && !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
-                        if selectionActive {
+                    if active && showsBottomChrome && !usesSideCaptureActions {
+                        if bottomOccupiesLayoutSpace {
+                            // The measured toolbar guides caret avoidance without resizing the scroller.
+                            sizedBottomChrome
+                        } else if selectionActive {
                             VStack {
                                 Spacer(minLength: 0)
                                 floatingBottomChrome
@@ -1016,6 +1009,20 @@ private struct LGNavigationContent: View {
             }
             #endif
             .background(routeBackground.ignoresSafeArea())
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            surface
+                .toolbarBackground(.hidden, for: .navigationBar)
+                // The scroll edge supplies the blur while the system bar stays clear.
+                // Duo's vertical toolbar has no horizontal edge effect.
+                .scrollEdgeEffectHidden(true, for: verticalToolbar ? .all : .bottom)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            surface.toolbarBackground(.hidden, for: .navigationBar)
+        }
+        #else
+        surface
+        #endif
     }
 
     private var composerDismissalTarget: some View {
@@ -1119,6 +1126,7 @@ private struct LGNavigationContent: View {
         )
         .background(routeBackground.ignoresSafeArea())
         #if os(iOS)
+        .tint(navigationBarTint)
         .toolbar(.visible, for: .navigationBar)
         #endif
         .onAppear {
@@ -1165,7 +1173,7 @@ private struct LGNavigationContent: View {
 
     @ViewBuilder
     private var rootNavigationSurface: some View {
-        searchSurface(transformedRootContent, active: path.isEmpty)
+        withAppTint(searchSurface(transformedRootContent, active: path.isEmpty))
             .padding(.top, navigationContentTopPadding)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if verticalToolbar, !searchVisible, let flashcardsToolbar {
@@ -1255,12 +1263,29 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private func destinationSurface(_ childID: Int) -> some View {
         if let search, searchRoutes.contains(childID) {
-            search.context.content(for: childID)
+            withAppTint(search.context.content(for: childID))
                 .onAppear { search.suspendInput() }
         } else {
-            searchSurface(context.content(for: childID), active: childID == path.last)
+            withAppTint(searchSurface(context.content(for: childID), active: childID == path.last))
         }
     }
+
+    @ViewBuilder
+    private func withAppTint<Content: View>(_ content: Content) -> some View {
+        #if os(iOS)
+        content.tint(LogseqThemePolicy.accent)
+        #else
+        content
+        #endif
+    }
+
+    #if os(iOS)
+    private var navigationBarTint: Color? {
+        // The system picks the contrast of its Liquid Glass back control.
+        if #available(iOS 26.0, *) { return nil }
+        return themePalette.primaryText
+    }
+    #endif
 
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -1423,7 +1448,7 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private var sizedBottomChrome: some View {
         if bottomOccupiesLayoutSpace {
-            bottomChrome
+            withAppTint(bottomChrome)
                 .fixedSize(horizontal: false, vertical: true)
                 #if os(iOS)
                 .background(OutlinerEditorToolbarGuide())
@@ -1435,7 +1460,7 @@ private struct LGNavigationContent: View {
                     occupiesLayoutSpace: true
                 ))
         } else {
-            bottomChrome
+            withAppTint(bottomChrome)
                 .frame(maxWidth: .infinity)
                 .fixedSize(horizontal: false, vertical: true)
                 .modifier(LGBottomChromeHitTarget(isRounded: false))

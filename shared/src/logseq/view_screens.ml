@@ -330,7 +330,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                     []);
             ];
           View_outliner.page_loading_view model_source;
-          box ~height:120 [];
+          View_outliner.outliner_bottom_spacer ();
           ]))));
     ])
 

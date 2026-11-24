@@ -1038,7 +1038,7 @@ let zoom_placeholder_creates_a_child_in_the_same_page () = R.with_runtime (fun s
   check_eq child.parent_id (Some Q.alpha);
   check_eq child.page_id Q.page)
 
-let placeholders_hide_while_editing_and_keep_empty_journal_headings () =
+let editing_hides_only_its_own_page_placeholder () =
   List.iter (fun backend ->
     let response = J.to_string (`Assoc ["ok", `Bool true; "result", `Assoc [
       "selectedGraphId", `String "graph";
@@ -1052,7 +1052,8 @@ let placeholders_hide_while_editing_and_keep_empty_journal_headings () =
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
       check ~msg:"the fixture is actually editing" ((App.model app).outliner_editing <> None);
       check_eq ~msg:"editing hides the current page placeholder" (find ("button.outliner.placeholder." ^ Q.page)) (-1);
-      check_eq ~msg:"editing hides placeholders for other empty days" (find "button.outliner.placeholder.empty-day") (-1);
+      check ~msg:"editing leaves placeholders for other empty days visible"
+        (find "button.outliner.placeholder.empty-day" <> -1);
       check ~msg:"empty journal headings remain visible while editing" (find "button.journal.empty-day" <> -1)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
@@ -1746,7 +1747,7 @@ let cases = [
   case "code commands immediately update the active editor presentation" code_commands_update_the_active_editor_style;
   case "calculator last remembers successful expressions across blank and comment lines" calculator_last_tracks_successful_lines;
   case "embedded outliner bullets open the source" embedded_outliner_bullets_open_source;
-  case "editing hides placeholders but keeps journal headings" placeholders_hide_while_editing_and_keep_empty_journal_headings;
+  case "editing hides only its own page placeholder" editing_hides_only_its_own_page_placeholder;
   case "Backspace keeps the caret at the merge boundary" backspace_at_start_keeps_the_caret_at_the_merge_boundary;
   case "unrelated edits do not create issue number tags" unrelated_edit_does_not_create_issue_number_tags;
   case "Enter on a parent matches master placement" enter_on_a_parent_matches_master_placement;

@@ -7159,6 +7159,37 @@ let journal_home_places_today_references_before_older_days () =
   check_eq ~msg:"journal home accepts the deferred reference result for its first day"
     applied.related_rows [reference]
 
+let journal_placeholders_only_follow_their_own_page_editor () =
+  List.iter (fun backend ->
+    let app = App.create (backend ()) in
+    let renderer = Lui_app.runtime app in
+    let today = journal_outline_row "today-block" "today" "Draft" "Today" 20261116 0 in
+    let older = journal_outline_row "older-block" "older" "Previous" "Yesterday" 20261115 0 in
+    let projection = { (empty_core_projection ()) with
+      selected_graph_id = Some "graph";
+      outliner_rows = [today; older];
+      journal_outliner_rows = [today; older];
+      empty_journals = [({uuid = "empty"; title = "Earlier"}, 20261114)] } in
+    let apply projection = send app (Model.ApplyCoreSnapshot projection); flush app in
+    let button page = descendant_with_identifier renderer (Lui_app.root_node app)
+      ("button.outliner.placeholder." ^ page) in
+    start app;
+    apply projection;
+    let older_button = button "older" and empty_button = button "empty" in
+    check ~msg:"all three dates initially offer Add block"
+      (List.for_all (fun page -> button page <> -1) ["today"; "older"; "empty"]);
+    let editing = Some {Model.editing_uuid = today.row_uuid; editing_is_task = None;
+      editing_title = today.row_title; caret_utf16_offset = 0} in
+    apply {projection with projection_outliner_editing = editing};
+    check_eq ~msg:"the edited date hides its own Add block control" (button "today") (-1);
+    check_eq ~msg:"editing another date keeps the populated date's Add block control" (button "older") older_button;
+    check_eq ~msg:"editing another date keeps the empty date's Add block control" (button "empty") empty_button;
+    let code = {today with row_display_type = Some "code"} in
+    apply {projection with outliner_rows = [code; older]; journal_outliner_rows = [code; older];
+      projection_outliner_editing = editing};
+    check ~msg:"editing a code block keeps its date's Add block control" (button "today" <> -1)
+  ) [ios_backend; kotlin_backend]
+
 let block_navigation_exposes_an_immediate_outliner_preview_route () =
   let parent =
     {
@@ -7420,8 +7451,8 @@ let older_journals_use_an_invisible_scroll_sentinel () =
     (property_int renderer sentinel Lui_protocol.HeightValue)
     1;
   check_eq ~msg:"main keeps bottom padding after the pagination marker"
-    (property_int renderer bottom_spacer Lui_protocol.HeightValue)
-    120;
+    (extension_property application bottom_spacer "height")
+    (Some (Lui_protocol.IntValue 120));
   check
     ~msg:"pagination begins before the user reaches the absolute scroll edge"
     (sentinel <> bottom_spacer);
@@ -9250,7 +9281,13 @@ let scrolling_keeps_the_active_editor_outside_the_visible_window () =
       check_eq ~msg:"the retained editor keeps its unsaved text"
         (extension_property application editor "title") (Some (Lui_protocol.StringValue "Unsaved draft"));
       check ~msg:"only the window and one pinned editor may stay mounted"
-        (List.length (children renderer window) <= 33)) [100; 9_980; 0]
+        (List.length (children renderer window) <= 33)) [100; 9_980; 0];
+    dispatch application (Lui_protocol.VisibleRange (window, 8, 9999));
+    flush application;
+    check ~msg:"an outlying pinned row cannot block the viewport from mounting the last block"
+      (descendant_with_identifier renderer root "outliner.block.retained-9999" <> -1);
+    check_eq ~msg:"the viewport and the pinned editor remain independent"
+      (extension_node application "outliner-editor") editor
   ) [ios_backend; kotlin_backend]
 
 let kotlin_large_pages_mount_only_the_requested_window () =
@@ -11784,6 +11821,7 @@ let cases =
     case "native-navigation-retains-repeated-node-visits" native_navigation_retains_repeated_node_visits;
     case "journal-navigation-exposes-an-immediate-preview-route" journal_navigation_exposes_an_immediate_preview_route;
     case "journal-home-places-today-references-before-older-days" journal_home_places_today_references_before_older_days;
+    case "journal-placeholders-only-follow-their-own-page-editor" journal_placeholders_only_follow_their_own_page_editor;
     case "block-navigation-exposes-an-immediate-outliner-preview-route" block_navigation_exposes_an_immediate_outliner_preview_route;
     case "popped-native-path-restores-root-before-core-route-cleanup" popped_native_path_restores_root_before_core_route_cleanup;
     case "app-and-search-routes-are-retained-by-distinct-native-stacks" app_and_search_routes_are_retained_by_distinct_native_stacks;
