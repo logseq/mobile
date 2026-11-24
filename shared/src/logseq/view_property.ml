@@ -286,6 +286,11 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
               column ~cross:(if compact then `start else `stretch) [
               (match task_icon with
               | Some icon_name ->
+                let edit_task_date () =
+                  if Lui_ui.platform context = Lui_protocol.IOS && Lui_ui.host context = Lui_protocol.SwiftUIHost then
+                    let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
+                    ignore (send (Model.OpenBlockTaskDate (owner, name)))
+                  else edit () in
                 let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
                 let value = own (Signal.map2 (fun current property ->
                   match timestamp property with
@@ -306,7 +311,7 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
                 compact_task_metadata ~icon_name ~disabled_signal:disabled ?overdue_signal
                   ~icon_identifier:("property.label." ^ owner ^ "." ^ attr)
                   ~identifier:("property.value." ^ owner ^ "." ^ attr)
-                  ~label:(property_title (Signal.sample model_source) first) value edit
+                  ~label:(property_title (Signal.sample model_source) first) value edit_task_date
               | None -> fields [
                 label;
                 reactive (fun text_layout -> if text_layout then
