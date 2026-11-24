@@ -5421,6 +5421,7 @@ let dictionaries = [
     ("About", "关于");
     ("Account", "账户");
     ("Add attachment", "添加附件");
+    ("Add block", "添加块");
     ("Add graph", "添加图谱");
     ("Add sync graph", "添加同步图谱");
     ("Appearance", "外观");
@@ -5854,6 +5855,7 @@ let dictionaries = [
     ("3 months ago", "3 個月前");
     ("About", "關於");
     ("Account", "帳戶");
+    ("Add block", "新增區塊");
     ("Add property", "添加屬性");
     ("Advanced", "進階功能");
     ("Again", "重來");

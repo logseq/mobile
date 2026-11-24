@@ -1753,18 +1753,23 @@ let page_loading_view model_source : t =
          text ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) "Loading blocks…") [] ])
 
 let placeholder_block context model_source (value : View_rows.placeholder) show_button send : t =
+  let android = Lui_ui.host context = KotlinHost in
+  let label = View_base.tr (Signal.sample model_source) "Add block" in
   let placeholder : t = custom @@ fun mount_context parent ->
-    let node = mount mount_context ?parent (box ~height:28
+    let node = mount mount_context ?parent (box
+      ?height:(if android then None else Some 28) ~min_height:28
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
       [row ~cross:`center ~gap:0 ~padding_vertical:2
         [box ~opacity:0.35 [icon ~name:(`app "outliner-bullet") ~width:24 ~height:24 ~foreground:"muted-foreground"
            ~accessibility_identifier:("outliner.placeholder.bullet." ^ value.parent_uuid) []];
-         box ~grow:1.0 []]]) in
-    Lui_ui.string_property mount_context node AccessibilityLabel "Add block";
+         (if android then text ~value:label ~style_class:"caption" ~foreground:"muted-foreground" []
+          else box ~grow:1.0 [])]]) in
+    Lui_ui.string_property mount_context node AccessibilityLabel label;
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
-  let placeholder = box ~height:28 [if_ ~test:show_button placeholder] in
+  let placeholder = box ?height:(if android then None else Some 28) ~min_height:28
+    [if_ ~test:show_button placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, day, divider) ->
