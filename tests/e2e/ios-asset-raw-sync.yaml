@@ -52,6 +52,13 @@ appId: com.logseq.logseq
     timeout: 15000
 - assertVisible:
     id: "player.asset.audio"
+- runFlow:
+    when:
+      visible:
+        id: "button.journals.more"
+    commands:
+      - tapOn:
+          id: "button.journals.more"
 - extendedWaitUntil:
     visible:
       id: "sync.connected"

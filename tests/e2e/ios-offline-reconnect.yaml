@@ -4,22 +4,24 @@ appId: com.logseq.logseq
 - extendedWaitUntil:
     visible: "__LOGSEQ_E2E_GRAPH_NAME__"
     timeout: 30000
-- extendedWaitUntil:
-    visible: "Synced"
-    timeout: 30000
 - scrollUntilVisible:
     element:
       text: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
     direction: DOWN
     timeout: 30000
 - assertVisible: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
-- assertVisible:
-    id: "sync.connected"
+- tapOn:
+    id: "button.journals.more"
+- extendedWaitUntil:
+    visible: "Synced"
+    timeout: 30000
 - stopApp
 - launchApp
 - extendedWaitUntil:
     visible: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
     timeout: 30000
+- tapOn:
+    id: "button.journals.more"
 - assertVisible:
     id: "sync.connected"
 - takeScreenshot: tests/e2e/screenshots/ios-offline-reconnect
