@@ -3183,8 +3183,11 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"the sidebar has no duplicate graph switch"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     (-1);
+  let journals_tweak = List.hd (children renderer sidebar_content) in
   check_eq ~msg:"the sidebar content starts directly with navigation rows"
-    (List.hd (children renderer sidebar_content)) journals;
+    (child_with_identifier renderer journals_tweak "link.sidebar.journals") journals;
+  check_eq ~msg:"VoiceOver can identify Journals as the current destination"
+    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue true));
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
     2;
@@ -3252,6 +3255,11 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (App.model application).selected_page (Some favorite);
   check ~msg:"the favorite link has no selected background after navigation"
     (not (property_bool renderer favorite_link Lui_protocol.Selected));
+  let favorite_tweak = parent_with_child_identifier renderer favorites "link.sidebar.page.page-a" in
+  check_eq ~msg:"VoiceOver can identify the current favorite"
+    (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
+  check_eq ~msg:"VoiceOver no longer identifies Journals as current"
+    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue false));
   let menu =
     descendant_with_identifier renderer graph_switch "menu.graph-switch"
   in
@@ -3274,13 +3282,32 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (not (property_bool renderer root Lui_protocol.Selected));
     check ~msg:"system presentation does not require model-owned popup state"
       (not (App.model application).graph_menu_open);
-    let remote_item = child_with_identifier renderer menu "menu.graph.remote" in
+    let selecting = {(App.model application) with outliner_selected_block_ids = ["selected-block"]} in
+    let attempted_switch = Model.update selecting (Model.SelectSidebarGraph "remote") in
+    check_eq ~msg:"switching graphs cannot clear an active block selection"
+      attempted_switch.outliner_selected_block_ids selecting.outliner_selected_block_ids;
+    check_eq ~msg:"switching graphs cannot enqueue an effect during block selection"
+      attempted_switch.pending_effects selecting.pending_effects;
+    send application Model.ShowFlashcards;
+    flush application;
+    check ~msg:"Flashcards retains its deck picker"
+      (descendant_with_identifier renderer navigation "menu.flashcards.deck" <> -1);
+    let flashcards_switch = descendant_with_identifier renderer navigation "button.graph-switch" in
+    let remote_item = descendant_with_identifier renderer flashcards_switch "menu.graph.remote" in
+    check ~msg:"Flashcards also exposes the native graph switch" (remote_item <> -1);
+    send application (Model.ApplyComposerDraft "Unsent capture");
+    send application Model.ExpandComposer;
+    flush application;
     dispatch application (Lui_protocol.Press remote_item);
     flush application;
     check
       ~msg:"choosing another graph reuses the typed open-graph effect"
       (List.exists (function Model.OpenGraphEffect (_, "remote") -> true | _ -> false)
-        (App.model application).pending_effects)
+        (App.model application).pending_effects);
+    check ~msg:"switching graphs closes the composer and clears autofocus"
+      (not ((App.model application).composer_expanded || (App.model application).composer_autofocus));
+    check_eq ~msg:"switching graphs keeps the unsent draft"
+      (App.model application).composer_draft "Unsent capture"
   end
 
 let sidebar_drag_reserves_app_navigation () =
@@ -3968,8 +3995,10 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     (descendant_with_identifier renderer screen "layout.flashcards.review") (-1);
   let navigation = extension_node application "native-navigation-stack" in
   let toolbar = extension_node application "native-flashcards-toolbar" in
-  check_eq ~msg:"card group controls replace the iOS navigation title slot"
-    (children renderer (List.nth (children renderer navigation) 2)) [toolbar];
+  let title_slot = List.nth (children renderer navigation) 2 in
+  let graph_switch = child_with_identifier renderer title_slot "button.graph-switch" in
+  check ~msg:"the navigation title hosts both the card group controls and the graph switch"
+    (graph_switch <> -1 && children renderer title_slot = [toolbar; graph_switch]);
   let deck_menu = child_with_identifier renderer toolbar "menu.flashcards.deck" in
   check ~msg:"the toolbar carries both the card group menu and the add button"
     (deck_menu <> -1

@@ -927,7 +927,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [View_base.with_int_prop_signal WidthValue width
               (View_sidebar.native_graph_switch ~min_height:28 ~foreground:"muted-foreground" model_source send)] in
          dyn (fun flashcards ->
-           if flashcards then box [View_flashcards.flashcard_toolbar model_source send]
+           if flashcards then box [View_flashcards.flashcard_toolbar model_source send;
+             View_sidebar.native_graph_switch ~compact:true ~foreground:"muted-foreground" model_source send]
            else title) (Signal.map View_base.flashcards_destination_ model_source)
        else main_header_title context model_source in
      ignore (mount context ~parent:node title_slot);

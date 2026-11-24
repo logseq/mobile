@@ -21,6 +21,12 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "section.sidebar.recent"
 - tapOn:
+    id: "button.sidebar.settings"
+- assertVisible:
+    id: "screen.settings"
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
     id: "button.sidebar"
 - assertNotVisible:
     id: "link.sidebar.graphs"
@@ -36,3 +42,11 @@ appId: com.logseq.logseq
     duration: 500
 - assertNotVisible:
     id: "link.sidebar.graphs"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
+- assertVisible:
+    id: "menu.flashcards.deck"
+- assertVisible:
+    id: "button.graph-switch"

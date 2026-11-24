@@ -8,6 +8,8 @@ import UIKit
 enum LGNavigationSurfacePolicy {
     static let androidContentTopPadding = CGFloat(0)
     static let androidDestinationContentTopPadding = CGFloat(56)
+    // The collapsed composer is 58 points tall and sits 21 points from the bottom.
+    static let collapsedComposerCenterFromBottom: CGFloat = 21 + 58 / 2
 
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
         contentPreference
@@ -194,6 +196,16 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try registry.registerTweak(
+            LUIAppleTweak(
+                identifier: "sidebar-current-item",
+                fingerprint: "lui-tweak-v1|20:sidebar-current-item|profiles:ios/swiftui|properties:7:current:bool:required:none",
+                properties: [.init(name: "current", kind: .bool, isRequired: true)]
+            ) { content, context in
+                let isCurrent = context.property("current") == .bool(true)
+                return AnyView(content.accessibilityAddTraits(isCurrent ? .isSelected : []))
+            }
+        )
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-auth-input",
@@ -375,12 +387,16 @@ struct LGWindowVerticalInsetsReader: UIViewRepresentable {
 #endif
 
 private struct LGSidebarNavigation: View {
+    private static let settingsButtonHeight: CGFloat = 44
     let context: LUIAppleExtensionViewContext
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
     @State private var topInset: CGFloat = 0
-    @State private var bottomInset: CGFloat = 0
+
+    private var settingsBottomPadding: CGFloat {
+        LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - Self.settingsButtonHeight / 2
+    }
 
     private var palette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -402,7 +418,7 @@ private struct LGSidebarNavigation: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Let the rows scroll into the status area while starting just below it.
                 .padding(.top, topInset)
-                .padding(.bottom, bottomInset + 48)
+                .padding(.bottom, settingsBottomPadding + Self.settingsButtonHeight + 4)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -424,13 +440,10 @@ private struct LGSidebarNavigation: View {
         .overlay(alignment: .bottomTrailing) {
             child(at: 1)
                 .padding(.trailing, 16)
-                .padding(.bottom, bottomInset)
+                .padding(.bottom, settingsBottomPadding)
         }
         #if os(iOS)
-        .background(LGWindowVerticalInsetsReader {
-            topInset = $0.top
-            bottomInset = $0.bottom
-        })
+        .background(LGWindowVerticalInsetsReader { topInset = $0.top })
         #endif
         .background(background.ignoresSafeArea())
     }
@@ -791,16 +804,17 @@ private struct LGNavigationContent: View {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
-    private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
+    private var flashcardsToolbar: (container: Int, title: Int, add: Int, graph: Int)? {
         guard let toolbarStartIndex,
               let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
         let _ = context.measureStamp(of: titleSlot)
-        guard let container = context.childIDs(of: titleSlot).first,
-              context.extensionIdentifier(of: container) == LGNavigationExtension.flashcardsToolbarIdentifier
-        else { return nil }
+        let slots = context.childIDs(of: titleSlot)
+        guard slots.count == 2,
+              context.extensionIdentifier(of: slots[0]) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
+        let container = slots[0]
         let children = context.childIDs(of: container)
         guard children.count == 3 else { return nil }
-        return (container, children[0], children[1])
+        return (container, children[0], children[1], slots[1])
     }
 
 
@@ -1020,7 +1034,7 @@ private struct LGNavigationContent: View {
                                 if let search, searchVisible {
                                     searchStatusTitle(search.statusTitle)
                                 } else if let flashcardsToolbar {
-                                    flashcardsTitle(flashcardsToolbar.title)
+                                    flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
                                 } else {
                                     graphSwitchTitle
                                 }
@@ -1095,12 +1109,15 @@ private struct LGNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
-    private func flashcardsTitle(_ nodeID: Int) -> some View {
-        context.nodeView(of: nodeID)
-            .font(.headline)
-            .lineLimit(1)
-            .menuStyle(.button)
-            .buttonStyle(.plain)
+    private func flashcardsHeader(deck: Int, graph: Int) -> some View {
+        HStack(spacing: 8) {
+            context.nodeView(of: deck)
+                .font(.headline)
+                .lineLimit(1)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+            graphSwitchMenu(graph)
+        }
     }
 
     private func searchStatusTitle(_ title: String) -> some View {
@@ -1110,17 +1127,22 @@ private struct LGNavigationContent: View {
             .accessibilityIdentifier("search.status")
     }
 
+    private func graphSwitchMenu(_ nodeID: Int) -> some View {
+        context.nodeView(of: nodeID)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .disabled(selectionActive)
+    }
+
     private var graphSwitchTitle: some View {
         VStack(spacing: 0) {
             if let toolbarStartIndex,
                let titleSlot = childID(at: toolbarStartIndex + 1),
                let graphSwitch = context.childIDs(of: titleSlot).first {
-                context.nodeView(of: graphSwitch)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
+                graphSwitchMenu(graphSwitch)
             }
             if !contextualTitle.isEmpty {
                 Text(verbatim: contextualTitle)
@@ -1134,24 +1156,24 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private var rootNavigationSurface: some View {
         let base = AnyView(transformedRootContent.safeAreaInset(edge: .top, spacing: 0) {
-            if verticalToolbar, toolbarStartIndex != nil, flashcardsToolbar == nil {
-                // Retain the journal viewport while the native search bar is presented.
-                graphSwitchTitle
-                    .frame(maxWidth: .infinity)
-                    .background(routeBackground)
-                    .opacity(searchVisible || pdfWorkspaceOpen ? 0 : 1)
+            if verticalToolbar, toolbarStartIndex != nil {
+                // A principal item would create a second, horizontal bar on Duo.
+                let hideTitle = searchVisible || pdfWorkspaceOpen
+                Group {
+                    if let flashcardsToolbar {
+                        flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
+                    } else {
+                        graphSwitchTitle
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .opacity(hideTitle ? 0 : 1)
+                .allowsHitTesting(!hideTitle)
+                .accessibilityHidden(hideTitle)
             }
         })
         withAppTint(searchSurface(base, active: path.isEmpty))
             .padding(.top, navigationContentTopPadding)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if verticalToolbar, !searchVisible, let flashcardsToolbar {
-                    // A principal item would create a second, horizontal bar.
-                    flashcardsTitle(flashcardsToolbar.title)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(routeBackground)
-                }
-            }
             .background {
                 if let flashcardsToolbar {
                     context.nodeView(of: flashcardsToolbar.container)

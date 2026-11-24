@@ -52,18 +52,24 @@ import SwiftUI
         try await Task.sleep(for: .milliseconds(1500))
         let settings = try frame("button.sidebar.settings")
         let sidebar = try frame("sidebar.navigation")
+        let composer = try frame("row.bottom.capture")
+        let journalsButton = try frame("link.sidebar.journals")
         let journalsID = try id("link.sidebar.journals")
         guard let contentID = backend.model(id: journalsID)?.children.first,
               let journals = frames[contentID] else { throw failure("Missing Journals label frame") }
         let toolbar = try frame("button.sidebar")
-        let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
-        print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) safeBottom=\(safeBottom)")
+        print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
         if journals.midY <= toolbar.midY || journals.midY > toolbar.maxY + 4 {
             errors.append("Journals must sit just below the header controls")
         }
-        if abs(sidebar.maxX - settings.maxX - 16) > 1 || abs(safeBottom - settings.maxY) > 1
-            || settings.width < 44 || settings.height < 44 {
-            errors.append("Settings must sit at the sidebar's bottom trailing corner above the home indicator")
+        if journalsButton.minY < window.safeAreaInsets.top {
+            errors.append("The Journals touch target must clear the status area")
+        }
+        if abs(sidebar.maxX - settings.maxX - 16) > 1 || settings.width < 44 || settings.height < 44 {
+            errors.append("Settings must sit at the sidebar's bottom trailing corner with a 44-point touch target")
+        }
+        if abs(settings.midY - composer.midY) > 1 {
+            errors.append("Settings must share the collapsed composer's vertical center")
         }
         try backend.performPress(node: id("button.sidebar.settings"))
         try await Task.sleep(for: .milliseconds(300))

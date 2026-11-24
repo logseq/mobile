@@ -18,10 +18,13 @@ import Vision
         let rows: [[String: Any]] = (0..<60).map { index in
             ["block": ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"], "depth": 0]
         }
-        let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
-            "selectedPage": ["uuid": "page", "title": title],
-            "outlinerState": ["selectedBlockIds": []]]
-        let snapshot = String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
+        func encodeSnapshot(rows: [[String: Any]]) throws -> String {
+            let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
+                "selectedPage": ["uuid": "page", "title": title],
+                "outlinerState": ["selectedBlockIds": []]]
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
+        }
+        let snapshot = try encodeSnapshot(rows: rows)
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         if !delayedLoad { try runtime.applyCoreResponse(snapshot) }
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
@@ -63,6 +66,11 @@ import Vision
         scroll.setContentOffset(CGPoint(x: 0, y: top + 180), animated: false)
         try await Task.sleep(for: .milliseconds(700))
         guard observed == title else { throw failure("The title must appear after its heading crosses the viewport top") }
+        var updatedRows = rows
+        updatedRows[3] = ["block": ["uuid": "replacement", "title": "Replacement row", "pageId": "page"], "depth": 0]
+        try runtime.applyCoreResponse(encodeSnapshot(rows: updatedRows))
+        try await Task.sleep(for: .milliseconds(700))
+        guard observed == title else { throw failure("Replacing a visible page row must keep the contextual title") }
         func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
         guard let bar = views(window).compactMap({ $0 as? UINavigationBar }).first(where: {
             let frame = $0.convert($0.bounds, to: window)

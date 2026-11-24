@@ -4,6 +4,16 @@ open Lui_elements
 let uses_native_sidebar context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
+let with_sidebar_selection context selected item =
+  if uses_native_sidebar context then
+    custom (fun context parent ->
+      let node = Lui_ui.platform_tweak context "sidebar-current-item" in
+      Lui_ui.extension_property_signal context node "current" (Signal.map View_base.bool_wire_value selected);
+      ignore (mount context ~parent:node item);
+      attach context parent node;
+      node)
+  else View_base.with_selected_signal selected item
+
 let sidebar_page_row (context : Lui_ui.ui_context) model_source
     (page_source : Model.sidebar_page Signal.signal) send : t
   =
@@ -13,8 +23,10 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
   let icon_source = Signal.map2 (fun current (page : Model.sidebar_page) ->
     View_base.node_icon current page.uuid) model_source page_source in
   let ios = uses_native_sidebar context in
+  let selected = Signal.map2 View_base.sidebar_page_selected_ model_source page_source in
   let item custom =
-    View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
+    with_sidebar_selection context selected
+      (View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
       (list_item ~corner_radius:10
         ?height:(if Lui_ui.host context = KotlinHost then Some 48 else None)
         ?min_height:(if ios then Some 44 else None)
@@ -22,13 +34,12 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
         ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
         ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
         ?icon:(if custom then None else Some (`app "document"))
-        ?selected_signal:(if ios then None else Some (Signal.map2 View_base.sidebar_page_selected_ model_source page_source))
         ~accessibility_identifier:(View_base.sidebar_page_identifier page)
         ~on_press:navigate
         (if custom then [row ~gap:10 ~cross:`center [
           View_base.node_icon_view ~muted:true ~size:20 icon_source;
           text ?font_family:(if ios then Some "system-ui" else None)
-            ~value:(reactive View_base.sidebar_page_title page_source) []]] else [])) in
+            ~value:(reactive View_base.sidebar_page_title page_source) []]] else []))) in
   column ~gap:0 [
     if_ ~test:(Signal.map (fun icon -> icon <> "") icon_source) (item true);
     if_ ~test:(Signal.map (fun icon -> icon = "") icon_source) (item false)]
@@ -111,14 +122,16 @@ let sidebar_graph_switch_content model_source : t =
         ~foreground:"muted-foreground" [];
     ]
 
-let native_graph_switch ?grow ?(min_height = 44) ?(foreground = "foreground") model_source send : t =
+let native_graph_switch ?grow ?(min_height = 44) ?(foreground = "foreground") ?(compact = false) model_source send : t =
   View_base.with_label_signal
     (Signal.map (fun current ->
        View_base.graph_label current ^ ", " ^ View_base.tr current "Switch graph") model_source)
     (button ~variant:`ghost ~min_height ?grow
-      ~text:(reactive View_base.graph_label model_source)
+      ?width:(if compact then Some 44 else None)
+      ~text:(reactive (fun current -> if compact then "" else View_base.graph_label current) model_source)
+      ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
       ~style_class:"semibold" ~foreground
-      ~icon:(`app "chevron-down") ~icon_placement:`trailing
+      ~icon:(`app (if compact then "folder" else "chevron-down")) ~icon_placement:`trailing
       ~accessibility_identifier:"button.graph-switch"
       [context_menu ~accessibility_identifier:"menu.graph-switch"
          (sidebar_graph_menu_items keyed_context_menu_item sidebar_graph_context_item model_source send)])
@@ -135,12 +148,12 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~id ~icon ~selected ~action : t =
   let value = View_base.tr (Signal.sample model_source) title in
   let ios = uses_native_sidebar context in
-  View_base.with_label (if ios then value else title)
+  with_sidebar_selection context (Signal.map selected model_source)
+    (View_base.with_label (if ios then value else title)
     (list_item ~corner_radius:10
       ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
       ?min_height:(if ios then Some 48 else None)
       ?icon:(if ios then None else Some icon)
-      ?selected_signal:(if ios then None else Some (Signal.map selected model_source))
       ?text:(if ios then None else Some value)
       ~accessibility_identifier:("link.sidebar." ^ id)
       ~on_press:(press send action)
@@ -150,7 +163,7 @@ let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~
         ];
         text ~value ~font_family:"system-ui" ~font_size:"21" ~font_weight:500
           ~style_class:"single-line" [];
-      ]] else []))
+      ]] else [])))
 
 let sidebar_journals_row context model_source send =
   sidebar_destination_row context model_source send ~title:"Journals" ~id:"journals"

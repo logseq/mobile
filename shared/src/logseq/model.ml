@@ -2809,13 +2809,14 @@ let rec update (current : logseq_model) action =
     { current with sidebar_open = false; graph_menu_open = false }
   | OpenGraphMenu -> { current with graph_menu_open = true }
   | DismissGraphMenu -> { current with graph_menu_open = false }
+  | SelectSidebarGraph _ when current.outliner_selected_block_ids <> [] -> current
   | SelectSidebarGraph graph_id ->
     (match graph_by_id current.graphs graph_id with
      | Some graph ->
        if graph.is_ready then begin
          let updated =
            {
-             (cancel_outliner_editing (return_to_app_root current)) with
+             (cancel_outliner_editing (update (return_to_app_root current) DismissComposer)) with
              sidebar_open = sidebar_after_navigation current;
              graph_menu_open = false;
            }

@@ -388,4 +388,8 @@ let extension_registry () =
   Lui_extension.register_tweak registry (liquid_glass_schema ());
   Lui_extension.register_tweak registry (native_control_tint_schema ());
   Lui_extension.register_tweak registry (adaptive_content_insets_schema ());
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "sidebar-current-item"
+      [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+      [Lui_extension.property "current" Lui_extension.BoolScalar true None]);
   registry

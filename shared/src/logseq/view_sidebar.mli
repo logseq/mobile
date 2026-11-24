@@ -11,7 +11,7 @@ val sidebar_empty_section_label : Model.logseq_model Signal.signal -> string -> 
 val sidebar_graph_switch_content :
   Model.logseq_model Signal.signal -> Lui_elements.t
 val native_graph_switch :
-  ?grow:float -> ?min_height:int -> ?foreground:string -> Model.logseq_model Signal.signal ->
+  ?grow:float -> ?min_height:int -> ?foreground:string -> ?compact:bool -> Model.logseq_model Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val sidebar_graph_switch :
   Lui_ui.ui_context ->
