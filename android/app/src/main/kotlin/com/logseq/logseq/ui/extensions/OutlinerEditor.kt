@@ -32,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
@@ -143,6 +145,8 @@ internal fun OutlinerEditor(
     val nativeValue = remember { EditorFieldValue(fieldState) }
     var value: TextFieldValue by nativeValue
     var observedValue by remember { mutableStateOf(value) }
+    var compositionStartText by remember { mutableStateOf<String?>(null) }
+    val preImeEnterKeys = remember { mutableSetOf<Key>() }
     var previousText by remember { mutableStateOf(modelTitle) }
     var previousSelection by remember { mutableStateOf(value.selection) }
     var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
@@ -173,6 +177,7 @@ internal fun OutlinerEditor(
 
     fun applyNativeValue(next: TextFieldValue) {
         // Snapshot observers can run during the edit. Mark it before writing.
+        if (next.composition == null) compositionStartText = null
         observedValue = next
         value = next
     }
@@ -343,6 +348,30 @@ internal fun OutlinerEditor(
         return true
     }
 
+    // Gboard can mark an existing word as composing without changing the text.
+    fun hasUnconfirmedComposition(): Boolean {
+        val current = value
+        return current.composition != null && current.text != (compositionStartText ?: observedValue.text)
+    }
+
+    fun handleEnter(event: ComposeKeyEvent): Boolean {
+        if (event.key != Key.Enter && event.key != Key.NumPadEnter) return false
+        if (event.type != KeyEventType.KeyDown) return false
+        if (multiline && !event.isShiftPressed) return false
+        val hasUnconfirmedText = hasUnconfirmedComposition()
+        if (commitComposition() && hasUnconfirmedText) return true
+        if (!event.isShiftPressed || code && multiline) {
+            returnAtSelection()
+        } else {
+            val start = value.selection.min.coerceIn(0, value.text.length)
+            val end = value.selection.max.coerceIn(start, value.text.length)
+            val next = TextFieldValue(value.text.replaceRange(start, end, "\n"), TextRange(start + 1))
+            if (awaitingHandoff) capturePendingInput(next) else debounceSeq++
+            applyNativeValue(next)
+        }
+        return true
+    }
+
     fun emitStructuralBackspace() {
         context.emit(
             "backspace",
@@ -354,6 +383,8 @@ internal fun OutlinerEditor(
     fun acceptValue(incoming: TextFieldValue) {
             if (incoming == observedValue) return
             val prior = observedValue
+            if (incoming.composition == null) compositionStartText = null
+            else if (compositionStartText == null) compositionStartText = prior.text
             if (awaitingHandoff) {
                 val priorText = prior.text
                 var prefix = 0
@@ -579,32 +610,31 @@ internal fun OutlinerEditor(
             .focusRequester(focusRequester)
             .testTag("field.outliner.block.$visibleBlockId")
             .semantics { testTagsAsResourceId = true }
+            .onPreInterceptKeyBeforeSoftKeyboard { event ->
+                if (event.key != Key.Enter && event.key != Key.NumPadEnter) return@onPreInterceptKeyBeforeSoftKeyboard false
+                when (event.type) {
+                    KeyEventType.KeyDown -> {
+                        // Give the IME the whole key press when it can confirm a candidate.
+                        val canIntercept = if (event.nativeKeyEvent.repeatCount == 0) {
+                            preImeEnterKeys.remove(event.key)
+                            !hasUnconfirmedComposition()
+                        } else event.key in preImeEnterKeys
+                        (canIntercept && handleEnter(event)).also { handled ->
+                            if (handled) preImeEnterKeys.add(event.key)
+                        }
+                    }
+                    KeyEventType.KeyUp -> preImeEnterKeys.remove(event.key)
+                    else -> false
+                }
+            }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown &&
                     ((event.key == Key.V && event.isCtrlPressed) || (event.key == Key.Insert && event.isShiftPressed))) {
                     submitPaste()
                     return@onPreviewKeyEvent true
                 }
-                if (event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)) {
-                    if (commitComposition()) return@onPreviewKeyEvent true
-                    if (!event.isShiftPressed && multiline) return@onPreviewKeyEvent false
-                    if (!event.isShiftPressed || (code && multiline)) {
-                        // Handle hardware Enter before the IME can batch it with other keys.
-                        returnAtSelection()
-                        return@onPreviewKeyEvent true
-                    }
-                    val start = value.selection.min.coerceIn(0, value.text.length)
-                    val end = value.selection.max.coerceIn(start, value.text.length)
-                    val title = value.text.replaceRange(start, end, "\n")
-                    val next = TextFieldValue(title, TextRange(start + 1))
-                    if (awaitingHandoff) {
-                        capturePendingInput(next)
-                    } else {
-                        debounceSeq++
-                    }
-                    applyNativeValue(next)
-                    true
-                } else if (event.type == KeyEventType.KeyDown &&
+                if (handleEnter(event)) return@onPreviewKeyEvent true
+                if (event.type == KeyEventType.KeyDown &&
                     event.key == Key.Backspace &&
                     value.selection.collapsed &&
                     value.selection.start == 0

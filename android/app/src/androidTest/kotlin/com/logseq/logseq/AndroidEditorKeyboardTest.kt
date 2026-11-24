@@ -355,6 +355,38 @@ class AndroidEditorKeyboardTest {
         assertSplit("日本語")
     }
 
+    @Test fun preImeEnterSplitsWhenTheKeyboardMarksUnchangedTextAsComposing() {
+        render("Draft")
+        ui.runOnIdle {
+            val view = requireNotNull(findEditorView())
+            val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+            assertTrue(connection.setSelection(0, 0))
+            assertTrue(connection.setComposingRegion(0, 5))
+            assertTrue(view.dispatchKeyEventPreIme(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, AndroidKeyEvent.KEYCODE_ENTER)))
+            assertTrue(view.dispatchKeyEventPreIme(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, AndroidKeyEvent.KEYCODE_ENTER)))
+        }
+        ui.runOnIdle {
+            val split = events.filterIsInstance<LuiEvent.Extension>().single { it.name == "return" }
+            assertEquals("Draft", split.values["title"])
+            assertEquals(0, split.values["caret-utf16-offset"])
+        }
+    }
+
+    @Test fun preImeEnterLetsTheKeyboardReplaceItsCandidateBeforeSplitting() {
+        val editor = render("Draft ")
+        ui.runOnIdle {
+            val view = requireNotNull(findEditorView())
+            val connection = requireNotNull(view.onCreateInputConnection(EditorInfo()))
+            assertTrue(connection.setComposingText("nihao", 1))
+            assertFalse(view.dispatchKeyEventPreIme(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, AndroidKeyEvent.KEYCODE_ENTER)))
+            assertTrue(connection.commitText("你好", 1))
+            assertFalse(view.dispatchKeyEventPreIme(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, AndroidKeyEvent.KEYCODE_ENTER)))
+        }
+        assertCommittedInCurrentBlock(editor, "Draft 你好")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        assertSplit("Draft 你好")
+    }
+
     @Test fun keyboardNewlineCommitsCompositionBeforeSplitting() {
         val editor = render("Draft ")
         val connection = inputConnection()
