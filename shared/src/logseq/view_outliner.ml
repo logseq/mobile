@@ -641,7 +641,7 @@ let outliner_row_content context model_source retained_row_source
         row_source send;
     ]
 
-let native_outliner_row ~allow_drag model_source retained_source row_source send : t =
+let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source row_source send : t =
  custom @@ fun context parent ->
   let node = Lui_ui.extension context "outliner-block-row" in
   attach context parent node;
@@ -668,6 +668,7 @@ let native_outliner_row ~allow_drag model_source retained_source row_source send
       "selected", `Bool retained.is_selected;
       "editing", `Bool (View_rows.retained_row_editing_ retained);
       "allowsDrag", `Bool allow_drag;
+      "trailingInset", `Int trailing_inset;
       "hasCustomContent", `Bool (View_rows.retained_row_editing_ retained || row.row_display_type = Some "code");
       "canRemoveTags", `Bool (Model.node_can_set_tags current row.row_uuid);
       "removeTagTitle", `String (View_base.tr current "Remove tag");
@@ -716,14 +717,20 @@ let native_outliner_row ~allow_drag model_source retained_source row_source send
 let selected_row ~selected_signal content =
   View_base.with_bool_prop_signal Selected selected_signal content
 
-let outliner_row_body ?(allow_drag = true) (context : Lui_ui.ui_context) model_source
+let with_ios_trailing_padding padding content =
+  custom (fun context parent ->
+    let node = mount context ?parent content in
+    if Lui_ui.host context = SwiftUIHost then Lui_ui.padding_right context node padding;
+    node)
+
+let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
   if Lui_ui.host context = SwiftUIHost then
     selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (box ~padding:0 ~accessibility_identifier:(reactive View_base.outliner_row_identifier row_source)
-        [native_outliner_row ~allow_drag model_source retained_row_source row_source send])
+        [native_outliner_row ~allow_drag ~trailing_inset model_source retained_row_source row_source send])
   else
   if
     View_base.outliner_row_list_item_press_enabled_
@@ -962,11 +969,11 @@ let with_result_page ?(root = false) context model_source send fallback : t =
       (View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current)
       && View_base.page_content_ready_ current && View_base.active_node_result_views current <> "") model_source)
 
-let outliner_row context model_source retained_row_source row_source send : t =
+let outliner_row ?(trailing_inset = 0) context model_source retained_row_source row_source send : t =
   with_embed_children model_source None row_source send (fun row_source send ->
   let retained_row_source = Signal.map2 (fun (retained : View_rows.retained_row) value ->
     {retained with value}) retained_row_source row_source in
-  let body = outliner_row_body context model_source retained_row_source row_source send in
+  let body = outliner_row_body ~trailing_inset context model_source retained_row_source row_source send in
   let body = decorate_row model_source row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
@@ -984,7 +991,9 @@ let outliner_row context model_source retained_row_source row_source send : t =
         (box ~padding_horizontal:8
           ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
           [View_query.view ~render_block model_source row_source send])] in
-    column ~gap:0 [body; outliner_continuation row_source (column ~gap:0 (dates @ properties @ query))])
+    column ~gap:0 [body;
+      outliner_continuation row_source
+        (with_ios_trailing_padding trailing_inset (column ~gap:0 (dates @ properties @ query)))])
     (Signal.map2 (fun (model : Model.logseq_model) (row : Model.outline_row) ->
       row.query_json <> "", (match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
@@ -1020,8 +1029,10 @@ let journal_heading model_source row_source parts send children : t =
 
 let outliner_entry context model_source retained_row_source row_source
     send : t =
+  let inset = 8 in
   let parts = Signal.map2 View_base.outliner_journal_title_parts model_source row_source in
-  column ~padding_horizontal:8
+  (* On iOS the disclosure button includes the trailing gutter. *)
+  with_ios_trailing_padding 0 (column ~padding_horizontal:inset
     ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "outliner.entry." ^ row.row_uuid) row_source)
     [
       if_
@@ -1030,16 +1041,16 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_divider_visible_ current r)
              model_source row_source)
-        (column ~gap:0
+        (with_ios_trailing_padding inset (column ~gap:0
            [ box ~height:26 [];
-             separator ~accessibility_identifier:"journal.divider" [] ]);
+             separator ~accessibility_identifier:"journal.divider" [] ]));
       if_
         ~test:
           (Signal.map2
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (journal_heading model_source row_source parts send
+        (with_ios_trailing_padding inset (journal_heading model_source row_source parts send
            [
              (* Align the Android title edge with the center of its 24dp bullet slot. *)
              box
@@ -1059,10 +1070,10 @@ let outliner_entry context model_source retained_row_source row_source
                  :: page_heading_text parts);
                  page_title_spacer ();
                ];
-           ]);
-      outliner_row context model_source retained_row_source row_source
+           ]));
+      outliner_row ~trailing_inset:inset context model_source retained_row_source row_source
         send;
-    ]
+    ])
 
 
 let toolbar_button model_source icon label identifier action send : t =
@@ -1563,7 +1574,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           [];
       ]) model_source
 
-let node_related_row ?(reference = false) context model_source ~source:row_source send : t =
+let node_related_row ?(reference = false) ?(trailing_inset = 0) context model_source ~source:row_source send : t =
   let send action = send (match action with
     | Model.ToggleOutlinerCollapsed uuid when reference ->
       Model.ToggleReferenceCollapsed (uuid, not (Signal.sample row_source : Model.outline_row).is_collapsed)
@@ -1583,18 +1594,18 @@ let node_related_row ?(reference = false) context model_source ~source:row_sourc
   column ~gap:0
     [
       if_ ~test:structured_breadcrumb_source
-        (box ~padding_horizontal:8
-           [ box ~height:10 []; related_row_breadcrumbs model_source row_source send ]);
+        (with_ios_trailing_padding (8 + trailing_inset) (box ~padding_horizontal:8
+           [ box ~height:10 []; related_row_breadcrumbs model_source row_source send ]));
       if_ ~test:fallback_breadcrumb_source
-        (box ~padding_horizontal:8
+        (with_ios_trailing_padding (8 + trailing_inset) (box ~padding_horizontal:8
            [
              box ~height:10 [];
              text
                ~value:
                  (reactive (Signal.map View_base.outliner_row_breadcrumb row_source))
                ~style_class:"caption" ~foreground:"muted-foreground" [];
-           ]);
-      outliner_row context model_source retained_row_source row_source
+           ]));
+      outliner_row ~trailing_inset context model_source retained_row_source row_source
         send;
     ]
 
@@ -1629,9 +1640,10 @@ let reference_entry context model_source entry_source send : t =
           ~accessibility_identifier:("reference.page." ^ page.uuid)
           [ node_breadcrumb_button model_source page_source send ]
       | View_rows.Reference_row (key, _) ->
-        box ~padding_horizontal:8
-          [ node_related_row ~reference:(key <> "tagged") context model_source
-              ~source:(reactive View_rows.reference_entry_row entry_source) send ]
+        let inset = 8 in
+        with_ios_trailing_padding 0 (box ~padding_horizontal:inset
+          [ node_related_row ~reference:(key <> "tagged") ~trailing_inset:inset context model_source
+              ~source:(reactive View_rows.reference_entry_row entry_source) send ])
 
 let page_loading_view model_source : t =
   if_ ~test:(reactive View_base.page_loading_visible_ model_source)
@@ -1720,13 +1732,14 @@ let journal_task_row context model_source task_source send =
           [text ~value:"·" ~style_class:"footnote" ~foreground:"muted-foreground" []; item]) items) in
       row ~gap:5 ~main:`start ~cross:`center
         ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_source in
-    column ~gap:0 ~padding_horizontal:8 ~padding_vertical:1
+    let inset = 8 in
+    with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [
-        outliner_row_body ~allow_drag:false context view_model retained source send_block;
+        outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block;
         View_base.with_int_prop_signal PaddingLeft
           (Signal.map (outliner_task_date_leading context) source)
-          (box [metadata]);
-      ]
+          (with_ios_trailing_padding inset (box [metadata]));
+      ])
 
 let journal_task_entry context model_source send = function
   | View_rows.Journal_task_gap -> box ~height:80 []

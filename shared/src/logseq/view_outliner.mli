@@ -67,6 +67,7 @@ val outliner_row_content :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_row :
+  ?trailing_inset:int ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->
@@ -102,6 +103,7 @@ val outliner_editor_toolbar :
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val node_related_row :
   ?reference:bool ->
+  ?trailing_inset:int ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   source:Model.outline_row Signal.signal ->
