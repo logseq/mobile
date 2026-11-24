@@ -16,6 +16,11 @@ struct LGRendererTests {
         #expect(LGIconPolicy.icons["star"] == .systemName("star"))
     }
 
+    @Test("journal task disclosures resolve their rotating chevron")
+    func journalTaskDisclosureIconResolves() {
+        #expect(LGIconPolicy.icons["chevron-right"] == .systemName("chevron.right"))
+    }
+
     @Test("native List routes use the platform grouped page surface")
     func nativeListRoutesUseSystemSurface() {
         #expect(LGNavigationSurfacePolicy.usesSystemGroupedBackground(
