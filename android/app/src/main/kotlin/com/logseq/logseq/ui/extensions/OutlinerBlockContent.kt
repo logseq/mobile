@@ -260,37 +260,15 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .pointerInput(uuid) {
-                val swipeDistance = 44.dp.toPx()
-                val resistanceStart = 36.dp.toPx()
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
-                        val travel = change.position - down.position
-                        if (abs(travel.x) > abs(travel.y) * 1.5f) change.consume()
-                    } ?: return@awaitEachGesture
-                    var distance = down.position.x - start.position.x
-                    val leftSwipe = distance > 0
-                    swiping = leftSwipe
-                    try {
-                        val released = horizontalDrag(start.id) { change ->
-                            distance -= change.positionChange().x
-                            if (leftSwipe) {
-                                val travel = distance.coerceAtLeast(0f)
-                                swipeOffset = minOf(travel, resistanceStart) +
-                                    ((travel - resistanceStart).coerceAtLeast(0f) * 0.18f).coerceAtMost(12.dp.toPx())
-                            }
-                            change.consume()
-                        }
-                        if (released && leftSwipe && distance >= swipeDistance) {
-                            currentContext.emit("toggle-selection", "uuid" to uuid)
-                        }
-                    } finally {
-                        swiping = false
-                        swipeOffset = 0f
-                    }
-                }
-            }
+            .outlinerSelectionSwipe(uuid,
+                onStart = { swiping = true },
+                onDrag = { swipeOffset = it },
+                onFinish = { selected ->
+                    swiping = false
+                    swipeOffset = 0f
+                    if (selected) currentContext.emit("toggle-selection", "uuid" to uuid)
+                },
+            )
             .then(when {
                 linkOnly && !selectionMode && actions == null -> Modifier
                 linkOnly && !selectionMode -> Modifier.pointerInput(uuid) {
@@ -348,8 +326,12 @@ internal fun OutlinerBlockContent(
             }
         }
         if (actions != null) {
-            AndroidBlockActionMenu(actions, expanded = menuOpen, onDismiss = { menuOpen = false },
-                onAction = { action -> currentContext.emit("menu-action", "payload" to action) },
+            AndroidBlockActionMenu(actions, canEdit = linkOnly, canCut = !LocalPropertyValue.current,
+                expanded = menuOpen, onDismiss = { menuOpen = false },
+                onAction = { action ->
+                    if (action == "edit") currentContext.emit("edit", "uuid" to uuid)
+                    else currentContext.emit("menu-action", "payload" to action)
+                },
                 onStatus = { index -> currentContext.emit("set-status", "uuid" to uuid, "count" to index) })
         }
         if (dragHover) {
@@ -364,12 +346,75 @@ internal fun OutlinerBlockContent(
     }
 }
 
+private fun Modifier.outlinerSelectionSwipe(
+    uuid: String,
+    onStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onFinish: (Boolean) -> Unit,
+): Modifier = pointerInput(uuid) {
+    val swipeDistance = 44.dp.toPx()
+    val resistanceStart = 36.dp.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+            val travel = change.position - down.position
+            if (abs(travel.x) > abs(travel.y) * 1.5f) change.consume()
+        } ?: return@awaitEachGesture
+        var distance = down.position.x - start.position.x
+        val leftSwipe = distance > 0
+        if (leftSwipe) onStart()
+        var selected = false
+        try {
+            val released = horizontalDrag(start.id) { change ->
+                distance -= change.positionChange().x
+                if (leftSwipe) {
+                    val travel = distance.coerceAtLeast(0f)
+                    onDrag(minOf(travel, resistanceStart) +
+                        ((travel - resistanceStart).coerceAtLeast(0f) * 0.18f).coerceAtMost(12.dp.toPx()))
+                }
+                change.consume()
+            }
+            selected = released && leftSwipe && distance >= swipeDistance
+        } finally {
+            onFinish(selected)
+        }
+    }
+}
+
+@Composable
+internal fun CalculatorSwipeSurface(context: LuiExtensionContext) {
+    val blockId = context.string("block-id").orEmpty()
+    val currentContext by rememberUpdatedState(context)
+    var horizontalPosition by remember(blockId) { mutableFloatStateOf(0f) }
+    var offset by remember(blockId) { mutableFloatStateOf(0f) }
+    var swiping by remember(blockId) { mutableStateOf(false) }
+    val density = LocalDensity.current.density
+    val displacement by animateFloatAsState(offset, if (swiping) snap() else spring(), label = "calculatorSwipe")
+    val swipe = if (!context.flag("enabled")) Modifier else Modifier.outlinerSelectionSwipe(
+        blockId,
+        onStart = { swiping = true },
+        onDrag = { offset = it },
+        onFinish = { selected ->
+            swiping = false
+            offset = 0f
+            if (selected) currentContext.emit("toggle-selection", "uuid" to blockId)
+        },
+    )
+    Box(Modifier.fillMaxWidth().onGloballyPositioned { horizontalPosition = it.positionInRoot().x }.then(swipe)) {
+        Box(Modifier.graphicsLayer { translationX = -minOf(displacement, (horizontalPosition + 16 * density).coerceAtLeast(0f)) }) {
+            context.Children()
+        }
+    }
+}
+
 private val LocalOutlinerBlockActions = compositionLocalOf { false }
 private val LocalOutlinerSelection = compositionLocalOf { false }
 
 @Composable
 private fun AndroidBlockActionMenu(
     actions: JSONObject,
+    canEdit: Boolean,
+    canCut: Boolean,
     expanded: Boolean,
     onDismiss: () -> Unit,
     onAction: (String) -> Unit,
@@ -399,13 +444,14 @@ private fun AndroidBlockActionMenu(
             }
             else -> {
                 BlockActionItem(label("Open block"), "external-link") { perform("open") }
+                if (canEdit) BlockActionItem(label("Edit"), "edit") { perform("edit") }
                 if (actions.optBoolean("isTask")) {
                     BlockActionItem(label("Scheduled"), "calendar") { perform("scheduled") }
                     BlockActionItem(label("Deadline"), "deadline") { perform("deadline") }
                     if (statuses.length() > 0) BlockActionItem(label("Status"), "toolbar-task") { submenu = "Status" }
                 }
                 BlockActionItem(label("Copy"), "toolbar-copy") { perform("copy") }
-                BlockActionItem(label("Cut"), "toolbar-cut") { perform("cut") }
+                if (canCut) BlockActionItem(label("Cut"), "toolbar-cut") { perform("cut") }
                 BlockActionItem(label("Copy reference"), "toolbar-copy-reference") { perform("copyReference") }
                 BlockActionItem(label("Copy URL"), "toolbar-copy-url") { perform("copyURL") }
                 BlockActionItem(label("Move"), "toolbar-move-up") { submenu = "Move" }

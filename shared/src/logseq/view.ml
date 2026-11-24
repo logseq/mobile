@@ -352,6 +352,11 @@ let extension_registry () =
       [event "select-status" [event_field "value" StringScalar true]]);
   Lui_extension.register_component registry
     (outliner_block_content_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "outliner-calculator-swipe" [profile AndroidOS KotlinHost] true []
+      [property "block-id" StringScalar true None; property "enabled" BoolScalar true None]
+      [event "toggle-selection" [event_field "uuid" StringScalar true]]);
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
   Lui_extension.register_component registry

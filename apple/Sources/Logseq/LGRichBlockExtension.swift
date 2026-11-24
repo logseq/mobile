@@ -168,29 +168,42 @@ private struct LGRichBlock: View {
 
     var body: some View {
         #if os(iOS)
-        content
-            .modifier(OutlinerSelectionSwipe {
-                guard context.isUserInteractionEnabled else { return }
-                try? context.emit(name: "toggle-selection", values: ["uuid": .string(blockID)])
-            })
-            .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: 0) }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                dropGeometry.height = height
-            }
-            .onDrag {
-                emitDragStart()
-                return NSItemProvider(object: blockID as NSString)
-            }
-            .onDrop(
-                of: [UTType.plainText],
-                delegate: OutlinerRowDropDelegate(
-                    geometry: dropGeometry,
-                    onDrop: emitDrop
+        if insideNativeOutlinerRow {
+            content
+        } else {
+            content
+                .modifier(OutlinerSelectionSwipe {
+                    guard context.isUserInteractionEnabled else { return }
+                    try? context.emit(name: "toggle-selection", values: ["uuid": .string(blockID)])
+                })
+                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: 0) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    dropGeometry.height = height
+                }
+                .onDrag {
+                    emitDragStart()
+                    return NSItemProvider(object: blockID as NSString)
+                }
+                .onDrop(
+                    of: [UTType.plainText],
+                    delegate: OutlinerRowDropDelegate(
+                        geometry: dropGeometry,
+                        onDrop: emitDrop
+                    )
                 )
-            )
+        }
         #else
         content
         #endif
+    }
+
+    private var insideNativeOutlinerRow: Bool {
+        var ancestor = context.parentID(of: context.nodeID)
+        while let id = ancestor {
+            if context.extensionIdentifier(of: id) == "outliner-block-row" { return true }
+            ancestor = context.parentID(of: id)
+        }
+        return false
     }
 
     private var content: some View {
@@ -332,6 +345,8 @@ struct LGAssetPreview: View {
     let assetType: String
     let localPath: String
     var allowsInteraction: () -> Bool = { true }
+    var selectBlock: (() -> Void)?
+    var selectionLabel: String?
     @Environment(\.lgImagePreviews) private var imagePreviews
     @Environment(\.lgOpenPDF) private var openPDF
     @State private var downloadedURL: URL?
@@ -346,17 +361,23 @@ struct LGAssetPreview: View {
             Group {
                 if let url = downloadedURL ?? LocalAssetPath.resolve(localPath, title: title, assetType: assetType) {
                     Button {
+                        guard allowsInteraction() else { return }
+                        if let selectBlock { selectBlock(); return }
                         Task { await imagePreviews?.present(uuid: uuid, fallback: url) }
                     } label: {
                         LGInlineImage(url: url)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Preview image")
+                    .accessibilityLabel(selectionLabel.map(Text.init(verbatim:)) ?? Text("Preview image"))
                     .accessibilityIdentifier("image.open." + uuid)
                 } else if let downloadError {
-                    Button { retry += 1 } label: {
+                    Button {
+                        guard allowsInteraction() else { return }
+                        if let selectBlock { selectBlock() } else { retry += 1 }
+                    } label: {
                         SwiftUI.Label("Retry image", systemImage: "arrow.clockwise")
                     }
+                    .accessibilityLabel(selectionLabel.map(Text.init(verbatim:)) ?? Text("Retry image"))
                     .accessibilityHint(downloadError)
                 } else {
                     ProgressView().frame(height: 120)
@@ -384,13 +405,23 @@ struct LGAssetPreview: View {
             title: title,
             assetType: assetType
         ) {
-            VStack(alignment: .leading, spacing: 8) {
+            let audio = VStack(alignment: .leading, spacing: 8) {
                 Text(verbatim: title.isEmpty ? "Untitled file" : title)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(3)
                 AssetAudioPlayer(path: url.path)
                     .frame(height: 44)
+            }
+            if let selectBlock {
+                Button {
+                    if allowsInteraction() { selectBlock() }
+                } label: {
+                    audio.allowsHitTesting(false)
+                }
+                .buttonStyle(.plain)
+            } else {
+                audio
             }
         } else {
             filePreview
@@ -409,6 +440,7 @@ struct LGAssetPreview: View {
     private var filePreview: some View {
         Button {
             guard allowsInteraction() else { return }
+            if let selectBlock { selectBlock(); return }
             downloadError = nil
             isLoadingFile = true
         } label: {

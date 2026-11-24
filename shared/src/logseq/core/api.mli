@@ -95,6 +95,7 @@ val list_member : string -> Yojson.Basic.t -> Yojson.Basic.t list
 val created_block_uuid_from_body : string -> string
 val normalize_asset_type : string -> string
 val asset_file_name : string -> string -> string
+val is_image_asset_type : string -> bool
 val content_type_for_asset_type : string -> string
 val raw_asset_upload_request :
   api_config -> string -> string -> string -> string -> string -> api_file_upload

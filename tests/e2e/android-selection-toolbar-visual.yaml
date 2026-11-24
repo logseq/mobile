@@ -4,13 +4,16 @@ appId: com.logseq.logseq
 - extendedWaitUntil:
     visible: "Android E2E continuous first"
     timeout: 90000
-- longPressOn: "Android E2E continuous first"
+- swipe:
+    from:
+      text: "Android E2E continuous first"
+    direction: LEFT
 - extendedWaitUntil:
     visible:
       id: "toolbar.outliner.selection"
     timeout: 5000
 - assertVisible:
-    id: "button.outliner.selection.copy"
+    id: "button.outliner.selection.outdent"
 - assertVisible:
-    id: "button.outliner.selection.unselect"
+    id: "button.outliner.selection.done"
 - takeScreenshot: tests/e2e/screenshots/android-selection-material

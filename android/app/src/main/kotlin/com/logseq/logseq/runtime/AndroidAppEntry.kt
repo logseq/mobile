@@ -36,14 +36,17 @@ internal data class AndroidImportedAsset(
         throw AndroidAppEntryRejected("Could not add $title ($code): $message")
     }
 
-    fun coreRequest(targetBlockId: String? = null): String {
-        val payload = JSONObject()
+    fun payload(): JSONObject =
+        JSONObject()
             .put("uuid", uuid)
             .put("title", title)
             .put("assetType", assetType)
             .put("assetSize", size)
             .put("assetChecksum", checksum)
             .put("localPath", localPath)
+
+    fun coreRequest(targetBlockId: String? = null): String {
+        val payload = payload()
         if (!targetBlockId.isNullOrEmpty()) payload.put("targetBlockId", targetBlockId)
         return JSONObject()
             .put("apiVersion", 1)

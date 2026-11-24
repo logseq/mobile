@@ -170,7 +170,7 @@ let metadata_member key row =
 
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
-    ["Open block"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+    ["Open block"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
      "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"])
 
 let handle_block_menu_event model_source row_source send = function
@@ -546,8 +546,12 @@ let code_block_content model_source retained_source row_source send : t =
     if_ ~test:(Signal.map (fun retained -> not (View_rows.retained_row_editing_ retained)) retained_source)
       (list_item ~padding:0
         ~accessibility_identifier:("outliner.code.content." ^ current_row.row_uuid)
-        ~on_press:(fun _ -> ignore (send (Model.BeginOutlinerEdit (Signal.sample row_source).row_uuid)))
-        ~on_long_press:(fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid)))
+        ~on_press:(fun _ ->
+          let uuid = (Signal.sample row_source).row_uuid in
+          ignore (send (if View_base.outliner_selection_active_ (Signal.sample model_source)
+            then Model.ToggleOutlinerSelection uuid else Model.BeginOutlinerEdit uuid)))
+        ?on_long_press:(if Lui_ui.host context = SwiftUIHost then None else
+          Some (fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))))
         [reactive (fun calculator -> if calculator then
           text ~value:(reactive source) ~font_family:"monospace" ~font_size:"17" ~padding:12 [] else
           outliner_rich_block_view ~show_code_language:false model_source
@@ -564,12 +568,22 @@ let code_block_content model_source retained_source row_source send : t =
     ~accessibility_identifier:("outliner.code." ^ current_row.Model.row_uuid) [
       code_language_control context model_source row_source send;
       reactive (fun calculator -> if not calculator then input else
-        row ~gap:0 ~cross:`start
+        let content = row ~gap:0 ~cross:`start
           ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
           box ~min_width:64 ~padding:12 [
             text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
               ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
-              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
+              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]] in
+        if Lui_ui.host context <> KotlinHost then content else custom (fun context parent ->
+          let node = Lui_ui.extension context "outliner-calculator-swipe" in
+          attach context parent node;
+          Lui_ui.extension_property_signal context node "block-id" (Signal.map View_base.outliner_row_id_wire_value row_source);
+          Lui_ui.extension_property_signal context node "enabled"
+            (Signal.map (fun row -> BoolValue (not (View_rows.retained_row_editing_ row))) retained_source);
+          Lui_ui.on_event context node (fun input ->
+            ignore (View_base.handle_outliner_block_content_event input model_source send));
+          ignore (mount context ~parent:node content);
+          node)) calculator;
     ])
 
 let annotation_page_link row_source send =

@@ -193,6 +193,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "navigation-back" to Icons.AutoMirrored.Filled.ArrowBack,
     "open-external" to Icons.AutoMirrored.Outlined.OpenInNew,
     "outliner-editor-done" to Icons.Filled.Check,
+    "edit" to Icons.Outlined.Edit,
     "refresh" to Icons.Filled.Refresh,
     "search" to Icons.Outlined.Search,
     "selected" to Icons.Filled.CheckCircle,

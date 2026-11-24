@@ -320,44 +320,70 @@ let quote_paste_preserves_paragraphs_inside_one_block () =
 
 let cut_exports_blocks_before_removing_them () = R.with_runtime (fun session runtime _ ->
   insert runtime child Q.alpha "a0" "Nested cut block";
-  block_event session "toggleBlockSelection" Q.alpha;
-  let response = event session ["type", `String "toolbar"; "action", `String "cut"] in
+  block_event session "tapBlock" child;
+  success (event session ["type", `String "textChanged"; "title", `String "Unsaved child draft"; "caretUTF16Offset", `Int 19]);
+  let response = event session ["type", `String "blockToolbar"; "uuid", `String Q.alpha; "action", `String "cut"] in
   success response;
   let result = member "result" response in
   let clipboard = Q.items "outlinerCommands" result |> List.find_opt (fun command ->
     member "type" command = `String "setClipboardBlocks") in
-  (match clipboard with
+  let copied = match clipboard with
    | Some command ->
      let copied = J.from_string (text (member "text" command)) in
-     check ~msg:"the clipboard still includes the removed descendants"
-       (String_kit.index_of ~sub:"Nested cut block" ~start:0 (text (member "plainText" copied)) <> None)
-   | None -> fail "Cut must write the rich block clipboard");
+     check ~msg:"the clipboard includes the latest text of the removed descendant"
+       (String_kit.index_of ~sub:"Unsaved child draft" ~start:0 (text (member "plainText" copied)) <> None);
+     copied
+   | None -> fail "Cut must write the rich block clipboard" in
   let remaining = ids (Graph_runtime.blocks_for_page runtime Q.page) in
   check ~msg:"Cut removes the source subtree" (not (List.mem Q.alpha remaining || List.mem child remaining));
-  check ~msg:"Cut leaves unselected siblings" (List.mem Q.beta remaining))
+  check ~msg:"Cut leaves unselected siblings" (List.mem Q.beta remaining);
+  let before = ids (Graph_runtime.blocks_for_page runtime Q.page) in
+  success (paste_copy session runtime copied);
+  check ~msg:"paste restores the unsaved child draft" (List.exists (fun (block : Cache_model.block) ->
+    not (List.mem block.uuid before) && block.title = "Unsaved child draft")
+    (Graph_runtime.blocks_for_page runtime Q.page)))
 
 let copy_image_uses_native_clipboard_assets () = R.with_runtime (fun session runtime _ ->
-  check_ok (Graph_runtime.stage runtime {
+  let stage_image uuid kind order = check_ok (Graph_runtime.stage runtime {
     Pending_ops.operation_id = Graph_runtime.fresh_uuid ();
     base_t = 42; state = Pending_ops.Queued;
     intent = Pending_ops.Create_asset {
-      uuid = child; title = "Photo.png"; page_uuid = Q.page; parent_uuid = Q.page;
-      order = "az"; created_at = 1234; asset_type = "png"; asset_size = 12;
+      uuid; title = "Photo." ^ kind; page_uuid = Q.page; parent_uuid = Q.page;
+      order; created_at = 1234; asset_type = kind; asset_size = 12;
       asset_checksum = "image-checksum"; transcript = None;
     };
-  });
-  let response = event session ["type", `String "blockToolbar"; "uuid", `String child; "action", `String "copy"] in
-  success response;
-  let commands = Q.items "outlinerCommands" (member "result" response) in
-  let images = List.find_opt (fun command -> member "type" command = `String "setClipboardImages") commands in
-  check_eq ~msg:"Copy exports the native image encoding and block identity"
-    (Option.map (fun command -> member "images" (member "imageClipboard" command)) images)
-    (Some (`List [`Assoc ["uuid", `String child; "assetType", `String "png"]]));
+  }) in
+  stage_image child "png" "az";
+  stage_image grandchild "bmp" "b0";
+  List.iter (fun (uuid, kind) ->
+    let response = event session ["type", `String "blockToolbar"; "uuid", `String uuid; "action", `String "copy"] in
+    success response;
+    let commands = Q.items "outlinerCommands" (member "result" response) in
+    let images = List.find_opt (fun command -> member "type" command = `String "setClipboardImages") commands in
+    check_eq ~msg:"Copy exports the native image encoding and block identity"
+      (Option.map (fun command -> member "images" (member "imageClipboard" command)) images)
+      (Some (`List [`Assoc ["uuid", `String uuid; "assetType", `String kind]])))
+    [child, "png"; grandchild, "bmp"];
   check ~msg:"Copy leaves the original image block in the graph"
     (List.mem child (ids (Graph_runtime.blocks_for_page runtime Q.page)));
-  ignore (copy session [child; Q.alpha]))
+  ignore (copy session [child; Q.alpha]);
+  let credit = "81000000-0000-4000-8000-000000000003" in
+  insert runtime credit child "a0" "Photo credit";
+  let copied = copy session [child] in
+  check ~msg:"an image with children keeps the whole subtree on the clipboard"
+    (String_kit.includes ~sub:"Photo credit" (text (member "plainText" copied))))
+
+let cut_rejects_a_partial_selection () = R.with_runtime (fun _ runtime _ ->
+  let open Outliner_state in
+  let context = context (Graph_runtime.blocks_for_page runtime Q.page) [] [] in
+  let state = {empty with selected = Sset.of_list [Q.alpha; child]} in
+  let next, commands = update context state (Toolbar Cut) in
+  check_eq (selected_uuids next) (selected_uuids state);
+  check ~msg:"cut rejects the selection before emitting clipboard or deletion commands"
+    (match commands with [Editor_error _] -> true | _ -> false))
 
 let cases = [
+  case "Cut rejects the entire selection if it contains an unsupported value" cut_rejects_a_partial_selection;
   case "Copy on an image block exports an image asset" copy_image_uses_native_clipboard_assets;
   case "Cut copies a subtree before removing it" cut_exports_blocks_before_removing_them;
   case "Quote paste retains paragraphs and Markdown in one block" quote_paste_preserves_paragraphs_inside_one_block;

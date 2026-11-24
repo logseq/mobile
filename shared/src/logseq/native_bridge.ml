@@ -602,7 +602,7 @@ let extension_event node identifier name text value =
     | "outliner-block-row", _ -> ["uuid", StringValue text]
     | "outliner-block-content", "open-node"
     | "outliner-block-content", "drag-start"
-    | "outliner-block-content", "toggle-selection"
+    | ("outliner-block-content" | "outliner-calculator-swipe"), "toggle-selection"
     | "outliner-block-content", "edit" ->
       [ "uuid", StringValue text ]
     | "outliner-block-content", "drop" ->

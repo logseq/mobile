@@ -5,37 +5,49 @@ appId: com.logseq.logseq
 - launchApp
 - runFlow:
     file: "__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__"
-- longPressOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
+- swipe:
+    from:
+      text: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+    direction: LEFT
 - assertVisible:
     id: "toolbar.outliner.selection"
 - assertVisible:
-    id: "button.outliner.selection.copy"
+    id: "button.outliner.selection.done"
 - assertVisible:
     id: "button.outliner.selection.outdent"
 - assertVisible:
     id: "button.outliner.selection.indent"
 - assertVisible:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.moveUp"
 - assertVisible:
-    id: "button.outliner.selection.copyReference"
-- assertVisible:
-    id: "button.outliner.selection.copyURL"
+    id: "button.outliner.selection.moveDown"
 - takeScreenshot: "tests/e2e/screenshots/ios-selection-toolbar"
+- tapOn:
+    id: "button.outliner.selection.done"
+- assertNotVisible:
+    id: "toolbar.outliner.selection"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
+- assertVisible:
+    id: "button.composer.expand"
+- swipe:
+    from:
+      text: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+    direction: LEFT
 - tapOn: "Select block E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
-    id: "button.outliner.selection.indent"
-- assertVisible:
-    id: "toolbar.outliner.selection"
-- tapOn:
-    id: "button.outliner.selection.outdent"
-- assertVisible:
-    id: "toolbar.outliner.selection"
-- tapOn:
-    id: "button.outliner.selection.delete"
+    id: "button.outliner.selection.more"
+- assertVisible: "Copy reference"
+- assertVisible: "Copy URL"
+- tapOn: "Delete"
 - assertVisible: "Delete blocks?"
 - tapOn: "Cancel"
 - assertNotVisible:
     id: "toolbar.outliner.selection"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
 - assertVisible:
     id: "button.composer.expand"
 - assertNotVisible: "outliner_effect_failed"

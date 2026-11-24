@@ -95,12 +95,25 @@ private const val SEARCH_FINGERPRINT =
 fun logseqExtensionRegistry(
     onOpenImage: ((String, String) -> Unit)? = null,
     loadImage: (suspend (String, String) -> String)? = null,
+    importPastedImage: (suspend (android.net.Uri) -> org.json.JSONObject)? = null,
     resolveAssetPath: (String) -> String = { it },
 ): LuiExtensionRegistry = LuiExtensionRegistry().apply {
     val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     registerNodeIcon()
     registerProperties()
     registerPdfWorkspace(loadImage)
+    register(
+        "outliner-calculator-swipe",
+        "lui-extension-v1|25:outliner-calculator-swipe|profiles:android/kotlin|standard-children:1|children:|properties:7:enabled:bool:required:none,8:block-id:string:required:none|events:16:toggle-selection[4:uuid:string:required]",
+        acceptsStandardChildren = true,
+        properties = listOf(
+            LuiExtensionProperty("block-id", LuiExtensionValueKind.STRING, required = true),
+            LuiExtensionProperty("enabled", LuiExtensionValueKind.BOOLEAN, required = true),
+        ),
+        events = listOf(LuiExtensionEventSchema("toggle-selection", listOf(
+            LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true),
+        ))),
+    ) { CalculatorSwipeSurface(this) }
 
     register(
         "outliner-editor",
@@ -152,7 +165,7 @@ fun logseqExtensionRegistry(
             ),
         ),
     ) {
-        NativeWritingAssistance { OutlinerEditor(this) }
+        NativeWritingAssistance { OutlinerEditor(this, importPastedImage) }
     }
     register(
         "outliner-block-content",

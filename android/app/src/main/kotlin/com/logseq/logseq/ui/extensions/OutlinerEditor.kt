@@ -1,5 +1,6 @@
 package com.logseq.logseq.ui.extensions
 
+import android.net.Uri
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnectionWrapper
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -63,6 +65,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.lui.LuiExtensionContext
+import com.logseq.logseq.AndroidBlockClipboard
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import com.logseq.logseq.runtime.NativeEditorInput
 import kotlinx.coroutines.delay
 
@@ -116,7 +124,10 @@ private class EditorFieldValue(private val state: TextFieldState) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun OutlinerEditor(context: LuiExtensionContext) {
+internal fun OutlinerEditor(
+    context: LuiExtensionContext,
+    importPastedImage: (suspend (Uri) -> JSONObject)? = null,
+) {
     val blockId = context.string("block-id") ?: ""
     val modelTitle = context.string("title") ?: ""
     val modelCaret = context.int("caret-utf16-offset") ?: -1
@@ -151,6 +162,10 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     val clipboard = remember(androidContext) {
         androidContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     }
+    val pasteScope = rememberCoroutineScope()
+    val latestBlockId by rememberUpdatedState(blockId)
+    val latestSelectionRevision by rememberUpdatedState(selectionRevision)
+    var importingImages by remember { mutableStateOf(false) }
     val pasteKey = remember { Any() }
     val publishedTitles = remember { mutableStateListOf<String>() }
     var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
@@ -408,8 +423,41 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
     }
 
     fun submitPaste() {
+        val images = AndroidBlockClipboard.imageUris(androidContext, clipboard.primaryClip)
+        if (images.isNotEmpty()) {
+            val importer = importPastedImage ?: return
+            if (importingImages || awaitingHandoff) return
+            importingImages = true
+            pasteScope.launch {
+                val assets = mutableListOf<JSONObject>()
+                var handedOff = false
+                try {
+                    for (uri in images) assets.add(importer(uri))
+                    if (latestBlockId == blockId && latestSelectionRevision == selectionRevision && !awaitingHandoff) {
+                        val payload = JSONObject().put("assets", JSONArray(assets))
+                            .put("targetBlockId", blockId).put("beforeTitle", value.text)
+                            .put("selectionStart", value.selection.min)
+                            .put("selectionLength", value.selection.max - value.selection.min)
+                        debounceSeq++
+                        handoffRevision = selectionRevision
+                        awaitingHandoff = true
+                        handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
+                        context.emit("paste-content", "value" to payload.toString())
+                        handedOff = true
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    LogseqDialogs.notifyError(error.message ?: "The image could not be pasted")
+                } finally {
+                    if (!handedOff) assets.forEach { File(it.getString("localPath")).delete() }
+                    importingImages = false
+                }
+            }
+            return
+        }
         capturePendingInput(value)
-        val payload = com.logseq.logseq.AndroidBlockClipboard.content(androidContext, value.text,
+        val payload = AndroidBlockClipboard.content(androidContext, value.text,
             value.selection.min, value.selection.max - value.selection.min) ?: return
         val plain = org.json.JSONObject(payload).getString("plainText")
             .replace("\r\n", "\n").replace('\r', '\n')
@@ -507,8 +555,9 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
             .fillMaxWidth()
             .appendTextContextMenuComponents {
                 val clip = clipboard.primaryClip
-                val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(androidContext)?.toString() else null
-                if (text != null) item(pasteKey, pasteLabel) {
+                if (clip != null && clip.itemCount > 0 &&
+                    (clip.description.hasMimeType("image/*") || clip.getItemAt(0).coerceToText(androidContext) != null)
+                ) item(pasteKey, pasteLabel) {
                     submitPaste()
                     close()
                 }
