@@ -25,7 +25,7 @@ let discard_value result =
   | Ok _ -> Ok ()
   | Error message -> Error message
 
-let host_options (database : Database.mobile_database) ring catalog =
+let host_options ?journal_tasks (database : Database.mobile_database) ring catalog =
   let graph = database.graph in
   {
     Rpc.default_options with
@@ -103,7 +103,7 @@ let host_options (database : Database.mobile_database) ring catalog =
     has_older_journals =
       Some (fun () -> Graph.has_older_journals graph);
     stage_operation =
-      Some (fun operation -> Graph.stage graph operation);
+      Some (fun operation -> Graph.stage ?journal_tasks graph operation);
     prepare_operation =
       Some (fun operation -> Graph.prepare_sync graph operation);
     prepare_operations = Some (Graph.prepare_sync_batch graph);
@@ -142,6 +142,10 @@ let host_options (database : Database.mobile_database) ring catalog =
       Some (fun day -> Graph.journal_page_uuid graph day);
   }
 
+let create_rpc_session database ring catalog =
+  let journal_tasks = Journal_task_dates.create_cache () in
+  Rpc.create_session ~journal_tasks (host_options ~journal_tasks database ring catalog)
+
 let create crypto_call =
   let ring = Platform.create_keyring crypto_call Http.send in
   let graph =
@@ -157,7 +161,7 @@ let create crypto_call =
       }
   in
   let database = Database.create graph in
-  let session = Rpc.create_session (host_options database ring None) in
+  let session = create_rpc_session database ring None in
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = true };
   { database; keyring = ring; session = ref session }
@@ -166,10 +170,7 @@ let call (host : mobile_session) request =
   match Payload.database_open_path request with
   | Some path ->
     let catalog = Database.open_catalog host.database path in
-    let session =
-      Rpc.create_session
-        (host_options host.database host.keyring (Some catalog))
-    in
+    let session = create_rpc_session host.database host.keyring (Some catalog) in
     session.Types.state :=
       { !(session.Types.state) with Types.sidebar_deferred = true };
     host.session := session;

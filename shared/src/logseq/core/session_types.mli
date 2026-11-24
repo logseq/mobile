@@ -194,6 +194,6 @@ val fresh_squuid : unit -> string
 val projection_server_t : session -> int option
 val submission_server_t : session -> int option
 val record_accepted_server_t : session -> int -> unit
-val create_session : host_options -> session
+val create_session : ?journal_tasks:Journal_task_dates.cache -> host_options -> session
 val empty_sidebar : Graph_read.sidebar_pages
 val transport_operation_block : transport_operation -> Cache_model.block
