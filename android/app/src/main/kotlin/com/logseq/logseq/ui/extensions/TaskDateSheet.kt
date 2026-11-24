@@ -51,6 +51,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.Locale
 import org.json.JSONObject
 
 internal fun LuiExtensionRegistry.registerTaskDateSheet() {
@@ -160,6 +161,9 @@ private fun TaskDateCalendar(selection: LocalDate?, enabled: Boolean, onChoose: 
     val choose by rememberUpdatedState(onChoose)
     val picker = remember(calendar, enabled) {
         object : DatePickerState by calendar {
+            override val locale = Locale.Builder().setLocale(calendar.locale)
+                .setUnicodeLocaleKeyword("ca", "gregory").build()
+
             override val selectableDates = object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long) = enabled
                 override fun isSelectableYear(year: Int) = enabled
