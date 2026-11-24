@@ -6,6 +6,6 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.block.journal-block-1
 ext ext:outliner-block-row outliner-block-row toggle-selection '{"uuid":"journal-block-1"}'
-wait prop:accessibility-identifier=button.outliner.selection.done
+wait prop:accessibility-identifier=toolbar.outliner.selection
 press prop:accessibility-identifier=button.outliner.selection.done
-expect-absent prop:accessibility-identifier=button.outliner.selection.done
+expect-absent prop:accessibility-identifier=toolbar.outliner.selection

@@ -816,6 +816,7 @@ private struct LGNavigationContent: View {
     #endif
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
+    @Namespace private var trailingGlass
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
@@ -1305,44 +1306,67 @@ private struct LGNavigationContent: View {
     }
 
     private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
-        ZStack(alignment: .trailing) {
+        let size: CGFloat = 44
+        let vertical = verticalToolbar && !searchPage
+        let fullWidth = searchPage || vertical ? size : size * 2
+        let fullHeight = vertical ? size * 2 : size
+        let alignment: Alignment = vertical ? .top : .trailing
+        let contents = ZStack(alignment: alignment) {
             if selectionActive {
-                trailingChrome(childContent(at: index + 3).frame(width: 44, height: 44),
-                    glass: glass, shape: .circle)
+                headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
+                    .frame(width: size, height: size)
                     .transition(.opacity)
             } else if let item = trailingToolbarItem(searchPage: searchPage) {
-                trailingChrome(item.content, glass: glass, shape: searchPage ? .circle : .capsule)
-                    .overlay {
-                        if composerDismissalEnabled {
-                            composerDismissalTarget.accessibilityHidden(true)
-                        }
-                    }
+                item.content
                     .transition(.opacity)
             }
         }
-        .fixedSize()
-        .animation(selectionAnimation, value: selectionActive)
-        .menuStyle(.button)
-        .buttonStyle(.plain)
+        .frame(width: selectionActive ? size : fullWidth,
+               height: selectionActive ? size : fullHeight, alignment: alignment)
+        .clipShape(Capsule())
+        return trailingChrome(contents, glass: glass)
+            // The system toolbar keeps one footprint while its glass resizes in place.
+            .frame(width: fullWidth, height: fullHeight, alignment: alignment)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.32), value: selectionActive)
+            .overlay {
+                if composerDismissalEnabled { composerDismissalTarget.accessibilityHidden(true) }
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
     }
 
     @ViewBuilder
-    private func trailingChrome<Content: View>(_ content: Content, glass: Bool, shape: LGLiquidGlassSurface.Shape) -> some View {
-        if glass { content.modifier(LGLiquidGlassSurface(shape: shape)) }
-        else { content }
+    private func trailingChrome<Content: View>(_ content: Content, glass: Bool) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *), glass {
+            GlassEffectContainer(spacing: 0) {
+                content.glassEffect(.regular.interactive(), in: .capsule)
+                    .glassEffectID("navigation-actions", in: trailingGlass)
+            }
+        } else { content }
+    }
+
+    private func headerConnectionSlot(
+        _ owner: LUIAppleExtensionViewContext, at container: Int?, selecting: Bool
+    ) -> AnyView {
+        guard let container else { return AnyView(EmptyView()) }
+        let _ = owner.measureStamp(of: container)
+        let slots = owner.childIDs(of: container)
+        let index = selecting ? 1 : 0
+        guard slots.indices.contains(index) else { return AnyView(EmptyView()) }
+        return owner.nodeView(of: slots[index])
     }
 
     private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {
         let pageActions: AnyView
         if searchPage, let search, search.context.childIDs.indices.contains(3) {
-            pageActions = search.context.content(for: search.context.childIDs[3])
+            pageActions = headerConnectionSlot(search.context, at: search.context.childIDs[3], selecting: false)
         } else if let toolbarStartIndex {
             // Keep these controls in one item so the system cannot replace
             // one of them with its own overflow menu as the title changes.
             let controls = LGToolbarControlPair(
                 first: AnyView(childContent(at: toolbarStartIndex + 2)
                     .frame(width: 44, height: 44)),
-                second: AnyView(childContent(at: toolbarStartIndex + 3)
+                second: AnyView(headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
                     .frame(width: 44, height: 44))
             )
             .fixedSize()

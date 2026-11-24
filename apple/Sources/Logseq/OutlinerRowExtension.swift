@@ -227,7 +227,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     #if os(iOS)
     @ViewBuilder private var blockMenu: some View {
         Button { emit("open-node", uuid: row.embedSourceUuid) } label: {
-            Label { menuText("Open block") } icon: { Image(systemName: "arrow.up.right") }
+            Label { menuText("Open block") } icon: { menuIcon("arrow.up.right") }
         }
         if row.isTask == true {
             Section {
@@ -244,7 +244,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
                                 }
                             }
                         }
-                    } label: { Label { menuText("Status") } icon: { Image(systemName: "checkmark.circle") } }
+                    } label: { Label { menuText("Status") } icon: { menuIcon("checkmark.circle") } }
                 }
             }
         }
@@ -259,16 +259,25 @@ struct OutlinerRowPayload: Decodable, Equatable {
             menuButton("Move down", icon: "arrow.down", action: "moveDown")
             menuButton("Outdent", icon: "arrow.left", action: "outdent")
             menuButton("Indent", icon: "arrow.right", action: "indent")
-        } label: { Label { menuText("Move") } icon: { Image(systemName: "arrow.up.arrow.down") } }
+        } label: { Label { menuText("Move") } icon: { menuIcon("arrow.up.arrow.down") } }
         Button(role: .destructive) { emitMenuAction("delete") } label: {
-            Label { menuText("Delete") } icon: { Image(systemName: "trash") }
+            Label { menuText("Delete") } icon: { menuIcon("trash", destructive: true) }
         }
     }
 
     private func menuText(_ key: String) -> Text { Text(verbatim: row.menuLabels?[key] ?? key) }
 
+    @ViewBuilder private func menuIcon(_ name: String, destructive: Bool = false) -> some View {
+        let tint = destructive ? UIColor.systemRed : .label
+        let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
+        if let image = UIImage(systemName: name) {
+            Image(uiImage: image.withTintColor(tint.resolvedColor(with: traits), renderingMode: .alwaysOriginal))
+                .renderingMode(.original)
+        }
+    }
+
     private func menuButton(_ title: String, icon: String, action: String) -> some View {
-        Button { emitMenuAction(action) } label: { Label { menuText(title) } icon: { Image(systemName: icon) } }
+        Button { emitMenuAction(action) } label: { Label { menuText(title) } icon: { menuIcon(icon) } }
     }
 
     private func emitMenuAction(_ action: String) {
