@@ -609,7 +609,7 @@ let temporal_command_inputs_open_empty () =
       check ~msg:"the calendar retains its initial selection"
         (App_test.extension_property app calendar "value" <> Some (Lui_protocol.StringValue ""));
       check_eq ~msg:"opening the picker does not initialize NLP"
-        (Natural_date.initialization_count ()) before))) ["Date picker"; "Scheduled"; "Deadline"])
+        (Natural_date.initialization_count ()) before))) ["Date picker"])
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let temporal_command_previews_follow_valid_input () =
@@ -641,11 +641,7 @@ let temporal_command_previews_follow_valid_input () =
       App_test.flush app;
       check_eq ~msg:"manual calendar selection does not populate the NLP input"
         (App_test.property_string host input Lui_protocol.TextValue) "")))
-    ["Date picker", ["January 1, 2000", "2000-01-01"; "0044-03-15", "0044-03-15"];
-     "Scheduled", ["January 1, 2000 at 3:20pm", string_of_int (int_of_float (Natural_date_test.reference 2000 1 1 15 20));
-       "January 2, 2000 at 9:45:37am", string_of_int (int_of_float (Natural_date_test.reference 2000 1 2 9 45))];
-     "Deadline", ["January 1, 2000 at 3:20pm", string_of_int (int_of_float (Natural_date_test.reference 2000 1 1 15 20));
-       "January 2, 2000 at 9:45:37am", string_of_int (int_of_float (Natural_date_test.reference 2000 1 2 9 45))]])
+    ["Date picker", ["January 1, 2000", "2000-01-01"; "0044-03-15", "0044-03-15"]])
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let temporal_commands_submit_the_previewed_selection () =
@@ -666,7 +662,7 @@ let temporal_commands_submit_the_previewed_selection () =
       check ~msg:"invalid or cleared drafts preserve the previewed selection when submitting"
         (List.exists (function Model.EditorOutlinerEventEffect (_, payload) ->
           member "value" (J.from_string payload) = expected | _ -> false) (App.model app).pending_effects))))
-    ["Date picker", "January 1, 2000"; "Scheduled", "in 3 hours"; "Deadline", "in 3 hours"])
+    ["Date picker", "January 1, 2000"])
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let natural_date_input_forwards_submit () =
@@ -705,18 +701,61 @@ let date_command_accepts_natural_language () =
       (Graph_read.journal_page_uuid (Graph_runtime.db runtime) 20000101 <> None)))
     [App_test.ios_backend; App_test.kotlin_backend]
 
-let datetime_commands_accept_natural_language () =
-  List.iter (fun backend -> List.iter (fun (label, attr) -> R.with_runtime (fun session _ _ ->
-    ignore (run session label);
+let task_date_commands_use_the_native_sheet () =
+  List.iter (fun backend -> List.iter (fun (label, field) -> R.with_runtime (fun session runtime _ ->
+    ignore (start session "Edited task /");
+    ignore (command session label);
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
-      let host = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
-      check ~msg:"date-time commands expose the shared text input" (find "view.edit.date.input.editor-command" <> -1));
-    ignore (submit session "January 1, 2000 at 3pm"); save session;
-    let prop = Node_property_test.property attr (Node_property_test.result (Node_property_test.read session Q.alpha)) in
-    let expected = Natural_date_test.reference 2000 1 1 15 0 |> int_of_float |> string_of_int in
-    check_eq (member "editorValue" prop) (`String expected)))
-    ["Deadline", "logseq.property/deadline"; "Scheduled", "logseq.property/scheduled"])
+      let send action = App_test.send app action; App_test.flush app in
+      let apply response = match Response_snapshot.decode_response response with
+        | Ok projection -> send (Model.ApplyCoreSnapshot projection)
+        | Error message -> fail message in
+      let effects () = (App.model app).pending_effects in
+      let identifier = "native-task-date-sheet" in
+      let sheet = App_test.extension_node app identifier in
+      check ~msg:"slash command opens the native task date sheet" (sheet <> -1);
+      let key, load_id, load = List.find_map (function
+        | Model.LoadPropertyValuesEffect (id, key, payload) -> Some (key, id, payload)
+        | _ -> None) (effects ()) |> Option.get in
+      let dismiss_id, dismiss = match List.find_map (function
+        | Model.EditorOutlinerEventEffect (id, payload)
+          when member "type" (J.from_string payload) = `String "dismissAutocomplete" -> Some (id, payload)
+        | _ -> None) (effects ()) with
+        | Some dismissal -> dismissal
+        | None -> fail "Expected a queued autocomplete dismissal" in
+      check ~msg:"the picker is active before the dismissal and load" (dismiss_id < load_id
+        && member "kind" (member "autocomplete" (state (snapshot session))) = `String field);
+      send (Model.DequeueEffect dismiss_id);
+      let response = Rpc_test.dispatch_json session "executeEffect" (J.to_string (`Assoc [
+        "id", `Int dismiss_id; "kind", `String "editor-outliner-event"; "text", `String dismiss])) in
+      let dismissed = result response in
+      check_eq ~msg:"the dismissal clears the core picker" (member "autocomplete" (state dismissed)) `Null;
+      check_eq ~msg:"the dismissal preserves the active draft" (member "title" (draft dismissed))
+        (`String "Edited task ");
+      apply (J.to_string response);
+      send (Model.ResolveEffect (dismiss_id, true, ""));
+      check_eq ~msg:"the native sheet remains open after autocomplete dismissal"
+        (App_test.extension_node app identifier) sheet;
+      ignore (event session "caretMoved" ["caretUTF16Offset", `Int 12]);
+      apply (Rpc_session.snapshot_visible session);
+      check_eq ~msg:"a late caret event does not close the native task date sheet"
+        (App_test.extension_node app identifier) sheet;
+      send (Model.DequeueEffect load_id);
+      let dates = Rpc_test.dispatch_json session "propertyValues" load |> result in
+      let column = member "column" (member "propertyValues" dates) in
+      send (Model.ReceivePropertyValues (key, J.to_string column));
+      send (Model.ResolveEffect (load_id, true, ""));
+      App_test.dispatch app (Lui_protocol.ExtensionEvent (sheet, identifier, "submit",
+        Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue "January 1, 2000 at 3pm")));
+      App_test.flush app;
+      let save = List.find_map (function
+        | Model.NodePropertyEffect (_, name, payload) when name = key -> Some payload
+        | _ -> None) (effects ()) |> Option.get in
+      ignore (Rpc_test.dispatch_json session "nodeProperty" save |> result);
+      let expected = Natural_date_test.reference 2000 1 1 15 0 |> Int64.of_float in
+      check_eq (value runtime Q.alpha ("logseq.property/" ^ field)) (Some (Ds.Int64 expected));
+      check_eq (value runtime Q.alpha "block/title") (Some (Ds.String "Edited task ")))))
+    ["Deadline", "deadline"; "Scheduled", "scheduled"])
     [App_test.ios_backend; App_test.kotlin_backend]
 
 let date_command_accepts_typed_historical_dates () =
@@ -1367,7 +1406,7 @@ let unrelated_edit_does_not_create_issue_number_tags () = R.with_runtime (fun se
       (Ds.entid before "block/name" (Ds.String name))) ["1442"; "13730/"; "13732)"])
 
 let task_dates_are_visible_and_editable_in_the_outline () =
-  List.iter (fun (ios, backend) -> R.with_runtime (fun session runtime _ ->
+  List.iter (fun backend -> R.with_runtime (fun session runtime _ ->
     List.iter (fun label -> ignore (run session label); ignore (submit session "1792719000000"); save session)
       ["Scheduled"; "Deadline"];
     let response = snapshot session in
@@ -1388,18 +1427,10 @@ let task_dates_are_visible_and_editable_in_the_outline () =
         check ~msg:"date text uses a readable month rather than a numeric date"
           (not (String_kit.includes ~sub:"2026-10-" (App_test.property_string host value Lui_protocol.TextValue)));
         App_test.dispatch app (Lui_protocol.Press value); App_test.flush app;
-        (if ios then begin
-          let identifier = "native-task-date-sheet" in
-          let node = App_test.extension_node app identifier in
-          check ~msg:"compact task dates open the same half-sheet as the editor toolbar" (node <> -1);
-          App_test.dispatch app (Lui_protocol.ExtensionEvent (node, identifier, "dismiss", Lui_protocol.String_map.empty))
-        end else begin
-          check ~msg:"task date opens the native property date editor"
-            (find ("view.edit.sheet.property." ^ Q.alpha ^ "." ^ attr) <> -1);
-          let cancel = find ("view.edit.cancel.property." ^ Q.alpha ^ "." ^ attr) in
-          check ~msg:"date editor has Cancel" (cancel <> -1);
-          App_test.dispatch app (Lui_protocol.Press cancel)
-        end);
+        let identifier = "native-task-date-sheet" in
+        let node = App_test.extension_node app identifier in
+        check ~msg:"compact task dates open the same half-sheet as the editor toolbar" (node <> -1);
+        App_test.dispatch app (Lui_protocol.ExtensionEvent (node, identifier, "dismiss", Lui_protocol.String_map.empty));
         App_test.flush app)
         ["logseq.property/scheduled"; "logseq.property/deadline"]);
     ignore (Q.dispatch session "openNode" (Yojson.Basic.to_string (`Assoc ["uuid", `String Q.alpha])));
@@ -1420,7 +1451,7 @@ let task_dates_are_visible_and_editable_in_the_outline () =
         check_eq (App_test.property_string host label Lui_protocol.TextValue) title)
         ["logseq.property/scheduled", "Scheduled"; "logseq.property/deadline", "Deadline"]);
     check ~msg:"displaying task dates does not add extra semantic writes" (List.length (Graph_runtime.pending_operations runtime) < 10)))
-    [true, App_test.ios_backend; false, App_test.kotlin_backend]
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let editor_task_date_buttons_follow_task_membership () =
   List.iter (fun backend -> R.with_runtime (fun session runtime conn ->
@@ -1689,10 +1720,8 @@ let journal_task_dates_calendar_preserves_each_task_time () =
     [1793511000000L; 1793514600000L]
 
 let task_date_sheet_rejects_invalid_text () =
-  List.iter (fun (ios, backend) -> R.with_runtime (fun session _ _ ->
+  List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
-      let runtime = Lui_app.runtime app in
-      let find id = App_test.descendant_with_identifier runtime (Lui_app.root_node app) id in
       let send action = App_test.send app action; App_test.flush app in
       let dispatch event = App_test.dispatch app event; App_test.flush app in
       send (Model.OpenBlockTaskDate (Q.alpha, "deadline"));
@@ -1708,37 +1737,20 @@ let task_date_sheet_rejects_invalid_text () =
       let submitted () = List.find_map (function
         | Model.NodePropertyEffect (_, name, payload) when name = key -> Some (J.from_string payload)
         | _ -> None) (App.model app).pending_effects in
-      (if ios then begin
-        let identifier = "native-task-date-sheet" in
-        let node = App_test.extension_node app identifier in
-        check (node <> -1);
-        let submit value = dispatch (Lui_protocol.ExtensionEvent (node, identifier, "submit",
-          Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue value))) in
-        submit "invalid date";
-        check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
-        submit "October 15, 2030 at 3:00pm"
-      end else begin
-        let input = find "view.edit.date.input.task-dates.deadline" in
-        let save = find "task-dates.save" in
-        check (input <> -1 && save <> -1);
-        let type_date value = dispatch (Lui_protocol.TextChanged (input, value)) in
-        let press_save () = dispatch (Lui_protocol.Press save) in
-        type_date "invalid date";
-        press_save ();
-        check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
-        type_date "tomorrow";
-        type_date "still invalid";
-        press_save ();
-        check_eq ~msg:"invalid text cannot submit a previous valid date" (submitted ()) None;
-        type_date "October 15, 2030 at 3:00pm";
-        press_save ()
-      end);
+      let identifier = "native-task-date-sheet" in
+      let node = App_test.extension_node app identifier in
+      check (node <> -1);
+      let submit value = dispatch (Lui_protocol.ExtensionEvent (node, identifier, "submit",
+        Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue value))) in
+      submit "invalid date";
+      check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
+      submit "October 15, 2030 at 3:00pm";
       match submitted () with
       | Some request ->
         check_eq (member "deadline" (member "changes" request))
           (`Int (int_of_float (Natural_date_test.reference 2030 10 15 15 0)))
       | None -> fail "Expected the corrected date to be submitted")))
-    [true, App_test.ios_backend; false, App_test.kotlin_backend]
+    [App_test.ios_backend; App_test.kotlin_backend]
 
 let agenda_date_save_releases_hidden_editor () = R.with_runtime (fun session runtime conn ->
   let now = Session_types.now_ms () in
@@ -1842,7 +1854,7 @@ let cases = [
   case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;
   case "date commands submit the previewed selection" temporal_commands_submit_the_previewed_selection;
   case "natural date input forwards Submit events" natural_date_input_forwards_submit;
-  case "date-time commands accept natural language" datetime_commands_accept_natural_language;
+  case "task date commands use the native sheet" task_date_commands_use_the_native_sheet;
   case "date commands accept natural language on both hosts" date_command_accepts_natural_language;
   case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
   case "composing quote markers convert only on commit" composing_quote_marker_converts_only_on_commit;

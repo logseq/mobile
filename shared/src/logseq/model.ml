@@ -2356,6 +2356,15 @@ let rec update (current : logseq_model) action =
          && not (Option.exists (fun (_, uuid) -> editing_uuid applied = Some uuid) applied.outliner_edit_scope) then
         {applied with outliner_edit_scope = None}
       else applied in
+    let applied =
+      match editing_uuid applied, applied.outliner_autocomplete with
+      | Some uuid, Some {autocomplete_kind = PickerAutocomplete ("scheduled" | "deadline" as field); _} ->
+        let applied = {applied with outliner_autocomplete = None; outliner_autocomplete_candidates = []} in
+        if applied.task_date_editor <> None then applied
+        else
+          let applied = update applied (EditorCompletion ("dismissAutocomplete", "")) in
+          open_task_date_editor applied [uuid] (Some uuid) field
+      | _ -> applied in
     (* The block editor takes ownership of keyboard focus. Retaining an expanded
        composer here would remount its autofocus field when editing ends. *)
     let applied = if applied.outliner_editing <> None

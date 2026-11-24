@@ -287,10 +287,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
               (match task_icon with
               | Some icon_name ->
                 let edit_task_date () =
-                  if Lui_ui.platform context = Lui_protocol.IOS && Lui_ui.host context = Lui_protocol.SwiftUIHost then
-                    let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
-                    ignore (send (Model.OpenBlockTaskDate (owner, name)))
-                  else edit () in
+                  let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
+                  ignore (send (Model.OpenBlockTaskDate (owner, name))) in
                 let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
                 let value = own (Signal.map2 (fun current property ->
                   match timestamp property with

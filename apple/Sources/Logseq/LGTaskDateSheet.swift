@@ -8,7 +8,7 @@ import UIKit
 @MainActor
 enum LGTaskDateSheetExtension {
     static let identifier = "native-task-date-sheet"
-    static let fingerprint = "lui-extension-v1|22:native-task-date-sheet|profiles:ios/swiftui|standard-children:0|children:|properties:7:payload:string:required:none|events:5:clear[],6:choose[5:value:string:required],6:submit[5:value:string:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|22:native-task-date-sheet|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:7:payload:string:required:none|events:5:clear[],6:choose[5:value:string:required],6:submit[5:value:string:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(

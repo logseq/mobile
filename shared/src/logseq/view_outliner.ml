@@ -11,129 +11,57 @@ let task_effect_active key (current : Model.logseq_model) =
     | Model.NodePropertyEffect (_, id, _) | Model.LoadPropertyValuesEffect (_, id, _) -> id = key
     | _ -> false) (current.pending_effects @ current.in_flight_effects)
 
-let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name ~targets
+let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name
     ~saved_dates ~ready ~waiting ~feedback ~close ~submit =
-      let _, field_label, _ = List.find (fun (field, _, _) -> field = name) task_date_fields in
-      let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
-      let state initial = Signal.state context.ui_scheduler initial in
-      let current = Signal.sample model_source in
-      let tr = View_base.tr current in
-      if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then begin
-        let node = Lui_ui.extension context "native-task-date-sheet" in
-        attach context parent node;
-        let invalid = state false in
-        let dates = own (Signal.map2 (fun saved ready -> saved, ready) saved_dates ready) in
-        let error = own (Signal.map2 (fun error invalid ->
-          let error = if invalid then Some (tr "Choose a valid date and time") else Option.map tr error in
-          Option.fold ~none:`Null ~some:(fun error -> `String error) error)
-          feedback (Signal.value invalid)) in
-        let status = own (Signal.map2 (fun waiting error -> waiting, error) waiting error) in
-        let payload = own (Signal.map2 (fun (saved, ready) (waiting, error) ->
-          StringValue (Yojson.Basic.to_string (`Assoc [
-            "title", `String (tr field_label); "clearTitle", `String (tr "Clear" ^ " " ^ tr field_label);
-            "submitTitle", `String (tr "Save"); "mixedTitle", `String (tr "Mixed dates");
-            "value", (match saved with [(`Int _ as value)] -> value | _ -> `Null);
-            "ready", `Bool ready; "waiting", `Bool waiting;
-            "canClear", `Bool (List.exists (fun value -> value <> `Null) saved);
-            "mixed", `Bool (List.length saved > 1);
-            "error", error
-          ]))) dates status) in
-        Lui_ui.extension_property_signal context node "payload" payload;
-        let apply value =
-          if Signal.sample ready && not (Signal.sample waiting) then begin
-            Signal.set invalid false;
-            if Signal.sample saved_dates = [value] then close () else submit value
-          end in
-        Lui_ui.on_event context node (function
-          | ExtensionEvent (_, _, "dismiss", _) -> close ()
-          | ExtensionEvent (_, _, "clear", _) -> apply `Null
-          | ExtensionEvent (_, _, "choose", fields) ->
-            (match String_map.find_opt "value" fields with
-             | Some (StringValue value) ->
-               Option.iter (fun day -> apply (`Assoc ["day", `Int day])) (int_of_string_opt value)
-             | _ -> ())
-          | ExtensionEvent (_, _, "submit", fields) ->
-            (match String_map.find_opt "value" fields with
-             | Some (StringValue text) ->
-               let current = Signal.sample model_source in
-               let locale = if current.language = "system" then current.system_language else current.language in
-               (match Natural_date.timestamp ~locale ~full_match:true text with
-                | Some value -> apply (`Int value)
-                | None -> Signal.set invalid true)
-             | _ -> ())
-          | _ -> ());
-        node
-      end else
-      let draft = state None in
-      let input = state "" in
-      let input_valid = state true in
-      let midnight = Session_types.now_ms () |> Cache_model.journal_day_for_ms
-        |> Dev_query.Date_time_util.journal_day_to_local_ms |> Int64.to_int in
-      let pending = own (Signal.map2 (fun saved edit ->
-        match saved, edit with
-        | [], _ -> None
-        | [value], Some edit when value = edit -> None
-        | _, Some edit -> Some edit
-        | [`Null], None -> Some (`Int midnight)
-        | _ -> None) saved_dates (Signal.value draft)) in
-      let save () =
-        if Signal.sample (Signal.value input_valid) then Option.iter submit (Signal.sample pending) in
-      let picker_value = own (Signal.map2 (fun saved edit ->
-        match saved, edit with
-        | _, Some (`Int value) | [`Int value], None -> string_of_int value
-        | _ -> string_of_int midnight) saved_dates (Signal.value draft)) in
-      let clear_disabled = own (Signal.map2 (fun saved edit ->
-        edit = Some `Null || (edit = None && saved = [`Null]))
-        saved_dates (Signal.value draft)) in
-      let error_message = reactive (function None -> box [] | Some error ->
-        text ~foreground:"destructive" ~style_class:"footnote" ~value:(tr error) []) feedback in
-      let controls = column ~gap:12 [
-        View_query.temporal_picker ~input ~on_validity:(Signal.set input_valid)
-          model_source "datetime" ("task-dates." ^ name) picker_value
-          (fun value -> Option.iter (fun value -> Signal.set draft (Some (`Int value))) (Natural_date.timestamp value));
-        if_ ~test:(own (Signal.map not (Signal.value input_valid)))
-          (text ~foreground:"destructive" ~style_class:"footnote" ~value:(tr "Choose a valid date and time") []);
-        if_ ~test:(own (Signal.map2 (fun saved edit -> List.length saved > 1 && edit = None)
-          saved_dates (Signal.value draft)))
-          (text ~style_class:"footnote" ~value:(tr "Mixed dates") []);
-        error_message;
-        button ~variant:`ghost ~min_height:44 ~text:(tr "Clear")
-          ~disabled_signal:clear_disabled ~accessibility_identifier:("task-dates.clear." ^ name)
-          ~on_press:(fun _ ->
-            Signal.set input "";
-            Signal.set input_valid true;
-            Signal.set draft (Some `Null)) [];
-      ] in
-      let cancel = toolbar_button ~text:(tr "Cancel") ~variant:`ghost ~style_class:"cancellation-action"
-        ~accessibility_identifier:"task-dates.cancel" ~on_press:(fun _ -> close ()) [] in
-      let unavailable = own (Signal.map2 (fun waiting pending -> waiting || pending = None) waiting pending) in
-      let disabled = own (Signal.map2 (fun unavailable valid -> unavailable || not valid)
-        unavailable (Signal.value input_valid)) in
-      let save_button = toolbar_button ~text:(tr "Save") ~variant:`ghost ~style_class:"confirmation-action"
-        ~accessibility_identifier:"task-dates.save" ~disabled_signal:disabled ~on_press:save [] in
-      mount context ?parent (View_base.sheet ~model_source ~title:(tr field_label)
-        ~detents:"large"
-        ~style_class:"navigation-list navigation-inline-title" ~accessibility_identifier:"sheet.task-dates"
-        ~on_dismiss:(fun _ -> close ()) [
-          list ~grow:1.0 ~style:`inset_grouped [
-            list_section [
-              if_list_section_item ~test:(Signal.constant context.ui_scheduler (targets > 1))
-                (list_section_item [text ~value:(View_base.tr_named current "{1} blocks selected"
-                  (string_of_int targets)) ~style_class:"footnote" []]);
-              list_section_item [reactive (function
-                | true -> controls
-                | false -> column [
-                  if_ ~test:waiting (spinner ~accessibility_identifier:"task-dates.loading" []);
-                  error_message;
-                ]) ready];
-            ];
-          ];
-          (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [
-             button ~text:(tr "Cancel") ~on_press:(fun _ -> close ()) [];
-             button ~text:(tr "Save") ~disabled_signal:disabled ~accessibility_identifier:"task-dates.save"
-               ~on_press:(fun _ -> save ()) []]
-           else toolbar ~label:(tr "Task dates") ~style_class:"navigation-actions" [cancel; save_button]);
-        ])
+  let _, field_label, _ = List.find (fun (field, _, _) -> field = name) task_date_fields in
+  let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+  let state initial = Signal.state context.ui_scheduler initial in
+  let current = Signal.sample model_source in
+  let tr = View_base.tr current in
+  let node = Lui_ui.extension context "native-task-date-sheet" in
+  attach context parent node;
+  let invalid = state false in
+  let dates = own (Signal.map2 (fun saved ready -> saved, ready) saved_dates ready) in
+  let error = own (Signal.map2 (fun error invalid ->
+    let error = if invalid then Some (tr "Choose a valid date and time") else Option.map tr error in
+    Option.fold ~none:`Null ~some:(fun error -> `String error) error)
+    feedback (Signal.value invalid)) in
+  let status = own (Signal.map2 (fun waiting error -> waiting, error) waiting error) in
+  let payload = own (Signal.map2 (fun (saved, ready) (waiting, error) ->
+    StringValue (Yojson.Basic.to_string (`Assoc [
+      "title", `String (tr field_label); "clearTitle", `String (tr "Clear" ^ " " ^ tr field_label);
+      "submitTitle", `String (tr "Save"); "mixedTitle", `String (tr "Mixed dates");
+      "value", (match saved with [(`Int _ as value)] -> value | _ -> `Null);
+      "ready", `Bool ready; "waiting", `Bool waiting;
+      "canClear", `Bool (List.exists (fun value -> value <> `Null) saved);
+      "mixed", `Bool (List.length saved > 1);
+      "error", error
+    ]))) dates status) in
+  Lui_ui.extension_property_signal context node "payload" payload;
+  let apply value =
+    if Signal.sample ready && not (Signal.sample waiting) then begin
+      Signal.set invalid false;
+      if Signal.sample saved_dates = [value] then close () else submit value
+    end in
+  Lui_ui.on_event context node (function
+    | ExtensionEvent (_, _, "dismiss", _) -> close ()
+    | ExtensionEvent (_, _, "clear", _) -> apply `Null
+    | ExtensionEvent (_, _, "choose", fields) ->
+      (match String_map.find_opt "value" fields with
+       | Some (StringValue value) ->
+         Option.iter (fun day -> apply (`Assoc ["day", `Int day])) (int_of_string_opt value)
+       | _ -> ())
+    | ExtensionEvent (_, _, "submit", fields) ->
+      (match String_map.find_opt "value" fields with
+       | Some (StringValue text) ->
+         let current = Signal.sample model_source in
+         let locale = if current.language = "system" then current.system_language else current.language in
+         (match Natural_date.timestamp ~locale ~full_match:true text with
+          | Some value -> apply (`Int value)
+          | None -> Signal.set invalid true)
+       | _ -> ())
+    | _ -> ());
+  node
 
 let task_dates_dialog model_source send : t =
   let close () = ignore (send Model.CloseTaskDates) in
@@ -143,7 +71,6 @@ let task_dates_dialog model_source send : t =
       custom @@ fun context parent ->
       let key = editor.task_date_key in
       let graph = editor.task_date_graph in
-      let blocks = editor.task_date_targets in
       let editing = editor.task_date_editing in
       let name = editor.task_date_field in
       let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
@@ -173,7 +100,7 @@ let task_dates_dialog model_source send : t =
           ignore (send (Model.SubmitNodeProperty (key, payload)))
         | _ -> () in
       let ready = own (Signal.map Option.is_some loaded) in
-      task_date_sheet context parent ~model_source ~name ~targets:(List.length blocks)
+      task_date_sheet context parent ~model_source ~name
         ~saved_dates ~ready ~waiting ~feedback ~close ~submit)
     (Signal.map (fun (current : Model.logseq_model) -> current.task_date_editor) model_source)
 
@@ -195,7 +122,7 @@ let composer_task_date_dialog model_source send : t =
           let current = List.assoc_opt name (Signal.sample model_source).Model.composer_task_dates in
           choose name (Journal_task_dates.reschedule_on_day day current)
         | _ -> choose name None in
-      task_date_sheet context parent ~model_source ~name ~targets:1 ~saved_dates
+      task_date_sheet context parent ~model_source ~name ~saved_dates
         ~ready:(constant true) ~waiting:(constant false) ~feedback:(constant None) ~close ~submit)
     (Signal.map (fun (current : Model.logseq_model) -> current.composer_task_date_field) model_source)
 
@@ -1473,19 +1400,20 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
     | PropertyAutocomplete -> "property" | PickerAutocomplete kind -> kind in
   let title = function "command" -> "Commands" | "node" -> "Pages" | "tag" -> "Tags"
     | "embed" -> "Embed a node" | "template" -> "Templates" | "link" -> "Link"
-    | "image" -> "Image link" | "date" -> "Date picker" | "deadline" -> "Deadline"
-    | "scheduled" -> "Scheduled" | "youtube" -> "YouTube timestamp" | _ -> "Properties" in
+    | "image" -> "Image link" | "date" -> "Date picker"
+    | "youtube" -> "YouTube timestamp" | _ -> "Properties" in
   let emit event value = ignore (send (Model.EditorCompletion (event, value))) in
   let dismiss () = emit "dismissAutocomplete" "" in
   let source = Signal.map (fun (current : Model.logseq_model) ->
-    match current.outliner_autocomplete with Some request -> [kind request.autocomplete_kind] | None -> []) model_source in
+    match current.outliner_autocomplete with
+    | None | Some {autocomplete_kind = PickerAutocomplete ("scheduled" | "deadline"); _} -> []
+    | Some request -> [kind request.autocomplete_kind]) model_source in
   keyed ~source ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
     let kind = Signal.sample source in
-    let form = List.mem kind ["link"; "image"; "date"; "deadline"; "scheduled"; "youtube"] in
+    let form = List.mem kind ["link"; "image"; "date"; "youtube"] in
     if form then (custom @@ fun context parent ->
-      let temporal = List.mem kind ["date"; "deadline"; "scheduled"] in
-      let date_kind = if kind = "date" then "date" else "datetime" in
-      let value = Signal.state context.Lui_ui.ui_scheduler (if temporal then View_query.temporal_default date_kind else "") in
+      let temporal = kind = "date" in
+      let value = Signal.state context.Lui_ui.ui_scheduler (if temporal then View_query.temporal_default "date" else "") in
       let label = Signal.state context.ui_scheduler "" in
       let input state = fun value -> Signal.set state value  in
       let confirm _ =
@@ -1505,7 +1433,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
         list ~grow:1.0 ~style:`inset_grouped [list_section (
           if temporal then [list_section_item ~padding_horizontal:0 ~padding_vertical:0 [
-            View_query.temporal_picker ~on_submit:confirm model_source date_kind "editor-command" (Signal.value value) (Signal.set value)]]
+            View_query.temporal_picker ~on_submit:confirm model_source "date" "editor-command" (Signal.value value) (Signal.set value)]]
           else [list_section_item [text_field ~text_signal:(Signal.value value) ~autofocus:true
             ~placeholder:(if kind = "youtube" then "1:32" else "https://example.com")
             ~label:(if kind = "youtube" then "Timestamp" else "URL")
