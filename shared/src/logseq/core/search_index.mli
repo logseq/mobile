@@ -46,6 +46,7 @@ val search_hits :
 val query_rows :
   search_index -> string -> string list -> (string * string * string) list
 
+val journal_search_hit : Datascript.db -> int -> indexed_search_hit option
 val search_hits_page :
-  offset:int -> limit:int -> search_index -> Datascript.db -> string ->
+  ?journal_day:int -> offset:int -> limit:int -> search_index -> Datascript.db -> string ->
   indexed_search_hit list * bool

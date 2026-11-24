@@ -137,7 +137,7 @@ val normalize_titles :
   graph_runtime -> string -> string list -> string list * (string * string) list
 val search : graph_runtime -> string -> Search_index.indexed_search_hit list
 
-val search_page : graph_runtime -> offset:int -> limit:int -> string ->
+val search_page : graph_runtime -> ?journal_day:int -> offset:int -> limit:int -> string ->
   Search_index.indexed_search_hit list * bool
 
 val empty_journals : graph_runtime -> (Cache_model.entity_summary * int) list

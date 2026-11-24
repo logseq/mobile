@@ -280,7 +280,65 @@ let reference_dates_parse_without_epoch_conversion () =
      "20261026", Some 20261026; "2026-10-26", Some 20261026;
      "0044-03-15", Some 440315; "Mar 15th, 0044", Some 440315]
 
+let localized_journal_titles_round_trip () =
+  List.iter (fun (choice : Model.settings_language_choice) ->
+    let current_year = 2026 and language = choice.id and system_language = "zh-CN" in
+    List.iter (fun day ->
+      let title, _ = Localization.journal_date ~language ~system_language ~current_year day in
+      check_eq ~msg:(language ^ " " ^ title)
+        (Localization.journal_day_of_title ~language ~system_language ~current_year title) (Some day))
+      [20261124; 20001021; 20000229; 440315]) (Model.settings_language_choices ());
+  let parse = Localization.journal_day_of_title ~language:"zh-CN" ~system_language:"en" ~current_year:2026 in
+  List.iter (fun title -> check_eq ~msg:title (parse title) None)
+    ["2026年2月29日"; "2000年10月21日的日记"; "20001021"]
+
+let displayed_journal_titles_search_through_native_effects () =
+  R.with_runtime ~search:true (fun _ runtime conn ->
+    let day = 20001021 and uuid = "82000000-0000-4000-8000-000000000021" in
+    let core_title = Journal.day_title day in
+    let model = { (Model.initial ()) with language = "zh-CN" } in
+    let query = View_base.journal_display_title model (Some day) core_title in
+    let put = Q.put in
+    let block index =
+      let block_uuid = Printf.sprintf "83000000-0000-4000-8000-%012d" index in
+      R.entity (201 + index) block_uuid (query ^ " note " ^ string_of_int index)
+      @ [put block_uuid "block/page" (D.Ref_to (Q.ref_uuid Q.page))] in
+    Editor_command_test.rebase runtime conn (R.entity 200 uuid core_title @ [
+      put uuid "block/name" (D.String (String.lowercase_ascii core_title));
+      put uuid "block/journal-day" (D.Int64 (Int64.of_int day))]
+      @ List.concat_map block (List.init 22 Fun.id));
+    let index = Option.get runtime.search_index in
+    Search_index.refresh index (Graph_runtime.db runtime);
+    let session = Rpc_session.create_session {Rpc_session.default_options with
+      outliner_projection_limit = Some 32;
+      graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      graph_search_page = Some (Graph_runtime.search_page runtime)} in
+    let search eff =
+      let payload = Native_bridge.encode_effect ~model eff in
+      let request = J.to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch"; "params", `Assoc [
+        "action", `String "executeEffect"; "payload", `String payload]]) in
+      let response = Rpc_session.call session request in
+      Result.get_ok (Response_snapshot.decode_response response) in
+    let journal_ids projection = List.map (fun (hit : Model.search_hit) -> hit.hit_uuid) projection.Model.search_results in
+    List.iter (fun query ->
+      let projection = search (Model.SearchNodesEffect (1, query)) in
+      check ~msg:query (List.mem uuid (journal_ids projection))) [core_title; string_of_int day];
+    let first = search (Model.SearchNodesEffect (2, query)) in
+    check_eq first.projection_search_query query;
+    check_eq (List.length first.search_results) 20;
+    check first.search_has_more;
+    let journal = List.hd first.search_results in
+    check_eq journal.hit_uuid uuid;
+    check_eq (View_base.search_result_title model journal) query;
+    let second = search (Model.LoadSearchPageEffect (3, query, 20)) in
+    check_eq (List.length second.search_results) 3;
+    check (not second.search_has_more);
+    let ids = journal_ids first @ journal_ids second in
+    check_eq (List.length (List.sort_uniq String.compare ids)) 23)
+
 let cases = [
+  case "displayed journal titles are searchable through paged native effects" displayed_journal_titles_search_through_native_effects;
+  case "localized journal titles round-trip in every supported language" localized_journal_titles_round_trip;
   case "reference dates parse without epoch conversion or partial years" reference_dates_parse_without_epoch_conversion;
   case "search refreshes journal and reference labels on format changes" search_reindexes_journals_and_references_when_format_changes;
   case "date commands preserve existing and new journal identities" date_commands_keep_stable_journal_references_after_format_changes;

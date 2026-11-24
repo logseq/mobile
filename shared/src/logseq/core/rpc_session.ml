@@ -1039,12 +1039,16 @@ let with_object action payload missing handle =
             (action ^ " payload must be an object")))
   | None -> Rpc.failure "invalid_params" missing
 
-let search_page session ~offset ~limit query =
+let search_page session ?journal_day ~offset ~limit query =
   let h = host session in
   match h.Types.graph_search_page with
-  | Some search -> search ~offset ~limit query
+  | Some search -> search ?journal_day ~offset ~limit query
   | None ->
     let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+    let journal = Option.bind journal_day (fun day ->
+      Option.bind (query_db session) (fun db -> Search_index.journal_search_hit db day)) in
+    let all = match journal with None -> all | Some journal ->
+      journal :: List.filter (fun (hit : Search_index.indexed_search_hit) -> hit.uuid <> journal.uuid) all in
     let rec slice skip remaining acc = function
       | [] -> List.rev acc, false
       | _ when remaining = 0 && skip = 0 -> List.rev acc, true
@@ -1055,7 +1059,8 @@ let search_page session ~offset ~limit query =
 let refresh_retained_search session =
   let current = state session in
   if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
-    let found, has_more = search_page session ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
+    let found, has_more = search_page session ?journal_day:current.search_journal_day
+      ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
     session.Types.state := {current with search_result_pages = [found];
       search_result_count = List.length found; search_has_more = has_more})
 
@@ -2881,20 +2886,23 @@ let rec dispatch session action payload =
     session.Types.state := { !(session.state) with sync_connected = false };
     snapshot_visible session
   | "searchNodes" | "searchNodesPage" ->
-    let query, offset = if action = "searchNodes" then Option.value ~default:"" payload, 0
+    let query, offset, journal_day = if action = "searchNodes" then Option.value ~default:"" payload, 0, None
       else match payload with
-        | None -> "", -1
+        | None -> "", -1, None
         | Some payload -> (try
           let json = Yojson.Basic.from_string payload in
           let query = Yojson.Basic.Util.member "query" json |> Yojson.Basic.Util.to_string in
           let offset = Yojson.Basic.Util.member "offset" json |> Yojson.Basic.Util.to_int in
-          query, offset with _ -> "", -1) in
+          let journal_day = if offset = 0 then
+            (match Yojson.Basic.Util.member "journalDay" json with `Int day -> Some day | _ -> None)
+            else s.search_journal_day in
+          query, offset, journal_day with _ -> "", -1, None) in
     let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
     let found, has_more =
       if not valid || String_kit.is_blank query then [], false
-      else search_page session ~offset ~limit:20 query in
+      else search_page session ?journal_day ~offset ~limit:20 query in
     if valid then session.Types.state :=
-      { !(session.state) with search_query = query; search_has_more = has_more;
+      { !(session.state) with search_query = query; search_journal_day = journal_day; search_has_more = has_more;
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);
         search_result_count = offset + List.length found };
     if h.Types.outliner_projection_limit = None then snapshot_visible session

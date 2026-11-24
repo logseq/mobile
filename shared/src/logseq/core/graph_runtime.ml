@@ -979,11 +979,13 @@ let search runtime query =
        [])
   | None -> []
 
-let search_page runtime ~offset ~limit query =
+let search_page runtime ?journal_day ~offset ~limit query =
   match runtime.search_index with
-  | None -> [], false
+  | None ->
+    let journal = if offset = 0 && limit > 0 then Option.bind journal_day (Index.journal_search_hit (db runtime)) else None in
+    Option.to_list journal, false
   | Some index ->
     if (state runtime).search_rebuild_failed then
       runtime.state := {!(runtime.state) with search_rebuild_failed = false};
-    try Index.search_hits_page ~offset ~limit index (db runtime) query
+    try Index.search_hits_page ?journal_day ~offset ~limit index (db runtime) query
     with error -> search_error "page" error; [], false

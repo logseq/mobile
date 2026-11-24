@@ -95,7 +95,7 @@ type host_options =
   ; graph_normalize_titles :
       (string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Search_index.indexed_search_hit list) option
-  ; graph_search_page : (offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
+  ; graph_search_page : (?journal_day:int -> offset:int -> limit:int -> string -> Search_index.indexed_search_hit list * bool) option
   ; graph_maintain_search_index : (string -> bool) option
   ; graph_due_flashcards : (int -> Flashcards.due_card list) option
   ; graph_review_flashcard :
@@ -154,6 +154,7 @@ type session_state =
   ; search_result_pages : Search_index.indexed_search_hit list list
   ; search_result_count : int
   ; search_query : string
+  ; search_journal_day : int option
   ; sync_transport : Sync_driver.t
   ; sync_connected : bool
   ; pending_sync : pending_sync option

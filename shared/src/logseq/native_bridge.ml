@@ -248,7 +248,7 @@ let encode_runtime_log_records records =
   "[" ^ String.concat "," (List.map encode_runtime_log_record records)
   ^ "]"
 
-let encode_effect (eff : Model.logseq_effect) =
+let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effect) =
   match eff with
   | SendAssetEffect (id, asset, _, _) ->
     "{\"id\":" ^ string_of_int id
@@ -349,8 +349,12 @@ let encode_effect (eff : Model.logseq_effect) =
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"maintain-search-index\",\"text\":"
     ^ Lui_wire.quoted graph_id ^ "}"
   | SearchNodesEffect (id, query) ->
-    "{\"id\":" ^ string_of_int id
-    ^ ",\"kind\":\"search-nodes\",\"text\":" ^ Lui_wire.quoted query ^ "}"
+    let day = Option.bind model (fun current ->
+      if current.journal_title_format <> Journal.default_format then None else
+      let current_year = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000 in
+      Localization.journal_day_of_title ~language:current.language ~system_language:current.system_language ~current_year query) in
+    Yojson.Basic.to_string (`Assoc (["id", `Int id; "kind", `String "search-nodes"; "text", `String query]
+      @ Option.fold ~none:[] ~some:(fun day -> ["value", `Int day]) day))
   | TapOutlinerBlockEffect (id, uuid) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"tap-outliner-block\",\"text\":" ^ Lui_wire.quoted uuid
@@ -484,8 +488,8 @@ let encode_effect (eff : Model.logseq_effect) =
   | SignOutEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"sign-out\",\"text\":\"\"}"
 
-let encode_effect_dispatch eff patch =
-  "{\"effect\":" ^ encode_effect eff ^ ",\"patch\":"
+let encode_effect_dispatch ?model eff patch =
+  "{\"effect\":" ^ encode_effect ?model eff ^ ",\"patch\":"
   ^ Lui_wire.quoted patch ^ "}"
 
 let search_index_source = ref (fun () -> None)
@@ -518,7 +522,7 @@ let take_effect () =
     match List.find_opt (fun eff -> remaining eff <= 0.) effects with
     | Some eff ->
       let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
-      encode_effect_dispatch eff patch
+      encode_effect_dispatch ~model:current eff patch
     | None ->
       let delay = List.fold_left (fun delay eff -> min delay (remaining eff)) 0.2 effects in
       Printf.sprintf "{\"waitMs\":%d}" (max 1 (int_of_float (ceil (delay *. 1000.))))
