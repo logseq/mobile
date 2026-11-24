@@ -27,6 +27,7 @@ type asset_preview =
 type sidebar_page =
   { uuid : string
   ; title : string
+  ; page_journal_day : int option
   }
 
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
@@ -113,6 +114,7 @@ type flashcard =
 type search_hit =
   { hit_uuid : string
   ; hit_title : string
+  ; hit_journal_day : int option
   ; breadcrumb : string
   ; breadcrumbs : sidebar_page list
   ; is_page : bool

@@ -1,7 +1,7 @@
 open Lui_protocol
 open Lui_elements
 
-let search_result_row hit_source send : t =
+let search_result_row model_source hit_source send : t =
  custom @@ fun context parent ->
    let hit : Model.search_hit = Signal.sample hit_source in
    let native_list = Lui_ui.host context = SwiftUIHost in
@@ -25,14 +25,14 @@ let search_result_row hit_source send : t =
                     hit_source)
                (text
                   ~value:
-                    (reactive View_base.search_result_breadcrumb hit_source)
+                    (reactive (Signal.map2 View_base.search_result_breadcrumb model_source hit_source))
                   ~style_class:"caption single-line"
                   ~foreground:"muted-foreground"
                   ~accessibility_identifier:
                     ("search.result.context." ^ hit.hit_uuid)
                   []);
              text
-               ~value:(reactive View_base.search_result_title hit_source)
+               ~value:(reactive (Signal.map2 View_base.search_result_title model_source hit_source))
                ~style_class:"search-match line-clamp-3"
                ~accessibility_identifier:("search.result.title." ^ hit.hit_uuid)
                [];
@@ -64,17 +64,17 @@ let search_entry_key = function
   | Search_heading (_, identifier) -> identifier
   | Search_hit hit -> View_base.search_result_identifier hit
 
-let mount_search_entry send entry_source =
+let mount_search_entry model_source send entry_source =
   match Signal.sample entry_source with
       | Search_heading (title, identifier) -> search_section_heading title identifier
       | Search_hit _ -> custom @@ fun context parent ->
         let hit = Signal.own_signal context.Lui_ui.ui_scope
           (Signal.map (function Search_hit hit -> hit | _ -> assert false) entry_source) in
-        mount context ?parent (search_result_row hit send)
+        mount context ?parent (search_result_row model_source hit send)
 
 let search_result_entries model_source send : t =
   keyed ~source:(reactive search_entries model_source)
-    ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)
+    ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry model_source send)
 
 let search_result_list model_source send : t =
  custom @@ fun context parent ->
@@ -92,7 +92,7 @@ let search_result_list model_source send : t =
          ~count ~offset
          ~on_visible_range:(fun _ last -> load_more last)
          ~source:(reactive search_entries model_source)
-         ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry send)]
+         ~key:search_entry_key ~cmp:compare ~mount:(mount_search_entry model_source send)]
    else
      list ~grow:1.0 ~style:`plain ~track_visible_range:true
        ~accessibility_identifier:"screen.search.results"
@@ -934,10 +934,13 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [View_base.with_string_prop_signal DisplayValue display
               (box [View_base.with_int_prop_signal WidthValue width
                 (View_sidebar.native_graph_switch ~min_height:28 ~foreground:"muted-foreground" model_source send)])] in
-         dyn (fun flashcards ->
-           if flashcards then box [View_flashcards.flashcard_toolbar model_source send;
-             View_sidebar.native_graph_switch ~compact:true ~foreground:"muted-foreground" model_source send]
-           else title) (Signal.map View_base.flashcards_destination_ model_source)
+         dyn (function
+           | `Flashcards -> box [View_flashcards.flashcard_toolbar model_source send]
+           | `Journals -> title
+           | `Page -> box []) (Signal.map (fun current ->
+             if View_base.flashcards_destination_ current then `Flashcards
+             else if View_base.journals_sidebar_selected_ current then `Journals
+             else `Page) model_source)
        else main_header_title context model_source in
      ignore (mount context ~parent:node title_slot);
      ignore

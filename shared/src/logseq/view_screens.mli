@@ -1,4 +1,5 @@
 val search_result_row :
+  Model.logseq_model Signal.signal ->
   Model.search_hit Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val search_screen :

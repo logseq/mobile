@@ -162,7 +162,7 @@ let graph_json (graph : Api.api_graph) =
     ]
     @ (match graph.role with None -> [] | Some role -> [ "role", `String role ]))
 
-let search_hit_json (hit : Search_index.indexed_search_hit) =
+let search_hit_json ?(summary_json = summary_json) (hit : Search_index.indexed_search_hit) =
   Wire.json_object
     [
       ("uuid", `String hit.uuid)

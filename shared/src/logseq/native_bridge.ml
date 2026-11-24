@@ -141,7 +141,8 @@ let host_action (update : Host_update.host_update) =
            | "graphs" -> Model.GraphsDestination
            | _ -> Model.JournalsDestination);
         assets = List.map session_asset session.assets;
-        composer_tags = List.map (fun (uuid, title) -> ({Model.uuid; title} : Model.sidebar_page)) session.composer_tags;
+        composer_tags = List.map (fun (uuid, title) ->
+          {Model.uuid; title; page_journal_day = None}) session.composer_tags;
         composer_expanded = session.composer_expanded;
         search_open = session.search_open;
         query = session.query;

@@ -47,7 +47,8 @@ let filter_map_option f values = List.filter_map f values
 let sidebar_page input =
   let fields = object_fields input in
   match string_member "uuid" fields, string_member "title" fields with
-  | Some uuid, Some title -> Some { Model.uuid; title }
+  | Some uuid, Some title ->
+    Some { Model.uuid; title; page_journal_day = int_member "journalDay" fields }
   | _ -> None
 
 let sidebar_pages_member name fields =
@@ -69,10 +70,13 @@ let search_hit input =
   let fields = object_fields input in
   match string_member "uuid" fields, string_member "title" fields with
   | Some hit_uuid, Some hit_title ->
+    let breadcrumbs = match breadcrumbs fields with
+      | [] -> Option.to_list (sidebar_page (`Assoc (object_member "page" fields)))
+      | pages -> pages in
     Some
-      { Model.hit_uuid; hit_title;
+      { Model.hit_uuid; hit_title; hit_journal_day = int_member "journalDay" fields;
         breadcrumb = breadcrumb fields;
-        breadcrumbs = breadcrumbs fields;
+        breadcrumbs;
         is_page = bool_member "isPage" fields }
   | _ -> None
 
@@ -508,7 +512,7 @@ let core_projection fields =
     empty_journals = List.filter_map (fun item -> match item with
       | `Assoc fields -> (match string_member "uuid" fields, string_member "title" fields,
           int_member "journalDay" fields with
-        | Some uuid, Some title, Some day -> Some ({Model.uuid; title}, day)
+        | Some uuid, Some title, Some day -> Some ({Model.uuid; title; page_journal_day = Some day}, day)
         | _ -> None)
       | _ -> None) (list_member "emptyJournals" fields);
     journal_tasks = Option.value ~default:`Null (List.assoc_opt "journalTasks" fields);

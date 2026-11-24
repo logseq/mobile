@@ -9,7 +9,7 @@ import Vision
         for delayedLoad in [true, false] {
             try await check(delayedLoad: delayedLoad)
         }
-        print("PASS: the graph switch stays visible alongside the page title while scrolling after warm and cold loads")
+        print("PASS: the page title appears by itself while scrolling after warm and cold loads")
     }
 
     @MainActor static func check(delayedLoad: Bool) async throws {
@@ -89,8 +89,8 @@ import Vision
             width: frame.width / window.bounds.width, height: frame.height / window.bounds.height)
         try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
         let visible = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        guard visible.contains(title), visible.contains("Work") else {
-            throw failure("The native top bar must display the graph and \(title) after \(delayedLoad ? "cold" : "warm") loading; found: \(visible)")
+        guard visible.contains(title), !visible.contains("Work") else {
+            throw failure("The native top bar must display \(title) by itself after \(delayedLoad ? "cold" : "warm") loading. Found \(visible)")
         }
         scroll.setContentOffset(CGPoint(x: 0, y: top), animated: false)
         try await Task.sleep(for: .milliseconds(700))

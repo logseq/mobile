@@ -804,17 +804,19 @@ private struct LGNavigationContent: View {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
-    private var flashcardsToolbar: (container: Int, title: Int, add: Int, graph: Int)? {
+    private var rootTitleContent: Int? {
         guard let toolbarStartIndex,
               let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
         let _ = context.measureStamp(of: titleSlot)
-        let slots = context.childIDs(of: titleSlot)
-        guard slots.count == 2,
-              context.extensionIdentifier(of: slots[0]) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
-        let container = slots[0]
+        return context.childIDs(of: titleSlot).first
+    }
+
+    private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
+        guard let container = rootTitleContent,
+              context.extensionIdentifier(of: container) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
         let children = context.childIDs(of: container)
         guard children.count == 3 else { return nil }
-        return (container, children[0], children[1], slots[1])
+        return (container, children[0], children[1])
     }
 
 
@@ -1033,10 +1035,8 @@ private struct LGNavigationContent: View {
                             ToolbarItem(placement: .principal) {
                                 if let search, searchVisible {
                                     searchStatusTitle(search.statusTitle)
-                                } else if let flashcardsToolbar {
-                                    flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
                                 } else {
-                                    graphSwitchTitle
+                                    rootHeaderTitle
                                 }
                             }
                         }
@@ -1109,17 +1109,6 @@ private struct LGNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
-    private func flashcardsHeader(deck: Int, graph: Int) -> some View {
-        HStack(spacing: 8) {
-            context.nodeView(of: deck)
-                .font(.headline)
-                .lineLimit(1)
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-            graphSwitchMenu(graph)
-        }
-    }
-
     private func searchStatusTitle(_ title: String) -> some View {
         Text(title)
             .font(.headline)
@@ -1137,20 +1126,22 @@ private struct LGNavigationContent: View {
             .disabled(selectionActive)
     }
 
-    private var graphSwitchTitle: some View {
-        VStack(spacing: 0) {
-            if let toolbarStartIndex,
-               let titleSlot = childID(at: toolbarStartIndex + 1),
-               let graphSwitch = context.childIDs(of: titleSlot).first {
-                graphSwitchMenu(graphSwitch)
-            }
-            if !contextualTitle.isEmpty {
-                Text(verbatim: contextualTitle)
-                    .lineLimit(1)
-                    .font(.caption.weight(.semibold))
-            }
+    @ViewBuilder
+    private var rootHeaderTitle: some View {
+        if let flashcardsToolbar {
+            context.nodeView(of: flashcardsToolbar.title)
+                .font(.headline)
+                .lineLimit(1)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+        } else if let graphSwitch = rootTitleContent {
+            graphSwitchMenu(graphSwitch)
+                .frame(minHeight: 44)
+        } else if !contextualTitle.isEmpty {
+            Text(verbatim: contextualTitle)
+                .font(.headline)
+                .lineLimit(1)
         }
-        .frame(minHeight: 44)
     }
 
     @ViewBuilder
@@ -1159,13 +1150,7 @@ private struct LGNavigationContent: View {
             if verticalToolbar, toolbarStartIndex != nil {
                 // A principal item would create a second, horizontal bar on Duo.
                 let hideTitle = searchVisible || pdfWorkspaceOpen
-                Group {
-                    if let flashcardsToolbar {
-                        flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
-                    } else {
-                        graphSwitchTitle
-                    }
-                }
+                rootHeaderTitle
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .opacity(hideTitle ? 0 : 1)
                 .allowsHitTesting(!hideTitle)
