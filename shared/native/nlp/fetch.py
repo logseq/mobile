@@ -76,15 +76,25 @@ def main():
         modules[identifier] = "function(module,exports){\n" + requires.sub(dependency, files[path]) + "\n}"
         return identifier
 
-    entry = include("dist/cjs/locales/en/index.js")
+    locales = ("ar", "de", "en", "es", "fi", "fr", "id", "it", "ja", "nl", "pt", "ru", "sv", "uk", "vi", "zh")
+    entries = {locale: include(f"dist/cjs/locales/{locale}/index.js") for locale in locales}
     bundle = "(function(){const modules=[" + ",\n".join(modules) + "],cache={};\n"
     bundle += "function load(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports);return m.exports;}\n"
-    bundle += "const chrono=load(" + str(entry) + ");\n"
-    bundle += """globalThis.logseqParseDate=function(text,now){
-const result=chrono.parse(text,new Date(now))[0];
+    bundle += "const locales=" + json.dumps(entries) + ";\n"
+    bundle += """globalThis.logseqParseDate=function(text,now,locale){
+const key=locale.toLowerCase().replace(/_/g,"-");
+const language=key.split("-")[0];
+const module=load(Object.hasOwn(locales,language)?locales[language]:locales.en);
+const parser=key==="en-gb"?module.GB:module;
+const reference=new Date(now);
+let result=parser.parse(text,reference)[0];
+if(language!=="en"&&(!result||result.text.trim()!==text)){
+const english=load(locales.en).parse(text,reference)[0];
+if(english&&(!result||english.text.trim()===text))result=english;
+}
 if(!result)return null;
 const start=result.start;
-return JSON.stringify({day:start.get("year")*10000+start.get("month")*100+start.get("day"),
+return JSON.stringify({matched:result.text.trim(),day:start.get("year")*10000+start.get("month")*100+start.get("day"),
 timestamp:start.date().getTime()});
 };})();\n"""
     data = bundle.encode()

@@ -81,14 +81,19 @@ CAMLprim value logseq_nlp_init_count(value unit) {
     return Val_int(logseq_nlp_initialization_count());
 }
 
-CAMLprim value logseq_nlp_parse(value input, value reference_ms) {
-    CAMLparam2(input, reference_ms);
+CAMLprim value logseq_nlp_parse(value input, value reference_ms, value locale) {
+    CAMLparam3(input, reference_ms, locale);
     CAMLlocal2(answer, text);
     size_t length = caml_string_length(input);
     char *copy = malloc(length + 1);
     if (!copy) caml_raise_out_of_memory();
     memcpy(copy, String_val(input), length);
     copy[length] = 0;
+    char *locale_name = strdup(String_val(locale));
+    if (!locale_name) {
+        free(copy);
+        caml_raise_out_of_memory();
+    }
     double reference = Double_val(reference_ms);
     char *output = NULL;
     int failed = 0;
@@ -99,10 +104,12 @@ CAMLprim value logseq_nlp_parse(value input, value reference_ms) {
     } else {
         JS_UpdateStackTop(runtime);
         deadline = monotonic_seconds() + 0.2;
-        JSValue arguments[2] = {JS_NewStringLen(context, copy, length), JS_NewFloat64(context, reference)};
-        JSValue result = JS_Call(context, parse_function, JS_UNDEFINED, 2, arguments);
+        JSValue arguments[3] = {JS_NewStringLen(context, copy, length), JS_NewFloat64(context, reference),
+                                JS_NewString(context, locale_name)};
+        JSValue result = JS_Call(context, parse_function, JS_UNDEFINED, 3, arguments);
         JS_FreeValue(context, arguments[0]);
         JS_FreeValue(context, arguments[1]);
+        JS_FreeValue(context, arguments[2]);
         if (JS_IsException(result)) {
             clear_exception();
             failed = 1;
@@ -122,6 +129,7 @@ CAMLprim value logseq_nlp_parse(value input, value reference_ms) {
     pthread_mutex_unlock(&parser_lock);
     caml_leave_blocking_section();
     free(copy);
+    free(locale_name);
     if (failed) {
         free(output);
         caml_failwith("Could not parse the natural-language date");

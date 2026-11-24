@@ -1,6 +1,9 @@
 #if os(iOS)
 import LUIAppleBackend
+import LogseqModel
+import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 enum LGTaskDateSheetExtension {
@@ -27,7 +30,7 @@ enum LGTaskDateSheetExtension {
     }
 }
 
-private struct LGTaskDateSheetState: Decodable {
+struct LGTaskDateSheetState: Decodable, Equatable {
     let title: String
     let clearTitle: String
     let submitTitle: String
@@ -44,46 +47,46 @@ private struct LGTaskDateSheetState: Decodable {
     }
 }
 
+@MainActor @Observable
+final class LGTaskDateSheetRequest: Identifiable {
+    let id = UUID()
+    let context: LUIAppleExtensionViewContext
+    var state: LGTaskDateSheetState
+
+    init(context: LUIAppleExtensionViewContext, state: LGTaskDateSheetState) {
+        self.context = context
+        self.state = state
+    }
+}
+
 private struct LGTaskDatePresentation: View {
     let context: LUIAppleExtensionViewContext
     let state: LGTaskDateSheetState
-    @State private var presented = true
+    @Environment(\.lgPlatformPresentation) private var coordinator
+    @State private var request: LGTaskDateSheetRequest?
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
-            .sheet(isPresented: $presented, onDismiss: {
-                try? context.emit(name: "dismiss", values: [:])
-            }) {
-                LGTaskDateSheet(context: context, state: state)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.hidden)
-                    .presentationContentInteraction(.scrolls)
-                    .presentationCornerRadius(28)
-                    .presentationBackground(.regularMaterial)
+            .onAppear {
+                let request = LGTaskDateSheetRequest(context: context, state: state)
+                self.request = request
+                coordinator?.presentTaskDateSheet(request)
+            }
+            .onChange(of: state) { _, state in request?.state = state }
+            .onDisappear {
+                if let request { coordinator?.dismissTaskDateSheet(request) }
             }
     }
 }
 
-private struct LGTaskDateSheet: View {
+struct LGTaskDateSheet: View {
     let context: LUIAppleExtensionViewContext
     let state: LGTaskDateSheetState
-    @Environment(\.locale) private var locale
-    @Environment(\.luiSemanticColors) private var colors
-    @ScaledMetric(relativeTo: .body) private var dayHeight: CGFloat = 37
+    @Environment(\.calendar) private var calendar
     @FocusState private var editingInput: Bool
     @State private var input = ""
-    @State private var displayedDate: Date?
-
-    private var calendar: Calendar {
-        var calendar = Calendar.current
-        calendar.locale = locale
-        return calendar
-    }
-
-    private var month: Date { displayedDate ?? state.selection ?? Date() }
-    private var accent: Color { colors["primary"] ?? LogseqThemePolicy.accent }
     private var enabled: Bool { state.ready && !state.waiting }
     private var canSubmit: Bool { enabled && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -103,7 +106,7 @@ private struct LGTaskDateSheet: View {
                         Image(systemName: "checkmark").frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(accent)
+                    .foregroundStyle(.tint)
                     .disabled(!canSubmit)
                     .accessibilityLabel(state.submitTitle)
                     .accessibilityIdentifier("task-dates.submit")
@@ -118,11 +121,8 @@ private struct LGTaskDateSheet: View {
 
             if state.ready {
                 ScrollView {
-                    VStack(spacing: 0) {
-                        monthHeader
-                        monthGrid
-                    }
-                    .padding(.horizontal, 12)
+                    LGTaskCalendar(selection: state.selection, onSelect: choose)
+                        .padding(.horizontal, 16)
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .scrollIndicators(.hidden)
@@ -168,106 +168,76 @@ private struct LGTaskDateSheet: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
         }
-        .tint(accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sheet.task-dates")
     }
 
-    private var monthHeader: some View {
-        HStack(spacing: 0) {
-            Text(monthTitle)
-                .font(.headline)
-                .padding(.leading, 8)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("task-dates.month")
-            Spacer()
-            monthButton("chevron.backward", label: "Previous month", id: "previous") { moveMonth(-1) }
-            monthButton("dot.circle", label: "Today", id: "today") { displayedDate = Date() }
-            monthButton("chevron.forward", label: "Next month", id: "next") { moveMonth(1) }
-        }
-    }
-
-    private func monthButton(_ icon: String, label: LocalizedStringKey, id: String,
-                             action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 40, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier("task-dates.month." + id)
-    }
-
-    private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(month, equalTo: Date(), toGranularity: .year) ? "LLLL" : "yLLLL")
-        return formatter.string(from: month)
-    }
-
-    private var monthGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-            ForEach(0..<7) { offset in
-                Text(calendar.shortStandaloneWeekdaySymbols[(calendar.firstWeekday - 1 + offset) % 7])
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .frame(maxWidth: .infinity, minHeight: 25)
-                    .accessibilityHidden(true)
-            }
-            ForEach(days, id: \.self) { day in dayButton(day) }
-        }
-    }
-
-    private var days: [Date] {
-        guard let start = calendar.dateInterval(of: .month, for: month)?.start else { return [] }
-        let offset = (calendar.component(.weekday, from: start) - calendar.firstWeekday + 7) % 7
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0 - offset, to: start) }
-    }
-
-    private func dayButton(_ day: Date) -> some View {
-        let number = calendar.component(.day, from: day)
-        let selected = state.selection.map { calendar.isDate(day, inSameDayAs: $0) } ?? false
-        let today = calendar.isDateInToday(day)
-        let currentMonth = calendar.isDate(day, equalTo: month, toGranularity: .month)
-        return Button { choose(day) } label: {
-            Text(number, format: .number)
-                .font(.body.monospacedDigit())
-                .foregroundStyle(selected || today ? accent : (currentMonth ? Color.primary : Color.secondary))
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-                .frame(maxWidth: .infinity, minHeight: dayHeight)
-                .background((selected || today) ? accent.opacity(0.17) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                .padding(.horizontal, 6)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).month(.wide).day().year().locale(locale)))
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("task-dates.day.\(calendar.component(.year, from: day))-\(calendar.component(.month, from: day))-\(number)")
-    }
-
-    private func moveMonth(_ direction: Int) {
-        guard let start = calendar.dateInterval(of: .month, for: month)?.start else { return }
-        displayedDate = calendar.date(byAdding: .month, value: direction, to: start)
-    }
-
     private func choose(_ day: Date) {
-        let time = state.selection.map { calendar.dateComponents([.hour, .minute, .second], from: $0) }
-        let date = calendar.date(bySettingHour: time?.hour ?? 0, minute: time?.minute ?? 0,
-                                 second: time?.second ?? 0, of: day) ?? day
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let parts = gregorian.dateComponents([.era, .year, .month, .day], from: day)
+        guard parts.era == 1, let year = parts.year, let month = parts.month, let date = parts.day else { return }
         editingInput = false
-        let millis = Int((date.timeIntervalSince1970 * 1000).rounded())
-        try? context.emit(name: "choose", values: ["value": .string(String(millis))])
+        try? context.emit(name: "choose", values: ["value": .string(String(year * 10000 + month * 100 + date))])
     }
 
     private func submit() {
         guard canSubmit else { return }
         try? context.emit(name: "submit", values: ["value": .string(input)])
+    }
+}
+
+private struct LGTaskCalendar: UIViewRepresentable {
+    let selection: Date?
+    let onSelect: (Date) -> Void
+    @Environment(\.calendar) private var calendar
+    @Environment(\.locale) private var locale
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UICalendarView {
+        let view = UICalendarView()
+        view.calendar = calendar
+        view.locale = locale
+        view.timeZone = calendar.timeZone
+        view.tintColor = UIColor(LogseqThemePolicy.accent)
+        view.wantsDateDecorations = false
+        view.accessibilityIdentifier = "task-dates.calendar"
+        view.selectionBehavior = context.coordinator.selection
+        view.visibleDateComponents = dateComponents(selection ?? Date())
+        return view
+    }
+
+    func updateUIView(_ view: UICalendarView, context: Context) {
+        context.coordinator.onSelect = onSelect
+        view.isUserInteractionEnabled = isEnabled
+        let selected = selection.map(dateComponents)
+        if context.coordinator.selection.selectedDate != selected {
+            context.coordinator.selection.selectedDate = selected
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UICalendarView, context: Context) -> CGSize? {
+        guard let width = proposal.width else { return nil }
+        return uiView.systemLayoutSizeFitting(
+            CGSize(width: width, height: 0),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+    }
+
+    private func dateComponents(_ date: Date) -> DateComponents {
+        calendar.dateComponents([.calendar, .era, .year, .month, .day], from: date)
+    }
+
+    final class Coordinator: NSObject, UICalendarSelectionSingleDateDelegate {
+        lazy var selection = UICalendarSelectionSingleDate(delegate: self)
+        var onSelect: ((Date) -> Void)?
+
+        func dateSelection(_ selection: UICalendarSelectionSingleDate, didSelectDate components: DateComponents?) {
+            if let date = components?.date { onSelect?(date) }
+        }
     }
 }
 #endif

@@ -25,7 +25,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-chrono-node 2.9.0
+chrono-node 2.10.3
 https://github.com/wanasit/chrono
 
 The MIT License

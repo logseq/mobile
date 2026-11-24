@@ -10,9 +10,9 @@
     "sha256": "775b7a711166c3f39899e56179a7fc8b5b755c3a043ee973c54ae5838023400f"
   },
   "chrono-node": {
-    "version": "2.9.0",
-    "url": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.9.0.tgz",
-    "sha256": "28a6e556d8e3335ec16e5e7fb4172a7090d172111be370330ae2bd12bd5fdfbd"
+    "version": "2.10.3",
+    "url": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.10.3.tgz",
+    "sha256": "3840e2cba43f1d865a30a9ac2191991e4f1467290e888a8e2312155895b86f0d"
   },
   "bignumber.js": {
     "version": "9.3.1",
