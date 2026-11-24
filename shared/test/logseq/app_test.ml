@@ -4348,6 +4348,8 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
   check_eq ~msg:"Add sync graph uses a plus in the toolbar"
     (property_string renderer add Lui_protocol.InlineIconName)
     "app:add";
+  check_eq ~msg:"the Graphs add icon uses the same toolbar style as the Flashcards add icon"
+    (property_string renderer add Lui_protocol.StyleClass) "system-toolbar-icon";
   check_eq ~msg:"Graphs has a single create action in its header"
     (child_with_identifier renderer screen "button.graph-add") (-1);
   check_eq ~msg:"Graphs uses the create action instead of Calendar"
