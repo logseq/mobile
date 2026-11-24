@@ -1331,8 +1331,9 @@ private struct LGNavigationContent: View {
     private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
         let size: CGFloat = 44
         let vertical = verticalToolbar && !searchPage
-        let fullWidth = searchPage || vertical ? size : size * 2
-        let fullHeight = vertical ? size * 2 : size
+        let actionCount: CGFloat = !searchPage && hasPrimaryToolbarAction(at: index) ? 2 : 1
+        let fullWidth = vertical ? size : size * actionCount
+        let fullHeight = vertical ? size * actionCount : size
         let alignment: Alignment = vertical ? .top : .trailing
         let contents = ZStack(alignment: alignment) {
             if selectionActive {
@@ -1379,21 +1380,27 @@ private struct LGNavigationContent: View {
         return owner.nodeView(of: slots[index])
     }
 
+    private func hasPrimaryToolbarAction(at index: Int) -> Bool {
+        guard let container = childID(at: index + 2) else { return false }
+        let _ = context.measureStamp(of: container)
+        return !context.childIDs(of: container).isEmpty
+    }
+
     private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {
         let pageActions: AnyView
         if searchPage, let search, search.context.childIDs.indices.contains(3) {
             pageActions = headerConnectionSlot(search.context, at: search.context.childIDs[3], selecting: false)
         } else if let toolbarStartIndex {
-            // Keep these controls in one item so the system cannot replace
-            // one of them with its own overflow menu as the title changes.
-            let controls = LGToolbarControlPair(
-                first: AnyView(childContent(at: toolbarStartIndex + 2)
-                    .frame(width: 44, height: 44)),
-                second: AnyView(headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
-                    .frame(width: 44, height: 44))
-            )
-            .fixedSize()
-            return ("logseq.trailing-controls", AnyView(controls))
+            pageActions = headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
+            if hasPrimaryToolbarAction(at: toolbarStartIndex) {
+                // Keep the two actions together so the system gives them a single toolbar slot.
+                let controls = LGToolbarControlPair(
+                    first: AnyView(childContent(at: toolbarStartIndex + 2).frame(width: 44, height: 44)),
+                    second: AnyView(pageActions.frame(width: 44, height: 44))
+                )
+                .fixedSize()
+                return ("logseq.trailing-controls", AnyView(controls))
+            }
         } else if let trailingMenuIndex {
             pageActions = childContent(at: trailingMenuIndex)
         } else {

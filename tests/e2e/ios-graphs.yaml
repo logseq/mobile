@@ -16,6 +16,10 @@ appId: com.logseq.logseq
 - assertVisible: "Local graphs:"
 - assertVisible:
     id: "button.graphs.refresh"
+- assertNotVisible:
+    id: "button.journal-calendar"
+- assertNotVisible:
+    id: 'sync\.(connected|disconnected|failed)'
 - waitForAnimationToEnd
 - tapOn:
     id: "button.graph-add"

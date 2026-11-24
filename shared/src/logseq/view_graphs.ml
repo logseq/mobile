@@ -521,7 +521,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
       ]
   else
     list ~accessibility_identifier:"screen.graphs" ~gap:4
-      [
+      ([
         list_item ~icon:(`app "refresh") ~min_height:44
           ~accessibility_identifier:"button.graphs.refresh"
           ~disabled_signal:
@@ -531,10 +531,10 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
         if_
           ~test:(Signal.map Model.graph_refresh_active_ model_source)
           (spinner ~accessibility_identifier:"graphs.loading" []);
-        list_item ~min_height:44
-          ~accessibility_identifier:"button.graph-add"
-          ~on_press:(press send Model.OpenCreateGraph)
-          ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") [];
+      ] @ (if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then []
+      else [list_item ~min_height:44 ~accessibility_identifier:"button.graph-add"
+        ~on_press:(press send Model.OpenCreateGraph)
+        ~text:(View_base.tr (Signal.sample model_source) "Add sync graph") []]) @ [
 
         heading ~level:`h5
           ~accessibility_identifier:"heading.graphs.local"
@@ -567,7 +567,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
-      ]
+      ])
 
 let kotlin_graph_picker_loading_state model_source () : t =
   column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
