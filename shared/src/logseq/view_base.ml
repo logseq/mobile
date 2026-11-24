@@ -1180,7 +1180,10 @@ let graph_shared_ (graph : Model.graph) =
 
 let local_graphs (current : Model.logseq_model) =
   List.filter (fun (graph : Model.graph) ->
-    not (graph_shared_ graph) && Model.graph_local_ current graph.id)
+    (* Signed-out views hide the shared section, so downloaded shared
+       graphs must surface under Local to stay openable/removable. *)
+    (current.authentication_state = "signedOut" || not (graph_shared_ graph))
+    && Model.graph_local_ current graph.id)
     (model_graphs current)
 
 let remote_graphs (current : Model.logseq_model) =

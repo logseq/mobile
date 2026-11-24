@@ -65,7 +65,7 @@ let sidebar_graph_menu_item model_source graph_source send : t =
 
 let sidebar_graph_menu_items keyed item model_source send =
   [ keyed
-      ~source:(Signal.map View_base.model_graphs model_source)
+      ~source:(Signal.map View_base.picker_graphs model_source)
       ~key:View_base.sidebar_graph_identifier ~cmp:compare
       ~mount:(fun graph_source ->
         item model_source graph_source send) ]

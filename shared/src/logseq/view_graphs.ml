@@ -664,7 +664,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
             column ~gap:12
               [
                 keyed
-                  ~source:(reactive View_base.model_graphs model_source)
+                  ~source:(reactive View_base.picker_graphs model_source)
                   ~key:View_base.graph_identifier ~cmp:compare
                   ~mount:(fun graph_source ->
                     graph_row context model_source graph_source false

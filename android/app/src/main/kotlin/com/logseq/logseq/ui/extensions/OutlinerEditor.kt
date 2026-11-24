@@ -295,11 +295,21 @@ internal fun OutlinerEditor(
     LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
     // When the system dismisses the IME while this editor still owns focus,
     // end the editing session so the editor toolbar doesn't stay orphaned.
+    // Only fire after the IME was actually shown for this editor — with a
+    // hardware keyboard it is never visible.
     val imeVisible = WindowInsets.isImeVisible
+    var imeWasVisible by remember { mutableStateOf(false) }
     LaunchedEffect(focusEnabled, imeVisible) {
-        if (!focusEnabled || imeVisible) return@LaunchedEffect
+        if (imeVisible) {
+            imeWasVisible = true
+            return@LaunchedEffect
+        }
+        if (!focusEnabled || !imeWasVisible) return@LaunchedEffect
         delay(300)
-        context.emit("ime-dismissed")
+        if (imeWasVisible) {
+            imeWasVisible = false
+            context.emit("ime-dismissed")
+        }
     }
     // Debounced text-change emission, cancelled by the next edit.
     LaunchedEffect(debounceSeq, focusEnabled) {
