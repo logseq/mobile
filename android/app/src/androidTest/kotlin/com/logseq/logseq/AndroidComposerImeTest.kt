@@ -68,6 +68,8 @@ class AndroidComposerImeTest {
 
     private fun control(id: String) = waitFor { it.viewIdResourceName == id }
     private fun field() = control("field.composer")
+    private fun taskToggleIsOn() = node { it.viewIdResourceName == "button.task-status" }
+        ?.let { it.isChecked || it.isSelected } == true
     private fun click(id: String) { check(control(id).performAction(AccessibilityNodeInfo.ACTION_CLICK)) }
     private fun choose(text: String) {
         automation.waitForIdle(200, 5_000)
@@ -139,10 +141,11 @@ class AndroidComposerImeTest {
             it.viewIdResourceName == "field.composer" || it.viewIdResourceName == "button.composer.expand"
         }
         if (composer.viewIdResourceName == "button.composer.expand") click("button.composer.expand")
-        if (waitFor { it.viewIdResourceName == "button.task-status" }.isSelected) {
+        control("button.task-status")
+        if (taskToggleIsOn()) {
             click("button.task-status")
         }
-        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected != true }
+        waitUntil { !taskToggleIsOn() }
         setDraft(original)
         if (wasCollapsed) click("surface.composer.dismiss")
     }
@@ -181,7 +184,7 @@ class AndroidComposerImeTest {
     @Test fun statusToggleKeepsTheRealKeyboardAndComposerPosition() {
         val before = bounds(field())
         click("button.task-status")
-        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
+        waitUntil(::taskToggleIsOn)
         assertInputKept(before)
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_X)
         waitUntil { field().text?.toString() == draft + "x" }
@@ -203,10 +206,10 @@ class AndroidComposerImeTest {
         waitUntil { !imeShown() }
         val before = bounds(field())
         click("button.task-status")
-        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
+        waitUntil(::taskToggleIsOn)
         assertTrue("The task toggle does not force the keyboard open", !imeShown())
         click("button.task-status")
-        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected != true }
+        waitUntil { !taskToggleIsOn() }
         click("button.attachment")
         waitFor { it.text?.toString() == "File" }
         assertTrue("A menu does not force the keyboard open", !imeShown())
@@ -221,7 +224,7 @@ class AndroidComposerImeTest {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 6)
         }))
         click("button.task-status")
-        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
+        waitUntil(::taskToggleIsOn)
         waitUntil { field().isFocused }
         assertTrue(imeShown())
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_X)

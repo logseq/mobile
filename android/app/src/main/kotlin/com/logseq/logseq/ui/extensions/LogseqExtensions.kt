@@ -103,6 +103,7 @@ fun logseqExtensionRegistry(
     registerNodeIcon()
     registerProperties()
     registerTaskDateSheet()
+    registerComposerTaskToggle()
     registerPdfWorkspace(loadImage)
     registerSidebarOverlay()
     register(

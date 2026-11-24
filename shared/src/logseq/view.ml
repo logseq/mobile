@@ -409,6 +409,11 @@ let extension_registry () =
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
        true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "composer-task-toggle" [profile AndroidOS KotlinHost] false []
+      [property "label" StringScalar true None; property "selected" BoolScalar true None]
+      [event "press" []]);
   Lui_extension.register_component registry (sidebar_overlay_schema ());
   Lui_extension.register_component registry (native_top_notification_schema ());
   Lui_extension.register_tweak registry
