@@ -1,5 +1,6 @@
 package com.logseq.logseq.ui.extensions
 
+import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -91,6 +92,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
 
     val colors = MaterialTheme.colorScheme
     val dark = LocalLuiThemeDark.current ?: androidx.compose.foundation.isSystemInDarkTheme()
+    val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     BoxWithConstraints(Modifier.fillMaxSize().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
         val widthPx = with(LocalDensity.current) { width.toPx() }.coerceAtLeast(1f)
@@ -153,7 +155,9 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                     ) { context.child(main) }
                 }
                 Canvas(Modifier.fillMaxSize()) {
-                    drawRect(brush = glassTint, alpha = revealFraction())
+                    val reveal = revealFraction()
+                    if (supportsBlur) drawRect(brush = glassTint, alpha = reveal)
+                    else drawRect(color = colors.background, alpha = reveal)
                 }
             }
         }
