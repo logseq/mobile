@@ -19,6 +19,21 @@ private let testEmptySnapshotJSON = """
 
 @Suite(.serialized) struct LogseqModelTests {
 
+    @Test func pendingSyncDistinguishesConnectionLossFromRejectedResponses() {
+        #expect(pendingSyncConnectionError(URLError(.notConnectedToInternet)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.cannotConnectToHost)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.networkConnectionLost)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(NSError(domain: NSPOSIXErrorDomain,
+            code: Int(POSIXErrorCode.ENOTCONN.rawValue))) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.badServerResponse)) == nil)
+        #expect(pendingSyncConnectionError(URLError(.cancelled)) == nil)
+        #expect(pendingSyncConnectionError(POSIXError(.EACCES)) == nil)
+        #expect(pendingSyncErrorIsOffline("upload: network_unavailable\n\nnetwork_unavailable"))
+        #expect(!pendingSyncErrorIsOffline("upload: network_unavailable\nHTTP 401"))
+        #expect(!pendingSyncErrorIsOffline("Sync server returned HTTP 503: network_unavailable"))
+        #expect(!pendingSyncErrorIsOffline("Upload asset (block-id): Sync server returned HTTP 503: network_unavailable"))
+    }
+
     @Test func logseqModel() throws {
         #expect(1 + 2 == 3, "basic test")
     }
@@ -282,6 +297,13 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func webSocketConnectionFailuresHaveUsefulUserFacingMessages() {
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.cannotConnectToHost))
+            == "network_unavailable")
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.networkConnectionLost))
+            == "network_unavailable")
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.unsupportedURL))
+            == "The sync server address is invalid.")
+
         #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.timedOut))
             == "The sync server timed out. Check that it is running and reachable, then try again.")
         #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.notConnectedToInternet))

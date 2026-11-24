@@ -18,10 +18,19 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
         ("card", View_base.grouped_row_background);
       ]
   in
+  let text_colors =
+    match Lui_ui.platform ui_context, Lui_ui.host ui_context with
+    | Lui_protocol.IOS, Lui_protocol.SwiftUIHost ->
+      [ ("muted-foreground", Adaptive {
+          light = "#6F6F6F";
+          dark = if dark_theme = "black" then "#A1A1AA" else "#9BD3D4";
+        }) ]
+    | _ -> []
+  in
   let task_colors = Task_status_style.palette |> List.map (fun (name, (light, dark)) ->
     let color = if light = dark then Fixed light else Adaptive { light; dark } in
     "task-" ^ name, color) in
-  surfaces @ task_colors @ [
+  surfaces @ text_colors @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
     ("deadline-overdue", Adaptive { light = "#B42318"; dark = "#FF6961" });
     ( "autocomplete-row-background",

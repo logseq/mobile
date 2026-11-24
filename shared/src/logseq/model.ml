@@ -4,6 +4,18 @@ type sync_state =
   | SyncedState
   | FailedState of string
 
+let sync_error_is_offline detail =
+  (* The pending pump can combine transport and asset errors. A server
+     rejection still takes precedence over a lost connection. *)
+  let reasons = String.split_on_char '\n' detail |> List.map String.trim
+    |> List.filter (fun line -> line <> "") in
+  let offline line =
+    match String.split_on_char ':' line with
+    | ["network_unavailable"] -> true
+    | [label; " network_unavailable"] -> not (String.starts_with ~prefix:"Sync server " label)
+    | _ -> false in
+  reasons <> [] && List.for_all offline reasons
+
 type navigation_route =
   | NodeRoute of string
 
@@ -1913,7 +1925,6 @@ let resolve_successful_effect (current : logseq_model) eff message =
     in
     {
       current with
-      pending_graph_deletion = None;
       local_graph_ids = remove_string current.local_graph_ids graph_id;
       selected_graph_id =
         (if deleting_selected then None else current.selected_graph_id);

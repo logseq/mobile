@@ -1,4 +1,4 @@
-# Cancel keeps the graph that the delete dialog was about to remove.
+# Cancel keeps the graph that the confirmation sheet was about to remove.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 wait prop:accessibility-identifier=field.graph-name
@@ -15,8 +15,9 @@ wait prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=graph.Alpha
 press kind:menu-item&text:"Delete local graph"
-wait kind:dialog&text:"Delete local graph"
+appear prop:accessibility-identifier=graph-delete.presentation-gate
+wait kind:sheet&text:"Delete local graph"
 press prop:accessibility-identifier=button.graph-delete.cancel
-expect-absent kind:dialog&text:"Delete local graph"
+expect-absent kind:sheet&text:"Delete local graph"
 expect prop:accessibility-identifier=graph.Alpha
 expect prop:accessibility-identifier=graph.Beta

@@ -3,8 +3,12 @@ let diagnostic_errors (current : Model.logseq_model) =
   let add = function
     | Some message when String.trim message <> "" -> messages := message :: !messages
     | _ -> () in
-  List.iter add [current.effect_error; current.authentication_error; current.pending_sync_error];
-  (match current.sync_state with Model.FailedState message -> add (Some message) | _ -> ());
+  List.iter add [current.effect_error; current.authentication_error];
+  let add_sync_error = function
+    | Some message when not (Model.sync_error_is_offline message) -> add (Some message)
+    | _ -> () in
+  add_sync_error current.pending_sync_error;
+  (match current.sync_state with Model.FailedState message -> add_sync_error (Some message) | _ -> ());
   List.iter (fun (_, _, message) -> add message) current.result_view_feedback;
   let rec json_errors = function
     | `Assoc fields -> List.iter (fun (key, value) ->

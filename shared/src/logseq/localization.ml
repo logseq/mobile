@@ -238,6 +238,15 @@ let dictionaries = [
     ("value", "Waarde")
   ]);
   ("ar", [
+    ("Available tabs", "علامات التبويب المتاحة");
+    ("Journals and Graphs are always available. Use the arrows to reorder tabs.", "اليوميات والرسوم البيانية متاحتان دائمًا. استخدم الأسهم لإعادة ترتيب علامات التبويب.");
+    ("Move tab down", "نقل علامة التبويب إلى أسفل");
+    ("Move tab up", "نقل علامة التبويب إلى أعلى");
+    ("Tabs", "علامات التبويب");
+    ("Tabs actions", "إجراءات علامات التبويب");
+    ("Visible tabs", "علامات التبويب الظاهرة");
+    ("{1}, off", "{1}، مخفي");
+    ("{1}, on", "{1}، ظاهر");
     ("Create new block", "إنشاء كتلة جديدة");
     ("Line break", "سطر جديد");
     ("Back", "رجوع");

@@ -19,31 +19,53 @@ appId: com.logseq.logseq
     id: "BackButton"
 - tapOn:
     id: "button.graphs.refresh"
-- assertVisible: "Local graphs:"
-- tapOn:
-    id: "button.graph.delete.*"
+- assertVisible: "Local graphs"
+- longPressOn: "logseq-local-e2e-fixture"
 - tapOn: "Delete local graph"
-- assertVisible: "Delete local graph"
-- assertVisible: "Confirm"
+- assertVisible:
+    id: button.graph-delete.cancel
+- assertVisible:
+    id: button.graph-delete.confirm
 - tapOn:
-    point: "90%,80%"
-- assertNotVisible: "Confirm"
+    id: button.graph-delete.cancel
 - assertVisible:
     id: "screen.graphs"
-- tapOn:
-    id: "button.graph.delete.*"
+- longPressOn: "logseq-local-e2e-fixture"
 - tapOn: "Delete local graph"
-- assertVisible: "Confirm"
-- tapOn: "Confirm"
-- extendedWaitUntil:
-    visible: "Remote graphs:"
-    timeout: 15000
+- assertVisible:
+    id: button.graph-delete.confirm
+- swipe:
+    from:
+      text: "Delete local graph"
+    direction: DOWN
+    duration: 500
+- assertNotVisible:
+    id: button.graph-delete.confirm
+- assertVisible: "logseq-local-e2e-fixture"
+# The local-only context action still exists after Cancel and swipe dismissal.
+- longPressOn: "logseq-local-e2e-fixture"
+- tapOn: "Delete local graph"
 - tapOn:
-    text: "logseq-local-e2e-.*"
-    index: 0
+    id: button.graph-delete.confirm
 - extendedWaitUntil:
     visible:
-      id: "button.sidebar"
+      text: "logseq-local-e2e-fixture"
+      below: "Remote graphs"
+      enabled: true
+    timeout: 15000
+- longPressOn:
+    text: "logseq-local-e2e-fixture"
+    below: "Remote graphs"
+- assertNotVisible: "Delete local graph"
+# A remote row with no context menu can open on a long press.
+- tapOn:
+    text: "logseq-local-e2e-fixture"
+    below: "Remote graphs"
+    enabled: true
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
     timeout: 60000
 - assertNotVisible:
     id: "screen.graphs"

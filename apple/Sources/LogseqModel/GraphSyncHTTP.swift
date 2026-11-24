@@ -69,6 +69,10 @@ final class LogseqSocketCancellation: @unchecked Sendable {
 }
 
 public enum LogseqGraphWebSocketFailurePolicy {
+    static func syncDriverMessage(_ error: Error) -> String {
+        pendingSyncConnectionError(error) ?? userFacingMessage(error)
+    }
+
     public static func userFacingMessage(_ error: Error) -> String {
         guard let urlError = error as? URLError else {
             return error.localizedDescription

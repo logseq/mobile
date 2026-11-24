@@ -806,7 +806,22 @@ let capture_and_offline_transport_show_pending_sync () =
   check_eq (View_base.sync_indicator_label waiting) "Not connected";
   check_eq (View_base.sync_pending_label waiting) "Waiting to save";
   let rejected = { waiting with pending_sync_error = Some "Server rejected the change\n\nnetwork_unavailable" } in
-  check_eq (View_base.sync_indicator_label rejected) "Sync failed"
+  check_eq (View_base.sync_indicator_label rejected) "Sync failed";
+  let app = App.create (ios_backend ()) in
+  start app;
+  send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    pending_sync_error = waiting.pending_sync_error });
+  check_eq ~msg:"temporary offline sync does not raise a diagnostic alert" (reported_errors (App.model app)) [];
+  send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
+    pending_sync_error = rejected.pending_sync_error });
+  check_eq ~msg:"a rejected change still raises a diagnostic alert"
+    (reported_errors (App.model app)) (Option.to_list rejected.pending_sync_error);
+  List.iter (fun message ->
+    check ~msg:"server responses retain their failure state when they quote the offline marker"
+      (not (Model.sync_error_is_offline message)))
+    ["Sync server returned HTTP 503: network_unavailable";
+     "Upload asset (block-id): Sync server returned HTTP 503: network_unavailable";
+     "Sync server rejected the change: network_unavailable"]
 
 let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter
@@ -1038,17 +1053,18 @@ let runtime_log_filters_refresh_and_successful_results_enter_lg_state () =
 
 let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
   let local = graph "local" "Local" false true in
+  let other = graph "other" "Other" false true in
   let projected =
     Model.update (Model.initial ())
       (Model.ApplyCoreSnapshot
          {
            (empty_core_projection ()) with
-           graphs = [ local ];
+           graphs = [ local; other ];
            selected_graph_id = None;
          })
   in
   let known_local =
-    Model.update projected (Model.ApplyLocalGraphIds [ "local" ])
+    Model.update projected (Model.ApplyLocalGraphIds [ "local"; "other" ])
   in
   let requested =
     Model.update known_local (Model.RequestOpenGraph "local")
@@ -1066,7 +1082,12 @@ let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
       (Model.update deletion_requested Model.ConfirmDeleteGraph)
       (Model.DequeueEffect 2)
   in
-  let deleted = Model.update deleting (Model.ResolveEffect (2, true, "ok")) in
+  let next_deletion_requested =
+    Model.update deleting (Model.RequestDeleteGraph "other")
+  in
+  let deleted =
+    Model.update next_deletion_requested (Model.ResolveEffect (2, true, "ok"))
+  in
   check_eq
     ~msg:"opening a graph updates LG selection after platform success"
     opened.selected_graph_id (Some "local");
@@ -1082,7 +1103,12 @@ let graph_effect_success_owns_selection_and_selected_deletion_cleanup () =
   check_eq ~msg:"deleting the selected local graph clears its title"
     deleted.selected_graph None;
   check_eq ~msg:"deleting a local graph removes it from local storage state"
-    deleted.local_graph_ids []
+    deleted.local_graph_ids [ "other" ];
+  check_eq ~msg:"completing a deletion preserves another graph's confirmation"
+    deleted.pending_graph_deletion (Some other);
+  let confirmed = Model.update deleted Model.ConfirmDeleteGraph in
+  check_eq ~msg:"the retained confirmation deletes the second graph only"
+    confirmed.pending_effects [ Model.DeleteLocalGraphEffect (3, "other") ]
 
 let graph_refresh_failure_enters_the_picker_error_state () =
   let requested = Model.update (Model.initial ()) Model.RefreshGraphs in
@@ -2047,6 +2073,11 @@ let authentication_screen_renders_from_lg_state () =
   check_eq ~msg:"authentication hides the signed-in navigation header"
     (descendant_with_identifier renderer root "button.sidebar")
     (-1);
+  check_eq ~msg:"authentication does not mount the native sidebar"
+    (descendant_with_identifier renderer root "application.shell")
+    (-1);
+  check ~msg:"settings is accessible from the signed-out screen"
+    (descendant_with_identifier renderer root "button.sidebar.settings" <> -1);
   check_eq ~msg:"authentication fills the available root height"
     (property_float renderer screen Lui_protocol.GrowValue)
     1.0;
@@ -2205,7 +2236,7 @@ let signed_out_users_can_choose_downloaded_graphs () =
 
 let authentication_screen_uses_the_product_name_on_every_host () =
   List.iter
-    (fun backend ->
+    (fun (backend, layout_count) ->
        let application = App.create backend in
        start application;
        send application (Model.ApplyAuthentication ("signedOut", None));
@@ -2215,8 +2246,8 @@ let authentication_screen_uses_the_product_name_on_every_host () =
        check_eq ~msg:"the signed-out surface uses the installed product name"
          (descendant_count_with_property_string renderer root
             Lui_protocol.TextValue "Logseq")
-         1)
-    [ ios_backend (); kotlin_backend () ]
+         layout_count)
+    [ (ios_backend (), 2); (kotlin_backend (), 1) ]
 
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
@@ -4720,12 +4751,38 @@ let graph_deletion_confirmation_names_the_local_graph () =
   send application (Model.RequestDeleteGraph "local");
   flush application;
   let renderer = Lui_app.runtime application in
+  let root = Lui_app.root_node application in
+  let gate = descendant_with_identifier renderer root "graph-delete.presentation-gate" in
+  check ~msg:"the sheet waits for the native menu transition" (gate <> -1);
+  check_eq (descendant_with_identifier renderer root "dialog.graph-delete") (-1);
+  dispatch application (Lui_protocol.Appear gate);
+  flush application;
   let warning =
-    descendant_with_identifier renderer (Lui_app.root_node application)
-      "text.graph-delete-warning"
+    descendant_with_identifier renderer root "text.graph-delete-warning"
   in
   check ~msg:"the graph deletion warning has a stable identifier"
     (warning <> -1);
+  let confirmation = descendant_with_identifier renderer root "dialog.graph-delete" in
+  let confirm = descendant_with_identifier renderer confirmation "button.graph-delete.confirm" in
+  check_eq ~msg:"iOS presents a destructive confirmation action"
+    (property_string renderer confirm Lui_protocol.VariantValue) "destructive";
+  send application Model.CancelDeleteGraph;
+  flush application;
+  check_eq ~msg:"cancelling a deletion leaves the graph local"
+    (App.model application).local_graph_ids ["local"];
+  send application (Model.RequestDeleteGraph "local");
+  send application (Model.ApplyGraphLoading true);
+  flush application;
+  dispatch application (Lui_protocol.Appear
+    (descendant_with_identifier renderer root "graph-delete.presentation-gate"));
+  flush application;
+  check_eq ~msg:"opening a graph discards an unpresented deletion confirmation"
+    (App.model application).pending_graph_deletion None;
+  send application (Model.ApplyGraphLoading false);
+  send application (Model.RequestDeleteGraph "local");
+  flush application;
+  dispatch application (Lui_protocol.Appear
+    (descendant_with_identifier renderer root "graph-delete.presentation-gate"));
   send application Model.ConfirmDeleteGraph;
   send application (Model.DequeueEffect 1);
   send application

@@ -291,7 +291,8 @@ final class AudioRecorderController: NSObject, ObservableObject {
         } catch {
             cancel()
             if !(error is CancellationError) {
-                errorMessage = CaptureLocalization.text("Couldn't start recording.", locale: locale) + " " + error.localizedDescription
+                logger.error("Could not start audio recording: \(error.localizedDescription)")
+                errorMessage = CaptureLocalization.text("Couldn't start recording.", locale: locale)
             }
         }
     }
@@ -544,7 +545,8 @@ struct AudioRecorderSheet: View {
                 dismiss()
             }
         } catch {
-            saveError = CaptureLocalization.text("Couldn't save the recording.", locale: locale) + " " + error.localizedDescription
+            logger.error("Could not save audio recording: \(error.localizedDescription)")
+            saveError = CaptureLocalization.text("Couldn't save the recording.", locale: locale)
         }
     }
 

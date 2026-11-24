@@ -356,6 +356,22 @@ public final class LGRuntime {
             operation = .extensionEvent(event.nodeID, identifier, name, text, value)
         }
 
+        #if os(iOS)
+        if event.kind == .appear,
+           renderer.backend.styleClass(of: event.nodeID) == "graph-delete-presentation-gate" {
+            // Let UIKit finish its context menu transition. Keep this UI event
+            // independent from network work in the effect drain.
+            let epoch = patchApplyEpoch
+            Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                guard let self, self.patchApplyEpoch == epoch,
+                      self.renderer.backend.styleClass(of: event.nodeID) == "graph-delete-presentation-gate" else { return }
+                self.enqueueNative(operation)
+                self.scheduleEffectDrain()
+            }
+            return
+        }
+        #endif
         enqueueNative(operation)
         scheduleEffectDrain()
     }

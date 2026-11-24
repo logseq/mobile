@@ -287,6 +287,46 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
       ]
 
 let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t =
+  let model = Signal.sample model_source in
+  let title = View_base.tr model "Delete local graph" in
+  let message =
+    text ~value:(reactive (Signal.map View_base.graph_deletion_message model_source))
+      ~accessibility_identifier:"text.graph-delete-warning" [] in
+  let detail ?foreground () =
+    text ?foreground
+      ~value:(View_base.tr model
+        "Cloud copies are not deleted. Unsynced changes on this device will be lost.") [] in
+  if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
+    let confirmation = View_base.sheet ~model_source ~title ~detents:"medium,large"
+      ~style_class:"navigation-content navigation-inline-title"
+      ~accessibility_identifier:"dialog.graph-delete"
+      ~on_dismiss:(press send Model.CancelDeleteGraph)
+      [ scroll ~grow:1.0 ~padding:20 [column ~gap:8
+          [message; detail ~foreground:"muted-foreground" ()]];
+        toolbar ~label:title ~style_class:"navigation-actions"
+          [ toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
+              ~accessibility_identifier:"button.graph-delete.cancel"
+              ~on_press:(press send Model.CancelDeleteGraph)
+              ~text:(View_base.tr model "Cancel") [];
+            toolbar_button ~variant:`destructive ~style_class:"confirmation-action"
+              ~foreground:"destructive" ~accessibility_identifier:"button.graph-delete.confirm"
+              ~on_press:(press send Model.ConfirmDeleteGraph)
+              ~text:(View_base.tr model "Delete local copy") [] ] ] in
+    custom (fun context parent ->
+      let ready = Signal.state context.Lui_ui.ui_scheduler false in
+      let present () =
+        let current = Signal.sample model_source in
+        if (View_base.graphs_destination_ current || View_base.graph_picker_visible_ current)
+           && not current.settings_open && not current.graph_loading
+        then Signal.set ready true
+        else ignore (send Model.CancelDeleteGraph) in
+      mount context ?parent
+        (stack [
+          box ~width:0 ~height:0 ~style_class:"graph-delete-presentation-gate"
+            ~accessibility_identifier:"graph-delete.presentation-gate" ~on_appear:present [];
+          if_ ~test:(Signal.value ready) confirmation;
+        ]))
+  else
   let android = Lui_ui.host context = KotlinHost in
   let warning_icon =
     if android then
@@ -297,18 +337,14 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t =
   in
   (* Direct button children occupy the native alert's action slots.
      The explanation can scroll independently when space is tight. *)
-  dialog ~text:(View_base.tr (Signal.sample model_source) "Delete local graph")
+  dialog ~text:title
     ?style_class:(if android then None else Some "alert")
     ~accessibility_identifier:"dialog.graph-delete"
     ~on_dismiss:(press send Model.CancelDeleteGraph)
     (warning_icon @
       [
-        text
-          ~value:(reactive (Signal.map View_base.graph_deletion_message model_source))
-          ~accessibility_identifier:"text.graph-delete-warning" [];
-        text ?foreground:(if android then Some "muted-foreground" else None)
-          ~value:(View_base.tr (Signal.sample model_source)
-            "Cloud copies are not deleted. Unsynced changes on this device will be lost.") [];
+        message;
+        detail ?foreground:(if android then Some "muted-foreground" else None) ();
         button ?variant:(if android then Some `ghost else None) ~style_class:"cancellation-action"
           ~accessibility_identifier:"button.graph-delete.cancel"
           ~on_press:(press send Model.CancelDeleteGraph)

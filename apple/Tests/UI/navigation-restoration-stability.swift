@@ -20,17 +20,19 @@ import UIKit
         for search in [false, true] {
             for restoreBeforeMount in [true, false] {
                 var routes: [String] = []
+                var query = ""
                 var rowCount = 96
                 func rows(_ page: String) -> [[String: Any]] {
                     (0..<rowCount).map { index in
                         ["depth": index % 3, "hasChildren": index % 3 < 2,
-                         "block": ["uuid": page + "-child-\(index)", "title": "Restored content \(index)", "pageId": page]]
+                         "block": ["uuid": page + "-child-\(index)", "title": "Page content \(index)",
+                                   "pageId": page, "journalTitle": "Today", "journalDay": 20261125]]
                     }
                 }
                 func snapshot() -> String {
                     let result: [String: Any] = [
                         "graphName": "Restoration", "selectedGraphId": "restoration", "isGraphUnlocked": true,
-                        "outlinerRows": rows("journal"), "searchQuery": "Restored",
+                        "outlinerRows": rows("journal"), "searchQuery": query,
                         "searchResults": [["uuid": "Search target", "title": "Restored result", "isPage": true]],
                         "nodeRoutes": routes.map { uuid -> [String: Any] in
                             ["uuid": uuid, "page": ["uuid": uuid, "title": uuid], "outlinerRows": rows(uuid)]
@@ -42,7 +44,9 @@ import UIKit
                     if let data = request.params.payload?.data(using: .utf8),
                        let effect = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         switch effect["kind"] as? String {
-                        case "open-node", "open-search-node", "open-search-result":
+                        case "search-nodes":
+                            query = effect["text"] as? String ?? ""
+                        case "open-node", "open-search-result":
                             try? await Task.sleep(for: .milliseconds(30))
                             routes.append(effect["text"] as! String)
                         case "close-node": _ = routes.popLast()
@@ -54,6 +58,26 @@ import UIKit
                 try runtime.applyCoreResponse(snapshot())
                 try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
                 try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
+                let backend = runtime.renderer.backend
+                func descendants(_ id: Int) -> [Int] {
+                    [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? [])
+                        .flatMap(descendants)
+                }
+                func find(_ identifier: String) -> Int? {
+                    backend.rootIDs.flatMap(descendants).first {
+                        backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue == identifier
+                    }
+                }
+                func openNode(from row: String, uuid: String) throws {
+                    guard let rowID = find("outliner.block." + row),
+                          let nativeRow = descendants(rowID).first(where: {
+                              backend.extensionModel(id: $0)?.identifier == "outliner-block-row"
+                          }) else {
+                        throw NSError(domain: "NavigationRestoration", code: 4,
+                                      userInfo: [NSLocalizedDescriptionKey: "Missing native row for " + row])
+                    }
+                    try backend.performExtensionEvent(node: nativeRow, name: "open-node", values: ["uuid": .string(uuid)])
+                }
                 func restore() throws {
                     let session: [String: Any] = [
                         "graphId": "restoration", "destination": "journals", "assets": [], "composerExpanded": false,
@@ -73,48 +97,85 @@ import UIKit
                     try restore()
                 }
                 defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
-                let expectedDepth = search ? 2 : 3
-                var retainedNavigation: UINavigationController?
                 func navigation() -> UINavigationController? {
-                    if let retainedNavigation { return retainedNavigation }
-                    let root = search ? window.rootViewController?.presentedViewController : window.rootViewController
-                    return root.flatMap { controllers($0).compactMap { $0 as? UINavigationController }
-                        .first { $0.viewControllers.count == expectedDepth } }
+                    window.rootViewController.flatMap { controllers($0).compactMap { $0 as? UINavigationController }.first }
                 }
+                func rendersFirstRow(of page: String, in navigation: UINavigationController?) -> Bool {
+                    guard let content = navigation?.topViewController?.viewIfLoaded else { return false }
+                    return views(content).contains { view in
+                        guard let label = view as? UILabel,
+                              label.accessibilityIdentifier == "outliner.block-action." + page + "-child-0",
+                              let text = label.attributedText?.string ?? label.text, !text.isEmpty,
+                              label.window === window, !label.isHidden else { return false }
+                        return window.bounds.intersects(label.convert(label.bounds, to: window))
+                    }
+                }
+                await runtime.drainEffectsForTesting()
+                try await wait("Session restore must open the journal root without replaying old routes") {
+                    let controller = navigation()
+                    return controller?.viewControllers.count == 1 &&
+                        rendersFirstRow(of: "journal", in: controller) && routes.isEmpty
+                }
+                let retainedNavigation = navigation()!
+                if search {
+                    let searchID = backend.rootIDs.flatMap(descendants).first {
+                        backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
+                    }!
+                    try backend.performExtensionEvent(node: searchID, name: "present", values: [:])
+                    var field: UISearchTextField?
+                    try await wait("Native search input must take focus") {
+                        field = views(window).compactMap { $0 as? UISearchTextField }
+                            .first { $0.isFirstResponder }
+                        return field != nil
+                    }
+                    field?.insertText("Restored")
+                    try await wait("Search must show its matching page") {
+                        query == "Restored" && find("search.result.Search target") != nil
+                    }
+                    try backend.performPress(node: find("search.result.Search target")!)
+                } else {
+                    try openNode(from: "journal-child-0", uuid: "First")
+                    try await wait("The first page must hydrate before opening its child") {
+                        retainedNavigation.viewControllers.count == 2 &&
+                            rendersFirstRow(of: "First", in: retainedNavigation)
+                    }
+                    try openNode(from: "First-child-0", uuid: "Second")
+                }
+                let expectedDepth = search ? 2 : 3
+                let target = search ? "Search target" : "Second"
                 do {
-                    try await wait("Restored \(search ? "search" : "app") routes must reach their native depth") {
-                        navigation()?.viewControllers.count == expectedDepth && navigation()?.transitionCoordinator == nil
+                    try await wait("The live route must reach native depth and contain real rows") {
+                        retainedNavigation.viewControllers.count == expectedDepth &&
+                            retainedNavigation.transitionCoordinator == nil &&
+                            rendersFirstRow(of: target, in: retainedNavigation)
                     }
                 } catch {
-                    print("RESTORE_STATE routes=\(routes) native=\(navigation()?.viewControllers.count ?? -1) error=\(runtime.lastError ?? "none")")
+                    print("LIVE_ROUTE search=\(search) routes=\(routes) depth=\(retainedNavigation.viewControllers.count) target=\(rendersFirstRow(of: target, in: retainedNavigation)) lastError=\(runtime.lastError ?? "none")")
                     throw error
                 }
-                retainedNavigation = navigation()
-                let target = search ? "Search target" : "Second"
-                try await wait("The restored top route must contain real lazy rows") {
-                    views(navigation()!.topViewController!.view).contains {
-                        $0.accessibilityIdentifier == "outliner.block-action." + target + "-child-0"
-                    }
-                }
-                let retained = navigation()!.topViewController!
+                let retained = retainedNavigation.topViewController!
                 for count in [250, 1, 96, 250, 96] {
                     rowCount = count
                     try runtime.applyCoreResponse(snapshot())
                     try await Task.sleep(for: .milliseconds(90))
-                    guard navigation()?.topViewController === retained else {
+                    guard navigation() === retainedNavigation, retainedNavigation.topViewController === retained else {
                         throw NSError(domain: "NavigationRestoration", code: 2,
-                                      userInfo: [NSLocalizedDescriptionKey: "Hydrating a restored route replaces its native controller"])
+                                      userInfo: [NSLocalizedDescriptionKey: "Hydrating a live route replaces its native controller"])
                     }
                 }
-                _ = navigation()!.popToRootViewController(animated: true)
-                try await wait("Native back must acknowledge every restored route") {
-                    navigation()?.viewControllers.count == 1 && navigation()?.transitionCoordinator == nil && routes.isEmpty
+                try await wait("The retained native page must still render its rows after hydration") {
+                    rendersFirstRow(of: target, in: retainedNavigation)
+                }
+                _ = retainedNavigation.popToRootViewController(animated: true)
+                try await wait("Native back must acknowledge every live route") {
+                    retainedNavigation.viewControllers.count == 1 &&
+                        retainedNavigation.transitionCoordinator == nil && routes.isEmpty
                 }
                 guard runtime.lastError == nil else { throw NSError(domain: "NavigationRestoration", code: 3,
                     userInfo: [NSLocalizedDescriptionKey: runtime.lastError!]) }
-                print("PASS restoration search=\(search) beforeMount=\(restoreBeforeMount)")
+                print("PASS journal relaunch and live navigation search=\(search) beforeMount=\(restoreBeforeMount)")
             }
         }
-        print("PASS: cold and late app/search restoration, lazy-row hydration and native multilevel back")
+        print("PASS: journal relaunch, app and search row hydration, and native multilevel back")
     }
 }
