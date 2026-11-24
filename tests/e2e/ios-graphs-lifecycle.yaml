@@ -57,7 +57,7 @@ appId: com.logseq.logseq
 - tapOn: "logseq-local-e2e-fixture"
 - extendedWaitUntil:
     visible:
-      id: "journals.graph-loaded"
+      id: "button.composer.expand"
     timeout: 60000
 - assertNotVisible:
     id: "screen.graphs"
