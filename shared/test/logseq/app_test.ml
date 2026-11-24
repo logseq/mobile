@@ -815,7 +815,13 @@ let capture_and_offline_transport_show_pending_sync () =
   send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
     pending_sync_error = rejected.pending_sync_error });
   check_eq ~msg:"a rejected change still raises a diagnostic alert"
-    (reported_errors (App.model app)) (Option.to_list rejected.pending_sync_error)
+    (reported_errors (App.model app)) (Option.to_list rejected.pending_sync_error);
+  List.iter (fun message ->
+    check ~msg:"server responses retain their failure state when they quote the offline marker"
+      (not (Model.sync_error_is_offline message)))
+    ["Sync server returned HTTP 503: network_unavailable";
+     "Upload asset (block-id): Sync server returned HTTP 503: network_unavailable";
+     "Sync server rejected the change: network_unavailable"]
 
 let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter

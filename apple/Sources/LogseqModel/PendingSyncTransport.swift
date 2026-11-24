@@ -25,7 +25,10 @@ func pendingSyncErrorIsOffline(_ message: String) -> Bool {
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .filter { !$0.isEmpty }
     return !reasons.isEmpty && reasons.allSatisfy {
-        $0 == pendingSyncNetworkUnavailable || $0.hasSuffix(": " + pendingSyncNetworkUnavailable)
+        if $0 == pendingSyncNetworkUnavailable { return true }
+        let parts = $0.split(separator: ":", omittingEmptySubsequences: false)
+        return parts.count == 2 && !parts[0].hasPrefix("Sync server ") &&
+            parts[1] == " " + pendingSyncNetworkUnavailable
     }
 }
 

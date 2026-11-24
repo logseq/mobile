@@ -9,9 +9,12 @@ let sync_error_is_offline detail =
      rejection still takes precedence over a lost connection. *)
   let reasons = String.split_on_char '\n' detail |> List.map String.trim
     |> List.filter (fun line -> line <> "") in
-  reasons <> [] && List.for_all (fun line ->
-    line = "network_unavailable" || String.ends_with ~suffix:": network_unavailable" line)
-    reasons
+  let offline line =
+    match String.split_on_char ':' line with
+    | ["network_unavailable"] -> true
+    | [label; " network_unavailable"] -> not (String.starts_with ~prefix:"Sync server " label)
+    | _ -> false in
+  reasons <> [] && List.for_all offline reasons
 
 type navigation_route =
   | NodeRoute of string

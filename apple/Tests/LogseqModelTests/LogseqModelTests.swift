@@ -30,6 +30,8 @@ private let testEmptySnapshotJSON = """
         #expect(pendingSyncConnectionError(POSIXError(.EACCES)) == nil)
         #expect(pendingSyncErrorIsOffline("upload: network_unavailable\n\nnetwork_unavailable"))
         #expect(!pendingSyncErrorIsOffline("upload: network_unavailable\nHTTP 401"))
+        #expect(!pendingSyncErrorIsOffline("Sync server returned HTTP 503: network_unavailable"))
+        #expect(!pendingSyncErrorIsOffline("Upload asset (block-id): Sync server returned HTTP 503: network_unavailable"))
     }
 
     @Test func logseqModel() throws {
