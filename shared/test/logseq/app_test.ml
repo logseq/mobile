@@ -4731,6 +4731,16 @@ let graph_deletion_confirmation_names_the_local_graph () =
   in
   check ~msg:"the graph deletion warning has a stable identifier"
     (warning <> -1);
+  let root = Lui_app.root_node application in
+  let confirmation = descendant_with_identifier renderer root "dialog.graph-delete" in
+  let confirm = descendant_with_identifier renderer confirmation "button.graph-delete.confirm" in
+  check_eq ~msg:"iOS presents a destructive confirmation action"
+    (property_string renderer confirm Lui_protocol.VariantValue) "destructive";
+  send application Model.CancelDeleteGraph;
+  flush application;
+  check_eq ~msg:"cancelling a deletion leaves the graph local"
+    (App.model application).local_graph_ids ["local"];
+  send application (Model.RequestDeleteGraph "local");
   send application Model.ConfirmDeleteGraph;
   send application (Model.DequeueEffect 1);
   send application
