@@ -2,7 +2,9 @@ package com.logseq.logseq.ui.extensions
 
 import android.graphics.PointF
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.ext.SdkExtensions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -146,6 +148,11 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
     }
 }
 
+// AndroidX backports rendering separately from the PDF text selection APIs.
+internal fun pdfTextSelectionAvailable(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) >= 13
+
 @OptIn(ExperimentalPdfApi::class)
 @Composable private fun NativePdfReader(payload: JSONObject, loadAsset: (suspend (String, String) -> String)?, fullScreen: Boolean, send: (JSONObject) -> Unit) {
     val context = LocalContext.current
@@ -156,6 +163,7 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
     val clipboard = LocalClipboard.current
     val copyFeedback = remember { SnackbarHostState() }
     val viewer = rememberPdfViewerState()
+    val textSelectionAvailable = remember { pdfTextSelectionAvailable() }
     val latestSend by rememberUpdatedState<(JSONObject) -> Unit>({ value ->
         send(value.put("graphId", payload.getString("graphId")).put("assetUuid", payload.getString("assetUuid")))
     })
@@ -257,6 +265,7 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
     }
 
     fun save() {
+        if (!textSelectionAvailable) return
         val doc = document ?: return
         val pen = penSelection
         val selection = viewer.currentSelection as? TextSelection
@@ -266,8 +275,9 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
                     listOf(pen.selectedContents.filterIsInstance<PdfPageTextContent>().joinToString("\n") { it.text } to
                         pen.selectedContents.flatMap { it.bounds }.map { PdfRect(pen.page, it) })
                 } else if (selection != null) {
-                    selection.bounds.groupBy { it.pageNum }.map { (page, bounds) ->
-                        val text = if (selection.bounds.all { it.pageNum == page }) selection.text.toString()
+                    val byPage = selection.bounds.groupBy { it.pageNum }
+                    byPage.map { (page, bounds) ->
+                        val text = if (byPage.size == 1) selection.text.toString()
                             else doc.getSelectionBounds(page,
                                 PointF(bounds.first().left, (bounds.first().top + bounds.first().bottom) / 2),
                                 PointF(bounds.last().right, (bounds.last().top + bounds.last().bottom) / 2))
@@ -305,9 +315,11 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
             }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = ::save, enabled = ready && !selecting &&
-                (penSelection != null || (viewer.currentSelection as? TextSelection)?.text?.isNotBlank() == true),
-                modifier = Modifier.testTag("pdf.highlight")) { Text("Highlight") }
+            if (textSelectionAvailable) {
+                TextButton(onClick = ::save, enabled = ready && !selecting &&
+                    (penSelection != null || (viewer.currentSelection as? TextSelection)?.text?.isNotBlank() == true),
+                    modifier = Modifier.testTag("pdf.highlight")) { Text("Highlight") }
+            }
             Box {
                 TextButton(onClick = { colorsOpen = true }) { Text(color.replaceFirstChar { it.uppercase() }) }
                 DropdownMenu(expanded = colorsOpen, onDismissRequest = { colorsOpen = false }) {
@@ -333,7 +345,9 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
             Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = { if (document == null) retry++; latestSend(JSONObject().put("action", "load")) }) { Text("Retry") }
         }
-        Text("${viewer.firstVisiblePage + 1} / ${document?.pageCount ?: 0} · Select text to highlight", style = MaterialTheme.typography.labelSmall)
+        val selectionHint = if (textSelectionAvailable) "Select text to highlight"
+            else "Text highlighting is unavailable on this device"
+        Text("${viewer.firstVisiblePage + 1} / ${document?.pageCount ?: 0} · $selectionHint", style = MaterialTheme.typography.labelSmall)
         val doc = document
         if (doc == null && error == null) CircularProgressIndicator(Modifier.padding(16.dp))
         if (doc != null) {
@@ -342,7 +356,7 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     val start = viewer.visibleOffsetToPdfPoint(down.position)
-                    if (down.type == PointerType.Stylus && start != null && ready) {
+                    if (textSelectionAvailable && down.type == PointerType.Stylus && start != null && ready) {
                         down.consume()
                         selectionGeneration++
                         selectionJob?.cancel()
@@ -398,7 +412,9 @@ internal fun LuiExtensionRegistry.registerPdfWorkspace(loadAsset: (suspend (Stri
                 }
             }) {
                 PdfViewer(pdfDocument = doc, state = viewer, modifier = Modifier.fillMaxSize(),
-                    appendContextMenuComponents = { item("logseq-highlight", "Highlight", "Highlight selected text") { save() } },
+                    appendContextMenuComponents = {
+                        if (textSelectionAvailable) item("logseq-highlight", "Highlight", "Highlight selected text") { save() }
+                    },
                     onFirstContentLoad = { contentLoaded = true })
                 SnackbarHost(copyFeedback, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
             }
