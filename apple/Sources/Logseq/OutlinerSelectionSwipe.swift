@@ -6,14 +6,22 @@ struct OutlinerSelectionSwipe: ViewModifier {
     let toggleSelection: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var displacement: CGFloat = 0
+    @State private var leadingSpace: CGFloat = 0
     @GestureState private var legacyDisplacement: CGFloat = 0
 
-    @ViewBuilder func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
+        swipeContent(content)
+            .onGeometryChange(for: CGFloat.self) { max(0, $0.frame(in: .global).minX) } action: {
+                leadingSpace = $0
+            }
+    }
+
+    @ViewBuilder private func swipeContent(_ content: Content) -> some View {
         if #available(iOS 18.0, *) {
-            content.offset(x: -displacement)
+            content.offset(x: -min(displacement, leadingSpace + 16))
                 .gesture(OutlinerLeftSwipe(track: { displacement = Self.offset(for: $0) }, finish: finish))
         } else {
-            content.offset(x: -legacyDisplacement)
+            content.offset(x: -min(legacyDisplacement, leadingSpace + 16))
                 .background(OutlinerLegacyScrollLock(active: legacyDisplacement > 0))
                 .simultaneousGesture(DragGesture(minimumDistance: 12)
                     .updating($legacyDisplacement) { value, offset, _ in
@@ -29,7 +37,7 @@ struct OutlinerSelectionSwipe: ViewModifier {
 
     private static func offset(for distance: CGFloat) -> CGFloat {
         let distance = max(0, distance)
-        return min(distance, 72) + min(max(0, distance - 72) * 0.22, 32)
+        return min(distance, 36) + min(max(0, distance - 36) * 0.18, 12)
     }
 
     private func finish(commit: Bool) {

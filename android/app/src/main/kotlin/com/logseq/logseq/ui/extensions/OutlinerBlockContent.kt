@@ -262,7 +262,7 @@ internal fun OutlinerBlockContent(
             .background(hoverColor, RoundedCornerShape(8.dp))
             .pointerInput(uuid) {
                 val swipeDistance = 44.dp.toPx()
-                val resistanceStart = 72.dp.toPx()
+                val resistanceStart = 36.dp.toPx()
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
@@ -278,7 +278,7 @@ internal fun OutlinerBlockContent(
                             if (leftSwipe) {
                                 val travel = distance.coerceAtLeast(0f)
                                 swipeOffset = minOf(travel, resistanceStart) +
-                                    ((travel - resistanceStart).coerceAtLeast(0f) * 0.22f).coerceAtMost(32.dp.toPx())
+                                    ((travel - resistanceStart).coerceAtLeast(0f) * 0.18f).coerceAtMost(12.dp.toPx())
                             }
                             change.consume()
                         }
@@ -314,7 +314,9 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = rowModifier,
     ) {
-        Column(Modifier.graphicsLayer { translationX = -displayedSwipeOffset }) {
+        Column(Modifier.graphicsLayer {
+            translationX = -minOf(displayedSwipeOffset, (rowPosition.x + 8 * density).coerceAtLeast(0f))
+        }) {
             if (isAsset) {
                 ProjectedAsset(
                     uuid = uuid,
