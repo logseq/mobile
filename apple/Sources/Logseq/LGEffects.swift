@@ -66,7 +66,6 @@ public struct LGSettingsPayload: Decodable, Equatable, Sendable {
     public let spellCheck: Bool
     public let autoCorrection: Bool
     public let sidebarTabs: [String]
-    public let graphQuickSlots: [String]?
     public let baseURL: String
 }
 

@@ -79,14 +79,6 @@ val rebase_operation :
   Pending_ops.pending_state
 val rebase :
   ?changed_attributes:string list -> graph_runtime -> int -> string list -> string list -> unit
-
-(** Prepare the runtime without reconciling pending edits or creating today's journal.
-    Call [activate_prepared] before making the runtime active. *)
-val restore_runtime :
-  string -> int -> Datascript.conn -> runtime_options -> graph_runtime
-
-val activate_prepared : graph_runtime -> unit
-
 val create_base :
   string -> int -> Datascript.conn -> runtime_options -> graph_runtime
 val fresh_uuid : unit -> string

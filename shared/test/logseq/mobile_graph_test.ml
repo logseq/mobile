@@ -564,45 +564,8 @@ let invalid_snapshot_does_not_replace_the_open_runtime_or_checkpoint () =
         (expect_ok (Store.restore_db (Filename.concat dir "graph.sqlite"))
          : Ds.db))
 
-let resident_switch_reuses_runtime_and_checks_disk_identity () =
-  with_directory (fun dir ->
-    let first = Filename.concat dir "first" and second = Filename.concat dir "second" in
-    List.iter (fun path -> Unix.mkdir path 0o755; prepare_graph path) [first; second];
-    let path dir = Filename.concat dir "graph.sqlite" in
-    let checkpoint dir = Filename.concat dir "checkpoint" in
-    expect_ok (Checkpoint.save_checkpoint_atomic (checkpoint second) (Checkpoint.create "second" "1" 7));
-    let host = host () in
-    let current () = expect_opened !(host.current) in
-    let activate id dir = expect_ok (Mobile.open_paths host id (path dir) (checkpoint dir) false) in
-    Mobile.retain_graphs host ["graph"; "second"];
-    expect_ok (Mobile.prepare_graph host (open_payload first false));
-    check_eq ~msg:"preparation does not change the focused graph" !(host.current) None;
-    check_eq ~msg:"preparation does not queue a journal creation"
-      (Pending_ops.list (path first)) [];
-    activate "graph" first;
-    let original = current () in
-    check ~msg:"first activation queues today's journal creation"
-      (List.exists (fun (operation : Pending_ops.pending_operation) ->
-        match operation.intent with
-        | Pending_ops.Create_journal _ -> true
-        | _ -> false) (Pending_ops.list (path first)));
-    Mobile.load_older_journals host;
-    activate "second" second;
-    activate "graph" first;
-    check ~msg:"focusing a retained graph keeps its read runtime and journal window" (current () == original);
-    activate "second" second;
-    expect_ok (Checkpoint.save_checkpoint_atomic (checkpoint first) (Checkpoint.create "graph" "1" 8));
-    activate "graph" first;
-    check ~msg:"a new checkpoint forces the runtime to reload" (current () != original);
-    check_eq (Mobile.sync_cursor host) (Some 8);
-    activate "second" second;
-    Mobile.retain_graphs host [];
-    check_eq ~msg:"clearing resident IDs drops inactive runtimes" (Hashtbl.length host.residents) 0)
-
 let cases =
   [
-    case "resident focus retains the runtime and rejects stale files"
-      resident_switch_reuses_runtime_and_checks_disk_identity;
     case "asset path resolution follows the current graph"
       asset_path_resolution_follows_the_current_graph;
     case "unopened host preserves query and command defaults"

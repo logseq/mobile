@@ -269,10 +269,6 @@ let main_root runtime application =
   in
   let stack = List.nth (children runtime shell_root) 0 in
   let stack =
-    if stack = extension_node application "graph-quick-switch" then
-      List.hd (children runtime stack)
-    else stack in
-  let stack =
     if node runtime stack = Some Lui_protocol.Overlay then
       List.hd (children runtime stack)
     else stack in
@@ -499,7 +495,6 @@ let settings tabs =
     spell_check = true;
     auto_correction = true;
     sidebar_tabs = tabs;
-    graph_quick_slots = [];
     base_url = "https://api.logseq.com";
     version = "1.0";
     revision = "abc123";
@@ -7592,101 +7587,6 @@ let downloaded_graph_rearms_initially_exhausted_journals () =
     ) [false; true]
   ) [ios_backend; kotlin_backend]
 
-let graph_quick_switch_cycles_and_configures_slots () =
-  let graph id = { Model.id; name = id; is_encrypted = false; is_ready = true; role = None } in
-  let projection = { (empty_core_projection ()) with
-    graph_name = Some "Work"; selected_graph_id = Some "Work";
-    graphs = [graph "Work"; graph "Notes"; graph "Ideas"] } in
-  List.iter (fun (platform, host) ->
-    ignore (Native_bridge.initialize platform host 0);
-    Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
-      let application = Native_bridge.app () in
-      let apply action = send application action; flush application in
-      apply (Model.ApplyCoreSnapshot projection);
-      apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["Work"; ""; "Notes"] });
-      let renderer = Lui_app.runtime application in
-      let root = Lui_app.root_node application in
-      let press identifier =
-        let id = descendant_with_identifier renderer root identifier in
-        check ~msg:("renders " ^ identifier) (id <> -1);
-        dispatch application (Lui_protocol.Press id);
-        flush application
-      in
-      apply Model.ShowGraphs;
-      press "graph-quick-switch.slot.2";
-      press "graph-quick-switch.choice.Ideas";
-      press "graph-quick-switch.slot.1";
-      press "graph-quick-switch.choice.Notes";
-      press "graph-quick-switch.slot.2";
-      press "graph-quick-switch.clear";
-      let assigned = ["Notes"; ""; "Work"] in
-      let model = App.model application in
-      check_eq ~msg:"choosing an assigned graph swaps the slots and clearing preserves order"
-        model.graph_quick_slots assigned;
-      check ~msg:"slot edits use the persisted settings payload"
-        (List.exists (function Model.SaveSettingsEffect (_, settings) -> settings.graph_quick_slots = assigned
-          | _ -> false) model.pending_effects);
-      apply (Model.ApplyLocalGraphIds ["Work"; "Notes"]);
-      apply (Model.ApplyAuthentication ("signedOut", None));
-      press "graph-quick-switch.slot.2";
-      check_eq ~msg:"signed-out slot choices omit remote graphs"
-        (descendant_with_identifier renderer root "graph-quick-switch.choice.Ideas") (-1);
-      apply (Model.SetGraphSlot "Ideas");
-      check_eq ~msg:"a stale remote selection cannot change slots while signed out"
-        (App.model application).graph_quick_slots assigned;
-      apply Model.DismissGraphSlotPicker;
-      apply Model.ShowJournals;
-      let gesture = extension_node application "graph-quick-switch" in
-      let target () = extension_property application gesture "target-id" in
-      let action_label () = extension_property application gesture "action-label" in
-      let presentation field =
-        match extension_property application gesture "presentation" with
-        | Some (Lui_protocol.StringValue json) ->
-          Yojson.Basic.Util.member field (Yojson.Basic.from_string json)
-        | _ -> failwith "Missing graph switch presentation"
-      in
-      let swipe id =
-        ignore (Native_bridge.extension_event gesture "graph-quick-switch" "switch" id 0)
-      in
-      check_eq ~msg:"the last slot wraps to the first, skipping empty slots" (target ())
-        (Some (Lui_protocol.StringValue "Notes"));
-      check_eq ~msg:"the accessibility action names the same graph as the swipe"
-        (action_label ()) (Some (Lui_protocol.StringValue "Switch to Notes"));
-      check_eq ~msg:"the motion starts with the source graph identified"
-        (presentation "graphID") (`String "Work");
-      let journal_panes = if platform = 2 then
-        Some (extension_node application "journal-graph-panes") else None in
-      let original_panes = Option.map (children renderer) journal_panes in
-      swipe "Ideas";
-      check ~msg:"ignores a stale target" (not (App.model application).graph_loading);
-      apply Model.OpenSidebar;
-      check_eq ~msg:"the sidebar owns gestures while open" (target ()) (Some (Lui_protocol.StringValue ""));
-      check_eq ~msg:"the accessibility action is hidden while the sidebar is open"
-        (action_label ()) (Some (Lui_protocol.StringValue ""));
-      swipe "Notes";
-      check ~msg:"ignores a swipe while the sidebar is open" (not (App.model application).graph_loading);
-      apply Model.CloseSidebar;
-      swipe "Notes";
-      check ~msg:"switches through the standard graph open effect"
-        (List.exists (function Model.OpenGraphEffect (_, "Notes") -> true | _ -> false)
-           (App.model application).pending_effects);
-      check_eq ~msg:"the graph switch reports that the target is still opening"
-        (presentation "loading") (`Bool true);
-      check_eq ~msg:"the in-flight switch disables another swipe" (target ()) (Some (Lui_protocol.StringValue ""));
-      match journal_panes, original_panes with
-      | Some node, Some [work] ->
-        check_eq ~msg:"the Work view stays mounted during activation" (children renderer node) [work];
-        apply (Model.ApplyCoreSnapshot {projection with graph_name = Some "Notes"; selected_graph_id = Some "Notes"});
-        apply (Model.ApplyGraphLoading false);
-        let resident = children renderer node in
-        check_eq ~msg:"both graph views are mounted" (List.length resident) 2;
-        check ~msg:"the original Work view is retained" (List.mem work resident);
-        apply (Model.ApplyCoreSnapshot projection);
-        check_eq ~msg:"focusing Work preserves both view identities" (children renderer node) resident
-      | None, None -> ()
-      | _ -> fail "Expected one initial iOS journal pane")
-  ) [2, 2; 3, 4]
-
 let graph_switch_rearms_journal_pagination () =
   List.iter (fun backend ->
     let application = App.create (backend ()) in
@@ -7723,73 +7623,6 @@ let graph_switch_rearms_journal_pagination () =
       (App.model application).pending_effects [Model.LoadOlderJournalsEffect 1]
   ) [ios_backend; kotlin_backend]
 
-let resident_journal_keeps_visible_bodies_during_refocus () =
-  let application = App.create (ios_backend ()) in
-  let renderer = Lui_app.runtime application in
-  let apply action = send application action; flush application in
-  let graphs = [graph "work" "Work" false true; graph "notes" "Notes" false true] in
-  let project id rows =
-    apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
-      graph_name = Some id; selected_graph_id = Some id; graphs; outliner_rows = rows }) in
-  let rows = List.init 96 (fun index ->
-    journal_outline_row ("resident-" ^ string_of_int index)
-      (if index < 48 then "work-today" else "work-yesterday")
-      ("Journal block " ^ string_of_int index)
-      (if index < 48 then "Today" else "Yesterday")
-      (if index < 48 then 20261123 else 20261122) 0) in
-  let shells = List.mapi (fun index (row : Model.outline_row) ->
-    if index < 32 then row else {row with row_title = ""; row_loaded = false}) rows in
-  let unloaded_id = "resident-95" in
-  let sparse = List.map (fun (row : Model.outline_row) ->
-    if row.row_uuid = unloaded_id then {row with row_title = ""; row_loaded = false}
-    else row) rows in
-  start application;
-  project "work" sparse;
-  apply (Model.ApplyLocalGraphIds ["work"; "notes"]);
-  apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["work"; "notes"; ""] });
-  let panes = extension_node application "journal-graph-panes" in
-  let work = List.hd (children renderer panes) in
-  let window = descendant_with_identifier renderer work "outliner.window" in
-  dispatch application (Lui_protocol.VisibleRange (window, 64, 79));
-  flush application;
-  let row () = descendant_with_identifier renderer work "outliner.block.resident-70" in
-  let original = row () in
-  check ~msg:"the scrolled journal body is mounted before switching" (original <> -1);
-  let hydration_for uuid =
-    List.filter_map (function
-      | Model.HydrateOutlinerRowsEffect (id, ids) when List.mem uuid ids -> Some id
-      | _ -> None) (App.model application).pending_effects in
-  List.iter (fun id ->
-    apply (Model.DequeueEffect id);
-    apply (Model.ResolveEffect (id, true, ""))) (hydration_for unloaded_id);
-  let switch ?provisional id rows =
-    apply (Model.SelectSidebarGraph id);
-    let effect_id = List.find_map (function
-      | Model.OpenGraphEffect (effect_id, graph_id) when graph_id = id -> Some effect_id
-      | _ -> None) (App.model application).pending_effects |> Option.get in
-    apply (Model.DequeueEffect effect_id);
-    Option.iter (project id) provisional;
-    project id rows;
-    apply (Model.ResolveEffect (effect_id, true, "")) in
-  let notes = [journal_outline_row "note" "notes-page" "Other graph" "Today" 20261123 0] in
-  switch "notes" notes;
-  dispatch application (Lui_protocol.VisibleRange (window, 80, 95));
-  flush application;
-  check_eq ~msg:"an inactive graph cannot hydrate its native window" (hydration_for unloaded_id) [];
-  switch "work" sparse;
-  check ~msg:"refocusing retries the same window hydration" (hydration_for unloaded_id <> []);
-  switch "notes" notes;
-  (* selectGraph returns before the target graph is open. *)
-  switch ~provisional:notes "work" shells;
-  check_eq ~msg:"refocusing with shells preserves the mounted native body" (row ()) original;
-  let title () = Yojson.Basic.Util.member "title" (native_row_payload application (row ())) in
-  check_eq (title ()) (`String "Journal block 70");
-  check ~msg:"cached bodies still request authoritative hydration" (hydration_for "resident-70" <> []);
-  let updated = { (List.nth rows 70) with row_title = "Updated journal block" } in
-  apply (Model.ApplyCoreSnapshot { (empty_core_projection ()) with selected_graph_id = Some "work";
-    is_outliner_content_patch = true; hydrated_rows = [updated] });
-  check_eq (title ()) (`String "Updated journal block")
-
 let journal_agenda_is_retained_across_navigation () =
   List.iter (fun (ios, backend) ->
     let app = App.create (backend ()) in
@@ -7819,7 +7652,6 @@ let journal_agenda_is_retained_across_navigation () =
     start app;
     snapshot work;
     apply (Model.ApplyLocalGraphIds graph_ids);
-    apply (Model.ApplySettingsSnapshot { (settings []) with graph_quick_slots = ["work"; "notes"; ""] });
     let pane = find (Lui_app.root_node app) "pane.journals" in
     let heading () = find pane "journal-tasks.planned" in
     let doing_heading () = find pane "journal-tasks.doing" in
@@ -7888,15 +7720,11 @@ let journal_agenda_is_retained_across_navigation () =
     snapshot notes;
     apply (Model.ApplyGraphLoading false);
     check_eq (Model.journal_tasks_collapsed (App.model app)) [];
-    if ios then begin
-      check_eq ~msg:"the resident graph keeps the same task row while inactive" (overdue ()) original_overdue;
-      check_eq (planned ()) (-1)
-    end;
+    check_eq ~msg:"switching graphs removes the previous graph's task rows" (overdue ()) (-1);
     snapshot work;
     check_eq ~msg:"the graph remembers its own disclosure state"
       (Model.journal_tasks_collapsed (App.model app)) ["planned"];
-    if ios then
-      check_eq ~msg:"focusing the resident graph keeps the same task row" (overdue ()) original_overdue;
+    check ~msg:"returning to a graph shows its task rows again" (overdue () <> -1);
     let failure = `Assoc (["error", `Bool true; "retained", `Bool true] @
       Yojson.Basic.Util.to_assoc work.journal_tasks) in
     snapshot {work with journal_tasks = failure};
@@ -11958,9 +11786,7 @@ let cases =
     case "short-journals-rearm-pagination-after-each-response" short_journals_rearm_pagination_after_each_response;
     case "journal-prefetches-before-reaching-its-loaded-end" journal_prefetches_before_reaching_its_loaded_end;
     case "downloaded-graph-rearms-initially-exhausted-journals" downloaded_graph_rearms_initially_exhausted_journals;
-    case "graph-quick-switch-cycles-and-configures-slots" graph_quick_switch_cycles_and_configures_slots;
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
-    case "resident-journal-keeps-visible-bodies-during-refocus" resident_journal_keeps_visible_bodies_during_refocus;
     case "journal-agenda-is-retained-across-navigation" journal_agenda_is_retained_across_navigation;
     case "journal-task-results-edit-and-select-the-source-block" journal_task_results_edit_and_select_the_source_block;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;

@@ -35,7 +35,3 @@ val graph_picker_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-
-val graph_slot_picker :
-  Lui_ui.ui_context -> Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t

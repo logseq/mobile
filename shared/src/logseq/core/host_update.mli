@@ -30,7 +30,6 @@ type host_settings =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
-  ; graph_quick_slots : string list
   ; base_url : string
   ; version : string
   ; revision : string

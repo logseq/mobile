@@ -30,7 +30,6 @@ type host_settings =
   ; spell_check : bool
   ; auto_correction : bool
   ; sidebar_tabs : string list
-  ; graph_quick_slots : string list
   ; base_url : string
   ; version : string
   ; revision : string
@@ -80,9 +79,6 @@ let settings value =
       spell_check = bool_field "spellCheck" value;
       auto_correction = bool_field "autoCorrection" value;
       sidebar_tabs = string_vector (Util.member "sidebarTabs" value);
-      graph_quick_slots = (match Util.member "graphQuickSlots" value with
-        | `Null -> []
-        | slots -> string_vector slots);
       base_url = string_field "baseURL" value;
       version = string_field "version" value;
       revision = string_field "revision" value;

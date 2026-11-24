@@ -179,20 +179,6 @@ let outliner_block_row_schema () =
      Lui_extension.event "set-priority" [Lui_extension.event_field "priority" StringScalar true];
      Lui_extension.event "set-status" [uuid; Lui_extension.event_field "count" IntScalar true]]
 
-let graph_quick_switch_schema () =
-  let open Lui_protocol in
-  let open Lui_extension in
-  component "graph-quick-switch" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
-    true [] [property "target-id" StringScalar true None; property "target-name" StringScalar true None;
-             property "action-label" StringScalar true None; property "presentation" StringScalar true None]
-    [event "switch" [event_field "value" StringScalar true]]
-
-let journal_graph_panes_schema () =
-  let open Lui_protocol in
-  let open Lui_extension in
-  component "journal-graph-panes" [profile IOS SwiftUIHost] true []
-    [property "presentation" StringScalar true None] []
-
 let native_navigation_stack_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -339,8 +325,6 @@ let extension_registry () =
         Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost]
        true [] [Lui_extension.property "kind" Lui_extension.StringScalar true None] []);
   Lui_extension.register_component registry (pdf_workspace_schema ());
-  Lui_extension.register_component registry (graph_quick_switch_schema ());
-  Lui_extension.register_component registry (journal_graph_panes_schema ());
   Lui_extension.register_component registry (node_icon_schema ());
   Lui_extension.register_component registry (property_row_schema ());
   Lui_extension.register_component registry (table_viewport_schema ());
@@ -367,4 +351,7 @@ let extension_registry () =
   Lui_extension.register_tweak registry (liquid_glass_schema ());
   Lui_extension.register_tweak registry (native_control_tint_schema ());
   Lui_extension.register_tweak registry (adaptive_content_insets_schema ());
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "journal-scroll-title"
+       [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost] []);
   registry

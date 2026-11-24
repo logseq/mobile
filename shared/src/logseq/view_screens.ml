@@ -256,11 +256,10 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
              ]);
       ]
 
-let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source visible_source
+let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
     send : t =
-  let allow_pagination = Option.value ~default:(Signal.constant context.ui_scheduler true) allow_pagination in
   let prefetch_history () =
-    Signal.sample allow_pagination && Signal.sample visible_source
+    Signal.sample visible_source
     && View_base.older_journals_visible_ (Signal.sample model_source)
     && send Model.LoadOlderJournals in
   View_base.with_reading_insets
@@ -310,10 +309,10 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
              a stable container renews appearance even for short journals. *)
           box ~padding:0
             [ keyed
-                ~source:(Signal.map2 (fun (current : Model.logseq_model) allowed ->
-                  if allowed && View_base.older_journals_visible_ current then
+                ~source:(Signal.map (fun (current : Model.logseq_model) ->
+                  if View_base.older_journals_visible_ current then
                     [Option.value ~default:"local" current.selected_graph_id]
-                  else []) model_source allow_pagination)
+                  else []) model_source)
                 ~key:Fun.id ~cmp:String.compare
                 ~mount:(fun _ ->
                   box ~height:1
@@ -327,94 +326,34 @@ let outliner_view ?allow_pagination (context : Lui_ui.ui_context) model_source v
           ]))));
     ])
 
-let root_outliner_view context model_source visible_source send =
-  outliner_view context model_source visible_source send
-
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
-    box ~grow:1.0 ~accessibility_identifier:"pane.journals"
-      [
-        root_outliner_view context
-          (Signal.map View_base.journal_navigation_model model_source)
-          (Signal.map
-             (fun (current : Model.logseq_model) ->
-               View_base.journal_home_visible_
-                 { current with
-                   Model.node_routes = [];
-                   app_navigation_path = [];
-                   search_open = false;
-                   search_navigation_path = [];
-                 })
-             model_source)
-          send;
-      ]
-
-let ios_journal_graph_panes model_source send : t =
-  custom (fun context parent ->
-    let node = Lui_ui.extension context "journal-graph-panes" in
-    attach context parent node;
-    let panes = Signal.state context.ui_scheduler [] in
-    let graph_id (model : Model.logseq_model) =
-      Option.value ~default:"local" model.selected_graph_id in
-    let scope = ref None in
-    let generation = ref 0 in
-    let refresh (current : Model.logseq_model) =
-      let owner = current.authentication_state, current.base_url in
-      let previous = if !scope = Some owner then Signal.sample (Signal.value panes) else begin
-        scope := Some owner;
-        incr generation;
-        []
-      end in
-      let active = graph_id current in
-      let eligible = Model.graph_slot_candidates current in
-      let retained = List.filter (fun (id, _) ->
-        (id = active && View_base.graph_selected_ current)
-        || (List.mem id current.graph_quick_slots && List.mem id current.local_graph_ids
-            && List.exists (fun (graph : Model.graph) -> graph.id = id) eligible)) previous in
-      let next =
-        if not current.graph_loading && View_base.graph_selected_ current then
-          let model = View_base.journal_navigation_model current in
-          match List.assoc_opt active retained with
-          | None -> retained @ [active, (!generation, model)]
-          | Some (_, previous) ->
-            (* A refocus sends row shells outside the first content window. Keep
-               the mounted pane's bodies while those rows are hydrated again. *)
-            let rows =
-              if previous.journal_outliner_rows == model.journal_outliner_rows then previous.outliner_rows
-              else Model.retain_shell_contents previous.outliner_rows model.outliner_rows in
-            List.map (fun (id, saved) -> id,
-              if id = active then !generation, {model with outliner_rows = rows} else saved) retained
-        else retained in
-      Signal.set panes next
-    in
-    refresh (Signal.sample model_source);
-    ignore (Signal.own context.ui_scope (Signal.observe model_source refresh));
-    let presentation = Signal.map2 (fun (current : Model.logseq_model) panes ->
-      let visible = View_base.journals_destination_ current && current.selected_page = None
-        && current.app_navigation_path = [] && not current.search_open in
-      graph_id current, visible, current.graph_loading, List.map fst panes) model_source (Signal.value panes)
-      |> Signal.cutoff (=)
-      |> Signal.map (fun (active, visible, loading, ids) ->
-        View_base.string_wire_value (Yojson.Basic.to_string (`Assoc [
-          "active", `String active; "visible", `Bool visible; "loading", `Bool loading;
-          "ids", `List (List.map (fun id -> `String id) ids);
-        ]))) in
-    Lui_ui.extension_property_signal context node "presentation" presentation;
-    ignore (mount context ~parent:node
-      (keyed ~source:(Signal.value panes) ~key:(fun (id, (generation, _)) -> id, generation) ~cmp:compare ~mount:(fun pane ->
-        let id, (scope_generation, _) = Signal.sample pane in
-        let owns_journal (current : Model.logseq_model) =
-          graph_id current = id && not current.graph_loading in
-        let send_action action =
-          let current = Signal.sample model_source in
-          if scope_generation = !generation && owns_journal current then send action else false in
-        let allow_pagination = Signal.map (fun current ->
-          owns_journal current && View_base.journal_home_visible_ current) model_source in
-        box ~grow:1.0 ~accessibility_identifier:"pane.journals" [
-          outliner_view ~allow_pagination context (Signal.map (fun (_, (_, model)) -> model) pane)
-            (Signal.constant context.ui_scheduler true) send_action
-        ])));
-    node)
+  let content =
+    root_outliner_view context
+      (Signal.map View_base.journal_navigation_model model_source)
+      (Signal.map
+         (fun (current : Model.logseq_model) ->
+           View_base.journal_home_visible_
+             { current with
+               Model.node_routes = [];
+               app_navigation_path = [];
+               search_open = false;
+               search_navigation_path = [];
+             })
+         model_source)
+      send
+  in
+  let content =
+    match Lui_ui.profile context with
+    | {profile_os = IOS; profile_host = SwiftUIHost} ->
+      custom (fun context parent ->
+        let tweak = Lui_ui.platform_tweak context "journal-scroll-title" in
+        ignore (mount context ~parent:tweak content);
+        attach context parent tweak;
+        tweak)
+    | _ -> content
+  in
+  box ~grow:1.0 ~accessibility_identifier:"pane.journals" [content]
 
 let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
     =
@@ -448,9 +387,7 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
                      selected_model_source)
                   send;
               ]);
-        (if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
-           ios_journal_graph_panes model_source send
-         else retained_journal_pane context model_source send);
+        retained_journal_pane context model_source send;
       ]
 
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
@@ -480,8 +417,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
   stack ~grow:1.0
     [
       if_
-        ~test:(reactive (if uses_ios_flashcard_toolbar context then View_base.graph_selected_
-                         else View_base.journal_tree_retained_) model_source)
+        ~test:(reactive View_base.journal_tree_retained_ model_source)
         (journal_tree_panes context model_source send);
       if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
@@ -493,8 +429,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
         (View_graphs.graphs_screen context model_source send);
 
       if_
-        ~test:(Signal.map (fun current -> View_base.graph_loading_visible_ current
-          && (not (uses_ios_flashcard_toolbar context) || not (View_base.graph_selected_ current))) model_source)
+        ~test:(Signal.map View_base.graph_loading_visible_ model_source)
         (graph_loading_feedback context model_source);
     ]
 
@@ -1072,49 +1007,6 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
       ~padding:32
       [ authentication_content context model_source send ]
 
-let with_graph_quick_switch model_source send content =
-  custom (fun context parent ->
-    match Lui_ui.profile context with
-    | { profile_os = IOS; profile_host = SwiftUIHost }
-    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
-      let node = Lui_ui.extension context "graph-quick-switch" in
-      attach context parent node;
-      let target = Signal.map Model.next_quick_graph model_source in
-      let property name field =
-        Lui_ui.extension_property_signal context node name
-          (Signal.map (fun graph ->
-             View_base.string_wire_value (Option.fold ~none:"" ~some:field graph)) target)
-      in
-      property "target-id" (fun (graph : Model.graph) -> graph.id);
-      property "target-name" View_base.graph_title;
-      let presentation =
-        Signal.map (fun (model : Model.logseq_model) ->
-           model.selected_graph_id, model.graph_loading, model.authentication_state)
-          model_source
-        |> Signal.cutoff (=)
-        |> Signal.map (fun (graph_id, loading, authentication) ->
-           View_base.string_wire_value (Yojson.Basic.to_string (`Assoc [
-             "graphID", `String (Option.value ~default:"" graph_id);
-             "loading", `Bool loading;
-             "authentication", `String authentication;
-           ])))
-      in
-      Lui_ui.extension_property_signal context node "presentation" presentation;
-      Lui_ui.extension_property_signal context node "action-label"
-        (Signal.map2 (fun model graph ->
-           View_base.string_wire_value (Option.fold ~none:"" ~some:(fun graph ->
-             View_base.tr_named model "Switch to {1}" (View_base.graph_title graph)) graph))
-           model_source target);
-      Lui_ui.on_event context node (function
-        | ExtensionEvent (_, _, "switch", values) ->
-          (match Lui_protocol.String_map.find_opt "value" values with
-           | Some (StringValue id) -> ignore (send (Model.QuickSwitchGraph id))
-           | _ -> ())
-        | _ -> ());
-      ignore (mount context ~parent:node content);
-      node
-    | _ -> mount context ?parent content)
-
 let application_main_content (context : Lui_ui.ui_context) model_source
     send : t =
   let content_children : t list =
@@ -1255,7 +1147,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
                  )
-               (with_graph_quick_switch model_source send drawer_main) drawer_panel);
+               drawer_main drawer_panel);
         ]
     else
       stack ~grow:1.0 ~container_relative_frame:`both
@@ -1305,7 +1197,7 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
               (send
                  (if open_ then Model.OpenSidebar else Model.CloseSidebar))
           )
-        (with_graph_quick_switch model_source send drawer_main) drawer_panel in
+        drawer_main drawer_panel in
     if ios_drawer then
       (* The drawer fades the moving page toward its own background token. *)
       let tokens = Signal.map (function
@@ -1335,7 +1227,5 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
 let logseq_view context model_source send : t =
   stack ~grow:1.0 [application_view context model_source send;
     View_outliner.task_dates_dialog model_source send;
-    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.editing_graph_slot <> None) model_source)
-      (View_graphs.graph_slot_picker context model_source send);
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)
       (View_authentication.sheet model_source send)]

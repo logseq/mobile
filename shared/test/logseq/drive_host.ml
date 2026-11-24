@@ -74,7 +74,6 @@ let default_settings =
     spell_check = true;
     auto_correction = true;
     sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
-    graph_quick_slots = [];
     base_url = "https://api.logseq.io";
     version = "Development";
     revision = "Development";

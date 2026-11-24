@@ -17,21 +17,14 @@ type mobile_graph_runtime =
   ; read_runtime : Graph_runtime.graph_runtime
   }
 
-type resident_graph
-
 type mobile_graph =
   { crypto : graph_crypto
   ; creator : Created_by.identity option ref
   ; current : mobile_graph_runtime option ref
-  ; resident_ids : string list ref
-  ; residents : (string, resident_graph) Hashtbl.t
   }
 
 val create : graph_crypto -> mobile_graph
 val configure_identity : mobile_graph -> string -> unit
-val retain_graphs : mobile_graph -> string list -> unit
-val evict_graph : mobile_graph -> string -> unit
-val prepare_graph : mobile_graph -> string -> (unit, string) result
 val import_asset_file : mobile_graph -> string -> string -> (string, string) result
 val resolve_asset_path : mobile_graph -> string -> string
 val sync_cursor : mobile_graph -> int option

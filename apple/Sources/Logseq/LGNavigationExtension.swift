@@ -1,7 +1,76 @@
 import LUIAppleBackend
 import SwiftUI
 #if os(iOS)
+import Observation
 import UIKit
+#endif
+
+#if os(iOS)
+@MainActor @Observable
+private final class JournalScrollTitle {
+    private(set) var displayed: String?
+    @ObservationIgnored private var candidate: String?
+    @ObservationIgnored private var scrollingCandidate: String?
+    @ObservationIgnored private var isScrolling = false
+    @ObservationIgnored private var updateTask: Task<Void, Never>?
+
+    func receive(_ title: String?) {
+        candidate = title
+        if isScrolling {
+            // The inline heading can temporarily leave the toolbar title empty.
+            if let title { scrollingCandidate = title }
+        } else {
+            cancelUpdate()
+        }
+        scheduleUpdate()
+    }
+
+    func setScrolling(_ scrolling: Bool) {
+        guard isScrolling != scrolling else { return }
+        isScrolling = scrolling
+        scrollingCandidate = scrolling ? candidate ?? displayed : nil
+        cancelUpdate()
+        scheduleUpdate()
+    }
+
+    private func cancelUpdate() {
+        updateTask?.cancel()
+        updateTask = nil
+    }
+
+    private var nextTitle: String? { isScrolling ? scrollingCandidate : candidate }
+
+    private func scheduleUpdate() {
+        guard updateTask == nil, nextTitle != displayed else { return }
+        // Coalesce fast section changes while moving and settle the final heading at rest.
+        let delay: Duration = .milliseconds(isScrolling ? 150 : 120)
+        updateTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self else { return }
+            updateTask = nil
+            displayed = nextTitle
+        }
+    }
+}
+
+private struct JournalScrollTitleModifier: ViewModifier {
+    @State private var title = JournalScrollTitle()
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let displayed = title.displayed
+        let tracked = content
+            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title.receive($0) }
+            .transformPreference(LUIScrollTitlePreferenceKey.self) { $0 = displayed }
+        if #available(iOS 18.0, *) {
+            tracked.onScrollPhaseChange { _, phase in
+                title.setScrolling(phase != .idle)
+            }
+        } else {
+            tracked
+        }
+    }
+}
 #endif
 
 enum LGNavigationSurfacePolicy {
@@ -193,6 +262,16 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        #if os(iOS)
+        try registry.registerTweak(
+            LUIAppleTweak(
+                identifier: "journal-scroll-title",
+                fingerprint: "lui-tweak-v1|20:journal-scroll-title|profiles:ios/swiftui|properties:"
+            ) { content, _ in
+                AnyView(content.modifier(JournalScrollTitleModifier()))
+            }
+        )
+        #endif
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-auth-input",
@@ -733,7 +812,6 @@ private struct LGNavigationContent: View {
     #if os(iOS)
     @State private var transitions = LGNavigationTransitions()
     @State private var dockedKeyboardInset: CGFloat = 0
-    @Environment(\.lgGraphSwitchViewport) private var graphSwitchViewport
     #endif
     @State private var usesSystemGroupedBackground = false
     @State private var visibleScrollTitle: String?
@@ -851,12 +929,6 @@ private struct LGNavigationContent: View {
             .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
                 if !searchVisible { visibleScrollTitle = title }
             }
-            #if os(iOS)
-            .onChange(of: verticalToolbar && path.isEmpty && !searchVisible && navigationTitle.isEmpty,
-                      initial: true) { _, showsName in
-                if toolbarStartIndex != nil { graphSwitchViewport?.showsNameInVerticalToolbar = showsName }
-            }
-            #endif
     }
 
     @ViewBuilder
@@ -878,12 +950,6 @@ private struct LGNavigationContent: View {
                         VStack {
                             Spacer(minLength: 0)
                             floatingBottomChrome
-                                #if os(iOS)
-                                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
-                                    graphSwitchViewport?.composerTop = top
-                                }
-                                .onDisappear { graphSwitchViewport?.composerTop = nil }
-                                #endif
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         // The expanded composer keeps the collapsed baseline until the
@@ -923,15 +989,7 @@ private struct LGNavigationContent: View {
 
     private var navigationStack: some View {
         // Keep returning content mounted while UISearchController animates its toolbar.
-        let normalTitle = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
-        #if os(iOS)
-        let journalTitleViewport = path.isEmpty && !searchVisible && navigationTitle.isEmpty
-            ? graphSwitchViewport : nil
-        let usesJournalTitleItem = journalTitleViewport != nil && !verticalToolbar
-        let title = usesJournalTitleItem || journalTitleViewport?.feedback != nil ? "" : normalTitle
-        #else
-        let title = normalTitle
-        #endif
+        let title = toolbarStartIndex == nil ? "" : (navigationTitle.isEmpty ? visibleScrollTitle ?? "" : navigationTitle)
         return NavigationStack(path: pathBinding) {
             navigationSurface(Group {
                 if toolbarStartIndex != nil {
@@ -1006,13 +1064,6 @@ private struct LGNavigationContent: View {
                             }
                         } else {
                             trailingToolbar(searchPage: false)
-                            #if os(iOS)
-                            if usesJournalTitleItem, let journalTitleViewport {
-                                ToolbarItem(placement: .principal) {
-                                    journalTitle(normalTitle, viewport: journalTitleViewport)
-                                }
-                            }
-                            #endif
                         }
                     }
                 }
@@ -1073,26 +1124,6 @@ private struct LGNavigationContent: View {
             .buttonStyle(.plain)
     }
 
-    #if os(iOS)
-    private func journalTitle(_ title: String, viewport: LGGraphSwitchViewport) -> some View {
-        Group {
-            if let feedback = viewport.feedback {
-                LGGraphSwitchNameCapsule(name: feedback.name)
-                    .frame(maxWidth: 240)
-            } else {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
-        .transaction {
-            $0.animation = nil
-            $0.disablesAnimations = true
-        }
-    }
-    #endif
-
     @ViewBuilder
     private var rootNavigationSurface: some View {
         searchSurface(transformedRootContent, active: path.isEmpty)
@@ -1111,9 +1142,6 @@ private struct LGNavigationContent: View {
                 }
             }
             #if os(iOS)
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                if toolbarStartIndex != nil { graphSwitchViewport?.journalFrame = frame }
-            }
             .background(LGNavigationControllerObserver(transitions: transitions).allowsHitTesting(false))
             .background {
                 if toolbarStartIndex != nil {

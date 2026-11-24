@@ -76,7 +76,6 @@ enum LGIconPolicy {
             "arrow-up": .systemName("arrow.up"),
             "close": .assetName("close"),
             "chevron-down": .assetName("chevron_down"),
-            "chevron-right": .systemName("chevron.right"),
             "chevron-up": .assetName("chevron_up"),
             "document": .assetName("document"),
             "disclosure-down": .systemName("arrowtriangle.down.fill"),

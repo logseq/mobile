@@ -161,7 +161,7 @@ let project ?(read_rows = rows) cache ~graph ~now ~force db =
     | _ -> None in
   let remember value =
     let remaining = List.remove_assoc graph !cache in
-    (* Keep the three quick-switch graphs and the active graph. *)
+    (* Keep up to four recently viewed graphs. *)
     cache := (graph, value) :: List.filteri (fun index _ -> index < 3) remaining;
     value.result in
   match previous with

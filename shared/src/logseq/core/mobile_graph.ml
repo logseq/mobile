@@ -22,59 +22,15 @@ type mobile_graph_runtime =
   ; read_runtime : Runtime.graph_runtime
   }
 
-type file_stamp = int * int * int * float * float
-
-type resident_graph =
-  { runtime : mobile_graph_runtime
-  ; prepared : bool
-  ; database_stamp : file_stamp
-  ; checkpoint_stamp : file_stamp
-  }
-
 type mobile_graph =
   { crypto : graph_crypto
   ; creator : Created_by.identity option ref
   ; current : mobile_graph_runtime option ref
-  ; resident_ids : string list ref
-  ; residents : (string, resident_graph) Hashtbl.t
   }
 
-let create crypto = { crypto; creator = ref None; current = ref None;
-  resident_ids = ref []; residents = Hashtbl.create 3 }
+let create crypto = { crypto; creator = ref None; current = ref None }
 
-let retain_graphs host ids =
-  host.resident_ids := ids;
-  Hashtbl.filter_map_inplace (fun id resident ->
-    if List.mem id ids then Some resident else None) host.residents
-
-let evict_graph host id = Hashtbl.remove host.residents id
-
-let configure_identity host token =
-  let identity = Created_by.of_token token in
-  let owner = Option.map (fun (identity : Created_by.identity) -> identity.uuid) in
-  if owner identity <> owner !(host.creator) then retain_graphs host [];
-  host.creator := identity
-
-let file_stamp path =
-  try
-    let stat = Unix.stat path in
-    Some (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime, stat.st_ctime)
-  with Unix.Unix_error _ -> None
-
-let remember ?(prepared = false) host (runtime : mobile_graph_runtime) =
-  if List.mem runtime.graph_id !(host.resident_ids) then
-    match file_stamp runtime.read_runtime.path, file_stamp runtime.checkpoint_path with
-    | Some database_stamp, Some checkpoint_stamp ->
-      Hashtbl.replace host.residents runtime.graph_id {runtime; prepared; database_stamp; checkpoint_stamp}
-    | _ -> evict_graph host runtime.graph_id
-
-let resident host graph_id path checkpoint e2ee =
-  match Hashtbl.find_opt host.residents graph_id with
-  | Some cached when cached.runtime.read_runtime.path = path
-      && cached.runtime.checkpoint_path = checkpoint && cached.runtime.e2ee = e2ee
-      && file_stamp path = Some cached.database_stamp
-      && file_stamp checkpoint = Some cached.checkpoint_stamp -> Some cached
-  | _ -> evict_graph host graph_id; None
+let configure_identity host token = host.creator := Created_by.of_token token
 
 let resolve_asset_path (host : mobile_graph) source_path =
   match !(host.current) with
@@ -283,7 +239,8 @@ let report_open started stage =
      ^ Printf.sprintf " elapsed_ms=%.3f"
          ((Unix.gettimeofday () -. started) *. 1000.0))
 
-let load_runtime ?(preparing = false) (host : mobile_graph) graph_id active_path checkpoint_path e2ee =
+let open_paths (host : mobile_graph) graph_id active_path checkpoint_path
+    e2ee =
   let started = Unix.gettimeofday () in
   let ( let* ) = Result.bind in
   let* saved = Checkpoint.load_checkpoint checkpoint_path in
@@ -325,41 +282,21 @@ let load_runtime ?(preparing = false) (host : mobile_graph) graph_id active_path
     else options
   in
   let read_runtime =
-    let create = if preparing then Runtime.restore_runtime else Runtime.create in
-    create active_path saved.applied_server_t conn options
+    Runtime.create active_path saved.applied_server_t conn options
   in
   report_open started "runtime_created";
+  host.current :=
+    Some
+      {
+        conn;
+        state;
+        checkpoint_path;
+        graph_id;
+        e2ee;
+        read_runtime;
+      };
   report_open started "complete";
-  Ok {conn; state; checkpoint_path; graph_id; e2ee; read_runtime}
-
-let open_paths host graph_id active_path checkpoint_path e2ee =
-  let ( let* ) = Result.bind in
-  let* opened = match resident host graph_id active_path checkpoint_path e2ee with
-    | Some cached ->
-      let* () = if e2ee then host.crypto.require_key graph_id else Ok () in
-      if cached.prepared then Runtime.activate_prepared cached.runtime.read_runtime;
-      Metric_log.line "LOGSEQ_GRAPH_OPEN_METRIC stage=resident_reused";
-      Ok cached.runtime
-    | None -> load_runtime host graph_id active_path checkpoint_path e2ee in
-  Option.iter (fun old -> if old.graph_id <> graph_id then remember host old) !(host.current);
-  evict_graph host graph_id;
-  host.current := Some opened;
   Ok ()
-
-let prepare_graph host body =
-  try
-    let ( let* ) = Result.bind in
-    let* request = Payload.decode_open body in
-    let id = request.graph_id in
-    if not (List.mem id !(host.resident_ids))
-       || Option.exists (fun opened -> opened.graph_id = id) !(host.current)
-       || Option.is_some (resident host id request.active_path request.checkpoint_path request.e2ee)
-    then Ok ()
-    else
-      let* opened = load_runtime ~preparing:true host id request.active_path request.checkpoint_path request.e2ee in
-      remember ~prepared:true host opened;
-      Ok ()
-  with error -> Error (Printexc.to_string error)
 
 let open_graph (host : mobile_graph) body =
   try
@@ -373,7 +310,6 @@ let import_snapshot (host : mobile_graph) body =
   try
     let ( let* ) = Result.bind in
     let* request = Payload.decode_import body in
-    evict_graph host request.graph_id;
     let* metadata = Sync.decode_snapshot_metadata request.metadata_body in
     let* _ =
       Sync.import_snapshot_file

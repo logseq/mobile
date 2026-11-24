@@ -913,19 +913,7 @@ struct LGRendererTests {
         let snapshot = try JSONDecoder().decode(
             LogseqSnapshot.self,
             from: Data(
-                #"""
-                {
-                  "revision": 3,
-                  "blocks": [],
-                  "graphName": "New graph",
-                  "selectedGraphId": "graph-new",
-                  "graphs": [{"id":"graph-new","name":"New graph","schemaVersion":"65.33","isEncrypted":true,"isReady":true}],
-                  "outlinerRows": [
-                    {"depth":0,"hasChildren":false,"isCollapsed":false,"block":{"uuid":"shell","title":"","pageId":"journal","createdAt":0,"updatedAt":0,"isShell":true}},
-                    {"depth":0,"hasChildren":false,"isCollapsed":false,"block":{"uuid":"empty","title":"","pageId":"journal","createdAt":0,"updatedAt":0}}
-                  ]
-                }
-                """#.utf8
+                #"{"revision":3,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"New graph","selectedGraphId":"graph-new","graphs":[{"id":"graph-new","name":"New graph","schemaVersion":"65.33","isEncrypted":true,"isReady":true}]}"#.utf8
             )
         )
 
@@ -944,7 +932,6 @@ struct LGRendererTests {
         #expect(envelope.ok)
         #expect(envelope.result.selectedGraphId == "graph-new")
         #expect(envelope.result.graphs?.map(\.id) == ["graph-new"])
-        #expect(envelope.result.outlinerRows.map(\.block.isShell) == [true, nil])
     }
 
     @Test("creating a graph persists the authoritative selected graph")

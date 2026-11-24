@@ -2259,22 +2259,6 @@ let rec dispatch session action payload =
          let result = match List.assoc_opt "result" envelope with Some (`Assoc fields) -> fields | _ -> [] in
          Json.to_string (`Assoc (("result", `Assoc (("deepLinkQuickAction", quick_action) :: result)) :: List.remove_assoc "result" envelope))
        | _ -> Rpc.failure "invalid_deep_link" "No application projection is available"))
-  | "retainGraphs" -> object_action (fun _ fields ->
-    let allowed id = List.exists (fun (graph : Api.api_graph) -> graph.id = id && graph.ready) s.available_graphs in
-    match List.assoc_opt "ids" fields, h.Types.retain_graphs with
-    | Some (`List values), Some retain when List.length values <= 3 ->
-      let ids = List.filter_map (function `String id when allowed id -> Some id | _ -> None) values in
-      retain ids;
-      Rpc.success (`Assoc [])
-    | _ -> Rpc.failure "invalid_params" "At most three resident graph IDs are allowed")
-  | "prepareGraph" -> object_action (fun _ fields ->
-    match payload, Rpc.required_string fields "graphId", h.Types.prepare_graph with
-    | Some body, Ok id, Some prepare when List.exists (fun (graph : Api.api_graph) ->
-        graph.id = id && graph.ready && not graph.e2ee) s.available_graphs ->
-      (match prepare body with
-       | Ok () -> Rpc.success (`Assoc [])
-       | Error message -> Rpc.failure "graph_prepare_failed" message)
-    | _ -> Rpc.failure "invalid_params" "An authorized local graph is required")
   | "bootstrapGraph" -> object_action (fun input fields ->
     let requested = Rpc.required_string fields "graphId" in
     match requested, s.config with
@@ -2307,10 +2291,8 @@ let rec dispatch session action payload =
              else Rpc.failure "snapshot_unavailable" "The graph is not cached and snapshot download is unavailable" in
            if not forced && Sys.file_exists active && Sys.file_exists checkpoint then
              let payload = Json.to_string (`Assoc (("isEncrypted", `Bool (selected_graph_is_encrypted session)) :: List.remove_assoc "isEncrypted" fields)) in
-             let opened = match h.Types.open_graph with
-               | None -> Error "Graph storage is unavailable"
-               | Some open_graph -> Result.bind (open_graph payload) (fun () -> switch_graph_model session payload) in
-             if Result.is_ok opened then respond "ready" else downloaded ()
+             let opened = dispatch session "openGraph" (Some payload) in
+             if Yojson.Basic.Util.member "ok" (Json.from_string opened) = `Bool true then respond "ready" else downloaded ()
            else downloaded ()
          | _ -> Rpc.failure "invalid_params" "Graph storage paths are required")
     | _ -> Rpc.failure "graph_changed" "The requested graph is not selected")
