@@ -290,6 +290,13 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func webSocketConnectionFailuresHaveUsefulUserFacingMessages() {
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.cannotConnectToHost))
+            == "network_unavailable")
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.networkConnectionLost))
+            == "network_unavailable")
+        #expect(LogseqGraphWebSocketFailurePolicy.syncDriverMessage(URLError(.unsupportedURL))
+            == "The sync server address is invalid.")
+
         #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.timedOut))
             == "The sync server timed out. Check that it is running and reachable, then try again.")
         #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.notConnectedToInternet))

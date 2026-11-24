@@ -914,7 +914,7 @@ private struct CreateSyncGraphPayload: Encodable {
             // A cancelled URLSession transport still needs recovery while its owning task is active.
             let cancelled = Task.isCancelled
             let commands = await event(cancelled ? "cancelled" : "failed",
-                message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))
+                message: cancelled ? nil : LogseqGraphWebSocketFailurePolicy.syncDriverMessage(error))
             graphEventsRetryDelayMilliseconds = commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
             logger.info("Logseq sync transport ended domain=\(transportError.domain) code=\(transportError.code) closeCode=\(closeCode) ownerCancelled=\(cancelled) lifetimeSeconds=\(Int(Date().timeIntervalSince(startedAt))) retryMs=\(graphEventsRetryDelayMilliseconds)")
             if !cancelled {
