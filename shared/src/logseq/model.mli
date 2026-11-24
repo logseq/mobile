@@ -486,6 +486,7 @@ type logseq_model =
   ; composer_task_date_field : string option
   ; composer_reference_query : string option
   ; composer_reference_candidates : outliner_autocomplete_candidate list
+  ; composer_reference_caret : int option
   ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list

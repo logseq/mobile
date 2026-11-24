@@ -489,6 +489,7 @@ type logseq_model =
   ; composer_task_date_field : string option
   ; composer_reference_query : string option
   ; composer_reference_candidates : outliner_autocomplete_candidate list
+  ; composer_reference_caret : int option
   ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
@@ -882,6 +883,7 @@ let initial () =
     composer_task_date_field = None;
     composer_reference_query = None;
     composer_reference_candidates = [];
+    composer_reference_caret = None;
     capture_confirmation = None;
     result_view_feedback = [];
     property_value_catalogs = [];
@@ -1780,7 +1782,8 @@ let rollback_navigation_effect (current : logseq_model) eff =
 let composer_for_graph (current : logseq_model) graph_id =
   if current.selected_graph_id = graph_id then current
   else {current with composer_tags = []; composer_tag_choices = [];
-    composer_tags_open = false; composer_tags_loading = false}
+    composer_tags_open = false; composer_tags_loading = false;
+    composer_reference_query = None; composer_reference_candidates = []}
 
 let resolve_failed_effect (current : logseq_model) eff message =
   match eff with
@@ -1799,7 +1802,9 @@ let resolve_failed_effect (current : logseq_model) eff message =
     if capture.capture_graph_id <> current.selected_graph_id then current
     else {current with capture_confirmation = None;
       composer_draft = (if current.composer_draft = "" then capture.capture_text else current.composer_draft);
-      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags)}
+      composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags);
+      composer_task_dates = (if current.composer_task_dates = [] then capture.capture_dates
+        else current.composer_task_dates)}
   | SendCaptureEffect _ | SendTaskEffect _ ->
     { current with capture_confirmation = None }
   | SendAssetEffect (_, asset, tags, graph_id) ->
@@ -2014,20 +2019,16 @@ let composer_edit_caret previous next =
     if index < next_length && Char.code next.[index] land 0xC0 = 0x80
     then char_boundary (index + 1) else index in
   let caret = char_boundary (next_length - common_suffix 0) in
-  Outliner_state.utf16_length (String.sub next 0 caret)
-
-let composer_reference_caret draft query =
-  let token = "[[" ^ query in
-  Option.map (fun index -> Outliner_state.utf16_length (String.sub draft 0 (index + String.length token)))
-    (Outliner_state.last_substring draft token)
+  prefix, Outliner_state.utf16_length (String.sub next 0 caret)
 
 let composer_reference_request active previous draft =
-  let caret = composer_edit_caret previous draft in
+  let edit_start, caret = composer_edit_caret previous draft in
   match Outliner_state.autocomplete_for draft caret with
   | Some { Outliner_state.kind = Node; query } ->
     let caret_byte = Outliner_state.byte_index_of_utf16 draft caret in
-    let fresh = caret_byte >= 2 && String.sub draft (caret_byte - 2) 2 = "[[" in
-    if active = None && not fresh then None else Some query
+    let typed = Option.exists (fun start -> start + 2 > edit_start)
+      (Outliner_state.last_substring (String.sub draft 0 caret_byte) "[[") in
+    if active = None && not typed then None else Some (query, caret)
   | _ -> None
 
 let remove_composer_draft_effects effects =
@@ -2553,14 +2554,16 @@ let rec update (current : logseq_model) action =
     { current with composer_autofocus = not current.composer_autofocus }
   | ApplyComposerDraft draft -> { current with composer_draft = draft }
   | ChangeComposerDraft draft ->
-    let query = composer_reference_request current.composer_reference_query
+    let request = composer_reference_request current.composer_reference_query
       current.composer_draft draft in
+    let query = Option.map fst request in
     let updated =
       {
         current with
         composer_draft = draft;
         composer_autofocus = false;
         composer_reference_query = query;
+        composer_reference_caret = Option.map snd request;
         composer_reference_candidates =
           (if query = None then [] else current.composer_reference_candidates);
         pending_effects =
@@ -2579,7 +2582,7 @@ let rec update (current : logseq_model) action =
      | _ -> persisted)
   | ChooseComposerReference value ->
     let caret = Option.bind current.composer_reference_query
-      (composer_reference_caret current.composer_draft) in
+      (fun _ -> current.composer_reference_caret) in
     (match Option.bind caret (fun caret ->
        Outliner_state.complete_node_text current.composer_draft caret value) with
      | Some (draft, _) ->
