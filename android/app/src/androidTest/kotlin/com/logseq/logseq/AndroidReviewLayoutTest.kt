@@ -217,6 +217,27 @@ class AndroidReviewLayoutTest {
         ui.onNodeWithTag("button.graph-switch").assertDoesNotExist()
     }
 
+    @Test fun sidebarSettingsAndRowsSlideTogether() {
+        app()
+        val journals = ui.onNodeWithTag("link.sidebar.journals")
+        val settings = ui.onNodeWithTag("button.sidebar.settings")
+        ui.mainClock.autoAdvance = false
+        try {
+            ui.onNodeWithTag("button.sidebar").performClick()
+            ui.mainClock.advanceTimeBy(96)
+            val movingJournals = journals.getUnclippedBoundsInRoot().left
+            val movingSettings = settings.getUnclippedBoundsInRoot().left
+            ui.mainClock.advanceTimeBy(700)
+            val journalTravel = journals.getUnclippedBoundsInRoot().left - movingJournals
+            val settingsTravel = settings.getUnclippedBoundsInRoot().left - movingSettings
+            assertTrue("The sidebar was in motion when sampled", journalTravel > 1.dp)
+            val travelDifference = journalTravel - settingsTravel
+            assertTrue("Settings and the sidebar rows travel together", travelDifference >= (-1).dp && travelDifference <= 1.dp)
+        } finally {
+            ui.mainClock.autoAdvance = true
+        }
+    }
+
     @Test fun graphActionsAreVisibleOnFirstOpen() {
         graphForm()
         ui.onNodeWithTag("button.graph-add.cancel").assertIsDisplayed()

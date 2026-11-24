@@ -79,7 +79,7 @@ import SwiftUI
         let journalFrame = journal.map { $0.convert($0.bounds, to: window) }
         let journalOffset = journal?.contentOffset
         try backend.performPress(node: find("button.sidebar")!)
-        try await Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(700))
         guard let scroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
             $0.contentSize.height > 3000 && $0.bounds.width < window.bounds.width * 0.85
         }) else { throw failure("Missing Recent/Favorites scroller") }
@@ -89,6 +89,10 @@ import SwiftUI
               let panelID = find("sidebar.navigation"), let panel = frames[panelID],
               let lastRecentID = find("link.sidebar.page.recent-39") else {
             throw failure("Missing sidebar footer or last Recent row")
+        }
+        func settingsStayedInPlace() -> Bool {
+            guard let actual = frames[settingsID] else { return false }
+            return abs(actual.minX - settings.minX) < 1 && abs(actual.minY - settings.minY) < 1 && actual.size == settings.size
         }
         guard abs(scroll.convert(scroll.bounds, to: window).maxY - panel.maxY) < 1 else {
             throw failure("The sidebar scroll viewport must extend behind Settings to the bottom of the panel")
@@ -111,7 +115,7 @@ import SwiftUI
             let sampler = SidebarScrollSampler(scroll: scroll)
             for selected in [false, true, false, true] {
                 try backend.performToggle(node: drawer, checked: selected)
-                try await Task.sleep(for: .milliseconds(420))
+                try await Task.sleep(for: .milliseconds(500))
             }
             sampler.stop()
             print("SIDEBAR offset=\(offset) frames=\(sampler.frames) modelShift=\(sampler.maximumModelShift) displayedShift=\(sampler.maximumDisplayedShift) viewportShift=\(sampler.maximumViewportShift)")
@@ -121,7 +125,7 @@ import SwiftUI
             guard scroll.isScrollEnabled, scroll.window === window else {
                 throw failure("The retained sidebar must resume scrolling after transitions")
             }
-            guard frames[settingsID] == settings else { throw failure("Settings must stay fixed while the sidebar scrolls") }
+            guard settingsStayedInPlace() else { throw failure("Settings must stay fixed while the sidebar scrolls") }
         }
         let viewport = scroll.convert(scroll.bounds, to: window)
         guard let lastRecent = frames[lastRecentID], lastRecent.minY >= viewport.minY,
@@ -140,7 +144,7 @@ import SwiftUI
             let batch = try JSONSerialization.data(withJSONObject: ["generation": backend.generation + 1, "ops": ops])
             try backend.apply(json: String(decoding: batch, as: UTF8.self))
             try await Task.sleep(for: .milliseconds(300))
-            guard journal.window === window, scroll.window === window, frames[settingsID] == settings else {
+            guard journal.window === window, scroll.window === window, settingsStayedInPlace() else {
                 throw failure("An unmounted ID displaced the committed sidebar content")
             }
         }

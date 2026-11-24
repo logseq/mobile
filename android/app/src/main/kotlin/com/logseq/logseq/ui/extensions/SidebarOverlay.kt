@@ -24,9 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lui.LocalLuiScrollingEnabled
 import dev.lui.LocalLuiThemeDark
@@ -82,12 +84,14 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     BoxWithConstraints(Modifier.fillMaxSize().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
         val widthPx = with(LocalDensity.current) { width.toPx() }.coerceAtLeast(1f)
-        val slidePx = with(LocalDensity.current) { 38.dp.toPx() }
+        val slidePx = with(LocalDensity.current) { 38.dp.toPx() }.coerceAtMost(widthPx)
+        val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
         fun revealFraction(): Float {
             val offset = drawer.currentOffset
             return if (offset.isFinite()) (1f + offset / widthPx).coerceIn(0f, 1f)
             else if (open) 1f else 0f
         }
+        fun sidebarTranslation(progress: Float) = direction * (progress - 1f) * slidePx
         ModalNavigationDrawer(
             drawerState = drawer,
             gesturesEnabled = enabled || open,
@@ -102,7 +106,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                         alpha = progress
                         // Keep the closed sheet offscreen for Material's hit testing.
                         translationX = if (progress > 0f) {
-                            (1f - progress) * (widthPx - slidePx).coerceAtLeast(0f)
+                            sidebarTranslation(progress) + direction * (1f - progress) * widthPx
                         } else 0f
                     }.then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
                 ) {
@@ -132,7 +136,11 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
         val progress = revealFraction()
         if (progress > 0f) {
             Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp)
-                .graphicsLayer { alpha = revealFraction() }
+                .graphicsLayer {
+                    val reveal = revealFraction()
+                    alpha = reveal
+                    translationX = sidebarTranslation(reveal)
+                }
                 .then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
             ) { context.child(settings) }
         }

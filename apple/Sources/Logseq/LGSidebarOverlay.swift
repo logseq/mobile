@@ -235,20 +235,15 @@ private struct LGSidebarLayers: View, Animatable {
                     .frame(width: panelWidth)
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .bottomTrailing) {
+                        settings.padding(settingsInsets)
+                    }
                     .opacity(visible)
                     .offset(x: reduceMotion ? 0 : (visible - 1) * 38)
                     .allowsHitTesting(open && visible > 0.95)
                     .accessibilityHidden(!open)
                     .accessibilityAction(.escape, dismiss)
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if hasOpened {
-                settings
-                    .padding(settingsInsets)
-                    .opacity(visible)
-                    .allowsHitTesting(open && visible > 0.95)
-                    .accessibilityHidden(!open)
             }
         }
         .accessibilityElement(children: .contain)
