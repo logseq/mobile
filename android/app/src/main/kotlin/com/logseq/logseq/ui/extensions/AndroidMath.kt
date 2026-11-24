@@ -76,7 +76,7 @@ internal fun AndroidMath(expression: String) {
     val density = LocalDensity.current
     val size = with(density) { MaterialTheme.typography.bodyLarge.fontSize.toPx() }
     val bitmap = rememberFormulaBitmap(expression, size)
-    Box(Modifier.padding(vertical = 4.dp).horizontalScroll(rememberScrollState())) {
+    Box(Modifier.testTag("block.rich.math").padding(vertical = 4.dp).horizontalScroll(rememberScrollState())) {
         val rendered = bitmap
         if (rendered == null) {
             Text(expression, style = MaterialTheme.typography.bodyLarge)

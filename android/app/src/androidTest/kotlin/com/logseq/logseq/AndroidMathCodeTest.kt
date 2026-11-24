@@ -79,6 +79,14 @@ class AndroidMathCodeTest {
         ui.onNodeWithText("y^2").assertDoesNotExist()
     }
 
+    @Test fun annotatedUnderbracesAndRomanSubscriptsRenderAsMath() {
+        val annotated = "\\underbrace{a-b}_{\\text{ear drift}} + \\underbrace{c-a}_{\\text{organ divergence}}"
+        val subscript = "h_{\\mathrm{wean}}^{\\mathrm{ear}}"
+        ui.setContent { MaterialTheme { Column { AndroidMath(annotated); AndroidMath(subscript) } } }
+        awaitFormula(annotated)
+        awaitFormula(subscript)
+    }
+
     @Test fun formulaRespondsToFontScaleAndDarkTheme() {
         val large = mutableStateOf(false)
         ui.setContent {

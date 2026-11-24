@@ -62,6 +62,7 @@ class AndroidRichContentTest {
         linkColor: Color? = null, dark: Boolean = false, imagePath: String? = null,
         rowActions: JSONObject? = null,
         scrollState: ScrollState? = null,
+        swipable: Boolean = false,
         onOpenImage: ((String, String) -> Unit)? = null): LuiBackend {
         val registry = logseqExtensionRegistry(onOpenImage = onOpenImage)
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
@@ -70,7 +71,18 @@ class AndroidRichContentTest {
             .put(JSONObject().put("op", "create-extension").put("id", 2)
                 .put("identifier", "outliner-block-content")
                 .put("fingerprint", registry.registration("outliner-block-content")!!.fingerprint))
-            .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 2).put("index", 0))
+        val parent = if (swipable) {
+            val identifier = "outliner-row-swipe"
+            ops.put(JSONObject().put("op", "create-extension").put("id", 4)
+                .put("identifier", identifier).put("fingerprint", registry.registration(identifier)!!.fingerprint))
+                .put(property("block-id", "rich-block").put("id", 4))
+                .put(property("enabled", true).put("id", 4))
+                .put(JSONObject().put("op", "create-node").put("id", 5).put("kind", "box"))
+                .put(JSONObject().put("op", "insert-child").put("parent", 1).put("child", 4).put("index", 0))
+                .put(JSONObject().put("op", "insert-child").put("parent", 4).put("child", 5).put("index", 0))
+            5
+        } else 1
+        ops.put(JSONObject().put("op", "insert-child").put("parent", parent).put("child", 2).put("index", 0))
         mapOf(
             "block-id" to "rich-block", "title" to "Readable fallback", "markup-json" to markup,
             "is-completed" to completed, "is-asset" to (imagePath != null),
@@ -164,6 +176,21 @@ class AndroidRichContentTest {
         }
     }
 
+    @Test fun inlineMathFitsTheParagraphAndInvalidTexRemainsReadable() {
+        val wide = List(10) { "\\frac{1234567890}{9876543210}" }.joinToString("+")
+        val invalid = "\\unknowncommand{"
+        val markup = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", "Before "))
+            .put(JSONObject().put("type", "math").put("style", "inline").put("text", wide))
+            .put(JSONObject().put("type", "text").put("text", " after "))
+            .put(JSONObject().put("type", "math").put("style", "inline").put("text", invalid))
+        render(markup.toString())
+        ui.waitUntil(10_000) { ui.onAllNodesWithContentDescription(wide).fetchSemanticsNodes().isNotEmpty() }
+        ui.onNodeWithContentDescription(wide).assertIsDisplayed()
+        val paragraph = layout("Before $wide after $invalid")
+        assertTrue(paragraph.placeholderRects.single()!!.width <= paragraph.size.width)
+    }
+
     @Test fun malformedBodyLongPressStillSelects() = assertLongPressSelects("not-json", "Readable fallback")
 
     @Test fun imageAssetLongPressSelectsAndShortTapOpensPreview() {
@@ -228,7 +255,7 @@ class AndroidRichContentTest {
     }
 
     @Test fun onlyLeftSwipesToggleBlockSelection() {
-        render("""[{"type":"text","text":"Selectable block"}]""")
+        render("""[{"type":"text","text":"Selectable block"}]""", swipable = true)
         val block = ui.onNodeWithTag("outliner-block-content-rich-block")
         block.performTouchInput { swipeRight() }
         repeat(2) { block.performTouchInput { swipeLeft() } }
@@ -240,7 +267,7 @@ class AndroidRichContentTest {
 
     @Test fun diagonalLeftSwipeKeepsVerticalScrollAtRest() {
         val scroll = ScrollState(0)
-        render("""[{"type":"text","text":"Selectable block"}]""", scrollState = scroll)
+        render("""[{"type":"text","text":"Selectable block"}]""", scrollState = scroll, swipable = true)
         val block = ui.onNodeWithTag("outliner-block-content-rich-block")
         block.performTouchInput {
             swipe(Offset(width * 0.8f, centerY), Offset(width * 0.2f, centerY - 52), durationMillis = 300)
@@ -290,7 +317,7 @@ class AndroidRichContentTest {
     @Test fun calculatorSurfaceSwipesFromItsResult() {
         val registry = logseqExtensionRegistry()
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
-        val identifier = "outliner-calculator-swipe"
+        val identifier = "outliner-row-swipe"
         val ops = JSONArray()
             .put(JSONObject().put("op", "create-node").put("id", 1).put("kind", "root"))
             .put(JSONObject().put("op", "create-extension").put("id", 2)

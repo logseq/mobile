@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.captureToImage
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.logseq.logseq.runtime.LogseqNativeBridge
@@ -75,7 +77,7 @@ class AndroidOutlinerSpacingTest {
                 .put(row("child", "Child note", 1)))).toString()
     }
 
-    private fun render(editing: Boolean = false) {
+    private fun render(editing: Boolean = false, status: Boolean = false) {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = { events.add(it); dispatchLuiEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
@@ -83,7 +85,7 @@ class AndroidOutlinerSpacingTest {
         native = LogseqNativeBridge(onPatch = { filter.applyJson(it) })
         bridge = native
         val root = native.initialize(authenticationCode = 3)
-        filter.applyJson(native.applySnapshot(snapshot(editing)))
+        filter.applyJson(native.applySnapshot(snapshot(editing, status = status)))
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
@@ -99,6 +101,35 @@ class AndroidOutlinerSpacingTest {
     @Test fun ordinaryTextDoesNotReserveAnEmptyPriorityGap() {
         render()
         assertTrue("Compact document text follows the bullet slot: ${gap()}", gap() in 0.dp..4.dp)
+    }
+
+    @Test fun selectionSwipeMovesTheTaskMarkersWithTheText() {
+        render(status = true)
+        val body = ui.onNodeWithTag("outliner-block-content-parent")
+        val parts = listOf(
+            ui.onNodeWithTag("outliner.bullet-glyph.parent"),
+            ui.onNodeWithTag("outliner.task-status-icon.parent"),
+            ui.onNodeWithText("Parent note"),
+        )
+        fun positions() = parts.map { it.getUnclippedBoundsInRoot().left }
+        val resting = positions()
+        body.performTouchInput {
+            down(center)
+            moveTo(center - Offset(width * .04f, 0f))
+            moveTo(center - Offset(width * .08f, 0f))
+        }
+        val displacement = resting.zip(positions()) { before, during -> before - during }
+        assertTrue("The bullet follows the active drag", displacement.first() > 4.dp)
+        assertTrue("The bullet, status and text share the same displacement: $displacement",
+            displacement.all { it in (displacement.first() - 1.dp)..(displacement.first() + 1.dp) })
+        body.performTouchInput { cancel() }
+        assertEquals(resting, positions())
+
+        body.performTouchInput { swipeLeft() }
+        ui.runOnIdle {
+            assertEquals(listOf("parent"), events.filterIsInstance<LuiEvent.Extension>()
+                .filter { it.name == "toggle-selection" }.map { it.values["uuid"] })
+        }
     }
 
     @Test fun editingKeepsTheSameCompactTextColumn() {
