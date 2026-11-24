@@ -1,5 +1,17 @@
 import Foundation
 
+let pendingSyncNetworkUnavailable = "network_unavailable"
+
+func pendingSyncConnectionError(_ error: Error) -> String? {
+    switch (error as? URLError)?.code {
+    case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
+         .cannotFindHost, .dnsLookupFailed, .timedOut, .dataNotAllowed:
+        return pendingSyncNetworkUnavailable
+    default:
+        return nil
+    }
+}
+
 @MainActor final class LogseqPendingWebSocket {
     private let socket: URLSessionWebSocketTask
     private let url: String
@@ -14,7 +26,7 @@ import Foundation
 
     func send(_ request: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
         guard !closed, request.url == url, let body = request.body, active == nil else {
-            return LogseqPendingSyncResult(status: nil, body: nil, error: "The graph WebSocket is unavailable")
+            return LogseqPendingSyncResult(status: nil, body: nil, error: pendingSyncNetworkUnavailable)
         }
         let attempt = UUID()
         return await withTaskCancellationHandler {
@@ -23,13 +35,13 @@ import Foundation
                 timeout = Task {
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                     guard active?.attempt == attempt else { return }
-                    close("The graph WebSocket response timed out")
+                    close()
                 }
                 Task {
                     do { try await socket.send(.string(body)) }
                     catch {
                         guard active?.attempt == attempt else { return }
-                        close(error.localizedDescription)
+                        close(pendingSyncConnectionError(error) ?? error.localizedDescription)
                     }
                 }
                 if Task.isCancelled { close("WebSocket upload cancelled") }
@@ -47,7 +59,7 @@ import Foundation
         finish(LogseqPendingSyncResult(status: 200, body: body, error: nil))
     }
 
-    func close(_ message: String = "The graph WebSocket closed") {
+    func close(_ message: String = pendingSyncNetworkUnavailable) {
         closed = true
         socket.cancel(with: .goingAway, reason: nil)
         finish(LogseqPendingSyncResult(status: nil, body: nil, error: message))
@@ -192,7 +204,9 @@ public enum LogseqPendingSyncHTTPTransport {
             #if DEBUG
             print("LOGSEQ_ASSET_SYNC transport_error id=\(pending.id) error=\(message)")
             #endif
-            return LogseqPendingSyncResult(status: nil, body: nil, error: message)
+            return LogseqPendingSyncResult(
+                status: nil, body: nil, error: pendingSyncConnectionError(error) ?? message
+            )
         }
     }
 

@@ -19,6 +19,14 @@ private let testEmptySnapshotJSON = """
 
 @Suite(.serialized) struct LogseqModelTests {
 
+    @Test func pendingSyncDistinguishesConnectionLossFromRejectedResponses() {
+        #expect(pendingSyncConnectionError(URLError(.notConnectedToInternet)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.cannotConnectToHost)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.networkConnectionLost)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(URLError(.badServerResponse)) == nil)
+        #expect(pendingSyncConnectionError(URLError(.cancelled)) == nil)
+    }
+
     @Test func logseqModel() throws {
         #expect(1 + 2 == 3, "basic test")
     }

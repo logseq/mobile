@@ -869,7 +869,7 @@ private struct CreateSyncGraphPayload: Encodable {
                                     }
                                 }
                             } catch {
-                                uploads.close(error.localizedDescription)
+                                uploads.close(pendingSyncConnectionError(error) ?? error.localizedDescription)
                                 continuation.finish(throwing: error)
                             }
                         }
