@@ -146,6 +146,25 @@ let links_and_dates_use_shared_prompts () = R.with_runtime (fun session runtime 
   check_eq (List.length (Graph_runtime.pending_operations runtime)) before;
   check ~msg:"invalid input leaves the prompt open" (member "autocomplete" (state (snapshot session)) <> `Null))
 
+let date_commands_survive_late_native_caret_events () = R.with_runtime (fun session _ _ ->
+  let open_picker query label kind =
+    ignore (start session ("/" ^ query));
+    let opened = command session label in
+    let moved = event session "caretMoved" ["caretUTF16Offset", `Int 0] in
+    check_eq (member "kind" (member "autocomplete" (state moved))) (`String kind);
+    check_eq (draft moved) (draft opened)
+  in
+  open_picker "date" "Date picker" "date";
+  let inserted = submit session "2026-10-23" in
+  check ~msg:"the Date picker still inserts a journal reference"
+    (String_kit.starts_with ~prefix:"[[" (text (member "title" (draft inserted))));
+  open_picker "schedule" "Scheduled" "scheduled";
+  ignore (submit session "1792719000000");
+  save session;
+  let prop = Node_property_test.property "logseq.property/scheduled"
+    (Node_property_test.result (Node_property_test.read session Q.alpha)) in
+  check_eq (member "editorValue" prop) (`String "1792719000000"))
+
 let embeds_delete_only_the_wrapper () = R.with_runtime (fun session runtime conn ->
   let child = "30000000-0000-4000-8000-000000000002" in
   rebase runtime conn (R.entity 101 child "Source child" @ [
@@ -1846,6 +1865,7 @@ let cases = [
   case "inline commands preserve caret and suffix" inline_commands_preserve_caret_and_suffix;
   case "graph choices headings and block types" graph_choices_headings_and_block_types;
   case "links and dates use shared prompts" links_and_dates_use_shared_prompts;
+  case "date commands survive late native caret events" date_commands_survive_late_native_caret_events;
   case "embeds delete only the wrapper" embeds_delete_only_the_wrapper;
   case "linked blocks edit source contents" linked_blocks_edit_source_contents;
   case "linked pages edit the unrendered source" linked_pages_edit_the_unrendered_source;

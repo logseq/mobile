@@ -80,6 +80,18 @@ let autocomplete_suppresses_idle_save () = with_editor (fun session saved ->
   check_eq (Native_bridge.take_effect ()) "";
   check_eq (!saved).Cache_model.title "Before")
 
+let composing_text_waits_for_commit_before_autosaving () = with_editor (fun session saved ->
+  let title = "Composing" in
+  send (Model.ComposeOutlinerText ("editing", title, 9));
+  send (Model.MoveOutlinerCaret ("editing", 3));
+  let dispatch = take_ready () in
+  check_eq (kind dispatch) "change-outliner-text";
+  apply_effect session dispatch ["type", `String "textChanged"; "title", `String title; "caretUTF16Offset", `Int 3];
+  check_eq (pending_kinds ()) [];
+  check_eq (!saved).Cache_model.title "Before";
+  type_text session title;
+  check_eq (pending_kinds ()) ["save-outliner-editing"])
+
 let completion_resumes_the_save_deadline () = with_editor (fun session _ ->
   type_text session "[[";
   check_eq (pending_kinds ()) [];
@@ -383,6 +395,7 @@ let cases = [
   case "platform deletion confirmation uses shared effects" platform_delete_confirmation_uses_shared_effects;
   case "idle save commits once then wakes sync" idle_save_commits_once_then_wakes_sync;
   case "autocomplete suppresses idle save" autocomplete_suppresses_idle_save;
+  case "composing text waits for commit before autosaving" composing_text_waits_for_commit_before_autosaving;
   case "completion resumes the save deadline" completion_resumes_the_save_deadline;
   case "new text replaces deadline and ignores stale resolution" newer_text_replaces_deadline_and_stale_resolution;
   case "structural input cancels save without waiting" structural_input_cancels_save_without_waiting;

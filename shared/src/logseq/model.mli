@@ -328,6 +328,7 @@ type logseq_effect =
   | EditorOutlinerEventEffect of int * string
   | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
+  | ComposeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
   | MoveOutlinerCaretEffect of int * string * int
@@ -538,6 +539,7 @@ type logseq_action =
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
+  | ComposeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int
   | MoveOutlinerCaret of string * int

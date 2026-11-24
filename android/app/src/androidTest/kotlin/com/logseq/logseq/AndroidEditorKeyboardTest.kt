@@ -284,6 +284,28 @@ class AndroidEditorKeyboardTest {
         assertCommittedInCurrentBlock(editor, "Draft 你好")
     }
 
+    @Test fun softwareKeyboardPublishesSlashQueriesBeforeFinishingComposition() {
+        val editor = render("")
+        val connection = inputConnection()
+        ui.runOnIdle { assertTrue(connection.commitText("/", 1)) }
+        assertCommittedInCurrentBlock(editor, "/")
+        for (query in listOf("d", "date")) {
+            ui.runOnIdle { assertTrue(connection.setComposingText(query, 1)) }
+            val title = "/$query"
+            ui.waitUntil(5_000) {
+                events.filterIsInstance<LuiEvent.Extension>().any {
+                    it.name == "composing-text-change" && it.values["title"] == title &&
+                        it.values["caret-utf16-offset"] == title.length
+                }
+            }
+            acknowledge("keyboard-block", title, title.length)
+            editor.assertIsFocused().assertTextEquals(title)
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, TextRange(1, title.length)))
+        }
+        ui.runOnIdle { assertTrue(connection.finishComposingText()) }
+        assertCommittedInCurrentBlock(editor, "/date")
+    }
+
     @Test fun softwareKeyboardNextSplitsImmediatelyWithAnActiveComposition() {
         render("")
         val connection = inputConnection()

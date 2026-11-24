@@ -331,6 +331,7 @@ type logseq_effect =
   | EditorOutlinerEventEffect of int * string
   | PasteOutlinerTextEffect of int * string * string * int
   | ChangeOutlinerTextEffect of int * string * string * int
+  | ComposeOutlinerTextEffect of int * string * string * int
   | ReturnOutlinerEditorEffect of int * string * string * int
   | BackspaceOutlinerEditorEffect of int * string * string * int
   | MoveOutlinerCaretEffect of int * string * int
@@ -541,6 +542,7 @@ type logseq_action =
   | PasteOutlinerContent of string * string
   | PasteOutlinerText of string * string * int
   | ChangeOutlinerText of string * string * int
+  | ComposeOutlinerText of string * string * int
   | ReturnOutlinerEditor of string * string * int
   | BackspaceOutlinerEditor of string * string * int
   | MoveOutlinerCaret of string * int
@@ -964,6 +966,7 @@ let effect_id eff =
   | PasteOutlinerTextEffect (id, _, _, _) -> id
   | EditorOutlinerEventEffect (id, _) -> id
   | ChangeOutlinerTextEffect (id, _, _, _) -> id
+  | ComposeOutlinerTextEffect (id, _, _, _) -> id
   | ReturnOutlinerEditorEffect (id, _, _, _) -> id
   | BackspaceOutlinerEditorEffect (id, _, _, _) -> id
   | MoveOutlinerCaretEffect (id, _, _) -> id
@@ -1105,7 +1108,8 @@ let sign_in_active_ (current : logseq_model) =
 let change_outliner_text_effect_for_ eff uuid =
   match eff with
   | PasteOutlinerTextEffect (_, effect_uuid, _, _)
-  | ChangeOutlinerTextEffect (_, effect_uuid, _, _) -> effect_uuid = uuid
+  | ChangeOutlinerTextEffect (_, effect_uuid, _, _)
+  | ComposeOutlinerTextEffect (_, effect_uuid, _, _) -> effect_uuid = uuid
   | _ -> false
 
 let contains_change_outliner_text_effect_ effects uuid =
@@ -1115,6 +1119,7 @@ let contains_change_outliner_text_effect_ effects uuid =
 let remove_trailing_outliner_inputs effects uuid =
   let rec drop = function
     | ChangeOutlinerTextEffect (_, id, _, _) :: rest
+    | ComposeOutlinerTextEffect (_, id, _, _) :: rest
     | MoveOutlinerCaretEffect (_, id, _) :: rest when id = uuid -> drop rest
     | rest -> rest
   in
@@ -1629,7 +1634,7 @@ let cancels_outliner_autosave = function
     (* Movement and media actions retain the draft without committing it. *)
     List.mem action [ "hideKeyboard"; "tag"; "pageReference"; "delete" ]
   | PasteOutlinerTextEffect _ | EditorOutlinerEventEffect _
-  | ChangeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
+  | ChangeOutlinerTextEffect _ | ComposeOutlinerTextEffect _ | ReturnOutlinerEditorEffect _
   | BackspaceOutlinerEditorEffect _ | TapOutlinerBlockEffect _
   | ToggleOutlinerCollapsedEffect _ | LongPressOutlinerBlockEffect _
   | DropOutlinerBlocksEffect _
@@ -2420,7 +2425,7 @@ let rec update (current : logseq_model) action =
     let updated = {updated with outliner_autocomplete = None; outliner_autocomplete_candidates = [];
       sync_state = editing_sync_state current} in
     enqueue_effect updated (PasteOutlinerTextEffect (updated.next_effect_id, uuid, title, caret))
-  | ChangeOutlinerText (uuid, title, caret) ->
+  | (ChangeOutlinerText (uuid, title, caret) | ComposeOutlinerText (uuid, title, caret)) as input ->
     let updated =
       {
         (update_editing current uuid title caret) with
@@ -2432,7 +2437,9 @@ let rec update (current : logseq_model) action =
     let id = updated.next_effect_id in
     enqueue_effect { updated with pending_effects =
       remove_trailing_outliner_inputs updated.pending_effects uuid }
-      (ChangeOutlinerTextEffect (id, uuid, title, caret))
+      (match input with
+       | ComposeOutlinerText _ -> ComposeOutlinerTextEffect (id, uuid, title, caret)
+       | _ -> ChangeOutlinerTextEffect (id, uuid, title, caret))
   | ReturnOutlinerEditor (uuid, title, caret) ->
     let updated = update_editing current uuid title caret in
     let id = updated.next_effect_id in
@@ -2451,14 +2458,16 @@ let rec update (current : logseq_model) action =
     let updated = update_editing current uuid title caret in
     let id = updated.next_effect_id in
     let pending = remove_trailing_outliner_inputs updated.pending_effects uuid in
-    let has_pending_text = List.exists
+    let pending_text = List.find_opt
       (fun eff -> change_outliner_text_effect_for_ eff uuid)
-      (sub_list (List.length pending) (List.length updated.pending_effects) updated.pending_effects) in
+      (List.rev (sub_list (List.length pending) (List.length updated.pending_effects) updated.pending_effects)) in
     enqueue_effect { updated with pending_effects = pending;
       outliner_autocomplete_candidates =
         reference_autocomplete_candidates current }
-      (if has_pending_text then ChangeOutlinerTextEffect (id, uuid, title, caret)
-       else MoveOutlinerCaretEffect (id, uuid, caret))
+      (match pending_text with
+       | Some (ComposeOutlinerTextEffect _) -> ComposeOutlinerTextEffect (id, uuid, title, caret)
+       | Some _ -> ChangeOutlinerTextEffect (id, uuid, title, caret)
+       | None -> MoveOutlinerCaretEffect (id, uuid, caret))
   | ToggleOutlinerCollapsed uuid ->
     let id = current.next_effect_id in
     enqueue_effect current (ToggleOutlinerCollapsedEffect (id, uuid))

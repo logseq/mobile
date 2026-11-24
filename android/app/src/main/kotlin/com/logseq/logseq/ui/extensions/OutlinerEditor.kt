@@ -168,6 +168,7 @@ internal fun OutlinerEditor(
     var importingImages by remember { mutableStateOf(false) }
     val pasteKey = remember { Any() }
     val publishedTitles = remember { mutableStateListOf<String>() }
+    var publishedInput by remember { mutableStateOf<Triple<String, Int, Boolean>?>(null) }
     var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
 
     fun applyNativeValue(next: TextFieldValue) {
@@ -206,6 +207,7 @@ internal fun OutlinerEditor(
         rememberedModelTitle = modelTitle
         rememberedSelectionRevision = selectionRevision
         publishedTitles.clear()
+        publishedInput = null
         awaitingHandoff = handoffSegments.isNotEmpty()
         retainedReturn = null
         if (awaitingHandoff) {
@@ -258,6 +260,7 @@ internal fun OutlinerEditor(
         // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
         if (!preserveNativeInput && (blockChanged || selectionRequested || titleChanged)) {
             if (titleChanged) publishedTitles.clear()
+            publishedInput = null
             applyingModel = true
             debounceSeq++
             val offset = modelCaret.coerceIn(0, modelTitle.length)
@@ -267,27 +270,34 @@ internal fun OutlinerEditor(
     }
     val visibleBlockId = if (composingAcrossHandoff) blockId else rememberedBlockId
 
+    fun publishInput(input: TextFieldValue, composing: Boolean) {
+        val title = input.text
+        val caret = caretOffset(input, title)
+        val published = Triple(title, caret, composing)
+        if (published == publishedInput ||
+            (composing && publishedInput == Triple(title, caret, false)) ||
+            (title == modelTitle && publishedInput == null)
+        ) return
+        if (publishedTitles.lastOrNull() != title) publishedTitles.add(title)
+        publishedInput = published
+        context.emit(if (composing) "composing-text-change" else "text-change",
+            "title" to title, "caret-utf16-offset" to caret)
+    }
+
     LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
     // Debounced text-change emission, cancelled by the next edit.
-    LaunchedEffect(debounceSeq) {
-        if (debounceSeq == 0 || awaitingHandoff || value.composition != null) return@LaunchedEffect
+    LaunchedEffect(debounceSeq, focusEnabled) {
+        if (debounceSeq == 0 || awaitingHandoff || !focusEnabled) return@LaunchedEffect
         delay(80)
-        val title = value.text
-        publishedTitles.add(title)
-        context.emit(
-            "text-change",
-            "title" to title,
-            "caret-utf16-offset" to caretOffset(value, title),
-        )
+        val input = value
+        publishInput(input, composing = input.composition != null)
     }
     val inputOwner = remember { Any() }
     SideEffect {
         if (focusEnabled) NativeEditorInput.register(inputOwner) {
-            if (!awaitingHandoff && value.text != modelTitle && value.text != publishedTitles.lastOrNull()) {
+            if (!awaitingHandoff) {
                 debounceSeq++
-                publishedTitles.add(value.text)
-                context.emit("text-change", "title" to value.text,
-                    "caret-utf16-offset" to caretOffset(value, value.text))
+                publishInput(value, composing = false)
             }
         } else NativeEditorInput.unregister(inputOwner)
     }
@@ -380,15 +390,17 @@ internal fun OutlinerEditor(
             observedValue = next
             value = next
 
-            if (!textChanged && next.selection != prior.selection && next.selection.start >= 0) {
-                context.emit(
-                    "caret-change",
-                    "caret-utf16-offset" to next.selection.start,
-                )
-                return
-            }
+            if (!focusEnabled) return
             if (!textChanged) {
-                if (prior.composition != null && next.composition == null) debounceSeq++
+                if (prior.composition != next.composition ||
+                    (next.selection != prior.selection &&
+                        (next.composition != null || next.text != (publishedInput?.first ?: modelTitle)))
+                ) {
+                    debounceSeq++
+                } else if (next.selection != prior.selection && next.selection.start >= 0) {
+                    publishedInput = Triple(next.text, next.selection.start, false)
+                    context.emit("caret-change", "caret-utf16-offset" to next.selection.start)
+                }
                 return
             }
 

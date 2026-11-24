@@ -1630,8 +1630,9 @@ let rec update context (state : outliner_state) message =
          []
      | None -> step state [])
   | Caret_moved caret ->
-    (match state.editing with
-     | Some editing ->
+    (match state.editing, state.autocomplete with
+     | _, Some {kind = Picker _; _} -> step state []
+     | Some editing, _ ->
        step
          {
            state with
@@ -1641,7 +1642,7 @@ let rec update context (state : outliner_state) message =
              | Some _ -> autocomplete_for editing.title caret);
          }
          []
-     | None -> step state [])
+     | None, _ -> step state [])
   | Choose_autocomplete value -> choose_completion context state value
   | Dismiss_autocomplete -> step {state with autocomplete = None; completion_dismissed = true} []
   | Search_autocomplete query ->
