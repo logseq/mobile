@@ -77,7 +77,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -187,12 +189,6 @@ internal fun OutlinerBlockContent(
         if (actions == null) currentContext.emit("drag-start", "uuid" to uuid)
         else menuOpen = true
     }
-    var swipeOffset by remember(uuid) { mutableFloatStateOf(0f) }
-    var swiping by remember(uuid) { mutableStateOf(false) }
-    val displayedSwipeOffset by animateFloatAsState(
-        swipeOffset, animationSpec = if (swiping) snap() else spring(), label = "blockSwipeOffset",
-    )
-
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current.density
@@ -260,15 +256,6 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .outlinerSelectionSwipe(uuid,
-                onStart = { swiping = true },
-                onDrag = { swipeOffset = it },
-                onFinish = { selected ->
-                    swiping = false
-                    swipeOffset = 0f
-                    if (selected) currentContext.emit("toggle-selection", "uuid" to uuid)
-                },
-            )
             .then(when {
                 linkOnly && !selectionMode && actions == null -> Modifier
                 linkOnly && !selectionMode -> Modifier.pointerInput(uuid) {
@@ -292,10 +279,7 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = rowModifier,
     ) {
-        Column(Modifier.graphicsLayer {
-            val maximumDisplacement = (rowPosition.x + 16 * density).coerceAtLeast(0f)
-            translationX = -minOf(displayedSwipeOffset, maximumDisplacement)
-        }) {
+        Column {
             if (isAsset) {
                 ProjectedAsset(
                     uuid = uuid,
@@ -353,7 +337,6 @@ private fun Modifier.outlinerSelectionSwipe(
     onFinish: (Boolean) -> Unit,
 ): Modifier = pointerInput(uuid) {
     val swipeDistance = 44.dp.toPx()
-    val resistanceStart = 36.dp.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
@@ -367,11 +350,7 @@ private fun Modifier.outlinerSelectionSwipe(
         try {
             val released = horizontalDrag(start.id) { change ->
                 distance -= change.positionChange().x
-                if (leftSwipe) {
-                    val travel = distance.coerceAtLeast(0f)
-                    onDrag(minOf(travel, resistanceStart) +
-                        ((travel - resistanceStart).coerceAtLeast(0f) * 0.18f).coerceAtMost(12.dp.toPx()))
-                }
+                if (leftSwipe) onDrag(distance.coerceAtLeast(0f))
                 change.consume()
             }
             selected = released && leftSwipe && distance >= swipeDistance
@@ -382,26 +361,35 @@ private fun Modifier.outlinerSelectionSwipe(
 }
 
 @Composable
-internal fun CalculatorSwipeSurface(context: LuiExtensionContext) {
+internal fun OutlinerRowSwipeSurface(context: LuiExtensionContext) {
     val blockId = context.string("block-id").orEmpty()
     val currentContext by rememberUpdatedState(context)
-    var horizontalPosition by remember(blockId) { mutableFloatStateOf(0f) }
+    var rowLeft by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val markerInset = with(density) { (context.int("marker-inset") ?: 0).dp.toPx() }
+    val maxSwipe = with(density) { 48.dp.toPx() }
+    // The marker stays in view while selection uses the full finger travel.
+    val swipeLimit by rememberUpdatedState((rowLeft + markerInset).coerceIn(0f, maxSwipe))
     var offset by remember(blockId) { mutableFloatStateOf(0f) }
     var swiping by remember(blockId) { mutableStateOf(false) }
-    val density = LocalDensity.current.density
-    val displacement by animateFloatAsState(offset, if (swiping) snap() else spring(), label = "calculatorSwipe")
+    val displacement by animateFloatAsState(offset, if (swiping) snap() else spring(), label = "blockSwipeOffset")
     val swipe = if (!context.flag("enabled")) Modifier else Modifier.outlinerSelectionSwipe(
         blockId,
         onStart = { swiping = true },
-        onDrag = { offset = it },
+        onDrag = { travel ->
+            val resistanceStart = swipeLimit * 0.75f
+            val resistedTravel = minOf(travel, resistanceStart) +
+                (travel - resistanceStart).coerceAtLeast(0f) * 0.18f
+            offset = minOf(resistedTravel, swipeLimit)
+        },
         onFinish = { selected ->
             swiping = false
             offset = 0f
             if (selected) currentContext.emit("toggle-selection", "uuid" to blockId)
         },
     )
-    Box(Modifier.fillMaxWidth().onGloballyPositioned { horizontalPosition = it.positionInRoot().x }.then(swipe)) {
-        Box(Modifier.graphicsLayer { translationX = -minOf(displacement, (horizontalPosition + 16 * density).coerceAtLeast(0f)) }) {
+    Box(Modifier.fillMaxWidth().onGloballyPositioned { rowLeft = it.positionInWindow().x }.then(swipe)) {
+        Box(Modifier.graphicsLayer { translationX = -minOf(displacement, swipeLimit) }) {
             context.Children()
         }
     }
@@ -544,7 +532,7 @@ private fun MarkupChunk(
         MarkupInlineText(
             annotated = annotated,
             modifier = Modifier.fillMaxWidth().testTag("block.rich.inline.$index"),
-            inlineContent = inlineMathContent(chunk),
+            mathNodes = chunk,
             onOpenNode = onOpenNode,
             onTapFallback = onTapFallback,
         )
@@ -693,17 +681,19 @@ private fun inlineMathSources(nodes: List<JSONObject>, result: MutableSet<String
 }
 
 @Composable
-private fun inlineMathContent(nodes: List<JSONObject>): Map<String, InlineTextContent> {
+private fun inlineMathContent(sources: Set<String>, availableWidth: Int): Map<String, InlineTextContent> {
     val density = LocalDensity.current
     val size = with(density) { outlinerBodyStyle.fontSize.toPx() }
     val content = linkedMapOf<String, InlineTextContent>()
-    for (source in inlineMathSources(nodes)) {
-        val bitmap = rememberFormulaBitmap(source, size)
-        val width = with(density) { (bitmap?.width?.toFloat() ?: (size * maxOf(1, source.length) * .55f)).toSp() }
-        val height = with(density) { (bitmap?.height?.toFloat() ?: size).toSp() }
+    for (source in sources) {
+        val bitmap = rememberFormulaBitmap(source, size) ?: continue
+        if (availableWidth <= 1) continue
+        // A placeholder wider than the paragraph can drop the formula altogether.
+        val widthPx = minOf(bitmap.width, availableWidth - 1)
+        val width = with(density) { widthPx.toSp() }
+        val height = with(density) { (bitmap.height * (widthPx.toFloat() / bitmap.width)).toSp() }
         content["math:" + source] = InlineTextContent(Placeholder(width, height, PlaceholderVerticalAlign.TextCenter)) {
-            if (bitmap == null) Text(source, style = outlinerBodyStyle)
-            else Image(bitmap.asImageBitmap(), contentDescription = source, modifier = Modifier.fillMaxSize())
+            Image(bitmap.asImageBitmap(), contentDescription = source, modifier = Modifier.fillMaxSize())
         }
     }
     return content
@@ -716,7 +706,7 @@ private fun MarkupInlineText(
     onOpenNode: (String) -> Unit,
     onTapFallback: () -> Unit,
     textStyle: TextStyle? = null,
-    inlineContent: Map<String, InlineTextContent> = emptyMap(),
+    mathNodes: List<JSONObject> = emptyList(),
 ) {
     val context = LocalContext.current
     val openNode by rememberUpdatedState(onOpenNode)
@@ -724,6 +714,10 @@ private fun MarkupInlineText(
     val linkColor = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary
     val selectionMode = LocalOutlinerSelection.current
     val usesBlockMenu = LocalOutlinerBlockActions.current
+    val mathSources = remember(mathNodes) { inlineMathSources(mathNodes) }
+    var paragraphWidth by remember { mutableIntStateOf(0) }
+    val mathLayout = if (mathSources.isEmpty()) Modifier else
+        Modifier.fillMaxWidth().onSizeChanged { paragraphWidth = it.width }
     val linked = remember(annotated, context, linkColor, selectionMode) {
         val links = annotated.getStringAnnotations(0, annotated.length)
             .filter { it.tag in setOf(TAG_NODE, TAG_URL, TAG_TIMESTAMP) }
@@ -746,12 +740,13 @@ private fun MarkupInlineText(
     // every newly composed row, and expose link/edit actions to accessibility.
     Text(
         text = linked,
-        inlineContent = inlineContent,
+        // Until a bitmap is available, Compose lays out its alternate TeX as ordinary text.
+        inlineContent = inlineMathContent(mathSources, paragraphWidth),
         style = textStyle ?: outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
         // The row owns fallback gestures; annotated links consume short taps here.
-        modifier = modifier
+        modifier = modifier.then(mathLayout)
             // A link-only block otherwise has no tappable surface that enters
             // editing: Text consumes every short tap to open the URL. Observe
             // a hold before the link handler and turn it into the block's edit
@@ -799,7 +794,7 @@ private fun MarkupRichNode(
             ) {
                 MarkupInlineText(
                     annotated = annotated,
-                    inlineContent = inlineMathContent(listOf(node)),
+                    mathNodes = listOf(node),
                     modifier = Modifier.padding(start = 13.dp),
                     onOpenNode = onOpenNode,
                     onTapFallback = onTapFallback,

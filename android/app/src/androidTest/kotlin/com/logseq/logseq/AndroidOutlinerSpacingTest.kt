@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.captureToImage
@@ -23,6 +24,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.logseq.logseq.runtime.LogseqNativeBridge
 import com.logseq.logseq.runtime.LuiPatchFilter
 import com.logseq.logseq.runtime.dispatchLuiEvent
@@ -31,6 +33,9 @@ import com.logseq.logseq.ui.LogseqTheme
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
+import java.io.File
+import kotlin.io.path.createTempDirectory
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -47,8 +52,12 @@ class AndroidOutlinerSpacingTest {
     private lateinit var filter: LuiPatchFilter
     private val events = mutableListOf<LuiEvent>()
     private val journal = "Oct 22nd, 2026"
+    private var swipeFixture: File? = null
 
-    @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
+    @After fun closeBridge() {
+        bridge?.let { ui.runOnIdle { it.close() } }
+        swipeFixture?.deleteRecursively()
+    }
 
     private fun snapshot(editing: Boolean = false, priority: Boolean = false, status: Boolean = false, dates: Boolean = false, hasChildren: Boolean = true, editingUuid: String = "parent"): String {
         fun row(id: String, text: String, depth: Int): JSONObject {
@@ -75,7 +84,10 @@ class AndroidOutlinerSpacingTest {
                 .put(row("child", "Child note", 1)))).toString()
     }
 
-    private fun render(editing: Boolean = false) {
+    private fun render(
+        editing: Boolean = false,
+        initialSnapshot: (LogseqNativeBridge) -> String = { snapshot(editing) },
+    ) {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = { events.add(it); dispatchLuiEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
@@ -83,12 +95,42 @@ class AndroidOutlinerSpacingTest {
         native = LogseqNativeBridge(onPatch = { filter.applyJson(it) })
         bridge = native
         val root = native.initialize(authenticationCode = 3)
-        filter.applyJson(native.applySnapshot(snapshot(editing)))
+        filter.applyJson(native.applySnapshot(initialSnapshot(native)))
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
                 Box(Modifier.fillMaxSize()) { backend.Content(root) }
             }
         }
+    }
+
+    private fun requestCore(native: LogseqNativeBridge, action: String? = null, payload: String? = null, path: String? = null): String =
+        runBlocking {
+            val params = JSONObject().put("action", action).put("payload", payload).put("path", path)
+            val method = if (action == null) "open" else "dispatch"
+            native.callCore(JSONObject().put("apiVersion", 1).put("method", method).put("params", params).toString())
+                .also { assertTrue(it, JSONObject(it).getBoolean("ok")) }
+        }
+
+    private fun openSwipeTask(native: LogseqNativeBridge, uuid: String): String {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val directory = createTempDirectory(instrumentation.targetContext.cacheDir.toPath(), "swipe-task").toFile()
+        swipeFixture = directory
+        val database = File(directory, "graph.sqlite")
+        val checkpoint = File(directory, "sync.checkpoint")
+        for (file in listOf(database, checkpoint)) {
+            instrumentation.context.assets.open("feedback/${file.name}").use { input ->
+                file.outputStream().use(input::copyTo)
+            }
+        }
+        requestCore(native, path = File(directory, "logseq.sqlite").path)
+        requestCore(native, "configure", """{"graphId":"feedback","baseUrl":"http://127.0.0.1:1","token":""}""")
+        requestCore(native, "openGraph", JSONObject().put("graphId", "feedback")
+            .put("activePath", database.path).put("checkpointPath", checkpoint.path).put("isEncrypted", false).toString())
+        requestCore(native, "selectPage", "f0000000-0000-4000-8000-000000000001")
+        requestCore(native, "outlinerEvent", JSONObject()
+            .put("type", "setTaskStatus").put("uuid", uuid)
+            .put("statusIdent", "logseq.property/status.doing").toString())
+        return requestCore(native, "refresh")
     }
 
     private fun gap(editing: Boolean = false) =
@@ -99,6 +141,67 @@ class AndroidOutlinerSpacingTest {
     @Test fun ordinaryTextDoesNotReserveAnEmptyPriorityGap() {
         render()
         assertTrue("Compact document text follows the bullet slot: ${gap()}", gap() in 0.dp..4.dp)
+    }
+
+    @Test fun selectionSwipeMovesTheTaskMarkersWithTheText() {
+        val uuid = "f0000000-0000-4000-8000-000000000011"
+        render { openSwipeTask(it, uuid) }
+        val body = ui.onNodeWithTag("outliner-block-content-$uuid")
+        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.$uuid")
+        val parts = listOf(
+            bullet,
+            ui.onNodeWithTag("outliner.task-status-icon.$uuid"),
+            ui.onNodeWithText("Journal content"),
+        )
+        fun positions() = parts.map { it.getUnclippedBoundsInRoot().left }
+        val resting = positions()
+        fun assertMarkersFollow() {
+            val displacement = resting.zip(positions()) { before, during -> before - during }
+            assertTrue("The bullet follows the active drag", displacement.first() > 4.dp)
+            assertTrue("The bullet, status and text share the same displacement: $displacement",
+                displacement.all { it in (displacement.first() - 1.dp)..(displacement.first() + 1.dp) })
+        }
+        body.performTouchInput {
+            down(center)
+            moveTo(center - Offset(width * .04f, 0f))
+            moveTo(center - Offset(width * .08f, 0f))
+        }
+        assertMarkersFollow()
+        body.performTouchInput { cancel() }
+        assertEquals(resting, positions())
+        ui.onNodeWithTag("toolbar.outliner.selection").assertDoesNotExist()
+
+        body.performTouchInput {
+            down(center)
+            moveTo(center - Offset(width * .20f, 0f))
+            moveTo(center - Offset(width * .40f, 0f))
+        }
+        assertMarkersFollow()
+        val bulletBounds = bullet.getUnclippedBoundsInRoot()
+        assertTrue("The bullet remains inside the viewport at full travel",
+            (bulletBounds.left + bulletBounds.right) / 2 >= 8.5.dp)
+        body.performTouchInput { up() }
+
+        val native = requireNotNull(bridge)
+        val effect = ui.runOnIdle {
+            assertEquals(listOf(uuid), events.filterIsInstance<LuiEvent.Extension>()
+                .filter { it.name == "toggle-selection" }.map { it.values["uuid"] })
+            generateSequence { native.takeEffect().takeIf { it.isNotEmpty() } }
+                .map { JSONObject(it) }
+                .onEach { it.optString("patch").takeIf { patch -> patch.isNotEmpty() }?.let(filter::applyJson) }
+                .mapNotNull { it.optJSONObject("effect") }
+                .first { it.getString("kind") == "editor-outliner-event" }
+        }
+        val response = requestCore(native, "executeEffect", effect.toString())
+        val selected = JSONObject(response).getJSONObject("result").getJSONObject("outlinerState")
+            .getJSONArray("selectedBlockIds")
+        assertEquals(1, selected.length())
+        assertEquals(uuid, selected.getString(0))
+        ui.runOnIdle {
+            native.applySnapshot(response).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+            native.resolveEffect(effect.getLong("id"), true, "").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        }
+        ui.onNodeWithTag("toolbar.outliner.selection").assertIsDisplayed()
     }
 
     @Test fun editingKeepsTheSameCompactTextColumn() {

@@ -642,22 +642,12 @@ let code_block_content model_source retained_source row_source send : t =
     ~accessibility_identifier:("outliner.code." ^ current_row.Model.row_uuid) [
       code_language_control context model_source row_source send;
       reactive (fun calculator -> if not calculator then input else
-        let content = row ~gap:0 ~cross:`start
+        row ~gap:0 ~cross:`start
           ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
           box ~min_width:64 ~padding:12 [
             text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
               ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
-              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]] in
-        if Lui_ui.host context <> KotlinHost then content else custom (fun context parent ->
-          let node = Lui_ui.extension context "outliner-calculator-swipe" in
-          attach context parent node;
-          Lui_ui.extension_property_signal context node "block-id" (Signal.map View_base.outliner_row_id_wire_value row_source);
-          Lui_ui.extension_property_signal context node "enabled"
-            (Signal.map (fun row -> BoolValue (not (View_rows.retained_row_editing_ row))) retained_source);
-          Lui_ui.on_event context node (fun input ->
-            ignore (View_base.handle_outliner_block_content_event input model_source send));
-          ignore (mount context ~parent:node content);
-          node)) calculator;
+              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
     ])
 
 let annotation_page_link row_source send =
@@ -851,10 +841,29 @@ let with_ios_trailing_padding padding content =
     if Lui_ui.host context = SwiftUIHost then Lui_ui.padding_right context node padding;
     node)
 
+let android_outliner_row_swipe model_source retained_source row_source send content =
+  custom (fun context parent ->
+    if Lui_ui.host context <> KotlinHost then mount context ?parent content else
+    let node = Lui_ui.extension context "outliner-row-swipe" in
+    attach context parent node;
+    Lui_ui.extension_property_signal context node "block-id" (Signal.map View_base.outliner_row_id_wire_value row_source);
+    Lui_ui.extension_property_signal context node "enabled"
+      (Signal.map (fun row -> BoolValue (not (View_rows.retained_row_editing_ row))) retained_source);
+    Lui_ui.extension_property_signal context node "marker-inset"
+      (Signal.map (fun (row : Model.outline_row) ->
+        (* The icon is centered in a 24-point slot. Numbered markers may fill it. *)
+        let padding = if row.row_list_number <> None && not row.row_is_embed then 0 else 3 in
+        IntValue (View_base.outliner_row_indent row + padding)) row_source);
+    Lui_ui.on_event context node (fun input ->
+      ignore (View_base.handle_outliner_block_content_event input model_source send));
+    ignore (mount context ~parent:node content);
+    node)
+
 let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
+  let swipe = android_outliner_row_swipe model_source retained_row_source row_source send in
   if Lui_ui.host context = SwiftUIHost then
     selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
       (box ~padding:0 ~accessibility_identifier:(reactive View_base.outliner_row_identifier row_source)
@@ -870,7 +879,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
            (Signal.map View_base.outliner_row_identifier row_source)
          ~padding:0 ~corner_radius:10
          [
-           row ~gap:0 ~cross:`start ~padding_vertical:2
+           swipe (row ~gap:0 ~cross:`start ~padding_vertical:2
           [
             outliner_indent_view
               (Signal.map View_base.outliner_row_indent row_source);
@@ -918,7 +927,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
                       outliner_row_main_content context model_source
                         retained_row_source row_source send;
                     ]));
-           ];
+           ]);
          ])
   else
     selected_row ~selected:(reactive View_rows.retained_row_selected_ retained_row_source)
@@ -932,8 +941,8 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
               (Signal.map View_base.outliner_row_identifier row_source)
             ~padding:0 ~corner_radius:10
             [
-              outliner_row_content context model_source
-                retained_row_source row_source send;
+              swipe (outliner_row_content context model_source
+                retained_row_source row_source send);
             ]))
 
 let outliner_text_leading context (row : Model.outline_row) =
