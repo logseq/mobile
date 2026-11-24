@@ -1400,19 +1400,20 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
     | PropertyAutocomplete -> "property" | PickerAutocomplete kind -> kind in
   let title = function "command" -> "Commands" | "node" -> "Pages" | "tag" -> "Tags"
     | "embed" -> "Embed a node" | "template" -> "Templates" | "link" -> "Link"
-    | "image" -> "Image link" | "date" -> "Date picker" | "deadline" -> "Deadline"
-    | "scheduled" -> "Scheduled" | "youtube" -> "YouTube timestamp" | _ -> "Properties" in
+    | "image" -> "Image link" | "date" -> "Date picker"
+    | "youtube" -> "YouTube timestamp" | _ -> "Properties" in
   let emit event value = ignore (send (Model.EditorCompletion (event, value))) in
   let dismiss () = emit "dismissAutocomplete" "" in
   let source = Signal.map (fun (current : Model.logseq_model) ->
-    match current.outliner_autocomplete with Some request -> [kind request.autocomplete_kind] | None -> []) model_source in
+    match current.outliner_autocomplete with
+    | None | Some {autocomplete_kind = PickerAutocomplete ("scheduled" | "deadline"); _} -> []
+    | Some request -> [kind request.autocomplete_kind]) model_source in
   keyed ~source ~key:Fun.id ~cmp:String.compare ~mount:(fun source ->
     let kind = Signal.sample source in
-    let form = List.mem kind ["link"; "image"; "date"; "deadline"; "scheduled"; "youtube"] in
+    let form = List.mem kind ["link"; "image"; "date"; "youtube"] in
     if form then (custom @@ fun context parent ->
-      let temporal = List.mem kind ["date"; "deadline"; "scheduled"] in
-      let date_kind = if kind = "date" then "date" else "datetime" in
-      let value = Signal.state context.Lui_ui.ui_scheduler (if temporal then View_query.temporal_default date_kind else "") in
+      let temporal = kind = "date" in
+      let value = Signal.state context.Lui_ui.ui_scheduler (if temporal then View_query.temporal_default "date" else "") in
       let label = Signal.state context.ui_scheduler "" in
       let input state = fun value -> Signal.set state value  in
       let confirm _ =
@@ -1432,7 +1433,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
         ~accessibility_identifier:"sheet.outliner.autocomplete" ~on_dismiss:(fun _ -> dismiss ()) [
         list ~grow:1.0 ~style:`inset_grouped [list_section (
           if temporal then [list_section_item ~padding_horizontal:0 ~padding_vertical:0 [
-            View_query.temporal_picker ~on_submit:confirm model_source date_kind "editor-command" (Signal.value value) (Signal.set value)]]
+            View_query.temporal_picker ~on_submit:confirm model_source "date" "editor-command" (Signal.value value) (Signal.set value)]]
           else [list_section_item [text_field ~text_signal:(Signal.value value) ~autofocus:true
             ~placeholder:(if kind = "youtube" then "1:32" else "https://example.com")
             ~label:(if kind = "youtube" then "Timestamp" else "URL")
