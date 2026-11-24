@@ -13,3 +13,12 @@ appId: com.logseq.logseq.PageBenchmark
     id: journal-task.deadline.task
 - assertVisible:
     id: journal-task.metadata.task
+- tapOn:
+    id: outliner.block-action.task
+- tapOn:
+    id: button.outliner.editor.deadline
+- assertVisible:
+    id: task-dates.calendar
+- assertVisible:
+    id: task-dates.clear
+    enabled: false
