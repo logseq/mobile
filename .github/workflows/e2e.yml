@@ -383,7 +383,11 @@ jobs:
             eval $(opam env)
             export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
             export DUNE="$(command -v dune)"
-            ./android/gradlew -p android :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.logseq.AndroidTaskDateSheetTest
+            if ! ./android/gradlew -p android :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.logseq.logseq.AndroidTaskDateSheetTest; then
+              adb logcat -d -s TestRunner AndroidRuntime
+              find android/app/build/outputs/androidTest-results -name '*.xml' -exec cat {} +
+              exit 1
+            fi
             ./scripts/test-android-e2e.sh "$ANDROID_MODULE"
 
       - name: Upload Maestro debug artifacts
