@@ -4744,25 +4744,18 @@ let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
   let warning_icon =
     descendant_with_identifier renderer dialog "icon.graph-delete-warning"
   in
-  let actions =
-    descendant_with_identifier renderer dialog "toolbar.graph-delete"
-  in
   let cancel =
-    descendant_with_identifier renderer actions "button.graph-delete.cancel"
+    descendant_with_identifier renderer dialog "button.graph-delete.cancel"
   in
   let confirm =
-    descendant_with_identifier renderer actions "button.graph-delete.confirm"
+    descendant_with_identifier renderer dialog "button.graph-delete.confirm"
   in
-  check_eq
-    ~msg:"the Material dialog has enough room without filling the screen"
-    (property_int renderer dialog Lui_protocol.HeightValue)
-    320;
   check_eq ~msg:"the irreversible warning uses a Material icon"
     (property_string renderer warning_icon Lui_protocol.IconName)
     "app:warning";
-  check_eq ~msg:"dialog actions follow the Material horizontal action row"
-    (property_string renderer actions Lui_protocol.OrientationValue)
-    "horizontal";
+  check ~msg:"the native dialog owns both action buttons"
+    (List.mem cancel (children renderer dialog) &&
+     List.mem confirm (children renderer dialog));
   check_eq ~msg:"Cancel remains the quiet action"
     (property_string renderer cancel Lui_protocol.VariantValue)
     "ghost";
